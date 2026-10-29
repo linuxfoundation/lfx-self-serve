@@ -188,6 +188,16 @@ describe('Member 360 entitlement and generation', () => {
     await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
     expect(mocks.createSession).not.toHaveBeenCalled();
   });
+  it('reuses tracker rows prepared before the discard without loading them twice', async () => {
+    const service = new Member360Service();
+    const body = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    const prepared = await service.prepareTrackers(req, body);
+    await service.start(req, body, prepared);
+    expect(mocks.loadTrackers).toHaveBeenCalledOnce();
+    expect(mocks.createSession).toHaveBeenCalledOnce();
+    expect(mocks.deleteTrackers).toHaveBeenCalledOnce();
+  });
   it('does not consume tracker rows if the Guild start fails', async () => {
     mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
     mocks.createSession.mockRejectedValue(new Error('Synthetic start unavailable'));

@@ -19,6 +19,7 @@ import {
   Member360Envelope,
   Member360FinalizeReceipt,
   Member360GenerateRequest,
+  Member360Tracker,
   Member360GenerationStart,
   Member360PriorRun,
   Member360Result,
@@ -74,12 +75,18 @@ export class Member360Service {
     };
   }
 
-  public async start(req: Request, body: Member360GenerateRequest): Promise<Member360GenerationStart> {
+  /** Validate private receipts under fresh writer scope before any discard. */
+  public async prepareTrackers(req: Request, body: Member360GenerateRequest): Promise<Member360Tracker[]> {
+    const project = await this.resolveProject(req, body.project);
+    return body.trackerIds?.length ? this.trackerStore.load(req, project.uid, body.trackerIds) : [];
+  }
+
+  public async start(req: Request, body: Member360GenerateRequest, preparedTrackers?: Member360Tracker[]): Promise<Member360GenerationStart> {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
-    const trackers = body.trackerIds?.length ? await this.trackerStore.load(req, project.uid, body.trackerIds) : undefined;
+    const trackers = body.trackerIds?.length ? (preparedTrackers ?? (await this.trackerStore.load(req, project.uid, body.trackerIds))) : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',

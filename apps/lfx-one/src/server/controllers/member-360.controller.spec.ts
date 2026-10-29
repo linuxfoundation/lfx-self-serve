@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn(), active: vi.fn() }));
+const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn(), active: vi.fn(), prepare: vi.fn() }));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
@@ -23,6 +23,7 @@ vi.mock('../services/member-360.service', async (original) => {
     Member360Service: class {
       public static toRunResult = actual.Member360Service.toRunResult;
       public start = mocks.start;
+      public prepareTrackers = mocks.prepare;
       public result = mocks.result;
     },
   };
@@ -35,6 +36,7 @@ describe('Member 360 HTTP boundary', () => {
     vi.resetAllMocks();
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.prepare.mockResolvedValue([]);
   });
   it('refuses before creating a Guild session and passes explicit discard separately from the agent intake', async () => {
     const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
@@ -48,7 +50,31 @@ describe('Member 360 HTTP boundary', () => {
     expect(mocks.active).toHaveBeenCalledWith(req, 'sample-project', 'member-360', 'a'.repeat(64));
     mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
     await new Member360Controller().generate(req, res, vi.fn());
-    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project' });
+    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project' }, []);
+  });
+  it('rejects expired trackers before discarding the active run or starting a replacement', async () => {
+    const failure = Object.assign(new Error('Upload the tracker again.'), { statusCode: 400 });
+    mocks.prepare.mockRejectedValue(failure);
+    const next = vi.fn();
+    await new Member360Controller().generate(
+      { body: { project: 'sample-project', trackerIds: ['a'.repeat(64)], discard: 'b'.repeat(64) } } as Request,
+      {} as Response,
+      next
+    );
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.active).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.track).not.toHaveBeenCalled();
+  });
+  it('reuses validated private rows only after the active-run guard succeeds', async () => {
+    const rows = [{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }];
+    mocks.prepare.mockResolvedValue(rows);
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    const req = { body: { project: 'sample-project', trackerIds: ['a'.repeat(64)], discard: 'b'.repeat(64) } } as Request;
+    await new Member360Controller().generate(req, { json: vi.fn() } as unknown as Response, vi.fn());
+    expect(mocks.prepare.mock.invocationCallOrder[0]).toBeLessThan(mocks.active.mock.invocationCallOrder[0]);
+    expect(mocks.active.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
+    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] }, rows);
   });
   it.each(['project_name', 'project_uid', 'prior_run', 'request', 'handle'])('rejects client-controlled %s', async (key) => {
     const next = vi.fn();
@@ -62,7 +88,7 @@ describe('Member 360 HTTP boundary', () => {
     const next = vi.fn();
     await new Member360Controller().generate({ body: { project: 'sample-project' } } as Request, res as unknown as Response, next);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' }));
-    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), { project: 'sample-project' });
+    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), { project: 'sample-project' }, []);
     expect(next).not.toHaveBeenCalled();
   });
   it('preflights storage before creating a session and requires a durable start before returning success', async () => {

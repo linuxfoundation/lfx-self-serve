@@ -29,8 +29,9 @@ export class Member360Controller {
       }
       const project = await this.runs.resolveProject(req, parsed.data.project);
       const { discard, ...input } = parsed.data;
+      const trackers = await this.service.prepareTrackers(req, input);
       await this.runs.assertSingleActiveOneOffRun(req, project, 'member-360', discard);
-      const { sessionId, documentId } = await this.service.start(req, input);
+      const { sessionId, documentId } = await this.service.start(req, input, trackers);
       const runId = await this.runs.startForOneOff(req, 'member-360', project, sessionId);
       // Domain-separate this token from chat AND bind it to the entitled
       // project, preventing a session from being replayed into another partition.
