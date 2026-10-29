@@ -18,7 +18,7 @@
     --tg-h: 24px;
   }
 
-  // Thumb inset 2px, with the library's soft two-layer shadow (no token for it).
+  // Thumb inset 2px; no token for the library's thumb shadow (--ui-shadow-small is a ring, not a lift).
   &::after {
     content: '';
     position: absolute;
@@ -35,6 +35,20 @@
 
   &:checked::after {
     transform: translateX(calc(var(--tg-w) - var(--tg-h)));
+  }
+
+  // Forced colours drop the thumb's white fill, so it takes the text colour (Highlight track: HighlightText); the 1px border shifts the inset, so top and left drop to 1px.
+  @media (forced-colors: active) {
+    &::after {
+      top: 1px;
+      left: 1px;
+      background: CanvasText;
+      box-shadow: none;
+    }
+
+    &:checked::after {
+      background: HighlightText;
+    }
   }
 
   @media (prefers-reduced-motion: no-preference) {

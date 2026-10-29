@@ -7,7 +7,7 @@ import { UiToggleSize, UiToggleTone } from '@lfx-one/shared/interfaces';
 
 /**
  * On/off control for settings that apply at once (options saved with a form use a checkbox). A native checkbox with `role="switch"`
- * sits under the visual, so Space and focus are the browser's. Use `[(checked)]` or a reactive-forms control (`formControlName`, `[formControl]`, `ngModel`).
+ * sits under the visual, so Space and focus are the browser's. Use `[(checked)]` or a reactive-forms control (`formControlName`, `[formControl]`).
  */
 @Component({
   selector: 'lfx-ui-toggle',
@@ -78,10 +78,13 @@ export class UiToggleComponent implements ControlValueAccessor {
     return computed(() => {
       const sizes = { default: 'ui-toggle-default', medium: 'ui-toggle-medium', large: 'ui-toggle-large' };
       const tones = { accent: 'bg-ui-accent-500', warning: 'bg-ui-warning-600', danger: 'bg-ui-danger-600' };
-      const state = this.checked() ? `${tones[this.tone()]} ring-0` : 'bg-ui-neutral-100 ring-1 ring-inset ring-ui-neutral-alpha-200';
+      // forced-colors: a real border keeps the track visible; Highlight marks on (the SCSS recolours the thumb).
+      const state = this.checked()
+        ? `${tones[this.tone()]} ring-0 forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight]`
+        : 'bg-ui-neutral-100 ring-1 ring-inset ring-ui-neutral-alpha-200 forced-colors:border-[color:CanvasText] forced-colors:bg-[color:Canvas]';
       // opacity-50 matches the library's disabled opacity token (0.5).
       const cursor = this.isDisabled() ? 'cursor-not-allowed opacity-50' : 'cursor-pointer';
-      return `ui-toggle ${sizes[this.size()]} peer relative m-0 shrink-0 appearance-none rounded-ui-full transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus ${state} ${cursor}`;
+      return `ui-toggle ${sizes[this.size()]} relative m-0 shrink-0 appearance-none rounded-ui-full transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus forced-colors:border ${state} ${cursor}`;
     });
   }
 
