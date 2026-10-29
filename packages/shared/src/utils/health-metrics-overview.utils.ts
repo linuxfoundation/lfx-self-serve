@@ -12,6 +12,7 @@ import {
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_OVERVIEW_GAUGE_TINT,
+  HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_STROKES,
@@ -52,6 +53,7 @@ import type {
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewEventsView,
   HealthMetricsOverviewGaugeCapView,
+  HealthMetricsOverviewKpiStripLayout,
   HealthMetricsOverviewKpiView,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsView,
@@ -889,4 +891,13 @@ function formatShare(value: number | null, allowLessThanOne = true): string {
 
 function clampPct(value: number): number {
   return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+}
+
+/**
+ * A KPI strip's layout at its measured width: a row while every item has 170px, otherwise one stacked column, except
+ * that four items fall back to a 2 × 2 grid while two columns still have 170px each. An unmeasured strip stays a row.
+ */
+export function toHealthMetricsOverviewKpiStripLayout(widthPx: number | null, itemCount: number): HealthMetricsOverviewKpiStripLayout {
+  if (widthPx === null || itemCount === 0 || widthPx / itemCount >= HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX) return 'row';
+  return itemCount === 4 && widthPx / 2 >= HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX ? 'grid' : 'stack';
 }
