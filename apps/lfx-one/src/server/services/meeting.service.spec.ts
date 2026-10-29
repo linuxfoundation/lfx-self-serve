@@ -1929,33 +1929,17 @@ describe('MeetingService registrant write payloads', () => {
     expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
   });
 
-  // Upstream treats `user_id` as immutable: an update that leaves it out reads as a change and fails with
-  // "user_id cannot be changed". It has to reach the wire as the caller sent it.
-  it('forwards user_id on update so a linked registrant keeps the user it has', async () => {
-    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
-      meeting_id: 'meeting-1',
-      email: 'a@example.com',
-      first_name: 'A',
-      last_name: 'B',
-      user_id: 'user-123',
-    });
+  // Upstream rejects an update that names `user_id` with "user_id cannot be changed", even when it is the
+  // registrant's own value, and a create must not let a caller pick the LF account. Never forwarded.
+  it('does not forward a client-supplied user_id on create or update', async () => {
+    const body = { meeting_id: 'meeting-1', email: 'a@example.com', first_name: 'A', last_name: 'B', user_id: 'user-123' };
 
-    expect(bodyOf()).toMatchObject({ user_id: 'user-123' });
-  });
-
-  // A create has no stored `user_id` for upstream to compare against, so a client-named one would pick
-  // the LF account a guest is linked to. Update-only.
-  it('does not forward a client-supplied user_id on create', async () => {
-    await service.addMeetingRegistrant(req, {
-      meeting_id: 'meeting-1',
-      email: 'a@example.com',
-      first_name: 'A',
-      last_name: 'B',
-      user_id: 'someone-else',
-    } as CreateMeetingRegistrantRequest & { user_id: string });
-
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', body);
     expect(bodyOf()).toMatchObject({ email: 'a@example.com' });
     expect(bodyOf()).not.toHaveProperty('user_id');
+
+    await service.addMeetingRegistrant(req, body as CreateMeetingRegistrantRequest & { user_id: string });
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('user_id');
   });
 
   // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form

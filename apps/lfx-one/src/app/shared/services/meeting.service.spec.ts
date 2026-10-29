@@ -157,11 +157,13 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body).not.toHaveProperty('committee_uid');
     });
 
-    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
-    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
-    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
-      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
-      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    // Upstream rejects an update that names `user_id` or `username` with "user_id cannot be changed", even
+    // when it is the guest's own value, so neither goes out — the Edit Guest form never sent them either.
+    it('does not send the user_id or username a listed guest is linked to', () => {
+      const changes = service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123', username: 'jdoe' }));
+
+      expect(changes).not.toHaveProperty('user_id');
+      expect(changes).not.toHaveProperty('username');
     });
 
     // `username` and `avatar_url` are derived from the linked user, and the Edit Guest form never sent them.

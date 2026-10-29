@@ -62,12 +62,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import {
-  NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS,
-  RENAMED_REGISTRANT_KEYS,
-  UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS,
-  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
-} from '../constants';
+import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -2778,11 +2773,6 @@ export class MeetingService {
     // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
     // to know exactly which keys survive here to tell an empty update apart from a real one.
     for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
-      // {@link UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS} have no stored value to be checked against on a create.
-      if (verb === 'create' && (UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
-        continue;
-      }
-
       const value = submitted[passthroughKey];
 
       // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,
