@@ -5,6 +5,9 @@ import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
 
+/** Coalesce a tab's adjacent visible/focus notifications without delaying its initial read. */
+export const VISIBILITY_POLL_WAKE_DEBOUNCE_MS = 50;
+
 /**
  * Configurable labels for votes displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed

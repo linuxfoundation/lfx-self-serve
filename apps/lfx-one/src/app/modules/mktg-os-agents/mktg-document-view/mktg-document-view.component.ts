@@ -44,6 +44,7 @@ import {
   MKTG_AGENTS,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
@@ -250,6 +251,7 @@ export class MktgDocumentViewComponent {
   private readonly confirmingApproval = signal(false);
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
+  protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
@@ -956,6 +958,7 @@ export class MktgDocumentViewComponent {
                       intervalMs: MKTG_RUN_POLL.intervalMs,
                       backoffBaseMs: MKTG_RUN_POLL.intervalMs,
                       backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+                      wakeDebounceMs: VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
                       shouldContinue: () => false,
                     }
                   ).pipe(switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))))
@@ -1462,7 +1465,7 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       const approved = view?.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
-      const produced = this.remoteRevisionId() ? view?.revisions.find((row) => row.number > view.revision.number) : null;
+      const produced = view?.revisions.find((row) => row.number > view.revision.number);
       const approvedIsNewer = !!view && !!approved && approved.number > view.revision.number;
       const newer = approvedIsNewer ? approved : produced;
       if (!view || !newer || newer.number <= view.revision.number) return null;
@@ -1489,6 +1492,7 @@ export class MktgDocumentViewComponent {
   }
 
   private initApprovedView(): Signal<MktgApprovedRevisionState> {
+    let bodyKey = '';
     return toSignal(
       toObservable(this.view).pipe(
         distinctUntilChanged(
@@ -1500,6 +1504,9 @@ export class MktgDocumentViewComponent {
             previous?.approvedCurrent?.revisionId === current?.approvedCurrent?.revisionId
         ),
         switchMap((view) => {
+          const nextBodyKey = view ? JSON.stringify([view.project, view.type.agentKey, view.documentId, view.revision.id]) : '';
+          this.approvedReadIsExplicit.set(nextBodyKey !== bodyKey);
+          bodyKey = nextBodyKey;
           if (!isPlatformBrowser(this.platformId) || !view || !isMktgSlidesExportAgentKey(view.type.agentKey)) {
             return of({ loading: false, revision: null, error: '' });
           }

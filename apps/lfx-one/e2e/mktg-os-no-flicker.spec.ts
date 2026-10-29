@@ -120,7 +120,7 @@ test('two document progress polls keep the selected tab, expanded history, compo
       ? stored.revision
       : { ...stored.revision, number, id: `${String(number).padStart(6, '0')}-${'a'.repeat(64)}`, latest: false };
   });
-  const response = {
+  let response: MktgRevisionResponse = {
     ...stored,
     revisions,
     runs: [{ ...startedDocumentRun('writing'), project: KIT_PROJECT.uid, agentKey: type.agentKey }],
@@ -154,6 +154,12 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await composer.fill('Synthetic draft kept while document progress refreshes.');
   await composer.focus();
   await composer.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
+  const readiness = page.getByTestId('mktg-document-view-readiness');
+  await expect(readiness).toBeVisible();
+  const readyText = await readiness.textContent();
+  const tabs = page.getByTestId('mktg-framework-view-tabs');
+  const tabsTop = (await tabs.boundingBox())?.y;
+  expect(tabsTop).toBeDefined();
   const scroll = await page.evaluate(() => window.scrollY);
   const before = polls;
   const bodyReadsBefore = bodyReads;
@@ -167,6 +173,22 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await expect(composer).toHaveAttribute('data-refresh-identity', 'kept');
   await expect(composer).toBeFocused();
   expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+  const produced = { ...stored.revision, id: `000010-${'a'.repeat(64)}`, number: 10, latest: true };
+  response = {
+    ...response,
+    runs: [],
+    revisions: [produced, ...revisions.map((row) => ({ ...row, latest: false }))],
+    current: { revisionId: produced.id, changedAt: '2026-10-29T12:00:00Z', changedBy: null },
+  };
+  const beforeStore = polls;
+  await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThan(beforeStore);
+  await expect(page.getByTestId('mktg-document-view-new-approval')).toContainText('v10 was produced');
+  await expect(page.getByTestId('mktg-document-view-revisions').getByTestId('mktg-document-view-history-bar')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-content').getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
+  await expect(readiness).toHaveText(readyText ?? '');
+  expect((await tabs.boundingBox())?.y).toBe(tabsTop);
+  expect(bodyReads).toBe(bodyReadsBefore);
+  await expect(composer).toBeFocused();
 });
 
 test('two same-scope comments refreshes keep the heading and thread nodes without a skeleton', async ({ page }) => {

@@ -11,6 +11,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_DOCUMENT_PROGRESS_POLL,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
   MKTG_REVISION_ID_REGEX,
@@ -509,6 +510,7 @@ export class MktgRunProgressComponent {
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,
             backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
             shouldContinue: () => false,
+            wakeDebounceMs: request.continuous ? VISIBILITY_POLL_WAKE_DEBOUNCE_MS : 0,
           });
         }),
         takeUntilDestroyed()

@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED, VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRevisionSummary, MktgRevisionResponse, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -715,7 +715,9 @@ describe('MktgRunProgressComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(read).toHaveBeenCalledTimes(count);
     visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
     await fixture.whenStable();
     expect(read).toHaveBeenCalledTimes(count + 1);
     visibility.mockRestore();
