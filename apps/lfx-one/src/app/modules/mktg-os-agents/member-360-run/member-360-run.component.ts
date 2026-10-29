@@ -165,6 +165,8 @@ export class Member360RunComponent {
     return project ? { project } : {};
   });
   private lastScope = '';
+  private trackerProject = '';
+  private readonly submittingTrackers = new Set<string>();
   private scopeVersion = 0;
   private lastHistoryRevision = '';
   private uploadSequence = 0;
@@ -175,7 +177,11 @@ export class Member360RunComponent {
   );
 
   public constructor() {
-    this.destroyRef.onDestroy(() => this.uploadSequence++);
+    this.destroyRef.onDestroy(() => {
+      this.uploadSequence++;
+      this.releaseUnconsumed();
+      this.submittingTrackers.clear();
+    });
     if (isPlatformBrowser(this.platformId)) {
       this.watchRun();
       this.watchHistory();
@@ -212,11 +218,29 @@ export class Member360RunComponent {
       project,
       window: this.form.controls.window.value,
       compare: this.form.controls.compare.value,
-      trackers: this.trackers().map((upload) => upload.tracker),
+      trackerIds: this.trackers().map((upload) => upload.tracker.trackerId),
     };
     const version = this.scopeVersion;
     const current = () =>
       version === this.scopeVersion && !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    // Do not race an accepted Generate by deleting its receipts on departure.
+    // Success transfers cleanup to the server; a late failure erases abandoned ids.
+    const generate = (discard?: string) => {
+      const ids = body.trackerIds ?? [];
+      ids.forEach((id) => this.submittingTrackers.add(this.receiptKey(project, id)));
+      return this.api.generate(discard ? { ...body, discard } : body).pipe(
+        tap({
+          next: () => {
+            ids.forEach((id) => this.submittingTrackers.delete(this.receiptKey(project, id)));
+            if (current()) this.form.controls.trackers.setValue(this.form.controls.trackers.value.filter((upload) => !ids.includes(upload.tracker.trackerId)));
+          },
+          error: () => {
+            ids.forEach((id) => this.submittingTrackers.delete(this.receiptKey(project, id)));
+            if (!current()) this.releaseIds(project, ids);
+          },
+        })
+      );
+    };
     const onSession = (session: Member360Session) => {
       if (!current()) return;
       const pending = this.attempts.load(project, 'member-360', session.documentId);
@@ -229,8 +253,7 @@ export class Member360RunComponent {
     const start = (discard?: string) => {
       if (!current()) return;
       this.submitting.set(true);
-      this.api
-        .generate(discard ? { ...body, discard } : body)
+      generate(discard)
         .pipe(take(1))
         .subscribe({
           next: onSession,
@@ -244,7 +267,7 @@ export class Member360RunComponent {
                 {
                   conflict,
                   current,
-                  recheck: () => this.api.generate(body),
+                  recheck: () => generate(),
                   classify: (failure) =>
                     failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, 'member-360') : null,
                   onValue: onSession,
@@ -265,6 +288,7 @@ export class Member360RunComponent {
               return;
             }
             let message = 'The run could not be started. Your trackers are still here; try again.';
+            if (error.status === 400 && error.error?.code === 'VALIDATION_ERROR') message = getHttpErrorDetail(error, message);
             if (error.status === 403) message = 'You need write access to this project to run Member 360.';
             if (error.error?.code === MEMBER_360_COMPARISON_UNAVAILABLE) message = 'The previous run could not be read. Turn off comparison or retry.';
             this.error.set(message);
@@ -290,10 +314,11 @@ export class Member360RunComponent {
     const attempt = ++this.uploadSequence;
     this.uploading.set(true);
     this.error.set('');
+    const project = this.context.activeContextUid();
+    const parsed: Member360TrackerUpload[] = [];
+    let committed = false;
     try {
       if (files.length + this.trackers().length > MEMBER_360_MAX_TRACKERS) throw new Error(`Upload at most ${MEMBER_360_MAX_TRACKERS} tracker files.`);
-      const project = this.context.activeContextUid();
-      const parsed: Member360TrackerUpload[] = [];
       for (const file of files) {
         if (attempt !== this.uploadSequence) return;
         if (file.size > MEMBER_360_MAX_BYTES) throw new Error('Each tracker must be smaller than 5 MB.');
@@ -301,16 +326,19 @@ export class Member360RunComponent {
         parsed.push({
           id: ++this.nextTrackerId,
           tracker,
+          filename: file.name,
           format: /\.xlsx$/i.test(file.name) ? 'XLSX' : 'CSV',
-          summary: Object.keys(tracker.rows[0] ?? {})
-            .slice(0, 3)
-            .join(', '),
+          summary: `${tracker.columnCount} columns`,
         });
+        if (attempt !== this.uploadSequence || this.destroyRef.destroyed) return;
       }
       const combined = [...this.trackers(), ...parsed];
-      if (new TextEncoder().encode(JSON.stringify(combined.map((upload) => upload.tracker))).length > MEMBER_360_MAX_BYTES)
+      if (combined.reduce((bytes, upload) => bytes + upload.tracker.byteCount, 0) > MEMBER_360_MAX_BYTES)
         throw new Error('The parsed trackers together must be smaller than 5 MB.');
-      if (attempt === this.uploadSequence) this.form.controls.trackers.setValue(combined);
+      if (attempt === this.uploadSequence) {
+        this.form.controls.trackers.setValue(combined);
+        committed = true;
+      }
     } catch (error) {
       let message = 'The tracker could not be parsed.';
       if (error instanceof Error) message = error.message;
@@ -318,6 +346,11 @@ export class Member360RunComponent {
         message = getHttpErrorDetail(error, 'The tracker could not be parsed. Check its format and limits, and try again.');
       if (attempt === this.uploadSequence) this.error.set(message);
     } finally {
+      if (!committed)
+        this.releaseIds(
+          project,
+          parsed.map((upload) => upload.tracker.trackerId)
+        );
       if (attempt === this.uploadSequence) {
         this.uploading.set(false);
         this.chooser()?.clear(true);
@@ -326,8 +359,20 @@ export class Member360RunComponent {
   }
 
   protected remove(id: number): void {
-    this.form.controls.trackers.setValue(this.trackers().filter((upload) => upload.id !== id));
+    const upload = this.form.controls.trackers.value.find((candidate) => candidate.id === id);
+    if (!upload) return;
+    const version = this.scopeVersion;
+    this.api.deleteTracker(this.trackerProject, upload.tracker.trackerId).subscribe({
+      next: () => {
+        if (!this.destroyRef.destroyed && version === this.scopeVersion)
+          this.form.controls.trackers.setValue(this.form.controls.trackers.value.filter((candidate) => candidate.id !== id));
+      },
+      error: () => {
+        if (!this.destroyRef.destroyed && version === this.scopeVersion) this.error.set('Tracker removal could not be confirmed. Try again.');
+      },
+    });
   }
+
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.pending();
     const questionsId = this.result()?.questionsId;
@@ -365,6 +410,24 @@ export class Member360RunComponent {
           this.error.set(error.status === 409 ? 'The questions changed — refreshed.' : 'Your answers could not be sent. They are kept — try again.');
         },
       });
+  }
+
+  private releaseUnconsumed(): void {
+    this.releaseIds(
+      this.trackerProject,
+      this.form.controls.trackers.value
+        .map((upload) => upload.tracker.trackerId)
+        .filter((id) => !this.submittingTrackers.has(this.receiptKey(this.trackerProject, id)))
+    );
+  }
+
+  private receiptKey(project: string, id: string): string {
+    return JSON.stringify([project, id]);
+  }
+
+  private releaseIds(project: string, ids: string[]): void {
+    if (!project || !isPlatformBrowser(this.platformId)) return;
+    for (const id of new Set(ids)) this.api.deleteTracker(project, id).subscribe({ error: () => undefined });
   }
 
   /** The filtered server roster chooses a run; local proof can only enrich that choice. */
@@ -426,7 +489,7 @@ export class Member360RunComponent {
     this.scope$
       .pipe(
         distinctUntilChanged((a, b) => a.key === b.key && a.retry === b.retry),
-        tap(({ key, user }) => {
+        tap(({ key, user, project }) => {
           if (key !== this.lastScope) {
             this.scopeVersion++;
             this.confirmation.close();
@@ -440,7 +503,10 @@ export class Member360RunComponent {
             this.accepted.set([user, null]);
             this.ownedContext.set([key, null]);
             this.startedAt.set(0); // Local timestamps do not decide the server's run budget.
+            this.releaseUnconsumed();
+            this.submittingTrackers.clear();
             this.form.controls.trackers.setValue([]);
+            this.trackerProject = project;
             this.chooser()?.clear();
             this.error.set('');
             this.answersNotice.set('');

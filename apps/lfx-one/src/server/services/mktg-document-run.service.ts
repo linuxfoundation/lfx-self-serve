@@ -98,7 +98,14 @@ import { MktgDocumentAuthorService } from './mktg-document-author.service';
 
 /** Private session-keyed starts and question turns; answer/state transitions use conditional object versions. */
 export class MktgDocumentRunService {
-  private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
+  private static readonly terminalCache = new Map<
+    string,
+    {
+      stamp: number;
+      progress: MktgDocumentRunProgress | null;
+      failure?: Pick<MktgStartedRunRecord, 'creatorSubject' | 'failureText'>;
+    }
+  >();
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
   private readonly guild = new GuildService();
@@ -421,7 +428,7 @@ export class MktgDocumentRunService {
           let stored: MktgStoredStartedRun | null = null;
           let knownUnfinished = false;
           try {
-            const cached = this.cached(entry.key);
+            const cached = this.cached(entry.key, getEffectiveSub(req));
             if (cached?.stamp === stamp) {
               return matchesMktgRunProgress(cached.progress, agentKey, documentId);
             }
@@ -459,7 +466,7 @@ export class MktgDocumentRunService {
               activity = record.creatorSubject && getEffectiveSub(req) === record.creatorSubject ? result.activity : undefined;
             }
             if (isMktgRunTerminal(record.state)) {
-              this.remember(entry, mktgRunProgress(record));
+              this.remember(entry, mktgRunProgress(record), record);
             }
             return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity);
           } catch (error) {
@@ -563,7 +570,7 @@ export class MktgDocumentRunService {
           if (rows.has(id)) return;
           try {
             const key = `${this.prefix(project)}${id}.json`;
-            const cached = this.cached(key);
+            const cached = this.cached(key, getEffectiveSub(req));
             if (cached) {
               const row = matchesMktgRunProgress(cached.progress, agentKey, documentId);
               if (row) {
@@ -1277,7 +1284,7 @@ export class MktgDocumentRunService {
       coverage.retainedRunIds.push(id);
     }
   }
-  private cached(key: string) {
+  private cached(key: string, readerSubject?: string | null) {
     const cache = MktgDocumentRunService.terminalCache;
     const entry = cache.get(key);
     if (entry?.progress?.agentKey === 'linkedin-post') {
@@ -1288,10 +1295,15 @@ export class MktgDocumentRunService {
       cache.delete(key);
       cache.set(key, entry);
     }
+    if (entry?.progress?.state === 'failed' && entry.failure?.creatorSubject && entry.failure.creatorSubject === readerSubject) {
+      // Cache only the bounded persisted snapshot, never a full provider reply or
+      // session capability. The public cached projection remains generic.
+      return { ...entry, progress: { ...entry.progress, failureText: entry.failure.failureText ?? entry.progress.failureText } };
+    }
     return entry;
   }
 
-  private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null): void {
+  private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null, record?: MktgStartedRunRecord): void {
     // Creator-only LinkedIn replies must be projected per reader, never from the shared terminal cache.
     if (progress?.agentKey === 'linkedin-post') {
       MktgDocumentRunService.terminalCache.delete(entry.key);
@@ -1304,7 +1316,17 @@ export class MktgDocumentRunService {
     }
     const cache = MktgDocumentRunService.terminalCache;
     cache.delete(entry.key);
-    cache.set(entry.key, { stamp, progress });
+    cache.set(entry.key, {
+      stamp,
+      progress,
+      ...(progress?.state === 'failed' &&
+        record && {
+          failure: {
+            creatorSubject: record.creatorSubject,
+            failureText: record.failureText === undefined ? undefined : Buffer.from(this.snapshot(record.failureText), 'base64').toString('utf8'),
+          },
+        }),
+    });
     while (cache.size > MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) {

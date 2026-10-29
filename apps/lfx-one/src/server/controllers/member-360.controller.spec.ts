@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   record: vi.fn(),
   active: vi.fn(),
+  prepare: vi.fn(),
+  cleanup: vi.fn(),
   sendAnswers: vi.fn(),
   claim: vi.fn(),
   commitClaim: vi.fn(),
@@ -38,6 +40,8 @@ vi.mock('../services/member-360.service', async (original) => {
     Member360Service: class {
       public static toRunResult = actual.Member360Service.toRunResult;
       public start = mocks.start;
+      public prepareTrackers = mocks.prepare;
+      public deleteConsumedTrackers = mocks.cleanup;
       public result = mocks.result;
       public sendAnswers = mocks.sendAnswers;
     },
@@ -52,6 +56,7 @@ describe('Member 360 HTTP boundary', () => {
     mocks.user = 'synthetic-subject';
     mocks.preflight.mockResolvedValue('sample-project');
     mocks.track.mockResolvedValue('a'.repeat(64));
+    mocks.prepare.mockResolvedValue([]);
     mocks.owned.mockResolvedValue('session-1');
     mocks.claim.mockResolvedValue(mocks.commitClaim);
     mocks.sendAnswers.mockImplementation(async (_req, _body, claim: () => Promise<void>) => {
@@ -176,7 +181,51 @@ describe('Member 360 HTTP boundary', () => {
     expect(mocks.active).toHaveBeenCalledWith(req, 'sample-project', 'member-360', 'a'.repeat(64));
     mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
     await new Member360Controller().generate(req, res, vi.fn());
-    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project' });
+    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project' }, []);
+  });
+  it('rejects expired trackers before discarding the active run or starting a replacement', async () => {
+    const failure = Object.assign(new Error('Upload the tracker again.'), { statusCode: 400 });
+    mocks.prepare.mockRejectedValue(failure);
+    const next = vi.fn();
+    await new Member360Controller().generate(
+      { body: { project: 'sample-project', trackerIds: ['a'.repeat(64)], discard: 'b'.repeat(64) } } as Request,
+      {} as Response,
+      next
+    );
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.active).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.track).not.toHaveBeenCalled();
+  });
+  it('reuses validated private rows only after the active-run guard succeeds', async () => {
+    const rows = [{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }];
+    mocks.prepare.mockResolvedValue(rows);
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    const req = { body: { project: 'sample-project', trackerIds: ['a'.repeat(64)], discard: 'b'.repeat(64) } } as Request;
+    await new Member360Controller().generate(req, { json: vi.fn() } as unknown as Response, vi.fn());
+    expect(mocks.prepare.mock.invocationCallOrder[0]).toBeLessThan(mocks.active.mock.invocationCallOrder[0]);
+    expect(mocks.active.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
+    expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] }, rows);
+    expect(mocks.cleanup).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
+  });
+  it('retains prepared private rows when durable registration fails so receipts remain usable', async () => {
+    const rows = [{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }];
+    let retained = true;
+    mocks.prepare.mockImplementation(async () => (retained ? rows : []));
+    mocks.cleanup.mockImplementation(async () => {
+      retained = false;
+    });
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    const failure = new Error('Synthetic registration unavailable');
+    mocks.track.mockRejectedValueOnce(failure);
+    const next = vi.fn();
+    const input = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    await new Member360Controller().generate({ body: input } as Request, { json: vi.fn() } as unknown as Response, next);
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+    expect(retained).toBe(true);
+    expect(await mocks.prepare({} as Request, input)).toEqual(rows);
   });
   it.each(['project_name', 'project_uid', 'prior_run', 'request', 'handle'])('rejects client-controlled %s', async (key) => {
     const next = vi.fn();
@@ -190,7 +239,7 @@ describe('Member 360 HTTP boundary', () => {
     const next = vi.fn();
     await new Member360Controller().generate({ body: { project: 'sample-project' } } as Request, res as unknown as Response, next);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' }));
-    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), { project: 'sample-project' });
+    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), { project: 'sample-project' }, []);
     expect(next).not.toHaveBeenCalled();
   });
   it('preflights storage before creating a session and requires a durable start before returning success', async () => {

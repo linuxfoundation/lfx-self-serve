@@ -140,14 +140,14 @@
                 [attr.data-upload-id]="upload.id">
                 <span class="break-all"
                   ><span class="mr-2 rounded border border-gray-200 px-2 py-1 font-mono text-xs">{{ upload.format }}</span
-                  >{{ upload.tracker.filename }}
+                  >{{ upload.filename }}
                   <span class="text-sm text-gray-500" data-testid="member-360-tracker-summary"
-                    >{{ upload.tracker.rows.length }} {{ upload.tracker.rows.length === 1 ? 'row' : 'rows' }} · {{ upload.summary }}</span
+                    >{{ upload.tracker.rowCount }} {{ upload.tracker.rowCount === 1 ? 'row' : 'rows' }} · {{ upload.summary }}</span
                   ></span
                 >
                 <lfx-button
                   label="Remove"
-                  [ariaLabel]="'Remove ' + upload.tracker.filename"
+                  [ariaLabel]="'Remove ' + upload.filename"
                   [text]="true"
                   [disabled]="uploading() || submitting()"
                   (onClick)="remove(upload.id)"

@@ -12,6 +12,7 @@ import {
   MEMBER_360_TRACKER_KINDS,
   MEMBER_360_MAX_TRACKERS,
   MEMBER_360_TRACKER_FILENAME_REGEX,
+  MEMBER_360_TRACKER_ID_REGEX,
   MEMBER_360_QUESTIONS_MARKER,
   MEMBER_360_QUESTIONS_CONTRACT,
   MEMBER_360_QUESTIONS_HEADER,
@@ -165,7 +166,7 @@ export const member360GenerateSchema = z
     discard: z.string().regex(MKTG_STARTED_RUN_ID_REGEX).optional(),
     window: z.enum(['12', '6', 'year']).optional(),
     compare: z.boolean().optional(),
-    trackers: z.array(trackerSchema).max(MEMBER_360_MAX_TRACKERS).optional(),
+    trackerIds: z.array(z.string().regex(MEMBER_360_TRACKER_ID_REGEX)).max(MEMBER_360_MAX_TRACKERS).optional(),
   })
   .strict();
 

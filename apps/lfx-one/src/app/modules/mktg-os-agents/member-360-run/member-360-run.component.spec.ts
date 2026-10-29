@@ -15,6 +15,7 @@ import { MktgDocumentStoreService } from '@services/mktg-document-store.service'
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { of, throwError, NEVER, Subject } from 'rxjs';
+import type { Member360Session, Member360TrackerReceipt } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL, MEMBER_360_RUN_CEILING_MS, MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS } from '@lfx-one/shared/constants';
@@ -31,6 +32,7 @@ describe('Member360RunComponent', () => {
     activeProject: signal({ writer: true }),
     canWrite: signal(true),
   };
+  const user = signal({ sub: 'synthetic-subject' });
   function progress(state: 'writing' | 'storing' | 'questions' | 'failed' = 'writing'): MktgDocumentDetailResponse {
     return {
       project: 'sample-project',
@@ -79,7 +81,8 @@ describe('Member360RunComponent', () => {
     generate: vi.fn<Member360Service['generate']>(() =>
       of({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' })
     ),
-    parseTracker: vi.fn(() => of({ filename: 'repeat.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] })),
+    parseTracker: vi.fn(() => of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 })),
+    deleteTracker: vi.fn<Member360Service['deleteTracker']>(() => of(undefined)),
   };
   const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   async function render(): Promise<void> {
@@ -94,6 +97,9 @@ describe('Member360RunComponent', () => {
   beforeEach(async () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     context.canWrite.set(true);
+    user.set({ sub: 'synthetic-subject' });
+    run.deleteTracker.mockReset().mockReturnValue(of(undefined));
+    run.parseTracker.mockReset().mockReturnValue(of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 }));
     context.activeContextUid.set('sample-project');
     context.activeContext.set({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation' });
     confirmation.confirm.mockClear();
@@ -119,7 +125,7 @@ describe('Member360RunComponent', () => {
         { provide: MktgRunAttemptService, useValue: attempts },
         { provide: MktgDocumentStoreService, useValue: documents },
         { provide: ProjectContextService, useValue: context },
-        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-subject' }) } },
+        { provide: UserService, useValue: { user } },
       ],
     }).compileComponents();
   });
@@ -418,7 +424,7 @@ describe('Member360RunComponent', () => {
     expect(button().disabled).toBe(false);
     button().click();
     fixture.detectChanges();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).not.toHaveBeenCalled();
     expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
@@ -475,6 +481,9 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.querySelector('lfx-file-upload')).toBe(chooser);
     expect(document.activeElement).toBe(chooser.querySelector('button'));
     const uploads = fixture.componentInstance.form.controls.trackers.value;
+    expect(uploads[0].filename).toBe('repeat.csv');
+    expect(uploads[0].tracker).not.toHaveProperty('rows');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-tracker-summary"]').textContent).toContain('1 row · 1 columns');
     expect(new Set(uploads.map((upload) => upload.id)).size).toBe(3);
     const retained: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="member-360-remove-${uploads[2].id}"] button`);
     retained.focus();
@@ -486,6 +495,116 @@ describe('Member360RunComponent', () => {
     expect(retained.classList.contains('p-button-text')).toBe(true);
     expect(retained.classList.contains('p-button-outlined')).toBe(false);
   });
+  it('submits only tracker ids after upload, keeping no parsed cells in the form', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    await fixture.componentInstance['upload']([new File(['email\nsynthetic@example.test'], 'tracker.csv')]);
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    expect(run.generate).toHaveBeenCalledWith(expect.objectContaining({ trackerIds: ['a'.repeat(64)] }));
+    expect(JSON.stringify(run.generate.mock.calls)).not.toContain('"trackers"');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the safe expired-tracker validation reason so the user can re-upload', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    run.generate.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Validation failed for trackerIds',
+              errors: [{ field: 'trackerIds', message: 'A tracker is unavailable or expired. Upload it again.' }],
+            },
+          })
+      )
+    );
+    fixture.detectChanges();
+    button().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]').textContent).toContain('Upload it again.');
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+  });
+
+  it('deletes a removed receipt and drops its row only after confirmation', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    const response = new Subject<void>();
+    run.deleteTracker.mockReturnValueOnce(response);
+    const upload = fixture.componentInstance.form.controls.trackers.value[0];
+    fixture.componentInstance['remove'](upload.id);
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+    response.next();
+    response.complete();
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(0);
+  });
+  it('retains the row when explicit removal fails so the user can retry', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company\nSynthetic Member'], 'tracker.csv')]);
+    run.deleteTracker.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance['remove'](fixture.componentInstance.form.controls.trackers.value[0].id);
+    expect(fixture.componentInstance.form.controls.trackers.value).toHaveLength(1);
+    expect(fixture.componentInstance['error']()).toContain('could not be confirmed');
+  });
+  it('deletes every unconsumed receipt on destroy', async () => {
+    await render();
+    run.parseTracker
+      .mockReturnValueOnce(of({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 }))
+      .mockReturnValueOnce(of({ trackerId: 'b'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 }));
+    await fixture.componentInstance['upload']([new File(['company'], 'one.csv'), new File(['company'], 'two.csv')]);
+    fixture.destroy();
+    expect(run.deleteTracker.mock.calls).toEqual([
+      ['sample-project', 'a'.repeat(64)],
+      ['sample-project', 'b'.repeat(64)],
+    ]);
+  });
+  it.each(['project', 'user'] as const)('deletes old-scope receipts on a %s reset without restoring them', async (scope) => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    if (scope === 'project') context.activeContextUid.set('other-project');
+    else user.set({ sub: 'synthetic-other' });
+    await fixture.whenStable();
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+    expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
+  });
+  it('does not erase durably consumed receipts again on destroy', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    button().click();
+    await fixture.whenStable();
+    fixture.destroy();
+    expect(run.deleteTracker).not.toHaveBeenCalled();
+  });
+  it('does not race an in-flight Generate on destroy, but cleans its receipts after a late failure', async () => {
+    await render();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    const pending = new Subject<Member360Session>();
+    run.generate.mockReturnValueOnce(pending);
+    button().click();
+    fixture.destroy();
+    expect(run.deleteTracker).not.toHaveBeenCalled();
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+  });
+  it('cleans a late upload receipt acknowledged after destroy', async () => {
+    await render();
+    const pending = new Subject<Member360TrackerReceipt>();
+    run.parseTracker.mockReturnValueOnce(pending);
+    const upload = fixture.componentInstance['upload']([new File(['company'], 'tracker.csv')]);
+    fixture.destroy();
+    pending.next({ trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 10 });
+    pending.complete();
+    await upload;
+    expect(run.deleteTracker).toHaveBeenCalledWith('sample-project', 'a'.repeat(64));
+  });
+
   it('explains an unavailable comparison instead of a generic server error', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
@@ -502,7 +621,7 @@ describe('Member360RunComponent', () => {
     const api = TestBed.inject(Member360Service),
       http = TestBed.inject(HttpTestingController);
     const file = new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv', { type: 'text/csv' });
-    const tracker = { filename: file.name, rows: [{ company: SYNTHETIC_ORG_NAME }] };
+    const tracker = { trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 };
     let received: unknown;
     api.parseTracker('sample-project', file).subscribe((value) => {
       received = value;
@@ -579,7 +698,7 @@ describe('Member360RunComponent', () => {
     fixture.componentInstance.form.controls.compare.setValue(false);
     button().click();
     await fixture.whenStable();
-    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(run.generate).toHaveBeenCalledWith({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     expect(navigate).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     fixture.detectChanges();

@@ -22,6 +22,7 @@ import {
   Member360Envelope,
   Member360FinalizeReceipt,
   Member360GenerateRequest,
+  Member360Tracker,
   Member360GenerationStart,
   Member360PriorRun,
   Member360Result,
@@ -60,11 +61,13 @@ import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectService } from './project.service';
+import { Member360TrackerStoreService } from './member-360-tracker-store.service';
 
 /** Form-only Member 360. Project identity and previous output come from trusted server reads. */
 export class Member360Service {
   private readonly guild = new GuildService();
   private readonly projects = new ProjectService();
+  private readonly trackerStore = new Member360TrackerStoreService();
   private readonly documents: MktgDocumentStoreService;
 
   public constructor(attribution?: MktgGenerationAttribution) {
@@ -83,11 +86,23 @@ export class Member360Service {
     };
   }
 
-  public async start(req: Request, body: Member360GenerateRequest): Promise<Member360GenerationStart> {
+  /** Validate private receipts under fresh writer scope before any discard. */
+  public async prepareTrackers(req: Request, body: Member360GenerateRequest): Promise<Member360Tracker[]> {
+    const project = await this.resolveProject(req, body.project);
+    return this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []);
+  }
+
+  public async deleteConsumedTrackers(req: Request, project: string, ids: string[]): Promise<void> {
+    await this.trackerStore.deleteConsumed(req, project, ids);
+  }
+
+  public async start(req: Request, body: Member360GenerateRequest, preparedTrackers?: Member360Tracker[]): Promise<Member360GenerationStart> {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
+    const loadedTrackers = preparedTrackers ?? (await this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []));
+    const trackers = loadedTrackers.length ? loadedTrackers : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -95,7 +110,7 @@ export class Member360Service {
       project_uid: project.uid,
       project_slug: project.slug,
       ...this.window(body.window ?? '12'),
-      trackers: body.trackers,
+      trackers,
       ...(prior && { prior_run: prior }),
     });
     logger.debug(req, 'member_360_generate', 'Starting entitled form-only run', { project: project.uid, comparison: !!prior });
@@ -233,12 +248,13 @@ export class Member360Service {
     if (!best) {
       const questionsText = findMember360Questions(payloads);
       const turn = questionsText ? parseMember360Questions(questionsText) : null;
+      const redactQuestions = createMember360Redactor(contacts);
       const questions = turn?.questions.map((item) => ({
         key: item.id,
         label: item.id.replace(/-/g, ' '),
-        question: item.question,
-        why: item.why,
-        suggestedAnswer: item.suggested_answer,
+        question: redactQuestions(item.question),
+        why: redactQuestions(item.why),
+        suggestedAnswer: redactQuestions(item.suggested_answer),
         basis: [],
       }));
       const questionsResult: Member360Result = {
@@ -327,6 +343,11 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  private async loadPrivateTrackers(req: Request, project: string, ids: string[]): Promise<Member360Tracker[]> {
+    await this.trackerStore.sweepExpired(req, project);
+    return ids.length ? this.trackerStore.load(req, project, ids) : [];
   }
 
   /** Only positive non-delivery evidence may reopen a claimed questions turn. */

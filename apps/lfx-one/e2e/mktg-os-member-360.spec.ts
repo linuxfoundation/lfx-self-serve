@@ -302,16 +302,18 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
       mimeType: 'text/csv',
       buffer: Buffer.from(`company,speaker,session\n${SYNTHETIC_ORG_NAME},Sample speaker,Sample session`),
     });
-  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · company, speaker, session');
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
   await expect(page.getByTestId('member-360-tracker')).toContainText('CSV');
   await expect(page.getByRole('button', { name: 'Upload tracker', exact: true })).toBeFocused();
+  const deletion = page.waitForRequest((request) => request.method() === 'DELETE' && request.url().includes('/member-360/tracker/'));
   await page.getByRole('button', { name: 'Remove speaking.csv' }).click();
+  expect(new URL((await deletion).url()).pathname).toContain(`/tracker/${'a'.repeat(64)}`);
   await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
   const create = page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true });
   await expect(create).toBeEnabled();
   await expect(page.getByTestId('member-360-compare')).toContainText('No comparison');
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
-    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackers: [] });
+    expect(route.request().postDataJSON()).toEqual({ project: 'sample-project', window: '12', compare: false, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-first-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => member360Progress('writing'));
@@ -321,12 +323,33 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
   await page.screenshot({ path: info.outputPath('first-run-no-comparison.png'), fullPage: true });
 });
 
+test('a parsed tracker sends only its opaque id when generating', async ({ page }, info) => {
+  await setupMember360(page);
+  await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.trackerIds).toEqual(['a'.repeat(64)]);
+    expect(body).not.toHaveProperty('trackers');
+    expect(JSON.stringify(body)).not.toContain('synthetic-contact');
+    await json(route, { sessionId: 'synthetic-tracker-run', ownerToken: 'synthetic-proof', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
+  });
+  await stubMember360Progress(page, () => member360Progress('writing'));
+  await openMember360(page);
+  await page
+    .locator('lfx-file-upload input[type=file]')
+    .setInputFiles({ name: 'tracker.csv', mimeType: 'text/csv', buffer: Buffer.from('email\nsynthetic-contact@example.test') });
+  await expect(page.getByTestId('member-360-tracker')).toContainText('1 row · 3 columns');
+  await page.getByTestId('member-360-run').getByRole('button', { name: 'Create Member 360', exact: true }).click();
+  await expect(page.getByTestId('member-360-generating')).toBeVisible();
+  await page.screenshot({ path: info.outputPath('opaque-tracker-run.png'), fullPage: true });
+});
+
 test('Generate stays on the run page until the creator poll confirms stored readiness', async ({ page }, info) => {
   await setupMember360(page, { stored: true });
   let stored = false;
   let intakeBody: unknown;
   await page.route('**/api/mktg-agents/member-360/generate', async (route) => {
     intakeBody = route.request().postDataJSON();
+    expect(intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackerIds: [] });
     await json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-owner-token', documentId: MEMBER_360_DOCUMENT_ID, runId: 'b'.repeat(64) });
   });
   await stubMember360Progress(page, () => (stored ? member360Revision() : member360Progress('writing')));
@@ -342,7 +365,7 @@ test('Generate stays on the run page until the creator poll confirms stored read
   });
   await page.getByTestId('member-360-run').getByRole('button').click();
   await expect(page.getByTestId('member-360-generating')).toBeVisible();
-  await expect.poll(() => intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackers: [] });
+  await expect.poll(() => intakeBody).toEqual({ project: 'sample-project', window: '12', compare: true, trackerIds: [] });
   await expect(page).toHaveURL(/\/mktg-os-agents\/member-360\?/);
   await expect(page.getByTestId('mktg-run-activity-title')).toHaveText('Member 360 is working on your report.');
   await expect(page.getByTestId('mktg-run-activity-step-step-10')).toContainText('Searching the web', { timeout: 20000 });
