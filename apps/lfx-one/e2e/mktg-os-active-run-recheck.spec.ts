@@ -42,10 +42,10 @@ test('returns an accepted catalog recheck to editable Sources when polling is de
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) => route.fulfill({ status: 403, json: { code: 'FORBIDDEN' } }));
   await sources.open();
   await page.getByTestId('mktg-run-start').getByRole('button').click();
-  await expect(page.getByRole('dialog')).toContainText('Started 19 Oct 2026, 12:00.');
+  await expect(page.getByRole('alertdialog')).toContainText('Started 19 Oct 2026, 12:00.');
   accept = true;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await expect(
     page.getByText('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.', {
       exact: true,
@@ -109,7 +109,7 @@ for (const surface of ['catalog', 'linkedin', 'member'] as const) {
       if (surface === 'linkedin') await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       if (surface === 'member') await selectMember360Option(page, 'member-360-compare', 'No comparison');
       await page.getByTestId(submit).getByRole('button').click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('alertdialog');
       await expect(dialog).toContainText('Checking the active run…');
       await expect(dialog.getByRole('button', { name: 'Discard and start over' })).toBeDisabled();
       const originalNode = await dialog.elementHandle();

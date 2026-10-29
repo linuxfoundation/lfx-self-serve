@@ -49,7 +49,7 @@ test.describe('Marketing OS new run Sources', () => {
       );
       await sources.open();
       await page.getByTestId('mktg-run-start').getByRole('button').click();
-      const dialog = page.getByRole('dialog');
+      const dialog = page.getByRole('alertdialog');
       await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();

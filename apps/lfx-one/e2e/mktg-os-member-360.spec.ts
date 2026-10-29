@@ -51,7 +51,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
