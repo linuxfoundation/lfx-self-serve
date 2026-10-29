@@ -295,15 +295,21 @@ describe('NavTooltipDirective', () => {
   describe('right placement (the collapsed rail)', () => {
     const viewport = { width: 1280, height: 800 };
     const card = { width: 90, height: 40 };
+    // Served through the one prototype spy: vitest 4 hands an element-level spyOn the inherited
+    // prototype spy, so stubbing the trigger there would also move the card.
+    let triggerRect: DOMRect | undefined;
 
     beforeEach(() => {
       host.secondPlacement.set('right');
       TestBed.tick();
+      triggerRect = undefined;
       vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(viewport.width);
       vi.spyOn(document.documentElement, 'clientHeight', 'get').mockReturnValue(viewport.height);
       const original = HTMLElement.prototype.getBoundingClientRect;
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-        return this.classList.contains('lfxn-tooltip') ? new DOMRect(0, 0, card.width, card.height) : original.call(this);
+        if (this.classList.contains('lfxn-tooltip')) return new DOMRect(0, 0, card.width, card.height);
+        if (this === second && triggerRect) return triggerRect;
+        return original.call(this);
       });
     });
 
@@ -312,7 +318,7 @@ describe('NavTooltipDirective', () => {
     });
 
     const showOver = (trigger: DOMRect): HTMLElement => {
-      vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(trigger);
+      triggerRect = trigger;
       second.dispatchEvent(new MouseEvent('mouseenter'));
       vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
       return tooltips()[0];

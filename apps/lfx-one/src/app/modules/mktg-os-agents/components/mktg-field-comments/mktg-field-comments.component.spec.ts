@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { mktgCommentFixture, mktgCommentScopeFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import type { MktgDocumentCommentsResponse } from '@lfx-one/shared/interfaces';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from './mktg-field-comments.component';
 
 describe('MktgFieldCommentsComponent', () => {
@@ -16,7 +16,7 @@ describe('MktgFieldCommentsComponent', () => {
   const subject = signal('opaque-viewer');
   const threads = signal([mktgCommentFixture()]);
   const loaded = signal(true);
-  let add: ReturnType<typeof vi.fn>;
+  let add: Mock;
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   function click(id: string): void {
     const button = element().querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`);

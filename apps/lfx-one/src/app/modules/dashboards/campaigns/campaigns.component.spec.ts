@@ -43,7 +43,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
@@ -61,11 +61,11 @@ import { ImplementationTabComponent } from './components/implementation-tab/impl
 describe('CampaignsComponent brief persistence', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
 
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   // Restoring an unapproved brief approves the stored row. Mocked like `persistBrief` so every
   // restore test keeps a stub instead of leaving a real request pending, and defaulted to a
   // successful approval so the tests written before the approve existed still read as before.
-  let approveBrief: ReturnType<typeof vi.fn>;
+  let approveBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
@@ -3122,7 +3122,7 @@ describe('CampaignsComponent brief persistence', () => {
 describe('CampaignsComponent brief persistence — queue state', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
   const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   beforeEach(async () => {
@@ -3796,7 +3796,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register', ctaUrl: '' };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4778,7 +4778,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       version: 1,
     };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -6058,7 +6058,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   describe('email staging trigger (LFXV2-3201)', () => {
     // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
     // not in scope here.
-    let persistBrief: ReturnType<typeof vi.fn>;
+    let persistBrief: Mock;
 
     beforeEach(() => {
       persistBrief = vi.fn();
