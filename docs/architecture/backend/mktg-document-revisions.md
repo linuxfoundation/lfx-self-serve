@@ -308,8 +308,7 @@ retry/answers budget origin, answered questions id, prior revision, persist retr
 `revision-id` and state. Result transitions now use the ETag captured with the record GET and a
 conditional replacement of both body and metadata. The transition predicate is rechecked against current metadata before the ETag write, so a closure observed during a result read cannot be overwritten by its stale snapshot. State/budget changes also change the JSON bytes,
 so a metadata-only S3 update cannot leave a stale claim token valid. A losing result poll re-reads the
-winner instead of replacing its completion or reopening answered questions. Start admission and ACK-ledger
-updates retain their separate HEAD/check/PUT limitation; this does not make the one-active-run guard atomic.
+winner instead of replacing its completion or reopening answered questions. Existing-session ACK renewals also conditionally replace the observed body/ETag, advancing attempt/budget bytes so a held older result cannot overwrite the renewed attempt or ledger after its last metadata check. Initial session admission retains its separate reservation limitation; this does not make the one-active-run guard atomic.
 The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
 current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
 `suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
@@ -331,7 +330,7 @@ redactor to activity labels/details before returning them, including to the crea
 `POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
 A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
 private session from the project-scoped record and validates the answers through the registered intake.
-Before sending to Guild it conditionally claims the exact `questions` state and matching questions id,
+Before sending to Guild it checks the canonical active slot, then conditionally claims the exact `questions` state and matching questions id. On that same claim snapshot, answers must cover every stored question key exactly once with no extras; a bad set returns a field validation error without writing or consuming the turn. The claim is committed by
 writing `state: 'writing'`, `answeredQuestionsId`, private effective-subject `answeredBy` and ISO `answeredAt`.
 Only one observed ETag wins. A lost/stale claim is 409 `MKTG_RUN_ANSWERED`, with response-only
 `{ runId, questionsId, answeredBy, answeredAt }`: `answeredBy` is a resolved display name or null, never
@@ -340,8 +339,7 @@ the stored subject, and `answeredAt` is ISO or null for unknown legacy attributi
 reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
 back the claim because delivery may be uncertain; it must not invite a second answers message.
 The four kit creator-token answer endpoints require project and questions id and use this same claim
-before their existing domain senders. LinkedIn's dedicated route also claims first, but additionally
-requires the recorded one-off creator; the public writer route still refuses one-offs.
+before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
 No client owner token or session id is trusted or returned by the public route; the ACK is
 only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
 creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored

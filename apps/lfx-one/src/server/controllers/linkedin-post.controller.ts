@@ -162,8 +162,11 @@ export class LinkedinPostController {
         throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
       const project = await this.writableProject(req, body['project']);
       await this.runs.assertRunOpen(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
-      await this.runs.claimSessionAnswers(req, project.uid, sessionId, questionsId, LINKEDIN_POST_INTAKE.agentId);
-      await this.posts.sendAnswers(req, sessionId, questionsId, answers, this.routingHandle());
+      const prepared = await this.posts.prepareAnswers(req, sessionId, questionsId, answers);
+      if (prepared !== null) {
+        await this.runs.claimSessionAnswers(req, project.uid, sessionId, questionsId, LINKEDIN_POST_INTAKE.agentId, answers);
+        await this.posts.deliverAnswers(req, sessionId, prepared, this.routingHandle(), answers.length);
+      }
       logger.success(req, operation, start, { answers: answers.length });
       res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {

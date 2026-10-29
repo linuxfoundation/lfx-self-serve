@@ -260,6 +260,7 @@ describe('MktgDocumentRunService core', () => {
         basis: ['Synthetic framework'],
       },
     ];
+    const answers = questions.map((question) => ({ key: question.key, text: 'Synthetic answer.', origin: 'requester' as const }));
     async function waiting(): Promise<void> {
       await service.start(req, project, types[0].agentKey, session);
       const object = stored();
@@ -334,7 +335,7 @@ describe('MktgDocumentRunService core', () => {
       await waiting();
       const writer = writerRequest('synthetic-answer-writer');
       const etag = hash(stored().body);
-      const result = await service.claimAnswers(writer, project, hash(session), questionsId);
+      const result = await service.claimAnswers(writer, project, hash(session), questionsId, answers);
       expect(flows.claim).toHaveBeenCalledWith(expect.objectContaining({ ifMatch: etag, metadata: expect.objectContaining({ state: 'writing' }) }));
       expect(result).toMatchObject({
         state: 'writing',
@@ -368,7 +369,7 @@ describe('MktgDocumentRunService core', () => {
       const polling = service.readProgress(req, project);
       await reached;
       const writer = writerRequest('synthetic-claim-writer');
-      await service.claimAnswers(writer, project, hash(session), questionsId);
+      await service.claimAnswers(writer, project, hash(session), questionsId, answers);
       release();
       const result = await polling;
       expect(result.runs[0]?.state).toBe('writing');
@@ -388,7 +389,9 @@ describe('MktgDocumentRunService core', () => {
       });
       flows.author.mockResolvedValue({ name: 'Synthetic Writer' });
       const writers = ['synthetic-writer-a', 'synthetic-writer-b'].map(writerRequest);
-      const results = await Promise.allSettled(writers.map((writer) => new MktgDocumentRunService().claimAnswers(writer, project, hash(session), questionsId)));
+      const results = await Promise.allSettled(
+        writers.map((writer) => new MktgDocumentRunService().claimAnswers(writer, project, hash(session), questionsId, answers))
+      );
       expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
       const loser = results.find((result) => result.status === 'rejected');
       expect(loser?.status === 'rejected' ? loser.reason : null).toMatchObject({
@@ -405,9 +408,9 @@ describe('MktgDocumentRunService core', () => {
       async (name) => {
         await waiting();
         const writer = writerRequest('synthetic-private-subject');
-        await service.claimAnswers(writer, project, hash(session), questionsId);
+        await service.claimAnswers(writer, project, hash(session), questionsId, answers);
         flows.author.mockResolvedValue({ name });
-        await expect(service.claimAnswers(writer, project, hash(session), questionsId)).rejects.toMatchObject({
+        await expect(service.claimAnswers(writer, project, hash(session), questionsId, answers)).rejects.toMatchObject({
           statusCode: 409,
           code: 'MKTG_RUN_ANSWERED',
           message: 'Already answered',
@@ -423,22 +426,44 @@ describe('MktgDocumentRunService core', () => {
       await service.startForOneOff(owner, 'linkedin-post', project, session);
       flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
       await service.readProgress(owner, project);
-      await expect(service.claimSessionAnswers(other, project, session, questionsId, 'linkedin-post')).rejects.toMatchObject({ statusCode: 403 });
-      await expect(service.claimAnswers(owner, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.claimSessionAnswers(other, project, session, questionsId, 'linkedin-post', answers)).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.claimAnswers(owner, project, hash(session), questionsId, answers)).rejects.toMatchObject({ statusCode: 403 });
       expect(flows.claim).not.toHaveBeenCalled();
-      await service.claimSessionAnswers(owner, project, session, questionsId, 'linkedin-post');
+      await service.claimSessionAnswers(owner, project, session, questionsId, 'linkedin-post', answers);
       expect(flows.claim).toHaveBeenCalledTimes(1);
       expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredBy: 'synthetic-linkedin-creator' });
     });
     it('binds creator transports to their catalog agent before using the same conditional claim', async () => {
       await waiting();
       const writer = writerRequest('synthetic-original-writer');
-      await expect(service.claimSessionAnswers(writer, project, session, questionsId, 'synthetic-wrong-agent')).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.claimSessionAnswers(writer, project, session, questionsId, 'synthetic-wrong-agent', answers)).rejects.toMatchObject({
+        statusCode: 403,
+      });
       expect(flows.claim).not.toHaveBeenCalled();
-      await service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '');
+      await service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '', answers);
       expect(flows.claim).toHaveBeenCalledTimes(1);
       expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
     });
+    it.each([false, true])('rejects missing, extra or duplicate keys before a durable claim (creator=%s)', async (creator) => {
+      await waiting();
+      const invoke = (value: typeof answers) =>
+        creator
+          ? service.claimSessionAnswers(req, project, session, questionsId, types[0].catalogAgentId ?? '', value)
+          : service.claimAnswers(req, project, hash(session), questionsId, value);
+      for (const invalid of [[], [...answers, { ...answers[0], key: 'extra' }], [answers[0], answers[0]], [{ ...answers[0], key: 'unasked' }]]) {
+        await expect(invoke(invalid)).rejects.toMatchObject({
+          statusCode: 400,
+          validationErrors: [{ field: 'answers', code: 'FIELD_VALIDATION_ERROR', message: 'Answer every current question.' }],
+        });
+        expect(flows.claim).not.toHaveBeenCalled();
+        expect(stored().metadata['state']).toBe('questions');
+        expect(JSON.parse(stored().body).pendingQuestions.questionsId).toBe(questionsId);
+      }
+      await invoke(answers);
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(stored().metadata['state']).toBe('writing');
+    });
+
     it('cannot select a record in another project using a known run id', async () => {
       await waiting();
       flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
@@ -569,8 +594,8 @@ describe('MktgDocumentRunService core', () => {
 
   it('checks closed metadata again in the turn tracking predicate', async () => {
     await service.start(req, project, types[0].agentKey, session);
-    flows.beforePredicate.mockImplementationOnce((metadata) => {
-      metadata['state'] = 'discarded';
+    flows.head.mockImplementationOnce(() => {
+      stored().metadata['state'] = 'discarded';
     });
     await expect(service.start(req, project, types[0].agentKey, session, 0, 'follow-up')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
     expect(stored().metadata['state']).toBe('discarded');
@@ -1260,8 +1285,15 @@ describe('MktgDocumentRunService core', () => {
     const body = stored().body;
     expect(JSON.parse(body).creatorSubject).toBe('synthetic-creator');
     await service.start(visitor, project, types[0].agentKey, session, 0, 'first-turn');
-    await service.start(visitor, project, types[0].agentKey, session, 0, 'next-turn');
     expect(stored().body).toBe(body);
+    await service.start(visitor, project, types[0].agentKey, session, 0, 'next-turn');
+    expect(stored().body).not.toBe(body);
+    expect(JSON.parse(stored().body)).toMatchObject({
+      creatorSubject: 'synthetic-creator',
+      startedAt: JSON.parse(body).startedAt,
+      sessionId: session,
+      attemptId: 'next-turn',
+    });
     await service.start(req, project, types[0].agentKey, 'unknown-creator');
     expect(JSON.parse(stored('unknown-creator').body).creatorSubject).toBeNull();
   });
@@ -1293,6 +1325,20 @@ describe('MktgDocumentRunService core', () => {
     if (completed) expect(before.metadata['revision-id']).toBe(location().revision_id);
     expect(await service.start(req, project, types[0].agentKey, session, 0, 'turn-A')).toBe(hash(session));
     expect(stored()).toBe(before);
+  });
+
+  it('fences a held result after its last HEAD across a same-session renewal', async () => {
+    await service.start(req, project, types[0].agentKey, session, 0, 'turn-A');
+    const oldBody = stored().body;
+    flows.result.mockResolvedValue(ready());
+    flows.beforeMark.mockImplementationOnce(async () => {
+      await service.start(req, project, types[0].agentKey, session, 1, 'turn-B');
+    });
+    await service.readProgress(req, project);
+    expect(stored().body).not.toBe(oldBody);
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'attempt-id': 'turn-B', 'attempt-history': 'turn-A,turn-B', 'prior-version': '1' });
+    expect(stored().metadata).not.toHaveProperty('revision-id');
+    expect(JSON.parse(stored().body).attemptId).toBe('turn-B');
   });
 
   it('seeds legacy ACK history from the current attempt without losing it on renewal', async () => {

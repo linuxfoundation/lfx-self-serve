@@ -357,11 +357,30 @@ describe('MktgAgentsController', () => {
         handle?.status === 'active' ? handle.guildAgentHandle : undefined
       );
       expect(tokenMocks.verifySessionOwnerToken).not.toHaveBeenCalled();
-      expect(runMocks.claimAnswers).toHaveBeenCalledWith(req, 'synthetic-project', publicRunId, 'c'.repeat(64));
+      expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'synthetic-project', expect.any(String), 'private-original-session');
+      expect(runMocks.claimAnswers).toHaveBeenCalledWith(req, 'synthetic-project', publicRunId, 'c'.repeat(64), [
+        { key: 'voice', text: 'Synthetic answer', origin: 'requester' },
+      ]);
+      expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(runMocks.claimAnswers.mock.invocationCallOrder[0]);
       expect(runMocks.claimAnswers.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({ runId: publicRunId, state: 'writing' });
       expect(JSON.stringify(res.json.mock.calls)).not.toContain('private-original');
+    });
+    it('never claims or sends when the canonical active-slot check refuses continuation', async () => {
+      const failure = new ConflictError('Another active run.', 'MKTG_RUN_ACTIVE');
+      runMocks.assertRunOpen.mockRejectedValueOnce(failure);
+      await controller.runAnswers(request(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(runMocks.claimAnswers).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+    it('does not send when stored question coverage is refused before the claim write', async () => {
+      const failure = ServiceValidationError.forField('answers', 'Answer every current question.');
+      runMocks.claimAnswers.mockRejectedValueOnce(failure);
+      await controller.runAnswers(request({ answers: [{ key: 'unasked', text: 'Synthetic answer', origin: 'requester' }] }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
     });
     it.each(['Synthetic Writer', null])('forwards the answered conflict body with claimant %s and never sends after a lost claim', async (answeredBy) => {
       const message = answeredBy ? `Already answered by ${answeredBy}` : 'Already answered';
@@ -559,10 +578,21 @@ describe('MktgAgentsController', () => {
       expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'requested-project');
       expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(runMocks.assertRunOpen.mock.invocationCallOrder[0]);
       expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'resolved-project', expect.any(String), 'synthetic-session');
-      expect(runMocks.claimSessionAnswers).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567', expect.any(String));
+      expect(runMocks.claimSessionAnswers).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567', expect.any(String), req.body.answers);
       expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(runMocks.claimSessionAnswers.mock.invocationCallOrder[0]);
       expect(runMocks.claimSessionAnswers.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it(`${method}: forwards coverage rejection without sending or consuming a corrected retry`, async () => {
+      const failure = ServiceValidationError.forField('answers', 'Answer every current question.');
+      runMocks.claimSessionAnswers.mockRejectedValueOnce(failure);
+      const req = answersRequest();
+      await controller[method](req, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(runMocks.claimSessionAnswers).toHaveBeenCalledWith(req, expect.any(String), 'synthetic-session', 'a1234567', expect.any(String), req.body.answers);
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      await controller[method](req, buildRes(), next);
+      expect(adapter.sendAnswers).toHaveBeenCalledTimes(1);
     });
     it(`${method}: requires a questions id even with a valid creator token`, async () => {
       const req = answersRequest();

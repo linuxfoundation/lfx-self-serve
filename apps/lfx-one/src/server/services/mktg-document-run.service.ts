@@ -46,6 +46,7 @@ import {
   MktgDocumentRunStartOptions,
   MktgRunActivity,
   MktgRunPendingQuestions,
+  MktgRunAnswer,
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
 } from '@lfx-one/shared/interfaces';
@@ -265,8 +266,8 @@ export class MktgDocumentRunService {
 
   /**
    * Retain accepted turn IDs across sequential replay; a full ledger rejects a new turn, never evicts history.
-   * Concurrent ACKs and state transitions still use HEAD/check/PUT, not cross-writer CAS. A stale update can
-   * replace a completed receipt; conditional metadata transitions are a separately tracked storage follow-up.
+   * Existing-session renewals advance the body and conditionally replace the observed ETag, fencing held
+   * result polls. Initial session admission remains separate from the active-slot reservation follow-up.
    */
   public async start(
     req: Request,
@@ -322,7 +323,9 @@ export class MktgDocumentRunService {
     const written = await this.put(
       req,
       key,
-      existing?.body ?? JSON.stringify(record),
+      JSON.stringify(
+        existing ? { ...existing.record, state: 'writing', attemptId, priorVersion, retryAt: now, result: null, pendingQuestions: undefined } : record
+      ),
       {
         state: 'writing',
         'started-at': existing?.record.startedAt ?? now,
@@ -340,7 +343,8 @@ export class MktgDocumentRunService {
           !current.includes(attemptId) &&
           [...current, attemptId].join(',').length <= MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES
         );
-      }
+      },
+      existing ?? undefined
     );
     if (!written) {
       const winner = await this.read(req, project, key);
@@ -652,7 +656,14 @@ export class MktgDocumentRunService {
   }
 
   /** Commit the exact questions-to-writing transition before any Guild send. Only one ETag can win. */
-  public async claimAnswers(req: Request, project: string, runId: string, questionsId: string, creatorOnly = false): Promise<MktgStartedRunRecord> {
+  public async claimAnswers(
+    req: Request,
+    project: string,
+    runId: string,
+    questionsId: string,
+    answers: MktgRunAnswer[],
+    creatorOnly = false
+  ): Promise<MktgStartedRunRecord> {
     await this.questionsForAnswers(req, project, runId, questionsId, creatorOnly);
     const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
     if (!stored) throw new ResourceNotFoundError('Marketing OS run', runId);
@@ -660,6 +671,15 @@ export class MktgDocumentRunService {
     if (!subject) throw new AuthenticationError('A signed-in writer subject is required to answer.');
     const claim = mktgRunClaimAnswers(stored.record, questionsId, subject, new Date().toISOString());
     if (!claim) throw await this.answeredConflict(req, stored.record, questionsId);
+    const expected = new Set(stored.record.pendingQuestions?.questions.map((question) => question.key));
+    if (
+      !Array.isArray(answers) ||
+      !expected.size ||
+      answers.length !== expected.size ||
+      new Set(answers.map((answer) => answer.key)).size !== expected.size ||
+      answers.some((answer) => !expected.has(answer.key))
+    )
+      throw ServiceValidationError.forField('answers', 'Answer every current question.');
     if (!stored.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token. Refresh before answering.');
     const written = await this.store.putConditionalObject(
       req,
@@ -690,11 +710,18 @@ export class MktgDocumentRunService {
   }
 
   /** Creator-token endpoints select only their catalog agent's session, then use the same writer CAS. */
-  public async claimSessionAnswers(req: Request, project: string, sessionId: string, questionsId: string, agentId: string): Promise<void> {
+  public async claimSessionAnswers(
+    req: Request,
+    project: string,
+    sessionId: string,
+    questionsId: string,
+    agentId: string,
+    answers: MktgRunAnswer[]
+  ): Promise<void> {
     const run = await this.questionsForAnswers(req, project, this.hash(sessionId), questionsId, true);
     if (run.sessionId !== sessionId || findMktgRunIntake(run.agentKey, true)?.agentId !== agentId)
       throw new AuthorizationError('The recorded run does not match this agent session.');
-    await this.claimAnswers(req, project, run.runId, questionsId, true);
+    await this.claimAnswers(req, project, run.runId, questionsId, answers, true);
   }
 
   /** Caller validates before sending answers; invalid internal input is DEBUG, never a storage WARN. */

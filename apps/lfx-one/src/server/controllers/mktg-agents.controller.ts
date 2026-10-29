@@ -1654,7 +1654,6 @@ export class MktgAgentsController {
     }
   }
 
-  /** Record the ACK through the catalog-aware domain service. */
   /** Project-writer continuation for a kit run, deliberately separate from creator-token session writes. */
   public async runAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_run_answers';
@@ -1683,13 +1682,14 @@ export class MktgAgentsController {
       const agent = MKTG_AGENTS.find((entry) => entry.id === intake?.agentId && entry.status === 'active');
       const handle = agent?.status === 'active' ? agent.guildAgentHandle : undefined;
       const adapter = this.livingAnswers(intake?.endpoints.answers);
-      if (!handle || !adapter) throw new PreconditionFailedError('This run has no registered answers path.');
+      if (!intake || !handle || !adapter) throw new PreconditionFailedError('This run has no registered answers path.');
       const checked = adapter.validate(body.answers);
       if (!checked.valid || !Array.isArray(body.answers))
         throw ServiceValidationError.forField('answers', checked.errors.join('; ') || 'Valid answers are required.');
       if (await this.redrafts.forSession(req, run.sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       const answers = body.answers.map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
-      await this.documentRuns.claimAnswers(req, run.project, run.runId, body.questionsId);
+      await this.documentRuns.assertRunOpen(req, run.project, intake.agentId, run.sessionId);
+      await this.documentRuns.claimAnswers(req, run.project, run.runId, body.questionsId, answers);
       await adapter.send(req, run.sessionId, answers, handle);
       logger.success(req, operation, started, { agent: run.agentKey, count: answers.length });
       const response: MktgPublicRunAnswersResponse = { runId: run.runId, state: 'writing' };
@@ -1753,6 +1753,7 @@ export class MktgAgentsController {
     }
   }
 
+  /** Record the ACK through the catalog-aware domain service. */
   private async trackStart(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }
@@ -1765,7 +1766,7 @@ export class MktgAgentsController {
     const project = await this.documentRuns.resolveProject(req, req.body.project);
     await this.documentRuns.assertRunOpen(req, project, agentId, sessionId);
     if (await this.redrafts.forSession(req, sessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
-    await this.documentRuns.claimSessionAnswers(req, project, sessionId, questionsId, agentId);
+    await this.documentRuns.claimSessionAnswers(req, project, sessionId, questionsId, agentId, req.body.answers as MktgRunAnswer[]);
   }
 
   private async trackResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {

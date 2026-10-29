@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   claim: vi.fn(),
   share: vi.fn(),
   answer: vi.fn(),
+  prepare: vi.fn(),
   start: vi.fn(),
   result: vi.fn(),
   read: vi.fn(),
@@ -63,6 +64,8 @@ vi.mock('../services/linkedin-post.service', () => ({
     public start = mocks.start;
     public result = mocks.result;
     public sendAnswers = mocks.answer;
+    public prepareAnswers = mocks.prepare;
+    public deliverAnswers = mocks.answer;
     public constructor(...args: unknown[]) {
       mocks.attribution(...args);
     }
@@ -110,6 +113,8 @@ describe('LinkedIn endpoint boundaries', () => {
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
     mocks.open.mockReset().mockResolvedValue(undefined);
+    mocks.prepare.mockReset().mockResolvedValue('synthetic-prepared-answers');
+    mocks.answer.mockReset().mockResolvedValue(undefined);
   });
   it('names the complete Generate allow-list when an unexpected input is submitted', async () => {
     const next = vi.fn();
@@ -158,6 +163,66 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.ownedResult).not.toHaveBeenCalled();
   });
 
+  it.each([400, 503])('does not claim after a read-only preparation failure (%s) and permits a corrected retry', async (statusCode) => {
+    const failure = Object.assign(new Error('Synthetic preparation failure'), { statusCode });
+    mocks.prepare.mockRejectedValueOnce(failure);
+    const next = vi.fn();
+    const res = response();
+    const req = request({
+      sessionId: 'session-one',
+      ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+      project: 'project-one',
+      questionsId: 'a'.repeat(64),
+      answers: [{ key: 'tendency', text: 'Synthetic answer', origin: 'requester' }],
+    });
+    await new LinkedinPostController().answer(req, res, next);
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(mocks.answer).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    await new LinkedinPostController().answer(req, res, vi.fn());
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+    expect(mocks.answer).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the successful claim when delivery is uncertain', async () => {
+    const failure = new Error('Synthetic uncertain delivery');
+    mocks.answer.mockRejectedValueOnce(failure);
+    const next = vi.fn();
+    await new LinkedinPostController().answer(
+      request({
+        sessionId: 'session-one',
+        ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+        project: 'project-one',
+        questionsId: 'a'.repeat(64),
+        answers: [{ key: 'tendency', text: 'Synthetic answer', origin: 'requester' }],
+      }),
+      response(),
+      next
+    );
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.claim).toHaveBeenCalledTimes(1);
+    expect(mocks.claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.answer.mock.invocationCallOrder[0]);
+    expect(mocks.resume).not.toHaveBeenCalled();
+  });
+  it('does not claim or deliver again when preparation finds the completed output', async () => {
+    mocks.prepare.mockResolvedValueOnce(null);
+    const res = response();
+    await new LinkedinPostController().answer(
+      request({
+        sessionId: 'session-one',
+        ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+        project: 'project-one',
+        questionsId: 'a'.repeat(64),
+        answers: [{ key: 'tendency', text: 'Synthetic answer', origin: 'requester' }],
+      }),
+      res,
+      vi.fn()
+    );
+    expect(mocks.claim).not.toHaveBeenCalled();
+    expect(mocks.answer).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
   it('never sends a second one-off answers message after a lost conditional claim', async () => {
     const details = { runId: 'a'.repeat(64), questionsId: 'b'.repeat(64), answeredBy: null, answeredAt: '2026-10-28T21:15:00Z' };
     const failure = new ConflictError('Already answered', 'MKTG_RUN_ANSWERED', { details });
@@ -191,10 +256,12 @@ describe('LinkedIn endpoint boundaries', () => {
     const res = response();
     await controller.answer(request(body), res, next);
     expect(next).not.toHaveBeenCalled();
-    expect(mocks.answer).toHaveBeenCalledWith(expect.anything(), 'session-one', body.questionsId, body.answers, 'linkedin-post');
-    expect(mocks.open.mock.invocationCallOrder[0]).toBeLessThan(mocks.answer.mock.invocationCallOrder[0]);
+    expect(mocks.prepare).toHaveBeenCalledWith(expect.anything(), 'session-one', body.questionsId, body.answers);
+    expect(mocks.answer).toHaveBeenCalledWith(expect.anything(), 'session-one', 'synthetic-prepared-answers', 'linkedin-post', 1);
+    expect(mocks.open.mock.invocationCallOrder[0]).toBeLessThan(mocks.prepare.mock.invocationCallOrder[0]);
+    expect(mocks.prepare.mock.invocationCallOrder[0]).toBeLessThan(mocks.claim.mock.invocationCallOrder[0]);
     expect(res.json).toHaveBeenCalledWith({ success: true });
-    expect(mocks.claim).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId, 'linkedin-post');
+    expect(mocks.claim).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId, 'linkedin-post', body.answers);
     expect(mocks.claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.answer.mock.invocationCallOrder[0]);
     mocks.answer.mockClear();
     await controller.answer(request({ ...body, ownerToken: 'forged' }), res, next);
