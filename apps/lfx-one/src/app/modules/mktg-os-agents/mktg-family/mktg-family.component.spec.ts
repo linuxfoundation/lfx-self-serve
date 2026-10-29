@@ -249,9 +249,10 @@ describe('Marketing family page', () => {
     expect(list?.tagName).toBe('UL');
     expect(list?.getAttribute('role')).toBe('list');
     expect(root?.querySelector('table')).toBeNull();
-    const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === 'positioning-brand');
-    expect(family).toBeDefined();
-    for (const asset of family?.assets ?? []) {
+    const family = families().find((entry) => entry.family.id === 'positioning-brand');
+    expect(family?.rows).toHaveLength(4);
+    expect(list?.querySelector('[data-testid="mktg-family-asset-one-pager"]')).toBeNull();
+    for (const { asset } of family?.rows ?? []) {
       const row = list?.querySelector(`[data-testid="mktg-family-asset-${asset.id}"]`);
       expect(row?.tagName).toBe('LI');
       expect(row?.classList.contains('relative')).toBe(true);
