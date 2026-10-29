@@ -36,6 +36,10 @@ import type {
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
   OrgMaintainerRolesCountRow,
+  OrgOrganizationMaintainerRolesRow,
+  OrgProjectMaintainerRolesLifetimeRow,
+  OrgProjectMaintainerRolesMonthlyRow,
+  OrgProjectMaintainerRolesSeriesRow,
 } from '@lfx-one/shared/interfaces';
 import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
@@ -81,7 +85,6 @@ interface CardsRow {
   ECO_CERTIFIED_INDIVIDUALS_PCT: number | null;
   // Project-wide totals for the card-detail drawer "Total/Average for this project" line (DN9).
   // Read straight from the same range-scoped _tr models the headlines read — no re-derivation.
-  TECH_MAINTAINERS_TOTAL: number | null;
   TECH_CONTRIBUTORS_TOTAL: number | null;
   TECH_COMMITS_TOTAL: number | null;
   TECH_PR_OPENED_TOTAL: number | null;
@@ -95,6 +98,11 @@ interface CardsRow {
   ECO_EVENT_SPONSORSHIPS_TOTAL: number | null;
   ECO_MEETUP_ATTENDANCE_TOTAL: number | null;
   ECO_CERTIFIED_INDIVIDUALS_TOTAL: number | null;
+}
+
+/** The drawer totals: the cards row plus the project's maintainer roles, which come from the roles table (lfx-self-serve#4605). */
+interface CardDrawerTotalsRow extends CardsRow {
+  PROJECT_MAINTAINER_ROLES: number | null;
 }
 
 interface TrendRow {
@@ -179,20 +187,20 @@ interface RosterProvider {
 
 /**
  * Static per-card drawer definition metadata (copy carried over from the shipped card detail
- * drawer). `totalField` names the project-wide total column on the cards row for the active range
- * (read straight through — org-dashboard parity, no monthly re-derivation); 'average' totals are
- * seconds and rendered as a duration.
+ * drawer). `totalField` names the project-wide total for the active range: a cards-row column
+ * (read straight through — org-dashboard parity, no monthly re-derivation), or the project's
+ * maintainer roles for the maintainers card; 'average' totals are seconds and rendered as a duration.
  */
-/** Keys of CardsRow whose value is numeric — the only columns valid as a drawer total field. */
+/** Keys of the drawer totals whose value is numeric — the only columns valid as a drawer total field. */
 type NumericCardsField = {
-  [K in keyof CardsRow]-?: NonNullable<CardsRow[K]> extends number ? K : never;
-}[keyof CardsRow];
+  [K in keyof CardDrawerTotalsRow]-?: NonNullable<CardDrawerTotalsRow[K]> extends number ? K : never;
+}[keyof CardDrawerTotalsRow];
 
 interface CardDefMeta {
   text: string;
   totalType: 'count' | 'average';
   columns: string[];
-  /** Project-wide total column on the cards row (active-range value) for the drawer total line. */
+  /** Project-wide total (active-range value) for the drawer total line. */
   totalField: NumericCardsField;
   /** Static source label for the 9 ecosystem cards; technical cards derive it from the platforms model. */
   ecoDataSource?: string;
@@ -231,7 +239,7 @@ interface ActivityBoardRow {
  * One warehouse column set behind a single drawer category. Only `points` is mandatory: membership
  * tier has no count or denominator at all, because it maps from the tier rather than being scored on
  * participation. The binary awards (maintainers, board members) do carry both — the warehouse omits
- * only their share, so the drawer can still say "3 of 41 maintainers".
+ * only their share, so the drawer can still say "3 of 41".
  */
 interface CategorySource {
   key: string;
@@ -244,6 +252,11 @@ interface CategorySource {
    * foundation-wide total cannot tell those two apart on a child project's page.
    */
   allTimeTotal?: string;
+  /**
+   * The count and total are maintainer roles overlapping the range (lfx-self-serve#4605) — the organization's and
+   * every company's on the project, read from the roles table — rather than warehouse columns; the points stay the score's.
+   */
+  countsMaintainerRoles?: true;
 }
 
 /**
@@ -297,7 +310,7 @@ export class OrgLensProjectDetailService {
   // behind them. Keys match the drawer's category lists; the two must stay the same size as the
   // warehouse's scored-component counts, which a shared-package test asserts.
   private static readonly technicalCategorySources: readonly CategorySource[] = [
-    { key: 'maintainer', points: 'MAINTAINERS_POINTS', count: 'MAINTAINERS_COUNT', projectTotal: 'MAINTAINERS_PROJECT_TOTAL' },
+    { key: 'maintainer', points: 'MAINTAINERS_POINTS', countsMaintainerRoles: true },
     {
       key: 'contributors',
       points: 'CONTRIBUTORS_POINTS',
@@ -393,7 +406,7 @@ export class OrgLensProjectDetailService {
       text: ORG_PROJECT_MAINTAINER_ROLES_DEFINITION,
       totalType: 'count',
       columns: ['Our Contributors', 'Maintainer Since', 'Maintainer Until'],
-      totalField: 'TECH_MAINTAINERS_TOTAL',
+      totalField: 'PROJECT_MAINTAINER_ROLES',
       platformField: 'MAINTAINER_PLATFORMS',
     },
     contributors: {
@@ -585,8 +598,8 @@ export class OrgLensProjectDetailService {
   public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    // `v3`: the maintainers card counts the account's maintainer roles following the toggle (lfx-self-serve#4482).
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v3:${this.paramSignature([slug, range])}`);
+    // `v4`: the maintainers sparkline counts maintainer roles following the toggle (lfx-self-serve#4605).
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v4:${this.paramSignature([slug, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -603,16 +616,23 @@ export class OrgLensProjectDetailService {
     // 1y/2y read the trailing monthly sparkline model and slice client-side over a fixed month axis;
     // `all` reads the adaptive lifetime-bucketed model and carries its own variable `periods[]` axis
     // (LFXV2-2867 D9) — the same shared bucket axis the trend chart uses (D7).
-    const [cardRows, maintainerRoles, viewing, sparkData] = await Promise.all([
+    const [cardRows, maintainerRoles, viewing, sparkData, maintainerRolesSparkline] = await Promise.all([
       this.fetchCards(orgUid, slug, timeRangeType),
       this.fetchMaintainerRolesCount(orgUid, slug, range),
       // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
       // that single row rather than the whole board — the board itself is now paged separately.
       this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
       range === 'all' ? this.fetchLifetimeSparklineData(orgUid, slug) : this.fetchMonthlySparklineData(orgUid, slug),
+      this.fetchMaintainerRolesSparkline(orgUid, slug, range),
     ]);
 
     const cards = cardRows[0] ?? null;
+    // The maintainers card's series is the roles series alone, on the same axis; an account with no roles in it has
+    // no series ("No data"), and a missing roles table leaves the sparkline empty rather than showing anything else.
+    sparkData.index.delete('maintainers');
+    if (maintainerRolesSparkline !== null && maintainerRolesSparkline.org.size > 0) {
+      sparkData.index.set('maintainers', maintainerRolesSparkline);
+    }
 
     const block: OrgLensInfluenceBlock = {
       technical: this.buildTechnicalCards(cards, maintainerRoles, sparkData.index, sparkData.axis),
@@ -626,8 +646,8 @@ export class OrgLensProjectDetailService {
       // An empty axis must still be emitted as `[]`, or `hasAdaptivePeriods` rejects the block just written.
       ...(sparkData.periods === undefined ? {} : { periods: sparkData.periods }),
     };
-    // A block read while the roles table is missing (its maintainers card unavailable) is served, never stored.
-    if (key !== null && maintainerRoles !== null) {
+    // A block read while a roles table is missing (its maintainers card unavailable) is served, never stored.
+    if (key !== null && maintainerRoles !== null && maintainerRolesSparkline !== null) {
       await valkeyService.setJson(key, block, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return block;
@@ -707,8 +727,8 @@ export class OrgLensProjectDetailService {
   ): Promise<OrgLensCardDetailSection | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    // `v2`: the maintainers definition now states the maintainer roles rule (lfx-self-serve#4482).
-    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v2:${this.paramSignature([slug, cardKey, range])}`);
+    // `v3`: the maintainers total counts every company's maintainer roles following the toggle (lfx-self-serve#4605).
+    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v3:${this.paramSignature([slug, cardKey, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardDetailSection>(key, OrgLensProjectDetailService.isCardDetailSection);
       if (cached !== null) return cached;
@@ -717,9 +737,15 @@ export class OrgLensProjectDetailService {
     const heroRow = await this.fetchHeroRow(orgUid, slug);
     if (!heroRow) return null;
 
-    const [cardRows, platformRows] = await Promise.all([this.fetchCards(orgUid, slug, timeRangeType), this.fetchPlatforms(slug, timeRangeType)]);
-    const section = this.buildCardDetails(cardRows[0] ?? null, platformRows[0] ?? null, heroRow.IS_LF_PROJECT !== true)[cardKey] ?? null;
-    if (section !== null && key !== null) {
+    const isMaintainers = cardKey === 'maintainers';
+    const [cardRows, platformRows, maintainerRolesTotal] = await Promise.all([
+      this.fetchCards(orgUid, slug, timeRangeType),
+      this.fetchPlatforms(slug, timeRangeType),
+      isMaintainers ? this.fetchProjectMaintainerRolesTotal(slug, range) : Promise.resolve(null),
+    ]);
+    const section = this.buildCardDetails(cardRows[0] ?? null, maintainerRolesTotal, platformRows[0] ?? null, heroRow.IS_LF_PROJECT !== true)[cardKey] ?? null;
+    // A maintainers drawer read while the roles table is missing (its total unavailable) is served, never stored.
+    if (section !== null && key !== null && !(isMaintainers && maintainerRolesTotal === null)) {
       await valkeyService.setJson(key, section, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return section;
@@ -757,7 +783,8 @@ export class OrgLensProjectDetailService {
     // organization, so an entry can only exist for a caller that already passed the catalog gate
     // below, and own-organization status needs no partition of its own: it is decided by the subject
     // account this key already identifies, so every caller sharing the key shares the visibility.
-    const cacheKey = `project-detail-breakdown-${dimension}:${this.paramSignature([slug, range, organizationId])}`;
+    // `v2`: the maintainer category counts maintainer roles following the toggle (lfx-self-serve#4605).
+    const cacheKey = `project-detail-breakdown-${dimension}:v2:${this.paramSignature([slug, range, organizationId])}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLeaderboardDetailBreakdown>(key, OrgLensProjectDetailService.isLeaderboardBreakdown);
@@ -772,9 +799,11 @@ export class OrgLensProjectDetailService {
     if (row === null) return null;
     const isOwnOrganization = row.ACCOUNT_ID === orgUid;
 
-    const [position, activitySharePercent] = await Promise.all([
+    const readsMaintainerRoles = this.categorySources(dimension).some((source) => source.countsMaintainerRoles);
+    const [position, activitySharePercent, maintainerRoles] = await Promise.all([
       this.fetchBoardPosition(slug, timeRangeType, dimension, organizationId),
       this.fetchActivitySharePercent(slug, timeRangeType, dimension, organizationId),
+      readsMaintainerRoles ? this.fetchOrganizationMaintainerRoles(slug, organizationId, range) : Promise.resolve(null),
     ]);
 
     const withheldCategories = isOwnOrganization ? [] : this.withheldKeysFor(dimension);
@@ -794,11 +823,12 @@ export class OrgLensProjectDetailService {
       ...(activitySharePercent === null ? {} : { activitySharePercent }),
       categories: this.categorySources(dimension)
         .filter((source) => !withheld.has(source.key))
-        .map((source) => this.mapCategoryFigure(source, row)),
+        .map((source) => this.mapCategoryFigure(source, row, maintainerRoles)),
       withheldCategories,
     };
 
-    if (key !== null) {
+    // A breakdown read while the roles table is missing (its maintainer count unavailable) is served, never stored.
+    if (key !== null && !(readsMaintainerRoles && maintainerRoles === null)) {
       await valkeyService.setJson(key, breakdown, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
     }
     return breakdown;
@@ -1071,9 +1101,21 @@ export class OrgLensProjectDetailService {
     return [source.points, source.count, source.projectTotal, source.allTimeTotal].filter((column): column is string => !!column);
   }
 
-  private mapCategoryFigure(source: CategorySource, row: BreakdownRow): OrgLeaderboardDetailCategoryFigure {
-    const count = source.count ? this.numOrNull(this.column(row, source.count)) : null;
-    const projectTotal = source.projectTotal ? this.numOrNull(this.column(row, source.projectTotal)) : null;
+  /** `maintainerRoles` backs a `countsMaintainerRoles` category; `null` (roles table missing) leaves its count and total out. */
+  private mapCategoryFigure(
+    source: CategorySource,
+    row: BreakdownRow,
+    maintainerRoles: OrgOrganizationMaintainerRolesRow | null
+  ): OrgLeaderboardDetailCategoryFigure {
+    let count: number | null = null;
+    let projectTotal: number | null = null;
+    if (source.countsMaintainerRoles) {
+      count = maintainerRoles === null ? null : this.num(maintainerRoles.ORGANIZATION_ROLES);
+      projectTotal = maintainerRoles === null ? null : this.num(maintainerRoles.PROJECT_ROLES);
+    } else {
+      count = source.count ? this.numOrNull(this.column(row, source.count)) : null;
+      projectTotal = source.projectTotal ? this.numOrNull(this.column(row, source.projectTotal)) : null;
+    }
     const allTimeTotal = source.allTimeTotal ? this.numOrNull(this.column(row, source.allTimeTotal)) : null;
     return {
       key: source.key,
@@ -1136,7 +1178,7 @@ export class OrgLensProjectDetailService {
                ECO_COLLABORATION_PCT, ECO_MEETING_ATTENDANCE_COUNT, ECO_BOARD_MEMBERS_COUNT,
                ECO_COMMITTEE_MEMBERS_PCT, ECO_EVENT_ATTENDANCE_PCT, ECO_EVENT_SPEAKERS_PCT,
                ECO_EVENT_SPONSORSHIPS_PCT, ECO_MEETUP_ATTENDANCE_PCT, ECO_CERTIFIED_INDIVIDUALS_PCT,
-               TECH_MAINTAINERS_TOTAL, TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,
+               TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,
                TECH_AVG_MERGE_TIME_SECONDS,
                ECO_COLLABORATION_TOTAL, ECO_MEETING_ATTENDANCE_TOTAL, ECO_BOARD_MEMBERS_TOTAL,
                ECO_COMMITTEE_MEMBERS_TOTAL, ECO_EVENT_ATTENDANCE_TOTAL, ECO_EVENT_SPEAKERS_TOTAL,
@@ -1165,6 +1207,99 @@ export class OrgLensProjectDetailService {
       [orgUid, slug, ...overlap.binds]
     );
     return rows === null ? null : this.num(rows[0]?.MAINTAINER_ROLES ?? 0);
+  }
+
+  /**
+   * Every company's maintainer roles on the project overlapping the toggle's range — roles with no account included —
+   * for the maintainers drawer total (lfx-self-serve#4605); `null` when the roles table is missing.
+   */
+  private async fetchProjectMaintainerRolesTotal(slug: string, range: OrgLensLeaderboardTimeRange): Promise<number | null> {
+    const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
+    const rows = await readMaintainerRoles<OrgMaintainerRolesCountRow>(
+      this.snowflakeService,
+      'PROJECT_MAINTAINER_ROLES',
+      `
+        SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
+        FROM ${this.projectMaintainerRolesTable()}
+        WHERE INSIGHTS_PROJECT_SLUG = ?
+          AND ${overlap.sql}
+      `,
+      [slug, ...overlap.binds]
+    );
+    return rows === null ? null : this.num(rows[0]?.MAINTAINER_ROLES ?? 0);
+  }
+
+  /**
+   * A leaderboard organization's maintainer roles on the project and every company's, overlapping the toggle's range
+   * (lfx-self-serve#4605). The organization is the board row's crowd.dev organization, the one each role is credited
+   * to, so a company spread over several organizations is split as its rows are. `null` when the roles table is missing.
+   */
+  private async fetchOrganizationMaintainerRoles(
+    slug: string,
+    organizationId: string,
+    range: OrgLensLeaderboardTimeRange
+  ): Promise<OrgOrganizationMaintainerRolesRow | null> {
+    const overlap = orgMaintainerRoleOverlap(PD_ORG_LENS_TIME_RANGE[range]);
+    const rows = await readMaintainerRoles<OrgOrganizationMaintainerRolesRow>(
+      this.snowflakeService,
+      'PROJECT_MAINTAINER_ROLES',
+      `
+        SELECT COUNT(DISTINCT IFF(ORGANIZATION_ID = ?, MEMBER_ID, NULL), IFF(ORGANIZATION_ID = ?, SEGMENT_ID, NULL)) AS ORGANIZATION_ROLES,
+               COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS PROJECT_ROLES
+        FROM ${this.projectMaintainerRolesTable()}
+        WHERE INSIGHTS_PROJECT_SLUG = ?
+          AND ${overlap.sql}
+      `,
+      [organizationId, organizationId, slug, ...overlap.binds]
+    );
+    return rows === null ? null : { ORGANIZATION_ROLES: this.num(rows[0]?.ORGANIZATION_ROLES ?? 0), PROJECT_ROLES: this.num(rows[0]?.PROJECT_ROLES ?? 0) };
+  }
+
+  /**
+   * The Maintainer roles card's sparkline (lfx-self-serve#4605): per point, the account's roles on the project and every
+   * company's, on the axis the other cards use — trailing months for 1y/2y, the project's lifetime buckets for `all`.
+   * `null` when the series table is missing.
+   */
+  private async fetchMaintainerRolesSparkline(orgUid: string, slug: string, range: OrgLensLeaderboardTimeRange): Promise<SparkEntry | null> {
+    if (range === 'all') {
+      const rows = await readMaintainerRoles<OrgProjectMaintainerRolesLifetimeRow>(
+        this.snowflakeService,
+        'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME',
+        `
+          SELECT BUCKET_INDEX, ACCOUNT_ROLES, PROJECT_ROLES
+          FROM ${this.projectMaintainerRolesLifetimeTable()}
+          WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
+        `,
+        [orgUid, slug]
+      );
+      return rows === null
+        ? null
+        : this.maintainerRolesSparkEntry(
+            rows.map((row) => [row.BUCKET_INDEX === null || row.BUCKET_INDEX === undefined ? null : String(this.num(row.BUCKET_INDEX)), row])
+          );
+    }
+    const rows = await readMaintainerRoles<OrgProjectMaintainerRolesMonthlyRow>(
+      this.snowflakeService,
+      'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY',
+      `
+        SELECT SPAN_MONTH, ACCOUNT_ROLES, PROJECT_ROLES
+        FROM ${this.projectMaintainerRolesMonthlyTable()}
+        WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
+      `,
+      [orgUid, slug]
+    );
+    return rows === null ? null : this.maintainerRolesSparkEntry(rows.map((row) => [this.toYearMonth(row.SPAN_MONTH), row]));
+  }
+
+  /** Index roles series points by axis key (year-month or bucket index), skipping a point without one. */
+  private maintainerRolesSparkEntry(points: [string | null, OrgProjectMaintainerRolesSeriesRow][]): SparkEntry {
+    const entry: SparkEntry = { org: new Map(), project: new Map() };
+    for (const [axisKey, row] of points) {
+      if (axisKey === null) continue;
+      entry.org.set(axisKey, this.num(row.ACCOUNT_ROLES));
+      entry.project.set(axisKey, this.num(row.PROJECT_ROLES));
+    }
+    return entry;
   }
 
   private async fetchSparklines(orgUid: string, slug: string): Promise<SparkRow[]> {
@@ -1422,17 +1557,24 @@ export class OrgLensProjectDetailService {
   /**
    * DN9 Phase 1: per-card drawer sections — real definition copy, the project-wide total for the
    * active range (read straight from the cards row's TOTAL_* columns, which mirror org-dashboard's
-   * per-card summary totals — no monthly re-derivation), data source (static for the 9 ecosystem
+   * per-card summary totals — no monthly re-derivation — except the maintainers card's, which is every
+   * company's maintainer roles; `null` when unavailable), data source (static for the 9 ecosystem
    * cards; project-wide distinct source platforms for the 5 technical cards), and the table column
    * headers. The card-specific roster rows land in a follow-up, so `rows` is empty for now.
    */
-  private buildCardDetails(cards: CardsRow | null, platforms: PlatformsRow | null, isNonLf: boolean): Record<string, OrgLensCardDetailSection> {
+  private buildCardDetails(
+    cards: CardsRow | null,
+    projectMaintainerRoles: number | null,
+    platforms: PlatformsRow | null,
+    isNonLf: boolean
+  ): Record<string, OrgLensCardDetailSection> {
     const details: Record<string, OrgLensCardDetailSection> = {};
+    const totals: Partial<CardDrawerTotalsRow> = { ...cards, PROJECT_MAINTAINER_ROLES: projectMaintainerRoles };
 
     for (const [key, meta] of Object.entries(OrgLensProjectDetailService.cardDefs)) {
       const isTechnical = meta.ecoDataSource === undefined;
       // Non-LF projects have no ecosystem group (DN4), so their ecosystem drawers carry no total.
-      const total = isNonLf && !isTechnical ? '—' : this.projectTotal(meta, cards);
+      const total = isNonLf && !isTechnical ? '—' : this.projectTotal(meta, totals);
       const dataSource = isTechnical ? this.technicalDataSource(meta, platforms) : (meta.ecoDataSource ?? '');
 
       details[key] = {
@@ -1770,11 +1912,11 @@ export class OrgLensProjectDetailService {
   }
 
   /**
-   * Project-wide total string for a card's drawer, read from the active-range cards row. Counts are
+   * Project-wide total string for a card's drawer, read from the active-range drawer totals. Counts are
    * whole numbers; the average-merge-time total is seconds rendered as a duration.
    */
-  private projectTotal(meta: CardDefMeta, cards: CardsRow | null): string {
-    const raw = cards?.[meta.totalField] ?? null;
+  private projectTotal(meta: CardDefMeta, totals: Partial<CardDrawerTotalsRow>): string {
+    const raw = totals[meta.totalField] ?? null;
     if (raw === null || raw === undefined) return '—';
     const value = this.num(raw);
     if (meta.totalType === 'average') {
@@ -2327,6 +2469,18 @@ export class OrgLensProjectDetailService {
 
   private maintainerRolesTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_MAINTAINER_ROLES`;
+  }
+
+  private projectMaintainerRolesTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.PROJECT_MAINTAINER_ROLES`;
+  }
+
+  private projectMaintainerRolesMonthlyTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY`;
+  }
+
+  private projectMaintainerRolesLifetimeTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME`;
   }
 
   private projectPeopleTable(): string {
