@@ -373,23 +373,6 @@ export class Member360RunComponent {
     });
   }
 
-  private releaseUnconsumed(): void {
-    this.releaseIds(
-      this.trackerProject,
-      this.form.controls.trackers.value
-        .map((upload) => upload.tracker.trackerId)
-        .filter((id) => !this.submittingTrackers.has(this.receiptKey(this.trackerProject, id)))
-    );
-  }
-
-  private receiptKey(project: string, id: string): string {
-    return JSON.stringify([project, id]);
-  }
-
-  private releaseIds(project: string, ids: string[]): void {
-    if (!project || !isPlatformBrowser(this.platformId)) return;
-    for (const id of new Set(ids)) this.api.deleteTracker(project, id).subscribe({ error: () => undefined });
-  }
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.pending();
     const questionsId = this.result()?.questionsId;
@@ -427,6 +410,24 @@ export class Member360RunComponent {
           this.error.set(error.status === 409 ? 'The questions changed — refreshed.' : 'Your answers could not be sent. They are kept — try again.');
         },
       });
+  }
+
+  private releaseUnconsumed(): void {
+    this.releaseIds(
+      this.trackerProject,
+      this.form.controls.trackers.value
+        .map((upload) => upload.tracker.trackerId)
+        .filter((id) => !this.submittingTrackers.has(this.receiptKey(this.trackerProject, id)))
+    );
+  }
+
+  private receiptKey(project: string, id: string): string {
+    return JSON.stringify([project, id]);
+  }
+
+  private releaseIds(project: string, ids: string[]): void {
+    if (!project || !isPlatformBrowser(this.platformId)) return;
+    for (const id of new Set(ids)) this.api.deleteTracker(project, id).subscribe({ error: () => undefined });
   }
 
   /** The filtered server roster chooses a run; local proof can only enrich that choice. */

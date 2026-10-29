@@ -70,6 +70,16 @@ describe('Member 360 tracker raw parser', () => {
     objects.clear();
     vi.clearAllMocks();
   });
+  it('keeps four-argument error middleware and delegates when headers are already sent', () => {
+    const route = router.stack.find((layer) => layer.route?.path === '/member-360/tracker/:id')?.route;
+    const handler = route?.stack.at(-1)?.handle;
+    expect(handler).toHaveLength(4);
+    const error = new ResourceNotFoundError('Member 360 tracker');
+    const next = vi.fn();
+    if (typeof handler !== 'function') throw new Error('Missing private tracker error handler');
+    Reflect.apply(handler, undefined, [error, {}, { headersSent: true }, next]);
+    expect(next).toHaveBeenCalledWith(error);
+  });
   it('blocks impersonated DELETE before the creator-bound erasure handler', async () => {
     const id = 'a'.repeat(64);
     objects.set(id, 'synthetic-owner');

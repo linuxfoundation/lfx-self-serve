@@ -92,7 +92,12 @@ router.delete(
   '/member-360/tracker/:id',
   blockDuringImpersonation,
   (req: Request, res: Response, next: NextFunction) => member360Workbook.deleteTracker(req, res, next),
-  (error: unknown, req: Request, res: Response, _next: NextFunction) => {
+  (error: unknown, req: Request, res: Response, next: NextFunction) => {
+    // Express needs four arguments to recognize error middleware.
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
     // This private erasure endpoint returns status only, including errors.
     const status = error instanceof BaseApiError ? error.statusCode : 500;
     logger.warning(req, 'member_360_tracker_delete', 'Private tracker deletion rejected', { status });
