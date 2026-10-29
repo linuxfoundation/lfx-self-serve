@@ -17,6 +17,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { fetchLfProjectMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { logger } from './logger.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { SnowflakeService } from './snowflake.service';
@@ -73,7 +74,8 @@ interface RawFoundationProjectRow {
   PROJECT_NAME: string | null;
   IS_LF_PROJECT: boolean;
   INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket;
-  MAINTAINERS_COUNT: number;
+  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482), merged in from their own read; `null` when the roles table is missing. */
+  MAINTAINER_ROLES: number | null;
   CONTRIBUTORS_COUNT: number;
   COLLABORATORS_COUNT: number;
   COMMITS_COUNT: number;
@@ -207,12 +209,21 @@ export class OrgLensMembershipsService {
    * Unknown org/foundation pairs return an empty envelope, never a 404.
    */
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
+    // `v3`: a null MAINTAINER_ROLES now means "roles unavailable", not "no roles", so `v2` entries must miss.
+    // (`v2`: per-project maintainers became LF maintainer roles over the past 365 days, lfx-self-serve#4482.)
+    // Set by the fetcher, read by `storable`: rows without their roles (table missing) are served, never stored.
+    let rolesMissing = false;
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:${foundationId}`,
+      `memberships-projects:v3:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFoundationProjectRows(accountId, foundationId),
-      OrgLensMembershipsService.isRawProjectRowArray
+      async () => {
+        const fetched = await this.fetchFoundationProjectRows(accountId, foundationId);
+        rolesMissing = fetched.rolesMissing;
+        return fetched.rows;
+      },
+      OrgLensMembershipsService.isRawProjectRowArray,
+      () => !rolesMissing
     );
 
     const projects: OrgMembershipProject[] = rows.map((raw) => ({
@@ -221,7 +232,7 @@ export class OrgLensMembershipsService {
       projectName: raw.PROJECT_NAME ?? raw.PROJECT_ID,
       isLfProject: raw.IS_LF_PROJECT === true,
       influence: raw.INFLUENCE_MAX_BUCKET,
-      maintainers: raw.MAINTAINERS_COUNT ?? 0,
+      maintainers: raw.IS_LF_PROJECT === true ? raw.MAINTAINER_ROLES : 0,
       contributors: raw.CONTRIBUTORS_COUNT ?? 0,
       collaborators: raw.COLLABORATORS_COUNT ?? 0,
       commits: raw.COMMITS_COUNT ?? 0,
@@ -379,7 +390,8 @@ export class OrgLensMembershipsService {
     );
   }
 
-  private async fetchFoundationProjectRows(accountId: string, foundationId: string): Promise<RawFoundationProjectRow[]> {
+  /** The foundation's project rows with their LF maintainer roles, which come from their own read so a missing roles table leaves them unavailable (`null`). */
+  private async fetchFoundationProjectRows(accountId: string, foundationId: string): Promise<{ rows: RawFoundationProjectRow[]; rolesMissing: boolean }> {
     const query = `
       SELECT
         PROJECT_ID,
@@ -387,7 +399,6 @@ export class OrgLensMembershipsService {
         PROJECT_NAME,
         IS_LF_PROJECT,
         INFLUENCE_MAX_BUCKET,
-        MAINTAINERS_COUNT,
         CONTRIBUTORS_COUNT,
         COLLABORATORS_COUNT,
         COMMITS_COUNT
@@ -397,8 +408,14 @@ export class OrgLensMembershipsService {
       ORDER BY COMMITS_COUNT DESC NULLS LAST, PROJECT_NAME ASC
     `;
 
-    const result = await this.snowflakeService.execute<RawFoundationProjectRow>(query, [accountId, foundationId]);
-    return result.rows;
+    const [result, roles] = await Promise.all([
+      this.snowflakeService.execute<Omit<RawFoundationProjectRow, 'MAINTAINER_ROLES'>>(query, [accountId, foundationId]),
+      fetchLfProjectMaintainerRoles(this.snowflakeService, accountId),
+    ]);
+    return {
+      rows: result.rows.map((row) => ({ ...row, MAINTAINER_ROLES: roles === null ? null : (roles.get(row.PROJECT_ID) ?? 0) })),
+      rolesMissing: roles === null,
+    };
   }
 
   private shapeRow(raw: RawMembershipRow): OrgActiveMembership {

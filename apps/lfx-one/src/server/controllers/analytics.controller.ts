@@ -1992,7 +1992,7 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/org-involvement-maintainers-monthly
-   * Get cross-foundation maintainers monthly for an organization
+   * The organization's maintainer roles in LF projects: past-12-month headline and monthly trend
    * Query params: accountId (required)
    */
   public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -2005,8 +2005,7 @@ export class AnalyticsController {
 
       logger.success(req, 'get_org_involvement_maintainers_monthly', startTime, {
         account_id: accountId,
-        total_maintainers: response.totalMaintainersYearly,
-        total_projects: response.totalProjectsYearly,
+        maintainer_roles: response.maintainerRoles,
         monthly_data_points: response.monthlyData.length,
       });
 
@@ -4232,23 +4231,6 @@ export class AnalyticsController {
         high_fit_count: response.highFitCount,
         warmest_count: response.warmest.length,
       });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
-  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_training_presence');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
-
-      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
-
-      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
 
       res.json(response);
     } catch (error) {

@@ -19,7 +19,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -51,7 +51,7 @@ describe('PlanningTabComponent brief read-back', () => {
   };
 
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let campaignService: { loadBrief: ReturnType<typeof vi.fn> };
+  let campaignService: { loadBrief: Mock };
   let projectContextService: ProjectContextService;
 
   // Debounce is 500ms; add 50ms slack for timer jitter (consistent with newsletter.component.spec.ts)
@@ -829,7 +829,7 @@ describe('PlanningTabComponent brief read-back', () => {
  */
 describe('PlanningTabComponent delivery-type mode', () => {
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let generateBrief: ReturnType<typeof vi.fn>;
+  let generateBrief: Mock;
 
   const programTypeConfig: CampaignProgramTypeOption = {
     id: 'events',
@@ -2083,8 +2083,8 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
   };
 
   let fixture: ComponentFixture<PlanningTabComponent>;
-  let lookup: ReturnType<typeof vi.fn>;
-  let create: ReturnType<typeof vi.fn>;
+  let lookup: Mock;
+  let create: Mock;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({

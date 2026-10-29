@@ -575,14 +575,18 @@ describe('NavbarComponent', () => {
   describe('sidebar collapse', () => {
     afterEach(() => {
       vi.restoreAllMocks();
+      vi.unstubAllGlobals();
       localStorage.clear();
     });
 
     /** Reports every viewport as narrow (and non-touch) when `narrow`; otherwise matches nothing. */
     const stubViewport = (narrow: boolean): void => {
-      vi.spyOn(window, 'matchMedia').mockImplementation(
-        (media: string) =>
-          ({ matches: narrow && media.includes('max-width'), media, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(
+          (media: string) =>
+            ({ matches: narrow && media.includes('max-width'), media, addEventListener: vi.fn(), removeEventListener: vi.fn() }) as unknown as MediaQueryList
+        )
       );
     };
 
@@ -650,9 +654,10 @@ describe('NavbarComponent', () => {
       };
 
       /** A desktop navbar docked to the rail, its panel laid out 280px wide from x=8 when it peeks. */
-      const createPeekFixture = async () => {
+      const createPeekFixture = async (routerEvents?: Observable<unknown>) => {
         stubViewport(false);
-        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate });
+        const navigation = routerEvents ? { extras: {}, trigger: 'imperative' } : null;
+        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate, routerEvents, navigation });
         const panel = fixture.nativeElement.querySelector('nav') as HTMLElement;
         vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 8, 280, 800));
         const collapse = TestBed.inject(NavbarCollapseService);
@@ -742,6 +747,73 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('keeps a hover peek open through a navigation picked from it, closing once the pointer leaves', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(100);
+        events.next(new NavigationEnd(1, '/org/acme/overview', '/org/acme/overview'));
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps a hover peek open through a navigation while the pointer is on one of its tooltips outside the panel', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        tooltip.remove();
+      });
+
+      it('closes a hover peek on a navigation once the tooltip the pointer was on is gone (a role chip clicked)', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        tooltip.remove();
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a hover peek on a navigation once the pointer is off it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(600);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a pinned peek on a navigation picked from it, even with the pointer over it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek(true);
+
+        move(100);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('closes on Escape', async () => {
         const { collapse } = await createPeekFixture();
         collapse.openPeek();
@@ -819,6 +891,18 @@ describe('NavbarComponent', () => {
 
       events.next(new NavigationEnd(1, '/meetings', '/meetings'));
       expect(collapse.peek()).toBe(false);
+    });
+
+    it('leaves the desktop peek to the desktop navbar: the mounted mobile drawer navbar never closes it', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { mobile: true, routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(true);
     });
 
     it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {

@@ -267,6 +267,7 @@ Before treating the implementation as complete (and so before the single **Pre-P
 - `docs/reviews/docs-checklist.md` — the documentation review checklist.
 - `.claude/rules/development-rules.md` § Documentation Maintenance — what to keep, trim, and never let go stale when editing `docs/`.
 - When a convention, contract, or workflow changes, update `AGENTS.md`, `.claude/rules/`, and the affected architecture docs in the same PR.
+- **User-facing docs under `docs/user/` must stay in sync with the app.** Whenever you add a feature, remove a feature, or make a UI change that affects something a doc describes (renamed buttons or tabs, a changed flow, new permissions, a redesigned page), update the matching `docs/user/` article in the same PR — e.g. restyling the meeting details page means re-checking `docs/user/meetings/`, and changing the committee wizard means re-checking `docs/user/committees/`. The module-to-section table is in the rule below. Pure internal changes are exempt. See `.claude/rules/development-rules.md` § User Documentation Maintenance.
 
 After `/compact`, re-invoke `/self-serve-dev` if continuing work that depends on its conventions.
 
@@ -281,5 +282,6 @@ After `/compact`, re-invoke `/self-serve-dev` if continuing work that depends on
 - ❌ Open a PR without running `/lfx-self-serve-pr-readiness`, clearing every CRITICAL finding, and addressing or documenting every SHOULD_FIX — also non-negotiable
 - ❌ Open a PR without DCO sign-off + GPG (`--signoff -S`)
 - ❌ Commit and claim "done" before `yarn build` passes
+- ❌ Add, remove, or visibly change a feature without updating the affected `docs/user/` articles (or stating "No user docs impact" in the PR)
 - ❌ Re-introduce Figma references — design source is HTML/GitHub
 - ❌ Edit `AGENTS.md` or other preflight-protected files without code-owner review
