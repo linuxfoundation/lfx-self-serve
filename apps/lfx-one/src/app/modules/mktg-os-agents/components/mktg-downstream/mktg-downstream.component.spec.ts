@@ -62,7 +62,7 @@ describe('Framework Downstream card', () => {
     fixture.componentRef.setInput('writer', true);
     await fixture.whenStable();
   });
-  it('renders the board copy from the shared server projection and keeps its box when nothing is stale', async () => {
+  it('renders the board copy from the shared server projection and renders nothing when nothing is stale', async () => {
     reads[0].next(listing());
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -89,9 +89,8 @@ describe('Framework Downstream card', () => {
     await fixture.whenStable();
     reads[2].next(listing(false));
     await fixture.whenStable();
-    const card = root.querySelector('[data-testid="mktg-downstream-card"]');
-    expect(card?.classList.contains('min-h-56')).toBe(true);
-    expect(root.querySelector('[data-testid="mktg-downstream-empty"]')?.textContent).toBe('No downstream assets need rebuilding.');
+    expect(root.children).toHaveLength(0);
+    expect(root.textContent?.trim()).toBe('');
   });
   it('formats three stale names as an English conjunction list', async () => {
     const data = listing(true, ['boilerplates', 'faq', 'brand-kit']);
@@ -115,7 +114,7 @@ describe('Framework Downstream card', () => {
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')).not.toBeNull();
     expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBe(card);
-    expect(card?.classList.contains('min-h-56')).toBe(true);
+    expect(card?.classList.contains('min-h-56')).toBe(false);
   });
   it('disables the action without write access and during impersonation', async () => {
     reads[0].next(listing());

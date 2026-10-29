@@ -2924,7 +2924,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-about-skeleton')).toBeNull();
   });
 
-  it('settles the rail once at the real two-comment height without inner scroll and retains the empty downstream box', async () => {
+  it('reveals About once both reads answer, with natural Comments and no settled-empty downstream slot', async () => {
     useFrameworkRevision();
     const loading = signal(true);
     const commentsService = TestBed.inject(MktgDocumentCommentsService);
@@ -2950,6 +2950,7 @@ describe('MktgDocumentViewComponent', () => {
       Array.from(about?.parentElement?.children ?? [])
         .filter((card) => card.tagName !== 'LFX-MKTG-SKELETON')
         .map((card) => card.getAttribute('data-testid') ?? card.tagName);
+    const downstreamHost = about?.parentElement?.querySelector('lfx-mktg-downstream');
     const order = ['mktg-document-view-revisions', 'LFX-MKTG-COMMENTS-PANEL', 'LFX-MKTG-DOWNSTREAM', 'mktg-document-view-about'];
     expect(railOrder()).toEqual(order);
     expect(about?.classList.contains('hidden')).toBe(true);
@@ -2960,25 +2961,30 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(about?.classList.contains('hidden')).toBe(true);
     expect(query('mktg-document-view-downstream-skeleton')).not.toBeNull();
+    expect(query('mktg-downstream-card')).toBeNull();
+    expect(downstreamHost?.children).toHaveLength(0);
     loading.set(false);
     await settle();
     expect(comments?.querySelectorAll('[data-testid="mktg-comment-thread"]')).toHaveLength(2);
     expect(query('mktg-comments-send')).not.toBeNull();
     expect(railOrder()).toEqual(order);
     expect(query('mktg-comments-panel')).toBe(comments);
-    expect(query('mktg-downstream-card')).toBe(downstream);
+    expect(downstream).not.toBeNull(); // Pending content existed until its read answered.
+    expect(query('mktg-downstream-card')).toBeNull();
+    expect(downstreamHost?.children).toHaveLength(0);
+    expect(downstreamHost?.textContent?.trim()).toBe('');
+    expect(downstreamHost?.classList.contains('empty:hidden')).toBe(true);
+    expect(downstreamHost?.className).not.toContain('min-h-');
     expect(query('mktg-document-view-about')).toBe(about);
     expect(about?.classList.contains('hidden')).toBe(false);
     expect(comments?.className).not.toContain('h-96');
     expect(comments?.className).not.toContain('max-h-');
     expect(comments?.classList.contains('overflow-y-auto')).toBe(false);
-    expect(downstream?.classList.contains('min-h-56')).toBe(true);
-    expect(downstream?.className).not.toContain('max-h-');
-    expect(downstream?.classList.contains('overflow-y-auto')).toBe(false);
+
     expect(query('mktg-document-view-comments-skeleton')).toBeNull();
     expect(query('mktg-document-view-downstream-skeleton')).toBeNull();
     expect(query('mktg-document-view-about-skeleton')).toBeNull();
-    expect(query('mktg-downstream-empty')?.textContent).toBe('No downstream assets need rebuilding.');
+    expect(query('mktg-downstream-empty')).toBeNull();
     expect(query('mktg-comments-loading')).toBeNull();
     expect(query('mktg-downstream-loading')).toBeNull();
   });
