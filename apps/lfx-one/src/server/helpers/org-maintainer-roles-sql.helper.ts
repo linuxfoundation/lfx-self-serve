@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_OVERVIEW_MAINTAINER_ROLES_RANGE } from '@lfx-one/shared/constants';
-import type { OrgLensTimeRange, OrgMaintainerRoleOverlap, OrgMaintainerRolesTable, OrgProjectMaintainerRolesCountRow } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensTimeRange,
+  OrgMaintainerRoleOverlap,
+  OrgMaintainerRolesTable,
+  OrgProjectMaintainerRolesCountRow,
+  SnowflakeQueryOptions,
+} from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
 
 import type { SnowflakeService } from '../services/snowflake.service';
@@ -28,16 +34,18 @@ export function orgMaintainerRoleOverlap(range: OrgLensTimeRange, alias?: string
 /**
  * Runs a read of a maintainer roles table, answering `null` when that table does not exist (yet): the tables ship
  * from lf-dbt ahead of this app, and a view must keep loading without its maintainer counts rather than fail. Any
- * other error — including a different missing object in the same statement — still rejects.
+ * other error — including a different missing object in the same statement — still rejects. `options` adds the
+ * caller's own expected rollout errors (e.g. a not-yet-built column).
  */
 export async function readMaintainerRoles<T>(
   snowflakeService: SnowflakeService,
   table: OrgMaintainerRolesTable,
   sql: string,
-  binds: (string | number)[]
+  binds: (string | number)[],
+  options?: SnowflakeQueryOptions
 ): Promise<T[] | null> {
   try {
-    return (await snowflakeService.execute<T>(sql, binds, { expectMissingObject: table })).rows;
+    return (await snowflakeService.execute<T>(sql, binds, { ...options, expectMissingObject: table })).rows;
   } catch (error) {
     if (isMissingObjectError(error, table)) return null;
     throw error;

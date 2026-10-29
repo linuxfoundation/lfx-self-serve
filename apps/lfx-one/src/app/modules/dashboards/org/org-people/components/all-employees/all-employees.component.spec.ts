@@ -1334,6 +1334,15 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(TestBed.inject(Router).url).toBe('/?tab=employees');
     });
 
+    it('notes that team members are counted while the team-member data is unavailable', async () => {
+      getFormerEmployees.mockImplementation(() => of({ ...response([], 0), teamMembersUnavailable: true as const }));
+      await mount('browser', '/?tab=employees');
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-team-members-unavailable"]')?.textContent).toContain(
+        'Team-member data is unavailable; counts include team members.'
+      );
+    });
+
     it('reads ?teamMembers=include from a shared link into the picker and every roster read', async () => {
       await mount('browser', '/?tab=employees&teamMembers=include');
 

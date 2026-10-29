@@ -691,11 +691,45 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
     expect(response.stats).toMatchObject({ contributors: 1, projects: 2, foundations: 1 });
   });
 
-  it('keeps the Maintainer roles tile the same under exclude', async () => {
+  it("leaves team members' maintainer roles out of the tile under exclude, as LFX Insights does", async () => {
+    execute.mockImplementation(async (sql?: string) => {
+      // person-no-code holds two roles and is a team member.
+      if (sql?.includes('IS_CDP_TEAM_MEMBER')) return { rows: [{ PERSON_KEY: 'person-no-code' }] };
+      return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : CONTRIBUTOR_ROWS };
+    });
+
     const include = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'include');
     const exclude = await service.getContributors(ACCOUNT, '365d', FILTERS, 'all', 'exclude');
 
-    expect(exclude.stats.maintainerRoles).toBe(include.stats.maintainerRoles);
+    expect([include.stats.maintainerRoles, exclude.stats.maintainerRoles]).toEqual([4, 2]);
+  });
+
+  it('serves everyone, says so and stores no team-member list while the warehouse has no flag yet', async () => {
+    const missingColumn = Object.assign(new Error("SQL compilation error: error line 2 at position 90\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), {
+      code: '000904',
+    });
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('IS_CDP_TEAM_MEMBER')) throw missingColumn;
+      return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : CONTRIBUTOR_ROWS };
+    });
+
+    const response = await service.getContributors(ACCOUNT, '365d', FILTERS);
+
+    expect(response.teamMembersUnavailable).toBe(true);
+    expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+    expect(response.stats.maintainerRoles).toBe(4);
+    expect(cacheValues.has(TEAM_MEMBERS_KEY)).toBe(false);
+    // The missing column is expected during the rollout, so it never counts toward the circuit breaker.
+    expect(execute.mock.calls.find(isTeamMembersRead)?.[2]).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+  });
+
+  it('still fails the tab on any other warehouse error in the team-member read', async () => {
+    execute.mockImplementation(async (sql?: string) => {
+      if (sql?.includes('IS_CDP_TEAM_MEMBER')) throw new Error('Warehouse timeout');
+      return { rows: sql?.includes('ORG_MAINTAINER_ROLES') ? ROLE_ROWS : CONTRIBUTOR_ROWS };
+    });
+
+    await expect(service.getContributors(ACCOUNT, '365d', FILTERS)).rejects.toThrow('Warehouse timeout');
   });
 
   it('excludes team members by default', async () => {

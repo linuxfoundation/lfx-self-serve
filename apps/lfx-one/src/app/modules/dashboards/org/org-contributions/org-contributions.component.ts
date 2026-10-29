@@ -40,6 +40,7 @@ import {
   ORG_TEAM_MEMBERS_LABEL,
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
@@ -127,6 +128,7 @@ export class OrgContributionsComponent {
   protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
   protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
   protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
   private readonly initialCodeFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.initialParams.get(name)));

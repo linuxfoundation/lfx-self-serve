@@ -98,6 +98,10 @@
     }
   </div>
 
+  @if (teamMembersUnavailable()) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-all-employees-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
+
   @if (fetchError()) {
     <lfx-empty-state
       [withCard]="false"

@@ -63,6 +63,8 @@ export class OrgPeopleDirectoryStateService {
         tap({
           next: (res) => {
             if ((this.generation.get(orgUid) ?? 0) !== startedGeneration) return;
+            // Served without the team-member exclusion while its data is unavailable (lfx-self-serve#4685): ask again next time.
+            if (res.teamMembersUnavailable) return;
             this.byKey.set(key, { value: res, expiresAt: Date.now() + DIRECTORY_CACHE_TTL_MS });
           },
           finalize: () => {

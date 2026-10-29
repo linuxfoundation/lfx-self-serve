@@ -9,7 +9,7 @@ import type { OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 import { orgTeamMembersUrlParam, parseOrgTeamMembersFilter } from '@lfx-one/shared/utils';
 import { distinctUntilChanged, map } from 'rxjs';
 
-/** The team members filter a route's `?teamMembers=` selects (include when absent or unknown). */
+/** The team members filter a route's `?teamMembers=` selects (the default, exclude, when absent or unknown). */
 export function readOrgTeamMembers(route: ActivatedRoute): OrgTeamMembersFilter {
   return parseOrgTeamMembersFilter(route.snapshot.queryParamMap.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS;
 }

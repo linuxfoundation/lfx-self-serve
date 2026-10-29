@@ -93,6 +93,8 @@ export interface OrgContributionCommitRow {
 
 /** Bundled GET response for `/api/orgs/:orgUid/lens/contributions`. Server-paginated. */
 export interface OrgContributionsResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   /** Echo of the window the BFF aggregated over — lets the client drop late responses. */
   dateRange: OrgLensTimeRange;

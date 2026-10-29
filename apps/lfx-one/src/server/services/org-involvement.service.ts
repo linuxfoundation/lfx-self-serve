@@ -9,6 +9,7 @@ import {
   OrgInvolvementMaintainersMonthlyResponse,
   OrgMaintainerRolesCountRow,
   OrgMaintainerRolesMonthlyRow,
+  OrgTeamMembersFilter,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import {
@@ -22,7 +23,7 @@ import {
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
-import { orgTeamMembersPredicate } from '../helpers/org-team-members.helper';
+import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -95,23 +96,31 @@ export class OrgInvolvementService {
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
     // `contributors:v3`: the headline leaves out CDP team members, as the People -> Contributors default does
-    // (lfx-self-serve#4685), so a `v2` entry (everyone) must not be read.
+    // (lfx-self-serve#4685), so a `v2` entry (everyone) must not be read. Set by the fetcher, read by `storable`: a
+    // card read while the team-member flag is not in the warehouse counts them, and is served but never stored.
+    let teamMembersUnavailable = false;
     return withOrgCache(
       accountId,
       'contributors:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchContributorsMonthly(accountId),
-      OrgInvolvementService.hasAccountId
+      async () => {
+        const fetched = await this.fetchContributorsMonthly(accountId);
+        teamMembersUnavailable = fetched.teamMembersUnavailable;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !teamMembersUnavailable
     );
   }
 
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
-    // `maintainer-roles:v1`: maintainer roles replaced the people count (lfx-self-serve#4482), so a `maintainers` entry must not be read.
-    // Set by the fetcher, read by `storable`: a card read while a roles table is missing is served, never stored.
+    // `maintainer-roles:v2`: the headline leaves out CDP team members' roles (lfx-self-serve#4685), so a `v1` entry must
+    // not be read. Set by the fetcher, read by `storable`: a card read while a roles table or the team-member flag is
+    // missing is served, never stored.
     let rolesMissing = false;
     return withOrgCache(
       accountId,
-      'maintainer-roles:v1',
+      'maintainer-roles:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchMaintainersMonthly(accountId);
@@ -195,14 +204,14 @@ export class OrgInvolvementService {
    * 12-month total of ORG_CONTRIBUTORS_MONTHLY (calendar months, built once a day) drifted from it. The trend stays the
    * monthly table's distinct contributors per month. Either read failing fails the card, as before.
    */
-  private async fetchContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    const headlineQuery = `
+  private async fetchContributorsMonthly(accountId: string): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; teamMembersUnavailable: boolean }> {
+    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
       SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ?
         ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
-        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
+        ${orgTeamMembersPredicate(teamMembers)}
     `;
     const trendQuery = `
       SELECT
@@ -214,31 +223,38 @@ export class OrgInvolvementService {
     `;
 
     const [headline, trend] = await Promise.all([
-      this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(headlineQuery, [accountId]),
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_contributors', (teamMembers) =>
+        this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(headlineQuery(teamMembers), [accountId], orgTeamMembersQueryOptions(teamMembers))
+      ),
       this.snowflakeService.execute<ContributorsMonthlyRow>(trendQuery, [accountId]),
     ]);
 
     return {
-      accountId,
-      totalActiveContributors: headline.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
-      monthlyData: trend.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
-      monthlyLabels: trend.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      response: {
+        accountId,
+        totalActiveContributors: headline.value.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
+        monthlyData: trend.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+        monthlyLabels: trend.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      },
+      teamMembersUnavailable: headline.teamMembersUnavailable,
     };
   }
 
   /**
    * Overview Maintainers card. The headline counts LF roles overlapping the past 365 days to today with the same rule
-   * as People -> Contributors, so the two default views agree (the monthly table stops at the last complete month).
-   * The trend is the roles held in each month.
+   * as People -> Contributors, so the two default views agree (the monthly table stops at the last complete month);
+   * CDP team members' roles are left out, as LFX Insights does (lfx-self-serve#4685). The trend is the roles held in
+   * each month (it still counts team members until it is read from ORG_MAINTAINER_ROLES, lfx-self-serve#4701).
    */
   private async fetchMaintainersMonthly(accountId: string): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
-    const headlineQuery = `
+    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
       SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
       WHERE ACCOUNT_ID = ?
         AND ${overlap.sql}
         ${orgProjectScopePredicate('lf', 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
     `;
     const trendQuery = `
       SELECT
@@ -250,20 +266,28 @@ export class OrgInvolvementService {
     `;
 
     // Each part degrades on its own: a missing roles table answers an unavailable (null) headline, a missing monthly
-    // table an empty trend — never an error.
+    // table an empty trend, a missing team-member flag a headline with team members — never an error.
     const [headline, trend] = await Promise.all([
-      readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', headlineQuery, [accountId, ...overlap.binds]),
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_maintainer_roles', (teamMembers) =>
+        readMaintainerRoles<OrgMaintainerRolesCountRow>(
+          this.snowflakeService,
+          'ORG_MAINTAINER_ROLES',
+          headlineQuery(teamMembers),
+          [accountId, ...overlap.binds],
+          orgTeamMembersQueryOptions(teamMembers)
+        )
+      ),
       readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_MONTHLY', trendQuery, [accountId]),
     ]);
 
     return {
       response: {
         accountId,
-        maintainerRoles: headline === null ? null : (headline[0]?.MAINTAINER_ROLES ?? 0),
+        maintainerRoles: headline.value === null ? null : (headline.value[0]?.MAINTAINER_ROLES ?? 0),
         monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
         monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
       },
-      rolesMissing: headline === null || trend === null,
+      rolesMissing: headline.value === null || trend === null || headline.teamMembersUnavailable,
     };
   }
 

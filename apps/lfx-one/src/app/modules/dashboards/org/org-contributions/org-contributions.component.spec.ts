@@ -222,6 +222,18 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['windowCaption']()).toContain(' in LF projects, ');
   });
 
+  it('notes that team members are counted when the team-member data is unavailable, and only then', async () => {
+    const note = (fixture: { nativeElement: HTMLElement }): Element | null =>
+      fixture.nativeElement.querySelector('[data-testid="org-contributions-team-members-unavailable"]');
+    const unavailable = await render(null, { response: { ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, teamMembersUnavailable: true } });
+
+    expect(note(unavailable.fixture)?.textContent).toContain('Team-member data is unavailable; counts include team members.');
+
+    TestBed.resetTestingModule();
+    const available = await render(null);
+    expect(note(available.fixture)).toBeNull();
+  });
+
   it('opens ?teamMembers=include including team members, then drops the param again for Exclude', async () => {
     const { fixture, navigate, getContributions } = await render(null, { queryParams: { teamMembers: 'include' } });
     const { teamMembers } = fixture.componentInstance['filterForm'].controls;

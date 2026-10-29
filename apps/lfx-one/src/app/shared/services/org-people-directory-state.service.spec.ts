@@ -196,6 +196,16 @@ describe('OrgPeopleDirectoryStateService', () => {
     await expect(included).resolves.toEqual(roster('With Team'));
   });
 
+  it('does not keep a directory served while the team-member data was unavailable', async () => {
+    const first = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
+    http.expectOne(URL).flush({ ...roster('With Team'), teamMembersUnavailable: true });
+    await first;
+
+    const second = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d'));
+    http.expectOne(URL).flush(roster('Without Team'));
+    await expect(second).resolves.toEqual(roster('Without Team'));
+  });
+
   // The reassign pickers keep the pre-#4163 directory: the unranged roster, never a time range.
   it('serves the reassign pickers from the unranged roster, requested without a range and cached apart from 365d', async () => {
     const employees = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));

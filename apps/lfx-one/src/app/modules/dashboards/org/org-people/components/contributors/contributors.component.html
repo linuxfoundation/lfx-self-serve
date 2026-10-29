@@ -103,6 +103,10 @@
     }
   </div>
 
+  @if (response().teamMembersUnavailable) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-contributors-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
+
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-contributors-error">
       <lfx-empty-state

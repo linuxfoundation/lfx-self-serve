@@ -60,6 +60,7 @@ import {
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
   ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   OrgAccessBadgeState,
@@ -144,6 +145,7 @@ export class AllEmployeesComponent {
   protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
   protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
   protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
   // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
   protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
   protected readonly statSkeletonLabels: readonly string[] = [
@@ -270,6 +272,9 @@ export class AllEmployeesComponent {
 
   // Former employees are a separate read so they never enter the shared people directory the reassign pickers use.
   protected readonly formerResponse: Signal<OrgAllEmployeesResponse> = this.initFormerResponse();
+
+  // Exclude team members was asked but the team-member data could not be read (lfx-self-serve#4685): the rosters include them.
+  protected readonly teamMembersUnavailable = computed(() => !!this.response().teamMembersUnavailable || !!this.formerResponse().teamMembersUnavailable);
 
   private readonly rosterRows: Signal<OrgAllEmployeeRow[]> = computed(() => this.initRosterRows());
 

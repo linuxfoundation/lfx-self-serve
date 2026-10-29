@@ -19,6 +19,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
+vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgContributionsService } from './org-contributions.service';
@@ -238,8 +239,9 @@ describe('OrgContributionsService — exact project and foundation filters', () 
   );
 
   it.each([
-    ['commits', [ACCOUNT]],
-    // The code read's lifetime first-activity CTE takes its own account bind.
+    // The lifetime first-commit / first-activity CTE takes its own account bind (under Exclude team members, the
+    // default, the commits read computes the first commit without them, lfx-self-serve#4685).
+    ['commits', [ACCOUNT, ACCOUNT]],
     ['code', [ACCOUNT, ACCOUNT]],
   ] as const)(
     'adds foundation_id = ? to every data read and the employee options, bound before the project, employee and search binds (metric=%s)',
@@ -342,6 +344,69 @@ describe('OrgContributionsService — team members', () => {
     const [include, exclude] = withOrgCache.mock.calls.map((call) => call[1] as string);
 
     expect(include).not.toBe(exclude);
+  });
+
+  it.each(['commits', 'code'] as const)(
+    'tells Snowflake a missing flag column is expected on every read under exclude, and nothing under include (metric=%s)',
+    async (metric) => {
+      await service.getContributions(ACCOUNT, query({ metric }));
+      expect(
+        execute.mock.calls.every((call) => (call[2] as { expectInvalidIdentifier?: string } | undefined)?.expectInvalidIdentifier === 'IS_CDP_TEAM_MEMBER')
+      ).toBe(true);
+
+      execute.mockClear();
+      await service.getContributions(ACCOUNT, query({ metric, teamMembers: 'include' }));
+      expect(execute.mock.calls.every((call) => call[2] === undefined)).toBe(true);
+    }
+  );
+
+  it('reads the first commit under the commits metric without team members, every project and branch', async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', projectScope: 'lf', commitScope: 'merged' }));
+
+    const { sql } = repoCall();
+    const firstCommit = sql.slice(sql.indexOf('repo_first AS ('), sql.indexOf('repo_rows AS ('));
+    expect(firstCommit).toContain('MIN(activity_ts) AS first_commit_ts');
+    expect(firstCommit).toContain('NOT is_cdp_team_member');
+    expect(firstCommit).not.toContain('is_lf_project');
+    expect(firstCommit).not.toContain('is_merged');
+    expect(sql).not.toContain('org_repo_first_commit_ts');
+  });
+
+  it("keeps the warehouse's lifetime first commit under include", async () => {
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', teamMembers: 'include' }));
+
+    expect(repoCall().sql).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
+    expect(repoCall().sql).not.toContain('repo_first AS');
+  });
+
+  describe('while the warehouse has no team-member flag yet', () => {
+    const missingColumn = Object.assign(new Error("SQL compilation error: error line 9 at position 18\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), {
+      code: '000904',
+    });
+
+    beforeEach(() => {
+      execute.mockImplementation(async (sql: string) => {
+        if (sql.includes('is_cdp_team_member')) throw missingColumn;
+        return { rows: [] };
+      });
+    });
+
+    it('serves every read with team members, says so, and never stores the payload', async () => {
+      const response = await service.getContributions(ACCOUNT, query());
+
+      expect(response.teamMembersUnavailable).toBe(true);
+      const unfiltered = execute.mock.calls.filter(([sql]) => !String(sql).includes('is_cdp_team_member'));
+      expect(unfiltered).toHaveLength(6);
+      const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
+      expect(storable({ teamMembersUnavailable: true })).toBe(false);
+      expect(storable({})).toBe(true);
+    });
+
+    it('still rejects any other warehouse error', async () => {
+      execute.mockRejectedValue(new Error('Warehouse timeout'));
+
+      await expect(service.getContributions(ACCOUNT, query())).rejects.toThrow('Warehouse timeout');
+    });
   });
 });
 

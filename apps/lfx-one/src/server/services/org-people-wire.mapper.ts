@@ -8,6 +8,7 @@ import type {
   OrgAllEmployeesCountedResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
+  OrgTeamMemberKeys,
 } from '@lfx-one/shared/interfaces';
 import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
 
@@ -81,22 +82,36 @@ export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilte
 
 /**
  * Project a counted payload onto the wire envelope for the request's filters; the tiles are counted over the projected
- * rows, so they cover the people the table lists. `excludedPeople` (the Team members filter's CDP team members,
- * lfx-self-serve#4685) are dropped first, so neither the rows nor the tiles count them.
+ * rows, so they cover the people the table lists. Under the Team members filter's `exclude` (lfx-self-serve#4685) a CDP
+ * team member's code counts are removed first, on LFX Insights' code-only rule: someone with a seat, an event or a
+ * course stays listed without their code, and someone whose only signal was code is dropped. An unavailable flag
+ * serves everyone and says so.
  */
 export function toWireResponse(
   response: OrgAllEmployeesCountedResponse,
   filters: OrgCommitFilters,
-  excludedPeople: ReadonlySet<string> | null = null
+  teamMembers: OrgTeamMemberKeys = NO_TEAM_MEMBERS
 ): OrgAllEmployeesResponse {
-  const kept = excludedPeople === null ? response.rows : response.rows.filter((row) => !excludedPeople.has(row.personKey));
-  const rows = kept.map((row) => toWireRow(row, filters));
+  const excluded = teamMembers.excluded;
+  const counted = excluded === null ? response.rows : response.rows.flatMap((row) => (excluded.has(row.personKey) ? withoutCode(row) : [row]));
+  const rows = counted.map((row) => toWireRow(row, filters));
   return {
     accountId: response.accountId,
     rows,
     stats: computeOrgAllEmployeeStats(rows),
     foundations: response.foundations,
+    ...(teamMembers.unavailable ? { teamMembersUnavailable: true as const } : {}),
   };
+}
+
+const NO_TEAM_MEMBERS: OrgTeamMemberKeys = { excluded: null, unavailable: false };
+
+/** A team member's row with its code counts removed, or nothing when code was their only engagement. */
+function withoutCode(row: OrgAllEmployeeCountedRow): OrgAllEmployeeCountedRow[] {
+  if (row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
+    return [];
+  }
+  return [{ ...row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0 }];
 }
 
 function selectedCodeCount(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilters): number {

@@ -666,7 +666,8 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     await mount('/?tab=contributors&employment=former');
 
     const info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-maintainers-info"]'));
-    expect(info.injector.get(Tooltip).content).toContain('It does not follow the Employment or Team members filter.');
+    expect(info.injector.get(Tooltip).content).toContain('It does not follow the Employment filter.');
+    expect(info.injector.get(Tooltip).content).toContain('Team members are left out unless included.');
   });
 
   it('says on the Contributors tile who the employment pick counts', async () => {
@@ -732,7 +733,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
 
     const labelled = el().querySelector('[data-test="org-people-contributors-team-members-filter"] [aria-label="Team members"]');
     expect(labelled?.textContent?.trim()).toBe('Exclude team members');
-    expect((fixture.componentInstance as unknown as { teamMembersTooltip: string }).teamMembersTooltip).toContain('Org Lens excludes them by default.');
+    expect((fixture.componentInstance as unknown as { teamMembersTooltip: string }).teamMembersTooltip).toContain('Org Lens does too by default.');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
@@ -760,6 +761,21 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
     expect(form().controls['teamMembers'].value).toBe('include');
     expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'include');
     expect(clear()?.textContent?.trim()).toBe('Clear filters');
+  });
+
+  it('notes that team members are counted while the team-member data is unavailable', async () => {
+    getContributors = vi.fn(() => of({ ...contributorsResponse(), teamMembersUnavailable: true as const }));
+    await mount('/?tab=contributors');
+
+    expect(el().querySelector('[data-testid="org-people-contributors-team-members-unavailable"]')?.textContent).toContain(
+      'Team-member data is unavailable; counts include team members.'
+    );
+  });
+
+  it('shows no team-member note when the data is available', async () => {
+    await mount('/?tab=contributors');
+
+    expect(el().querySelector('[data-testid="org-people-contributors-team-members-unavailable"]')).toBeNull();
   });
 
   it('Clear filters resets team members to Exclude in one read and drops the param', async () => {

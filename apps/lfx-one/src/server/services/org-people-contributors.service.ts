@@ -55,8 +55,10 @@ export class OrgPeopleContributorsService {
    * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
    * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
    * roles. `all` (the default) reads no classification and filters nothing. `teamMembers: 'exclude'`
-   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile and the Projects/Foundations stats
-   * and options; the roles are not filtered, as LFX Insights' maintainer roles keep team members.
+   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile, the Projects/Foundations stats
+   * and options, and the roles — LFX Insights leaves team members' roles unattributed (no organization), so they never
+   * reach a company's Maintainer roles. While the flag is not in the warehouse, team members stay in and the response
+   * says so (`teamMembersUnavailable`).
    */
   public async getContributors(
     accountId: string,
@@ -92,10 +94,13 @@ export class OrgPeopleContributorsService {
       readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
       readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers),
     ]);
+    const excluded = teamMemberKeys.excluded;
     const keptRows = rows.filter(
-      (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (teamMemberKeys === null || !teamMemberKeys.has(row.PERSON_KEY))
+      (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (excluded === null || !excluded.has(row.PERSON_KEY))
     );
-    return buildResponse(accountId, timeRange, filters, keptRows, roles);
+    const keptRoles = roles === null || excluded === null ? roles : roles.filter((role) => !excluded.has(role.PERSON_KEY));
+    const response = buildResponse(accountId, timeRange, filters, keptRows, keptRoles);
+    return teamMemberKeys.unavailable ? { ...response, teamMembersUnavailable: true } : response;
   }
 
   /**

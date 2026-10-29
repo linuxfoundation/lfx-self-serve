@@ -257,10 +257,10 @@ export class OrgPeopleDirectoryService {
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
-    // other caller that arrived without a resolvable identity. The Team members filter drops people
-    // after the cached merge, so one directory entry serves both picks; the unranged roster (the
+    // other caller that arrived without a resolvable identity. The Team members filter removes team
+    // members' code after the cached merge, so one directory entry serves both picks; the unranged roster (the
     // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
-    const [entry, excludedPeople] = await Promise.all([
+    const [entry, teamMemberKeys] = await Promise.all([
       coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
         let formerResolved = true;
         return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
@@ -279,7 +279,7 @@ export class OrgPeopleDirectoryService {
       }),
       this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
     ]);
-    return toWireResponse(fromCompactDirectory(entry), filters, excludedPeople);
+    return toWireResponse(fromCompactDirectory(entry), filters, teamMemberKeys);
   }
 
   private async computeLive(

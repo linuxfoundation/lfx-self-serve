@@ -240,7 +240,7 @@ beforeEach(() => {
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   getFormerUsernames.mockResolvedValue([]);
-  getTeamMemberPersonKeys.mockResolvedValue(null);
+  getTeamMemberPersonKeys.mockResolvedValue({ excluded: null, unavailable: false });
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
   getAccessPrincipals.mockResolvedValue([]);
@@ -928,7 +928,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
     // One burst is one read-through: a single cache read and a single serialized write, not one per
     // joined caller on the connection the session store shares.
-    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+    expect(cache.readThroughs).toBe(1);
     expect(first).toEqual(second);
     // Each caller rebuilds its own response from the shared stored envelope.
     expect(first).not.toBe(second);
@@ -1178,32 +1178,53 @@ describe('OrgPeopleDirectoryService.getLive — the tiles do not follow the code
 
 // lfx-self-serve#4685
 describe('OrgPeopleDirectoryService.getLive — team members filter', () => {
-  const teamMember = storedRow({
-    personKey: 'team-member',
-    lfid: 'team-member',
-    lfUsername: 'teammate',
-    name: 'Team Mate',
-    email: 'tm@lfx-partner.example',
-    emails: ['tm@lfx-partner.example'],
-  });
+  const teamMember = (personKey: string, over: Partial<OrgAllEmployeeRowInternal> = {}): OrgAllEmployeeRowInternal =>
+    storedRow({
+      personKey,
+      lfid: personKey,
+      lfUsername: personKey,
+      name: personKey,
+      email: `${personKey}@lfx-partner.example`,
+      emails: [`${personKey}@lfx-partner.example`],
+      ...over,
+    });
+  const keysFor = async (_account: string, teamMembers: string) =>
+    teamMembers === 'exclude' ? { excluded: new Set(['coder', 'speaker']), unavailable: false } : { excluded: null, unavailable: false };
+  // `coder` only has code; `speaker` has code and an event.
+  const coder = teamMember('coder', { seatsCount: 0, boardSeatsCount: 0, committeeSeatsCount: 0, eventsCount: 0, commitsCount: 5, codeActivitiesCount: 9 });
+  const speaker = teamMember('speaker', { seatsCount: 0, boardSeatsCount: 0, committeeSeatsCount: 0, eventsCount: 2, commitsCount: 3, codeActivitiesCount: 4 });
 
-  it('drops CDP team members from the rows and the tiles under exclude, from the same cached directory entry', async () => {
-    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), teamMember]));
-    getTeamMemberPersonKeys.mockImplementation(async (_account: string, teamMembers: string) => (teamMembers === 'exclude' ? new Set(['team-member']) : null));
+  it("removes team members' code under exclude, keeping who has other engagement, from the same cached directory entry", async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder, speaker]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
     cache.serveHits = true;
 
     const included = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'include');
     const excluded = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
 
-    expect(included.rows.map((row) => row.personKey).sort()).toEqual(['lfnEMOUiFenugGty80', 'team-member']);
-    expect(excluded.rows.map((row) => row.personKey)).toEqual(['lfnEMOUiFenugGty80']);
-    expect([included.stats.activeInOss, excluded.stats.activeInOss]).toEqual([2, 1]);
+    expect(included.rows.map((row) => row.personKey).sort()).toEqual(['coder', 'lfnEMOUiFenugGty80', 'speaker']);
+    expect(excluded.rows.map((row) => [row.personKey, row.commitsCount, row.codeActivitiesCount, row.eventsCount])).toEqual(
+      expect.arrayContaining([['speaker', 0, 0, 2]])
+    );
+    expect(excluded.rows.map((row) => row.personKey).sort()).toEqual(['lfnEMOUiFenugGty80', 'speaker']);
+    expect([included.stats.codeContributors, excluded.stats.codeContributors]).toEqual([2, 0]);
+    expect(excluded.teamMembersUnavailable).toBeUndefined();
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
   });
 
+  it('serves everyone and says so while the team-member flag is unavailable', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockResolvedValue({ excluded: null, unavailable: true });
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
+    expect(roster.teamMembersUnavailable).toBe(true);
+  });
+
   it('lists everyone on the unranged roster (the assignment pickers), whatever the pick', async () => {
-    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), teamMember]));
-    getTeamMemberPersonKeys.mockImplementation(async (_account: string, teamMembers: string) => (teamMembers === 'exclude' ? new Set(['team-member']) : null));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), coder]));
+    getTeamMemberPersonKeys.mockImplementation(keysFor);
 
     const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, null, FILTERS, 'exclude');
 

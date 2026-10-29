@@ -31,6 +31,7 @@ import {
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
   ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   OrgCodeMeasure,
@@ -106,6 +107,7 @@ export class ContributorsComponent {
   protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
   protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
   protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly maintainerRolesLabel = ORG_MAINTAINER_ROLES_LABEL;
   protected readonly maintainerRolesTooltip = ORG_MAINTAINER_ROLES_DEFINITION;

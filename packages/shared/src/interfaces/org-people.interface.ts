@@ -43,6 +43,14 @@ export interface OrgTeamMembersOption {
   value: OrgTeamMembersFilter;
 }
 
+/** The account's CDP team members, as the server reads them for a Team members pick (lfx-self-serve#4685). */
+export interface OrgTeamMemberKeys {
+  /** Person keys left out of code-based numbers; `null` under `include`, or when the flag cannot be read. */
+  excluded: ReadonlySet<string> | null;
+  /** `true` when `exclude` was asked but the warehouse flag is missing (lf-dbt not built yet): team members are included. */
+  unavailable: boolean;
+}
+
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 
@@ -155,6 +163,8 @@ export interface OrgAllEmployeeStats {
 
 /** Bundled list payload — single UI subscription on tab load. */
 export interface OrgAllEmployeesResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   rows: OrgAllEmployeeRow[];
   stats: OrgAllEmployeeStats;
