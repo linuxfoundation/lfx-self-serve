@@ -123,6 +123,16 @@ export interface MktgPublicRunAnswersResponse {
   state: 'writing';
 }
 
+/** Optional navigation-only retired-row hint; never a private run record or capability. */
+export interface MktgRetiredRunHint {
+  runId: string;
+  state: 'discarded' | 'superseded';
+  replacedBy: string | null;
+  /** Safe display name only; no email, subject or member data. */
+  closedBy: string | null;
+  closedAt: string | null;
+}
+
 /** Stored states include completion; closed markers appear only on selected details. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
