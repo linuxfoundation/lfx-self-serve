@@ -2,13 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { DATE_PIPE_DEFAULT_OPTIONS, Location } from '@angular/common';
-import { computed, signal } from '@angular/core';
+import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By, Title } from '@angular/platform-browser';
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_REBUILD_NAVIGATION_STATE_KEY, MKTG_AGENT_INTAKES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
+import {
+  MKTG_AGENTS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_REBUILD_NAVIGATION_STATE_KEY,
+  MKTG_AGENT_INTAKES,
+  MKTG_KIT_FAMILIES,
+  MKTG_RUN_POLL,
+} from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
@@ -27,6 +34,7 @@ describe('Marketing family page', () => {
   const loading = signal(false);
   const error = signal('');
   const accessDenied = signal(false);
+  const refreshDenied = signal(false);
   const projectSlug = signal('synthetic');
   const framework: MktgRevisionRef = {
     agentKey: 'foundation-message',
@@ -35,6 +43,7 @@ describe('Marketing family page', () => {
     contentSha256: 'b'.repeat(64),
   };
   const documents = signal<MktgDocumentsResponse>({ project: 'synthetic', groups: [] });
+  const refresh = vi.fn(() => of(documents()));
   const run = vi.fn(() => of({ project: 'synthetic', framework, chainId: 'chain', ownerToken: 'token', status: 'complete', steps: [] }));
   const writer = signal(false);
   const lastExport = vi.fn(() => of(null));
@@ -45,6 +54,7 @@ describe('Marketing family page', () => {
     lastExport.mockClear();
     projectSlug.set('synthetic');
     documents.set({ project: 'synthetic', groups: [] });
+    refresh.mockReset().mockImplementation(() => of(documents()));
     run.mockClear();
     families.set(
       resolveMktgKit({
@@ -71,6 +81,7 @@ describe('Marketing family page', () => {
     loading.set(false);
     error.set('');
     accessDenied.set(false);
+    refreshDenied.set(false);
     TestBed.configureTestingModule({
       providers: [
         { provide: DATE_PIPE_DEFAULT_OPTIONS, useValue: { timezone: 'UTC' } },
@@ -98,10 +109,12 @@ describe('Marketing family page', () => {
               loading,
               error,
               accessDenied,
+              refreshDenied,
               projectUid: signal('synthetic'),
               projectName: signal('Synthetic Project'),
               projectQueryParams: computed(() => ({ project: projectSlug() })),
               documents,
+              refresh,
               retry: vi.fn(),
             },
           },
@@ -109,7 +122,68 @@ describe('Marketing family page', () => {
       },
     });
   });
-  afterEach(() => void MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents));
+  afterEach(() => {
+    MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('re-reads on open, visible and focus without replacing the page, then stops on destroy', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const harness = await RouterTestingHarness.create('/project/mktg-os-agents/families/positioning-brand');
+    await harness.fixture.whenStable();
+    expect(refresh).toHaveBeenCalledOnce();
+    const page = harness.routeNativeElement;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await harness.fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(harness.routeNativeElement).toBe(page);
+    expect(loading()).toBe(false);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await harness.fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(3);
+    window.dispatchEvent(new Event('focus'));
+    await harness.fixture.whenStable();
+    expect(refresh).toHaveBeenCalledTimes(4);
+    harness.fixture.destroy();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not refresh on open, timers or focus after a 403 listing', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    accessDenied.set(true);
+    const harness = await RouterTestingHarness.create('/project/mktg-os-agents/families/positioning-brand');
+    await harness.fixture.whenStable();
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    accessDenied.set(false);
+    refreshDenied.set(true);
+    await harness.fixture.whenStable();
+    window.dispatchEvent(new Event('focus'));
+    expect(refresh).not.toHaveBeenCalled();
+    refreshDenied.set(false);
+    await harness.fixture.whenStable();
+    expect(refresh).toHaveBeenCalledOnce();
+    harness.fixture.destroy();
+  });
+
+  it('does not subscribe to browser polling during SSR', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const fixture = TestBed.createComponent(MktgFamilyComponent);
+    await fixture.whenStable();
+    expect(refresh).not.toHaveBeenCalled();
+    fixture.destroy();
+  });
 
   it.each([
     ['foundation-message', 'positioning-brand', 'writing', 'Writing…', 'Open'],

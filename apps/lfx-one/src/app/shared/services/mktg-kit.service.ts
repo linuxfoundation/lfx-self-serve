@@ -7,7 +7,7 @@ import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
-import { catchError, distinctUntilChanged, of, switchMap } from 'rxjs';
+import { catchError, defer, distinctUntilChanged, EMPTY, finalize, Observable, of, shareReplay, Subject, switchMap, takeUntil, tap } from 'rxjs';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectContextService } from './project-context.service';
 
@@ -19,11 +19,16 @@ export class MktgKitService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reload = signal(0);
   private contextSeen = false;
+  private readonly cancelReads = new Subject<void>();
+  private inFlight: Observable<MktgDocumentsResponse> | null = null;
+  private inFlightProject = '';
 
   public readonly loading = signal(true);
   public readonly error = signal('');
   /** A denied read resolves access, not private document state. */
   public readonly accessDenied = signal(false);
+  /** Quiet refresh denial controls polling only, without changing the existing action/error UI. */
+  public readonly refreshDenied = signal(false);
   public readonly documents = signal<MktgDocumentsResponse | null>(null);
   public readonly projectUid = computed(() => this.context.activeContext()?.uid ?? '');
   public readonly projectName = computed(() => this.context.activeContext()?.name ?? 'Project');
@@ -41,13 +46,16 @@ export class MktgKitService {
         .pipe(
           distinctUntilChanged((a, b) => a.project === b.project && a.reload === b.reload),
           switchMap(({ project }) => {
+            // Cancel all subscribers on request-scope changes, including actor-scoped reloads.
+            this.cancelReads.next();
+            this.refreshDenied.set(false);
             this.documents.set(null);
             this.error.set('');
             this.accessDenied.set(false);
             if (project) this.contextSeen = true;
             this.loading.set(!!project || !this.contextSeen);
             if (!project) return of(null);
-            return this.store.listDocuments(project).pipe(
+            return this.read(project).pipe(
               catchError((error: HttpErrorResponse) => {
                 this.accessDenied.set(error.status === 403);
                 this.error.set(
@@ -66,7 +74,43 @@ export class MktgKitService {
     }
   }
 
+  /** Read the current server listing without replacing the mounted rows with a loading state. */
+  public refresh(): Observable<MktgDocumentsResponse | null> {
+    return defer(() => {
+      const project = this.projectUid();
+      if (!isPlatformBrowser(this.platformId) || !project) return of(null);
+      if (this.accessDenied() || this.refreshDenied()) return EMPTY;
+      return this.read(project).pipe(
+        tap((documents) => {
+          if (project !== this.projectUid()) return;
+          this.documents.set(documents);
+          this.error.set('');
+        }),
+        catchError((error: HttpErrorResponse) => {
+          if (project === this.projectUid() && error.status === 403) this.refreshDenied.set(true);
+          return error.status === 403 ? EMPTY : of(null);
+        })
+      );
+    });
+  }
+
   public retry(): void {
     this.reload.update((value) => value + 1);
+  }
+
+  /** Initial loads and quiet refreshes observe the same in-flight HTTP read. */
+  private read(project: string): Observable<MktgDocumentsResponse> {
+    if (this.inFlight && this.inFlightProject === project) return this.inFlight;
+    this.cancelReads.next();
+    const pending: Observable<MktgDocumentsResponse> = defer(() => this.store.listDocuments(project)).pipe(
+      takeUntil(this.cancelReads),
+      finalize(() => {
+        if (this.inFlight === pending) this.inFlight = null;
+      }),
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
+    this.inFlightProject = project;
+    this.inFlight = pending;
+    return pending;
   }
 }

@@ -1,17 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { map } from 'rxjs';
+import { distinctUntilChanged, EMPTY, map, switchMap } from 'rxjs';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
+import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES, MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitFilter } from '@lfx-one/shared/interfaces';
 import { resolveMktgFamilyActions, resolveMktgFamilyNextStep, resolveMktgFamilyRun } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgKitService } from '@services/mktg-kit.service';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
 import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
@@ -26,12 +28,35 @@ export class MktgKitComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly context = inject(ProjectContextService);
+  private readonly document = inject(DOCUMENT);
+  private readonly platform = inject(PLATFORM_ID);
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
   protected readonly familyCount = MKTG_KIT_FAMILIES.length;
   protected readonly selectedFilter = this.initSelectedFilter();
   protected readonly cards = this.initCards();
   protected readonly nextStep = this.initNextStep();
+
+  public constructor() {
+    if (isPlatformBrowser(this.platform)) {
+      toObservable(computed(() => ({ project: this.kit.projectUid(), denied: this.kit.accessDenied() || this.kit.refreshDenied() })))
+        .pipe(
+          distinctUntilChanged((a, b) => a.project === b.project && a.denied === b.denied),
+          switchMap(({ denied }) =>
+            denied
+              ? EMPTY
+              : createVisibilityPoll(this.document, () => this.kit.refresh(), {
+                  intervalMs: MKTG_RUN_POLL.intervalMs,
+                  backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                  backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+                  shouldContinue: () => !this.kit.accessDenied() && !this.kit.refreshDenied(),
+                })
+          ),
+          takeUntilDestroyed()
+        )
+        .subscribe();
+    }
+  }
 
   protected selectFilter(id: string): void {
     const filter = this.filters.find((option) => option.id === id);
