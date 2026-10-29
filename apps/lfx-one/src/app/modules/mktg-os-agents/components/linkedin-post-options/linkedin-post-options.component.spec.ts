@@ -46,7 +46,7 @@ describe('Shared LinkedIn option cards', () => {
     const copy = (number: number) => fixture.nativeElement.querySelector(`[data-testid="mktg-linkedin-copy-${number}"] button`);
     expect(selected(1).getAttribute('aria-checked')).toBe('true');
     expect(selected(1).textContent).toContain('Selected');
-    expect(selected(1).classList.contains('border-blue-500')).toBe(true);
+    expect(selected(1).closest('article').classList.contains('border-blue-500')).toBe(true);
     expect(copy(1).classList.contains('p-button-outlined')).toBe(false);
     expect(copy(2).classList.contains('p-button-outlined')).toBe(true);
     selected(2).click();
@@ -71,17 +71,17 @@ describe('Shared LinkedIn option cards', () => {
   it('keeps the selected option and its card across server re-reads, falling back only when that option disappears', async () => {
     const fixture = await render();
     const root: HTMLElement = fixture.nativeElement;
-    const card = root.querySelector<HTMLElement>('[data-option-number="2"]');
+    const card = root.querySelector<HTMLElement>('[data-option-number="2"]')?.closest('article');
     card?.querySelector<HTMLElement>('[data-testid="mktg-linkedin-post-text"]')?.click();
     await fixture.whenStable();
-    expect(card?.getAttribute('aria-checked')).toBe('true');
+    expect(card?.querySelector('[role="radio"]')?.getAttribute('aria-checked')).toBe('true');
     fixture.componentRef.setInput(
       'options',
       options.map((option) => ({ ...option }))
     );
     await fixture.whenStable();
-    expect(root.querySelector('[data-option-number="2"]')).toBe(card);
-    expect(card?.getAttribute('aria-checked')).toBe('true');
+    expect(root.querySelector('[data-option-number="2"]')?.closest('article')).toBe(card);
+    expect(card?.querySelector('[role="radio"]')?.getAttribute('aria-checked')).toBe('true');
     expect(card?.textContent).toContain('Selected');
     fixture.componentRef.setInput('options', [{ ...options[2] }, { ...options[0] }]);
     await fixture.whenStable();
@@ -96,7 +96,7 @@ describe('Shared LinkedIn option cards', () => {
     const cards = root.querySelectorAll<HTMLElement>('[role="radio"]');
     expect(root.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Post options');
     expect(cards).toHaveLength(3);
-    cards[1].querySelector<HTMLElement>('[data-testid="mktg-linkedin-post-text"]')?.click();
+    cards[1].closest('article')?.querySelector<HTMLElement>('[data-testid="mktg-linkedin-post-text"]')?.click();
     await fixture.whenStable();
     expect(cards[1].getAttribute('aria-checked')).toBe('true');
     for (const [index, key, selected] of [
@@ -121,16 +121,29 @@ describe('Shared LinkedIn option cards', () => {
     expect(clipboard).not.toHaveBeenCalled();
   });
 
-  it('leaves nested link and Copy actions independent of the card keyboard handler', async () => {
+  it('keeps readable post content and independent link/Copy actions outside each radio subtree', async () => {
     const fixture = await render();
     const root: HTMLElement = fixture.nativeElement;
-    const cards = root.querySelectorAll<HTMLElement>('[role="radio"]');
+    const cards = root.querySelectorAll<HTMLElement>('[data-testid="mktg-linkedin-option"]');
+    for (const card of cards) {
+      const radio = card.querySelector('[role="radio"]');
+      expect(card.getAttribute('role')).toBeNull();
+      expect(radio?.tagName).toBe('BUTTON');
+      expect(radio?.querySelector('p, a, lfx-button')).toBeNull();
+      expect(card.querySelector('[data-testid="mktg-linkedin-post-text"]')?.closest('[role="radio"]')).toBeNull();
+      expect(card.querySelector('[data-testid="mktg-linkedin-post-text"]')?.textContent).toContain('Example post');
+      expect(card.querySelector('[data-testid="mktg-linkedin-add-link"]')?.closest('[role="radio"]')).toBeNull();
+      expect(card.querySelector('lfx-button')?.closest('[role="radio"]')).toBeNull();
+      const labels = radio?.getAttribute('aria-labelledby')?.split(' ') ?? [];
+      expect(labels.length).toBeGreaterThan(0);
+      for (const label of labels) expect(card.querySelector(`[id="${label}"]`)?.textContent?.trim()).toBeTruthy();
+    }
     const handoff = vi.fn();
     fixture.componentInstance.addLink.subscribe(handoff);
     cards[1].querySelector<HTMLElement>('[data-testid="mktg-linkedin-add-link"]')?.click();
     await fixture.whenStable();
     expect(handoff).toHaveBeenCalledOnce();
-    expect(cards[0].getAttribute('aria-checked')).toBe('true');
+    expect(cards[0].querySelector('[role="radio"]')?.getAttribute('aria-checked')).toBe('true');
     const copy = cards[1].querySelector<HTMLElement>('[data-testid="mktg-linkedin-copy-2"] button');
     const key = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
     copy?.dispatchEvent(key);
@@ -138,7 +151,7 @@ describe('Shared LinkedIn option cards', () => {
     copy?.click();
     await fixture.whenStable();
     expect(clipboard).toHaveBeenCalledOnce();
-    expect(cards[1].getAttribute('aria-checked')).toBe('true');
+    expect(cards[1].querySelector('[role="radio"]')?.getAttribute('aria-checked')).toBe('true');
   });
 
   it('stretches option cards and pushes hashtags and the following actions to the bottom', async () => {

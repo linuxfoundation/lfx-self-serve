@@ -98,7 +98,7 @@ describe('MktgRunProgressComponent', () => {
       response.complete();
       await fixture.whenStable();
       const heading = fixture.nativeElement.querySelector('h2');
-      const noun = oneOff.itemLabel.toLowerCase().endsWith('post') ? 'post' : 'report';
+      const noun = oneOff.agentKey === 'linkedin-post' ? 'post' : 'report';
       expect(heading?.textContent).toBe(`${oneOff.agentName} is working on your ${noun}.`);
       expect(fixture.nativeElement.querySelectorAll('h2')).toHaveLength(1);
       expect(text()).toContain('Checking synthetic sources');
@@ -115,22 +115,29 @@ describe('MktgRunProgressComponent', () => {
     }
   );
 
-  it.each([undefined, []])('keeps one leave line without redundant one-off writing steps before the feed arrives (%s)', async (activity) => {
-    await setup();
-    const oneOff = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
-    if (!oneOff) throw new Error('Missing synthetic one-off type');
-    fixture.componentRef.setInput('runPage', false);
-    fixture.componentRef.setInput('agentKey', oneOff.agentKey);
-    read.mockReturnValue(of({ ...detail([{ ...run, agentKey: oneOff.agentKey, activity }]), type: oneOff }));
-    await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBeNull();
-    expect(text().match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
-    expect(text()).not.toContain('It will appear here when it is ready.');
-    expect(text()).not.toContain('Writing…');
-  });
+  it.each([true, false].flatMap((polling) => [undefined, []].map((activity) => ({ polling, activity }))))(
+    'keeps fallback steps when one-off activity has no rows (polling=$polling, activity=$activity)',
+    async ({ polling, activity }) => {
+      await setup();
+      const oneOff = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
+      if (!oneOff) throw new Error('Missing synthetic one-off type');
+      fixture.componentRef.setInput('runPage', false);
+      fixture.componentRef.setInput('agentKey', oneOff.agentKey);
+      const snapshot = { ...detail([{ ...run, agentKey: oneOff.agentKey, activity }]), type: oneOff };
+      fixture.componentRef.setInput('polling', polling);
+      fixture.componentRef.setInput('snapshot', snapshot);
+      fixture.componentRef.setInput('externalActivity', activity);
+      read.mockReturnValue(of(snapshot));
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBeNull();
+      expect(text().match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
+      expect(text()).toContain('It will appear here when it is ready.');
+      expect(text()).toContain('Writing…');
+    }
+  );
 
-  it.each([false, true])('preserves the legacy Member document feed header and node (steps=%s)', async (hasSteps) => {
+  it.each([false, true])('keeps one Member document heading and selects feed or fallback by rows (steps=%s)', async (hasSteps) => {
     await setup();
     const member = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
     if (!member) throw new Error('Missing synthetic Member document type');
@@ -145,9 +152,11 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('snapshot', { ...detail([{ ...run, agentKey: member.agentKey, documentId, activity }]), type: member, documentId });
     fixture.componentRef.setInput('externalActivity', activity);
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-title"]')?.textContent?.trim()).toBe('Working on Member 360');
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-title"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('h2')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelector('h2')?.textContent).toBe('Member 360 Agent is working on your report.');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-run-activity"]')).toHaveLength(hasSteps ? 1 : 0);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-document-view-run-steps"]')).toHaveLength(hasSteps ? 0 : 1);
     expect(text().match(/You can leave this page — the agent keeps working\./g)).toHaveLength(1);
     if (hasSteps) expect(text()).toContain('Checking LFX');
     expect(read).not.toHaveBeenCalled();
@@ -171,6 +180,9 @@ describe('MktgRunProgressComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-run-steps"]')).toBeNull();
     expect(text()).toContain('Checking synthetic sources');
     expect(fixture.nativeElement.querySelectorAll('lfx-mktg-run-activity')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('h2')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelector('h2')?.textContent).toBe('LinkedIn Post Agent is working on your post.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-title"]')).toBeNull();
     expect(read).not.toHaveBeenCalled();
   });
 

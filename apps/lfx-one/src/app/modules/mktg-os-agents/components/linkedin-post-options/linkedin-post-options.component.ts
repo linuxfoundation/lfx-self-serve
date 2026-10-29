@@ -36,6 +36,14 @@ export class LinkedinPostOptionsComponent {
   protected readonly copied = this.initCopied();
   protected readonly notice = computed(() => (this.copied() !== null && this.copiedContent()?.missingLink ? LINKEDIN_MISSING_LINK_COPY_NOTICE : ''));
 
+  protected onCardClick(event: MouseEvent): void {
+    if (!isPlatformBrowser(this.platform)) return;
+    const card = event.currentTarget as HTMLElement;
+    const radio = card.querySelector<HTMLButtonElement>('[role="radio"]');
+    radio?.click();
+    radio?.focus();
+  }
+
   protected onOptionKeydown(event: KeyboardEvent, number: number): void {
     // Nested Copy/link controls keep their own native keyboard behaviour.
     if (event.target !== event.currentTarget) return;
@@ -57,7 +65,7 @@ export class LinkedinPostOptionsComponent {
     this.selectedOption.set(next.number);
     if (isPlatformBrowser(this.platform)) {
       const card = event.currentTarget as HTMLElement;
-      card.parentElement?.querySelector<HTMLElement>(`[data-option-number="${next.number}"]`)?.focus();
+      card.closest('[role="radiogroup"]')?.querySelector<HTMLElement>(`[role="radio"][data-option-number="${next.number}"]`)?.focus();
     }
   }
 

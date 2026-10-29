@@ -314,7 +314,7 @@ export class MktgRunProgressComponent {
       if (this.runState()) {
         const type = this.runDocumentType();
         if (type) {
-          const noun = type.itemLabel.toLowerCase().endsWith('post') ? 'post' : 'report';
+          const noun = type.agentKey === 'linkedin-post' ? 'post' : 'report';
           return `${type.agentName} is working on your ${noun}.`;
         }
         return 'Generating the asset.';
