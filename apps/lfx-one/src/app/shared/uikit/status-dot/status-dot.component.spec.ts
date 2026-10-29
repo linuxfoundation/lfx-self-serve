@@ -72,6 +72,7 @@ describe('UiStatusDotComponent', () => {
     expect(host.getAttribute('aria-label')).toBe('Ready');
     expect(host.getAttribute('title')).toBe('Ready');
     expect(host.getAttribute('tabindex')).toBe('0');
+    expect(host.className).toContain('focus-visible:shadow-focus');
     expect(host.className).not.toContain('gap-[8px]');
   });
 });

@@ -13,7 +13,7 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
     '[class]': 'hostClasses()',
     '[attr.role]': 'dotOnly() ? "img" : null',
     '[attr.aria-label]': 'dotOnly() ? text() : null',
-    // shortcut: native title tooltip. revisit: when lfx-ui-tooltip lands (#4661)
+    // shortcut: native title tooltip, hover only, so the tab stop shows a focus ring but no text. revisit: when lfx-ui-tooltip lands (#4661)
     '[attr.title]': 'dotOnly() ? text() : null',
     '[attr.tabindex]': 'dotOnly() ? 0 : null',
     'data-testid': 'ui-status-dot',
@@ -42,7 +42,7 @@ export class UiStatusDotComponent {
     return computed(() => {
       const base = 'inline-flex items-center text-copy-14 text-ui-neutral-900';
       // Exact px, not rem; 14px root.
-      return this.dotOnly() ? base : `${base} gap-[8px]`;
+      return this.dotOnly() ? `${base} rounded-full focus-visible:shadow-focus focus-visible:outline-none` : `${base} gap-[8px]`;
     });
   }
 
