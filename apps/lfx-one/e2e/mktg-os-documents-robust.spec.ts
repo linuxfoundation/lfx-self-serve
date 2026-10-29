@@ -180,7 +180,6 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-open-1')).toBeVisible();
       if (width >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible();
-      const sideBySide = width === 1000 || width >= 1264;
       const root = page.getByTestId('mktg-document-view-page');
       const content = await root.getByRole('region', { name: 'Document content' }).boundingBox();
       const details = await root.getByRole('region', { name: 'Revision details' }).boundingBox();
@@ -189,7 +188,7 @@ test.describe('Marketing OS Documents structure', () => {
       if (!content || !details || !label || !open) throw new Error('Document layout must be rendered before measuring it');
       const availableWidth = await page.getByTestId('mktg-document-view-width').evaluate((element) => element.clientWidth);
       const viewDiagnostic = `viewport ${width}px, document-view host ${availableWidth}px`;
-      if (sideBySide) {
+      if (availableWidth >= 800) {
         expect(details.x, viewDiagnostic).toBeGreaterThanOrEqual(content.x + content.width);
         expect(Math.abs(details.y - content.y), viewDiagnostic).toBeLessThan(2);
       } else {
@@ -211,12 +210,15 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(page.getByTestId('mktg-documents-page').locator('main')).toHaveCount(0);
       await expect(page.getByTestId('mktg-documents-revision-when-2').getByTestId('mktg-documents-current-2')).toHaveCount(0);
       await expect(page.getByTestId('mktg-documents-revision-actions-2').getByTestId('mktg-documents-current-2')).toBeAttached();
-      const documentsWidth = await page.getByTestId('mktg-documents-width').evaluate((element) => element.clientWidth);
+      const documentsWidth = await page.getByTestId('mktg-documents-page').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return element.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+      });
       const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
       const documentPanel = await page.getByRole('region', { name: 'Documents and revisions' }).boundingBox();
       if (!navigation || !documentPanel) throw new Error('Documents navigation and content must be rendered before measuring');
       const documentsDiagnostic = `viewport ${width}px, documents host ${documentsWidth}px`;
-      if (sideBySide) expect(documentPanel.x, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.x + navigation.width);
+      if (documentsWidth >= 800) expect(documentPanel.x, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.x + navigation.width);
       else expect(documentPanel.y, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.y + navigation.height);
       if (width === 1280) {
         const scroller = page.getByTestId('mktg-documents-revisions-scroll');

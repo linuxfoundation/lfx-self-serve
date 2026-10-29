@@ -176,7 +176,11 @@ test.describe('Native FAQ document approval and header', () => {
   });
   test('keeps a loading state while the read is pending', async ({ page }, info) => {
     await openAssetDocument(page, 'faq', 0);
-    await expect(page.getByTestId('mktg-document-view-loading')).toContainText('Loading the document');
+    await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveText('Loading the document…');
     await expect(page.getByTestId('mktg-faq-view')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('loading.png'), fullPage: true });
   });
@@ -246,23 +250,29 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
 }
 
 for (const receipt of [true, false]) {
-  test(`standalone Draft opens the ${receipt ? 'receipt-named revision' : 'document default'}, never approving or exporting by digest`, async ({
+  test(`a Draft ${receipt ? 'lands on its receipt-named revision' : 'waits for its receipt without guessing a document'}, never approving or exporting by digest`, async ({
     page,
   }, info) => {
     const revision = await openDraftAssetRun(page, receipt);
-    await expect(page.getByTestId('mktg-framework-view-approval-state')).toHaveText('Draft');
-    await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('approved by');
-    await expect(page.getByTestId('mktg-framework-view-header')).not.toContainText('the kit still shows');
-    await expect(page.getByTestId('mktg-framework-view-approval-required')).toHaveText('Export is available once this version is approved');
-    await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Open in Documents', exact: true }).click();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-    await expect(page).toHaveURL(/\/documents\/foundation-message\/living/);
-    const selected = new URL(page.url()).searchParams.get('revision');
-    expect(selected).toBe(receipt ? revision : null);
-    await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
+    if (receipt) {
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+      await expect(page).toHaveURL(/\/documents\/foundation-message\/living/);
+      expect(new URL(page.url()).searchParams.get('revision')).toBe(revision);
+      await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
+      await expect(page.getByTestId('mktg-document-view-meta')).not.toContainText('approved by');
+      await expect(page.getByTestId('mktg-document-view-meta')).not.toContainText('the kit still shows');
+      await expect(page.getByTestId('mktg-framework-view-approval-required')).toHaveText('Export is available once this version is approved');
+      await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
+    } else {
+      await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-download-pdf')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-framework-view-export-slides')).toHaveCount(0);
+    }
+    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toHaveCount(0);
     await page.screenshot({ path: info.outputPath(`open-document-${receipt}.png`), fullPage: true });
   });
 }

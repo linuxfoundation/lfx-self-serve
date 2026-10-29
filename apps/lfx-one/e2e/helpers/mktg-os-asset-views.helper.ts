@@ -255,7 +255,7 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
     sidecar: { content: asset.content, report: asset.report, checks: asset.checks, mode: asset.mode },
   };
   await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.generate}`, (route) =>
-    route.fulfill({ json: { sessionId: 'synthetic-run-session', ownerToken: 'synthetic-run-capability' } })
+    route.fulfill({ json: { sessionId: 'synthetic-run-session', ownerToken: 'synthetic-run-capability', runId: 'b'.repeat(64) } })
   );
   await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.result}`, (route) =>
     route.fulfill({
@@ -267,6 +267,7 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
         ...(receipt && {
           persistence: {
             s3_key: `documents/${ASSET_PROJECT.uid}/${type.agentKey}/living/${revisionId}.json`,
+            document_location: { agent_key: type.agentKey, document_id: 'living', revision_id: revisionId },
             content_sha256: 'a'.repeat(64),
             project: ASSET_PROJECT.uid,
             version: 1,
@@ -285,8 +286,18 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
   await expect(page.getByTestId('mktg-agent-run-submit-button')).toBeVisible();
   await page.locator('[data-test="mktg-intake-project_name"]').fill(ASSET_PROJECT.name);
   await page.locator(`[data-test="mktg-intake-${FOUNDATION_MESSAGE_WEBSITE_KEY}"]`).fill('https://project.example');
+  const firstResult = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === FOUNDATION_MESSAGE_INTAKE.endpoints.result
+  );
   await page.getByTestId('mktg-agent-run-submit-button').getByRole('button').click();
-  await expect(page.getByTestId('mktg-framework-view')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await firstResult;
+  if (receipt) {
+    await expect(page).toHaveURL(new RegExp(`/documents/${type.agentKey}/living\\?[^#]*revision=${revisionId}`), { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-framework-view')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  } else {
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+  }
   return revisionId;
 }
 
@@ -325,6 +336,14 @@ export async function openAssetDocument(
   await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => route.fulfill({ json: { last: null, latestRevision: null } }));
   let response =
     responseOverride ?? (key === 'faq' || key === 'boilerplates' ? nativeAssetRevisionResponse(key, unreadable) : columnAssetRevisionResponse(key));
+  await page.route('**/api/mktg-agents/documents/*/living/comments?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { revisionId: new URL(route.request().url()).searchParams.get('revision') ?? response.revision.id, threads: [] } });
+  });
+  await page.route('**/api/mktg-agents/documents?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
+  });
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };

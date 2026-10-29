@@ -168,7 +168,11 @@ test.describe('Marketing OS runs land on assets', () => {
     await suppressCookieBanner(page);
     const fixture = await setupAsset(page, { hold: true });
     await fixture.open();
-    await expect(page.getByText('Loading the document…', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveText('Loading the document…');
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveAttribute('role', 'status');
     fixture.finish();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.screenshot({ path: test.info().outputPath('loading-settled.png'), fullPage: true });

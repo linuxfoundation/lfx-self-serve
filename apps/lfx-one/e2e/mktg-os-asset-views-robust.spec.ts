@@ -26,7 +26,7 @@ for (const key of ['foundation-message', 'brand-kit', 'boilerplates', 'faq'] as 
         if (!main || !side) throw new Error('Both document columns must be rendered');
         const host = await page.getByTestId('mktg-document-view-width').evaluate((element) => element.clientWidth);
         const diagnostic = `${key}, viewport ${width}px, host ${host}px, tab ${await tab.textContent()}`;
-        if (width >= 1280) {
+        if (host >= 800) {
           expect(side.x, diagnostic).toBeGreaterThanOrEqual(main.x + main.width);
           expect(Math.abs(side.y - main.y), diagnostic).toBeLessThan(2);
         } else {
@@ -105,12 +105,13 @@ for (const width of [1440, 1280, 390]) {
 
   test(`standalone Draft structure at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 1000 });
-    await openDraftAssetRun(page);
-    await expect(page.getByTestId('mktg-framework-view-metadata')).toHaveCount(1);
-    await expect(page.getByTestId('mktg-framework-view-approval-state')).toHaveText('Draft');
-    await expect(page.getByTestId('mktg-framework-view-meta')).toContainText('v1');
-    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
+    const revision = await openDraftAssetRun(page);
+    await expect(page.getByTestId('mktg-document-view-metadata')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
+    await expect(page.getByTestId('mktg-document-view-meta')).toContainText('v1');
+    expect(new URL(page.url()).searchParams.get('revision')).toBe(revision);
+    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`draft-structure-${width}.png`), fullPage: true });
   });
