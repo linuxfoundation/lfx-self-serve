@@ -1,0 +1,137 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="vote-detail-header">
+  <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
+    <button
+      type="button"
+      class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors w-fit"
+      (click)="back.emit()"
+      data-testid="vote-detail-header-back">
+      <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
+      Votes
+    </button>
+
+    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+      <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+        <!-- Exact 20px title matches the committee detail header (styling.md accepts an arbitrary px size for a design value). -->
+        <h1 class="font-display font-light text-[20px] break-words min-w-0 max-w-full" data-testid="vote-detail-header-title">{{ vote().name }}</h1>
+        <lfx-tag [value]="vote().status | pollStatusLabel" [severity]="vote().status | pollStatusSeverity" data-testid="vote-detail-header-status" />
+        @if (!limited()) {
+          <lfx-tag
+            [value]="privacyLabel()"
+            [severity]="vote().pseudo_anonymity ? 'warn' : 'secondary'"
+            icon="fa-light fa-lock"
+            data-testid="vote-detail-header-privacy" />
+        }
+      </div>
+
+      <div class="flex items-center gap-2 flex-wrap shrink-0" data-testid="vote-detail-header-actions">
+        @if (canSendReminder() && !limited()) {
+          <lfx-button
+            label="Send reminder"
+            icon="fa-light fa-envelope"
+            size="small"
+            (onClick)="sendReminder.emit()"
+            data-testid="vote-detail-header-send-reminder" />
+        }
+        @if (canPresent() && !limited()) {
+          <lfx-button
+            label="Present"
+            icon="fa-light fa-presentation-screen"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="present.emit()"
+            data-testid="vote-detail-header-present" />
+          <lfx-button
+            label="Copy slide"
+            icon="fa-light fa-image"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="slideBusy()"
+            (onClick)="copySlide.emit()"
+            data-testid="vote-detail-header-copy-slide" />
+        }
+        @if (canSendBallots() && !limited()) {
+          <lfx-vote-send-ballots [voteUid]="vote().uid" data-testid="vote-detail-header-send-ballots" />
+        }
+        @if (canCastVote() && !limited()) {
+          <lfx-button
+            label="Cast vote"
+            icon="fa-light fa-check-to-slot"
+            size="small"
+            [severity]="canSendReminder() ? 'secondary' : undefined"
+            [outlined]="canSendReminder()"
+            (onClick)="castVote.emit()"
+            data-testid="vote-detail-header-cast-vote" />
+        }
+        <!-- Managers reach results from the Results tab; Send reminder is their primary action (#4447). -->
+        @if (!limited() && audience() !== 'creator') {
+          <lfx-button
+            label="View results"
+            icon="fa-light fa-chart-simple"
+            size="small"
+            [severity]="canCastVote() ? 'secondary' : undefined"
+            [outlined]="canCastVote()"
+            (onClick)="viewResults.emit()"
+            data-testid="vote-detail-header-view-results" />
+        }
+      </div>
+    </div>
+
+    @if (!limited()) {
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600" data-testid="vote-detail-header-meta">
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-group">
+          <i class="fa-light fa-people-group" aria-hidden="true"></i>{{ vote().committee_name || 'Unknown group' }}
+        </span>
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-method">
+          <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>{{ methodLabel() }}
+        </span>
+        @if (closeDateText()) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-close-date">
+            <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
+          </span>
+        }
+        @if (endedEarlyNote(); as endedEarly) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-ended-early">
+            <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ endedEarly }}
+          </span>
+        }
+        @if (invitedText(); as invited) {
+          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-invited">
+            <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}
+          </span>
+        }
+      </div>
+    }
+  </div>
+
+  @if (!limited()) {
+    <!-- Roving tabindex: only the selected tab is a Tab stop; Left/Right/Home/End move between tabs. The page renders the one panel. -->
+    <div
+      class="border-t border-gray-200 px-6 py-4 flex gap-2 flex-wrap"
+      role="tablist"
+      aria-label="Vote information"
+      (keydown)="onTabKeydown($event)"
+      data-testid="vote-detail-header-tabs">
+      @for (tab of tabs(); track tab.key) {
+        <button
+          #tabBtn
+          type="button"
+          role="tab"
+          [id]="'vote-detail-tab-' + tab.key"
+          [attr.aria-selected]="activeTab() === tab.key"
+          [attr.aria-controls]="activeTab() === tab.key ? 'vote-detail-tab-panel' : null"
+          [attr.tabindex]="activeTab() === tab.key ? 0 : -1"
+          (click)="tabChange.emit(tab.key)"
+          class="flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+          [ngClass]="activeTab() === tab.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+          [attr.data-testid]="'vote-detail-header-tab-' + tab.key">
+          <i class="fa-light {{ tab.icon }} mr-1.5" aria-hidden="true"></i>{{ tab.label }}
+        </button>
+      }
+    </div>
+  }
+</lfx-card>

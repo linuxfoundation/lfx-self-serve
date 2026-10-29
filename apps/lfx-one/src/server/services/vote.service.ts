@@ -12,7 +12,6 @@ import {
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
-  VOTE_VOTERS_PSEUDO_ANONYMOUS,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
 import {
@@ -22,6 +21,7 @@ import {
   ExtendVoteRequest,
   IndexedVote,
   IndexedVoteResponse,
+  MyVoteBallot,
   MyVoteResponse,
   MyVotesResponse,
   PaginatedResponse,
@@ -37,8 +37,10 @@ import {
   VoteLinkResponseRequest,
   VoteListResponse,
   VoteReminderRecipient,
+  VoteResponseDetail,
   VoteStatusCounts,
   VoteSummary,
+  VoteParticipationVoter,
   VoteSummaryEmailContext,
   VoteSummaryRecipient,
   VoteResultsResponse,
@@ -52,6 +54,7 @@ import {
   isVoteClosingSoon,
   normalizePollStatus,
   sortCommentResponsesByRecency,
+  sortCommentResponsesByText,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
@@ -64,6 +67,7 @@ import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
 import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
 import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { isImpersonating } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { EmailService } from './email.service';
 import { logger } from './logger.service';
@@ -441,6 +445,19 @@ export class VoteService {
   }
 
   /**
+   * Ends an active vote now via the dedicated end_vote upstream endpoint (voting-service v0.3.16): `end_time` is kept and
+   * `early_end_time` is stamped; ending an already ended vote is a 2xx no-op, a vote that has not started is a 409, and a vote
+   * past its scheduled end is a 400. Never faked with extend. The caller must hold `vote#writer`, re-checked here before the
+   * proxy call (the gateway enforces it again upstream).
+   */
+  public async endVote(req: Request, voteUid: string): Promise<Vote> {
+    await assertVoteWrite(req, voteUid, 'end_vote');
+    logger.debug(req, 'end_vote', 'Ending vote now', { vote_uid: voteUid });
+
+    return this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/end`, 'POST');
+  }
+
+  /**
    * Deletes a vote directly via microservice proxy
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {
@@ -510,38 +527,82 @@ export class VoteService {
 
   /**
    * Fetches aggregated vote results for a given vote.
+   * On a vote that is not explicitly named (#3916), totals, the abstention count and comments are
+   * held until the vote has ended, and comments are returned as text only, in text order. The vote
+   * is loaded alongside the results so a failed lookup fails the request rather than leaking
+   * un-held results.
+   *
+   * A caller without `vote#writer` (`options.canWrite === false`, #4330) only gets results for an
+   * ended vote they were invited to and not removed from — anything else is a 403 before upstream
+   * results are fetched — and always gets comments as text only, in text order.
    */
-  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
-    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+  public async getVoteResults(req: Request, voteUid: string, options: { canWrite: boolean }): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid, can_write: options.canWrite });
 
-    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      `/votes/${this.encodeVoteUid(voteUid)}/results`,
-      'GET'
-    );
+    const path = `/votes/${this.encodeVoteUid(voteUid)}/results`;
+    let vote: Vote;
+    let results: VoteResultsResponse;
+    if (options.canWrite) {
+      [vote, results] = await Promise.all([
+        this.getVoteById(req, voteUid),
+        this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
+      ]);
+    } else {
+      vote = await this.getVoteById(req, voteUid);
+      await this.assertVoterCanReadResults(req, voteUid, vote);
+      results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET');
+    }
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
-    // through would emit a 200 that the results drawer renders as a genuine zero-response vote
+    // through would emit a 200 that the vote detail page renders as a genuine zero-response vote
     // ("No responses yet") instead of its error state.
     if (!results) {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
         operation: 'get_vote_results',
         service: 'vote_service',
-        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+        path,
       });
     }
 
-    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
-    // responses at the most recent N to keep the payload linear in prompt count rather than
-    // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
-    // reported via total_responses so the UI can disclose truncation.
+    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous (#3911).
+    const pseudoAnonymous = vote.pseudo_anonymity !== false;
+    if (pseudoAnonymous) {
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+        return this.toHeldVoteResults(req, voteUid, results);
+      }
+
+      // Never infer "not held" from upstream: an ended vote with questions but no per-question
+      // results means upstream is still holding, and must not render as a zero-response vote.
+      if (results.results_held === true || (!results.poll_results?.length && (vote.poll_questions?.length ?? 0) > 0)) {
+        logger.warning(req, 'get_vote_results', 'Upstream is still holding results for an ended pseudo-anonymous vote', {
+          vote_uid: voteUid,
+          upstream_results_held: results.results_held === true,
+        });
+        return this.toHeldVoteResults(req, voteUid, results);
+      }
+    }
+
+    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's responses
+    // at N to keep the payload linear in prompt count rather than electorate size (defense against multi-MB
+    // payloads). Named votes keep the most recent N; pseudo-anonymous votes keep the first N in comment-text
+    // order. The pre-cap count is reported via total_responses so the UI can disclose truncation.
     for (const commentResult of results?.comment_results ?? []) {
       // Normalize to an array before touching length — this loop is the single aggregation point for
       // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
       const responses = commentResult.responses ?? [];
       commentResult.total_responses = responses.length;
+      // A non-writer gets the same text-only payload on a named vote too (#4330): only vote managers
+      // may see who wrote each comment, so the identity is stripped here rather than in the browser.
+      if (pseudoAnonymous || !options.canWrite) {
+        // Text only: `vote_id` equals the vote_response uid other endpoints expose, and
+        // `vote_creation_time` / `abstained` (or recency order) could re-link a comment to its author.
+        commentResult.responses = sortCommentResponsesByText(responses.map((response) => ({ comment_text: response.comment_text }))).slice(
+          0,
+          VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
+        );
+        continue;
+      }
       commentResult.responses =
         responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
           ? sortCommentResponsesByRecency(responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT)
@@ -550,8 +611,10 @@ export class VoteService {
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
+      can_write: options.canWrite,
       num_poll_results: results?.poll_results?.length ?? 0,
       num_votes_cast: results?.num_votes_cast,
+      results_held: false,
     });
 
     return results;
@@ -658,12 +721,13 @@ export class VoteService {
   }
 
   /**
-   * Lists every invited voter on a named vote with their participation status and current ballot (#3911).
+   * Lists every invited voter on a vote, sorted by name (#3911). Named votes get each voter's
+   * participation status and current ballot; votes not explicitly named get a participation-only
+   * projection (#3916) with no `uid`, ballot content, abstention, submission time or contact details.
    * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
-   * Draft or unrecognized-status votes (409) and votes not explicitly named (403) are refused before
-   * any `vote_response` row is read, so no ballot content is fetched for a pseudo-anonymous vote.
+   * Draft or unrecognized-status votes (409) are refused before any `vote_response` row is read.
    */
-  public async getVoteVoters(req: Request, voteUid: string): Promise<VoteVoter[]> {
+  public async getVoteVoters(req: Request, voteUid: string): Promise<VoteVoter[] | VoteParticipationVoter[]> {
     logger.debug(req, 'get_vote_voters', 'Fetching vote_response rows for the voter list', { vote_uid: voteUid });
 
     const vote = await this.getVoteById(req, voteUid);
@@ -675,32 +739,29 @@ export class VoteService {
       });
     }
 
-    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous.
-    if (vote.pseudo_anonymity !== false) {
-      throw new AuthorizationError('Individual ballots are not available for pseudo-anonymous votes.', {
-        code: VOTE_VOTERS_PSEUDO_ANONYMOUS,
-        operation: 'get_vote_voters',
-        service: 'vote_service',
-      });
-    }
-
     const rows = await this.fetchVoteResponseRows(req, voteUid);
 
     const seen = new Set<string>();
-    const voters = rows
+    const invited = rows
       .filter((row): row is IndexedVoteResponse & { uid: string } => getParentVoteId(row) === voteUid && row.voter_removed !== true && !!row.uid)
       .filter((row) => {
         if (seen.has(row.uid)) return false;
         seen.add(row.uid);
         return true;
-      })
-      .map((row) => this.toVoteVoter(row))
-      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+      });
+
+    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous.
+    const participationOnly = vote.pseudo_anonymity !== false;
+    const byName = (a: { user_name?: string }, b: { user_name?: string }) => (a.user_name ?? '').localeCompare(b.user_name ?? '');
+    const voters = participationOnly
+      ? invited.map((row) => this.toVoteParticipationVoter(row)).sort(byName)
+      : invited.map((row) => this.toVoteVoter(row)).sort(byName);
 
     logger.debug(req, 'get_vote_voters', 'Mapped vote voters', {
       vote_uid: voteUid,
       row_count: rows.length,
       voter_count: voters.length,
+      participation_only: participationOnly,
     });
 
     return voters;
@@ -880,7 +941,7 @@ export class VoteService {
       });
     }
 
-    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid), this.getVoteSummaryRecipients(req, voteUid)]);
+    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
 
     const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
 
@@ -935,7 +996,7 @@ export class VoteService {
   // ============================================
 
   /**
-   * Fetches votes the current user has been invited to.
+   * Fetches votes the current user is still invited to; removed invitations never make a ballot actionable.
    * Queries vote_response records by user_email and username using filters_or.
    */
   public async getMyVotes(req: Request): Promise<MyVotesResponse> {
@@ -946,18 +1007,19 @@ export class VoteService {
         complete = false;
       },
     });
+    const eligibleResponses = responses.filter((response) => !response.voter_removed);
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
     // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
-    for (const r of responses) {
+    for (const r of eligibleResponses) {
       const id = getParentVoteId(r);
       if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(eligibleResponses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
       return { votes: [], complete };
@@ -1006,10 +1068,12 @@ export class VoteService {
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
-    // the list surfaced this vote under) and requires a usable row id.
-    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
-      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+    // Apply the shared parent-key rule and require a usable row id. A re-invitation's current
+    // row wins over historical removed rows, regardless of query-service ordering.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined => {
+      const matches = rows.filter((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+      return matches.find((r) => !r.voter_removed) ?? matches[0];
+    };
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
@@ -1019,11 +1083,12 @@ export class VoteService {
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
     // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
     // The query service supports a single `filters_or` group (spent on identity), so the two
-    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
-    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
-    // non-match must still fall through to the legacy key.
-    if (!match) {
-      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    // scoped queries run sequentially. Fall through when no current match exists: an owned
+    // foreign-vote row or a historical removed invitation must not hide a current legacy row.
+    if (!match || match.voter_removed) {
+      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+      if (!legacyMatch?.voter_removed) match = legacyMatch ?? match;
+      else match ??= legacyMatch;
     }
 
     if (!match) return null;
@@ -1041,7 +1106,72 @@ export class VoteService {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       response.uid = match.vote_id;
     }
+    // Admin Mode needs participation metadata, never a legacy index row's ballot content.
+    // Named ballot inspection uses the privacy-checked my-ballot path instead.
+    if (isImpersonating(req)) {
+      return { uid: response.uid, vote_uid: response.vote_uid, vote_status: response.vote_status, voter_removed: response.voter_removed };
+    }
     return response;
+  }
+
+  /**
+   * Reads the caller's own current ballot for a vote (#4331), or null when they have no submitted ballot.
+   * @description The response uid comes only from the identity-matched row (`getMyVoteResponse`), never from the
+   * client, so on a pseudo-anonymous vote the caller still sees only their own ballot. The ballot is read from the
+   * voting service rather than the query-service index, which omits ballot content on pseudo-anonymous votes.
+   */
+  public async getMyVoteBallot(req: Request, voteUid: string): Promise<MyVoteBallot | null> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) return null;
+
+    if (isImpersonating(req)) {
+      const vote = await this.getVoteById(req, voteUid);
+      if (vote.pseudo_anonymity !== false) {
+        throw new AuthorizationError('This ballot is private while impersonating a user.', {
+          code: 'IMPERSONATION_BALLOT_PRIVATE',
+          operation: 'get_my_vote_ballot',
+          service: 'vote_service',
+        });
+      }
+    }
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (!detail) {
+      throw new MicroserviceError('Vote ballot response body was empty', 502, 'VOTE_BALLOT_EMPTY', {
+        operation: 'get_my_vote_ballot',
+        service: 'vote_service',
+        path: `/vote_responses/${encodeURIComponent(row.uid)}`,
+      });
+    }
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_vote_ballot', 'Vote response belongs to a different vote, returning no ballot', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return null;
+    }
+
+    return {
+      vote_response_uid: row.uid,
+      vote_uid: voteUid,
+      abstained: detail?.abstained === true,
+      poll_answers: (detail?.poll_answers ?? []).map((answer) => ({
+        question_id: answer.question_id,
+        prompt: answer.prompt,
+        type: answer.type,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
+      vote_creation_time: detail?.vote_creation_time || undefined,
+    };
   }
 
   // ============================================
@@ -1050,6 +1180,14 @@ export class VoteService {
 
   /** Builds the summary email's content from the aggregate results: question prompts, choice text, counts and percentages — never a per-voter breakdown. */
   private buildSummaryEmailContext(voteTitle: string, results: VoteResultsResponse): VoteSummaryEmailContext {
+    // Privacy-held results omit the abstention count; never email incomplete totals as final results.
+    if (results.results_held === true || results.num_abstained === undefined) {
+      throw new MicroserviceError('Vote results are not available for a summary yet. Please try again.', 502, 'VOTE_RESULTS_UNAVAILABLE', {
+        operation: 'send_vote_summary',
+        service: 'vote_service',
+      });
+    }
+
     const questions = results.poll_results.map((pollResult) => {
       const choiceTextById = new Map(pollResult.question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
 
@@ -1093,6 +1231,31 @@ export class VoteService {
       num_abstained: results.num_abstained,
       questions,
     };
+  }
+
+  /**
+   * Non-writer results gate (#4330): the vote has ended, and the caller holds a `vote_response` row
+   * for it that was not removed. Runs before upstream results are fetched, so a caller who fails it
+   * never reaches the data. Mirrors the browser's `canVoterFetchVoteResults`, which never asks for
+   * results outside these conditions, so a 403 here is only visible to direct API callers.
+   */
+  private async assertVoterCanReadResults(req: Request, voteUid: string, vote: Vote): Promise<void> {
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new MicroserviceError('Results are available after the vote closes.', 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
+
+    const mine = await this.getMyVoteResponse(req, voteUid);
+    if (!mine || mine.voter_removed) {
+      throw new MicroserviceError("You do not have access to this vote's results.", 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
   }
 
   /**
@@ -1285,12 +1448,30 @@ export class VoteService {
   }
 
   /**
-   * Maps a `vote_response` row to the voter list's projection (#3911). A row with a submission
-   * time, or marked `responded`, has been submitted — either one alone is enough, so a mismatch
-   * between them can't hide a ballot. ITX rewrites `vote_creation_time` on every ballot change.
+   * Builds the held results payload for a pseudo-anonymous vote (#3916): participation counts and
+   * the deadline only. Fields are copied by allowlist so nothing else upstream returns can leak.
    */
+  private toHeldVoteResults(req: Request, voteUid: string, results: VoteResultsResponse): VoteResultsResponse {
+    logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
+      vote_uid: voteUid,
+      num_votes_cast: results.num_votes_cast,
+      results_held: true,
+    });
+
+    return {
+      num_recipients: results.num_recipients,
+      num_votes_cast: results.num_votes_cast,
+      poll_end_time: results.poll_end_time,
+      ...(results.poll_end_time_timezone !== undefined && { poll_end_time_timezone: results.poll_end_time_timezone }),
+      poll_results: [],
+      comment_results: [],
+      results_held: true,
+    };
+  }
+
+  /** Maps a `vote_response` row on a named vote to the voter list's projection (#3911). */
   private toVoteVoter(row: IndexedVoteResponse & { uid: string }): VoteVoter {
-    const submitted = !!row.vote_creation_time || row.vote_status === IndexedVoteResponseStatus.RESPONDED;
+    const submitted = this.isVoteResponseSubmitted(row);
     let status = VoteVoterStatus.NOT_VOTED;
     if (submitted) {
       status = row.abstained === true ? VoteVoterStatus.ABSTAINED : VoteVoterStatus.VOTED;
@@ -1314,6 +1495,29 @@ export class VoteService {
       })),
       comment_responses: row.comment_responses,
     };
+  }
+
+  /**
+   * Maps a `vote_response` row on a pseudo-anonymous vote to a participation-only row (#3916). Fields
+   * are copied by allowlist: no `uid`, ballot content, abstention, submission time or contact details,
+   * and an abstainer counts as `responded`.
+   */
+  private toVoteParticipationVoter(row: IndexedVoteResponse): VoteParticipationVoter {
+    return {
+      user_name: row.user_name,
+      user_org_name: row.user_org_name,
+      user_role: row.user_role,
+      user_voting_status: row.user_voting_status,
+      status: this.isVoteResponseSubmitted(row) ? 'responded' : 'pending',
+    };
+  }
+
+  /**
+   * A row with a submission time, or marked `responded`, has been submitted — either one alone is
+   * enough, so a mismatch between them can't hide a ballot. ITX rewrites `vote_creation_time` on every ballot change.
+   */
+  private isVoteResponseSubmitted(row: IndexedVoteResponse): boolean {
+    return !!row.vote_creation_time || row.vote_status === IndexedVoteResponseStatus.RESPONDED;
   }
 
   /**

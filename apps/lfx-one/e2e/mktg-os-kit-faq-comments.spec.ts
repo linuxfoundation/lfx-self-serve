@@ -65,7 +65,8 @@ test('FAQ: answer a gap by commenting and sending; the new Draft shows Notes and
   await expect(field.getByRole('button', { name: /^Answer / })).toBeFocused();
   await field.getByRole('textbox').fill('Membership is free for this synthetic project.');
   await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-  await expect(field.getByTestId('mktg-comment-thread')).toContainText('Membership is free for this synthetic project.');
+  await field.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(field.getByTestId('mktg-comment-body')).toContainText('Membership is free for this synthetic project.');
   expect(fixture.state.adds[0]).toMatchObject({ revisionId: ASSET_REVISION, anchor: { kind: 'field', key: 'faq[0][1][2][1]' } });
   await panel.getByRole('button', { name: 'Send 1 open comment to the agent', exact: true }).click();
   await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
@@ -82,6 +83,7 @@ test('FAQ: answer a gap by commenting and sending; the new Draft shows Notes and
   await expect(page.getByTestId('mktg-faq-view-source-0-2')).toHaveText('Notes');
   await expect(page.getByTestId('mktg-faq-view-needs-answer-0-2')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-revision-label-2')).toContainText('Draft');
-  await expect(panel).toContainText('Added the supplied answer as Notes.');
+  await panel.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(panel.getByTestId('mktg-comment-resolution')).toHaveText('Added the supplied answer as Notes.');
   await page.screenshot({ path: test.info().outputPath('faq-answer-redraft.png'), fullPage: true });
 });

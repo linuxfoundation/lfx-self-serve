@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { MKTG_KIT_FRAMEWORK_KEY } from '@lfx-one/shared/constants';
+import { MKTG_KIT_FRAMEWORK_KEY, MKTG_KIT_SHOW_COMING_SOON } from '@lfx-one/shared/constants';
 import { MktgKitFamilyView, MktgKitSourcesView } from '@lfx-one/shared/interfaces';
 import { mktgKitSources } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -22,6 +22,7 @@ export class MktgFamilyDetailsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   public readonly family = input.required<MktgKitFamilyView>();
   public readonly projectUid = input.required<string>();
+  protected readonly showComingSoon = MKTG_KIT_SHOW_COMING_SOON;
   protected readonly loading = signal(false);
   protected readonly failed = signal(false);
   protected readonly sources = signal<MktgKitSourcesView | null>(null);

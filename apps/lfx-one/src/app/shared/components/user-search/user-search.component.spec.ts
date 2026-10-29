@@ -213,16 +213,7 @@ describe('UserSearchComponent', () => {
 
       await typeAndSettle('sa');
 
-      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member', false);
-    });
-
-    it('searches as the impersonator when asked to', async () => {
-      await render();
-      fixture.componentRef.setInput('asImpersonator', true);
-
-      await typeAndSettle('sa');
-
-      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member', true);
+      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
     });
 
     // The search is driven by completeMethod alone, not by the search control's valueChanges — the

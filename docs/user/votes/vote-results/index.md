@@ -1,53 +1,64 @@
 ---
 title: Vote Results
-description: How to see live and final results, abstentions, ranked questions, and comments for a vote in LFX Self Serve.
+description: How to see live and final results, abstentions, ranked questions, comments, and voters for a vote in LFX Self Serve.
 audience: [all]
 product_area: Votes
-tags: [votes, results, abstain, comments, ranked, tallies]
-last_updated: 2026-10-28
+tags: [votes, results, abstain, comments, ranked, tallies, voters]
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
-This article explains the **Results** drawer, which shows how a vote turned out. What you see depends on how you open the vote.
+This article explains the vote's page, which shows how a vote is going and how it turned out. What you see depends on whether you manage the vote or are invited to vote on it.
 
-## Open the results
+## Open a vote's page
 
-- On the **Votes** dashboard, select **Results** on an ended vote. Select **View** on an active vote you manage to see its live results.
-- Select the vote's name in the table to open the same drawer.
-- In the **Me** lens list, you get the voter view described below. **Review** on an active vote you have already voted on opens the drawer with a confirmation of your vote.
-- A shared link to a vote (`/votes/:id`) opens the full results view if you manage the vote. If you still have a ballot to cast, it opens the cast drawer instead.
+- On the **Votes** dashboard, select **View** on an active vote you manage, or **Results** on an ended vote. Selecting the vote's name does the same.
+- In the **Me** lens list, select an ended vote. On an active vote, **Vote** and **Review** open the ballot drawer on the list instead.
+- A shared link to a vote (`/votes/:id`) opens its page. If you are invited and still have a ballot to cast, the cast drawer opens on top of it.
 
-## From the Project, Foundation, or group view
+The page header shows the vote's title, status, whether ballots are named or pseudo-anonymous, its group, voting method, close date and how many voters were invited. Select **Votes** at the top to go back to the list.
 
-The Project and Foundation **Votes** dashboards and a group's **Votes** tab open the full results view. It is meant for people who manage the vote.
+If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
 
-The drawer shows the vote's status and deadline, how the vote counts ballots, and the results.
+## If you manage the vote
 
-- **Live Results** while the vote is active, and **Final Results** once it has ended.
-- For each question, every option with its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on.
-- **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained and what share of the ballots that is. Abstentions are counted as ballots cast but not in any option's tally.
-- **Comments**, when the vote has comment questions, lists each comment question with the responses, each with the commenter's name and the date. Voters see the same comments once the vote closes. A response from someone who abstained is marked. Long lists are paged, and if only the most recent responses are shown, the drawer says how many it is showing out of the total.
-- **Present** and **Copy slide** buttons for active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
+The page opens on the **Overview** tab and has these tabs:
 
-On the Project and Foundation dashboards, if you are also invited to an active vote and haven't voted yet, the drawer shows **You haven't cast your vote yet** with a **Cast Vote** button. A group's **Votes** tab doesn't show this button. Open **Votes** in the **Me** lens to cast your ballot.
+- **Overview** shows the vote's description, a short results summary with a **View full results** link, and recent comments.
+- **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
+- **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment.
+- **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted.
+
+Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
+
+The buttons at the top right depend on the vote's status:
+
+- **Send reminder** on active votes. See [Send a reminder](../manage-votes/#send-a-reminder).
+- **Present** and **Copy slide** on active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
+- **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice.
+- **Cast vote**, if you are also invited and haven't voted yet.
 
 ### Ranked questions
 
-Some votes rank their options instead of counting one choice. For those, each option shows how many voters ranked it and how many placed it at each rank (**Rank 1**, **Rank 2**, and so on), with a percentage. The drawer explains the voting method at the top. Round-by-round detail isn't shown yet. If no one has ranked yet, it says **No rankings recorded yet.**
+Some votes rank their options instead of counting one choice. For those, each option shows how many voters ranked it and how many placed it at each rank (**Rank 1**, **Rank 2**, and so on), with a percentage. The Results tab explains the voting method at the top. Round-by-round detail isn't shown yet. If no one has ranked yet, it says **No rankings recorded yet.**
 
-## From the Me lens (voter view)
+### Pseudo-anonymous votes
 
-When you open a vote from the **Me** lens list, the drawer is the voter view, even if you also manage the vote. It shows results only after the vote closes.
+Totals, abstentions and comments stay hidden until the vote closes, and the page says **Totals appear when voting closes**. Once it closes, it may say **Totals are being finalized** until the results are ready. You can still follow who has responded on the **Voters** tab. Comments appear without names for everyone.
 
-| Your situation                    | What the drawer shows                                                                                                                                                                                                                    |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| You haven't voted, vote is active | Use **Vote** on the Votes list to cast your ballot. Live results are hidden until the vote closes.                                                                                                                                       |
-| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**), and a note that results will be available after the vote closes. There is no way to change or resubmit.                                       |
-| The vote has closed               | If you voted and the vote isn't a [secret ballot](../faq/#are-votes-anonymous), **You voted on this motion**. Then the final results for each question, abstentions, and comments. If no one voted, it says **No votes were submitted.** |
-| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                                    |
-| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                                  |
+## If you are invited to vote
 
-If the final results don't load, the drawer says **Couldn't load final results. Try reopening this vote.**
+Voters see only their own response while the vote is open. Totals and comments appear after it closes.
+
+| Your situation                    | What the page shows                                                                                                                                                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| You haven't voted, vote is active | **Results available after voting closes**, a note that you haven't responded yet, and a **Cast vote** button.                                                                                                                   |
+| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**) and your recorded ballot. The signed-in app offers no way to change it; a personalized ballot link can still update an active ballot. |
+| The vote has closed               | The final results for each question, abstentions, and comments without names. On a named vote, a note says **Your vote is included in these results.** If no one voted, it says **No votes were submitted.**                    |
+| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                           |
+| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                         |
+
+If the final results don't load, the page says **Couldn't load results. Try reloading this page.**
 
 ## Related
 

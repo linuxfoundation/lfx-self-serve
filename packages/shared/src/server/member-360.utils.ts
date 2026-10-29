@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
   CATEGORY_KEYS,
@@ -11,9 +12,20 @@ import {
   MEMBER_360_TRACKER_KINDS,
   MEMBER_360_MAX_TRACKERS,
   MEMBER_360_TRACKER_FILENAME_REGEX,
+  MEMBER_360_TRACKER_ID_REGEX,
   MEMBER_360_QUESTIONS_MARKER,
+  MEMBER_360_QUESTIONS_CONTRACT,
+  MEMBER_360_QUESTIONS_HEADER,
+  MEMBER_360_ANSWERS_HEADER,
+  MEMBER_360_MAX_QUESTIONS,
+  MEMBER_360_MAX_BYTES,
 } from '../constants/member-360.constants';
-import type { Member360FormInput } from '../interfaces/member-360.interface';
+import type { Member360FormInput, Member360QuestionsTurn } from '../interfaces/member-360.interface';
+import type { MktgRunAnswer } from '../interfaces/mktg-run.interface';
+import { FOUNDATION_MESSAGE_ANSWER_ORIGINS, FOUNDATION_MESSAGE_NON_ANSWER_REGEX } from '../constants/foundation-message.constants';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
+import { MKTG_ARTIFACT_PARTITION_REGEX } from '../constants/mktg-artifact.constants';
+import { mktgOneOffTerminalFacts } from './mktg-one-off-terminal.utils';
 import { weightsSchema } from './member-360-schema.utils';
 import { extractMktgAgentTexts } from '../utils/mktg-session-event.utils';
 
@@ -22,13 +34,105 @@ export function isMember360Question(text: string): boolean {
   return (text.trim().split(/\r?\n/, 1)[0] ?? '').includes(MEMBER_360_QUESTIONS_MARKER);
 }
 
-/** Temporary questions tolerance: attribute agent text and inspect only its marker line. */
+/** Attribute questions to the current agent turn, never a previously answered turn. */
 export function findMember360Questions(payloads: string[]): string | undefined {
-  return payloads
-    .flatMap(extractMktgAgentTexts)
-    .map((text) => text.trim())
-    .filter(isMember360Question)
-    .at(-1);
+  return payloads.slice(mktgOneOffTerminalFacts(payloads).currentTurnOffset).flatMap(extractMktgAgentTexts).filter(isMember360Question).at(-1);
+}
+
+/** Ignore carrier-only boundary whitespace when identifying the same questions turn. */
+export function member360QuestionsId(text: string): string {
+  return createHash('sha256').update(text.trim()).digest('hex');
+}
+
+const member360QuestionIdSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .max(40);
+/** Mirror questions-turn.ts; unknown extensions are stripped before use. */
+export const member360QuestionsSchema = z.object({
+  contract: z.literal(MEMBER_360_QUESTIONS_CONTRACT),
+  project: z.string().min(1),
+  questions: z
+    .array(
+      z.object({
+        id: member360QuestionIdSchema,
+        question: z.string().trim().min(10).max(400),
+        why: z.string().trim().min(1).max(400),
+        suggested_answer: z.string().trim().min(1).max(2000),
+        basis: z.string().trim().min(1).max(600),
+      })
+    )
+    .min(1)
+    .max(MEMBER_360_MAX_QUESTIONS)
+    .refine((items) => new Set(items.map((item) => item.id)).size === items.length),
+});
+
+export const member360AnswersSchema = z
+  .object({
+    project: z.string().regex(MKTG_ARTIFACT_PARTITION_REGEX),
+    sessionId: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+    ownerToken: z.string().min(1).max(2048),
+    questionsId: z.string().regex(/^[a-f0-9]{64}$/),
+    answers: z
+      .array(
+        z
+          .object({
+            id: member360QuestionIdSchema,
+            text: z
+              .string()
+              .trim()
+              .min(1)
+              .max(4000)
+              .refine((text) => !FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(text), MKTG_ANSWERS_INCOMPLETE_MESSAGE),
+            origin: z.enum(FOUNDATION_MESSAGE_ANSWER_ORIGINS),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(MEMBER_360_MAX_QUESTIONS)
+      .refine((items) => new Set(items.map((item) => item.id)).size === items.length),
+  })
+  .strict();
+
+export function parseMember360Questions(text: string): Member360QuestionsTurn | null {
+  if (text.length > MEMBER_360_MAX_BYTES) return null;
+  const start = text.indexOf(MEMBER_360_QUESTIONS_HEADER);
+  if (start < 0) return null;
+  const body = text.slice(start + MEMBER_360_QUESTIONS_HEADER.length);
+  // Match upstream's linear fence scan rather than overlapping whitespace regexes.
+  let opening = 0;
+  while (opening < body.length && /\s/.test(body.charAt(opening))) opening++;
+  if (!opening || body[opening - 1] !== '\n' || !body.startsWith('```json', opening)) return null;
+  let jsonStart = opening + 7;
+  while (jsonStart < body.length && /\s/.test(body.charAt(jsonStart))) jsonStart++;
+  const closing = body.lastIndexOf('\n```');
+  if (jsonStart === opening + 7 || body[jsonStart - 1] !== '\n' || closing < jsonStart - 1 || body.slice(closing + 4).trim()) return null;
+  const block = body.slice(jsonStart, Math.max(jsonStart, closing));
+  try {
+    const parsed = member360QuestionsSchema.safeParse(JSON.parse(block));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Byte-compatible with member-360 questions-turn.ts renderAnswersTurn + wire-text.ts guardText. */
+export function renderMember360Answers(answers: MktgRunAnswer[]): string {
+  const lines = [MEMBER_360_ANSWERS_HEADER];
+  for (const answer of answers) {
+    const text = normalizeFormLines(answer.text)
+      .split('\n')
+      .map((line) =>
+        /^(?:---|=====|MEMBER 360|SCOPE —|REQUESTER'S NOTES:|ANALYSIS WINDOW:|UPLOADED TRACKERS|PRIOR MEMBER 360 RUN|CATEGORY WEIGHTS|FEEDBACK on draft| {2}(?:Project:|LFX project UID:|LFX project slug:))/.test(
+          line
+        )
+          ? `> ${line}`
+          : line
+      )
+      .join('\n');
+    lines.push(`--- A ${answer.key} (${answer.origin}) ---`, 'ANSWER: follows', text, `--- END A ${answer.key} ---`);
+  }
+  return lines.join('\n');
 }
 
 function parseIsoDate(day: string): number {
@@ -62,7 +166,7 @@ export const member360GenerateSchema = z
     discard: z.string().regex(MKTG_STARTED_RUN_ID_REGEX).optional(),
     window: z.enum(['12', '6', 'year']).optional(),
     compare: z.boolean().optional(),
-    trackers: z.array(trackerSchema).max(MEMBER_360_MAX_TRACKERS).optional(),
+    trackerIds: z.array(z.string().regex(MEMBER_360_TRACKER_ID_REGEX)).max(MEMBER_360_MAX_TRACKERS).optional(),
   })
   .strict();
 

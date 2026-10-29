@@ -64,7 +64,7 @@
                     }
                   </p>
                   @if (closedAt(); as closed) {
-                    <p class="m-0 text-[22px] text-gray-300" data-testid="vote-presenter-closed-at">Closed automatically at {{ closed | date: 'medium' }}</p>
+                    <p class="m-0 text-[22px] text-gray-300" data-testid="vote-presenter-closed-at">Closed at {{ closed | date: 'medium' }}</p>
                   }
                 </div>
               </div>
@@ -72,6 +72,11 @@
               @if (resultsError()) {
                 <p class="m-0 text-lg text-red-200" role="alert" data-testid="vote-presenter-results-error">
                   Couldn't load the final results. Exit and reopen this vote to retry.
+                </p>
+              } @else if (resultsHeld()) {
+                <!-- Held results are not final: no tallies and no abstain row until the BFF releases them. -->
+                <p class="m-0 text-lg text-gray-300" role="status" data-testid="vote-presenter-results-held">
+                  Final results are being finalized and will appear here shortly.
                 </p>
               } @else if (!resultsReady()) {
                 <!-- The final numbers arrive with /results; until then nothing derived from the zero defaults is shown. -->
@@ -183,18 +188,15 @@
             </p>
             <div class="flex items-center gap-3">
               <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit()" data-testid="vote-presenter-exit" />
-              <!-- Close is a placeholder until the voting service can end a vote early. TODO(#4370): enable and wire to POST /api/votes/:uid/end once that ships. -->
-              <span
-                class="inline-flex"
-                role="group"
-                tabindex="0"
-                [attr.aria-label]="'Close vote unavailable. ' + closeTooltip()"
-                [pTooltip]="closeTooltip()"
-                tooltipPosition="top"
-                tooltipEvent="both"
-                data-testid="vote-presenter-close-wrapper">
-                <lfx-button label="Close vote" severity="danger" size="large" styleClass="min-h-[44px]" [disabled]="true" data-testid="vote-presenter-close" />
-              </span>
+              <lfx-button
+                label="Close vote"
+                severity="danger"
+                size="large"
+                styleClass="min-h-[44px]"
+                [loading]="closing()"
+                [disabled]="!canClose()"
+                (onClick)="onCloseClick()"
+                data-testid="vote-presenter-close" />
             </div>
           </footer>
 
@@ -279,7 +281,7 @@
                 }
                 @if (v.status === PollStatus.ACTIVE) {
                   <!-- votePresenterGuard already proved vote#writer for this route; the BFF re-checks it on send. -->
-                  <lfx-vote-send-ballots [voteUid]="v.uid" data-testid="vote-presenter-send-ballots" />
+                  <lfx-vote-send-ballots [voteUid]="v.uid" [blocked]="confirmOpen()" data-testid="vote-presenter-send-ballots" />
                 }
                 <p class="m-0 text-base text-gray-400">Didn't get the email? Scan to open your ballot</p>
                 <lfx-vote-qr [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
@@ -309,3 +311,4 @@
     </header>
   </ng-template>
 </main>
+<p-confirmDialog [dismissableMask]="true" (onHide)="onConfirmHidden()" data-testid="vote-presenter-confirm-dialog" />

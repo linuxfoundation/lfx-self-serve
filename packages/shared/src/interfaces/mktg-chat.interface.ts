@@ -97,3 +97,14 @@ export interface GuildSessionEvent {
   /** Event content — a bare string, or an object with a content type + data. */
   content?: { type?: string; data?: string } | string;
 }
+
+/** Server-side raw event page; metadata can be absent in older Guild responses. */
+export interface GuildRawEventsPage {
+  items?: Partial<GuildSessionEvent>[];
+  pagination?: {
+    offset?: number;
+    limit?: number;
+    has_more?: boolean;
+    total_count?: number;
+  };
+}

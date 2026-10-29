@@ -43,6 +43,7 @@ import {
   getMeetingSelfRemovalMessage,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
+  buildMeetingOrganizerKeys,
   buildMeetingOrganizerMailto,
   buildImportSummary,
   buildRecurrenceNeverEndDate,
@@ -72,6 +73,7 @@ import {
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
   reconcileOptimisticPad,
+  resolveMeetingGuestRole,
   resolveMeetingOrganizer,
   resolveMeetingOwner,
   resolveMeetingCalendarColors,
@@ -1113,6 +1115,36 @@ describe('isUnresolvableParticipantName', () => {
     expect(isUnresolvableParticipantName('Ada', '')).toBe(false);
     expect(isUnresolvableParticipantName('', 'Lovelace')).toBe(false);
     expect(isUnresolvableParticipantName('unknown', 'Lovelace')).toBe(false);
+  });
+});
+
+describe('resolveMeetingGuestRole', () => {
+  const organizerKeys = buildMeetingOrganizerKeys([' Organizer-One@acme-motors.example ', 'organizer-two', '']);
+
+  it('reports a listed organizer by email, ignoring case and spacing', () => {
+    expect(resolveMeetingGuestRole({ email: 'ORGANIZER-ONE@acme-motors.example' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a listed organizer by username', () => {
+    expect(resolveMeetingGuestRole({ email: 'someone@acme-motors.example', username: 'Organizer-Two' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('never reports a listed organizer as a host, whatever their host flag says', () => {
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: true }, organizerKeys)).toBe('organizer');
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: false }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a host-flagged guest who is not an organizer as a host', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: true }, organizerKeys)).toBe('host');
+  });
+
+  it('reports no role for an ordinary guest', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: false }, organizerKeys)).toBeNull();
+  });
+
+  it('treats a missing or blank organizers list as nobody being an organizer', () => {
+    expect(buildMeetingOrganizerKeys(undefined).size).toBe(0);
+    expect(buildMeetingOrganizerKeys(['', '  ']).size).toBe(0);
   });
 });
 

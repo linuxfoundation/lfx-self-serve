@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
+import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT } from '@lfx-one/shared';
 import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_INVITATION_COUNT_REFRESH_MS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -18,7 +19,6 @@ import {
   Vote,
   VoteFilterState,
   VoteListResponse,
-  VotePermalinkTarget,
   VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
@@ -26,6 +26,8 @@ import {
   countVotesByStatus,
   findCursorWalkStartIndex,
   getUserTimezone,
+  isVoteAwaitingMyBallot,
+  isVoteBallotReviewable,
   matchesMyVotesQuickFilter,
   recordPageToken,
   resolveCursorWalkOutcome,
@@ -57,7 +59,6 @@ import {
 } from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
-import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
@@ -67,7 +68,6 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     LowerCasePipe,
     ButtonComponent,
     VotesTableComponent,
-    VoteResultsDrawerComponent,
     VoteCastDrawerComponent,
     RouterLink,
     EmptyStateComponent,
@@ -86,14 +86,7 @@ export class VotesDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
-
-  // === Inputs ===
-  /** Set by VotePermalinkComponent (`/votes/:id`): the drawer to open once for the linked vote. Null on the routed dashboard. */
-  public readonly permalinkTarget = input<VotePermalinkTarget | null>(null);
-
-  // === Outputs ===
-  /** Emits once when the permalink drawer has closed, so the host can drop the vote from the URL. */
-  public readonly permalinkClosed = output<void>();
+  private readonly router = inject(Router);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
@@ -114,13 +107,6 @@ export class VotesDashboardComponent {
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
   protected readonly canWrite = this.projectContextService.canWrite;
-  protected readonly resultsDrawerVisible = signal<boolean>(false);
-  protected readonly castDrawerVisible = signal<boolean>(false);
-  protected readonly selectedVoteId = signal<string | null>(null);
-  // Confirmed deadline from votes-table's voteExtended output, held until votes()/myVotes() reflects a
-  // deadline at least as new — a stale search-index refresh otherwise leaves the open results drawer
-  // showing the pre-extension deadline indefinitely (per @greptile-apps, GH-3823 review).
-  private readonly extendedVoteOverride = signal<Vote | null>(null);
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
@@ -139,6 +125,13 @@ export class VotesDashboardComponent {
   protected readonly managementSummaryError = signal(false);
   protected readonly managementStatusCountsLoading = signal(true);
   protected readonly managementStatusCountsError = signal(false);
+  // Me-lens cast drawer (#4330): opened in place for an active vote still awaiting the viewer's ballot.
+  protected readonly castDrawerVisible = signal<boolean>(false);
+  protected readonly castDrawerVoteId = signal<string | null>(null);
+  // Capture the mode per open session; a missing/refreshed list row must never unlock a submitted ballot.
+  protected readonly castDrawerReadOnly = signal<boolean>(false);
+  /** Accepted ballots stay submitted for this dashboard's lifetime, even if a later indexed read still lags. */
+  private readonly submittedVoteIds = signal<ReadonlySet<string>>(new Set());
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -157,11 +150,6 @@ export class VotesDashboardComponent {
   // Sequential token array: index 0 = token for page 2, index 1 = token for page 3, etc.
   private pageTokens: string[] = [];
 
-  // === Permalink ===
-  // The uid the permalink drawer was opened for — opening once keeps a later target re-emission
-  // from reopening a drawer the user closed.
-  private openedPermalinkUid: string | null = null;
-
   // === Computed Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
@@ -174,8 +162,9 @@ export class VotesDashboardComponent {
   protected readonly managementStatusCounts: Signal<VoteStatusCounts | null> = this.initManagementStatusCounts();
   private readonly voteRequestScope = this.initVoteRequestScope();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
-  protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
+  // List row for the open cast drawer — seeds the ballot so it renders before the vote fetch returns.
+  protected readonly castDrawerVote: Signal<Vote | null> = computed(() => this.myVotes().find((v) => v.uid === this.castDrawerVoteId()) ?? null);
   protected readonly totalCount: Signal<number> = this.initTotalCount();
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
@@ -197,10 +186,15 @@ export class VotesDashboardComponent {
     if (this.isMeLens()) return this.myVotesQuickFilter();
     return this.managementClosingOnly() ? 'closing-soon' : null;
   });
-  /** Results-drawer audience: the permalink's choice for the linked vote (a writer sees `creator` in the Me lens), otherwise by lens. */
-  protected readonly resultsAudience: Signal<'voter' | 'creator'> = this.initResultsAudience();
 
   public constructor() {
+    toObservable(this.castDrawerVisible)
+      .pipe(
+        filter((visible) => !visible),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.castDrawerReadOnly.set(false));
+
     toObservable(this.isMeLens)
       .pipe(
         filter((isMe) => !isMe),
@@ -213,7 +207,6 @@ export class VotesDashboardComponent {
         this.filters.update((state) => ({ ...state, status: PollStatus.ACTIVE }));
       });
 
-    this.initPermalinkDrawer();
     this.initInvitationCountRefresh();
   }
 
@@ -263,38 +256,33 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
   }
 
+  /**
+   * The table's Vote/Review button, title and row click all land here. In the Me lens, an active vote opens the cast
+   * drawer on the list — empty while it still awaits the viewer's ballot (#4330), read-only with their recorded ballot
+   * once they have voted (#4331). It is looked up synchronously in myVotes(), since castDrawerVote() hasn't re-derived
+   * yet. Ended votes, and every vote in the Project/Foundation lens, navigate to the vote page, which opens the cast
+   * drawer itself for a voter awaiting a ballot.
+   */
   protected onViewVote(voteId: string): void {
-    this.selectedVoteId.set(voteId);
-
-    // Look up the picked vote synchronously — selectedListVote() hasn't re-derived yet.
-    const source = this.isMeLens() ? this.myVotes() : this.votes();
-    const picked = source.find((v) => v.uid === voteId) ?? null;
-
-    if (picked && this.shouldOpenCastDrawerFor(picked)) {
-      this.resultsDrawerVisible.set(false);
-      this.castDrawerVisible.set(true);
-    } else {
-      this.castDrawerVisible.set(false);
-      this.resultsDrawerVisible.set(true);
+    if (this.isMeLens()) {
+      const vote = this.myVotes().find((v) => v.uid === voteId);
+      if (vote && (isVoteAwaitingMyBallot(vote) || isVoteBallotReviewable(vote))) {
+        this.castDrawerVoteId.set(voteId);
+        this.castDrawerReadOnly.set(isVoteBallotReviewable(vote));
+        this.castDrawerVisible.set(true);
+        return;
+      }
     }
+    void this.router.navigate(['/votes', voteId]);
   }
 
   protected onViewResults(voteId: string): void {
-    this.selectedVoteId.set(voteId);
-    this.castDrawerVisible.set(false);
-    this.resultsDrawerVisible.set(true);
-  }
-
-  // Hiding the results drawer and showing the cast drawer in one synchronous handler means the
-  // combined visibility signal never emits both hidden, so this switch is not reported as a close.
-  protected onCastFromResults(voteId: string): void {
-    this.selectedVoteId.set(voteId);
-    this.resultsDrawerVisible.set(false);
-    this.castDrawerVisible.set(true);
+    void this.router.navigate(['/votes', voteId], { queryParams: { tab: 'results' } });
   }
 
   // Me-lens uses myVotes (refresh$); fetch$ feeds initVotes (non-Me) and would just cause extra churn.
-  protected onVoteSubmitted(): void {
+  protected onCastVoteSubmitted(voteId: string): void {
+    this.submittedVoteIds.update((ids) => new Set(ids).add(voteId));
     this.refresh$.next();
   }
 
@@ -306,15 +294,11 @@ export class VotesDashboardComponent {
     this.refresh$.next();
   }
 
-  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
-   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
-   *  Also reconciles the closing-soon count and filtered list (per @greptile-apps / @copilot-pull-request-reviewer,
-   *  GH-3823 review): the table no longer emits `refresh` on extend (that reset pagination, per @cursor), so this
-   *  handler re-triggers the summary count and current-page fetch itself — fetch$/refresh$ refetch the page/list
-   *  in place without touching pageTokens or currentFirst, unlike refreshVotes(). extendedVoteOverride above keeps
-   *  the open drawer and this row's rendered deadline correct in the meantime while the search index catches up. */
-  protected onVoteExtended(vote: Vote): void {
-    this.extendedVoteOverride.set(vote);
+  /** votes-table's voteExtended output — reconciles the closing-soon count and filtered list (per @greptile-apps /
+   *  @copilot-pull-request-reviewer, GH-3823 review): the table no longer emits `refresh` on extend (that reset
+   *  pagination, per @cursor), so this handler re-triggers the summary count and current-page fetch itself —
+   *  fetch$/refresh$ refetch the page/list in place without touching pageTokens or currentFirst, unlike refreshVotes(). */
+  protected onVoteExtended(): void {
     if (this.isMeLens()) {
       this.refresh$.next();
     } else {
@@ -487,43 +471,6 @@ export class VotesDashboardComponent {
         },
       ];
     });
-  }
-
-  private initResultsAudience(): Signal<'voter' | 'creator'> {
-    return computed(() => {
-      const target = this.permalinkTarget();
-      if (target && this.selectedVoteId() === target.uid) {
-        return target.audience;
-      }
-      return this.isMeLens() ? 'voter' : 'creator';
-    });
-  }
-
-  /** Opens the permalink target's drawer once, then reports when every drawer has closed again. */
-  private initPermalinkDrawer(): void {
-    toObservable(this.permalinkTarget)
-      .pipe(
-        filter((target): target is VotePermalinkTarget => target !== null),
-        takeUntilDestroyed()
-      )
-      .subscribe((target) => {
-        if (target.uid === this.openedPermalinkUid) return;
-        this.openedPermalinkUid = target.uid;
-        this.selectedVoteId.set(target.uid);
-        this.castDrawerVisible.set(target.drawer === 'cast');
-        this.resultsDrawerVisible.set(target.drawer === 'results');
-      });
-
-    // Observe the combined signal, not separate streams: a synchronous results → cast switch
-    // must not transiently report both drawers closed while their emissions settle.
-    const anyDrawerOpen = computed(() => this.castDrawerVisible() || this.resultsDrawerVisible());
-    toObservable(anyDrawerOpen)
-      .pipe(
-        filter((open) => !open && this.openedPermalinkUid !== null),
-        take(1),
-        takeUntilDestroyed()
-      )
-      .subscribe(() => this.permalinkClosed.emit());
   }
 
   private initProject(): Signal<ProjectContext | null> {
@@ -780,24 +727,10 @@ export class VotesDashboardComponent {
     );
   }
 
-  private initSelectedListVote(): Signal<Vote | null> {
-    return computed(() => {
-      const id = this.selectedVoteId();
-      if (!id) return null;
-      const source = this.isMeLens() ? this.myVotes() : this.votes();
-      const row = source.find((v) => v.uid === id) || null;
-      const override = this.extendedVoteOverride();
-      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
-        return { ...(row ?? override), ...override };
-      }
-      return row;
-    });
-  }
-
   private initMyVotes(): Signal<Vote[]> {
     const lens$ = toObservable(this.lensService.activeLens);
 
-    return toSignal(
+    const fetchedVotes = toSignal(
       combineLatest([lens$, this.refresh$]).pipe(
         switchMap(([lens]) => {
           this.myVotesComplete.set(false);
@@ -827,6 +760,11 @@ export class VotesDashboardComponent {
       ),
       { initialValue: [] }
     );
+    // Overlay only returned rows, never insert a vote or change its authoritative status/access scope.
+    return computed(() => {
+      const submitted = this.submittedVoteIds();
+      return fetchedVotes().map((vote) => (submitted.has(vote.uid) ? { ...vote, response_status: VoteResponseStatus.RESPONDED } : vote));
+    });
   }
 
   private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
@@ -949,16 +887,5 @@ export class VotesDashboardComponent {
 
       return filtered;
     });
-  }
-
-  // Me lens routes all active-awaiting votes to the cast drawer (regardless of poll_type):
-  // - GENERIC renders the real ballot form
-  // - Advanced types (CONDORCET_IRV, INSTANT_RUNOFF_VOTE, MEEK_STV) render the "Coming soon"
-  //   placeholder inside the cast drawer
-  // Either way no PCC link is shown in Me lens. Project / Foundation / Organization lenses
-  // continue to open the read-only results drawer (existing behaviour) where the PCC link
-  // still lives for ops/admin workflows.
-  private shouldOpenCastDrawerFor(vote: Vote): boolean {
-    return this.isMeLens() && vote.status === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
   }
 }

@@ -714,20 +714,20 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
+        data: { preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',

@@ -50,10 +50,10 @@ import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
 /** A start must explicitly discard the current active run before replacing it. */
 export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+/** Another writer already accepted the answers for this exact questions turn. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** A discarded or superseded session cannot accept another turn. */
 export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
-/** The questions turn was already claimed; never send another answers message. */
-export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 
@@ -749,6 +749,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    oneOffDocument: true,
     tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
@@ -756,7 +757,11 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
     batchPreamble: [],
     fields: [],
     sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
-    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    endpoints: {
+      generate: '/api/mktg-agents/member-360/generate',
+      result: '/api/mktg-agents/member-360/result',
+      answers: '/api/mktg-agents/member-360/answers',
+    },
     persistsDocument: true,
     regenerateViaGenerate: true,
   },
@@ -913,6 +918,8 @@ export const MKTG_RUN_POLL = {
   initialDelayMs: 4000,
   /** Interval between subsequent polls. */
   intervalMs: 5000,
+  /** Reconcile another writer's answers while a questions screen is open. */
+  questionsIntervalMs: 10000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;
@@ -928,6 +935,9 @@ export const MKTG_RUN_POLL = {
  * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Bound raw Guild history reads to 2,000 events per result request. */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
 
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';

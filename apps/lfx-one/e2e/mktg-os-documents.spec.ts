@@ -44,9 +44,14 @@ test.describe('Marketing OS current revisions', () => {
       if (state === 'questions') {
         const link = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
         await expect(link).toHaveText('Answer the questions');
-        await expect(link).toHaveAttribute('href', new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}$`));
+        await expect(link).toHaveAttribute(
+          'href',
+          new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}&run=${run.runId}$`)
+        );
         await link.click();
-        await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers');
+        await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
         return;
       }
       await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
@@ -64,15 +69,19 @@ test.describe('Marketing OS current revisions', () => {
     });
   }
 
-  test('labels a Member 360 questions run as paused in the started list and navigation', async ({ page }) => {
+  test('links a Member 360 waiting-for-answers run to its run page from row and navigation', async ({ page }) => {
     const run: ReturnType<typeof startedDocumentRun> = { ...startedDocumentRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
     await setupDocuments(page, { empty: true, runs: [run] });
     await openDocuments(page);
     const row = page.getByTestId(`mktg-documents-started-run-${run.runId}`);
-    await expect(row).toContainText('Paused — the run needs input');
-    await expect(row).not.toContainText('Waiting for your answers');
-    await expect(page.getByTestId('mktg-documents-nav-member-360')).toContainText('Paused');
-    await expect(page.getByTestId('mktg-documents-nav-member-360')).not.toContainText('Needs answers');
+    await expect(row).toContainText('Waiting for your answers');
+    await expect(row).not.toContainText('Paused — the run needs input');
+    const action = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
+    await expect(action).toHaveText('Answer the questions');
+    await expect(action).toHaveAttribute('href', /\/mktg-os-agents\/member-360\?project=[^&]+$/);
+    const nav = page.getByTestId('mktg-documents-nav-member-360');
+    await expect(nav).toContainText('Needs answers');
+    await expect(nav).toHaveAttribute('href', (await action.getAttribute('href')) ?? '');
   });
 
   for (const entry of ['Started runs Open', 'another-tab run URL'] as const) {
@@ -176,6 +185,11 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded', { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-started-runs')).toContainText('No runs in progress', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-started-slot')).not.toHaveClass(/min-h-40/);
+    const card = await page.getByTestId('mktg-documents-started-runs').boundingBox();
+    const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
+    if (!card || !navigation) throw new Error('Missing settled Documents geometry');
+    expect(navigation.y - card.y - card.height).toBeLessThanOrEqual(24); // No pending-height band below the retained empty card.
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });

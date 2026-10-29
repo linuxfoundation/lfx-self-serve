@@ -131,13 +131,13 @@
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
-    @if (!closedRun() && !loading() && view() && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
+    @if (!closedRun() && !loading() && (view() || runState() || restoreNotice()) && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"
         class="w-fit text-sm font-semibold text-blue-600 hover:text-blue-800"
         data-testid="mktg-document-view-run-again"
-        >Run again</a
+        >{{ restoreNotice() && !view() && !runState() ? 'Open intake' : 'Run again' }}</a
       >
     }
 
@@ -157,13 +157,20 @@
       <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
     }
     @if (!isAeoDocument()) {
+      @if (memberQuestionsCreator() && selectedRun()?.state === 'questions') {
+        <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+          Member 360 needs your answers — continue from the Member 360 page in the tab where you started it.
+        </p>
+      }
       <lfx-mktg-run-progress
         [project]="projectUid()"
+        [projectName]="projectName()"
         [announceState]="false"
         [agentKey]="params().agentKey"
         [documentId]="params().documentId"
         [runId]="runParam() || handoffRunId()"
         [polling]="publicProgressPolling()"
+        [continuous]="publicProgressPolling()"
         [refreshKey]="progressRefreshKey()"
         [loadRevision]="publicProgressPolling()"
         [revisionId]="revisionParam()"
@@ -177,10 +184,11 @@
         [retrying]="retrying()"
         [errorText]="errorText()"
         [waitingForQuestions]="waitingForQuestions()"
+        [answersSupported]="params().agentKey === 'member-360' ? false : null"
         [runAgentId]="runAgentId()"
         [externalActivity]="visibleRunActivity()"
-        [suppressCard]="runFailed() || !!closedRun()"
-        [headless]="!!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
+        [suppressCard]="runFailed() || !!closedRun() || (memberQuestionsCreator() && selectedRun()?.state === 'questions')"
+        [headless]="loading() || !!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
         (observed)="onPublicProgress($event)"
         (readError)="onPublicProgressError($event)"
         (retry)="onRetryRun()"
@@ -199,6 +207,9 @@
       </div>
     }
 
+    @if (answeredNotice(); as concurrent) {
+      <lfx-message severity="info" [text]="concurrent.message" data-testid="mktg-document-view-answered-note" />
+    }
     @if (restoreNotice()) {
       <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
     }
@@ -263,6 +274,8 @@
             [icon]="runAgent()?.icon ?? ''"
             [iconClass]="activityIconClass()"
             data-testid="mktg-document-view-activity" />
+        } @else if (runFirstPaint()) {
+          <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
         } @else {
           <div
             class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500"
@@ -363,9 +376,15 @@
     }
 
     @if (loading() && !isAeoDocument()) {
-      <div class="rounded-xl border border-gray-200 bg-white" data-testid="mktg-document-view-loading">
-        <p class="px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</p>
-      </div>
+      @if (runFirstPaint()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
+      } @else {
+        <lfx-mktg-skeleton
+          variant="card"
+          label="Loading the document…"
+          class="rounded-xl border border-gray-200 bg-white px-6 py-5"
+          data-testid="mktg-document-view-loading" />
+      }
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">

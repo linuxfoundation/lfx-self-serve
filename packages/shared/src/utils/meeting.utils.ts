@@ -32,6 +32,7 @@ import type {
   Meeting,
   MeetingAllowedVotingStatus,
   MeetingCommittee,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
   MeetingOccurrenceOption,
@@ -1599,6 +1600,31 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
     return rankDelta;
   }
   return a.first_name?.localeCompare(b.first_name ?? '') ?? 0;
+}
+
+/**
+ * Lowercased keys (email or username) of the meeting's listed organizers, for {@link resolveMeetingGuestRole}.
+ * @description The meeting's `organizers` list is typed as usernames on read and emails on create, so a guest
+ * is matched on either. People who organize through project permissions are not in the list.
+ */
+export function buildMeetingOrganizerKeys(organizers: readonly string[] | null | undefined): Set<string> {
+  return new Set((organizers ?? []).map((key) => key?.trim().toLowerCase()).filter(Boolean));
+}
+
+/**
+ * Which role label a guest carries: `organizer` for a listed organizer, `host` for a guest marked as a Meeting
+ * Host who is not one, otherwise `null`. An organizer counts as a host already, so a listed organizer is never
+ * reported as a host, whatever their `host` flag says.
+ */
+export function resolveMeetingGuestRole(person: MeetingHostCandidate, organizerKeys: ReadonlySet<string>): MeetingGuestRole {
+  const email = person.email?.trim().toLowerCase();
+  const username = person.username?.trim().toLowerCase();
+
+  if ((email && organizerKeys.has(email)) || (username && organizerKeys.has(username))) {
+    return 'organizer';
+  }
+
+  return person.host ? 'host' : null;
 }
 
 /**

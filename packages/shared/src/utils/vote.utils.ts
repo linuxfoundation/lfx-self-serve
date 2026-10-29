@@ -13,37 +13,63 @@ import {
   VOTE_TITLE_MAX_LENGTH,
 } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { VOTES_STATS_WINDOW_DAYS, VOTE_PRESENTER_TITLE_MAX_CHARS } from '../constants/vote.constants';
+import {
+  VOTE_PARTICIPATION_STATUS_FILTER_LABELS,
+  VOTE_VOTER_MAX_CHOICE_CHIPS,
+  VOTE_VOTER_NOT_VOTED_LABELS,
+  VOTE_VOTER_STATUS_FILTER_LABELS,
+  VOTE_PRESENTER_TITLE_MAX_CHARS,
+  VOTES_STATS_WINDOW_DAYS,
+} from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
-import { truncateToUtf16Units } from './string.utils';
+import { splitIntoParagraphs, truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
   CommentPromptFormValue,
+  CommentResponseView,
   CommentResponseFormData,
   CommentResponseInput,
   CreatePollCommentPrompt,
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  MyVoteBallot,
+  MyVoteResponse,
   MyVotesQuickFilter,
+  PollAnswer,
   PollCommentPrompt,
   PollCommentResult,
   PollQuestion,
   QuestionFormValue,
   RankedQuestionView,
   UpdateVoteRequest,
+  UserChoice,
   Vote,
+  VoteAnswerSummaryLine,
+  VoteBallotQuestionView,
+  VoteBallotSubmission,
+  VoteCastFormPrefill,
   VoteFormValue,
   VoteParticipationStats,
+  VoteParticipationStatusCounts,
+  VoteParticipationVoter,
+  VoteParticipationVoterRowView,
   VoteResultsOption,
   VoteResultsQuestion,
+  VoteResultsSummaryLine,
   VoteResultsResponse,
   VoteRowParticipation,
+  VoterResultsState,
+  VoteVoter,
+  VoteVoterChoiceFilterOption,
+  VoteVoterChoiceSummary,
+  VoteVoterRowView,
+  VoteVoterStatusCounts,
 } from '../interfaces/poll.interface';
 
 /** Active votes with a deadline strictly after now and within the rolling seven-day window. */
@@ -53,10 +79,26 @@ export function isVoteClosingSoon(vote: Vote, nowMs: number): boolean {
   return Number.isFinite(endMs) && nowMs < endMs && endMs <= nowMs + VOTES_STATS_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 }
 
+/**
+ * True when the viewer can cast a ballot on this vote right now: it is active and their response is still awaited.
+ * Shared by the My Votes "needs vote" filter and the My Votes cast drawer, so both agree on which rows await a ballot.
+ */
+export function isVoteAwaitingMyBallot(vote: Vote): boolean {
+  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+}
+
+/**
+ * True when My Votes can show the viewer's recorded ballot in a read-only drawer: active and already responded (#4331).
+ * My Votes opens the cast drawer in read-only review mode for these rows instead of navigating to the vote page.
+ */
+export function isVoteBallotReviewable(vote: Vote): boolean {
+  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.RESPONDED;
+}
+
 /** Matches the personal summary's status/response semantics at a shared time snapshot. */
 export function matchesMyVotesQuickFilter(vote: Vote, filter: MyVotesQuickFilter, nowMs: number): boolean {
   if (filter === 'closing-soon') return isVoteClosingSoon(vote, nowMs);
-  return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+  return isVoteAwaitingMyBallot(vote);
 }
 
 /**
@@ -200,7 +242,7 @@ function computeParticipationPercent(responses: number, invited: number): number
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
  * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
- * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-detail-header,
  * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
  * hydration — this does not prevent a server/client difference, it just makes the server side
  * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
@@ -230,7 +272,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), 
 }
 
 /**
- * Computes participation stats for the results drawer from the results API payload
+ * Computes participation stats for the vote detail page from the results API payload
  * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
  * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
  * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
@@ -343,15 +385,74 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null): R
 }
 
 /**
+ * Joins names as "a", "a and b" or "a, b and c"
+ */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Builds the one-line-per-question results summary shown on the vote detail Overview
+ * @description Generic and majority votes read the leader/tie markers from `questions` without declaring an elected
+ * winner or inferring quorum/threshold rules. Ranked votes use the choice(s) with the most rank-1 votes. Abstentions are not part of the summary.
+ * @param questions - Processed plurality questions from `buildVoteResultsQuestions`
+ * @param rankedQuestions - Ranked views from `buildRankedQuestionViews`
+ * @param isGeneric - Whether the vote renders the plurality layout (otherwise the ranked views are summarised)
+ * @param isClosed - Whether the vote is finalized
+ * @returns One VoteResultsSummaryLine per question, in API order
+ */
+export function buildVoteResultsSummary(
+  questions: VoteResultsQuestion[],
+  rankedQuestions: RankedQuestionView[],
+  isGeneric: boolean,
+  isClosed: boolean
+): VoteResultsSummaryLine[] {
+  if (!isGeneric) {
+    return rankedQuestions.map((question) => {
+      const firstChoiceCounts = question.choiceDistributions.map((row) => ({
+        text: row.choiceText,
+        count: row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0,
+      }));
+      const topCount = Math.max(...firstChoiceCounts.map((row) => row.count), 0);
+      const leaders = firstChoiceCounts.filter((row) => row.count === topCount);
+
+      let text = isClosed ? 'No rankings recorded' : 'No rankings recorded yet';
+      if (topCount > 0 && leaders.length > 1) {
+        text = `Most first choices: ${joinNames(leaders.map((row) => row.text))} (${topCount} ${topCount === 1 ? 'voter' : 'voters'} each)`;
+      } else if (topCount > 0) {
+        text = `Most first choices: ${leaders[0].text} (${topCount} ${topCount === 1 ? 'voter' : 'voters'})`;
+      }
+
+      return { questionId: question.questionId, question: question.prompt, text };
+    });
+  }
+
+  return questions.map((question) => {
+    const leaders = question.options.filter((option) => (isClosed ? option.isWinner || option.isTied : option.isLeading));
+    const percentage = leaders.length > 0 ? Math.round(leaders[0].percentage) : 0;
+
+    let text = 'No choices selected';
+    if (question.totalVotes > 0 && leaders.length > 1) {
+      text = `Tied: ${joinNames(leaders.map((option) => option.text))} (${percentage}% each)`;
+    } else if (question.totalVotes > 0 && leaders.length === 1) {
+      text = `${leaders[0].text} ${isClosed ? 'received the most votes' : 'leads'} with ${percentage}%`;
+    }
+
+    return { questionId: question.questionId, question: question.question, text };
+  });
+}
+
+/**
  * Merges the vote detail's comment prompts with the results payload's comment responses
  * @description Prompts come from the vote detail (`poll_comment_prompts`), not the results payload — the results
  * endpoint only reports prompts that have responses, which would hide prompts on zero-response votes. Responses
- * left-join in by `prompt_id` when present, sorted newest-first (pagination slices the already-sorted list, so page 1
- * always shows the most recent comments). If the detail supplied no prompts (e.g. it failed and the list-vote
- * fallback lacks them), degrade to the results payload's prompts that have responses.
+ * left-join in by `prompt_id` when present. Timestamped responses sort newest-first; timestamp-free
+ * pseudo-anonymous responses preserve the server's comment-text order. Pagination slices this ordered list.
+ * If the detail supplied no prompts (e.g. it failed and the list-vote fallback lacks them), degrade to the results payload's prompts that have responses.
  * @param commentResults - `comment_results` from the results API
  * @param detailPrompts - `poll_comment_prompts` from the vote detail, when available
- * @returns One PollCommentResult per prompt, with responses sorted newest-first
+ * @returns One PollCommentResult per prompt, with timestamped responses newest-first and timestamp-free responses in server order
  */
 export function mergeCommentResults(commentResults: PollCommentResult[], detailPrompts: PollCommentPrompt[] | undefined): PollCommentResult[] {
   if (!detailPrompts?.length) {
@@ -370,6 +471,32 @@ export function mergeCommentResults(commentResults: PollCommentResult[], detailP
   });
 }
 
+/**
+ * Picks the comments the vote detail Overview previews (#4448)
+ * @description Flattens responses across every prompt. Timestamped responses (named votes read by a vote manager)
+ * sort newest-first across prompts; text-only responses carry no timestamp, so they keep the input order — the
+ * server's comment-text order — rather than implying a recency nobody may know.
+ * @param commentResults - Per-prompt comment results, e.g. from {@link mergeCommentResults}
+ * @param limit - Maximum number of responses to return
+ * @returns Up to `limit` responses decorated for display, with a stable prompt-aware `previewKey` and preview `position`
+ */
+export function getRecentCommentResponses(commentResults: PollCommentResult[], limit: number): CommentResponseView[] {
+  const responses = commentResults.flatMap((cr) =>
+    cr.responses.map((response, index) => ({
+      ...response,
+      promptText: cr.prompt.prompt,
+      previewKey: JSON.stringify([cr.prompt.prompt_id, response.vote_id ?? index]),
+    }))
+  );
+  const ordered = responses.some((response) => response.vote_creation_time) ? sortCommentResponsesByRecency(responses) : responses;
+
+  return ordered.slice(0, limit).map((response, index) => ({
+    ...response,
+    paragraphs: splitIntoParagraphs(response.comment_text),
+    position: index,
+  }));
+}
+
 /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
 export function computeResultPercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
   if (apiPercentage > 0) return apiPercentage;
@@ -385,9 +512,9 @@ function isParticipationCount(value: unknown): value is number {
 /**
  * Computes the votes-table participation summary for one vote row
  * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
- * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
+ * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` on the vote detail page.
  * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
- * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
+ * never yields a percent. Use the same completion-aware rounding as the vote detail page: incomplete counts cap at 99%,
  * complete/excess counts at 100%. A just-opened vote whose index row has not reported a positive electorate yet shows
  * COUNTING instead of a false "No one invited" (GH-4078).
  * @param vote - Vote list row from the query-service index or per-vote REST
@@ -479,6 +606,21 @@ export function mapCommentPromptsToApiFormat(commentPrompts: CommentPromptFormVa
     .map((commentPrompt) => ({ prompt: commentPrompt.prompt.trim() }));
 
   return nonBlank.length > 0 ? nonBlank : undefined;
+}
+
+/**
+ * Keeps recorded ballot comments visible when current prompt metadata is incomplete.
+ * Known prompts retain their labels and order; saved nonblank responses add missing ids once.
+ */
+export function buildBallotCommentPrompts(prompts: PollCommentPrompt[] | undefined, responses: CommentResponseInput[]): PollCommentPrompt[] {
+  const resolved = [...(prompts ?? [])];
+  const knownIds = new Set(resolved.map((prompt) => prompt.prompt_id));
+  for (const response of responses) {
+    if (!response.comment_text?.trim() || knownIds.has(response.prompt_id)) continue;
+    resolved.push({ prompt_id: response.prompt_id, prompt: 'Comment' });
+    knownIds.add(response.prompt_id);
+  }
+  return resolved;
 }
 
 /** Reconciles a ballot comment form against the vote's prompts, keyed by prompt_id.
@@ -744,13 +886,383 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
 
 /**
  * Builds the relative path to a vote's canonical, lens-independent permalink page
- * (`VotePermalinkComponent`, mounted at `/votes/:id`).
+ * (the vote detail page, `VoteDetailComponent`, mounted at `/votes/:id`).
  * Combine with `toAbsoluteUrl` for a shareable/copyable absolute URL.
  * @param voteUid - The vote uid
  * @returns The relative permalink path, e.g. `/votes/abc123`
  */
 export function votePermalinkPath(voteUid: string): string {
   return `/votes/${encodeURIComponent(voteUid)}`;
+}
+
+/**
+ * Voter-side results panel for a viewer without write access — the single copy of the rules the vote detail page
+ * applies. A removed voter is `access_denied`; a settled, error-free, empty my-response is a viewer who was
+ * never invited (`not_participant`), so a deep link to a closed vote can never route a stranger to final results. A failed
+ * my-response call must not collapse into `not_participant` — callers render their error state for it instead.
+ * @param vote - The loaded vote, or null while loading
+ * @param myResponse - The viewer's vote_response row (null when absent or not loaded yet)
+ * @param myResponseLoading - Whether the my-response request is still in flight
+ * @param myResponseError - Whether the last my-response request failed (non-404)
+ * @param listResponseStatus - `response_status` decorated on the list row the caller opened from, if any (wins over the vote's own)
+ */
+export function resolveVoterResultsState(
+  vote: Vote | null,
+  myResponse: MyVoteResponse | null,
+  myResponseLoading: boolean,
+  myResponseError: boolean,
+  listResponseStatus?: VoteResponseStatus
+): VoterResultsState {
+  if (!vote) return 'not_voted';
+  if (myResponse?.voter_removed) return 'access_denied';
+  if (!myResponseLoading && !myResponseError && !myResponse) return 'not_participant';
+  const decoratedResponseStatus = listResponseStatus ?? vote.response_status;
+  const submitted = myResponse?.vote_status === IndexedVoteResponseStatus.RESPONDED || decoratedResponseStatus === VoteResponseStatus.RESPONDED;
+  if (normalizePollStatus(vote.status) === PollStatus.ENDED) return 'closed';
+  if (submitted) return 'submitted';
+  return 'not_voted';
+}
+
+/**
+ * Whether a viewer without write access may request a vote's results: only after it ended, and only with a settled,
+ * successful my-response row for this same vote that wasn't removed. Every input is checked against `voteId` so a stale
+ * vote or response from the previously opened vote can never authorize the next vote's request.
+ * @param voteId - The vote the caller is about to fetch results for
+ * @param vote - The loaded vote
+ * @param myResponse - The viewer's vote_response row
+ * @param myResponseLoading - Whether the my-response request is still in flight
+ * @param myResponseError - Whether the last my-response request failed (non-404)
+ */
+export function canVoterFetchVoteResults(
+  voteId: string,
+  vote: Vote | null,
+  myResponse: MyVoteResponse | null,
+  myResponseLoading: boolean,
+  myResponseError: boolean
+): boolean {
+  return (
+    vote?.uid === voteId &&
+    normalizePollStatus(vote.status) === PollStatus.ENDED &&
+    myResponse?.vote_uid === voteId &&
+    !myResponse.voter_removed &&
+    !myResponseLoading &&
+    !myResponseError
+  );
+}
+
+/**
+ * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
+ * totals and comments on a named vote, and participation only on a pseudo-anonymous one until close; voters see their
+ * own response, and totals and comments only after close), never a new rule. Ballot privacy itself is shown by the page header's
+ * privacy tag, so it is not repeated here.
+ * @param audience - `creator` for a project or committee writer, `voter` for everyone else
+ * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting; missing metadata never promises access to individual ballots
+ * @param isClosed - Whether the vote has ended. A draft is not closed.
+ * @param ballotsAvailable - Whether the vote is open or ended, so managers can use the Voters tab now
+ * @param resultsHeld - Whether totals and comments are still withheld after the vote ends
+ */
+export function getVoteVisibilityRules(
+  audience: 'voter' | 'creator',
+  pseudoAnonymous: boolean | null | undefined,
+  isClosed: boolean,
+  ballotsAvailable = true,
+  resultsHeld = false
+): string[] {
+  const rules: string[] = [];
+  if (isClosed && resultsHeld) {
+    rules.push('Voting has closed. Totals and comments will appear once they are finalized.');
+  } else if (audience === 'creator') {
+    rules.push(isClosed ? 'As a manager, you can see the final totals and comments.' : creatorOpenVisibilityRule(pseudoAnonymous));
+    rules.push(
+      isClosed ? 'Invited voters now see the final totals and comments, without commenter names.' : 'Voters see only their own response until the vote closes.'
+    );
+  } else if (isClosed) {
+    rules.push(
+      pseudoAnonymous === false
+        ? 'Invited voters see the final totals and comments. Only vote managers see who wrote each comment.'
+        : 'Invited voters see the final totals and comments. Comments are shown without names, including for vote managers.'
+    );
+  } else {
+    rules.push('You see only your own response. Totals and comments stay hidden until the vote closes.');
+  }
+  // Only explicitly named votes permit individual ballots; missing privacy metadata fails closed.
+  if (pseudoAnonymous !== false) {
+    rules.push('No one sees how another voter voted on this page.');
+  } else if (audience === 'creator') {
+    rules.push(
+      ballotsAvailable
+        ? "You can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."
+        : "Once voting opens, you can see each voter's ballot on the Voters tab. Voters can't see each other's ballots."
+    );
+  } else {
+    rules.push("Vote managers can see each voter's ballot. Other voters can't see yours.");
+  }
+  return rules;
+}
+
+/** A manager's view of an open vote: live totals on a named vote; participation only on any other (#3916), where totals are held until close. */
+function creatorOpenVisibilityRule(pseudoAnonymous: boolean | null | undefined): string {
+  if (pseudoAnonymous !== false) return 'As a manager, you can follow who has responded. Totals and comments appear when the vote closes.';
+  return 'As a manager, you can follow live totals and comments until the vote closes.';
+}
+
+/** Splits a Voters tab choice key (`<question_id>:<choice_id>`) at its first colon; null when malformed. */
+function parseVoteVoterChoiceKey(choiceKey: string): { questionId: string; choiceId: string } | null {
+  const separator = choiceKey.indexOf(':');
+  if (separator <= 0 || separator === choiceKey.length - 1) return null;
+  return { questionId: choiceKey.slice(0, separator), choiceId: choiceKey.slice(separator + 1) };
+}
+
+/** A ranked answer's preferences in rank order — `ranked_user_choice` when present, else `user_choice`; unranked entries keep their order. */
+function rankedAnswerChoices(answer: PollAnswer): UserChoice[] {
+  const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
+  return choices
+    .map((choice, index) => ({ choice, index }))
+    .sort((a, b) => (a.choice.choice_rank ?? a.index + 1) - (b.choice.choice_rank ?? b.index + 1))
+    .map(({ choice }) => choice);
+}
+
+/** The voter's choices for one answer, in display order: ranked preferences for a ranked vote, selections otherwise. */
+function answerChoices(vote: Pick<Vote, 'poll_type'>, answer: PollAnswer): UserChoice[] {
+  return isRankedPollType(vote.poll_type) ? rankedAnswerChoices(answer) : (answer.user_choice ?? []);
+}
+
+/** The vote's questions, falling back to the voter's answers when the vote detail carries none. */
+function voteVoterQuestions(vote: Pick<Vote, 'poll_questions'>, voter: Pick<VoteVoter, 'poll_answers'>): PollQuestion[] {
+  if (vote.poll_questions?.length) return vote.poll_questions;
+  return (voter.poll_answers ?? []).map((answer) => ({ question_id: answer.question_id, prompt: answer.prompt, type: answer.type, choices: [] }));
+}
+
+/**
+ * Participation status of an invited voter (#3914)
+ * @description The voter list endpoint derives the status (#3911); an unrecognized value reads as not voted, so a
+ * row never claims a ballot the list can't show.
+ */
+export function getVoteVoterStatus(voter: Pick<VoteVoter, 'status'>): VoteVoterStatus {
+  return Object.values(VoteVoterStatus).includes(voter.status) ? voter.status : VoteVoterStatus.NOT_VOTED;
+}
+
+/**
+ * Builds the Choice cell of a Voters tab row (#3914): one summary per question, in question order
+ * @description Choice text comes from the vote's questions when the choice still exists there, else from the ballot.
+ * Single and multiple choice show up to two chips, ranked questions `<rank> <choice>` chips; the rest count as `+N`.
+ * A voter who abstained or hasn't voted gets no summaries — the row shows their status instead.
+ */
+export function buildVoteVoterChoiceSummaries(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, voter: VoteVoter): VoteVoterChoiceSummary[] {
+  if (getVoteVoterStatus(voter) !== VoteVoterStatus.VOTED) return [];
+
+  const ranked = isRankedPollType(vote.poll_type);
+  const questions = voteVoterQuestions(vote, voter);
+  const answersById = new Map((voter.poll_answers ?? []).map((answer) => [answer.question_id, answer]));
+
+  return questions.map((question, index) => {
+    const textById = new Map((question.choices ?? []).map((choice) => [choice.choice_id, choice.choice_text]));
+    const answer = answersById.get(question.question_id);
+    const choices = answer ? answerChoices(vote, answer) : [];
+    const labels = choices.map((choice, position) => {
+      const text = textById.get(choice.choice_id) ?? choice.choice_text;
+      return ranked ? `${position + 1} ${text}` : text;
+    });
+
+    return {
+      questionId: question.question_id,
+      ...(questions.length > 1 && { questionLabel: `Q${index + 1}` }),
+      ranked,
+      chips: labels.slice(0, VOTE_VOTER_MAX_CHOICE_CHIPS),
+      overflow: Math.max(labels.length - VOTE_VOTER_MAX_CHOICE_CHIPS, 0),
+    };
+  });
+}
+
+/**
+ * Builds the Voters tab's Choice filter options (#3914) from the vote's questions
+ * @description Keys are `<question_id>:<choice_id>`. Generic labels are the choice text, prefixed `Q<n>: ` when the
+ * vote has several questions; ranked questions filter on the voter's first choice and read `First choice: <choice>`.
+ */
+export function buildVoteVoterChoiceFilterOptions(vote: Pick<Vote, 'poll_type' | 'poll_questions'>): VoteVoterChoiceFilterOption[] {
+  const questions = vote.poll_questions ?? [];
+  const ranked = isRankedPollType(vote.poll_type);
+
+  return questions.flatMap((question, index) => {
+    const prefix = questions.length > 1 ? `Q${index + 1}: ` : '';
+    return (question.choices ?? []).map((choice) => ({
+      label: `${prefix}${ranked ? 'First choice: ' : ''}${choice.choice_text}`,
+      value: `${question.question_id}:${choice.choice_id}`,
+    }));
+  });
+}
+
+/**
+ * Whether a voter's current ballot matches a Voters tab choice key (#3914)
+ * @description Generic questions match any selected choice; ranked questions match the voter's rank-1 choice — the
+ * same count the results' Rank 1 count link shows. Only voted ballots match; a malformed key matches no one.
+ */
+export function matchesVoteVoterChoice(voter: VoteVoter, choiceKey: string, vote: Pick<Vote, 'poll_type'>): boolean {
+  const key = parseVoteVoterChoiceKey(choiceKey);
+  if (!key || getVoteVoterStatus(voter) !== VoteVoterStatus.VOTED) return false;
+
+  const answer = voter.poll_answers?.find((candidate) => candidate.question_id === key.questionId);
+  if (!answer) return false;
+  if (isRankedPollType(vote.poll_type)) return rankedAnswerChoices(answer)[0]?.choice_id === key.choiceId;
+  return (answer.user_choice ?? []).some((choice) => choice.choice_id === key.choiceId);
+}
+
+/**
+ * Maps a voter from GET /api/votes/:uid/voters to its Voters tab row (#3914)
+ * @description Role is the voting eligibility (`user_voting_status`), which decides who may vote; the committee role is
+ * secondary text. The not-voted label follows the vote: "Did not vote" once it has ended, "Not voted yet" otherwise.
+ */
+export function buildVoteVoterRowView(vote: Pick<Vote, 'status' | 'poll_type' | 'poll_questions'>, voter: VoteVoter): VoteVoterRowView {
+  const status = getVoteVoterStatus(voter);
+  const isClosed = normalizePollStatus(vote.status) === PollStatus.ENDED;
+  const notVotedLabel = isClosed ? VOTE_VOTER_NOT_VOTED_LABELS.closed : VOTE_VOTER_NOT_VOTED_LABELS.active;
+  const statusLabel = status === VoteVoterStatus.NOT_VOTED ? notVotedLabel : VOTE_VOTER_STATUS_FILTER_LABELS[status];
+
+  return {
+    uid: voter.uid,
+    displayName: voter.user_name?.trim() || voter.username?.trim() || voter.user_email?.trim() || 'Unknown voter',
+    organization: voter.user_org_name || undefined,
+    role: voter.user_voting_status || undefined,
+    committeeRole: voter.user_role || undefined,
+    status,
+    statusLabel,
+    choiceSummaries: buildVoteVoterChoiceSummaries(vote, voter),
+    submittedAt: status === VoteVoterStatus.NOT_VOTED ? undefined : voter.submitted_at,
+    hasBallot: status !== VoteVoterStatus.NOT_VOTED,
+    voter,
+  };
+}
+
+/**
+ * Orders Voters tab rows for display (#3914)
+ * @description While the vote is open, voters who haven't voted come first so a manager sees who to remind. Otherwise
+ * rows follow the first question's choice order (a ranked vote's first choice), then abstentions, then non-voters.
+ * Ties break on name. Returns a new array.
+ */
+export function sortVoteVotersForDisplay(rows: readonly VoteVoterRowView[], vote: Pick<Vote, 'status' | 'poll_type' | 'poll_questions'>): VoteVoterRowView[] {
+  const byName = (a: VoteVoterRowView, b: VoteVoterRowView): number => a.displayName.localeCompare(b.displayName, undefined, { sensitivity: 'base' });
+
+  if (normalizePollStatus(vote.status) === PollStatus.ACTIVE) {
+    const notVotedFirst = (row: VoteVoterRowView): number => (row.status === VoteVoterStatus.NOT_VOTED ? 0 : 1);
+    return [...rows].sort((a, b) => notVotedFirst(a) - notVotedFirst(b) || byName(a, b));
+  }
+
+  const firstQuestion = vote.poll_questions?.[0];
+  const choiceOrder = new Map((firstQuestion?.choices ?? []).map((choice, index) => [choice.choice_id, index]));
+  const unknownChoice = choiceOrder.size;
+  const rank = (row: VoteVoterRowView): number => {
+    if (row.status === VoteVoterStatus.ABSTAINED) return unknownChoice + 1;
+    if (row.status === VoteVoterStatus.NOT_VOTED) return unknownChoice + 2;
+    const answer = firstQuestion ? row.voter.poll_answers?.find((candidate) => candidate.question_id === firstQuestion.question_id) : undefined;
+    const first = answer ? answerChoices(vote, answer)[0] : undefined;
+    return first ? (choiceOrder.get(first.choice_id) ?? unknownChoice) : unknownChoice;
+  };
+
+  return [...rows].sort((a, b) => rank(a) - rank(b) || byName(a, b));
+}
+
+/**
+ * Maps a participation-only voter from GET /api/votes/:uid/voters to its Voters tab row on a pseudo-anonymous vote (#3916)
+ * @description Same Role and committee-role columns as {@link buildVoteVoterRowView}, with only a Responded / Not responded status.
+ */
+export function buildVoteParticipationRowView(voter: VoteParticipationVoter): VoteParticipationVoterRowView {
+  return {
+    displayName: voter.user_name?.trim() || 'Unknown voter',
+    organization: voter.user_org_name || undefined,
+    role: voter.user_voting_status || undefined,
+    committeeRole: voter.user_role || undefined,
+    status: voter.status,
+    statusLabel: VOTE_PARTICIPATION_STATUS_FILTER_LABELS[voter.status],
+  };
+}
+
+/** Counts participation-only Voters tab rows per status pill (#3916); `all` is every row. */
+export function countVoteParticipationByStatus(rows: readonly Pick<VoteParticipationVoterRowView, 'status'>[]): VoteParticipationStatusCounts {
+  const counts: VoteParticipationStatusCounts = { all: rows.length, responded: 0, pending: 0 };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
+}
+
+/** Counts Voters tab rows per status pill (#3914); `all` is every row. */
+export function countVoteVotersByStatus(rows: readonly Pick<VoteVoterRowView, 'status'>[]): VoteVoterStatusCounts {
+  const counts: VoteVoterStatusCounts = { all: rows.length, [VoteVoterStatus.VOTED]: 0, [VoteVoterStatus.ABSTAINED]: 0, [VoteVoterStatus.NOT_VOTED]: 0 };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
+}
+
+/**
+ * Builds the read-only ballot dialog's questions for one voter (#3914)
+ * @description Generic questions list every choice with its selected state (single choice radio-style, the rest
+ * checkbox-style); ranked questions list the voter's preferences in order, then the choices they left unranked.
+ * Selected choices missing from the vote's questions are still shown, so a renamed or removed choice never hides part
+ * of the ballot.
+ */
+export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, voter: Pick<VoteVoter, 'poll_answers'>): VoteBallotQuestionView[] {
+  const ranked = isRankedPollType(vote.poll_type);
+  const answersById = new Map((voter.poll_answers ?? []).map((answer) => [answer.question_id, answer]));
+
+  return voteVoterQuestions(vote, voter).map((question, index) => {
+    const answer = answersById.get(question.question_id);
+    const picked = answer ? answerChoices(vote, answer) : [];
+    const pickedIds = new Set(picked.map((choice) => choice.choice_id));
+    const questionChoices = question.choices ?? [];
+    const textById = new Map(questionChoices.map((choice) => [choice.choice_id, choice.choice_text]));
+    const orphaned = picked.filter((choice) => !textById.has(choice.choice_id));
+    const allChoices = [...questionChoices, ...orphaned];
+
+    return {
+      questionId: question.question_id,
+      number: index + 1,
+      prompt: question.prompt || answer?.prompt || '',
+      ranked,
+      multiple: (answer?.type ?? question.type) === 'multiple_choice',
+      choices: ranked ? [] : allChoices.map((choice) => ({ choiceId: choice.choice_id, text: choice.choice_text, selected: pickedIds.has(choice.choice_id) })),
+      rankedChoices: ranked
+        ? picked.map((choice, position) => ({
+            choiceId: choice.choice_id,
+            text: textById.get(choice.choice_id) ?? choice.choice_text,
+            selected: true,
+            rank: position + 1,
+          }))
+        : [],
+      unrankedChoices: ranked
+        ? questionChoices
+            .filter((choice) => !pickedIds.has(choice.choice_id))
+            .map((choice) => ({ choiceId: choice.choice_id, text: choice.choice_text, selected: false }))
+        : [],
+    };
+  });
+}
+
+/**
+ * Turns the caller's current ballot into cast-drawer form values (#4331)
+ * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
+ * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
+ */
+export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {
+  const ranked = isRankedPollType(vote.poll_type);
+  const answersById = new Map(ballot.poll_answers.map((answer) => [answer.question_id, answer]));
+  const answers: Record<string, string | string[]> = {};
+
+  for (const question of vote.poll_questions ?? []) {
+    const answer = answersById.get(question.question_id);
+    if (!answer) continue;
+    const picked = answerChoices(vote, answer).map((choice) => choice.choice_id);
+
+    if (ranked || question.type === 'multiple_choice') {
+      answers[question.question_id] = picked;
+    } else if (picked.length) {
+      answers[question.question_id] = picked[0];
+    }
+  }
+
+  const comments: Record<string, string> = {};
+  for (const response of ballot.comment_responses) {
+    comments[response.prompt_id] = response.comment_text;
+  }
+
+  return { answers, abstain: ballot.abstained, comments };
 }
 
 /**
@@ -779,4 +1291,22 @@ export function truncateVoteTitle(title: string, max: number = VOTE_PRESENTER_TI
   const lastSpace = head.lastIndexOf(' ');
   const wordSafe = lastSpace > 0 && trimmed.charAt(head.length) !== ' ' ? head.slice(0, lastSpace) : head;
   return `${wordSafe.trimEnd()}…`;
+}
+
+/**
+ * One recap line per question for the vote link thank-you screen. Ranked ballots read in rank order
+ * ("1. Alice, 2. Bob"); an abstention has no per-question answers, so it returns no lines.
+ */
+export function buildVoteAnswerSummary(questions: PollQuestion[], submission: VoteBallotSubmission): VoteAnswerSummaryLine[] {
+  if (submission.abstain) return [];
+  return questions.map((question) => {
+    const textById = new Map(question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
+    const answer = submission.userVoteContent?.find((entry) => entry.question_id === question.question_id);
+    const ranked = [...(answer?.ranked_choices ?? [])].sort((a, b) => a.choice_rank - b.choice_rank);
+    const text =
+      ranked.length > 0
+        ? ranked.map((choice, index) => `${index + 1}. ${textById.get(choice.choice_id) ?? choice.choice_id}`).join(', ')
+        : (answer?.choice_ids ?? []).map((id) => textById.get(id) ?? id).join(', ');
+    return { question_id: question.question_id, prompt: question.prompt, answer: text };
+  });
 }

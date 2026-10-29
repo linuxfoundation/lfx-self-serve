@@ -10,6 +10,10 @@ import {
   MEMBER_360_COMPARISON_UNAVAILABLE,
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
+  MEMBER_360_DEFINITE_SEND_HTTP_STATUSES,
+  MEMBER_360_DEFINITE_CONNECT_CODES,
+  MEMBER_360_ACTIVITY_TOOLS,
+  MEMBER_360_ACTIVITY_LABELS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
   MKTG_ARTIFACT_SHA256_REGEX,
@@ -18,10 +22,13 @@ import {
   Member360Envelope,
   Member360FinalizeReceipt,
   Member360GenerateRequest,
+  Member360Tracker,
   Member360GenerationStart,
   Member360PriorRun,
   Member360Result,
+  Member360AnswersBody,
   MktgGenerationAttribution,
+  MktgMember360QuestionsClaim,
   MktgRunResultResponse,
   Project,
 } from '@lfx-one/shared/interfaces';
@@ -34,8 +41,13 @@ import {
   createMember360Redactor,
   member360CandidateContacts,
   redactMember360Tabs,
+  redactMember360Research,
   findMember360Questions,
   member360TerminalResult,
+  mktgOneOffTerminalFacts,
+  parseMember360Questions,
+  member360QuestionsId,
+  renderMember360Answers,
 } from '@lfx-one/shared/server';
 import { extractMktgToolResults, isMktgReasoningEvent, isMktgToolTaskEvent, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
 import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
@@ -49,11 +61,13 @@ import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ProjectService } from './project.service';
+import { Member360TrackerStoreService } from './member-360-tracker-store.service';
 
 /** Form-only Member 360. Project identity and previous output come from trusted server reads. */
 export class Member360Service {
   private readonly guild = new GuildService();
   private readonly projects = new ProjectService();
+  private readonly trackerStore = new Member360TrackerStoreService();
   private readonly documents: MktgDocumentStoreService;
 
   public constructor(attribution?: MktgGenerationAttribution) {
@@ -65,17 +79,30 @@ export class Member360Service {
     return {
       status: result.status === 'needs_input' ? 'questions' : result.status,
       activity: result.activity,
+      ...(result.questions ? { questions: result.questions, questionsId: result.questionsId } : {}),
       persistence: result.persistence,
       failureText: result.status === 'needs_input' ? undefined : result.message,
       failureReason: result.reason,
     };
   }
 
-  public async start(req: Request, body: Member360GenerateRequest): Promise<Member360GenerationStart> {
+  /** Validate private receipts under fresh writer scope before any discard. */
+  public async prepareTrackers(req: Request, body: Member360GenerateRequest): Promise<Member360Tracker[]> {
+    const project = await this.resolveProject(req, body.project);
+    return this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []);
+  }
+
+  public async deleteConsumedTrackers(req: Request, project: string, ids: string[]): Promise<void> {
+    await this.trackerStore.deleteConsumed(req, project, ids);
+  }
+
+  public async start(req: Request, body: Member360GenerateRequest, preparedTrackers?: Member360Tracker[]): Promise<Member360GenerationStart> {
     const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
+    const loadedTrackers = preparedTrackers ?? (await this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []));
+    const trackers = loadedTrackers.length ? loadedTrackers : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -83,7 +110,7 @@ export class Member360Service {
       project_uid: project.uid,
       project_slug: project.slug,
       ...this.window(body.window ?? '12'),
-      trackers: body.trackers,
+      trackers,
       ...(prior && { prior_run: prior }),
     });
     logger.debug(req, 'member_360_generate', 'Starting entitled form-only run', { project: project.uid, comparison: !!prior });
@@ -96,6 +123,36 @@ export class Member360Service {
     return { sessionId, documentId: buildMktgRunDocumentId(sessionId) };
   }
 
+  /** Only a validated, creator-authorized controller call reaches this transport. */
+  public async sendAnswers(req: Request, body: Member360AnswersBody, beforeSend: MktgMember360QuestionsClaim): Promise<void> {
+    const payloads = await this.guild.getRawEventPayloads(req, body.sessionId);
+    const text = findMember360Questions(payloads);
+    const turn = text ? parseMember360Questions(text) : null;
+    if (!text || !turn || member360QuestionsId(text) !== body.questionsId || mktgFailureAfterQuestions(payloads, isMember360Question) !== null) {
+      throw new ConflictError('These questions are no longer waiting for answers. Refresh the run.', 'MEMBER_360_QUESTIONS_CHANGED');
+    }
+    if (body.answers.length !== turn.questions.length || body.answers.some((answer) => !turn.questions.some((question) => question.id === answer.id))) {
+      throw ServiceValidationError.forField('answers', 'Answer each of the current questions exactly once.');
+    }
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'member-360');
+    if (agent?.status !== 'active' || !agent.guildAgentHandle) throw ServiceValidationError.forField('agentId', 'Member 360 is unavailable.');
+    await beforeSend(); // Only the server-side CAS winner may create the next user turn.
+    try {
+      await this.guild.sendFollowUp(req, body.sessionId, {
+        message: renderMember360Answers(body.answers.map(({ id, ...answer }) => ({ ...answer, key: id }))),
+        handle: agent.guildAgentHandle, // sendFollowUp routes on its own line by default.
+      });
+    } catch (error) {
+      if (Member360Service.definitelyNotDelivered(error)) await beforeSend.release();
+      throw error; // Preserve the transport error and the existing retry UI.
+    }
+    logger.info(req, 'member_360_answers', 'Sent the requester answers', {
+      session_id: body.sessionId,
+      questions_id: body.questionsId,
+      count: body.answers.length,
+    });
+  }
+
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
     const redactIdentity = createMember360Redactor([]);
@@ -103,11 +160,13 @@ export class Member360Service {
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
     // Raw candidates supply privacy masks only, never authoritative output.
     const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
-    const redactActivity = createMember360Redactor(contacts);
-    const activity = buildMktgRunActivity(payloads).map((step) => ({
-      ...step,
-      label: redactActivity(step.label),
-      ...(step.detail !== undefined && { detail: redactActivity(step.detail) }),
+    const activity = buildMktgRunActivity(payloads, MEMBER_360_ACTIVITY_TOOLS).map(({ id, kind, status, startedAt, endedAt }) => ({
+      id,
+      kind,
+      status,
+      startedAt,
+      ...(endedAt !== undefined ? { endedAt } : {}),
+      label: MEMBER_360_ACTIVITY_LABELS[kind],
     }));
     const finalizeResults = payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL));
     for (const payload of finalizeResults) {
@@ -188,15 +247,30 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
+      const turn = questionsText ? parseMember360Questions(questionsText) : null;
+      const redactQuestions = createMember360Redactor(contacts);
+      const questions = turn?.questions.map((item) => ({
+        key: item.id,
+        label: item.id.replace(/-/g, ' '),
+        question: redactQuestions(item.question),
+        why: redactQuestions(item.why),
+        suggestedAnswer: redactQuestions(item.suggested_answer),
+        basis: [],
+      }));
+      const questionsResult: Member360Result = {
+        status: 'needs_input',
+        activity,
+        ...(questions && questionsText ? { questions, questionsId: member360QuestionsId(questionsText) } : {}),
+      };
       if (questionsText && mktgFailureAfterQuestions(payloads, isMember360Question) === null) {
-        return { status: 'needs_input', activity };
+        return questionsResult;
       }
-      const failed = member360TerminalResult(payloads, contacts);
+      const failed = member360TerminalResult(payloads.slice(mktgOneOffTerminalFacts(payloads).currentTurnOffset), contacts);
       if (failed) {
         logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
         return failed;
       }
-      if (questionsText) return { status: 'needs_input', activity };
+      if (questionsText) return questionsResult;
       return { status: 'pending', activity };
     }
     const type = findMktgDocumentType('member-360');
@@ -214,6 +288,10 @@ export class Member360Service {
       delete storedEnvelope.lfx_project_uid;
       let member360 = {
         ...storedEnvelope,
+        inputs: {
+          ...storedEnvelope.inputs,
+          ...(storedEnvelope.inputs.research ? { research: redactMember360Research(storedEnvelope.inputs.research, redact) } : {}),
+        },
         project_uid: project.uid,
         ...(best.project_uid !== undefined && best.project_uid !== project.uid && { lfx_project_uid: best.project_uid }),
         project_name: redactIdentity(best.project_name),
@@ -265,6 +343,37 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  private async loadPrivateTrackers(req: Request, project: string, ids: string[]): Promise<Member360Tracker[]> {
+    await this.trackerStore.sweepExpired(req, project);
+    return ids.length ? this.trackerStore.load(req, project, ids) : [];
+  }
+
+  /** Only positive non-delivery evidence may reopen a claimed questions turn. */
+  private static definitelyNotDelivered(error: unknown): boolean {
+    if (!(error instanceof MicroserviceError) || error.service !== 'guild' || error.operation !== 'guild_send_follow_up') return false;
+    if (error.code === 'guild_unreachable') return this.preconnectFailure(error.originalError);
+    return (
+      !error.originalError &&
+      MEMBER_360_DEFINITE_SEND_HTTP_STATUSES.includes(error.statusCode) &&
+      error.originalMessage?.startsWith(`HTTP ${error.statusCode}:`) === true
+    );
+  }
+
+  private static preconnectFailure(error: unknown, depth = 0): boolean {
+    if (!error || typeof error !== 'object' || depth > 3) return false;
+    if (error instanceof AggregateError && error.errors.length > 0) return error.errors.every((cause: unknown) => this.preconnectFailure(cause, depth + 1));
+    const code = 'code' in error ? error.code : undefined;
+    if (typeof code === 'string' && MEMBER_360_DEFINITE_CONNECT_CODES.includes(code)) return true;
+    if (code === 'ECONNRESET' || code === 'UND_ERR_SOCKET') {
+      if ('syscall' in error && error.syscall === 'connect') return true;
+      const socket = 'socket' in error ? error.socket : undefined;
+      if (socket && typeof socket === 'object' && 'bytesWritten' in socket && socket.bytesWritten === 0) return true;
+      return false;
+    }
+    if (code !== undefined) return false;
+    return 'cause' in error && this.preconnectFailure(error.cause, depth + 1);
   }
 
   private finalCarrierTexts(payload: string): string[] {

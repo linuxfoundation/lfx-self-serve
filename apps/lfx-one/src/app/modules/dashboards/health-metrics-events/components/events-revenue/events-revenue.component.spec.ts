@@ -224,16 +224,23 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-unconverted-note')).toBeNull();
   });
 
-  it('shows the empty table note for a measured period with no events', async () => {
+  // $0 with no event in the period is nothing to show, so the shell's empty state takes the section over.
+  it('settles empty, with no body, for a $0 period with no events', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(text('events-revenue-headline-value')).toBe('$0');
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-revenue-hero')).toBeNull();
+  });
+
+  it('shows the empty table note for a period with revenue but no listed events', async () => {
+    await render(revenue({ events: [revenueEvent({ ranges: ['COMPLETED_YEAR'] })] }));
+
+    expect(text('events-revenue-headline-value')).toBe('$258K');
     expect(query('events-revenue-empty')).not.toBeNull();
     expect(query('events-revenue-table')).toBeNull();
-    // A measured $0 is something to show, so the shell does not take the section over.
-    expect(verdicts).toEqual([false, false]);
+    expect(verdicts).toEqual([false]);
   });
 
   it('says per-event figures are missing, not that no event ran, when only the totals were read', async () => {

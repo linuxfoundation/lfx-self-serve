@@ -7,6 +7,7 @@ import {
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -16,7 +17,6 @@ import type {
   OrgFormerEmployeeCheck,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
-  OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
@@ -28,19 +28,27 @@ import type {
   OrgAllEmployeesResponse,
   OrgLensTimeRange,
   OrgPeopleDirectoryView,
+  OrgPersonCodeContributions,
+  OrgPersonCodeProjectCount,
+  OrgPersonCodeProjectRow,
+  OrgPersonCodeView,
   OrgPersonCompanyEmailRow,
   OrgProjectScope,
   OrgPersonCompanyEmailsResponse,
   OrgPersonMaintainerRoleProjectRow,
   OrgPersonSource,
+  OrgTeamMemberKeys,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
+import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
+import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
@@ -98,7 +106,6 @@ interface TrainingRow {
 
 interface EmployeeActivityRaw {
   committeeRows: CommitteeMembershipRow[];
-  codeRows: CodeContributionRow[];
   eventRows: EventRow[];
   trainingRows: TrainingRow[];
 }
@@ -120,9 +127,23 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not scope); the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgLensTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters.projectScope), filters);
+  /**
+   * Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged
+   * roster, which the filters do not scope); the wire projection of the internal roster. `exclude` removes CDP team
+   * members' code from a ranged roster (lfx-self-serve#4685, see `toWireResponse`); the unranged roster lists everyone,
+   * like the commit filters it is not scoped by.
+   */
+  public async getAllEmployees(
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgAllEmployeesResponse> {
+    const [roster, teamMemberKeys] = await Promise.all([
+      this.getAllEmployeesInternal(accountId, range, filters.projectScope),
+      this.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
+    ]);
+    return toWireResponse(roster, filters, teamMemberKeys);
   }
 
   /**
@@ -163,42 +184,65 @@ export class OrgLensPeopleService {
    * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
    * directory — and the reassign pickers that read it — never sees a former employee. Stats are
    * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
-   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name.
+   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name. `exclude`
+   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`).
    */
-  public async getFormerEmployees(req: Request, accountId: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    const raw = await this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope);
+  public async getFormerEmployees(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgAllEmployeesResponse> {
+    const [raw, teamMemberKeys] = await Promise.all([
+      this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope),
+      this.getTeamMemberPersonKeys(accountId, teamMembers),
+    ]);
     const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
     return toWireResponse(
       { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
-      filters
+      filters,
+      teamMemberKeys
     );
   }
 
   /**
-   * Chevron-expansion detail for one person within an account: four activity queries in parallel, served
-   * through the shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come
-   * from a live warehouse view that takes seconds, so callers render activity without waiting for it. A code
-   * project carries the Maintainer pill when the person holds a maintainer role on it overlapping
-   * `maintainerRange` (lfx-self-serve#4482) — the page range for the All Employees row, the opener's range or the
-   * past 365 days for the drawer. When the roles table is missing no project is pilled and the detail says so with
-   * `maintainerRolesUnavailable`.
+   * Chevron-expansion detail for one person within an account: activity queries in parallel, served through the
+   * shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come from a live warehouse
+   * view that takes seconds, so callers render activity without waiting for it. A code project carries the Maintainer
+   * pill when the person holds a maintainer role on it overlapping `maintainerRange` (lfx-self-serve#4482) — the page
+   * range for the All Employees row, the opener's range or the Org Lens default range (last 2 years) for the drawer.
+   * When the roles table is missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
+   *
+   * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
+   * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
+   * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
+   * trailing 12 months. `teamMembers` is that page's Team members pick (lfx-self-serve#4685): under `exclude` a CDP team
+   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code.
    */
   public async getEmployeeDetail(
     req: Request,
     accountId: string,
     personKey: string,
-    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail> {
+    const codeView: OrgPersonCodeView | null = codeFilters ? { range: maintainerRange, ...codeFilters } : null;
+    const codeViewField = codeView ? { codeView } : {};
     // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
     // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
-      return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, events: [], training: [] };
+      return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, ...codeViewField, events: [], training: [] };
     }
 
-    const [{ committeeRows, codeRows, eventRows, trainingRows }, maintainerProjectIds] = await Promise.all([
+    const [{ committeeRows, eventRows, trainingRows }, viewCode, maintainerProjectIds, teamMemberKeys] = await Promise.all([
       this.fetchEmployeeActivityRaw(accountId, personKey),
+      codeView ? this.readCodeViewContributions(accountId, personKey, codeView) : this.readTrailingYearCodeContributions(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
+      this.getTeamMemberPersonKeys(accountId, codeView ? teamMembers : 'include'),
     ]);
+    const code = teamMemberKeys.excluded?.has(personKey) ? { projects: [], total: 0 } : viewCode;
     const maintainerProjects = new Set(maintainerProjectIds ?? []);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
@@ -215,9 +259,9 @@ export class OrgLensPeopleService {
       personKey,
       boardSeats,
       committeeSeats,
-      code: codeRows.map((row) => this.mapCodeRow(row, maintainerProjects)),
-      // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
-      totalCommits: codeRows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
+      code: code.projects.map((project) => ({ ...project, isMaintainer: maintainerProjects.has(project.projectId) })),
+      totalCommits: code.total,
+      ...codeViewField,
       events,
       training,
       ...(maintainerProjectIds === null ? { maintainerRolesUnavailable: true } : {}),
@@ -288,20 +332,22 @@ export class OrgLensPeopleService {
    * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
    * Resolves the username with a keyed read of the account's warehouse roster (ORG_PEOPLE_ALL, a table — not the
    * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
-   * carries the username.
+   * carries the username. `maintainerRange` and `codeFilters` as for {@link getEmployeeDetail}.
    */
   public async getEmployeeDetailByUsername(
     req: Request,
     accountId: string,
     username: string,
-    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE
+    maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers) : null;
   }
 
   /**
@@ -310,6 +356,11 @@ export class OrgLensPeopleService {
    */
   public async getFormerUsernames(accountId: string): Promise<string[]> {
     return readOrgFormerUsernames(this.snowflakeService, accountId);
+  }
+
+  /** The account's CDP team members under `exclude` (`include` reads nothing); unavailable while the flag is not in the warehouse. */
+  public async getTeamMemberPersonKeys(accountId: string, teamMembers: OrgTeamMembersFilter): Promise<OrgTeamMemberKeys> {
+    return readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers);
   }
 
   /**
@@ -390,7 +441,8 @@ export class OrgLensPeopleService {
     }
     const views: OrgPeopleDirectoryView[] = [...(directoryView ? [directoryView] : []), { range: '30d', projectScope: 'lf' }];
     for (const { range, projectScope } of views) {
-      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
+      // Everyone, team members included: this resolves a person already opened, whichever Team members pick listed them.
+      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }, 'include');
       const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
       if (username) {
         return username;
@@ -632,30 +684,103 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. `v4`: the code rows no
-   * longer carry the declared-maintainer flag (lfx-self-serve#4482), so a `v3` entry must miss.
+   * Committee, event and training rows. `v5`: the code rows moved to their own reads, which follow the opener's code
+   * filters (lfx-self-serve#4404), so a `v4` entry must miss.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
-    if (!isFilterSafeIdentifier(personKey)) {
-      return this.runEmployeeActivityFetch(accountId, personKey);
-    }
-    return withOrgCache(
+    return this.withPersonCache(
       accountId,
-      `people-detail:v4:${personKey}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      personKey,
+      `people-detail:v5:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );
   }
 
   private async runEmployeeActivityFetch(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
-    const [committeeRows, codeRows, eventRows, trainingRows] = await Promise.all([
+    const [committeeRows, eventRows, trainingRows] = await Promise.all([
       this.fetchCommitteeMembershipRows(accountId, personKey),
-      this.fetchCodeContributionRows(accountId, personKey),
       this.fetchEventRows(accountId, personKey),
       this.fetchTrainingRows(accountId, personKey),
     ]);
-    return { committeeRows, codeRows, eventRows, trainingRows };
+    return { committeeRows, eventRows, trainingRows };
+  }
+
+  /** The Code tab without opener filters: every commit of the trailing 12 months (ORG_PEOPLE_CODE_CONTRIBUTIONS). */
+  private async readTrailingYearCodeContributions(accountId: string, personKey: string): Promise<OrgPersonCodeContributions> {
+    const rows = await this.withPersonCache(
+      accountId,
+      personKey,
+      `people-detail-code:v1:${personKey}`,
+      () => this.fetchCodeContributionRows(accountId, personKey),
+      isCodeContributionRows
+    );
+    return {
+      projects: rows.map((row) => toCodeProjectCount(row, row.PROJECT_COMMITS, row.LAST_ACTIVITY_DATE)),
+      // The per-project counts overlap on mirrored commits; the total sums the per-person credit instead.
+      total: rows.reduce((sum, row) => sum + (row.TOTAL_COMMITS ?? 0), 0),
+    };
+  }
+
+  /**
+   * The Code tab in the opener's view: this person's People → Contributors project rows for the range and project
+   * scope, each counting what the view's commit filters pick, sorted as that tab's expanded row is (count, then last
+   * activity, then name). Each row credits a commit to one project in the scope, so they sum to the person's row count —
+   * the Contributors and All Employees (ORG_PEOPLE_ALL_RANGES sums the same columns) row. One cache entry per range and
+   * scope carries every count, so it serves every code-count option.
+   */
+  private async readCodeViewContributions(accountId: string, personKey: string, view: OrgPersonCodeView): Promise<OrgPersonCodeContributions> {
+    const rows = await this.withPersonCache(
+      accountId,
+      personKey,
+      `people-detail-code-view:v1:${personKey}:${view.range}:${view.projectScope}`,
+      () => this.fetchCodeViewRows(accountId, personKey, view.range, view.projectScope),
+      isCodeContributionRows
+    );
+    const column = orgContributorCountColumn(view);
+    const projects = rows
+      .map((row) => toCodeProjectCount(row, row[column], row.LAST_ACTIVE_DATE))
+      .sort(
+        (a, b) =>
+          b.commits - a.commits ||
+          (b.lastActivityDate ?? '').localeCompare(a.lastActivityDate ?? '') ||
+          a.projectName.localeCompare(b.projectName) ||
+          a.projectId.localeCompare(b.projectId)
+      );
+    return { projects, total: projects.reduce((sum, project) => sum + project.commits, 0) };
+  }
+
+  /** People → Contributors' per-(person, project) aggregate, for one person: same table, window, scope and columns. */
+  private async fetchCodeViewRows(
+    accountId: string,
+    personKey: string,
+    range: OrgLensTimeRange,
+    projectScope: OrgProjectScope
+  ): Promise<OrgPersonCodeProjectRow[]> {
+    const columns = orgContributorsCommitColumns(projectScope);
+    const query = `
+      SELECT
+        project_id AS PROJECT_ID,
+        MAX(project_name) AS PROJECT_NAME,
+        MAX(foundation_id) AS FOUNDATION_ID,
+        MAX(foundation_name) AS FOUNDATION_NAME,
+        SUM(${columns.commits}) AS COMMITS,
+        SUM(${columns.mergedCommits}) AS MERGED_COMMITS,
+        SUM(daily_code_activities) AS CODE_ACTIVITIES,
+        MAX(activity_date) AS LAST_ACTIVE_DATE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id = ? AND person_key = ?
+        ${orgContributorsActivityPredicate(range)}
+        ${orgProjectScopePredicate(projectScope)}
+      GROUP BY project_id
+    `;
+    const result = await this.snowflakeService.execute<OrgPersonCodeProjectRow>(query, [accountId, personKey]);
+    return result.rows;
+  }
+
+  /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
+  private withPersonCache<T>(accountId: string, personKey: string, key: string, fetcher: () => Promise<T>, accept: (value: unknown) => boolean): Promise<T> {
+    return isFilterSafeIdentifier(personKey) ? withOrgCache(accountId, key, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, fetcher, accept) : fetcher();
   }
 
   /**
@@ -877,18 +1002,6 @@ export class OrgLensPeopleService {
     };
   }
 
-  private mapCodeRow(row: CodeContributionRow, maintainerProjects: ReadonlySet<string>): OrgAllEmployeeCodeContribution {
-    return {
-      projectId: row.PROJECT_ID,
-      projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
-      foundationId: row.FOUNDATION_ID ?? '',
-      foundationName: row.FOUNDATION_NAME ?? '',
-      commits: row.PROJECT_COMMITS ?? 0,
-      lastActivityDate: toDateString(row.LAST_ACTIVITY_DATE),
-      isMaintainer: maintainerProjects.has(row.PROJECT_ID),
-    };
-  }
-
   private mapEventRow(row: EventRow, eventsCount: number): OrgAllEmployeeEvent {
     return {
       eventId: row.EVENT_ID,
@@ -1035,7 +1148,28 @@ function isCompactAllEmployeesRaw(value: unknown): boolean {
 
 function isEmployeeActivityRaw(value: unknown): boolean {
   const v = value as Partial<Record<keyof EmployeeActivityRaw, unknown>> | null;
-  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.codeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+  return !!v && Array.isArray(v.committeeRows) && Array.isArray(v.eventRows) && Array.isArray(v.trainingRows);
+}
+
+/** A stored code read: an array of project rows, each keyed by a project id. */
+function isCodeContributionRows(value: unknown): boolean {
+  return Array.isArray(value) && value.every((row: unknown) => !!row && typeof row === 'object' && 'PROJECT_ID' in row && typeof row.PROJECT_ID === 'string');
+}
+
+/** One Code tab project from either code read, counting `count` (a missing count is 0). */
+function toCodeProjectCount(
+  row: Pick<CodeContributionRow, 'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME'>,
+  count: number | null,
+  lastActivityDate: Date | string | null
+): OrgPersonCodeProjectCount {
+  return {
+    projectId: row.PROJECT_ID,
+    projectName: row.PROJECT_NAME ?? row.PROJECT_ID,
+    foundationId: row.FOUNDATION_ID ?? '',
+    foundationName: row.FOUNDATION_NAME ?? '',
+    commits: count ?? 0,
+    lastActivityDate: toDateString(lastActivityDate),
+  };
 }
 
 function isFormerEmployeesRaw(value: unknown): boolean {

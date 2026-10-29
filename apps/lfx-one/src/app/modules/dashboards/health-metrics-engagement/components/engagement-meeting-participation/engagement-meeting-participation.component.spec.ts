@@ -401,6 +401,26 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
   });
 
+  it('settles empty, with no body, for a period whose roll-up held no meetings', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null }));
+    await render(response({ total }));
+
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
+  });
+
+  // A count the view never filled in is unmeasured, not zero, so it keeps the body.
+  it('keeps the body for a period whose meeting count is unmeasured', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, meetingsHeld: null }));
+    await render(response({ total }));
+
+    expect(verdicts).toEqual([false]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).not.toBeNull();
+  });
+
   // An unresolved foundation is not a foundation with no meetings, and the two must not look alike.
   it('holds the skeleton while no foundation is selected, rather than captioning an unread scope', async () => {
     selectedFoundation.set(null);

@@ -8,25 +8,41 @@ import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
-import { INVITATION_NOT_FOUND, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { CommentResponseFormData, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, getUserTimezone, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import {
+  INVITATION_NOT_FOUND,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_IMPERSONATION_PRIVATE_NOTICE,
+  VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+} from '@lfx-one/shared/constants';
+import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import {
+  buildBallotCommentPrompts,
+  buildCommentResponses,
+  buildVoteBallotQuestions,
+  getCommentPromptsData,
+  getUserTimezone,
+  isRankedPollType,
+  mapMyBallotToCastForm,
+  reconcileCommentFormControls,
+} from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -38,6 +54,7 @@ import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWit
     TooltipModule,
     ReactiveFormsModule,
     ButtonComponent,
+    MessageComponent,
     RadioButtonComponent,
     TagComponent,
     TextareaComponent,
@@ -53,6 +70,7 @@ import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWit
 export class VoteCastDrawerComponent {
   // === Services ===
   private readonly voteService = inject(VoteService);
+  private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -60,6 +78,8 @@ export class VoteCastDrawerComponent {
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
+  /** Review mode (#4331): shows the voter's submitted ballot without allowing changes. */
+  public readonly readOnly = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -76,10 +96,14 @@ export class VoteCastDrawerComponent {
   // === Writable Signals ===
   protected readonly loadingVote = signal<boolean>(false);
   protected readonly submitting = signal<boolean>(false);
+  protected readonly loadingBallot = signal<boolean>(false);
+  protected readonly ballotError = signal<boolean>(false);
   // Reactive dependency for submitDisabled — rebuildForm uses { emitEvent: false }, so statusChanges is silent.
   private readonly formVersion = signal<number>(0);
   // Tracks the poll_type the form was last built for; if it changes (e.g., list vote omitted poll_type and detail fetch supplied a ranked one), rebuildForm wipes controls so they get the right shape.
   private lastBuiltPollType: PollType | null = null;
+  // Key of the recorded ballot last displayed; cleared on close so a reopen reloads it.
+  private appliedPrefillKey: string | null = null;
 
   // === Shared Observables ===
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
@@ -87,19 +111,28 @@ export class VoteCastDrawerComponent {
 
   // === Derived Signals (from API) ===
   protected readonly vote: Signal<Vote | null> = this.initVote();
+  protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
 
   // === Computed Signals ===
   protected readonly isRankedPoll: Signal<boolean> = this.initIsRankedPoll();
-  protected readonly questions: Signal<PollQuestion[]> = computed(() => this.vote()?.poll_questions ?? []);
+  protected readonly questions: Signal<PollQuestion[]> = this.initQuestions();
   protected readonly allowAbstain: Signal<boolean> = computed(() => !!this.vote()?.allow_abstain);
   protected readonly submitDisabled: Signal<boolean> = this.initSubmitDisabled();
+  protected readonly impersonating = this.userService.impersonating;
+  protected readonly ballotPrivacyRestricted = computed(() => this.impersonating() && this.vote()?.pseudo_anonymity !== false);
+  protected readonly impersonationNotice = computed(() =>
+    this.readOnly() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
+  );
+  protected readonly reviewNotice = 'Your vote has been recorded.';
+  protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
   protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
   // Map<question_id, ordered choices> — recomputed when questions or formVersion changes; replaces a per-render method call in @for.
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = this.initRankedOrderByQuestion();
+  protected readonly unrankedChoicesByQuestion: Signal<Map<string, UserChoice[]>> = this.initUnrankedChoicesByQuestion();
   protected readonly commentResponseMaxLength = VOTE_COMMENT_RESPONSE_MAX_LENGTH;
-  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.vote()?.poll_comment_prompts ?? []);
+  protected readonly commentPrompts: Signal<PollCommentPrompt[]> = this.initCommentPrompts();
   protected readonly commentPromptsData: Signal<CommentResponseFormData[]> = this.initCommentPromptsData();
 
   // Resolved once per browser session — SSR has no `Intl` zone to resolve, so
@@ -110,7 +143,10 @@ export class VoteCastDrawerComponent {
     // Rebuild the form when the loaded vote's questions change.
     toObservable(this.questions)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((questions) => this.rebuildForm(questions));
+      .subscribe((questions) => {
+        this.rebuildForm(questions);
+        this.applyBallotPrefill();
+      });
 
     // Rebuild the comment form when the loaded vote's comment prompts change.
     toObservable(this.commentPrompts)
@@ -118,6 +154,22 @@ export class VoteCastDrawerComponent {
       .subscribe((prompts) => {
         reconcileCommentFormControls(this.commentForm, prompts);
         this.bumpFormVersion();
+        this.applyBallotPrefill();
+      });
+
+    // Review mode: display the form once the voter's recorded ballot loads.
+    toObservable(this.myBallot)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.applyBallotPrefill());
+
+    // A reused drawer must not carry recorded choices or disabled controls into a first ballot.
+    toObservable(this.readOnly)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.appliedPrefillKey = null;
+        for (const id of Object.keys(this.form.controls)) this.form.removeControl(id, { emitEvent: false });
+        this.rebuildForm(this.questions());
+        this.applyBallotPrefill();
       });
 
     // User input (checkbox/radio toggle, etc.) emits statusChanges; bump formVersion so the submitDisabled computed re-evaluates form.valid.
@@ -127,9 +179,8 @@ export class VoteCastDrawerComponent {
     this.commentForm.statusChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.bumpFormVersion());
 
     // Abstain toggle disables answer controls without losing their values.
-    this.abstainControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((isAbstaining) => {
-      if (isAbstaining) this.form.disable({ emitEvent: false });
-      else this.form.enable({ emitEvent: false });
+    this.abstainControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.syncControls();
       this.bumpFormVersion();
     });
 
@@ -142,6 +193,7 @@ export class VoteCastDrawerComponent {
       .subscribe(() => {
         if (this.submitting()) this.cancelSubmit$.next();
         this.submitting.set(false);
+        this.appliedPrefillKey = null;
         // Reset abstain so reopening starts fresh — letting valueChanges fire keeps form.enable + abstain signal in sync.
         if (this.abstainControl.value) this.abstainControl.setValue(false);
         // Clear comment text so reopening the same vote doesn't show stale drafts.
@@ -158,6 +210,7 @@ export class VoteCastDrawerComponent {
 
   /** Reorder via CDK drag-and-drop — bumpFormVersion() drives submitDisabled re-evaluation since rebuildForm/setValue here suppress statusChanges. */
   protected onRankedDrop(questionId: string, event: CdkDragDrop<string[]>): void {
+    if (this.readOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -168,6 +221,7 @@ export class VoteCastDrawerComponent {
 
   /** Keyboard / arrow-button reorder fallback for the drag list. */
   protected moveRank(questionId: string, fromIndex: number, toIndex: number): void {
+    if (this.readOnly() || this.impersonating()) return;
     const control = this.form.get(questionId);
     if (!control) return;
     const current = [...((control.value as string[] | null) ?? [])];
@@ -179,7 +233,7 @@ export class VoteCastDrawerComponent {
 
   protected onSubmit(): void {
     const vote = this.vote();
-    if (!vote || this.submitting()) return;
+    if (!vote || this.submitting() || this.readOnly() || this.impersonating()) return;
 
     const isAbstain = this.abstain();
     if (!isAbstain && this.form.invalid) {
@@ -197,7 +251,11 @@ export class VoteCastDrawerComponent {
     this.submitting.set(true);
 
     this.voteService
-      .submitMyResponse(vote.uid, { abstain: isAbstain, userVoteContent, commentResponses })
+      .submitMyResponse(vote.uid, {
+        abstain: isAbstain,
+        userVoteContent,
+        commentResponses,
+      })
       .pipe(
         takeUntil(this.cancelSubmit$),
         takeUntilDestroyed(this.destroyRef),
@@ -229,13 +287,13 @@ export class VoteCastDrawerComponent {
   }
 
   // === Private Initializers ===
-  /** Mirrors vote-results-drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
+  /** Mirrors the former results drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
    *  off voteId alone meant a manager who extended a vote's deadline while this drawer was closed, then
    *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
    *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
-   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
-   *  the results drawer.
-   *  Also mirrors the results drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
+   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps a reopened drawer
+   *  on the current deadline.
+   *  Also mirrors that drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
    *  GH-3823 review): a deadline change on the open vote re-runs this stream, and startWith(listVote) alone
    *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
    *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
@@ -320,10 +378,66 @@ export class VoteCastDrawerComponent {
     );
   }
 
+  /** Loads the recorded ballot only while reviewing; missing content is an error, never an editable form. */
+  private initMyBallot(): Signal<MyVoteBallot | null> {
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), reviewing: this.readOnly() && !this.ballotPrivacyRestricted() }));
+
+    return toSignal(
+      toObservable(selection).pipe(
+        distinctUntilChanged((prev, curr) => prev.id === curr.id && prev.visible === curr.visible && prev.reviewing === curr.reviewing),
+        switchMap(({ id, visible, reviewing }) => {
+          this.ballotError.set(false);
+          if (!id || !visible || !reviewing) {
+            this.loadingBallot.set(false);
+            return of(null);
+          }
+
+          this.loadingBallot.set(true);
+          return this.voteService.getMyVoteBallot(id).pipe(
+            map((ballot) => {
+              if (!ballot || ballot.vote_uid !== id) {
+                this.ballotError.set(true);
+                return null;
+              }
+              return ballot;
+            }),
+            catchError(() => {
+              this.ballotError.set(true);
+              return of(null);
+            }),
+            finalize(() => this.loadingBallot.set(false)),
+            startWith(null)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /** Review preserves saved choices absent from current metadata, without offering them on a first ballot. */
+  private initQuestions(): Signal<PollQuestion[]> {
+    return computed(() => {
+      const vote = this.vote();
+      const ballot = this.myBallot();
+      if (!vote) return [];
+      if (!this.readOnly() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
+      return buildVoteBallotQuestions(vote, ballot).map((question) => ({
+        question_id: question.questionId,
+        prompt: question.prompt,
+        type: question.multiple ? 'multiple_choice' : 'single_choice',
+        choices: [...question.choices, ...question.rankedChoices, ...question.unrankedChoices].map((choice) => ({
+          choice_id: choice.choiceId,
+          choice_text: choice.text,
+        })),
+      }));
+    });
+  }
+
   private initDrawerPt(): Signal<Record<string, unknown>> {
     return computed(() => {
       const hasBallot = !this.loadingVote() && this.questions().length > 0;
-      return { footer: { class: hasBallot ? 'border-t border-slate-200' : 'hidden' } };
+      const restricted = this.impersonating() && (!this.readOnly() || this.ballotPrivacyRestricted());
+      return { footer: { class: hasBallot && !restricted ? 'border-t border-slate-200' : 'hidden' } };
     });
   }
 
@@ -335,9 +449,19 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
+      if (this.readOnly() || this.impersonating()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
+    });
+  }
+
+  private initCommentPrompts(): Signal<PollCommentPrompt[]> {
+    return computed(() => {
+      const vote = this.vote();
+      const ballot = this.myBallot();
+      if (!this.readOnly() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
+      return buildBallotCommentPrompts(vote.poll_comment_prompts, ballot.comment_responses);
     });
   }
 
@@ -357,7 +481,7 @@ export class VoteCastDrawerComponent {
         // Defensive Array.isArray — if a stale non-array control value lingers (e.g. mid-session vote reshape), fall back to declared order.
         const raw = this.form.get(question.question_id)?.value;
         const order = Array.isArray(raw) ? (raw as string[]) : null;
-        if (!order?.length) {
+        if (!order) {
           result.set(question.question_id, question.choices);
           continue;
         }
@@ -371,8 +495,24 @@ export class VoteCastDrawerComponent {
     });
   }
 
+  private initUnrankedChoicesByQuestion(): Signal<Map<string, UserChoice[]>> {
+    return computed(() => {
+      const result = new Map<string, UserChoice[]>();
+      if (!this.readOnly() || !this.isRankedPoll()) return result;
+      const ranked = this.rankedOrderByQuestion();
+      for (const question of this.questions()) {
+        const selected = new Set((ranked.get(question.question_id) ?? []).map((choice) => choice.choice_id));
+        result.set(
+          question.question_id,
+          question.choices.filter((choice) => !selected.has(choice.choice_id))
+        );
+      }
+      return result;
+    });
+  }
+
   // === Private Helpers ===
-  /** Reconciles the form against the current vote's questions; ranked polls seed declared order so the form is valid on load. */
+  /** First ballots seed every rank; review waits for the recorded preferences. */
   private rebuildForm(questions: PollQuestion[]): void {
     const currentPollType = this.vote()?.poll_type ?? PollType.GENERIC;
     const pollIsRanked = this.isRankedPoll();
@@ -388,9 +528,9 @@ export class VoteCastDrawerComponent {
       if (!desiredIds.has(existingId)) this.form.removeControl(existingId, { emitEvent: false });
     }
     for (const question of questions) {
-      if (this.form.contains(question.question_id)) continue;
+      if (this.form.get(question.question_id)) continue;
       if (pollIsRanked) {
-        const seeded = question.choices.map((c) => c.choice_id);
+        const seeded = this.readOnly() ? [] : question.choices.map((c) => c.choice_id);
         this.form.addControl(question.question_id, new FormControl<string[]>(seeded, { nonNullable: true, validators: [Validators.required] }), {
           emitEvent: false,
         });
@@ -403,6 +543,55 @@ export class VoteCastDrawerComponent {
       }
     }
     this.bumpFormVersion();
+  }
+
+  /**
+   * Displays the recorded ballot in the same controls used for voting (#4331). Reapply after a
+   * ballot or control-shape change, keeping all controls locked throughout loading and review.
+   */
+  private applyBallotPrefill(): void {
+    const vote = this.vote();
+    const ballot = this.myBallot();
+    this.syncControls();
+    if (!this.readOnly() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
+
+    const key = [
+      vote.uid,
+      ballot.vote_creation_time ?? '',
+      this.lastBuiltPollType ?? '',
+      Object.keys(this.form.controls).join(','),
+      Object.keys(this.commentForm.controls).join(','),
+    ].join('|');
+    if (key === this.appliedPrefillKey) return;
+    this.appliedPrefillKey = key;
+
+    const prefill = mapMyBallotToCastForm({ ...vote, poll_questions: this.questions() }, ballot);
+    // An abstention can carry no answers. Never retain choices from an earlier ballot or draft.
+    for (const question of this.questions()) {
+      const emptyValue = this.isRankedPoll() || question.type === 'multiple_choice' ? [] : null;
+      this.form.get(question.question_id)?.setValue(emptyValue, { emitEvent: false });
+    }
+    for (const [questionId, value] of Object.entries(prefill.answers)) {
+      this.form.get(questionId)?.setValue(value, { emitEvent: false });
+    }
+    // Emitting updates the displayed abstention while syncControls keeps review locked.
+    this.abstainControl.setValue(prefill.abstain);
+    for (const [promptId, text] of Object.entries(prefill.comments)) {
+      this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
+    }
+    this.bumpFormVersion();
+  }
+
+  private syncControls(): void {
+    if (this.readOnly() || this.impersonating() || this.abstainControl.value) this.form.disable({ emitEvent: false });
+    else this.form.enable({ emitEvent: false });
+    if (this.readOnly() || this.impersonating()) {
+      this.commentForm.disable({ emitEvent: false });
+      this.abstainControl.disable({ emitEvent: false });
+    } else {
+      this.commentForm.enable({ emitEvent: false });
+      this.abstainControl.enable({ emitEvent: false });
+    }
   }
 
   private bumpFormVersion(): void {

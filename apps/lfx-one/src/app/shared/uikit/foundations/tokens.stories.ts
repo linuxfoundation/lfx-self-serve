@@ -94,6 +94,50 @@ export const RadiiAndHeights: Story = {
   }),
 };
 
+export const Motion: Story = {
+  render: () => ({
+    template: `
+      <div class="flex flex-col gap-6 p-6 bg-ui-background-100 text-ui-neutral-900">
+        <p class="copy-14">Hover a bar to run it. Durations use <code>ease-ui-standard</code>; easing rows use <code>duration-ui-slow</code>. Honours reduced motion.</p>
+        <div class="flex flex-col gap-3">
+          <div class="group flex items-center gap-4">
+            <span class="label-14-mono w-48">duration-ui-fast</span>
+            <div class="h-ui-tiny w-80 rounded-ui-xs bg-ui-neutral-100 overflow-hidden">
+              <div class="h-full w-4 bg-ui-accent-500 motion-safe:transition-[width] motion-safe:duration-ui-fast motion-safe:ease-ui-standard group-hover:w-full"></div>
+            </div>
+          </div>
+          <div class="group flex items-center gap-4">
+            <span class="label-14-mono w-48">duration-ui-base</span>
+            <div class="h-ui-tiny w-80 rounded-ui-xs bg-ui-neutral-100 overflow-hidden">
+              <div class="h-full w-4 bg-ui-accent-500 motion-safe:transition-[width] motion-safe:duration-ui-base motion-safe:ease-ui-standard group-hover:w-full"></div>
+            </div>
+          </div>
+          <div class="group flex items-center gap-4">
+            <span class="label-14-mono w-48">duration-ui-slow</span>
+            <div class="h-ui-tiny w-80 rounded-ui-xs bg-ui-neutral-100 overflow-hidden">
+              <div class="h-full w-4 bg-ui-accent-500 motion-safe:transition-[width] motion-safe:duration-ui-slow motion-safe:ease-ui-standard group-hover:w-full"></div>
+            </div>
+          </div>
+        </div>
+        <div class="flex flex-col gap-3">
+          <div class="group flex items-center gap-4">
+            <span class="label-14-mono w-48">ease-ui (spring)</span>
+            <div class="h-ui-tiny w-80 rounded-ui-xs bg-ui-neutral-100 overflow-hidden">
+              <div class="h-full w-4 bg-ui-accent-500 motion-safe:transition-[width] motion-safe:duration-ui-slow motion-safe:ease-ui group-hover:w-full"></div>
+            </div>
+          </div>
+          <div class="group flex items-center gap-4">
+            <span class="label-14-mono w-48">ease-ui-standard</span>
+            <div class="h-ui-tiny w-80 rounded-ui-xs bg-ui-neutral-100 overflow-hidden">
+              <div class="h-full w-4 bg-ui-accent-500 motion-safe:transition-[width] motion-safe:duration-ui-slow motion-safe:ease-ui-standard group-hover:w-full"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+  }),
+};
+
 export const Typography: Story = {
   render: () => ({
     template: `

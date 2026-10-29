@@ -12,7 +12,7 @@ import {
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
-  MKTG_RUN_FAILURE_REASON,
+  MEMBER_360_FAILURE_MESSAGES,
   MKTG_ONE_OFF_STOPPED_MESSAGE,
   MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
@@ -44,6 +44,8 @@ const flows = vi.hoisted(() => ({
   get: vi.fn(),
   head: vi.fn(),
   beforePut: vi.fn(),
+  beforeConditionalPut: vi.fn(),
+  omitEtag: false,
   beforePredicate: vi.fn(),
   beforeClaim: vi.fn(),
   beforeMark: vi.fn(),
@@ -135,9 +137,10 @@ vi.mock('./object-store.service', () => ({
       await Promise.resolve();
       flows.active--;
       const object = objects.get(key);
-      return object ? { ...object, metadata: { ...object.metadata }, etag: hash(object.body) } : null;
+      return object ? { ...object, metadata: { ...object.metadata }, etag: flows.omitEtag ? undefined : hash(object.body) } : null;
     }
     public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      await flows.beforeConditionalPut(input.metadata);
       const previous = objects.get(key);
       if (
         previous?.metadata['state'] === 'questions' &&
@@ -229,6 +232,8 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
+    flows.beforeConditionalPut.mockReset();
+    flows.omitEtag = false;
     flows.beforePredicate.mockReset();
     flows.beforeClaim.mockReset();
     flows.beforeMark.mockReset();
@@ -246,6 +251,216 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  const memberOwner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-member-owner' } } });
+  const questionId = 'c'.repeat(64);
+  async function waitingMember() {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    stored().metadata['state'] = 'questions';
+  }
+  it('filters the same public snapshot per viewer without adding identity fields or caching ownership', async () => {
+    await waitingMember();
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
+    await service.startForOneOff(other, 'member-360', project, 'other-session');
+    const snapshot = await service.readProgress(req, project);
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    const theirs = await service.ownProgress(other, project, snapshot);
+    expect(own.runs.map((row) => row.runId)).toEqual([hash(session)]);
+    expect(theirs.runs.map((row) => row.runId)).toEqual([hash('other-session')]);
+    expect(own).toEqual({ runs: snapshot.runs.filter((row) => row.runId === hash(session)) });
+    for (const secret of ['creatorSubject', 'startedBy', 'ownerToken', 'sessionId', 'synthetic-member-owner'])
+      expect(JSON.stringify(own)).not.toContain(secret);
+    flows.get.mockImplementationOnce(() => {
+      throw new Error('Synthetic storage unavailable');
+    });
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it.each(['discarded', 'superseded', 'completed', 'failed'])('excludes a cached writing row whose live state is %s', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [] });
+  });
+  it.each(['questions', 'storing'])('projects the live %s record instead of the cached writing row', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    stored().metadata['started-at'] = '2026-10-19T12:01:00Z';
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    expect(own.runs).toHaveLength(1);
+    expect(own.runs[0]).toMatchObject({ runId: hash(session), state, startedAt: '2026-10-19T12:01:00Z' });
+    expect(JSON.stringify(own)).not.toMatch(/creatorSubject|sessionId|synthetic-member-owner/);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+  });
+  it('preserves discovery uncertainty when no owned-run candidate was returned', async () => {
+    await expect(service.ownProgress(memberOwner, project, { runs: [], progressUnavailable: true })).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('preserves an unavailable snapshot even when its visible rows belong to another agent', async () => {
+    await service.start(req, project, 'brand-kit', 'unrelated-stale-brand');
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs.some((row) => row.agentKey === 'brand-kit')).toBe(true);
+    expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('looks up only active Member candidates and treats a vanished record as not owned', async () => {
+    await waitingMember();
+    const snapshot = await service.readProgress(req, project);
+    const row = snapshot.runs[0];
+    if (!row) throw new Error('Missing synthetic Member row');
+    objects.delete(key());
+    flows.get.mockClear();
+    expect(
+      await service.ownProgress(memberOwner, project, { runs: [row, { ...row, state: 'failed' }, { ...row, agentKey: 'brand-kit', documentId: 'living' }] })
+    ).toEqual({ runs: [] });
+    expect(flows.get).toHaveBeenCalledOnce();
+    expect(flows.get).toHaveBeenCalledWith(key());
+  });
+  it('resolves a private Member session only for the stored creator after writer authorization', async () => {
+    await waitingMember();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).resolves.toBe(session);
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
+    await expect(service.ownedMember360Session(other, project, hash(session))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.ownedMember360Session(other, project, hash('missing'))).rejects.toMatchObject({ statusCode: 404 });
+    flows.project.mockResolvedValueOnce({ uid: project, writer: false });
+    flows.get.mockClear();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).rejects.toMatchObject({ statusCode: 403 });
+    expect(flows.get).not.toHaveBeenCalled();
+  });
+  it('releases only its won Member claim back to questions and accepts a fresh retry', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    expect(await claim.release()).toBe(false);
+    await claim();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(await claim.release()).toBe(true);
+    const restored = await service.readProgress(memberOwner, project, 'member-360');
+    expect(restored.runs[0]?.state).toBe('questions');
+    for (const field of ['answered-questions-id', 'answered-by', 'answered-at']) expect(stored().metadata[field]).toBeUndefined();
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+    expect(await claim.release()).toBe(false); // An old release cannot erase the retry's new claim.
+  });
+  it('makes a competing pre-prepared claim lose its CAS while rollback is in flight', async () => {
+    await waitingMember();
+    const winner = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    const competitor = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await winner();
+    let unblock: () => void = () => undefined;
+    let entered: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      entered();
+      await blocked;
+    });
+    const rollback = winner.release();
+    await started;
+    await expect(competitor()).rejects.toMatchObject({ statusCode: 409 });
+    unblock();
+    expect(await rollback).toBe(true);
+    expect(stored().metadata['state']).toBe('questions');
+  });
+  it('never rolls a newer object version back or loses the claim when release storage is unavailable', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockRejectedValueOnce(new Error('Synthetic store unavailable'));
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('writing');
+    stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'newer-private-version' });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
+  it('loses the release CAS if a newer transition lands after the nonce read', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockImplementationOnce(() => {
+      stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'concurrent-transition' });
+      stored().metadata['state'] = 'storing';
+    });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('storing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
+  it('lets exactly one concurrent Member answer claim win a body-version CAS', async () => {
+    await waitingMember();
+    flows.author.mockResolvedValue({ name: 'Synthetic writer' });
+    const before = stored().body;
+    const claims = await Promise.all([
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+    ]);
+    const outcomes = await Promise.allSettled(claims.map((claim) => claim()));
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    const losses = outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : []));
+    expect(losses[0]).toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00.000Z' },
+    });
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain(session);
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().body).not.toBe(before); // metadata-only writes cannot fence S3 ETags.
+    const projection = await service.readProgress(memberOwner, project, 'member-360');
+    expect(JSON.stringify(projection)).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(projection)).not.toContain('answeredBySubject');
+    expect(JSON.stringify(projection)).not.toContain('storageWriteId');
+  });
+  it.each([null, { name: 'owner@example.test' }])('uses a neutral acknowledgement for unavailable/unsafe author %j', async (author) => {
+    await waitingMember();
+    flows.author.mockResolvedValue(author);
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    await expect(service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)).rejects.toMatchObject({
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Another writer' },
+    });
+  });
+  it('does not let a stale Member failure write erase the winning answer', async () => {
+    await waitingMember();
+    let release: () => void = () => undefined;
+    let observed: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      observed();
+      await blocked;
+    });
+    flows.member.mockResolvedValue({ status: 'failed', message: 'A stale failure.' });
+    const stale = service.recordResult(memberOwner, session, { status: 'failed' }, project);
+    await entered;
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    release();
+    await stale;
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().metadata['failure-text']).toBeUndefined();
+  });
+  it('never claims on behalf of another writer or without an object version token', async () => {
+    await waitingMember();
+    const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other-owner' } } });
+    await expect(service.prepareMember360QuestionsClaim(other, project, session, questionId)).rejects.toMatchObject({ statusCode: 403 });
+    flows.omitEtag = true;
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await expect(claim()).rejects.toMatchObject({ statusCode: 412 });
+    expect(stored().metadata['state']).toBe('questions');
   });
 
   describe('durable kit questions and scoped writer answers', () => {
@@ -1143,7 +1358,7 @@ describe('MktgDocumentRunService core', () => {
       expect(flows.result).toHaveBeenCalled();
       expect(flows.events).toHaveBeenCalled();
       expect(stored().metadata['state']).toBe('failed');
-      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
       expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
       expect(progress.runs[0]).not.toHaveProperty('persistenceFailed');
       expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/icp/living');
@@ -1212,6 +1427,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['writing', 'questions'])('fails Member %s only when its adapter reports a session end, even after two hours', async (state) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     if (state === 'questions') {
       flows.member.mockResolvedValue({ status: 'needs_input', activity: [] });
@@ -1242,7 +1458,8 @@ describe('MktgDocumentRunService core', () => {
     expect(paused.runs[0]).toMatchObject({ state: 'questions' });
   });
 
-  it('retains Member failure classification with the redacted details across process-local cache loss', async () => {
+  it('retains Member failure classification but exposes details only to its creator across cache loss', async () => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     flows.member.mockResolvedValue({ status: 'failed', reason: 'no_edit_access', message: 'Synthetic entitled-project refusal.' });
     const progress = await service.readProgress(req, project);
@@ -1250,6 +1467,10 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['failure-reason']).toBe('no_edit_access');
     const reread = await new MktgDocumentRunService().readProgress(req, project);
     expect(reread.runs[0]).toMatchObject({ failureReason: 'no_edit_access' });
+    const visitor = { oidc: { user: { sub: 'synthetic-visitor' } } } as unknown as Request;
+    const expected = { failureReason: 'no_edit_access', failureText: MEMBER_360_FAILURE_MESSAGES.no_edit_access };
+    expect((await new MktgDocumentRunService().readProgress(visitor, project)).runs[0]).toMatchObject(expected);
+    expect(await service.refreshFailure(visitor, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session))).toMatchObject(expected);
   });
 
   it('ignores failure reason codes outside the dedicated allow-list on writes and legacy metadata reads', async () => {
@@ -1644,6 +1865,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['failed', 'refused'])('bounds %s snapshots, refreshes a full scoped reply and retries only the exact recorded run', async (status) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic plain reply. '.repeat(300);
     flows.result.mockResolvedValue({ status, failureText: reply, reply });

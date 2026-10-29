@@ -11,15 +11,16 @@ import type {
   OrgProjectScopeOption,
   OrgCountUnit,
 } from '../interfaces';
+import { ORG_LENS_DEFAULT_TIME_RANGE_LABEL } from './org-lens-time-range.constants';
 
 /**
  * Project-type dropdown options, default first (lfx-self-serve#4322, #4160, #4559). Also the BFF's allow-list for
- * `projectScope`. LF projects is the default, so every Org Lens view counts the same projects as the Overview; LF and
- * non-LF projects is what LFX Insights counts, the option to pick when comparing with it.
+ * `projectScope`. LF and non-LF projects is the default (lfx-self-serve#4694): what LFX Insights counts, so every Org
+ * Lens view opens on the same projects as Insights and the Overview.
  */
 export const ORG_PROJECT_SCOPE_OPTIONS: readonly OrgProjectScopeOption[] = [
-  { label: 'LF projects', value: 'lf' },
   { label: 'LF and non-LF projects', value: 'all' },
+  { label: 'LF projects', value: 'lf' },
   { label: 'Non-LF projects', value: 'non_lf' },
 ] as const;
 
@@ -45,11 +46,18 @@ export const ORG_CODE_METRIC_OPTIONS: readonly OrgCodeMetricOption[] = [
 ] as const;
 
 /**
- * Filter defaults: LF projects (lfx-self-serve#4160) and all code contributions (lfx-self-serve#4559). The URL drops a
- * param while it holds its default, so `?projectScope=all` (what LFX Insights counts) and `?metric=commits` are written,
- * and a link without them opens LF projects and code contributions.
+ * Filter defaults: LF and non-LF projects, as LFX Insights counts (lfx-self-serve#4694), and all code contributions
+ * (lfx-self-serve#4559). The URL drops a param while it holds its default, so `?projectScope=lf` and `?metric=commits`
+ * are written, and a link without them opens every project and code contributions.
  */
-export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+export const DEFAULT_ORG_COMMIT_FILTERS: Readonly<OrgCommitFilters> = { projectScope: 'all', commitScope: 'all', metric: 'code' };
+
+/** Label of the default project scope, for copy that names it ("LF and non-LF projects"). */
+export const ORG_DEFAULT_PROJECT_SCOPE_LABEL: string =
+  ORG_PROJECT_SCOPE_OPTIONS.find((option) => option.value === DEFAULT_ORG_COMMIT_FILTERS.projectScope)?.label ?? '';
+
+/** The Org Lens default view in words, for copy that names it: "LF and non-LF projects, past 2 years". */
+export const ORG_LENS_DEFAULT_VIEW_PHRASE = `${ORG_DEFAULT_PROJECT_SCOPE_LABEL}, ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}`;
 
 /**
  * Filters the unranged people roster (assignment pickers, Org Lens Access, Key Contacts) is computed with: every
@@ -95,11 +103,11 @@ export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
 
 /**
  * Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). The headline is the
- * People → Contributors default tile (LF projects, past 365 days), so it says so in the same words as the Maintainer roles card.
+ * People → Contributors default tile (the Org Lens default view), so it says so in the same words as the Maintainer roles card.
  */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
-  'People with at least one code contribution (commit, pull request, review or comment) in LF projects over the past 365 days, ' +
-  'credited to the employer they had at the time, so people who have since left are included. Bots excluded.';
+  `People with at least one code contribution (commit, pull request, review or comment) in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} ` +
+  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. Bots and CDP team members excluded.`;
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =

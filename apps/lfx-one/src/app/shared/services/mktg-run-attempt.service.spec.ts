@@ -140,6 +140,16 @@ describe('MktgRunAttemptService', () => {
     expect(service.load(request.projectUid, accepted.agentId)).toBeNull();
   });
 
+  it('peeks at a scope-valid first-paint handoff without consuming its single use', () => {
+    const token = service.prepare(request);
+    expect(service.peek(token, 'another-project', request.agentId)).toBeNull();
+    const first = service.peek(token, request.projectUid, request.agentId);
+    expect(first).not.toBeNull();
+    expect(service.peek(token, request.projectUid, request.agentId)).toBe(first);
+    expect(service.consume(token, request.projectUid, request.agentId)).toBe(first);
+    expect(service.peek(token, request.projectUid, request.agentId)).toBeNull();
+  });
+
   it('uses the same map for a failed public intake hint after reload without granting Generate provenance', () => {
     const failed = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
     service.save({ request: failed, state: 'failed', updatedAt: new Date().toISOString() });

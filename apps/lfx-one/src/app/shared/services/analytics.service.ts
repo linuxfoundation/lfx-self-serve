@@ -142,6 +142,7 @@ import {
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewCode,
+  HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewOutstandingBalance,
@@ -1539,6 +1540,10 @@ export class AnalyticsService {
 
   public getOverviewCode(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewCode> {
     return this.getOverviewCard<HealthMetricsOverviewCode>('overview-code', query);
+  }
+
+  public getOverviewNewsletters(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewNewsletters> {
+    return this.getOverviewCard<HealthMetricsOverviewNewsletters>('overview-newsletters', query);
   }
 
   /**

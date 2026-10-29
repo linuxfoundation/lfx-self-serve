@@ -15,7 +15,7 @@ The **host key** is a 6-digit code that lets a person claim host in a Zoom meeti
 Only meeting hosts can see the key, and you need to be signed in. There are two kinds of host:
 
 - **Organizers** are the people who manage the meeting: its owner, and people with write access to the meeting's project or committee, including users granted **Meeting Coordinator** access. An organizer is always a host too.
-- **Meeting Hosts** are guests (participants) who were marked as a **Meeting Host** when they were invited. They don't need to be organizers. Being a Meeting Host gives them enough access to run the meeting, including the host key, but not to edit it.
+- **Meeting Hosts** are guests (participants) who an organizer marked as a **Meeting Host**. They don't need to be organizers. Being a Meeting Host gives them enough access to run the meeting, including the host key, but not to edit it.
 
 Everyone else, including guests and attendees who aren't hosts, never sees the key.
 
@@ -70,13 +70,22 @@ You become the host of the meeting and can use the host controls.
 
 ## Make someone a meeting host
 
-Organizers can give a guest the access to run the meeting by marking them as a **Meeting Host** when they invite them:
+Organizers can give a guest the access to run the meeting by marking them as a **Meeting Host**. You can do it when you invite them, or later for a guest who is already on the list.
+
+### When you invite someone
 
 1. Open the meeting's editor from **Create Meeting**, or from **Edit** on the meeting card.
 2. Go to the **Invite guests** section and select **Add manually**.
 3. In the dialog, enter the guest's details and select **Meeting Host**.
 4. Select **Add guest** in the dialog. Until you do, the guest isn't on the invited list.
 5. Save the meeting.
+
+### For a guest who is already invited
+
+Use the **Make host** button (a shield icon) on the guest's row. When the guest is already a host, the same button reads **Remove host**. You can find it in two places:
+
+- **On the meeting card.** Open the guest list from the meeting's card, and select the button on the guest's row. It saves straight away.
+- **In the meeting's editor.** In the **Invite guests** section, select the button on the guest's row, then save the meeting. When you edit a single occurrence of a recurring meeting, the button is only on guests invited to that occurrence alone. To change the others, edit the entire series.
 
 A guest marked as a host shows a **Host** label in the guest list. For the rest of the guest list, see [Manage Participants](../manage-participants/).
 

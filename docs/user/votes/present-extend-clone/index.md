@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -17,7 +17,7 @@ This article is for people who manage votes. These actions are in the **⋮** (*
 1. Find an active or ended vote you manage.
 2. Select **⋮ → Present**. The presenter opens in a new browser tab at `/votes/:id/present`.
 
-You can also open it from the **Present** button in the vote's [Results drawer](../vote-results/).
+You can also open it from the **Present** button on the vote's [page](../vote-results/).
 
 You need permission to manage the vote. If you don't have it, **Present** isn't in the menu.
 
@@ -27,15 +27,27 @@ The presenter shows the vote's title and description, a live count of how many p
 
 On the right it shows a **Copy link** button and a QR code with the text **In the room? Scan instead**, so people can open the vote on their phones. The page refreshes itself, and a line at the bottom shows how long ago it last updated. If the connection drops, it keeps trying to reconnect.
 
+### Close the vote early
+
+While the vote is open, **Close vote** at the bottom of the presenter ends it now instead of at its deadline. LFX asks **Close the vote now? Members can no longer cast or change ballots.** Select **Close vote** to confirm, or **Cancel** to keep it open. Pressing **Esc** while this question is showing cancels it; it doesn't leave the presenter.
+
+After you confirm, the presenter switches to the final results within a few seconds. The vote keeps its original deadline on record and also shows when it was closed. If the vote can't be closed (for example it hasn't started yet), LFX shows the reason and the vote stays open. You need permission to manage the vote.
+
+### Leave the presenter
+
+While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vote stays open.** Select **Leave** to go to the vote's page, or **Stay** to keep presenting. Pressing **Esc** or clicking outside the question also keeps you on the presenter. The same goes for the questions from **Close vote** and **Send ballots now**: **Esc** only dismisses the question. If you dismiss the question, focus goes back to the button you used. After you close the vote, focus moves to **Exit**.
+
 ### After the vote ends
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
 
-Press **Esc** to leave the presenter. It takes you to the vote's page in LFX.
+If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
+
+Press **Exit** or **Esc** to leave the presenter. Once the vote has ended it leaves straight away, with no question. It takes you to the vote's page in LFX.
 
 ### Copy slide
 
-The Results drawer for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
+The page for a vote you manage also has a **Copy slide** button, which copies an image with the vote's title, link, and QR code so you can paste it into Slides or PowerPoint. If your browser can't copy images, LFX saves the image as a file instead.
 
 ## Extend the deadline
 

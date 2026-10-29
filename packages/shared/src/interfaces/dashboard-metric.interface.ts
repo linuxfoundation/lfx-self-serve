@@ -95,6 +95,9 @@ export interface DashboardMetricCard {
   /** Color for bar chart */
   chartColor?: string;
 
+  /** Line under the chart stating its window (e.g. which months the bars cover) */
+  chartCaption?: string;
+
   // ============================================
   // Filtering & Organization
   // ============================================

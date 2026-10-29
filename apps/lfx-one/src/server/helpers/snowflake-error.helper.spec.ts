@@ -92,6 +92,18 @@ describe('isInvalidIdentifierError', () => {
     expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(false);
   });
 
+  // An aliased column comes back qualified with its alias, as written in the query (lfx-self-serve#4685).
+  it('matches a qualified identifier on its last part', () => {
+    const error = Object.assign(new Error("SQL compilation error: error line 9 at position 46\ninvalid identifier 'R.IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
+    expect(isInvalidIdentifierError(error, 'TEAM_MEMBER')).toBe(false);
+  });
+
+  it('matches a quoted qualified identifier', () => {
+    const error = new Error('SQL compilation error: invalid identifier \'R."IS_CDP_TEAM_MEMBER"\'');
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
+  });
+
   it('does not accept an identifier-specific fallback from error code alone', () => {
     expect(isInvalidIdentifierError(new Error('SQL compilation error: error code: 904'), 'LAST_TOUCH_CONVERSIONS')).toBe(false);
   });

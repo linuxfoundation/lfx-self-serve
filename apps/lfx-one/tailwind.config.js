@@ -79,7 +79,8 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 // Generated utilities: colours `*-ui-{background|neutral|neutral-alpha|accent|success|warning|danger|feature}-<step>`,
 // `*-ui-focus`, `*-ui-overlay` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
 // with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
-// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `text-<role>` and `<role>` type
+// `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
+// `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
 // classes; `edge`, `edge-hover`. The 14px root font makes rem scale, so every size is a literal px value.
 // Any `ui-<family>-<step>` colour token is picked up, so a new role family needs no change here.
 const uiVar = (name) => `var(${uiVarName(name)})`;
@@ -92,6 +93,7 @@ for (const { name } of uiTokens.color.tokens) {
 }
 const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
+const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
@@ -284,6 +286,9 @@ export default {
       colors: { ...lfxColors, ui: uiColors },
       borderRadius: uiVarMap(uiTokens.radius.tokens, 'radius-', 'ui-'),
       height: uiVarMap(uiTokens.height.tokens, 'height-', 'ui-'),
+      transitionDuration: uiMotion('duration-'),
+      // The library's spring `--ease` maps to `ease-ui`; `--ease-standard` to `ease-ui-standard`.
+      transitionTimingFunction: { ui: uiVar('ease'), ...uiMotion('ease-') },
       boxShadow: {
         ...uiVarMap(uiTokens.shadow.tokens, 'shadow-'),
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
