@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { afterNextRender, Component, computed, inject, type Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -73,7 +73,8 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
 import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, describeContributionsWindow } from './org-contributions.util';
@@ -106,6 +107,7 @@ export class OrgContributionsComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -280,6 +282,18 @@ export class OrgContributionsComponent {
       .subscribe((foundation) => {
         if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
       });
+
+    // The Employees selection came from the previous org's roster, so a change between two resolved orgs (a switch,
+    // or Back/Forward across one) clears it; the switch navigation strips `?employees=` too. Clearing also restarts
+    // the debounce, so a pick still pending from the previous org never reaches the next org's request or URL.
+    this.orgUid$
+      .pipe(
+        filter((uid) => !!uid),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.employees.setValue([]));
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
@@ -540,7 +554,12 @@ export class OrgContributionsComponent {
     };
   }
 
+  // Deferred while another navigation (an org switch swapping the path) is in flight, so it cannot supersede it.
   private syncUrl(query: OrgContributionsQuery): void {
+    runWhenRouterIdle(this.router, this.destroyRef, () => this.navigateToQuery(query));
+  }
+
+  private navigateToQuery(query: OrgContributionsQuery): void {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
