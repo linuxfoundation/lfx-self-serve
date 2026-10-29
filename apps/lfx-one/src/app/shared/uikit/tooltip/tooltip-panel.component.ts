@@ -11,14 +11,11 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     role: 'tooltip',
-    '[id]': 'id()',
     '[class]': 'hostClasses()',
     'data-testid': 'ui-tooltip',
   },
 })
 export class UiTooltipPanelComponent {
-  /** Id the trigger points at with `aria-describedby`. */
-  public readonly id = input<string>('');
   /** The tooltip text; with a heading it becomes the smaller description line. */
   public readonly text = input<string>('');
   /** Bold first line. Setting it switches to the rich layout. */

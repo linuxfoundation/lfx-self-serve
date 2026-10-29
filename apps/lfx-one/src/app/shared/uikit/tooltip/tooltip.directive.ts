@@ -1,26 +1,31 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { _IdGenerator, FocusMonitor } from '@angular/cdk/a11y';
+import { AriaDescriber, FocusMonitor } from '@angular/cdk/a11y';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
-import { isPlatformBrowser } from '@angular/common';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { afterNextRender, ComponentRef, DestroyRef, Directive, effect, ElementRef, inject, input, PLATFORM_ID } from '@angular/core';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, input, PLATFORM_ID } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { filter, take } from 'rxjs';
 
 import { UiTooltipPanelComponent } from './tooltip-panel.component';
 
 /**
  * Shows a short label next to the host on hover and keyboard focus. Add it to the element the user points at:
  * `<button lfxUiTooltip="Copy link" aria-label="Copy link">`. The tooltip opens after a short delay and closes on Escape, on blur,
- * or once the pointer has left both the host and the tooltip. It stays open while the pointer is over the tooltip. It flips to the opposite side when it does not fit, and does nothing on the server.
- * A disabled button gets no pointer events, so put the directive on a wrapper element around it.
+ * or once the pointer has left both the host and the tooltip. It stays open while the pointer is over the tooltip. It flips to the
+ * opposite side when it does not fit, ignores touch, and does nothing on the server. The text is also registered as the host's
+ * accessible description, so screen readers read it on focus; it is skipped when it equals the host's `aria-label`.
+ * Put it on the focusable element itself, such as a native `<button>`: on a component that wraps a button the description lands on the
+ * wrapper, which screen readers do not read when the inner button is focused. A disabled button gets no pointer events, so wrap it
+ * in an element that carries the directive and `tabindex="0"`.
  */
 @Directive({
   selector: '[lfxUiTooltip]',
   host: {
-    '(mouseenter)': 'onHostEnter()',
-    '(mouseleave)': 'scheduleHide()',
+    '(pointerenter)': 'onPointerEnter($event)',
+    '(pointerleave)': 'onPointerLeave($event)',
   },
 })
 export class UiTooltipDirective {
@@ -32,27 +37,30 @@ export class UiTooltipDirective {
   public readonly shortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
   /** Preferred side. The tooltip sits 6px from the host and flips to the opposite side, then the other two, if it would leave the window. */
   public readonly side = input<'top' | 'right' | 'bottom' | 'left'>('top', { alias: 'lfxUiTooltipSide' });
-  /** Milliseconds between hover or keyboard focus and the tooltip appearing. Closing is immediate. */
+  /** Milliseconds between hover or keyboard focus and the tooltip appearing. Escape and blur close it at once; leaving with the pointer waits a short grace period. */
   public readonly delay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
   /** Turns the tooltip off without removing the directive. */
   public readonly disabled = input<boolean>(false, { alias: 'lfxUiTooltipDisabled' });
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly document = inject(DOCUMENT);
   private readonly overlay = inject(Overlay);
   private readonly focusMonitor = inject(FocusMonitor);
+  private readonly ariaDescriber = inject(AriaDescriber);
   private readonly destroyRef = inject(DestroyRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
-  private readonly panelId = inject(_IdGenerator).getId('lfx-ui-tooltip-');
   // Distance between the host and the tooltip, in px.
   private readonly gap = 6;
   // Milliseconds the pointer may spend crossing the gap between the host and the tooltip before it closes.
   private readonly graceMs = 100;
+  private readonly config = computed(() => ({ text: this.text(), title: this.title(), shortcut: this.shortcut(), disabled: this.disabled() }));
 
   private overlayRef: OverlayRef | null = null;
   private panel: ComponentRef<UiTooltipPanelComponent> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private keyboardFocused = false;
+  private description = '';
 
   public constructor() {
     afterNextRender(() => {
@@ -66,30 +74,47 @@ export class UiTooltipDirective {
           else if (origin === null) this.hide();
         });
     });
+    toObservable(this.config)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((config) => this.apply(config));
     this.destroyRef.onDestroy(() => {
       this.focusMonitor.stopMonitoring(this.host);
       this.hide();
-    });
-    effect(() => {
-      const text = this.text();
-      const title = this.title();
-      const shortcut = this.shortcut();
-      if (this.disabled() || !(text || title)) {
-        this.hide();
-        return;
-      }
-      this.panel?.setInput('text', text);
-      this.panel?.setInput('heading', title);
-      this.panel?.setInput('shortcut', shortcut);
+      this.describe('');
     });
   }
 
-  protected onHostEnter(): void {
+  protected onPointerEnter(event: PointerEvent): void {
+    if (event.pointerType === 'touch') return;
     this.cancelHide();
     this.scheduleShow();
   }
 
-  protected scheduleHide(): void {
+  protected onPointerLeave(event: PointerEvent): void {
+    if (event.pointerType !== 'touch') this.scheduleHide();
+  }
+
+  private apply(config: { text: string; title: string; shortcut: string[]; disabled: boolean }): void {
+    const empty = config.disabled || !(config.text || config.title);
+    this.describe(empty ? '' : [config.title, config.text].filter(Boolean).join('. '));
+    if (empty) {
+      this.hide();
+      return;
+    }
+    this.panel?.setInput('text', config.text);
+    this.panel?.setInput('heading', config.title);
+    this.panel?.setInput('shortcut', config.shortcut);
+  }
+
+  // The CDK skips a description that equals the host's aria-label, so it is not read twice.
+  private describe(message: string): void {
+    if (!this.isBrowser || message === this.description) return;
+    if (this.description) this.ariaDescriber.removeDescription(this.host, this.description);
+    if (message) this.ariaDescriber.describe(this.host, message);
+    this.description = message;
+  }
+
+  private scheduleHide(): void {
     this.clearShowTimer();
     // Keyboard focus keeps it open; blur closes it.
     if (!this.overlayRef || this.keyboardFocused) return;
@@ -100,28 +125,40 @@ export class UiTooltipDirective {
     }, this.graceMs);
   }
 
-  protected scheduleShow(): void {
+  private scheduleShow(): void {
     if (!this.isBrowser || this.overlayRef || this.timer !== null || this.disabled() || !(this.text() || this.title())) return;
+    // Escape during the delay cancels the pending show.
+    this.document.addEventListener('keydown', this.onPendingKeydown);
     this.timer = setTimeout(() => {
-      this.timer = null;
+      this.clearShowTimer();
       this.show();
     }, this.delay());
   }
 
-  protected hide(): void {
+  private readonly onPendingKeydown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') this.dismiss();
+  };
+
+  private dismiss(): void {
+    this.keyboardFocused = false;
+    this.hide();
+  }
+
+  private hide(): void {
     this.clearShowTimer();
     this.cancelHide();
-    if (!this.overlayRef) return;
-    this.overlayRef.dispose();
+    const overlayRef = this.overlayRef;
+    if (!overlayRef) return;
     this.overlayRef = null;
     this.panel = null;
-    this.removeDescribedBy();
+    overlayRef.dispose();
   }
 
   private clearShowTimer(): void {
     if (this.timer === null) return;
     clearTimeout(this.timer);
     this.timer = null;
+    this.document.removeEventListener('keydown', this.onPendingKeydown);
   }
 
   private cancelHide(): void {
@@ -137,19 +174,36 @@ export class UiTooltipDirective {
       disposeOnNavigation: true,
     });
     this.overlayRef = overlayRef;
-    this.panel = overlayRef.attach(new ComponentPortal(UiTooltipPanelComponent));
-    this.panel.setInput('id', this.panelId);
-    this.panel.setInput('text', this.text());
-    this.panel.setInput('heading', this.title());
-    this.panel.setInput('shortcut', this.shortcut());
-    this.addDescribedBy();
+    const panel = overlayRef.attach(new ComponentPortal(UiTooltipPanelComponent));
+    this.panel = panel;
+    panel.setInput('text', this.text());
+    panel.setInput('heading', this.title());
+    panel.setInput('shortcut', this.shortcut());
+    // The CDK can dispose the overlay itself, such as on navigation; drop the stale reference when it does.
+    overlayRef
+      .detachments()
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.overlayRef !== overlayRef) return;
+        this.overlayRef = null;
+        this.panel = null;
+        this.cancelHide();
+      });
     // The tooltip stays open while the pointer is over it (WCAG 1.4.13 hoverable).
-    const panelElement: HTMLElement = this.panel.location.nativeElement;
-    panelElement.addEventListener('mouseenter', () => this.cancelHide());
-    panelElement.addEventListener('mouseleave', () => this.scheduleHide());
-    overlayRef.keydownEvents().subscribe((event) => {
-      if (event.key === 'Escape') this.hide();
+    const panelElement: HTMLElement = panel.location.nativeElement;
+    panelElement.addEventListener('pointerenter', (event) => {
+      if ((event as PointerEvent).pointerType !== 'touch') this.cancelHide();
     });
+    panelElement.addEventListener('pointerleave', (event) => {
+      if ((event as PointerEvent).pointerType !== 'touch') this.scheduleHide();
+    });
+    overlayRef
+      .keydownEvents()
+      .pipe(
+        filter((event) => event.key === 'Escape'),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.dismiss());
   }
 
   private positions(): ConnectedPosition[] {
@@ -167,16 +221,5 @@ export class UiTooltipDirective {
       right: ['right', 'left', 'top', 'bottom'],
     } as const;
     return order[this.side()].map((side) => all[side]);
-  }
-
-  private addDescribedBy(): void {
-    const ids = (this.host.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
-    this.host.setAttribute('aria-describedby', [...ids, this.panelId].join(' '));
-  }
-
-  private removeDescribedBy(): void {
-    const ids = (this.host.getAttribute('aria-describedby') ?? '').split(' ').filter((id) => id && id !== this.panelId);
-    if (ids.length) this.host.setAttribute('aria-describedby', ids.join(' '));
-    else this.host.removeAttribute('aria-describedby');
   }
 }

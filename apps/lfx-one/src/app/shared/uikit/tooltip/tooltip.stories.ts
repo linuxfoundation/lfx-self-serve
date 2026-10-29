@@ -44,6 +44,17 @@ export const Rich: Story = {
 export const Bottom: Story = { args: { side: 'bottom' } };
 export const Left: Story = { args: { side: 'left' } };
 export const Right: Story = { args: { side: 'right' } };
+/** On the focusable element itself, so the screen-reader description is read when it takes focus. */
+export const OnNativeButton: Story = {
+  render: () => ({
+    template: `
+      <div class="flex justify-center p-[96px]">
+        <button type="button" lfxUiTooltip="Copy link" class="edge inline-flex h-ui-medium w-ui-medium items-center justify-center rounded-ui-sm bg-ui-background-100 focus-visible:shadow-focus focus-visible:outline-none">
+          <i class="fa-light fa-link" aria-hidden="true"></i><span class="sr-only">Share</span>
+        </button>
+      </div>`,
+  }),
+};
 /** Tooltips can explain why a control is off. A disabled button gets no pointer events, so the directive sits on a wrapper. */
 export const OnDisabledControl: Story = {
   render: () => ({
