@@ -213,12 +213,13 @@ export interface MeetingOrganizerChipModel {
   overflow: MeetingOrganizerLink[];
 }
 
+/** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
+export type MeetingGuestRole = 'organizer' | 'host' | null;
+
 /**
  * Minimal host-candidate shape for the organizer host-fallback derivation.
  * Satisfied structurally by both {@link MeetingRegistrant} and {@link PastMeetingParticipant}.
  */
-export type MeetingGuestRole = 'organizer' | 'host' | null;
-
 export interface MeetingHostCandidate {
   first_name?: string | null;
   last_name?: string | null;

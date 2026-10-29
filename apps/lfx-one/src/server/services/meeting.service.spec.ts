@@ -1943,6 +1943,21 @@ describe('MeetingService registrant write payloads', () => {
     expect(bodyOf()).toMatchObject({ user_id: 'user-123' });
   });
 
+  // A create has no stored `user_id` for upstream to compare against, so a client-named one would pick
+  // the LF account a guest is linked to. Update-only.
+  it('does not forward a client-supplied user_id on create', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      user_id: 'someone-else',
+    } as CreateMeetingRegistrantRequest & { user_id: string });
+
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com' });
+    expect(bodyOf()).not.toHaveProperty('user_id');
+  });
+
   // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form
   // control. All three targets are declared non-nullable, and before the rename Goa dropped the
   // undeclared key outright; omitting keeps that outcome instead of planting a null on a declared
