@@ -36,7 +36,7 @@
 
   <!-- Step: Connect (email only) -->
   @if (step() === 'connect') {
-    <p class="text-sm text-slate-600">Enter your email address and we'll send you a verification code.</p>
+    <p class="text-sm text-slate-600">Enter your email address. If it can be added to your account, we'll send you a verification code.</p>
 
     <div class="flex flex-col gap-4">
       <!-- Email input -->
@@ -52,7 +52,7 @@
           styleClass="text-sm"
           data-testid="add-account-email" />
         @if (!codeSent()) {
-          <p class="text-xs text-slate-500">You'll receive a verification code after clicking Send verification code.</p>
+          <p class="text-xs text-slate-500">Codes are sent only to addresses that can be added to your account.</p>
         }
       </div>
 

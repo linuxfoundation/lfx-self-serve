@@ -580,13 +580,15 @@ describe('AccountSettingsComponent — email verification support', () => {
 describe('AccountSettingsComponent — resend escalation (#4695)', () => {
   const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
 
-  async function setup() {
+  async function setup(
+    send: () => Observable<SendEmailVerificationResponse> = () => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })
+  ) {
     const userServiceMock = {
       impersonating: signal(false),
       getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
       getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
       getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
-      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+      sendEmailVerificationCode: vi.fn(send),
     };
 
     TestBed.resetTestingModule();
@@ -616,9 +618,19 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
     vi.useRealTimers();
   });
 
-  it('words the code step conditionally and keeps the support hint visible from the start', async () => {
-    const { root } = await setup();
+  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+    const response$ = new Subject<SendEmailVerificationResponse>();
+    const { component, fixture, root } = await setup(() => response$);
 
+    expect(component.otpStep()).toBe(false);
+    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
+    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+
+    response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+    response$.complete();
+    fixture.detectChanges();
+
+    expect(component.otpStep()).toBe(true);
     const otpStep = root.querySelector('[data-testid="otp-step"]');
     expect(normalizedText(otpStep)).toContain("If this address can be added to your account, we'll send a 6-digit code to new-address@example.test");
     expect(normalizedText(otpStep)).not.toContain('a 6-digit code was sent');

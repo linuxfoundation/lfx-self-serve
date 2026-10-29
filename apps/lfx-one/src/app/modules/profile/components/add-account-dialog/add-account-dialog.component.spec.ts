@@ -10,6 +10,7 @@ import {
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
@@ -17,7 +18,7 @@ import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from './add-account-dialog.component';
@@ -328,9 +329,26 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       expect(component.resendCount()).toBe(0);
     });
 
-    it('words the code hint without promising a code or naming the address status', () => {
-      const { root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+    it('words the complete email step conditionally before and after a generic successful send', () => {
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      const { component, root } = setup(
+        () => of<VerifyAndLinkEmailResponse>({ success: true }),
+        () => response$
+      );
 
+      expect(component.codeSent()).toBe(false);
+      expect(normalizedText(root)).toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
+      expect(normalizedText(root)).toContain('Codes are sent only to addresses that can be added to your account.');
+      expect(normalizedText(root)).not.toContain("You'll receive a verification code");
+
+      response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.codeSent()).toBe(true);
+      expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
+      expect(normalizedText(root)).not.toContain("Enter your email address and we'll send you a verification code.");
       const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
       expect(hint).not.toContain('already linked');
