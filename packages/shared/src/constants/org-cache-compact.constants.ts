@@ -179,6 +179,4 @@ export const ORG_CONTRIBUTOR_ROW_COLUMNS = [
   'MERGED_COMMITS',
   'CODE_ACTIVITIES',
   'LAST_ACTIVE_DATE',
-  'IS_DECLARED_MAINTAINER_FOR_PROJECT',
-  'IS_DECLARED_MAINTAINER_FOR_ORG',
 ] as const satisfies readonly (keyof ContributorPersonProjectRow)[];

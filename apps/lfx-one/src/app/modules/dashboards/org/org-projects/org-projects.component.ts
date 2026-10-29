@@ -210,6 +210,7 @@ export class OrgProjectsComponent {
   protected readonly selectedWorkspaceName = computed<string>(() => this.selectedWorkspace()?.name ?? '');
   private readonly workspacesResponse = this.initWorkspaces();
   private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
+  protected readonly maintainerRolesUnavailable = computed<boolean>(() => this.response()?.maintainerRolesUnavailable === true);
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 

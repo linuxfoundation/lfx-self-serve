@@ -528,6 +528,30 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
   });
 
+  it.each([
+    { flagged: true, shown: true },
+    { flagged: false, shown: false },
+  ])('notes maintainer roles as unavailable on the Code tab only when the detail flags it (flagged: $flagged)', async ({ flagged, shown }) => {
+    drawer.open(person);
+    await render();
+    const code = [
+      {
+        projectId: 'project-1',
+        projectName: 'project-1',
+        foundationId: 'foundation-1',
+        foundationName: 'Foundation One',
+        commits: 1,
+        lastActivityDate: null,
+        isMaintainer: false,
+      },
+    ];
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code, totalCommits: 1, ...(flagged ? { maintainerRolesUnavailable: true as const } : {}) });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-maintainer-unavailable') !== null).toBe(shown);
+  });
+
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {
     drawer.open(person);
     await render();
@@ -691,5 +715,20 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     expect(emailState('none')).not.toBeNull();
     expect(emailState('0')).toBeNull();
+  });
+
+  it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({ name: 'First person', personKey: 'first-person', range: '90d' });
+    await render();
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '90d' } });
+    // The address read is keyed on the live directory, not on the pill range, so it is unchanged.
+    expect(optionsFor(`${BY_PERSON_KEY}/company-emails`)).toEqual({ params: undefined });
+
+    httpGet.mockClear();
+    drawer.open({ name: 'First person', username: 'first-person' });
+    await render();
+    expect(optionsFor(`${BY_USERNAME}/detail`)).toEqual({ params: {} });
   });
 });
