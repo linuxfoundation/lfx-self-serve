@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- PrimeNG's projected button templates must be created on the client, not hydrated. -->
-@defer (on immediate) {
+@if (browser()) {
   <p-fileUpload
     [mode]="mode()"
     [name]="name()"
@@ -178,7 +178,7 @@
       </ng-template>
     }
   </p-fileUpload>
-} @placeholder {
+} @else {
   <div [class]="styleClass()" [style]="style()" aria-busy="true" data-testid="file-upload-placeholder">
     @if (mode() === 'basic') {
       <lfx-button
