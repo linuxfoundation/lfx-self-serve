@@ -198,7 +198,7 @@ export interface OrgAllEmployeeCodeContribution {
    */
   commits: number;
   lastActivityDate: string | null;
-  /** The person holds a maintainer role on this project overlapping the detail's range (the page range, else the past 365 days). */
+  /** The person holds a maintainer role on this project overlapping the detail's range (the page range, else the Org Lens default range). */
   isMaintainer: boolean;
 }
 

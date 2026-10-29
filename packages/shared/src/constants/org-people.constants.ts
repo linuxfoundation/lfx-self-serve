@@ -81,8 +81,11 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
   { label: 'All employees', value: 'all' },
 ] as const;
 
-/** Default employment filter — the URL drops `?employment=` when it is active. */
-export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
+/**
+ * Default employment filter on All Employees — everyone credited to the org at the time, as LFX Insights counts
+ * (lfx-self-serve#4694). The URL drops `?employment=` when it is active.
+ */
+export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
 
 /** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
 export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
@@ -93,7 +96,7 @@ export const ORG_EMPLOYMENT_LABEL = 'Employment';
 /**
  * Default employment filter on People → Contributors and Org Lens Access (lfx-self-serve#4627) — the URL drops
  * `?employment=` when it is active. Everyone, former employees included: Contributors keeps matching the Overview's
- * Active Contributors card, and Access lists every principal. All Employees has its own default.
+ * Active Contributors card, and Access lists every principal. All Employees has the same default.
  */
 export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
 

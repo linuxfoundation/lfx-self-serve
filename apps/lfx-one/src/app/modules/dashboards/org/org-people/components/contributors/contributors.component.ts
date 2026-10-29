@@ -157,6 +157,10 @@ export class ContributorsComponent {
 
   // The range, undebounced: it drives the BFF read (A1 architecture: one slice per timeRange), the filtering state and the tooltip.
   private readonly timeRange: Signal<OrgLensTimeRange> = this.timeRangeControl();
+  // The active range's label, for the empty state that names the window ("past 2 years").
+  protected readonly timeRangeLabel: Signal<string> = computed(
+    () => this.timeRangeOptions.find((option) => option.value === this.timeRange())?.label.toLowerCase() ?? ''
+  );
 
   // The commit filters also refetch (they change the read and the most-active project), undebounced like the time range.
   protected readonly commitFilters: Signal<OrgCommitFilters> = this.initCommitFilters();

@@ -19,26 +19,28 @@ export function orgTeamMembersPredicate(teamMembers: OrgTeamMembersFilter, colum
 
 /**
  * Query options for a read that filters on the flag: until lf-dbt has built the column, Snowflake rejects it as an
- * invalid identifier, which is expected during the rollout and must not count toward the circuit breaker.
+ * invalid identifier, which is expected during the rollout and must not count toward the circuit breaker. `column` is
+ * the identifier the `exclude` read depends on: the flag, or a model's count without team members.
  */
-export function orgTeamMembersQueryOptions(teamMembers: OrgTeamMembersFilter): SnowflakeQueryOptions | undefined {
-  return teamMembers === 'exclude' ? { expectInvalidIdentifier: TEAM_MEMBER_COLUMN } : undefined;
+export function orgTeamMembersQueryOptions(teamMembers: OrgTeamMembersFilter, column = TEAM_MEMBER_COLUMN): SnowflakeQueryOptions | undefined {
+  return teamMembers === 'exclude' ? { expectInvalidIdentifier: column } : undefined;
 }
 
 /**
- * Runs `read` for the pick; when `exclude` meets a missing flag column it logs, runs `read` again with `include` and
- * reports `teamMembersUnavailable`, so a view keeps loading (with team members counted) instead of failing. Callers
- * must not cache an unavailable answer. Any other error rejects.
+ * Runs `read` for the pick; when `exclude` meets a missing `column` (the flag by default) it logs, runs `read` again
+ * with `include` and reports `teamMembersUnavailable`, so a view keeps loading (with team members counted) instead of
+ * failing. Callers must not cache an unavailable answer. Any other error rejects.
  */
 export async function readWithOrgTeamMembersFallback<T>(
   teamMembers: OrgTeamMembersFilter,
   operation: string,
-  read: (teamMembers: OrgTeamMembersFilter) => Promise<T>
+  read: (teamMembers: OrgTeamMembersFilter) => Promise<T>,
+  column = TEAM_MEMBER_COLUMN
 ): Promise<{ value: T; teamMembersUnavailable: boolean }> {
   try {
     return { value: await read(teamMembers), teamMembersUnavailable: false };
   } catch (error) {
-    if (teamMembers !== 'exclude' || !isInvalidIdentifierError(error, TEAM_MEMBER_COLUMN)) {
+    if (teamMembers !== 'exclude' || !isInvalidIdentifierError(error, column)) {
       throw error;
     }
     logger.warning(undefined, operation, 'Team-member flag is not in the warehouse yet; serving team members included', { err: error });

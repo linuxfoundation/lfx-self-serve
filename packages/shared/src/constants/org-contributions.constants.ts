@@ -27,7 +27,7 @@ export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, Contrib
   code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution' },
 };
 
-/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, since the default is LF projects (lfx-self-serve#4160). */
+/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, the default (LF and non-LF projects, lfx-self-serve#4694) included. */
 export const CONTRIBUTIONS_PROJECT_SCOPE_PHRASE: Readonly<Record<OrgProjectScope, string>> = {
   all: ' in LF and non-LF projects',
   lf: ' in LF projects',

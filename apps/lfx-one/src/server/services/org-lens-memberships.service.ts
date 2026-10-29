@@ -74,7 +74,7 @@ interface RawFoundationProjectRow {
   PROJECT_NAME: string | null;
   IS_LF_PROJECT: boolean;
   INFLUENCE_MAX_BUCKET: ProjectInfluenceBucket;
-  /** LF maintainer roles on the project overlapping the past 365 days (lfx-self-serve#4482), merged in from their own read; `null` when the roles table is missing. */
+  /** LF maintainer roles on the project overlapping the last 2 years (lfx-self-serve#4482, #4694), merged in from their own read; `null` when the roles table is missing. */
   MAINTAINER_ROLES: number | null;
   CONTRIBUTORS_COUNT: number;
   COLLABORATORS_COUNT: number;
@@ -209,14 +209,15 @@ export class OrgLensMembershipsService {
    * Unknown org/foundation pairs return an empty envelope, never a 404.
    */
   public async getFoundationProjects(accountId: string, foundationId: string): Promise<OrgMembershipProjectsResponse> {
-    // `v4`: per-project maintainer roles leave CDP team members out (lfx-self-serve#4685). (`v3`: a null MAINTAINER_ROLES
-    // means "roles unavailable", not "no roles"; `v2`: per-project maintainers became LF maintainer roles over the past
-    // 365 days, lfx-self-serve#4482.) Set by the fetcher, read by `storable`: rows without their roles (table missing) or
-    // with team members counted (flag missing) are served, never stored.
+    // `v5`: per-project LF maintainer roles overlap the last 2 years, the Org Lens default range (lfx-self-serve#4694), and
+    // leave CDP team members out (lfx-self-serve#4685). (`v3`: a null MAINTAINER_ROLES means "roles unavailable", not
+    // "no roles"; `v2`: per-project maintainers became LF maintainer roles over the past 365 days, lfx-self-serve#4482.)
+    // Set by the fetcher, read by `storable`: rows without their roles (table missing) or with team members counted
+    // (flag missing) are served, never stored.
     let rolesMissing = false;
     const rows = await withOrgCache(
       accountId,
-      `memberships-projects:v4:${foundationId}`,
+      `memberships-projects:v5:${foundationId}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFoundationProjectRows(accountId, foundationId);

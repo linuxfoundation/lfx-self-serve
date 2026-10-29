@@ -1093,9 +1093,9 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
     expect(nonLf).toStrictEqual(picker);
   });
 
-  // lfx-self-serve#4160: the page default is LF projects, and a picker request (no range, no filters) parses to it. The
-  // unranged roster must not follow it: the pickers keep every seat, key contact, access principal and stored employee.
-  it('serves the pickers the full unranged roster under the LF projects default', async () => {
+  // lfx-self-serve#4160: the unranged roster never follows the project scope a caller sends: the pickers keep every
+  // seat, key contact, access principal and stored employee.
+  it('serves the pickers the full unranged roster even when the caller sends LF projects', async () => {
     getAllEmployeesInternal.mockResolvedValue(
       baseResponse([
         storedRow(),
@@ -1114,9 +1114,8 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
       ])
     );
 
-    const picker = await run(null, DEFAULT_ORG_COMMIT_FILTERS);
+    const picker = await run(null, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' });
 
-    expect(DEFAULT_ORG_COMMIT_FILTERS.projectScope).toBe('lf');
     expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
     expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
     expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);

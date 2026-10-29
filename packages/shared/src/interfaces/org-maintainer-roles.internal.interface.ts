@@ -13,12 +13,13 @@ export interface OrgMaintainerRoleOverlap {
 }
 
 /**
- * The maintainer roles tables; a read names the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role,
- * with or without an account; the ORG_LENS_PROJECT_* series are Project Detail's sparkline per account and project.
+ * The maintainer roles tables and the Overview trend view over ORG_MAINTAINER_ROLES (lfx-self-serve#4694); a read names
+ * the one it may find missing. PROJECT_MAINTAINER_ROLES holds every role, with or without an account; the
+ * ORG_LENS_PROJECT_* series are Project Detail's sparkline per account and project.
  */
 export type OrgMaintainerRolesTable =
   | 'ORG_MAINTAINER_ROLES'
-  | 'ORG_MAINTAINER_ROLES_MONTHLY'
+  | 'ORG_OVERVIEW_MAINTAINER_ROLES_TREND'
   | 'PROJECT_MAINTAINER_ROLES'
   | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY'
   | 'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME';
@@ -55,9 +56,9 @@ export interface OrgProjectMaintainerRoleRow {
   MAINTAINER_AVATAR_URL: string | null;
 }
 
-/** One month of the account's LF maintainer roles: the roles overlapping that calendar month. */
+/** One month of the account's maintainer roles (ORG_OVERVIEW_MAINTAINER_ROLES_TREND): the roles overlapping that calendar month. */
 export interface OrgMaintainerRolesMonthlyRow {
-  METRIC_MONTH: Date;
+  MONTH_START_DATE: Date;
   ACTIVE_ROLES: number | null;
 }
 

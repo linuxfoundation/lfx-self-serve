@@ -89,8 +89,8 @@ function buildRosterReq(query: Record<string, string>): Request {
 }
 
 const EMPTY_ROSTER = { accountId: ORG_UID, rows: [], stats: { activeInOss: 0 }, foundations: [] };
-// A request without the commit filters reads LF projects (lfx-self-serve#4160) and all code contributions (#4559).
-const DEFAULT_FILTERS = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
+// A request without the commit filters reads LF and non-LF projects (lfx-self-serve#4694) and all code contributions (#4559).
+const DEFAULT_FILTERS = { projectScope: 'all', commitScope: 'all', metric: 'code' };
 
 describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)', () => {
   const controller = new OrgLensPeopleController();
@@ -102,14 +102,14 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     getLive.mockResolvedValue(EMPTY_ROSTER);
   });
 
-  it('reads the unranged roster when /all has no range, and defaults /former to 365d', async () => {
+  it('reads the unranged roster when /all has no range, and defaults /former to 730d', async () => {
     await controller.getAllEmployees(buildRosterReq({}), buildRes(), vi.fn());
     await controller.getAllEmployees(buildRosterReq({ live: 'true' }), buildRes(), vi.fn());
     await controller.getFormerEmployees(buildRosterReq({}), buildRes(), vi.fn());
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null, DEFAULT_FILTERS, 'exclude');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null, DEFAULT_FILTERS, 'exclude');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', DEFAULT_FILTERS, 'exclude');
+    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'exclude');
   });
 
   it('passes a valid range through to the stored, live, former and contributors reads', async () => {
@@ -174,20 +174,20 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', picked, 'exclude');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', picked, 'exclude');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', picked, 'exclude');
+    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', picked, 'exclude');
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked, 'all', 'exclude');
   });
 
-  it('defaults missing params on the Contributors read to LF projects and everyone, former employees included', async () => {
+  it('defaults missing params on the Contributors read to the past 2 years, LF and non-LF projects and everyone, former employees included', async () => {
     await controller.getContributors(buildRosterReq({}), buildRes(), vi.fn());
 
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all', 'exclude');
   });
 
-  it('reads projectScope=all as every project', async () => {
-    await controller.getContributors(buildRosterReq({ projectScope: 'all' }), buildRes(), vi.fn());
+  it('reads projectScope=lf as LF projects only', async () => {
+    await controller.getContributors(buildRosterReq({ projectScope: 'lf' }), buildRes(), vi.fn());
 
-    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', { ...DEFAULT_FILTERS, projectScope: 'all' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', { ...DEFAULT_FILTERS, projectScope: 'lf' }, 'all', 'exclude');
   });
 
   // lfx-self-serve#4627
@@ -478,12 +478,12 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
     expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', 'all', null, 'include');
   });
 
-  it('defaults to the past 365 days when the opener sends no range', async () => {
+  it('defaults to the Org Lens default range, the past 2 years, when the opener sends no range', async () => {
     await controller.getEmployeeDetail(detailReq({}), buildRes(), vi.fn());
     await controller.getEmployeeDetailByUsername(detailReq({}), buildRes(), vi.fn());
 
-    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null, 'include');
-    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '365d', null, 'include');
+    expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', null, 'include');
+    expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '730d', null, 'include');
   });
 
   it("forwards the opener's code filters with its range, for a person key and for a username (lfx-self-serve#4404)", async () => {
@@ -503,7 +503,7 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
       expect.anything(),
       ORG_UID,
       'person-one',
-      '365d',
+      '730d',
       {
         projectScope: 'all',
         commitScope: 'all',
@@ -516,10 +516,10 @@ describe('OrgLensPeopleController detail range (lfx-self-serve#4482)', () => {
   // lfx-self-serve#4685
   it("forwards the opener's Team members pick with its code filters, and counts everyone for a code-free open", async () => {
     await controller.getEmployeeDetail(detailReq({ projectScope: 'lf', teamMembers: 'include' }), buildRes(), vi.fn());
-    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', expect.any(Object), 'include');
+    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', expect.any(Object), 'include');
 
     await controller.getEmployeeDetail(detailReq({ teamMembers: 'exclude' }), buildRes(), vi.fn());
-    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '365d', null, 'include');
+    expect(getEmployeeDetail).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', null, 'include');
   });
 
   it('rejects an unknown teamMembers with code filters with a 400 before any read', async () => {

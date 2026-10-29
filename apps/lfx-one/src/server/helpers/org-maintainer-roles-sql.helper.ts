@@ -54,7 +54,7 @@ export async function readMaintainerRoles<T>(
 }
 
 /**
- * The account's LF maintainer roles per project overlapping the Overview window (past 365 days), keyed by project id —
+ * The account's LF maintainer roles per project overlapping the Overview window (last 2 years), keyed by project id —
  * the per-project count of the Overview's Foundations & Projects and the Memberships projects drawer. CDP team
  * members' roles are left out, the Overview default and LFX Insights' rule (lfx-self-serve#4685). `roles` is `null`
  * when the roles table is missing; `teamMembersUnavailable` when its team-member flag is (team members then counted).

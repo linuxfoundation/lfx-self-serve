@@ -89,13 +89,14 @@ export class OrgLensFoundationsService {
   }
 
   public async getFoundationsAndProjects(accountId: string): Promise<OrgLensFoundationsAndProjectsResponse> {
-    // `foundations:v3`: per-project maintainer roles leave CDP team members out (lfx-self-serve#4685); `v2`: they are LF
-    // maintainer roles over the past 365 days (lfx-self-serve#4482). Set by the fetcher, read by `storable`: a response
+    // `foundations:v4`: per-project LF maintainer roles overlap the last 2 years, the Org Lens default range
+    // (lfx-self-serve#4694), and leave CDP team members out (lfx-self-serve#4685). (`v2`: per-project maintainers became
+    // LF maintainer roles over the past 365 days, lfx-self-serve#4482.) Set by the fetcher, read by `storable`: a response
     // without its roles (table missing) or with team members counted (flag missing) is served, never stored.
     let rolesMissing = false;
     return withOrgCache(
       accountId,
-      'foundations:v3',
+      'foundations:v4',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const fetched = await this.fetchFoundationsAndProjects(accountId);

@@ -9,13 +9,17 @@ export function isOrgLensTimeRange(value: unknown): value is OrgLensTimeRange {
   return (ORG_LENS_TIME_RANGES as readonly unknown[]).includes(value);
 }
 
-/** `?range=` value → range; anything absent or unknown (an old `12mo` link included) is the default. */
+/**
+ * `?range=` value → range. The legacy `12mo` reads as `365d`, as the BFF reads it (an old link keeps its 12-month
+ * window rather than widening to the default); anything else absent or unknown is the default.
+ */
 export function parseOrgLensTimeRange(value: string | null | undefined): OrgLensTimeRange {
-  return isOrgLensTimeRange(value) ? value : ORG_LENS_DEFAULT_TIME_RANGE;
+  const normalized = typeof value === 'string' ? normalizeLegacyOrgLensTimeRange(value) : value;
+  return isOrgLensTimeRange(normalized) ? normalized : ORG_LENS_DEFAULT_TIME_RANGE;
 }
 
 /**
- * A BFF `range` / `timeRange` value with the legacy `12mo` (the old default, still sent by tabs opened before the
+ * A `range` / `timeRange` value with the legacy `12mo` (the old default, still sent by tabs opened before the
  * Past 365 days ranges) read as `365d`; any other value is returned unchanged for the caller to validate.
  */
 export function normalizeLegacyOrgLensTimeRange(value: string): string {

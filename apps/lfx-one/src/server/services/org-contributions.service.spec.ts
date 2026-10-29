@@ -107,7 +107,7 @@ describe('OrgContributionsService — commit filters', () => {
 
 describe('OrgContributionsService — range window', () => {
   it('windows Past 365 days as 365 calendar days, on every commit read', async () => {
-    await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', dateRange: '365d' }));
 
     expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of commitReads()) {
@@ -118,7 +118,7 @@ describe('OrgContributionsService — range window', () => {
   });
 
   it('windows Past 365 days code activity on activity_date', async () => {
-    await service.getContributions(ACCOUNT, query({ metric: 'code' }));
+    await service.getContributions(ACCOUNT, query({ metric: 'code', dateRange: '365d' }));
 
     expect(kpiCall().sql).toContain('activity_date >= DATEADD(day, -365, CURRENT_DATE())');
   });
@@ -414,7 +414,7 @@ describe('OrgContributionsService — cache key', () => {
   it('is versioned and differs per projectScope, commitScope, metric and foundation', async () => {
     const variants: Partial<OrgContributionsQuery>[] = [
       {},
-      { projectScope: 'all' },
+      { projectScope: 'lf' },
       { projectScope: 'non_lf' },
       { commitScope: 'merged' },
       { metric: 'commits' },

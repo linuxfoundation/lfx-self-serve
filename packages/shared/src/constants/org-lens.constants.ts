@@ -50,3 +50,12 @@ export const ORG_ACCESS_UNVERIFIABLE_MESSAGE = "Couldn't verify your access to t
 
 /** How long a copy-to-clipboard confirmation stays on screen in the Org Lens person-detail drawer. */
 export const PERSON_DRAWER_COPIED_RESET_MS = 2000;
+
+/** lf-dbt's live view of the Overview Active Contributors trend (lfx-self-serve#4694); a read names it so a missing view degrades the trend only. */
+export const ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW = 'ORG_OVERVIEW_CONTRIBUTORS_TREND';
+
+/** ORG_OVERVIEW_CONTRIBUTORS_TREND's monthly count without CDP team members, read under the default Team members = Exclude (lfx-self-serve#4685). */
+export const ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN = 'UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS';
+
+/** ORG_OVERVIEW_MAINTAINER_ROLES_TREND's monthly roles without CDP team members', read under the default Team members = Exclude (lfx-self-serve#4685). */
+export const ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN = 'ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS';

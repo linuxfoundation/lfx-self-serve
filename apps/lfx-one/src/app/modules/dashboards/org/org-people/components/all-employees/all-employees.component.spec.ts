@@ -155,7 +155,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('requests the live merge without waiting for the Snowflake roster', () => {
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(live$.observed).toBe(true);
     });
 
@@ -346,10 +346,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     };
 
     it('reads former employees under "Current employees" too, for reconciliation, but lists none, and waits for that read', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
 
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
 
       await answerFormer();
@@ -360,7 +360,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('notes on the code tile that former employees are left out, only under "Current employees"', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
       await answerFormer();
       const infoSelector = '[data-testid="org-people-all-employees-stat-code-info"]';
@@ -391,7 +391,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await answerFormer();
 
       expect(getFormerEmployees).toHaveBeenCalledTimes(1);
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
       expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
       expect(activeStat()).toContain('1');
@@ -408,7 +408,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('2');
     });
     it('follows ?employment= when the URL changes after load', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
 
       await TestBed.inject(Router).navigateByUrl('/?employment=former');
@@ -449,7 +449,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
-      await mount('browser');
+      await mount('browser', '/?employment=current');
       await answerCurrent();
       live$.next(
         response(
@@ -471,7 +471,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('folds the stored activity of someone with a live seat into their current row, tiles included, under "Current employees"', async () => {
       // The merged row's count is checked as commits.
-      await mount('browser', '/?metric=commits');
+      await mount('browser', '/?employment=current&metric=commits');
       await answerCurrent();
       live$.next(
         response(
@@ -555,7 +555,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(error()).not.toBeNull();
       expect(warning()).toBeNull();
 
-      await TestBed.inject(Router).navigateByUrl('/');
+      await TestBed.inject(Router).navigateByUrl('/?employment=current');
       await settle();
 
       expect(error()).toBeNull();
@@ -824,7 +824,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       former$.complete();
       await settle();
 
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '365d', FILTERS, 'exclude');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(OTHER_ORG, '730d', FILTERS, 'exclude');
       // The table waits for the next account's current roster; the reconciled rows never take the previous account's.
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
       const roster = (fixture.componentInstance as unknown as { rosterRows: () => OrgAllEmployeeRow[] }).rosterRows();
@@ -907,8 +907,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('ignores an unknown ?range= and reads the default range', async () => {
       await mount('browser', '/?range=3y');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
     });
 
     it('refetches current and former employees on a range change and writes ?range=, dropping the default', async () => {
@@ -931,10 +931,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(activeStat()).toContain('3');
       expect(TestBed.inject(Router).url).toContain('range=all');
 
-      component().onRangeChange('365d');
+      component().onRangeChange('730d');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(TestBed.inject(Router).url).not.toContain('range=');
       expect(TestBed.inject(Router).url).toContain('employment=all');
     });
@@ -1041,54 +1041,54 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     const component = (): { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] } =>
       fixture.componentInstance as unknown as { onFiltersChange(change: Partial<OrgCodeFilterValues>): void; metricOptions: { label: string }[] };
     const text = (testId: string): string => el().querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? '';
-    const picked: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'code' };
+    const picked: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'code' };
 
     // lfx-self-serve#4559 — All code contributions is the default code count.
-    it('offers one code-count dropdown, All code contributions first and by default, and LF projects first and by default', async () => {
+    it('offers one code-count dropdown, All code contributions first and by default, and LF and non-LF projects first and by default', async () => {
       await mount('browser');
 
       expect(component().metricOptions.map((option) => option.label)).toEqual(['All code contributions', 'All commits', 'Only main branch commits']);
       expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
-        'LF projects',
         'LF and non-LF projects',
+        'LF projects',
         'Non-LF projects',
       ]);
       expect(fixture.componentInstance['projectScopeLabel']).toBe('Project type');
       expect(el().querySelector('[data-testid="org-people-all-employees-commit-scope-filter"]')).toBeNull();
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'code' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'code' }, 'exclude');
     });
 
     it('keeps an explicit ?metric=commits in the URL and drops it again for All code contributions', async () => {
       await mount('browser', '/?employment=all&metric=commits');
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'exclude');
       expect(TestBed.inject(Router).url).toBe('/?employment=all&metric=commits');
 
       component().onFiltersChange({ metric: 'code' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(TestBed.inject(Router).url).toBe('/?employment=all');
     });
 
     it('reads the filters on load and requests the stored, live and former rosters with them', async () => {
-      await mount('browser', '/?employment=all&projectScope=all&metric=code');
+      await mount('browser', '/?employment=all&projectScope=lf&metric=code');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', picked, 'exclude');
-      expect(getDirectory).toHaveBeenCalledWith(ORG, '365d', picked, 'exclude');
-      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '365d', picked, 'exclude');
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude');
+      expect(getDirectory).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude');
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG, '730d', picked, 'exclude');
     });
 
     it('reads an unknown value as its default', async () => {
       await mount('browser', '/?projectScope=LF&commitScope=main&metric=prs');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', FILTERS, 'exclude');
     });
 
     it('opens a legacy commitScope=merged link as Only main branch commits and rewrites it to metric=merged', async () => {
       await mount('browser', '/?employment=all&commitScope=merged');
 
-      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'merged', metric: 'commits' }, 'exclude');
       const url = TestBed.inject(Router).url;
       expect(url).toContain('metric=merged');
       expect(url).not.toContain('commitScope=');
@@ -1104,9 +1104,9 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ metric });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params }, 'exclude');
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params }, 'exclude');
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, ...params }, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, ...params }, 'exclude');
       const url = TestBed.inject(Router).url;
       expect(url).toContain(`metric=${metric}`);
       expect(url).not.toContain('commitScope=');
@@ -1118,22 +1118,22 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       component().onFiltersChange({ projectScope: 'non_lf' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'non_lf' }, 'exclude');
       const url = TestBed.inject(Router).url;
       expect(url).toContain('projectScope=non_lf');
       expect(url).not.toContain('commitScope=');
       expect(url).not.toContain('metric=');
       expect(url).toContain('employment=all');
 
-      component().onFiltersChange({ projectScope: 'all' });
+      component().onFiltersChange({ projectScope: 'lf' });
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, projectScope: 'all' }, 'exclude');
-      expect(TestBed.inject(Router).url).toContain('projectScope=all');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, projectScope: 'lf' }, 'exclude');
+      expect(TestBed.inject(Router).url).toContain('projectScope=lf');
 
-      component().onFiltersChange({ projectScope: 'lf' });
+      component().onFiltersChange({ projectScope: 'all' });
       await settle();
 
       expect(TestBed.inject(Router).url).not.toContain('projectScope=');
@@ -1145,12 +1145,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await TestBed.inject(Router).navigateByUrl('/?metric=merged');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'merged', metric: 'commits' }, 'exclude');
 
       await TestBed.inject(Router).navigateByUrl('/?metric=commits');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', { ...FILTERS, metric: 'commits' }, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', { ...FILTERS, metric: 'commits' }, 'exclude');
     });
 
     it("opens the person drawer with the page's range, project type and code count, so its Code tab counts this row (lfx-self-serve#4404)", async () => {
@@ -1183,7 +1183,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
-      await mount('browser', '/?tab=employees&employment=all&range=90d&projectScope=all&metric=commits&teamMembers=include');
+      await mount('browser', '/?tab=employees&employment=current&range=90d&projectScope=lf&metric=commits&teamMembers=include');
       const state = fixture.componentInstance as unknown as {
         filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
         searchTerm(): string;
@@ -1205,22 +1205,22 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         '',
         '',
         'all',
-        'current',
-        '365d',
+        'all',
+        '730d',
       ]);
       expect(state.filterForm.getRawValue()).toEqual({
         search: '',
         foundation: '',
         activity: 'all',
-        employment: 'current',
-        range: '365d',
+        employment: 'all',
+        range: '730d',
         projectScope: FILTERS.projectScope,
         metric: FILTERS.metric,
         teamMembers: 'exclude',
       });
       // The range and the commit filters change together, so no read starts for a half-cleared combination.
-      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '365d', FILTERS, 'exclude']]);
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getDirectory.mock.calls.slice(reads)).toEqual([[ORG, '730d', FILTERS, 'exclude']]);
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(TestBed.inject(Router).url).toBe('/?tab=employees');
       expect(clear()).toBeNull();
     });
@@ -1314,9 +1314,9 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       const labelled = el().querySelector('[data-test="org-people-all-employees-team-members-select"] [aria-label="Team members"]');
       expect(labelled?.textContent?.trim()).toBe('Exclude team members');
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
     });
 
@@ -1326,16 +1326,16 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       teamMembersControl().setValue('include');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'include');
-      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'include');
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'include');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include');
+      expect(getDirectory).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include');
       expect(TestBed.inject(Router).url).toBe('/?tab=employees&teamMembers=include');
       expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')?.textContent?.trim()).toBe('Clear filters');
 
       teamMembersControl().setValue('exclude');
       await settle();
 
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'exclude');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude');
       expect(TestBed.inject(Router).url).toBe('/?tab=employees');
     });
 
@@ -1352,8 +1352,8 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await mount('browser', '/?tab=employees&teamMembers=include');
 
       expect(teamMembersControl().value).toBe('include');
-      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'include');
-      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '365d', FILTERS, 'include');
+      expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include');
+      expect(getFormerEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'include');
     });
   });
 
@@ -1382,7 +1382,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       const component = fixture.componentInstance as unknown as DetailHarness;
 
       component.toggleRow({ personKey: 'person-one' });
-      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d', FILTERS, 'exclude');
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '730d', FILTERS, 'exclude');
       expect(component.expansion()).toEqual({ 'person-one': true });
       expect(Object.keys(component.detailMap())).toHaveLength(1);
 
@@ -1405,7 +1405,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(service.getEmployeeDetail).toHaveBeenCalledWith(
         ORG,
         'person-one',
-        '365d',
+        '730d',
         { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
         'exclude'
       );
@@ -1419,7 +1419,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(
         ORG,
         'person-one',
-        '365d',
+        '730d',
         { projectScope: 'non_lf', commitScope: 'all', metric: 'code' },
         'exclude'
       );

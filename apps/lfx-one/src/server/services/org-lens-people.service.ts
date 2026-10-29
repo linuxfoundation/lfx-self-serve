@@ -211,8 +211,8 @@ export class OrgLensPeopleService {
    * shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come from a live warehouse
    * view that takes seconds, so callers render activity without waiting for it. A code project carries the Maintainer
    * pill when the person holds a maintainer role on it overlapping `maintainerRange` (lfx-self-serve#4482) — the page
-   * range for the All Employees row, the opener's range or the past 365 days for the drawer. When the roles table is
-   * missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
+   * range for the All Employees row, the opener's range or the Org Lens default range (last 2 years) for the drawer.
+   * When the roles table is missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
    *
    * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
    * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
