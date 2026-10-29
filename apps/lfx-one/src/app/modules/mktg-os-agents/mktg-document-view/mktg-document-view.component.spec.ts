@@ -19,6 +19,7 @@ import {
   MEMBER_360_INPUT_TIMEOUT_MESSAGE,
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
   MKTG_RUN_POLL,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
@@ -3688,95 +3689,143 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
   });
 
-  it.each(['history', 'empty', 'error'] as const)(
-    'settles the exportable content and rail in one paint with a first %s export-history answer',
-    async (answer) => {
-      useFrameworkRevision();
-      const comments = TestBed.inject(MktgDocumentCommentsService);
-      vi.spyOn(comments, 'loaded').mockReturnValue(true);
-      vi.spyOn(comments, 'selectedScope').mockReturnValue({
-        projectUid: PROJECT.uid,
-        agentKey: 'foundation-message',
-        documentId: 'living',
-        revisionId: LATEST.id,
-      });
-      const pendingLast = new Subject<MktgSlidesExportLastResponse>();
-      const pendingDownstream = new Subject<MktgDocumentsResponse>();
-      slidesExport.last.mockReturnValue(pendingLast);
-      store.listDocuments.mockReturnValue(pendingDownstream);
-      await render('/documents/foundation-message/living');
-      const tabs = query('mktg-framework-view-tabs');
-      const panel = query('mktg-slides-export-panel');
-      const exporter = query('mktg-framework-view-slides-export');
-      const placeholder = query('mktg-slides-export-lookup-loading');
-      const content = query('mktg-document-view-content');
-      expect(content?.classList.contains('hidden')).toBe(true);
-      expect(query('mktg-document-view-content-skeleton')).not.toBeNull();
-      expect(placeholder?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
-      expect(tabs).not.toBeNull();
-      expect(panel).not.toBeNull();
-      expect(exporter?.classList.contains('hidden')).toBe(false);
-      expect(placeholder?.classList.contains('h-[1lh]')).toBe(true);
-      expect(placeholder?.querySelector('[data-variant="rows"]')).not.toBeNull();
-      expect(query('mktg-slides-export-last-link')).toBeNull();
-      expect(panel && tabs && panel.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      pendingDownstream.next({ project: PROJECT.uid, groups: [] });
+  it.each([
+    ['history', false],
+    ['empty', false],
+    ['error', false],
+    ['history', true],
+    ['empty', true],
+    ['error', true],
+  ] as const)('settles a first %s export-history answer (after the paint cap: %s)', async (answer, afterCap) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    useFrameworkRevision();
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    const pendingLast = new Subject<MktgSlidesExportLastResponse>();
+    const pendingDownstream = new Subject<MktgDocumentsResponse>();
+    slidesExport.last.mockReturnValue(pendingLast);
+    store.listDocuments.mockReturnValue(pendingDownstream);
+    await render('/documents/foundation-message/living');
+    const tabs = query('mktg-framework-view-tabs');
+    const panel = query('mktg-slides-export-panel');
+    const exporter = query('mktg-framework-view-slides-export');
+    const placeholder = query('mktg-slides-export-lookup-loading');
+    const content = query('mktg-document-view-content');
+    expect(content?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-content-skeleton')).not.toBeNull();
+    expect(placeholder?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
+    expect(tabs).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(exporter?.classList.contains('hidden')).toBe(false);
+    expect(placeholder?.classList.contains('h-[1lh]')).toBe(true);
+    expect(placeholder?.querySelector('[data-variant="rows"]')).not.toBeNull();
+    expect(query('mktg-slides-export-last-link')).toBeNull();
+    expect(panel && tabs && panel.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    pendingDownstream.next({ project: PROJECT.uid, groups: [] });
+    await settle();
+    expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(true);
+    expect(content?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-slides-export-panel')).toBe(panel);
+    expect(query('mktg-slides-export-lookup-loading')).toBe(placeholder);
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS - 1);
+    await settle();
+    expect(content?.classList.contains('hidden')).toBe(true);
+    if (afterCap) {
+      await vi.advanceTimersByTimeAsync(1);
       await settle();
-      expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(true);
-      expect(content?.classList.contains('hidden')).toBe(true);
-      expect(query('mktg-slides-export-panel')).toBe(panel);
-      expect(query('mktg-slides-export-lookup-loading')).toBe(placeholder);
-      expect(query('mktg-framework-view-tabs')).toBe(tabs);
-      if (answer === 'error') {
-        pendingLast.error(new HttpErrorResponse({ status: 503 }));
-      } else {
-        pendingLast.next({
-          last:
-            answer === 'empty'
-              ? null
-              : {
-                  schema: 'mktg-slides-export/v1',
-                  project: PROJECT.uid,
-                  agentKey: 'foundation-message',
-                  documentId: 'living',
-                  revisionId: LATEST.id,
-                  revisionNumber: LATEST.number,
-                  contentSha256: LATEST.contentSha256,
-                  mode: 'create',
-                  deckId: 'SyntheticDeck',
-                  link: 'https://docs.google.com/presentation/d/SyntheticDeck/edit',
-                  title: 'Synthetic framework export',
-                  slideCount: 1,
-                  assets: ['framework'],
-                  branded: { kit: false, logo: false, backgrounds: 0, text_colors: 0, fonts: 0, bars: 0, logos: 0, logos_skipped: 0, tables_header: null },
-                  exportedAt: '2026-10-28T09:39:00Z',
-                  agentVersion: '1.0.0',
-                },
-          latestRevision: null,
-        });
-        pendingLast.complete();
-      }
-      await settle();
-      expect(query('mktg-slides-export-lookup-loading')).toBeNull();
-      expect(query('mktg-document-view-content-skeleton')).toBeNull();
       expect(content?.classList.contains('hidden')).toBe(false);
+      expect(query('mktg-document-view-content-skeleton')).toBeNull();
       expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
+      expect(exporter?.classList.contains('hidden')).toBe(true);
+      expect(query('mktg-slides-export-panel')).toBeNull();
+      expect(query('mktg-slides-export-lookup-loading')).toBeNull();
       expect(query('mktg-framework-view-tabs')).toBe(tabs);
-      if (answer === 'history') {
-        expect(query('mktg-slides-export-panel')).toBe(panel);
-        expect(query('mktg-slides-export-last-link')?.textContent).toContain('Open the last export');
-        expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
-      } else if (answer === 'empty') {
-        expect(exporter?.classList.contains('hidden')).toBe(true);
-        expect(query('mktg-slides-export-panel')).toBeNull();
-      } else {
-        expect(query('mktg-slides-export-panel')).toBe(panel);
-        expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
-      }
-      expect(slidesExport.start).not.toHaveBeenCalled();
-      expect(slidesExport.last).toHaveBeenCalledTimes(1);
     }
-  );
+    if (answer === 'error') {
+      pendingLast.error(new HttpErrorResponse({ status: 503 }));
+    } else {
+      pendingLast.next({
+        last:
+          answer === 'empty'
+            ? null
+            : {
+                schema: 'mktg-slides-export/v1',
+                project: PROJECT.uid,
+                agentKey: 'foundation-message',
+                documentId: 'living',
+                revisionId: LATEST.id,
+                revisionNumber: LATEST.number,
+                contentSha256: LATEST.contentSha256,
+                mode: 'create',
+                deckId: 'SyntheticDeck',
+                link: 'https://docs.google.com/presentation/d/SyntheticDeck/edit',
+                title: 'Synthetic framework export',
+                slideCount: 1,
+                assets: ['framework'],
+                branded: { kit: false, logo: false, backgrounds: 0, text_colors: 0, fonts: 0, bars: 0, logos: 0, logos_skipped: 0, tables_header: null },
+                exportedAt: '2026-10-28T09:39:00Z',
+                agentVersion: '1.0.0',
+              },
+        latestRevision: null,
+      });
+      pendingLast.complete();
+    }
+    await settle();
+    expect(query('mktg-slides-export-lookup-loading')).toBeNull();
+    expect(query('mktg-document-view-content-skeleton')).toBeNull();
+    expect(content?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-about')?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    if (answer === 'history') {
+      expect(query('mktg-slides-export-panel')).not.toBeNull();
+      if (!afterCap) expect(query('mktg-slides-export-panel')).toBe(panel);
+      expect(query('mktg-slides-export-last-link')?.textContent).toContain('Open the last export');
+      expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
+    } else {
+      expect(exporter?.classList.contains('hidden')).toBe(true);
+      expect(query('mktg-slides-export-panel')).toBeNull();
+      expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+    }
+    const settledPanel = query('mktg-slides-export-panel');
+    await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS);
+    await settle();
+    expect(query('mktg-slides-export-panel')).toBe(settledPanel);
+    expect(query('mktg-framework-view-tabs')).toBe(tabs);
+    expect(content?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-content-skeleton')).toBeNull();
+    expect(slidesExport.start).not.toHaveBeenCalled();
+    expect(slidesExport.last).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['destroy', 'scope'] as const)('clears the pending export-history paint timer on %s change', async (change) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    const cancel = vi.spyOn(globalThis, 'clearTimeout');
+    useFrameworkRevision();
+    slidesExport.last.mockReturnValue(NEVER);
+    await render('/documents/foundation-message/living');
+    const timerIndex = schedule.mock.calls.findIndex((call) => call[1] === MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS);
+    expect(timerIndex).toBeGreaterThanOrEqual(0);
+    const timer = schedule.mock.results[timerIndex].value;
+    if (change === 'destroy') {
+      harness.fixture.destroy();
+    } else {
+      store.getDocument.mockReturnValue(of(detail));
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+      await harness.navigateByUrl('/documents/brand-kit/living', MktgDocumentViewComponent);
+      await settle();
+    }
+    expect(cancel).toHaveBeenCalledWith(timer);
+    schedule.mockRestore();
+    cancel.mockRestore();
+  });
 
   it('empty first lookup: no export line ever shown and tabs settle with the later rail answer', async () => {
     useFrameworkRevision();

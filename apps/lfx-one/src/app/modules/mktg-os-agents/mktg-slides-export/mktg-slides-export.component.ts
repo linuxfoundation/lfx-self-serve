@@ -10,6 +10,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
   MKTG_SLIDES_EXPORT_ASSET_LABELS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
@@ -39,8 +40,9 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
 // different approved-current content), asks Update or Create when a deck exists,
 // shows progress while the exporter works, then the deck (opens in a new
 // tab), its slide count and what was branded — or a plain message with a
-// retry. When the last export cannot be read it says so and offers to check
-// again rather than Create, and a panel that comes back to a document whose
+// retry. An unreadable history offers Check again only in an existing deck's
+// panel (or a standalone exporter); a first document lookup never adds an error bar.
+// A panel that comes back to a document whose
 // export is still under way in this tab shows that export instead of
 // offering a second deck. Slides are only an export: the asset itself stays
 // the app page.
@@ -48,7 +50,7 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Reserve the first lookup's line; hide an empty panel only once the server answers.
+  // Document history is secondary: never show an unknown/failed first lookup after the paint cap.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -65,7 +67,7 @@ export class MktgSlidesExportComponent {
   public readonly lookupTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed revision is a Draft, independent of the approved export target. */
   public readonly viewingDraft = input(false);
-  /** A measured history answer (including an error), keyed to the viewed document. */
+  /** Release the initial paint barrier on a history answer or its wait cap, keyed to the viewed document. */
   public readonly lookupAnswered = output<string>();
 
   // === Signals ===
@@ -80,6 +82,7 @@ export class MktgSlidesExportComponent {
   private readonly mode = signal<MktgSlidesExportMode>('create');
   /** True once the current target's last export has been read: until then Export cannot tell Update from Create. */
   private readonly lookupSettled = signal(false);
+  private readonly historyWaitExpired = signal(false);
   /** True when a lookup failed: offer Check again, retaining any previously successful lookup. */
   protected readonly lookupFailed = signal(false);
   /** True while the last export is being read: after a failed read the line stays, its "Check again" shown as checking. */
@@ -115,7 +118,10 @@ export class MktgSlidesExportComponent {
     if (this.canExport()) return '';
     if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
     if (this.busy()) return 'An export is already running';
-    if (this.lookupFailed()) return 'Could not check the last export. Use Check again below.';
+    if (this.lookupFailed()) {
+      if (this.lookupTarget() && !this.last()) return 'Could not check the last export.';
+      return 'Could not check the last export. Use Check again below.';
+    }
     return 'Checking the last export…';
   });
   protected readonly assetLabel = computed(() => {
@@ -137,11 +143,15 @@ export class MktgSlidesExportComponent {
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
-  /** The failed check's line shows while nothing else is on the panel. */
+  /** A failed refresh retains an existing deck's retry; a first document failure has no panel. */
   protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
   protected readonly lookupPending = computed(() => Boolean(this.lastTarget()) && !this.lookupSettled() && !this.lookupFailed() && this.phase() === 'idle');
-  public readonly visible = computed(() => this.lookupPending() || this.phase() !== 'idle' || this.last() !== null || this.lookupFailed());
+  public readonly visible = computed(
+    () =>
+      (this.lookupPending() && !this.historyWaitExpired()) || this.phase() !== 'idle' || this.last() !== null || (this.lookupFailed() && !this.lookupTarget())
+  );
 
+  private historyWaitTimer: ReturnType<typeof setTimeout> | null = null;
   private run: Subscription | null = null;
   /** "Check again" after a failed read of the last export. */
   private readonly lookupRetry = new Subject<void>();
@@ -155,11 +165,23 @@ export class MktgSlidesExportComponent {
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap(() => this.reset()),
-          tap((target) => this.attach(target)),
+          tap((target) => {
+            this.attach(target);
+            if (target && this.lookupTarget()) {
+              this.historyWaitTimer = setTimeout(() => {
+                this.historyWaitTimer = null;
+                this.historyWaitExpired.set(true);
+                // THE ONE allowed late insert: a deck arriving after this cap may
+                // add its bar once; secondary history must never hide the document indefinitely.
+                this.lookupAnswered.emit(JSON.stringify(target));
+              }, MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS);
+            }
+          }),
           switchMap((target) => (target ? this.readLast(target) : of<MktgSlidesExportLastResponse | null>({ last: null, latestRevision: null }))),
           takeUntilDestroyed()
         )
         .subscribe((response) => {
+          this.clearHistoryWait();
           if (!response) {
             this.lookupFailed.set(true);
             this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
@@ -180,7 +202,10 @@ export class MktgSlidesExportComponent {
           this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
         });
     }
-    this.destroyRef.onDestroy(() => this.run?.unsubscribe());
+    this.destroyRef.onDestroy(() => {
+      this.clearHistoryWait();
+      this.run?.unsubscribe();
+    });
   }
 
   // === Public methods ===
@@ -276,6 +301,8 @@ export class MktgSlidesExportComponent {
 
   /** Back to an empty panel: the panel stops watching the export under way and nothing of the previous target stays on screen. */
   private reset(): void {
+    this.clearHistoryWait();
+    this.historyWaitExpired.set(false);
     this.run?.unsubscribe();
     this.run = null;
     this.lookupSettled.set(false);
@@ -289,6 +316,13 @@ export class MktgSlidesExportComponent {
     this.failure.set(null);
     this.failureMessage.set('');
     this.failureDeckLink.set(null);
+  }
+
+  private clearHistoryWait(): void {
+    if (this.historyWaitTimer !== null) {
+      clearTimeout(this.historyWaitTimer);
+      this.historyWaitTimer = null;
+    }
   }
 
   private onResult(result: MktgSlidesExportResultResponse): void {
