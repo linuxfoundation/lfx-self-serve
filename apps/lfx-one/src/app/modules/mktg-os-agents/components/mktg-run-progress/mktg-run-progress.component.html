@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!headless() && answersNotice() && (runState() === 'writing' || runState() === 'storing')) {
-  <p class="text-sm text-gray-600" role="status" data-testid="mktg-run-progress-answered-note">{{ answersNotice() }}</p>
+@if (!headless() && visibleAnswersNotice() && runState() !== 'failed' && !closedRun()) {
+  <p class="text-sm text-gray-600" role="status" data-testid="mktg-run-progress-answered-note">{{ visibleAnswersNotice() }}</p>
 }
 @if (announceState() && !headless() && !runPage()) {
   <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>

@@ -9,11 +9,12 @@ describe('retired run navigation', () => {
   it('shares scope validation and safe attribution for every answers route', () => {
     const body = { code: 'MKTG_RUN_ANSWERED', details: { runId: row.runId, questionsId: 'd'.repeat(64), answeredBy: 'Synthetic writer' } };
     expect(mktgRunAnsweredBy(body, row.runId, 'd'.repeat(64))).toBe('Synthetic writer');
+    expect(mktgRunAnsweredBy({ code: 'MKTG_RUN_ANSWERED', details: { answeredBy: null } }, row.runId, 'd'.repeat(64))).toBe('Someone on your team');
     expect(mktgRunAnsweredBy(body, 'e'.repeat(64), 'd'.repeat(64))).toBeNull();
     expect(mktgRunAnsweredBy(body, row.runId, 'e'.repeat(64))).toBeNull();
-    expect(mktgRunAnsweredBy({ code: 'MKTG_RUN_ANSWERED', answeredBy: 'synthetic@example.test' }, row.runId, 'd'.repeat(64))).toBe('Another writer');
+    expect(mktgRunAnsweredBy({ code: 'MKTG_RUN_ANSWERED', answeredBy: 'synthetic@example.test' }, row.runId, 'd'.repeat(64))).toBe('Someone on your team');
     expect(mktgRunAnsweredBy({ code: 'MKTG_RUN_ANSWERED', details: { answeredBy: '<script>synthetic</script>' } }, row.runId, 'd'.repeat(64))).toBe(
-      'Another writer'
+      'Someone on your team'
     );
   });
 

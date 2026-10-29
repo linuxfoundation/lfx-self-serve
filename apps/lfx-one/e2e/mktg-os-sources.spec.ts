@@ -7,7 +7,7 @@ import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/
 import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
 import { MKTG_LAST_INTAKE_API, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
-import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
+import { DOCUMENT_PROJECT, documentFixture } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
@@ -74,6 +74,69 @@ test.describe('Marketing OS new run Sources', () => {
       expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
       await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
     });
+  test('a finished run record defeats a stale active conflict before any discard dialog', async ({ page }, info) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic asset');
+    const oldRunId = 'b'.repeat(64);
+    const newRunId = 'c'.repeat(64);
+    const bodies: Record<string, unknown>[] = [];
+    let started = false;
+    let freshChecks = 0;
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      if (!started && params.get('refreshRun') === oldRunId && params.get('poll') === '1') freshChecks++;
+      return route.fulfill({
+        json: {
+          ...documentFixture(),
+          type,
+          documentId: 'living',
+          runs: started
+            ? [
+                {
+                  project: DOCUMENT_PROJECT.uid,
+                  agentKey: type.agentKey,
+                  documentId: 'living',
+                  runId: newRunId,
+                  state: 'writing',
+                  startedAt: '2026-10-29T09:00:00Z',
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+      bodies.push(route.request().postDataJSON());
+      if (bodies.length === 1)
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ACTIVE',
+            message: 'A run is in progress.',
+            activeRunId: oldRunId,
+            state: 'writing',
+            agentKey: type.agentKey,
+            documentId: 'living',
+            startedBy: 'Synthetic writer',
+            startedByViewer: false,
+            startedAt: '2026-10-29T08:00:00Z',
+          },
+        });
+      started = true;
+      return route.fulfill({ json: { sessionId: 'synthetic-new-session', ownerToken: 'synthetic-new-proof', runId: newRunId } });
+    });
+    await sources.open();
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page.getByTestId('mktg-agent-run-status')).toContainText('You can leave this page');
+    await expect(page.getByRole('alertdialog').filter({ hasText: 'run is in progress' })).toHaveCount(0);
+    expect(freshChecks).toBe(1);
+    expect(bodies).toHaveLength(2); // One rejected start, then exactly one accepted replay, never a discard.
+    expect(bodies.every((body) => !body['discard'])).toBe(true);
+    await page.screenshot({ path: info.outputPath('finished-run-no-stale-dialog.png'), fullPage: true });
+  });
+
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
     const sources = await setupFreshSources(page);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);

@@ -103,6 +103,13 @@ export interface MktgRunPendingQuestions {
   askedAt: string;
 }
 
+/** Scoped client presentation of a server-confirmed concurrent-answer conflict; never an API payload. */
+export interface MktgRunAnsweredNotice {
+  runId: string;
+  questionsId: string;
+  message: string;
+}
+
 /** Answers scoped to the opaque public run id in the route. */
 export interface MktgRunAnswersRequest {
   project: string;

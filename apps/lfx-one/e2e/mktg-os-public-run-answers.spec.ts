@@ -81,14 +81,19 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('01-first-paint-neutral.png') });
   releaseRead();
   await expect(page.getByTestId('mktg-run-questions-title')).toHaveText('A few questions before the draft');
+  const waitingUrl = page.url();
   const answer = page.locator('textarea[data-test="mktg-run-questions-answer-audience"]');
   await expect(answer).toHaveValue('Synthetic maintainers');
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('02-settled-questions.png') });
   await answer.fill('Synthetic project maintainers and contributors');
   await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
   await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing');
-  if (alreadyAnswered)
+  if (alreadyAnswered) {
     await expect(page.getByTestId('mktg-run-progress-answered-note')).toHaveText('Another Writer already answered these — the agent is writing.');
+    // 144-E: the conflict lives above THIS run's writing progress, never a toast followed by a redirect.
+    await expect(page).toHaveURL(waitingUrl);
+    await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
+  }
   await page.getByTestId('mktg-run-public-progress').screenshot({ path: info.outputPath('03-settled-writing.png') });
   expect(submitted).toEqual([
     {

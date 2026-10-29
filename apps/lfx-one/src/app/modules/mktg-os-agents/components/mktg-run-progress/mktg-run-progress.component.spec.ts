@@ -153,12 +153,42 @@ describe('MktgRunProgressComponent', () => {
     expect(read).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps an in-flight conflict response through a same-subject identity refresh', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    const response = new Subject<never>();
+    answer.mockReturnValue(response);
+    const announced = vi.fn();
+    fixture.componentInstance.alreadyAnswered.subscribe(announced);
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
+    user.set({ sub: 'synthetic-creator' } as User);
+    await fixture.whenStable();
+    response.error(
+      new HttpErrorResponse({
+        status: 409,
+        error: {
+          code: MKTG_RUN_ANSWERED,
+          details: { runId, questionsId: waiting.pendingQuestions.questionsId, answeredBy: 'Synthetic writer' },
+        },
+      })
+    );
+    await fixture.whenStable();
+    expect(text()).toContain('Synthetic writer already answered these — the agent is writing.');
+    expect(announced).toHaveBeenCalledWith({
+      runId,
+      questionsId: waiting.pendingQuestions.questionsId,
+      message: 'Synthetic writer already answered these — the agent is writing.',
+    });
+    expect(answer).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { answeredBy: 'Synthetic writer', flattened: false, expected: 'Synthetic writer' },
-    { answeredBy: null, flattened: true, expected: 'Another writer' },
-    { answeredBy: '<script>synthetic</script>', flattened: false, expected: 'Another writer' },
-    { answeredBy: 'synthetic-writer@example.test', flattened: true, expected: 'Another writer' },
-    { answeredBy: 'auth0|synthetic-subject', flattened: false, expected: 'Another writer' },
+    { answeredBy: null, flattened: true, expected: 'Someone on your team' },
+    { answeredBy: '<script>synthetic</script>', flattened: false, expected: 'Someone on your team' },
+    { answeredBy: 'synthetic-writer@example.test', flattened: true, expected: 'Someone on your team' },
+    { answeredBy: 'auth0|synthetic-subject', flattened: false, expected: 'Someone on your team' },
   ])('moves an already-answered conflict to writing with attribution ($answeredBy)', async ({ answeredBy, flattened, expected }) => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));
@@ -170,7 +200,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.nativeElement.querySelector('[data-testid="mktg-run-questions-send"] button').click();
     await fixture.whenStable();
     expect(text()).toContain(`${expected} already answered these — the agent is writing.`);
-    if (expected === 'Another writer' && answeredBy) expect(text()).not.toContain(answeredBy);
+    if (expected === 'Someone on your team' && answeredBy) expect(text()).not.toContain(answeredBy);
     expect(fixture.componentInstance.runState()).toBe('writing');
     expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
     expect(fixture.nativeElement.querySelector('script')).toBeNull();
@@ -295,13 +325,21 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([waiting])));
     await fixture.whenStable();
     const textarea = fixture.nativeElement.querySelector('textarea');
+    textarea.focus();
     textarea.value = 'Synthetic edited audience';
     textarea.dispatchEvent(new Event('input'));
     await fixture.whenStable();
     read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: { ...waiting.pendingQuestions, questions: [...waiting.pendingQuestions.questions] } }])));
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
     expect(fixture.nativeElement.querySelector('textarea').value).toBe('Synthetic edited audience');
+    expect(document.activeElement).toBe(textarea);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
+    expect(textarea.value).toBe('Synthetic edited audience');
+    expect(document.activeElement).toBe(textarea);
     read.mockReturnValue(of(detail()));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();

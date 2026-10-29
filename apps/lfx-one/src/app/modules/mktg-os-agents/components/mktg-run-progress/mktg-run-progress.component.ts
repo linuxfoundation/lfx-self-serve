@@ -23,6 +23,7 @@ import {
   MktgRevisionResponse,
   MktgRunActivity,
   MktgRunAnswer,
+  MktgRunAnsweredNotice,
 } from '@lfx-one/shared/interfaces';
 import {
   findMktgRunIntake,
@@ -109,6 +110,8 @@ export class MktgRunProgressComponent {
   public readonly headless = input(false);
 
   public readonly observed = output<MktgDocumentReadCycle>();
+  public readonly alreadyAnswered = output<MktgRunAnsweredNotice>();
+  public readonly retainedAnswersNotice = input<MktgRunAnsweredNotice | null>(null);
   public readonly landed = output<void>();
   public readonly failed = output<void>();
   public readonly questions = output<void>();
@@ -128,6 +131,14 @@ export class MktgRunProgressComponent {
   protected readonly answersSending = signal(false);
   protected readonly answersError = signal('');
   protected readonly answersNotice = signal('');
+  protected readonly visibleAnswersNotice = computed(() => {
+    if (this.answersNotice()) return this.answersNotice();
+    const notice = this.retainedAnswersNotice();
+    if (!notice || notice.runId !== this.runId()) return '';
+    const questions = this.selectedRun()?.pendingQuestions;
+    if (questions && questions.questionsId !== notice.questionsId) return '';
+    return notice.message;
+  });
   private readonly answeredRunId = signal('');
   private readonly answeredQuestionsId = signal('');
   private readonly answersDenied = signal(false);
@@ -235,6 +246,7 @@ export class MktgRunProgressComponent {
       }))
     )
       .pipe(
+        distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
         switchMap((request) => {
           this.answersDenied.set(false);
           this.answersError.set('');
@@ -491,6 +503,7 @@ export class MktgRunProgressComponent {
     if (!runId || (this.runId() && this.runId() !== runId) || (this.selectedRun() && this.selectedRun()?.runId !== runId)) return;
     this.answersError.set('');
     this.answersNotice.set(notice);
+    if (notice) this.alreadyAnswered.emit({ runId, questionsId, message: notice });
     this.answeredRunId.set(runId);
     this.answeredQuestionsId.set(questionsId);
     this.loaded.update(

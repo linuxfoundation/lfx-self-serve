@@ -12,7 +12,7 @@ export function mktgRunAnsweredBy(body: unknown, runId: string, questionsId: str
   if (!details || typeof details !== 'object') return null;
   if (('runId' in details && runId && details.runId !== runId) || ('questionsId' in details && details.questionsId !== questionsId)) return null;
   const name = 'answeredBy' in details && typeof details.answeredBy === 'string' ? details.answeredBy.trim() : '';
-  return name && !/[<>@|:]/.test(name) ? name : 'Another writer';
+  return name && !/[<>@|:]/.test(name) ? name : 'Someone on your team';
 }
 
 /** Read only the optional safe navigation hint, never a private record or its arbitrary fields. */

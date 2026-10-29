@@ -38,6 +38,8 @@
         [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
+        [retainedAnswersNotice]="answeredNotice()"
+        (alreadyAnswered)="onAlreadyAnswered($event)"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
         (landed)="onPublicLanding()"
@@ -238,7 +240,7 @@
                 @if (submitReason()) {
                   <span class="text-xs text-gray-500" data-testid="mktg-run-start-reason">{{ submitReason() }}</span>
                 }
-                <lfx-button [label]="submitLabel()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
+                <lfx-button [label]="submitLabel()" [loading]="checkingGuard()" (onClick)="onSubmit()" data-testid="mktg-run-start" />
               </div>
             </div>
           </section>
@@ -497,7 +499,12 @@
                     @if (submitReason()) {
                       <span class="text-xs text-gray-500">{{ submitReason() }}</span>
                     }
-                    <lfx-button type="submit" [label]="submitLabel()" icon="fa-light fa-sparkles" data-testid="mktg-agent-run-submit-button" />
+                    <lfx-button
+                      type="submit"
+                      [label]="submitLabel()"
+                      [loading]="checkingGuard()"
+                      icon="fa-light fa-sparkles"
+                      data-testid="mktg-agent-run-submit-button" />
                   </div>
                 }
               </form>

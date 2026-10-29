@@ -508,6 +508,8 @@ export class MktgDocumentViewComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
       let observedSubject = this.userService.user()?.sub ?? '';
+      let readerSelectionKey = '';
+      let selectionChanged = true;
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
       combineLatest([this.request$, toObservable(actionContext)])
@@ -541,24 +543,31 @@ export class MktgDocumentViewComponent {
               current.runId === this.handoffRunId() &&
               !!current.runId &&
               JSON.stringify({ ...previous, generation: current.generation, runId: current.runId }) === JSON.stringify(current);
+            if (firstResolution || handoffOnly) readerSelectionKey = JSON.stringify({ ...current, reload: 0 });
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
-            if (request.runId) {
-              this.loading.set(true);
-              this.view.set(null);
-              this.runDetail.set(null);
-            }
+            const key = JSON.stringify({ ...request, reload: 0 });
+            selectionChanged = key !== readerSelectionKey;
+            readerSelectionKey = key;
             this.progressRefreshKey.update((value) => String(Number(value) + 1));
-            this.clearAeoPrint();
-            this.errorText.set('');
-            this.notice.set('');
-            this.runHistory.set([]);
-            this.historyError.set('');
-            this.runFailed.set(false);
-            this.failureDetails.set('');
-            this.activityContext.set(['', undefined]);
-            this.refreshWarning.set('');
+            // 145: a refresh is not a new reader selection. Keep the mounted body, choices and announcements.
+            if (selectionChanged) {
+              if (request.runId) {
+                this.loading.set(true);
+                this.view.set(null);
+                this.runDetail.set(null);
+              }
+              this.clearAeoPrint();
+              this.errorText.set('');
+              this.notice.set('');
+              this.runHistory.set([]);
+              this.historyError.set('');
+              this.runFailed.set(false);
+              this.failureDetails.set('');
+              this.activityContext.set(['', undefined]);
+              this.refreshWarning.set('');
+            }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
@@ -607,7 +616,7 @@ export class MktgDocumentViewComponent {
                   : this.attempts.consume(request.generation, request.project, type.catalogAgentId);
             }
             this.submittingGeneration.set(!!prepared && !prepared.pending.attempt);
-            if (!prepared) {
+            if (!prepared && selectionChanged) {
               this.localProgress.set(null);
               this.handoffRunId.set('');
               this.failureText.set('');

@@ -3024,6 +3024,47 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-history-bar')).toBeNull();
   });
 
+  it('keeps expanded Show all and the selected FAQ tab through two polls and a focus re-read', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const history = mockNineRevisionHistory();
+    const faq = faqResponse();
+    const revisions = history.revisions.map((entry) => revision(entry.number, { ...entry, format: 'json' }));
+    const selected = revisions[0];
+    if (!selected) throw new Error('Missing synthetic revision');
+    store.getDocument.mockReturnValue(of({ ...detail, type: faq.type, revisions }));
+    store.getRevision.mockReturnValue(of({ ...faq, revisions, revision: selected }));
+    await render(`/documents/faq/living?revision=${selected.id}`);
+    query('mktg-document-view-show-all-revisions')?.click();
+    query('mktg-faq-view-tab-sources')?.click();
+    await settle();
+    const tab = query('mktg-faq-view-tab-sources');
+    if (!tab) throw new Error('Missing synthetic FAQ tab');
+    tab.focus();
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    component?.['notice'].set('Synthetic retained reader notice');
+    component?.['restoreNotice'].set('Synthetic retained restore notice');
+    document.documentElement.scrollTop = 120;
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument.mock.calls.length).toBeGreaterThanOrEqual(reads + 2);
+    const afterPolls = store.getDocument.mock.calls.length;
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(store.getDocument.mock.calls.length).toBeGreaterThan(afterPolls);
+    component?.['onRefreshProgress']();
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('true');
+    expect(query('mktg-faq-view-tab-sources')).toBe(tab);
+    expect(tab.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tab);
+    expect(document.documentElement.scrollTop).toBe(120);
+    expect(component?.['notice']()).toBe('Synthetic retained reader notice');
+    expect(component?.['restoreNotice']()).toBe('Synthetic retained restore notice');
+    document.documentElement.scrollTop = 0;
+  });
+
   it('shows the newest five and pins older open/current revisions, with an in-place Show all 9 disclosure', async () => {
     const history = mockNineRevisionHistory();
     await render(`/documents/brand-kit/living?revision=${history.revisions[8].id}`);

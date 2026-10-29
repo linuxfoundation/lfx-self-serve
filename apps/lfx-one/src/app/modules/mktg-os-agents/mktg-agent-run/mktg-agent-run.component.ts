@@ -28,6 +28,7 @@ import {
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_POLL,
   MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -56,6 +57,7 @@ import {
   MktgMissingDependencyLink,
   MktgResolvedFieldGroup,
   MktgRunAnswer,
+  MktgRunAnsweredNotice,
   MktgRunActivity,
   MktgRunPhase,
   MktgRunQuestionsPending,
@@ -74,7 +76,7 @@ import {
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take, tap, timeout } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
@@ -161,6 +163,9 @@ export class MktgAgentRunComponent {
   private consumedFreshSubject: string | null = null;
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  private guardReadSub: Subscription | null = null;
+  protected readonly checkingGuard = signal(false);
+  protected readonly answeredNotice = signal<MktgRunAnsweredNotice | null>(null);
   /**
    * In-flight "Try again" dependency check. Only one may run, and it is
    * cancelled when the active project changes: a late result (or a late
@@ -725,7 +730,13 @@ export class MktgAgentRunComponent {
     const subject = this.userService.user()?.sub ?? '';
     this.navigation.set({ projectUid, subject, agentKey, ...(failed && { runId: this.publicRunId() }) });
     this.pendingPublicRunId = subject ? '' : this.publicRunId();
+    // The conflict notice stays with writing progress; stored runs still land normally (144-E).
     if (subject) this.onRetryHandoff();
+  }
+
+  protected onAlreadyAnswered(notice: MktgRunAnsweredNotice): void {
+    if (notice.runId !== this.publicRunId()) return;
+    this.answeredNotice.set(notice);
   }
 
   protected onRetryPublicLanding(): void {
@@ -746,6 +757,12 @@ export class MktgAgentRunComponent {
       this.errorText.set('');
     }
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
+    const notice = this.answeredNotice();
+    if (
+      notice &&
+      (readMktgRetiredRunHint(run) || run?.state === 'failed' || (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId))
+    )
+      this.answeredNotice.set(null);
     const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
     const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
     if (readMktgRetiredRunHint(run)) {
@@ -934,6 +951,7 @@ export class MktgAgentRunComponent {
   }
 
   protected onSubmit(): void {
+    if (this.checkingGuard()) return;
     if (this.submitDisabled()) {
       this.intakeForm.markAllAsTouched();
       this.errorText.set(this.submitReason());
@@ -1022,12 +1040,12 @@ export class MktgAgentRunComponent {
             if (saved?.attempt?.runId === runId)
               this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
             const notice = `${answeredBy} already answered these — the agent is writing.`;
+            this.answeredNotice.set({ runId, questionsId: pending.questionsId, message: notice });
+            this.discoveredRunId.set(runId);
+            this.publicReceiver.set(true);
             const observer = this.publicProgressView();
             if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
-            else {
-              this.messages.add({ severity: 'info', summary: notice });
-              void this.router.navigate([mktgKitRootPath(this.router.url), 'documents'], { queryParams: { project: this.projectSlug() } });
-            }
+            else this.publicRefreshKey.update((value) => value + '1');
             return;
           }
           if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412) && this.publicProgressView()) {
@@ -1075,7 +1093,86 @@ export class MktgAgentRunComponent {
       });
   }
 
+  /** 144-D: cached activity can request a check, never authorize a discard dialog. */
   private confirmDiscard(action: () => void): void {
+    if (this.checkingGuard()) return;
+    const project = this.projectContext.activeContextUid();
+    const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+    const cached = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId;
+    if (!this.assetType || (!this.hasWaitingNotice() && !this.existingRun() && !saved?.attempt)) {
+      this.confirmFreshDiscard(action);
+      return;
+    }
+    this.readRunAtClick(cached, (active) => {
+      this.waitingQuestions.set(false);
+      this.waitingRun.set(active);
+      this.existingRun.set(active);
+      if (active && cached && active.runId !== cached) this.runAttempts.clear(project, this.agent?.id ?? '');
+      if (!active) {
+        this.runAttempts.clear(project, this.agent?.id ?? '');
+        this.discardConfirmed = false;
+        this.discardedRunId = null;
+        this.conflictDiscardId = null;
+        action();
+        return;
+      }
+      this.confirmFreshDiscard(action);
+    });
+  }
+
+  /** A fresh selected-run read bypasses listing/reader caches and includes recorded closure metadata. */
+  private readRunAtClick(runId: string | undefined, onRead: (active: MktgDocumentRunProgress | null) => void): void {
+    const type = this.assetType;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    if (!type || !project || !subject || this.checkingGuard()) return;
+    const selector = runId && MKTG_STARTED_RUN_ID_REGEX.test(runId) ? runId : undefined;
+    const watch = new Subscription();
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = watch;
+    this.checkingGuard.set(true);
+    const current = () => !this.destroyRef.destroyed && project === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub;
+    const finish = () => {
+      if (this.guardReadSub === watch) {
+        this.guardReadSub = null;
+        this.checkingGuard.set(false);
+      }
+    };
+    const unavailable = () => {
+      finish();
+      if (current()) {
+        this.phase.set('form');
+        this.writingStretch.set(false);
+        this.errorText.set('The latest run could not be checked. Your inputs are kept — try again before starting over.');
+      }
+    };
+    watch.add(
+      this.documentStore
+        .getDocument(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID, true, selector, false, selector)
+        .pipe(take(1), timeout(MKTG_RUN_POLL.timeoutMs), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (detail) => {
+            if (!current()) return;
+            if (detail.progressUnavailable || detail.project !== project) {
+              unavailable();
+              return;
+            }
+            const active = detail.runs?.find(
+              (row) =>
+                row.project === project &&
+                row.agentKey === type.agentKey &&
+                row.documentId === MKTG_LIVING_DOCUMENT_ID &&
+                (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+            );
+            finish();
+            onRead(active ?? null);
+          },
+          error: unavailable,
+        })
+    );
+  }
+
+  private confirmFreshDiscard(action: () => void): void {
     const project = this.projectContext.activeContextUid();
     const draft = this.runAttempts.load(project, this.agent?.id ?? '');
     const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
@@ -1137,7 +1234,44 @@ export class MktgAgentRunComponent {
     if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
-  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
+  /** Never open a modal from a stale POST conflict without a fresh run-record read. */
+  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false, replayed = false): void {
+    const subject = this.userService.user()?.sub;
+    this.readRunAtClick(conflict.activeRunId, (active) => {
+      if (active?.runId === conflict.activeRunId && (active.state === 'writing' || active.state === 'questions' || active.state === 'storing')) {
+        this.showConfirmedActiveConflict({ ...conflict, state: active.state, startedAt: active.startedAt }, request, rejectedDiscard);
+        return;
+      }
+      if (replayed || !this.runService.canRetryActiveConflict(request)) {
+        this.phase.set('form');
+        this.errorText.set('The start response disagrees with the latest run record. Your inputs are kept — check again before starting over.');
+        return;
+      }
+      this.waitingRun.set(null);
+      this.existingRun.set(null);
+      this.phase.set('running');
+      this.generationSub = this.runService
+        .recheckActiveConflict(request)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (progress) => {
+            if (request.projectUid === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub)
+              this.onProgress(progress, request.projectUid);
+          },
+          error: (error: unknown) => {
+            if (request.projectUid !== this.projectContext.activeContextUid() || subject !== this.userService.user()?.sub) return;
+            const fresh = this.runService.activeRunConflict(error, request);
+            if (fresh) this.showActiveConflict(fresh, request, rejectedDiscard, true);
+            else {
+              this.phase.set('form');
+              this.errorText.set('The run could not be started. Your inputs are kept — try again.');
+            }
+          },
+        });
+    });
+  }
+
+  private showConfirmedActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
     if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
     if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
     this.activeRequest = request;
@@ -1746,6 +1880,10 @@ export class MktgAgentRunComponent {
     this.discardedRunId = null;
     this.discardEpoch++;
     this.conflictDiscardId = null;
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = null;
+    this.checkingGuard.set(false);
+    this.answeredNotice.set(null);
     this.confirmation.close();
     this.waitingSince.set('');
     this.startedOverWaiting.set(false);
