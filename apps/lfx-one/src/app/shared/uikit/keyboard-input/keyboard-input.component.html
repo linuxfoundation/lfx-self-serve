@@ -1,0 +1,6 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@for (key of keys(); track $index) {
+  <kbd [class]="keyClasses()" data-testid="ui-keyboard-input-key">{{ key }}</kbd>
+}
