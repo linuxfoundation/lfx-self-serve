@@ -9,7 +9,7 @@ export const MKTG_FAMILY_ACTION_LABELS = {
   caption: (names: string[]) => (names.length ? `Then: ${new Intl.ListFormat('en-GB', { type: 'conjunction' }).format(names)}` : undefined),
   create: (asset: string) => `Create ${asset}`,
   review: (count: number) => (count === 1 ? 'Review the draft' : `Review ${count} drafts`),
-  export: () => 'Export the kit',
+  export: () => 'Export the family',
 };
 
 export const MKTG_FAMILY_FRAMEWORK_REQUIRED = 'after the framework is approved';

@@ -498,7 +498,7 @@ describe('Marketing family page', () => {
     const visible = vi.spyOn(panel, 'isRendered').mockReturnValue(false);
     const reveal = vi.spyOn(panel, 'focusDownload').mockImplementation(() => undefined);
     const primary = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
-    expect(primary?.textContent).toContain('Export the kit');
+    expect(primary?.textContent).toContain('Export the family');
     primary?.click();
     expect(reveal).not.toHaveBeenCalled();
     visible.mockReturnValue(true);
