@@ -42,13 +42,15 @@ describe('FoundationHealthComponent metric availability', () => {
       getFoundationTotalProjects: vi.fn(() => of({ totalProjects: 7, monthlyData: [6, 7], monthlyLabels: ['Sep', 'Oct'] })),
       getFoundationTotalMembers: vi.fn(() => of({ totalMembers: 3, monthlyData: [2, 3], monthlyLabels: ['Sep', 'Oct'] })),
       getCompanyBusFactor: vi.fn(() => of({ topCompaniesCount: 2, topCompaniesPercentage: 60, otherCompaniesCount: 3, otherCompaniesPercentage: 40 })),
-      getFoundationMaintainers: vi.fn(() => of({ currentMaintainers: 9, asOfDate: '2026-10-28', trendData: [8, 9], trendLabels: ['Oct 27', 'Oct 28'] })),
+      getFoundationMaintainers: vi
+        .fn<AnalyticsService['getFoundationMaintainers']>()
+        .mockReturnValue(of({ currentMaintainers: 9, asOfDate: '2026-10-28', trendData: [8, 9], trendLabels: ['Oct 27', 'Oct 28'] })),
       getFoundationMaintainersMonthly: vi.fn(() => of({ monthlyData: [8, 9], monthlyLabels: ['Sep', 'Oct'] })),
       getFoundationHealthScoreDistribution: vi.fn(() => of({ excellent: 1, healthy: 0, fair: 0, concerning: 0, critical: 0, unscored: 0 })),
       getUniqueContributorsDaily: vi.fn(() => of({ data: [], avgContributors: 4, totalDays: 1 })),
-      getFoundationActiveContributorsMonthlyDistinct: vi.fn(() =>
-        of({ monthlyData: [4, 5], monthlyLabels: ['Sep', 'Oct'], latest: 5, momDeltaPercent: 25, momDirection: 'up' })
-      ),
+      getFoundationActiveContributorsMonthlyDistinct: vi
+        .fn<AnalyticsService['getFoundationActiveContributorsMonthlyDistinct']>()
+        .mockReturnValue(of({ monthlyData: [4, 5], monthlyLabels: ['Sep', 'Oct'], latest: 5, momDeltaPercent: 25, momDirection: 'up' })),
       getFoundationEventsQuarterly: vi.fn(() => of({ quarterlyData: [1, 2], quarterlyLabels: ['Q2', 'Q3'] })),
     };
   }
@@ -114,6 +116,112 @@ describe('FoundationHealthComponent metric availability', () => {
     await render();
     expect(card('total-value').textContent).toContain('$0.0M');
     expect(card('total-value').querySelector('[role="status"]')).toBeNull();
+  });
+
+  describe.each([
+    {
+      name: 'total-projects',
+      configure: (measured: boolean) =>
+        analytics.getFoundationTotalProjects.mockReturnValue(
+          of({ totalProjects: 0, monthlyData: measured ? [0] : [], monthlyLabels: measured ? ['Oct'] : [] })
+        ),
+    },
+    {
+      name: 'total-members',
+      configure: (measured: boolean) =>
+        analytics.getFoundationTotalMembers.mockReturnValue(of({ totalMembers: 0, monthlyData: measured ? [0] : [], monthlyLabels: measured ? ['Oct'] : [] })),
+    },
+    {
+      name: 'maintainers',
+      configure: (measured: boolean) =>
+        analytics.getFoundationMaintainers.mockReturnValue(
+          of({ currentMaintainers: 0, asOfDate: measured ? '2026-10-28' : null, trendData: measured ? [0] : [], trendLabels: measured ? ['Oct 28'] : [] })
+        ),
+    },
+    {
+      name: 'active-contributors',
+      configure: (measured: boolean) =>
+        analytics.getFoundationActiveContributorsMonthlyDistinct.mockReturnValue(
+          of({ monthlyData: measured ? [0] : [], monthlyLabels: measured ? ['Oct'] : [], latest: 0, momDeltaPercent: null, momDirection: 'flat' })
+        ),
+    },
+    {
+      name: 'events',
+      configure: (measured: boolean) =>
+        analytics.getFoundationEventsQuarterly.mockReturnValue(of({ quarterlyData: measured ? [0] : [], quarterlyLabels: measured ? ['Q3'] : [] })),
+    },
+  ])('$name measurement presence', ({ name, configure }) => {
+    it.each([false, true])('distinguishes an empty HTTP-200 response from a measured zero (measured=%s)', async (measured) => {
+      configure(measured);
+      analytics.getFoundationValueConcentration.mockReturnValue(failure(404, 'NOT_FOUND'));
+      await render();
+      const element = card(name);
+      if (measured) {
+        expect(element.querySelector('[role="status"]')).toBeNull();
+        expect(element.querySelector('.text-xl')?.textContent?.trim()).toBe('0');
+        element.click();
+        expect(fixture.componentInstance.activeDrawer()).not.toBeNull();
+      } else {
+        expect(element.textContent).toContain('Data not available yet');
+        expect(element.querySelector('.text-xl')).toBeNull();
+        expect(element.querySelector('lfx-chart')).toBeNull();
+        expect(element.querySelector('button')).toBeNull();
+        element.click();
+        expect(fixture.componentInstance.activeDrawer()).toBeNull();
+        if (name === 'total-projects') {
+          expect(card('project-health-scores').textContent).toContain('100%');
+          expect(card('project-health-scores').textContent).toContain('Additional details are unavailable');
+          expect(card('project-health-scores').querySelector('button')).toBeNull();
+          card('project-health-scores').click();
+          expect(fixture.componentInstance.activeDrawer()).toBeNull();
+        }
+      }
+      expect(card('org-dependency').textContent).toContain('2');
+    });
+  });
+
+  describe.each([
+    {
+      name: 'maintainers',
+      headline: '9',
+      configure: (measured: boolean) =>
+        analytics.getFoundationMaintainersMonthly.mockReturnValue(of({ monthlyData: measured ? [0] : [], monthlyLabels: measured ? ['Oct'] : [] })),
+    },
+    {
+      name: 'active-contributors',
+      headline: '5',
+      configure: (measured: boolean) => analytics.getUniqueContributorsDaily.mockReturnValue(of({ data: [], avgContributors: 0, totalDays: measured ? 1 : 0 })),
+    },
+  ])('$name supporting measurement presence', ({ name, headline, configure }) => {
+    it.each([false, true])('preserves the headline and only enables measured supporting data (measured=%s)', async (measured) => {
+      configure(measured);
+      await render();
+      const element = card(name);
+      expect(element.querySelector('.text-xl')?.textContent?.trim()).toBe(headline);
+      if (measured) {
+        expect(element.querySelector('[role="status"]')).toBeNull();
+      } else {
+        expect(element.textContent).toContain('Additional details are unavailable');
+        expect(element.textContent).toContain('Data not available yet');
+        expect(element.querySelector('button')).toBeNull();
+      }
+      element.click();
+      expect(fixture.componentInstance.activeDrawer() !== null).toBe(measured);
+    });
+  });
+
+  it('updates snapshot availability when switching from measured to empty and back to measured foundations', async () => {
+    await render();
+    expect(card('maintainers').querySelector('.text-xl')?.textContent?.trim()).toBe('9');
+    analytics.getFoundationMaintainers.mockReturnValueOnce(of({ currentMaintainers: 0, asOfDate: null, trendData: [], trendLabels: [] }));
+    selectedFoundation.set({ slug: 'empty-foundation', name: 'Empty Foundation' });
+    await fixture.whenStable();
+    expect(card('maintainers').textContent).toContain('Data not available yet');
+    expect(card('maintainers').querySelector('.text-xl')).toBeNull();
+    selectedFoundation.set({ slug: 'test-foundation', name: 'Test Foundation' });
+    await fixture.whenStable();
+    expect(card('maintainers').querySelector('[role="status"]')).toBeNull();
+    expect(card('maintainers').querySelector('.text-xl')?.textContent?.trim()).toBe('9');
   });
 
   it('treats a bare/proxy 404 as a retryable failure, not verified missing data', async () => {

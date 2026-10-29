@@ -657,9 +657,10 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalProjects(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.totalProjectsLoading.set(false);
-              this.totalProjectsOutcome.set('records');
+              // An empty series has no measurement; a series containing zero is still measured.
+              this.totalProjectsOutcome.set(data.monthlyData.length > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.totalProjectsLoading.set(false);
@@ -688,9 +689,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationTotalMembers(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.totalMembersLoading.set(false);
-              this.totalMembersOutcome.set('records');
+              this.totalMembersOutcome.set(data.monthlyData.length > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.totalMembersLoading.set(false);
@@ -785,9 +786,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainers(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.maintainersLoading.set(false);
-              this.maintainersOutcome.set('records');
+              this.maintainersOutcome.set(data.asOfDate ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.maintainersLoading.set(false);
@@ -815,9 +816,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationMaintainersMonthly(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.maintainersMonthlyLoading.set(false);
-              this.maintainersMonthlyOutcome.set('records');
+              this.maintainersMonthlyOutcome.set(data.monthlyData.length > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.maintainersMonthlyLoading.set(false);
@@ -880,9 +881,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
-            tap(() => {
+            tap((data) => {
               this.activeContributorsLoading.set(false);
-              this.activeContributorsOutcome.set('records');
+              this.activeContributorsOutcome.set(data.totalDays > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.activeContributorsLoading.set(false);
@@ -913,9 +914,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationActiveContributorsMonthlyDistinct(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.activeContributorsMonthlyDistinctLoading.set(false);
-              this.activeContributorsMonthlyDistinctOutcome.set('records');
+              this.activeContributorsMonthlyDistinctOutcome.set(data.monthlyData.length > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.activeContributorsMonthlyDistinctLoading.set(false);
@@ -943,9 +944,9 @@ export class FoundationHealthComponent {
         }),
         switchMap((foundationSlug) =>
           this.analyticsService.getFoundationEventsQuarterly(foundationSlug).pipe(
-            tap(() => {
+            tap((data) => {
               this.eventsLoading.set(false);
-              this.eventsOutcome.set('records');
+              this.eventsOutcome.set(data.quarterlyData.length > 0 ? 'records' : 'empty');
             }),
             catchError((error: unknown) => {
               this.eventsLoading.set(false);
@@ -970,8 +971,8 @@ export class FoundationHealthComponent {
   }
 
   private classifyMetricError(error: unknown): OrgLensSectionOutcome {
-    // These analytics endpoints use NOT_FOUND for an absent measurement. A bare/proxy 404
-    // remains a load failure; access codes continue to use the shared classification.
+    // Some sources use NOT_FOUND for an absent measurement; others expose absence in successful payloads.
+    // A bare/proxy 404 remains a load failure; access codes continue to use the shared classification.
     if (error instanceof HttpErrorResponse && error.status === 404 && error.error?.code === 'NOT_FOUND') {
       return 'empty';
     }
