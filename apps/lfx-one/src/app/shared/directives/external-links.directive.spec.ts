@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ExternalLinksDirective } from './external-links.directive';
 
@@ -18,10 +18,22 @@ class HostComponent {
 }
 
 describe('ExternalLinksDirective', () => {
-  afterEach(() => vi.restoreAllMocks());
+  let base: HTMLBaseElement;
 
-  function click(selector: string, init: MouseEventInit = {}, type = 'click'): { opened: ReturnType<typeof vi.fn>; event: MouseEvent } {
+  beforeEach(() => {
+    base = document.createElement('base');
+    base.href = 'https://vote.example/votes/v-1';
+    document.head.prepend(base);
+  });
+
+  afterEach(() => {
+    base.remove();
+    vi.restoreAllMocks();
+  });
+
+  function click(selector: string, init: MouseEventInit = {}, type = 'click', html?: string): { opened: ReturnType<typeof vi.fn>; event: MouseEvent } {
     const fixture = TestBed.createComponent(HostComponent);
+    if (html !== undefined) fixture.componentInstance.html = html;
     fixture.detectChanges();
     const opened = vi.spyOn(window, 'open').mockReturnValue(null);
     const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
@@ -35,14 +47,14 @@ describe('ExternalLinksDirective', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
-  it('leaves non-http schemes to the browser', () => {
-    const { opened, event } = click('a[href^="mailto:"]');
+  it.each(['mailto:a@example.com', 'tel:+15555550100'])('leaves %s to the browser', (href) => {
+    const { opened, event } = click('a', {}, 'click', `<a href="${href}">contact</a>`);
     expect(opened).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('leaves modified clicks to the browser', () => {
-    const { opened, event } = click('a[href^="https:"]', { ctrlKey: true });
+  it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }])('leaves safe modified clicks to the browser: %j', (init) => {
+    const { opened, event } = click('a[href^="https:"]', init);
     expect(opened).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });
@@ -57,5 +69,57 @@ describe('ExternalLinksDirective', () => {
     const { opened, event } = click('a[href^="http:"]', init);
     expect(opened).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each([
+    { href: '//example.com/charter', expected: 'https://example.com/charter' },
+    { href: '/docs/charter', expected: 'https://vote.example/docs/charter' },
+    { href: 'charter', expected: 'https://vote.example/votes/charter' },
+    { href: '#charter', expected: 'https://vote.example/votes/v-1#charter' },
+    { href: 'https://example.com/guide?topic=data:types', expected: 'https://example.com/guide?topic=data:types' },
+    { href: 'https://example.com/ftp:/manual', expected: 'https://example.com/ftp:/manual' },
+    { href: 'https://172.32.0.1/charter', expected: 'https://172.32.0.1/charter' },
+    { href: 'HTTPS://EXAMPLE.COM:443/charter', expected: 'https://example.com/charter' },
+  ])('opens the resolved legitimate destination $href', ({ href, expected }) => {
+    const { opened, event } = click('a b', {}, 'click', `<a href="${href}"><b>doc</b></a>`);
+    expect(opened).toHaveBeenCalledExactlyOnceWith(expected, '_blank', 'noopener,noreferrer');
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each(['//127.0.0.1/admin', '//[::1]/admin', '//169.254.169.254/latest', '//10.0.0.1/doc', 'http://[invalid'])(
+    'blocks rejected or malformed web destination %s',
+    (href) => {
+      const { opened, event } = click('a', {}, 'click', `<a href="${href}">doc</a>`);
+      expect(opened).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+    }
+  );
+
+  it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }])(
+    'blocks a protocol-relative private destination with modifiers %j',
+    (init) => {
+      const { opened, event } = click('a', init, 'click', '<a href="//127.0.0.1/admin">doc</a>');
+      expect(opened).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+    }
+  );
+
+  it('blocks a protocol-relative private destination on middle click', () => {
+    const { opened, event } = click('a', { button: 1 }, 'auxclick', '<a href="//127.0.0.1/admin">doc</a>');
+    expect(opened).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves a safe middle click to the browser', () => {
+    const { opened, event } = click('a[href^="https:"]', { button: 1 }, 'auxclick');
+    expect(opened).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not call browser APIs during server execution', () => {
+    TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: 'server' }] });
+    const { opened, event } = click('a[href^="https:"]');
+    expect(opened).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
   });
 });

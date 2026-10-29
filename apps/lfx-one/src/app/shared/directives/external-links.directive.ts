@@ -3,13 +3,13 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Directive, HostListener, inject, PLATFORM_ID } from '@angular/core';
-import { isValidUrl } from '@lfx-one/shared';
+import { isPrivateHost } from '@lfx-one/shared/utils';
 
 // Opens http(s) links inside author-supplied rich HTML (bound via [innerHTML]) in a new tab.
-// Angular's HTML sanitizer strips `target` and `rel` from anchors, so the markup cannot carry
-// them; handling the click here keeps the sanitizer untouched and works for any anchor the editor
-// produced. Safe modified clicks (ctrl/cmd/shift/middle) are left to the browser. Rejected web URLs
-// are blocked, while non-web schemes such as mailto: or tel: keep their native behaviour.
+// Delegation supplies consistent behaviour even when stored HTML omits target/rel, without
+// bypassing Angular's HTML sanitizer. Resolve relative links before checking their protocol/host
+// so equivalent web destinations receive the same policy. Safe modified clicks are left to the
+// browser; non-web schemes such as mailto: or tel: keep their native behaviour.
 @Directive({
   selector: '[lfxExternalLinks]',
 })
@@ -25,11 +25,23 @@ export class ExternalLinksDirective {
 
     const anchor = (event.target as Element | null)?.closest?.('a[href]');
     const href = anchor?.getAttribute('href');
-    if (!anchor || !href || !/^https?:/i.test(href.trim())) {
+    if (!anchor || !href) {
       return;
     }
 
-    if (!isValidUrl(href)) {
+    let url: URL;
+    try {
+      url = new URL(href, anchor.baseURI);
+    } catch {
+      event.preventDefault();
+      return;
+    }
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return;
+    }
+
+    if (isPrivateHost(url.hostname)) {
       event.preventDefault();
       return;
     }
@@ -39,6 +51,6 @@ export class ExternalLinksDirective {
     }
 
     event.preventDefault();
-    window.open(href, '_blank', 'noopener,noreferrer');
+    window.open(url.href, '_blank', 'noopener,noreferrer');
   }
 }

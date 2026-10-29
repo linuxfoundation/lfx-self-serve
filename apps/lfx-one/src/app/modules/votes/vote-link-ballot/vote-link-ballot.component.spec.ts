@@ -122,6 +122,44 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(description.classList.contains('[&_a]:underline')).toBe(true);
   });
 
+  it.each(['https://example.com/charter', '//example.com/charter', '/docs/charter'])(
+    'opens description link %s without replacing or resetting the ballot (#4655)',
+    async (href) => {
+      await open(of({ ...BALLOT, description: `<p>Read the <a href="${href}"><strong>charter</strong></a>.</p>` }));
+      const description = testId('vote-link-description')!;
+      const link = description.querySelector('a')!;
+      const base = document.createElement('base');
+      base.href = 'https://vote.example/votes/v-1';
+      document.head.prepend(base);
+      const form = testId('vote-link-ballot-form')!;
+      const choice = form.querySelector<HTMLInputElement>('input[type="radio"]')!;
+      choice.click();
+      fixture.detectChanges();
+      expect(choice.checked).toBe(true);
+      const locationBefore = window.location.href;
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      try {
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        link.querySelector('strong')!.dispatchEvent(event);
+        fixture.detectChanges();
+
+        expect(opened).toHaveBeenCalledExactlyOnceWith(new URL(href, base.href).href, '_blank', 'noopener,noreferrer');
+        expect(event.defaultPrevented).toBe(true);
+        expect(window.location.href).toBe(locationBefore);
+        expect(state()).toBe('ready');
+        expect(testId('vote-link-ballot-form')).toBe(form);
+        expect(testId('vote-link-description')).toBe(description);
+        expect(choice.checked).toBe(true);
+        expect(submitLinkResponse).not.toHaveBeenCalled();
+        expect(getLinkBallot).toHaveBeenCalledTimes(1);
+      } finally {
+        opened.mockRestore();
+        base.remove();
+      }
+    }
+  );
+
   it('renders the loading state before the ballot arrives', async () => {
     window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
     getLinkBallot.mockReturnValue(new Observable<VoteLinkBallot>());
