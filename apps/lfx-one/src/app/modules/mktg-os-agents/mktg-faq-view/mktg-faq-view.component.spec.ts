@@ -117,9 +117,9 @@ describe('MktgFaqViewComponent', () => {
       },
     });
     threads.set([
-      mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } }),
-      mktgCommentFixture({ status: 'sent', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
-      mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][0]' } }),
+      mktgCommentFixture({ id: 'resolved-gap', status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } }),
+      mktgCommentFixture({ id: 'sent-gap', status: 'sent', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
+      mktgCommentFixture({ id: 'resolved-question-not-answer', status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][0]' } }),
     ]);
     await fixture.whenStable();
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
@@ -128,7 +128,10 @@ describe('MktgFaqViewComponent', () => {
     await fixture.whenStable();
     expect(text('mktg-faq-view-unanswered-list')).toContain('How do I contribute?');
     expect(text('mktg-faq-view-unanswered-list')).not.toContain('How much does membership cost?');
-    threads.update((current) => [...current, mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } })]);
+    threads.update((current) => [
+      ...current,
+      mktgCommentFixture({ id: 'resolved-second-gap', status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
+    ]);
     await fixture.whenStable();
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
     expect(query('mktg-faq-view-unanswered-empty')).not.toBeNull();
