@@ -116,7 +116,8 @@ describe('UiCalendarComponent', () => {
   });
 
   it('changes month with the previous and next buttons', async () => {
-    const [previous, next] = Array.from(host.querySelectorAll<HTMLButtonElement>('lfx-ui-button button'));
+    const previous = host.querySelector<HTMLButtonElement>('[data-testid="ui-calendar-prev"] button') as HTMLButtonElement;
+    const next = host.querySelector<HTMLButtonElement>('[data-testid="ui-calendar-next"] button') as HTMLButtonElement;
     next.click();
     await fixture.whenStable();
     expect(title()).toBe('November 2026');
@@ -174,6 +175,20 @@ describe('UiCalendarComponent', () => {
       await formFixture.whenStable();
 
       expect(formFixture.componentInstance.control.value).toEqual(new Date(2026, 9, 12));
+    });
+
+    it('marks the grid aria-disabled, disables the month buttons and drops hover once the control is disabled', async () => {
+      const root = formFixture.nativeElement as HTMLElement;
+      expect(root.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBeNull();
+
+      formFixture.componentInstance.control.disable();
+      await formFixture.whenStable();
+
+      expect(root.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+      expect((root.querySelector('[data-testid="ui-calendar-prev"] button') as HTMLButtonElement).disabled).toBe(true);
+      expect((root.querySelector('[data-testid="ui-calendar-next"] button') as HTMLButtonElement).disabled).toBe(true);
+      expect(formDay('2026-10-20').className).toContain('cursor-not-allowed');
+      expect(formDay('2026-10-20').className).not.toContain('hover:bg-ui-neutral-alpha-100');
     });
   });
 });

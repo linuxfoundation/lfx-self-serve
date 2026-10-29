@@ -45,6 +45,8 @@ export interface UiModalConfig<D = unknown> {
   describedBy?: boolean;
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
+}
+
 /** One day button in a uikit calendar month grid. */
 export interface UiCalendarDay {
   /** Local `YYYY-MM-DD` key. Stable per date. */
@@ -57,12 +59,14 @@ export interface UiCalendarDay {
   label: string;
   /** True when the day belongs to the previous or next month. */
   outside: boolean;
-  /** True for today. */
+  /** True for today. Read when the grid rebuilds, so it updates on the next change, not live at midnight. */
   today: boolean;
   /** True for the selected date. */
   selected: boolean;
   /** True when the consumer's disabled rule rejects the date. */
   disabled: boolean;
+  /** Tailwind classes for the day button, covering today, selected, unavailable and form-disabled states. */
+  classes: string;
 }
 
 /** One row of seven days in a uikit calendar month grid. */

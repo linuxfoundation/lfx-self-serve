@@ -38,6 +38,10 @@ import { UiButtonComponent } from '../button/button.component';
 export class UiCalendarComponent implements ControlValueAccessor {
   private static nextId = 0;
 
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  private readonly ngControl = inject(NgControl, { self: true, optional: true });
+
   /** Rule that marks dates as unavailable, for example `(d) => d.getDay() === 0`. Those days are struck through. */
   public readonly isDateDisabled = input<(date: Date) => boolean>(() => false);
   /** First column of the week: `0` for Sunday, `1` for Monday. */
@@ -50,16 +54,12 @@ export class UiCalendarComponent implements ControlValueAccessor {
   protected readonly titleId = `lfx-ui-calendar-${UiCalendarComponent.nextId++}-title`;
   protected readonly formDisabled = signal(false);
   /** The date that holds the roving tab stop; its month is the month on show. Resets when the value changes. */
-  protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.today());
-  protected readonly today: Signal<Date> = computed(() => this.startOfDay(new Date()));
+  protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfDay(new Date()));
   protected readonly focusedKey: Signal<string> = computed(() => toLocalDateOnlyString(this.focusedDate()));
   protected readonly title: Signal<string> = computed(() => new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(this.focusedDate()));
   protected readonly weekdays: Signal<{ short: string; long: string }[]> = this.initWeekdays();
   protected readonly weeks: Signal<UiCalendarWeek[]> = this.initWeeks();
 
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly injector = inject(Injector);
-  private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private onChange: ((value: Date | null) => void) | null = null;
   private onTouched: (() => void) | null = null;
 
@@ -93,19 +93,6 @@ export class UiCalendarComponent implements ControlValueAccessor {
 
   protected shiftMonth(months: number): void {
     this.focusedDate.set(this.addMonths(this.focusedDate(), months));
-  }
-
-  protected dayClasses(day: UiCalendarDay): string {
-    // Exact px height; 14px root. The today dot is a 4px pseudo-element centred 5px above the bottom.
-    const base =
-      'relative h-[36px] w-full rounded-ui-sm label-14 tabular-nums transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
-    const dot = day.today
-      ? "after:absolute after:bottom-[5px] after:left-1/2 after:-ml-[2px] after:h-[4px] after:w-[4px] after:rounded-ui-full after:content-['']"
-      : '';
-    if (day.selected) return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white`;
-    if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
-    const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';
-    return `${base} ${dot} ${tone} cursor-pointer hover:bg-ui-neutral-alpha-100 after:bg-ui-accent-500`;
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -147,7 +134,8 @@ export class UiCalendarComponent implements ControlValueAccessor {
       const lead = (first.getDay() - this.weekStartsOn() + 7) % 7;
       const count = Math.ceil((lead + daysInMonth) / 7);
       const label = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-      const todayKey = toLocalDateOnlyString(this.today());
+      const todayKey = toLocalDateOnlyString(new Date());
+      const gridOff = this.formDisabled();
       const selected = this.value();
       const selectedKey = selected ? toLocalDateOnlyString(selected) : null;
       const disabled = this.isDateDisabled();
@@ -156,7 +144,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
         const days = Array.from({ length: 7 }, (_, d): UiCalendarDay => {
           const date = new Date(first.getFullYear(), first.getMonth(), 1 - lead + w * 7 + d);
           const key = toLocalDateOnlyString(date);
-          return {
+          const day: UiCalendarDay = {
             key,
             date,
             number: date.getDate(),
@@ -165,11 +153,28 @@ export class UiCalendarComponent implements ControlValueAccessor {
             today: key === todayKey,
             selected: key === selectedKey,
             disabled: disabled(date),
+            classes: '',
           };
+          day.classes = this.dayClasses(day, gridOff);
+          return day;
         });
         return { key: days[0].key, days };
       });
     });
+  }
+
+  private dayClasses(day: UiCalendarDay, gridOff: boolean): string {
+    // Exact px height; 14px root. The today dot is a 4px pseudo-element centred 5px above the bottom.
+    const base =
+      'relative h-[36px] w-full rounded-ui-sm label-14 tabular-nums transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
+    const dot = day.today
+      ? "after:absolute after:bottom-[5px] after:left-1/2 after:-ml-[2px] after:h-[4px] after:w-[4px] after:rounded-ui-full after:content-['']"
+      : '';
+    if (day.selected) return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+    if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
+    const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';
+    const interaction = gridOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-ui-neutral-alpha-100';
+    return `${base} ${dot} ${tone} ${interaction} after:bg-ui-accent-500`;
   }
 
   private startOfDay(date: Date): Date {

@@ -38,7 +38,6 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-menu-group`     | `UiMenuGroupComponent`     | Labelled `role="group"` of menu items with a 12px heading                                                                                                              |
 | `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                |
 | `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset band and actions footer slots; 540px or 420px, sticky title, single-action footer                                           |
-| `lfx-ui-calendar`       | `UiCalendarComponent`      | Inline month grid, one date; arrow, Home, End and Page keys; disabled dates; `[(value)]` and forms                                                                     |
 | `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus return, scroll lock, `ui-overlay` backdrop, split Escape and backdrop close                             |
 | `lfxUiTooltip`          | `UiTooltipDirective`       | Attribute directive: hover and keyboard-focus tooltip in a CDK overlay, plain or rich, flips sides, hoverable, Escape closes, spoken description; SSR-safe             |
 | `lfx-ui-checkbox`       | `UiCheckboxComponent`      | Native 16px checkbox: checked, indeterminate, disabled, label; `[(checked)]` and reactive forms                                                                        |
@@ -51,6 +50,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
 | `lfx-ui-slider`         | `UiSliderComponent`        | Native range with label and live value; min, max, step, value text; `[(value)]` and forms                                                                              |
 | `lfx-ui-table`          | `UiTableComponent`         | Data table from `columns` and `rows`: header, 48px rows, footer, bordered, striped, interactive, sortable headers, empty row                                           |
+| `lfx-ui-calendar`       | `UiCalendarComponent`      | Inline month grid, one date; arrow, Home, End and Page keys; disabled dates; `[(value)]` and forms                                                                     |
 
 ## Design tokens
 
