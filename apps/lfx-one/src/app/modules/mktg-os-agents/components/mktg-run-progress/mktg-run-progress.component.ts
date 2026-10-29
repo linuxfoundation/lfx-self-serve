@@ -212,6 +212,10 @@ export class MktgRunProgressComponent {
                     .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                 : metadata$.pipe(
                     switchMap((detail) => {
+                      const selected = detail.runs?.find((run) => run.runId === this.runId());
+                      if (selected?.state === 'discarded' || selected?.state === 'superseded') {
+                        return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
+                      }
                       const revisionId =
                         request.revisionId || detail.current?.revisionId || detail.revisions.find((revision) => revision.latest)?.id || detail.revisions[0]?.id;
                       if (!request.loadRevision || !revisionId) return of<MktgDocumentReadCycle>({ detail, view: null });

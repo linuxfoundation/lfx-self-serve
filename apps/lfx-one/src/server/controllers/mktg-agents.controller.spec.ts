@@ -416,6 +416,24 @@ describe('MktgAgentsController', () => {
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
       expect(tokenMocks.verifySessionOwnerToken.mock.invocationCallOrder[0]).toBeLessThan(redraftContext.mock.invocationCallOrder[0]);
     });
+    it.each(['discarded', 'superseded'])(`${method}: refuses answers on a %s session before Guild`, async (state) => {
+      const failure = new ConflictError(`This run was ${state}.`, 'MKTG_RUN_CLOSED');
+      runMocks.assertRunOpen.mockRejectedValueOnce(failure);
+      await controller[method](answersRequest(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it(`${method}: omitted project cannot bypass the scoped check`, async () => {
+      const req = answersRequest();
+      delete req.body.project;
+      const failure = ServiceValidationError.forField('project', 'Project is required.');
+      runMocks.resolveProject.mockRejectedValueOnce(failure);
+      await controller[method](req, buildRes(), next);
+      expect(runMocks.resolveProject).toHaveBeenCalledWith(req, undefined);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+    });
     it(`${method}: resolves canonical scope before answers and resumes only after accepted send`, async () => {
       runMocks.resolveProject.mockResolvedValueOnce('resolved-project');
       const req = answersRequest();
@@ -424,7 +442,9 @@ describe('MktgAgentsController', () => {
       expect(next).not.toHaveBeenCalled();
       expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'requested-project');
       expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567');
-      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
+      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(runMocks.assertRunOpen.mock.invocationCallOrder[0]);
+      expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'resolved-project', expect.any(String), 'synthetic-session');
+      expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
       expect(adapter.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
     });
     it(`${method}: malformed questions and failed preflight never reach Guild`, async () => {

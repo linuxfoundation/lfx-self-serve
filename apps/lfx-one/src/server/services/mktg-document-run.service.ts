@@ -131,7 +131,7 @@ export class MktgDocumentRunService {
 
   /** Owner proof and project authorization precede this pre-send check; no private session facts are returned. */
   public async assertRunOpen(req: Request, project: string, agentId: string, sessionId: string): Promise<void> {
-    const type = this.catalogDocumentType(agentId);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId && !!findMktgRunIntake(entry.agentKey, true));
     if (!type) return;
     const runId = this.hash(sessionId);
     const stored = await this.read(req, project, `${this.prefix(project)}${runId}.json`);
@@ -139,6 +139,9 @@ export class MktgDocumentRunService {
       throw ServiceValidationError.forField('run', 'Stored session does not match this run.');
     }
     this.assertNotRetired(stored?.record.state);
+    if (type.kind === 'run' && stored && (!stored.record.creatorSubject || stored.record.creatorSubject !== getEffectiveSub(req))) {
+      throw new AuthorizationError('Only the writer who started this run can continue it.');
+    }
     await this.assertSingleActiveRun(req, project, type.agentKey, { continuingRunId: runId });
   }
 
@@ -1110,6 +1113,11 @@ export class MktgDocumentRunService {
     if (stored.record.state === 'failed') return mktgRunProgress(stored.record, undefined, undefined, getEffectiveSub(req) ?? undefined);
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
+    const concurrentlyClosed = this.closedProgress(record);
+    if (concurrentlyClosed) return concurrentlyClosed;
+    const latest = await this.selected(req, project, agentKey, documentId, runId);
+    const closedDuringResult = this.closedProgress(latest.record);
+    if (closedDuringResult) return closedDuringResult;
     const activity = record.creatorSubject && record.creatorSubject === getEffectiveSub(req) ? result.activity : undefined;
     return mktgRunProgress(record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity, getEffectiveSub(req) ?? undefined);
   }
@@ -1130,9 +1138,11 @@ export class MktgDocumentRunService {
 
   private inSlot(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType, options: MktgActiveRunStartOptions): boolean {
     if (record.agentKey !== type.agentKey) return false;
-    return type.kind === 'run'
-      ? record.creatorSubject === (options.creatorSubject !== undefined ? options.creatorSubject : getEffectiveSub(req))
-      : record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
+    if (type.kind === 'run') {
+      const slotOwner = options.creatorSubject !== undefined ? options.creatorSubject : getEffectiveSub(req);
+      return record.creatorSubject === slotOwner;
+    }
+    return record.documentId === (options.documentId ?? MKTG_LIVING_DOCUMENT_ID);
   }
 
   private oneOffType(agentId: string): MktgDocumentType {

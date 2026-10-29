@@ -582,6 +582,30 @@ describe('MktgDocumentRunService core', () => {
     expect(JSON.stringify(detail)).not.toContain(session);
   });
 
+  it.each([
+    ['discarded', 'pending'],
+    ['superseded', 'pending'],
+    ['discarded', 'questions'],
+    ['superseded', 'questions'],
+  ] as const)('preserves a concurrent %s during selected %s reconciliation', async (state, outcome) => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.result.mockImplementationOnce(async () => {
+      Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+      return outcome === 'questions' ? { status: 'questions', questionsId: 'a'.repeat(64), questions: [] } : { status: 'pending' };
+    });
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state, closedAt: new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+  });
+
+  it.each(['discarded', 'superseded'])('refuses a retired LinkedIn session before an answers continuation (%s)', async (state) => {
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    await service.startForOneOff(owner, 'linkedin-post', project, session);
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).resolves.toBeUndefined();
+    stored().metadata['state'] = state;
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+  });
+
   it('keeps selected closed records lightweight even when omitted from discovery', async () => {
     await service.start(req, project, types[0].agentKey, session);
     stored().metadata['state'] = 'discarded';

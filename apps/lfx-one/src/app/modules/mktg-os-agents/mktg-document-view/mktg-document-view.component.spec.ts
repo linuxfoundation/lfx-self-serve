@@ -1558,9 +1558,16 @@ describe('MktgDocumentViewComponent', () => {
     ['prepared', 'discarded'],
     ['recovered', 'discarded'],
     ['recovered', 'superseded'],
-  ] as const)('cancels the %s creator stream when server metadata becomes %s and ignores late questions', async (kind, state) => {
+    ['one-off', 'discarded'],
+    ['one-off', 'superseded'],
+  ] as const)('cancels the %s creator stream on %s metadata before a failing body read can retain active state', async (kind, state) => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const type = kind === 'one-off' ? MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post') : BRAND_KIT;
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic run type');
+    const documentId = type.kind === 'run' ? 'run-' + 'a'.repeat(24) : 'living';
     const pending = preparedPending();
+    pending.request = { ...pending.request, intake, agentId: intake.agentId, documentId };
     const attempt = {
       runId: 'b'.repeat(64),
       priorVersion: 0,
@@ -1572,9 +1579,14 @@ describe('MktgDocumentViewComponent', () => {
     else vi.mocked(attempts.load).mockReturnValue(pending);
     const events = new Subject<MktgGenerateProgress>();
     vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(events);
-    store.getDocument.mockReturnValueOnce(of({ ...detail, revisions: [], runs: [started('writing')] }));
-    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started(state)] }));
-    await render('/documents/brand-kit/living?' + (kind === 'prepared' ? 'generation=synthetic-closed-handoff' : `run=${attempt.runId}`));
+    const response = { ...detail, type, documentId };
+    const run = { ...started('writing'), agentKey: type.agentKey, documentId };
+    store.getDocument.mockReturnValueOnce(of({ ...response, runs: [run] }));
+    store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...run, state }] }));
+    store.getRevision
+      .mockReturnValueOnce(of({ ...revisionResponse(LATEST), type, documentId }))
+      .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render(`/documents/${type.agentKey}/${documentId}?` + (kind === 'prepared' ? 'generation=synthetic-closed-handoff' : `run=${attempt.runId}`));
     expect(events.observed).toBe(true);
     const navigate = vi.mocked(TestBed.inject(Router).navigate);
     navigate.mockClear();
@@ -1582,6 +1594,7 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     expect(events.observed).toBe(false);
     expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    expect(store.getRevision).toHaveBeenCalledOnce(); // Closure skips the now-failing body read.
     events.next({ type: 'questions', pending: { attempt, questionsId: 'c'.repeat(64), questions: [] } });
     await settle();
     expect(navigate).not.toHaveBeenCalled();
