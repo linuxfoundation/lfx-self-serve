@@ -74,14 +74,19 @@ describe('VoteAbstainResultComponent', () => {
       expect(fixture.nativeElement.textContent).toContain('2 abstentions');
     });
 
-    it.each(['live', 'final'] as const)('makes the %s abstention count the link, and emits on click', (variant) => {
+    it.each([
+      ['live', 1, '1 abstention'],
+      ['live', 2, '2 abstentions'],
+      ['final', 1, '1 abstention'],
+      ['final', 2, '2 abstentions'],
+    ] as const)('makes the %s count of %i the link and includes its visible label in the accessible name', (variant, count, label) => {
       fixture.componentRef.setInput('showVoterLinks', true);
-      render(stats(2, 40), variant);
+      render(stats(count, count * 20), variant);
       let emitted = 0;
       fixture.componentInstance.viewVoters.subscribe(() => (emitted += 1));
 
-      expect(viewLink()?.textContent?.trim()).toBe('2 abstentions');
-      expect(viewLink()?.getAttribute('aria-label')).toBe('View the 2 voters who abstained');
+      expect(viewLink()?.textContent?.trim()).toBe(label);
+      expect(viewLink()?.getAttribute('aria-label')).toBe(`${label}, view ${count === 1 ? 'voter' : 'voters'} who abstained`);
       viewLink()!.click();
       expect(emitted).toBe(1);
     });

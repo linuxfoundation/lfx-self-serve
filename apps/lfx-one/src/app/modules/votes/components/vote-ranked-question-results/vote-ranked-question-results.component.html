@@ -27,7 +27,7 @@
                   <button
                     type="button"
                     class="min-w-8 text-right text-blue-600 hover:underline py-1 flex-shrink-0"
-                    [attr.aria-label]="'View the ' + rc.count + ' voters who ranked ' + row.choiceText + ' first'"
+                    [attr.aria-label]="'View the ' + rc.count + (rc.count === 1 ? ' voter' : ' voters') + ' who ranked ' + row.choiceText + ' first'"
                     (click)="onViewVoters(row.choiceId)"
                     [attr.data-testid]="'vote-results-ranked-choice-' + row.choiceId + '-view-voters'">
                     {{ rc.count }}

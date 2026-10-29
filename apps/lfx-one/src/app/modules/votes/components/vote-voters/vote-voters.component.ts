@@ -62,7 +62,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
  * Voters tab of the vote detail page (#3914): every invited voter with their status and current ballot, for vote managers on
  * named votes. The page decides visibility; GET /api/votes/:uid/voters (#3911) enforces the same rules. Filtering, counts and
  * sorting run in the browser — an electorate is a few hundred people at most and the endpoint returns it in one response.
- * `initialChoice` and `initialBallotUid` carry the results' "View N voters" and the comments' "View ballot" links.
+ * `initialChoice` and `initialBallotUid` carry the results' count links and the comments' "View ballot" links.
  *
  * On a vote that is not explicitly named (#3916) the tab is participation-only: the endpoint returns Responded / Not responded
  * rows with no identifier or ballot, in name order, so there is no choice filter, Choice or Submitted column, or ballot dialog,

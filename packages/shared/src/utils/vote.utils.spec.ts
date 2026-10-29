@@ -819,6 +819,11 @@ describe('buildVoteResultsSummary (#4450)', () => {
     expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, false)[0].text).toBe('No rankings recorded yet');
   });
 
+  it('does not imply more rankings can arrive after a vote closes', () => {
+    expect(buildVoteResultsSummary([], [ranked('q-1', { a: 0, b: 0 })], false, true)[0].text).toBe('No rankings recorded');
+    expect(buildVoteResultsSummary([], [ranked('q-1', {})], false, true)[0].text).toBe('No rankings recorded');
+  });
+
   it('keeps question order across multiple questions', () => {
     const qs = [question('q-2', [option('a', 'Yes', 1, 100, { isLeading: true })]), question('q-1', [option('a', 'No', 1, 100, { isLeading: true })])];
     expect(buildVoteResultsSummary(qs, [], true, false).map((line) => line.questionId)).toEqual(['q-2', 'q-1']);

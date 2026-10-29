@@ -414,7 +414,7 @@ export function buildVoteResultsSummary(
       const topCount = Math.max(...firstChoiceCounts.map((row) => row.count), 0);
       const leaders = firstChoiceCounts.filter((row) => row.count === topCount);
 
-      let text = 'No rankings recorded yet';
+      let text = isClosed ? 'No rankings recorded' : 'No rankings recorded yet';
       if (topCount > 0 && leaders.length > 1) {
         text = `Most first choices: ${joinNames(leaders.map((row) => row.text))} (${topCount} each)`;
       } else if (topCount > 0) {
@@ -1092,7 +1092,7 @@ export function buildVoteVoterChoiceFilterOptions(vote: Pick<Vote, 'poll_type' |
 /**
  * Whether a voter's current ballot matches a Voters tab choice key (#3914)
  * @description Generic questions match any selected choice; ranked questions match the voter's rank-1 choice — the
- * same count the results' "View N voters" link shows. Only voted ballots match; a malformed key matches no one.
+ * same count the results' Rank 1 count link shows. Only voted ballots match; a malformed key matches no one.
  */
 export function matchesVoteVoterChoice(voter: VoteVoter, choiceKey: string, vote: Pick<Vote, 'poll_type'>): boolean {
   const key = parseVoteVoterChoiceKey(choiceKey);

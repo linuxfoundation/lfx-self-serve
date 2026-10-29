@@ -11,7 +11,13 @@
           <button
             type="button"
             class="text-blue-600 hover:underline py-1"
-            [attr.aria-label]="'View the ' + stats().abstainedVoters + ' voters who abstained'"
+            [attr.aria-label]="
+              stats().abstainedVoters +
+              (stats().abstainedVoters === 1 ? ' abstention' : ' abstentions') +
+              ', view ' +
+              (stats().abstainedVoters === 1 ? 'voter' : 'voters') +
+              ' who abstained'
+            "
             (click)="viewVoters.emit()"
             [attr.data-testid]="testId() + '-view-voters'">
             {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}
@@ -36,7 +42,13 @@
             <button
               type="button"
               class="text-blue-600 hover:underline py-1"
-              [attr.aria-label]="'View the ' + stats().abstainedVoters + ' voters who abstained'"
+              [attr.aria-label]="
+                stats().abstainedVoters +
+                (stats().abstainedVoters === 1 ? ' abstention' : ' abstentions') +
+                ', view ' +
+                (stats().abstainedVoters === 1 ? 'voter' : 'voters') +
+                ' who abstained'
+              "
               (click)="viewVoters.emit()"
               [attr.data-testid]="testId() + '-view-voters'">
               {{ stats().abstainedVoters }} {{ stats().abstainedVoters === 1 ? 'abstention' : 'abstentions' }}

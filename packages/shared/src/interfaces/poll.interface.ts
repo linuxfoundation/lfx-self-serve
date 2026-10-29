@@ -540,7 +540,7 @@ export interface VoteVoterRowView {
   /** Name, falling back to the username, then the email */
   displayName: string;
   organization?: string;
-  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column */
   role?: string;
   /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
   committeeRole?: string;
@@ -564,7 +564,7 @@ export interface VoteParticipationVoterRowView {
   /** Name, or "Unknown voter" */
   displayName: string;
   organization?: string;
-  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column and filter */
+  /** Voting eligibility (`user_voting_status`, e.g. Voting Rep) — drives the Role column */
   role?: string;
   /** Committee role (`user_role`, e.g. Chair) — muted secondary text */
   committeeRole?: string;

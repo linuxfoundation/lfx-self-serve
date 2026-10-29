@@ -1968,6 +1968,31 @@ describe('VoteDetailComponent', () => {
     });
 
     it.each([
+      { status: PollStatus.ACTIVE, pollType: PollType.GENERIC, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, pollType: PollType.GENERIC, message: 'No votes were submitted.' },
+      { status: PollStatus.ACTIVE, pollType: PollType.MAJORITY, message: 'No votes recorded yet.' },
+      { status: PollStatus.ENDED, pollType: PollType.MAJORITY, message: 'No votes were submitted.' },
+    ])('shows the empty state for $status $pollType votes with zero-count question results', async ({ status, pollType, message }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status, poll_type: pollType })));
+      const results = makeMethodResults();
+      voteService.getVoteResults.mockReturnValue(
+        of({
+          ...results,
+          num_votes_cast: 0,
+          num_abstained: 0,
+          poll_results: results.poll_results.map((result) => ({
+            ...result,
+            generic_choice_votes: result.generic_choice_votes?.map((choice) => ({ ...choice, vote_count: 0, percentage: 0 })),
+          })),
+        })
+      );
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
+      expect(summary(fixture)).toBe('');
+    });
+
+    it.each([
       { status: PollStatus.ACTIVE, pollType: PollType.GENERIC },
       { status: PollStatus.ENDED, pollType: PollType.GENERIC },
       { status: PollStatus.ACTIVE, pollType: PollType.MAJORITY },

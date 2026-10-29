@@ -124,6 +124,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
 
       expect(viewLink('c1')).toBeNull();
       expect(viewLink('c3')?.textContent?.trim()).toBe('1');
+      expect(viewLink('c3')?.getAttribute('aria-label')).toBe('View the 1 voter who ranked Candidate Three first');
     });
 
     it('makes the Rank 1 count the link and emits the question and choice key', () => {

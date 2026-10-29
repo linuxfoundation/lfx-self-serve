@@ -116,14 +116,19 @@ describe('VoteOptionResultsComponent', () => {
       expect(text('vote-results-option-c1')).toContain('2 votes');
     });
 
-    it.each(['live', 'final'] as const)('makes the %s vote count the link and emits its choice id', (variant) => {
+    it.each([
+      ['live', 1, '1 vote'],
+      ['live', 3, '3 votes'],
+      ['final', 1, '1 vote'],
+      ['final', 3, '3 votes'],
+    ] as const)('makes the %s count of %i the link and includes its visible label in the accessible name', (variant, count, label) => {
       fixture.componentRef.setInput('showVoterLinks', true);
-      render([option({ choiceId: 'c1', text: 'Yes', voteCount: 3, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
+      render([option({ choiceId: 'c1', text: 'Yes', voteCount: count, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
       const emitted: string[] = [];
       fixture.componentInstance.viewVoters.subscribe((choiceId) => emitted.push(choiceId));
 
-      expect(viewLink('c1')?.textContent?.trim()).toBe('3 votes');
-      expect(viewLink('c1')?.getAttribute('aria-label')).toBe('View the 3 voters who chose Yes');
+      expect(viewLink('c1')?.textContent?.trim()).toBe(label);
+      expect(viewLink('c1')?.getAttribute('aria-label')).toBe(`${label} for Yes, view ${count === 1 ? 'voter' : 'voters'}`);
       expect(viewLink('c2')).toBeNull();
       expect(text('vote-results-option-c2')).toContain('0 votes');
       viewLink('c1')!.click();

@@ -14,7 +14,14 @@
               <button
                 type="button"
                 class="text-blue-600 hover:underline py-1"
-                [attr.aria-label]="'View the ' + option.voteCount + ' voters who chose ' + option.text"
+                [attr.aria-label]="
+                  option.voteCount +
+                  (option.voteCount === 1 ? ' vote' : ' votes') +
+                  ' for ' +
+                  option.text +
+                  ', view ' +
+                  (option.voteCount === 1 ? 'voter' : 'voters')
+                "
                 (click)="viewVoters.emit(option.choiceId)"
                 [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
                 {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
@@ -75,7 +82,14 @@
                 <button
                   type="button"
                   class="text-blue-600 hover:underline py-1"
-                  [attr.aria-label]="'View the ' + option.voteCount + ' voters who chose ' + option.text"
+                  [attr.aria-label]="
+                    option.voteCount +
+                    (option.voteCount === 1 ? ' vote' : ' votes') +
+                    ' for ' +
+                    option.text +
+                    ', view ' +
+                    (option.voteCount === 1 ? 'voter' : 'voters')
+                  "
                   (click)="viewVoters.emit(option.choiceId)"
                   [attr.data-testid]="testIdPrefix() + option.choiceId + '-view-voters'">
                   {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
