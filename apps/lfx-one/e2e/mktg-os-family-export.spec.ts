@@ -185,7 +185,12 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print [data-testid="kit-print-contrast"]')).toHaveCSS('break-inside', 'avoid');
-  await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first()).toHaveCSS('aspect-ratio', '16 / 9');
+  const firstUsageFrame = printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first();
+  await expect(firstUsageFrame).toHaveCSS('aspect-ratio', 'auto');
+  const usageBox = await firstUsageFrame.boundingBox();
+  if (!usageBox) throw new Error('Missing synthetic usage frame');
+  expect(usageBox.height).toBeCloseTo((36 * 96) / 25.4, 0);
+  await expect(printDocument.getByTestId('kit-print-usage-pair')).toHaveCount(2);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('SVG supplied');
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).not.toContainText('V1.0');
   await expect(printDocument.locator('lfx-brand-kit-view, .lfx-brand-kit-page')).toHaveCount(0);

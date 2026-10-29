@@ -89,7 +89,7 @@ it('omits missing logo slots and colourway samples without empty boxes or apolog
   expect(root.textContent).not.toContain('SVG supplied');
 });
 
-it('renders two-up aspect-ratio usage frames with ground, logo and current brand line', async () => {
+it('renders two-up usage samples with ground, logo and the current server-supplied brand line', async () => {
   const { root, view, brand, fixture } = await setup();
   expect(root.querySelectorAll('.kit-usage-grid')).toHaveLength(2);
   const frames = root.querySelectorAll<HTMLElement>('.kit-usage-frame');
@@ -107,4 +107,34 @@ it('renders two-up aspect-ratio usage frames with ground, logo and current brand
   await fixture.whenStable();
   expect(root.querySelector('.kit-chapter > thead')?.textContent).toContain('Updated synthetic project');
   expect(root.querySelector('.kit-usage-frame')?.textContent).toContain('Updated approved line');
+});
+
+it('keeps captioned pairs indivisible with explicit frame heights and the intro inside the first pair', async () => {
+  const { root } = await setup();
+  const pairs = root.querySelectorAll<HTMLElement>('[data-testid="kit-print-usage-pair"]');
+  expect(pairs).toHaveLength(2);
+  expect(pairs[0].querySelector('.kit-usage-intro')?.textContent).toContain('Graphic elements and usage');
+  expect(pairs[1].querySelector('.kit-usage-intro')).toBeNull();
+  pairs.forEach((pair) => {
+    expect(pair.closest('tr')?.classList.contains('kit-usage-pair-row')).toBe(true);
+    expect(getComputedStyle(pair).breakInside).toBe('avoid');
+    expect(getComputedStyle(pair).breakBefore).toBe('auto');
+    expect(pair.querySelectorAll('figcaption')).toHaveLength(2);
+    pair.querySelectorAll<HTMLElement>('.kit-usage-frame').forEach((frame) => {
+      const styles = getComputedStyle(frame);
+      const height = frame.getAttribute('data-layout') === 'report' ? '44mm' : '36mm';
+      expect(styles.height).toBe(height);
+      expect(styles.minHeight).toBe(height);
+      expect(styles.maxHeight).toBe(height);
+      expect(styles.aspectRatio).not.toContain('/');
+    });
+  });
+});
+
+it('keeps usage prose when a supplied kit has no examples', async () => {
+  const { root, view, fixture } = await setup();
+  fixture.componentRef.setInput('view', { ...view, usageTiles: [], usage: { ...view.usage, examples: [] } });
+  await fixture.whenStable();
+  expect(root.querySelector('[data-testid="kit-print-visual"]')?.textContent).toContain(view.usage.summary);
+  expect(root.querySelector('[data-testid="kit-print-usage-pair"]')).toBeNull();
 });

@@ -285,34 +285,42 @@
       </ul>
     </td>
   </tr>
-  <tr class="kit-block">
-    <td>
-      <h3>Graphic elements and usage</h3>
-      <p>{{ v.usage.summary }}</p>
-    </td>
-  </tr>
-  @for (row of usageRows(); track $index) {
-    <tr class="kit-block">
+  @for (row of usageRows(); track $index; let first = $first) {
+    <tr class="kit-block kit-usage-pair-row">
       <td>
-        <div class="kit-usage-grid">
-          @for (sample of row; track $index) {
-            <figure data-testid="kit-print-usage">
-              <div class="kit-usage-frame" [attr.data-layout]="sample.layout" [style.background-color]="sample.ground" [style.color]="sample.ink">
-                @if (sample.logo; as logo) {
-                  <img [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" />
-                } @else {
-                  <strong>{{ v.projectName }}</strong>
-                }
-                <p>{{ v.voice.line }}</p>
-              </div>
-              <figcaption>{{ sample.name }} · {{ sample.format }}</figcaption>
-            </figure>
+        <div class="kit-usage-pair" data-testid="kit-print-usage-pair">
+          @if (first) {
+            <div class="kit-usage-intro"><ng-container *ngTemplateOutlet="usageIntro" /></div>
           }
+          <div class="kit-usage-grid">
+            @for (sample of row; track $index) {
+              <figure data-testid="kit-print-usage">
+                <div class="kit-usage-frame" [attr.data-layout]="sample.layout" [style.background-color]="sample.ground" [style.color]="sample.ink">
+                  @if (sample.logo; as logo) {
+                    <img [src]="logo.src" [alt]="logo.alt" [style.filter]="logo.filter || null" />
+                  } @else {
+                    <strong>{{ v.projectName }}</strong>
+                  }
+                  <p>{{ v.voice.line }}</p>
+                </div>
+                <figcaption>{{ sample.name }} · {{ sample.format }}</figcaption>
+              </figure>
+            }
+          </div>
         </div>
       </td>
     </tr>
+  } @empty {
+    <tr class="kit-block">
+      <td><ng-container *ngTemplateOutlet="usageIntro" /></td>
+    </tr>
   }
 </ng-template>
+
+<ng-template #usageIntro
+  ><h3>Graphic elements and usage</h3>
+  <p>{{ v.usage.summary }}</p></ng-template
+>
 
 <ng-template #voiceBody>
   <tr class="kit-block">
