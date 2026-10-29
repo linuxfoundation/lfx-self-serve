@@ -25,7 +25,7 @@ export class UiToggleComponent implements ControlValueAccessor {
   public readonly label = input<string>('');
   /** Accessible name. Required when `label` is empty, or the switch is announced without a name. Ignored when `label` is set. */
   public readonly ariaLabel = input<string>('');
-  /** Native `name`, used when the toggle is inside a plain HTML form. */
+  /** Native `name` attribute. Native form reset is not supported; use `[(checked)]` or reactive forms. */
   public readonly name = input<string>('');
   /** `default` is 28x16, `medium` 36x20, `large` 44x24. */
   public readonly size = input<UiToggleSize>('default');
