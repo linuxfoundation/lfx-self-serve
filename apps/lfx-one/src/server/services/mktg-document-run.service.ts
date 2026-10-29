@@ -580,10 +580,10 @@ export class MktgDocumentRunService {
     };
   }
 
-  /** Selected-run details alone may expose a closed marker and its safe display-name attribution. */
+  /** Raw scoped closure marker; only the selected HTTP progress path enriches display-name attribution. */
   public async readClosedProgress(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
-    return this.closedProgress(req, stored.record);
+    return this.closedMarker(stored.record);
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
@@ -1011,7 +1011,7 @@ export class MktgDocumentRunService {
     return current.record;
   }
 
-  private put(
+  private async put(
     req: Request,
     key: string,
     body: string,
@@ -1022,7 +1022,9 @@ export class MktgDocumentRunService {
     MktgDocumentRunService.terminalCache.delete(key);
     if (snapshot) {
       if (!snapshot.etag) throw ServiceValidationError.forField('run', 'The run has no conditional-write token.');
-      if (!refreshMetadataWhen(snapshot.metadata)) return Promise.resolve(false);
+      if (!refreshMetadataWhen(snapshot.metadata)) return false;
+      const currentMetadata = await this.store.headObject(req, 'marketing-os-artifacts', key);
+      if (!currentMetadata || !refreshMetadataWhen(currentMetadata)) return false;
       return this.store.putConditionalObject(
         req,
         'marketing-os-artifacts',
@@ -1275,9 +1277,13 @@ export class MktgDocumentRunService {
     return this.publicProgress(req, record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity);
   }
 
-  private async closedProgress(req: Request, record: MktgStartedRunRecord): Promise<MktgDocumentRunProgress | null> {
+  private closedMarker(record: MktgStartedRunRecord): MktgDocumentRunProgress | null {
     if (record.state !== 'discarded' && record.state !== 'superseded') return null;
-    const progress = mktgRunProgress(record, undefined, undefined, undefined, false, true);
+    return mktgRunProgress(record, undefined, undefined, undefined, false, true);
+  }
+
+  private async closedProgress(req: Request, record: MktgStartedRunRecord): Promise<MktgDocumentRunProgress | null> {
+    const progress = this.closedMarker(record);
     return progress ? { ...progress, closedBy: await this.displayName(req, record.closedBySubject) } : null;
   }
 

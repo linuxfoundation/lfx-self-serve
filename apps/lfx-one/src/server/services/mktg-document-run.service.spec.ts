@@ -607,7 +607,8 @@ describe('MktgDocumentRunService core', () => {
     await service.assertSingleActiveRun(closer, project, types[0].agentKey, { discard: hash(session) });
     expect(stored().metadata['closed-by']).toBe('synthetic-closer');
     flows.author.mockResolvedValue({ name });
-    const result = await service.readClosedProgress(closer, project, types[0].agentKey, 'living', hash(session));
+    const detail = await service.detailWithProgress(closer, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    const result = detail?.runs[0];
     expect(result).toMatchObject({ state: 'discarded', closedBy: expected, closedAt: new Date().toISOString() });
     expect(result).not.toHaveProperty('closedBySubject');
     expect(JSON.stringify(result)).not.toContain('synthetic-closer');
