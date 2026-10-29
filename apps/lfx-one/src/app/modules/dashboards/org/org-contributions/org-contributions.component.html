@@ -96,6 +96,18 @@
         <div class="w-full sm:w-52">
           <lfx-select
             [form]="filterForm"
+            control="teamMembers"
+            size="small"
+            [options]="teamMembersOptions"
+            styleClass="w-full"
+            [ariaLabel]="teamMembersLabel"
+            [tooltip]="teamMembersTooltip"
+            tooltipPosition="top"
+            dataTest="org-contributions-team-members-filter" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
             control="foundation"
             size="small"
             [options]="foundationOptions()"

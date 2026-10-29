@@ -115,10 +115,10 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [310, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v2');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v3');
   });
 
-  it('counts distinct people with code in LF projects over the past 365 days, the Contributors default rule, binding only the account', async () => {
+  it('counts distinct people with code in LF projects over the past 365 days, team members left out, the Contributors default rule, binding only the account', async () => {
     await new OrgInvolvementService().getContributorsMonthly('acc-1');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_PEOPLE_CONTRIBUTORS_DAILY'))!;
@@ -126,6 +126,8 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     expect(sql).toContain('WHERE account_id = ?');
     expect(sql).toContain('AND activity_date >= DATEADD(day, -365, CURRENT_DATE())');
     expect(sql).toContain('AND is_lf_project = TRUE');
+    // CDP team members are left out, as on the People -> Contributors default (lfx-self-serve#4685).
+    expect(sql).toContain('AND NOT is_cdp_team_member');
     expect(binds).toEqual(['acc-1']);
     const [trendSql] = execute.mock.calls.find(([query]) => String(query).includes('ORG_CONTRIBUTORS_MONTHLY'))!;
     expect(trendSql).not.toContain('TOTAL_ACTIVE_CONTRIBUTORS');

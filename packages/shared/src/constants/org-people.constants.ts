@@ -15,6 +15,8 @@ import type {
   OrgEmploymentFilter,
   OrgEmploymentOption,
   OrgEventAttendeesResponse,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   OrgTraineesResponse,
   PeopleTabConfig,
   PeopleTabId,
@@ -94,6 +96,29 @@ export const ORG_EMPLOYMENT_LABEL = 'Employment';
  * Active Contributors card, and Access lists every principal. All Employees has its own default.
  */
 export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
+
+/**
+ * Team members filter on People → Contributors, People → All Employees and the Code Contributions page
+ * (lfx-self-serve#4685): people marked as team members in the Community Data Platform (CDP). Excluded by default,
+ * as LFX Insights does; the Overview's Active Contributors follows the default.
+ */
+export const ORG_TEAM_MEMBERS_OPTIONS: readonly OrgTeamMembersOption[] = [
+  { label: 'Exclude team members', value: 'exclude' },
+  { label: 'Include team members', value: 'include' },
+] as const;
+
+/** Default team members filter — the URL drops `?teamMembers=` when it is active. */
+export const DEFAULT_ORG_TEAM_MEMBERS: OrgTeamMembersFilter = 'exclude';
+
+/** URL query parameter of the team members filter. */
+export const ORG_TEAM_MEMBERS_QUERY_PARAM = 'teamMembers';
+
+/** Accessible label of the team members filter. */
+export const ORG_TEAM_MEMBERS_LABEL = 'Team members';
+
+/** Tooltip on the team members filter. */
+export const ORG_TEAM_MEMBERS_TOOLTIP =
+  'People marked as team members in the Community Data Platform. LFX Insights excludes them; Org Lens excludes them by default.';
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 

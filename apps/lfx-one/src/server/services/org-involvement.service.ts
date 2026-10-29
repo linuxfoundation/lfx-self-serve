@@ -11,11 +11,18 @@ import {
   OrgMaintainerRolesMonthlyRow,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
-import { DEFAULT_ORG_COMMIT_FILTERS, ORG_LENS_DEFAULT_TIME_RANGE, ORG_OVERVIEW_MAINTAINER_ROLES_RANGE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_TEAM_MEMBERS,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgTeamMembersPredicate } from '../helpers/org-team-members.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -87,11 +94,11 @@ export class OrgInvolvementService {
   }
 
   public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
-    // `contributors:v2`: the headline is now the live People -> Contributors default count, not the monthly table's
-    // frozen 12-month total, so a `contributors` entry must not be read.
+    // `contributors:v3`: the headline leaves out CDP team members, as the People -> Contributors default does
+    // (lfx-self-serve#4685), so a `v2` entry (everyone) must not be read.
     return withOrgCache(
       accountId,
-      'contributors:v2',
+      'contributors:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchContributorsMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -183,7 +190,8 @@ export class OrgInvolvementService {
 
   /**
    * Overview Active Contributors card. The headline is the People -> Contributors default tile, counted live with the
-   * same rule — distinct people with code in LF projects, the past 365 days to today — so the two agree; the frozen
+   * same rule — distinct people with code in LF projects, the past 365 days to today, CDP team members left out
+   * (lfx-self-serve#4685) — so the two agree; the frozen
    * 12-month total of ORG_CONTRIBUTORS_MONTHLY (calendar months, built once a day) drifted from it. The trend stays the
    * monthly table's distinct contributors per month. Either read failing fails the card, as before.
    */
@@ -194,6 +202,7 @@ export class OrgInvolvementService {
       WHERE account_id = ?
         ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
+        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
     `;
     const trendQuery = `
       SELECT

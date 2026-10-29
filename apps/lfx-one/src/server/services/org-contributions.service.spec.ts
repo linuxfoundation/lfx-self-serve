@@ -15,6 +15,7 @@ const { execute, withOrgCache } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
@@ -316,6 +317,31 @@ describe('OrgContributionsService — exact project and foundation filters', () 
 
     expect(response.foundationOptions).toEqual([{ foundationId: 'f-cncf', foundationName: 'CNCF' }]);
     expect(response.projectOptions).toEqual([{ slug: 'k8s', projectId: 'p-k8s', name: 'Kubernetes', commits: 4, foundationId: 'f-cncf' }]);
+  });
+});
+
+describe('OrgContributionsService — team members', () => {
+  it.each(['commits', 'code'] as const)('leaves team members in every read under include (metric=%s)', async (metric) => {
+    await service.getContributions(ACCOUNT, query({ metric, teamMembers: 'include' }));
+
+    expect(calls().some(({ sql }) => sql.includes('is_cdp_team_member'))).toBe(false);
+  });
+
+  it.each(['commits', 'code'] as const)('drops team members from every read by default (metric=%s)', async (metric) => {
+    await service.getContributions(ACCOUNT, query({ metric }));
+
+    expect(execute).toHaveBeenCalledTimes(6);
+    for (const { sql } of calls()) {
+      expect(sql).toContain('NOT is_cdp_team_member');
+    }
+  });
+
+  it('keys include and exclude apart in the cache', async () => {
+    await service.getContributions(ACCOUNT, query({ teamMembers: 'include' }));
+    await service.getContributions(ACCOUNT, query({ teamMembers: 'exclude' }));
+    const [include, exclude] = withOrgCache.mock.calls.map((call) => call[1] as string);
+
+    expect(include).not.toBe(exclude);
   });
 });
 

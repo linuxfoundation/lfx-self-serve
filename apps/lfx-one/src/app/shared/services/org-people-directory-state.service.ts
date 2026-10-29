@@ -3,19 +3,26 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { DEFAULT_ORG_COMMIT_FILTERS } from '@lfx-one/shared/constants';
-import type { KeyContactEmployee, OrgAllEmployeeRow, OrgAllEmployeesResponse, OrgCommitFilters, OrgLensTimeRange } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_COMMIT_FILTERS, DEFAULT_ORG_TEAM_MEMBERS } from '@lfx-one/shared/constants';
+import type {
+  KeyContactEmployee,
+  OrgAllEmployeeRow,
+  OrgAllEmployeesResponse,
+  OrgCommitFilters,
+  OrgLensTimeRange,
+  OrgTeamMembersFilter,
+} from '@lfx-one/shared/interfaces';
 import { orgCommitFiltersKey } from '@lfx-one/shared/utils';
 import { map, Observable, of, shareReplay, tap } from 'rxjs';
 
 /**
- * Root-singleton cache for the unified live people directory (`/lens/people/all?live[&range=&projectScope=&commitScope=&metric=]`).
+ * Root-singleton cache for the unified live people directory (`/lens/people/all?live[&range=&projectScope=&commitScope=&metric=&teamMembers=]`).
  *
- * The All Employees tab reads one directory per time range and commit filters; the "Assign to Email"
- * pickers in the Board/Committee/Key-Contacts modals read the unranged roster (no `range` sent, and the
+ * The All Employees tab reads one directory per time range, commit filters and team members pick; the "Assign to
+ * Email" pickers in the Board/Committee/Key-Contacts modals read the unranged roster (no `range` sent, and the
  * filters do not apply). Concurrent callers are deduped via `shareReplay`; resolved responses are
  * memoized for a short TTL (or until `invalidate`, e.g. on retry), keyed by
- * `${orgUid}:${range}:${projectScope}:${commitScope}:${metric}`, or `${orgUid}:roster` for the unranged roster.
+ * `${orgUid}:${range}:${projectScope}:${commitScope}:${metric}:${teamMembers}`, or `${orgUid}:roster` for the unranged roster.
  */
 // Client-side TTL so a long-lived SPA session re-hits the merged endpoint and picks up newly added live
 // people, rather than replaying the first response forever (which would bypass the server's short TTL).
@@ -32,9 +39,14 @@ export class OrgPeopleDirectoryStateService {
   // invalidated (e.g. started before a seat reassign) can't put the pre-invalidate roster back for the TTL.
   private readonly generation = new Map<string, number>();
 
-  /** Cached merged directory for the org, time range and commit filters (no range: the unranged roster); fetches once and replays until the TTL lapses. */
-  public getDirectory(orgUid: string, range?: OrgLensTimeRange, filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS): Observable<OrgAllEmployeesResponse> {
-    const key = range ? `${orgUid}:${range}:${orgCommitFiltersKey(filters)}` : `${orgUid}:roster`;
+  /** Cached merged directory for the org, time range, commit filters and team members pick (no range: the unranged roster); fetches once and replays until the TTL lapses. */
+  public getDirectory(
+    orgUid: string,
+    range?: OrgLensTimeRange,
+    filters: OrgCommitFilters = DEFAULT_ORG_COMMIT_FILTERS,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Observable<OrgAllEmployeesResponse> {
+    const key = range ? `${orgUid}:${range}:${orgCommitFiltersKey(filters)}:${teamMembers}` : `${orgUid}:roster`;
     this.pruneExpired(Date.now());
     const cached = this.byKey.get(key);
     if (cached) return of(cached.value);
@@ -45,7 +57,7 @@ export class OrgPeopleDirectoryStateService {
     const startedGeneration = this.generation.get(orgUid) ?? 0;
     const request$: Observable<OrgAllEmployeesResponse> = this.http
       .get<OrgAllEmployeesResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/people/all`, {
-        params: range ? { live: 'true', range, ...filters } : { live: 'true' },
+        params: range ? { live: 'true', range, ...filters, teamMembers } : { live: 'true' },
       })
       .pipe(
         tap({

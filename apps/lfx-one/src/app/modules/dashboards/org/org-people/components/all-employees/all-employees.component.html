@@ -75,6 +75,18 @@
         ariaLabel="Count all commits, only main branch commits or all code contributions"
         dataTest="org-people-all-employees-metric-select" />
     </div>
+    <div class="w-full md:w-52" data-testid="org-people-all-employees-team-members-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="teamMembers"
+        size="small"
+        [options]="teamMembersOptions"
+        styleClass="w-full"
+        [ariaLabel]="teamMembersLabel"
+        [tooltip]="teamMembersTooltip"
+        tooltipPosition="top"
+        dataTest="org-people-all-employees-team-members-select" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"

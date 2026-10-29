@@ -34,6 +34,15 @@ export type OrgAllEmployeeEmploymentFilter = 'current' | 'former' | 'all';
 /** Which employees a People tab shows — the All Employees employment filter, shared by every tab that offers it (Contributors: lfx-self-serve#4627). */
 export type OrgEmploymentFilter = OrgAllEmployeeEmploymentFilter;
 
+/** Whether a People tab or the Code Contributions page keeps people marked as CDP team members (lfx-self-serve#4685). */
+export type OrgTeamMembersFilter = 'include' | 'exclude';
+
+/** Dropdown option for the team members filter. */
+export interface OrgTeamMembersOption {
+  label: string;
+  value: OrgTeamMembersFilter;
+}
+
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 

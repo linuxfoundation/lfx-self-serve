@@ -27,6 +27,7 @@ import { createHash } from 'crypto';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgTeamMembersPredicate } from '../helpers/org-team-members.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -224,6 +225,7 @@ export class OrgContributionsService {
         SELECT repository_url, MIN(activity_date) AS first_commit_ts
         FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
+          ${orgTeamMembersPredicate(query.teamMembers)}
         GROUP BY repository_url
       ),
       repo_agg AS (
@@ -460,7 +462,7 @@ function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsVie
 /** Filters over `ORG_CODE_CONTRIBUTIONS` (one row per authored commit SHA). */
 function buildCommitScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   const mergedPredicate = query.commitScope === 'merged' ? 'AND is_merged = TRUE' : '';
-  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`.trim());
+  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`);
 }
 
 /** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project, foundation and member columns; commit scope has no meaning for code activity. */
@@ -468,7 +470,9 @@ function buildCodeScopeFilters(query: OrgContributionsQuery): ScopeFilters {
   return buildScopeFilters(query, activityDatePredicate(query.dateRange), orgProjectScopePredicate(query.projectScope));
 }
 
-function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, scopePredicate: string): ScopeFilters {
+/** Every read applies `scopePredicate`, so the team-members exclusion rides along with the project (and commit) scope. */
+function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, baseScopePredicate: string): ScopeFilters {
+  const scopePredicate = `${baseScopePredicate} ${orgTeamMembersPredicate(query.teamMembers)}`.trim();
   const foundationBinds: string[] = query.foundation ? [query.foundation] : [];
   const foundationPredicate = query.foundation ? 'AND foundation_id = ?' : '';
   const binds: string[] = [...foundationBinds];
@@ -619,6 +623,7 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     query.foundation,
     [...query.projects].sort(),
     [...query.employees].sort(),
+    query.teamMembers,
   ];
   return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 }

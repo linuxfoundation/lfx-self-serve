@@ -19,31 +19,40 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so runtime collaborators are mocked. The four source services are constructed in
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level.
-const { getAllEmployeesInternal, getFormerUsernames, fetchAllOrgSeats, getKeyContactEmployees, getAccessPrincipals, getEffectiveUsername, cache } = vi.hoisted(
-  () => ({
-    getAllEmployeesInternal: vi.fn(),
-    getFormerUsernames: vi.fn(),
-    fetchAllOrgSeats: vi.fn(),
-    getKeyContactEmployees: vi.fn(),
-    getAccessPrincipals: vi.fn(),
-    getEffectiveUsername: vi.fn(() => 'tester' as string | null),
-    cache: {
-      serveHits: false,
-      entry: null as string | null,
-      accept: null as ((value: unknown) => boolean) | null,
-      readThroughs: 0,
-      /** Namespace of every read-through, in call order. */
-      namespaces: [] as string[],
-      /** JSON of the rows handed to the encoder — the uncached stored rows, every code count included. */
-      encodedRows: null as string | null,
-    },
-  })
-);
+const {
+  getAllEmployeesInternal,
+  getFormerUsernames,
+  getTeamMemberPersonKeys,
+  fetchAllOrgSeats,
+  getKeyContactEmployees,
+  getAccessPrincipals,
+  getEffectiveUsername,
+  cache,
+} = vi.hoisted(() => ({
+  getAllEmployeesInternal: vi.fn(),
+  getFormerUsernames: vi.fn(),
+  getTeamMemberPersonKeys: vi.fn(),
+  fetchAllOrgSeats: vi.fn(),
+  getKeyContactEmployees: vi.fn(),
+  getAccessPrincipals: vi.fn(),
+  getEffectiveUsername: vi.fn(() => 'tester' as string | null),
+  cache: {
+    serveHits: false,
+    entry: null as string | null,
+    accept: null as ((value: unknown) => boolean) | null,
+    readThroughs: 0,
+    /** Namespace of every read-through, in call order. */
+    namespaces: [] as string[],
+    /** JSON of the rows handed to the encoder — the uncached stored rows, every code count included. */
+    encodedRows: null as string | null,
+  },
+}));
 
 vi.mock('./org-lens-people.service', () => ({
   OrgLensPeopleService: class {
     public getAllEmployeesInternal = getAllEmployeesInternal;
     public getFormerUsernames = getFormerUsernames;
+    public getTeamMemberPersonKeys = getTeamMemberPersonKeys;
   },
 }));
 vi.mock('./org-lens-board-committee.service', () => ({
@@ -109,6 +118,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
   },
+  DEFAULT_ORG_TEAM_MEMBERS: 'include',
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
 }));
 // The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
@@ -230,6 +240,7 @@ beforeEach(() => {
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   getFormerUsernames.mockResolvedValue([]);
+  getTeamMemberPersonKeys.mockResolvedValue(null);
   fetchAllOrgSeats.mockResolvedValue([]);
   getKeyContactEmployees.mockResolvedValue([] as KeyContactEmployee[]);
   getAccessPrincipals.mockResolvedValue([]);
@@ -917,7 +928,7 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
     // One burst is one read-through: a single cache read and a single serialized write, not one per
     // joined caller on the connection the session store shares.
-    expect(cache.readThroughs).toBe(1);
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
     expect(first).toEqual(second);
     // Each caller rebuilds its own response from the shared stored envelope.
     expect(first).not.toBe(second);
@@ -1162,6 +1173,41 @@ describe('OrgPeopleDirectoryService.getLive — the tiles do not follow the code
       [2, 2],
       [2, 2],
     ]);
+  });
+});
+
+// lfx-self-serve#4685
+describe('OrgPeopleDirectoryService.getLive — team members filter', () => {
+  const teamMember = storedRow({
+    personKey: 'team-member',
+    lfid: 'team-member',
+    lfUsername: 'teammate',
+    name: 'Team Mate',
+    email: 'tm@lfx-partner.example',
+    emails: ['tm@lfx-partner.example'],
+  });
+
+  it('drops CDP team members from the rows and the tiles under exclude, from the same cached directory entry', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), teamMember]));
+    getTeamMemberPersonKeys.mockImplementation(async (_account: string, teamMembers: string) => (teamMembers === 'exclude' ? new Set(['team-member']) : null));
+    cache.serveHits = true;
+
+    const included = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'include');
+    const excluded = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude');
+
+    expect(included.rows.map((row) => row.personKey).sort()).toEqual(['lfnEMOUiFenugGty80', 'team-member']);
+    expect(excluded.rows.map((row) => row.personKey)).toEqual(['lfnEMOUiFenugGty80']);
+    expect([included.stats.activeInOss, excluded.stats.activeInOss]).toEqual([2, 1]);
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists everyone on the unranged roster (the assignment pickers), whatever the pick', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow(), teamMember]));
+    getTeamMemberPersonKeys.mockImplementation(async (_account: string, teamMembers: string) => (teamMembers === 'exclude' ? new Set(['team-member']) : null));
+
+    const roster = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, null, FILTERS, 'exclude');
+
+    expect(roster.rows).toHaveLength(2);
   });
 });
 

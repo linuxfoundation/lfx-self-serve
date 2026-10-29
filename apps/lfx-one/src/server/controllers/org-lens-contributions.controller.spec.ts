@@ -15,6 +15,7 @@ const { getContributions, logger } = vi.hoisted(() => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
 }));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
@@ -203,6 +204,43 @@ describe('OrgLensContributionsController range', () => {
     await controller.getContributions(buildReq({ range }), buildRes(), next);
 
     expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController team members', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing teamMembers to exclude', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'exclude' });
+  });
+
+  it('passes teamMembers=include through to the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'include' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'include' });
+  });
+
+  it('rejects an unknown teamMembers with a 400 before the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'only' }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
   });
 });

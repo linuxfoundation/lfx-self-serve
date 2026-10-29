@@ -79,9 +79,18 @@ export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilte
   };
 }
 
-/** Project a counted payload onto the wire envelope for the request's filters; the tiles are counted over the projected rows, so they cover the people the table lists. */
-export function toWireResponse(response: OrgAllEmployeesCountedResponse, filters: OrgCommitFilters): OrgAllEmployeesResponse {
-  const rows = response.rows.map((row) => toWireRow(row, filters));
+/**
+ * Project a counted payload onto the wire envelope for the request's filters; the tiles are counted over the projected
+ * rows, so they cover the people the table lists. `excludedPeople` (the Team members filter's CDP team members,
+ * lfx-self-serve#4685) are dropped first, so neither the rows nor the tiles count them.
+ */
+export function toWireResponse(
+  response: OrgAllEmployeesCountedResponse,
+  filters: OrgCommitFilters,
+  excludedPeople: ReadonlySet<string> | null = null
+): OrgAllEmployeesResponse {
+  const kept = excludedPeople === null ? response.rows : response.rows.filter((row) => !excludedPeople.has(row.personKey));
+  const rows = kept.map((row) => toWireRow(row, filters));
   return {
     accountId: response.accountId,
     rows,

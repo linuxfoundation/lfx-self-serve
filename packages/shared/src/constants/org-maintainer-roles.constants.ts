@@ -15,9 +15,9 @@ export const ORG_LF_MAINTAINER_ROLES_LABEL = 'LF maintainer roles';
 /** Hint on the "—" shown in place of a Maintainer/Contributor role when the maintainer roles cannot be read. */
 export const ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT = 'Maintainer data is currently unavailable';
 
-/** The counting rule for People → Contributors' tile, which follows the range but not the Employment filter (lfx-self-serve#4627). */
+/** The counting rule for People → Contributors' tile, which follows the range but not the Employment or Team members filter (lfx-self-serve#4627, #4685). */
 export const ORG_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment filter.";
+  "Maintainer roles: people named as maintainers in a project's governance files, counted once per project, credited to their current employer, in the selected range. It does not follow the Employment or Team members filter.";
 
 /** The counting rule for the Overview card: LF projects, past 365 days. */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION =

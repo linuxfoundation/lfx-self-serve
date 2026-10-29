@@ -222,6 +222,34 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['windowCaption']()).toContain(' in LF projects, ');
   });
 
+  it('opens ?teamMembers=include including team members, then drops the param again for Exclude', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { teamMembers: 'include' } });
+    const { teamMembers } = fixture.componentInstance['filterForm'].controls;
+
+    expect(teamMembers.value).toBe('include');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'include' }));
+    expect(navigate).not.toHaveBeenCalled();
+
+    teamMembers.setValue('exclude');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'exclude' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ teamMembers: null }) }));
+  });
+
+  it('excludes team members by default, and sends teamMembers=include and writes it to the URL when Include is picked, back on page 1', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { page: '3' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.teamMembers.value).toBe('exclude');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'exclude' }));
+
+    fixture.componentInstance['filterForm'].controls.teamMembers.setValue('include');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'include', page: 1 }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ teamMembers: 'include', page: null }) }));
+  });
+
   it.each([
     ['merged', { commitScope: 'merged', metric: 'commits' }, 'Commits', 'only commits on the main branch', ORG_MAIN_BRANCH_COMMITS_DEFINITION],
     ['code', { commitScope: 'all', metric: 'code' }, 'Code contributions', 'Code contributions (commits, pull requests', ORG_CODE_CONTRIBUTIONS_DEFINITION],
@@ -295,6 +323,7 @@ describe('OrgContributionsComponent', () => {
         foundation: 'f-cncf',
         projects: 'alpha',
         employees: 'e-1',
+        teamMembers: 'include',
       },
     });
     const el = fixture.nativeElement as HTMLElement;
@@ -312,6 +341,7 @@ describe('OrgContributionsComponent', () => {
       employees: [],
       projectScope: 'lf',
       metric: 'code',
+      teamMembers: 'exclude',
     });
     expect(getContributions).toHaveBeenLastCalledWith(
       'org-uid-1',
@@ -325,6 +355,7 @@ describe('OrgContributionsComponent', () => {
         projectScope: 'lf',
         commitScope: 'all',
         metric: 'code',
+        teamMembers: 'exclude',
       })
     );
     expect(navigate).toHaveBeenLastCalledWith(
@@ -340,6 +371,7 @@ describe('OrgContributionsComponent', () => {
           foundation: null,
           projects: null,
           employees: null,
+          teamMembers: null,
         }),
       })
     );
