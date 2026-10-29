@@ -237,6 +237,11 @@ router.get('/engagement-non-member-participation', requireDashboardAccess, (req,
   analyticsController.getEngagementNonMemberParticipation(req, res, next)
 );
 
+// Health Metrics Engagement "Newsletter performance" section (#4714)
+router.get('/engagement-newsletter-performance', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterPerformance(req, res, next)
+);
+
 // Health Metrics Engagement "Representatives" section (#2802)
 router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
 

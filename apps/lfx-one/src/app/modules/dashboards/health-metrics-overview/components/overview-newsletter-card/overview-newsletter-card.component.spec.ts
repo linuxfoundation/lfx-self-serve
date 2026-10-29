@@ -87,6 +87,9 @@ describe('OverviewNewsletterCardComponent', () => {
     expect(high).toEqual(['HighOpened 7+ newsletters and clicked a link', '175', '12%']);
     const mostEngaging = [...(query('overview-newsletter-most-engaging')?.children ?? [])].map((cell) => cell.textContent?.trim());
     expect(mostEngaging).toEqual(['Most engaging newsletter · 12% click-to-open', 'Monthly: Protocol ships']);
+    const explore = query('overview-newsletter-explore') as HTMLAnchorElement;
+    expect(explore.textContent?.trim()).toBe('Explore Newsletters');
+    expect(explore.getAttribute('href')).toBe('/foundation/health-metrics/engagement#newsletters');
   });
 
   it('says so in place of the chart when no newsletter in the period carries engagement data', async () => {

@@ -49,4 +49,11 @@
       (reading)="shell.sectionReading('nonmem')"
       (settled)="shell.sectionSettled('nonmem', $event)" />
   </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="newsletters">
+    <lfx-engagement-newsletter-performance
+      (countChange)="newsletterCount.set($event)"
+      (reading)="shell.sectionReading('newsletters')"
+      (settled)="shell.sectionSettled('newsletters', $event)" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>

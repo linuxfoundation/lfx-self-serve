@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
@@ -10,7 +11,7 @@ import type {
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -55,6 +56,7 @@ export interface HealthMetricsEngagementSubNavCounts {
   reps: number | null;
   neverAttendedReps: number;
   nonMemberOrgs: number | null;
+  newsletters: number | null;
 }
 
 /** One group's numbers for a single period. Every period ships on every row, so the period pill
@@ -471,4 +473,105 @@ export interface HealthMetricsEngagementQueryParams {
   orgFilter?: HealthMetricsEngagementOrgFilter | null;
   partMode?: HealthMetricsEngagementParticipationMode | null;
   repFilter?: HealthMetricsEngagementRepFilter | null;
+  nlMode?: HealthMetricsEngagementNewsletterMode | null;
+}
+
+/** The newsletter chart's toggle: each newsletter's rates, or its recipients and unique opens. */
+export type HealthMetricsEngagementNewsletterMode = (typeof HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES)[number]['key'];
+
+/** Wire query for `GET /api/analytics/engagement-newsletter-performance`; the period resolves client-side. */
+export interface HealthMetricsEngagementNewsletterQuery {
+  foundationSlug: string;
+}
+
+/** The summary view's figures for one period. Rates are 0–1 shares of each newsletter's recipients. */
+export interface HealthMetricsEngagementNewsletterPeriod {
+  subscribers: number | null;
+  subscribersGrowth: number | null;
+  growthBaselineDate: string | null;
+  newslettersSent: number | null;
+  avgOpenRate: number | null;
+  avgClickRate: number | null;
+  avgClickToOpenRate: number | null;
+  avgDeliveryRate: number | null;
+}
+
+/** One newsletter sent. One without engagement data carries its recipients only; every other figure is `null`. */
+export interface HealthMetricsEngagementNewsletter {
+  key: string;
+  name: string;
+  sentDate: string | null;
+  hasEngagementData: boolean;
+  recipients: number | null;
+  failed: number | null;
+  uniqueOpens: number | null;
+  totalOpens: number | null;
+  uniqueClicks: number | null;
+  totalClicks: number | null;
+  openRate: number | null;
+  clickRate: number | null;
+  clickToOpenRate: number | null;
+}
+
+/** `GET /api/analytics/engagement-newsletter-performance` — every period's summary and every newsletter, latest first. */
+export interface HealthMetricsEngagementNewsletterPerformance {
+  /** `false` when the foundation has no summary row at all. */
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsEngagementNewsletterPeriod | null>;
+  newsletters: HealthMetricsEngagementNewsletter[];
+}
+
+/** One of the section's KPIs: a label over its value, with a delta only on Subscribers. */
+export interface HealthMetricsEngagementNewsletterKpiView {
+  key: string;
+  label: string;
+  value: string;
+  delta: string | null;
+  deltaDirection: 'up' | 'down' | 'neutral';
+}
+
+/** One table row, with every cell already labelled; "—" stands in where the newsletter has no engagement data. */
+export interface HealthMetricsEngagementNewsletterRowView {
+  key: string;
+  name: string;
+  sentLabel: string;
+  recipientsLabel: string;
+  failedLabel: string;
+  uniqueOpensLabel: string;
+  totalOpensLabel: string;
+  openRateLabel: string;
+  /** The open-rate bar's fill, 0–100. */
+  openRateWidthPct: number;
+  uniqueClicksLabel: string;
+  totalClicksLabel: string;
+  clickRateLabel: string;
+  clickToOpenLabel: string;
+}
+
+/** One newsletter on the chart. Rates are percentages (0–100); a figure the newsletter lacks is `null`. */
+export interface HealthMetricsEngagementNewsletterPointView {
+  key: string;
+  /** The x-axis label: the send's month. */
+  tick: string;
+  /** "Name · Oct 26, 2026", the tooltip's title. */
+  title: string;
+  openPct: number | null;
+  clickPct: number | null;
+  clickToOpenPct: number | null;
+  recipients: number | null;
+  uniqueOpens: number | null;
+}
+
+/** Newsletter performance for the selected period. */
+export interface HealthMetricsEngagementNewsletterView {
+  isEmpty: boolean;
+  /** The sub-nav badge; `null` when the period is unmeasured. */
+  newslettersSent: number | null;
+  headline: HealthMetricsEngagementNewsletterKpiView;
+  side: HealthMetricsEngagementNewsletterKpiView[];
+  /** Latest first, as the view ranks them. */
+  rows: HealthMetricsEngagementNewsletterRowView[];
+  /** Oldest first: every newsletter for the audience chart, only those with engagement data for the rates chart. */
+  audiencePoints: HealthMetricsEngagementNewsletterPointView[];
+  ratePoints: HealthMetricsEngagementNewsletterPointView[];
 }

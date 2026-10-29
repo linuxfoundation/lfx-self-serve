@@ -7,6 +7,7 @@ import {
   HEALTH_METRICS_OVERVIEW_CARDS,
   HEALTH_METRICS_OVERVIEW_CREATE_NEWSLETTER_LINK,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
+  HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_OVERVIEW_PROGRESS_TINT,
   HEALTH_METRICS_OVERVIEW_STROKES,
@@ -40,6 +41,7 @@ export class OverviewNewsletterCardComponent {
   protected readonly strokes = HEALTH_METRICS_OVERVIEW_STROKES;
   protected readonly fills = HEALTH_METRICS_OVERVIEW_FILL_CLASSES;
   protected readonly areaFill = HEALTH_METRICS_OVERVIEW_PROGRESS_TINT;
+  protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.newsletters;
   /** A point's tooltip opens inward at either end of the chart, so it stays inside the card. */
   protected readonly tipAlignClass: Record<HealthMetricsOverviewNewsletterPointView['tipAlign'], string> = {
     start: 'left-0',

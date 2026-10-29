@@ -4,16 +4,23 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getAttendanceTrend, getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation, getRepresentatives } = vi.hoisted(
-  () => ({
-    getAttendanceTrend: vi.fn(),
-    getGroupAttendance: vi.fn(),
-    getMeetingParticipation: vi.fn(),
-    getNonMemberParticipation: vi.fn(),
-    getOrgParticipation: vi.fn(),
-    getRepresentatives: vi.fn(),
-  })
-);
+const {
+  getAttendanceTrend,
+  getGroupAttendance,
+  getMeetingParticipation,
+  getNewsletterPerformance,
+  getNonMemberParticipation,
+  getOrgParticipation,
+  getRepresentatives,
+} = vi.hoisted(() => ({
+  getAttendanceTrend: vi.fn(),
+  getGroupAttendance: vi.fn(),
+  getMeetingParticipation: vi.fn(),
+  getNewsletterPerformance: vi.fn(),
+  getNonMemberParticipation: vi.fn(),
+  getOrgParticipation: vi.fn(),
+  getRepresentatives: vi.fn(),
+}));
 
 vi.mock('../services/health-metrics-engagement.service', async () => {
   // The range guard is real — a rename of the view's period columns must fail this suite too.
@@ -24,6 +31,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
       public getAttendanceTrend = getAttendanceTrend;
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
+      public getNewsletterPerformance = getNewsletterPerformance;
       public getNonMemberParticipation = getNonMemberParticipation;
       public getOrgParticipation = getOrgParticipation;
       public getRepresentatives = getRepresentatives;
@@ -55,6 +63,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
@@ -457,6 +466,52 @@ describe('AnalyticsController.getEngagementRepresentatives', () => {
     getRepresentatives.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callReps({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callNewsletters(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementNewsletterPerformance(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementNewsletterPerformance', () => {
+  beforeEach(() => {
+    getNewsletterPerformance.mockReset();
+    getNewsletterPerformance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it('reads the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callNewsletters({ foundationSlug: 'acme', range: 'YTD' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNewsletterPerformance).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not a slug', { foundationSlug: "acme' OR 1=1" }],
+  ])('rejects a foundation slug that is %s', async (_case, queryParams) => {
+    const { next, promise } = callNewsletters(queryParams);
+    await promise;
+
+    expect(getNewsletterPerformance).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getNewsletterPerformance.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callNewsletters({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();
