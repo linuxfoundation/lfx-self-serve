@@ -570,10 +570,11 @@ export class NavbarComponent extends NavMenuBase {
     // hover peek. As with the mobile drawer, only a navigation the viewer made counts — a page rewriting its own address in
     // place (`replaceUrl`, e.g. Org Lens writing in the default organization) would snap a just-opened peek shut;
     // back/forward still closes it. Focus on the link the rail now hides moves to the toggle (the railVisible subscription
-    // below).
+    // below). Desktop only: the mobile drawer's navbar stays mounted once opened but never tracks the pointer, so it would
+    // close the shared peek from under it.
     this.router.events
       .pipe(
-        filter((event) => event instanceof NavigationEnd && this.collapse.peek()),
+        filter((event) => event instanceof NavigationEnd && !this.mobile() && this.collapse.peek()),
         filter(() => {
           const navigation = this.router.currentNavigation();
           return !navigation?.extras.replaceUrl || navigation.trigger === 'popstate';
@@ -725,11 +726,15 @@ export class NavbarComponent extends NavMenuBase {
     return this.pointerOverPeek();
   }
 
-  /** The last pointer position seen is over the panel or one of its tooltips; false before the pointer has moved. */
+  /**
+   * The last pointer position seen is over the panel or one of its tooltips; false before the pointer has moved. The
+   * tooltip only counts while one is still mounted: a role chip's click removes its card before navigating, with no
+   * pointer movement to clear the flag.
+   */
   private pointerOverPeek(): boolean {
     const panel = this.panelEl()?.nativeElement;
     if (!panel || !this.pointer) return false;
-    if (this.pointerOnTooltip) return true;
+    if (this.pointerOnTooltip && panel.ownerDocument.querySelector('.lfxn-tooltip')) return true;
     const rect = panel.getBoundingClientRect();
     const { x, y } = this.pointer;
     return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;

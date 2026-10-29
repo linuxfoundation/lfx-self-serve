@@ -776,6 +776,20 @@ describe('NavbarComponent', () => {
         tooltip.remove();
       });
 
+      it('closes a hover peek on a navigation once the tooltip the pointer was on is gone (a role chip clicked)', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        tooltip.remove();
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('closes a hover peek on a navigation once the pointer is off it', async () => {
         const events = new Subject<unknown>();
         const { collapse } = await createPeekFixture(events);
@@ -873,6 +887,18 @@ describe('NavbarComponent', () => {
 
       events.next(new NavigationEnd(1, '/meetings', '/meetings'));
       expect(collapse.peek()).toBe(false);
+    });
+
+    it('leaves the desktop peek to the desktop navbar: the mounted mobile drawer navbar never closes it', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { mobile: true, routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(true);
     });
 
     it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
