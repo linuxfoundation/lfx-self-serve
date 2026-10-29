@@ -578,16 +578,27 @@ export class MktgDocumentRunService {
     const subject = getEffectiveSub(req);
     if (!subject) throw new AuthorizationError('Sign in to read your runs.');
     const runs: MktgDocumentRunProgress[] = [];
+    let memberLookupFailed = false;
     for (let offset = 0; offset < snapshot.runs.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
       const batch = await Promise.all(
         snapshot.runs.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (row) => {
-          const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
-          return stored.record.creatorSubject === subject ? row : null;
+          try {
+            const stored = await this.selected(req, project, row.agentKey, row.documentId, row.runId);
+            return stored.record.creatorSubject === subject ? row : null;
+          } catch (err) {
+            if (row.agentKey === 'member-360') memberLookupFailed = true;
+            logger.warning(req, 'mktg_owned_progress', 'Scoped run lookup unavailable; unrelated coverage does not decide ownership', {
+              project,
+              run: row.runId,
+              err,
+            });
+            return null;
+          }
         })
       );
       runs.push(...batch.filter((row): row is MktgDocumentRunProgress => row !== null));
     }
-    return { ...snapshot, runs };
+    return { runs, ...(memberLookupFailed && runs.length === 0 && { progressUnavailable: true }) };
   }
 
   /** Creator-only public selector; the private Guild session never leaves the BFF. */

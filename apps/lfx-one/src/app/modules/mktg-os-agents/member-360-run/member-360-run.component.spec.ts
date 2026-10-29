@@ -309,7 +309,7 @@ describe('Member360RunComponent', () => {
     response.complete();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(documents.listDocuments).toHaveBeenCalledWith('sample-project', true, true);
+    expect(documents.listDocuments).toHaveBeenCalledWith('sample-project', false, true);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).toBeNull();
     if (state === 'none') {
       expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
@@ -322,6 +322,25 @@ describe('Member360RunComponent', () => {
       expect(attempts.save).not.toHaveBeenCalled();
     }
     expect(run.generate).not.toHaveBeenCalled();
+  });
+  it('uses non-windowed initial and Refresh reads, then windowed background checks for the owned roster', async () => {
+    documents.listDocuments.mockReturnValue(of({ project: 'sample-project', groups: [], runs: [] }));
+    await render();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).not.toBeNull();
+    expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', false, true);
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', true, true);
+    fixture.componentInstance['retryHistory']();
+    await fixture.whenStable();
+    expect(documents.listDocuments).toHaveBeenLastCalledWith('sample-project', false, true);
+  });
+  it('verifies a selected long-running Member record without the polling window', async () => {
+    attempts.latestPending.mockReturnValue({ documentId: capability().request.documentId, state: 'writing' });
+    run.questions.mockReturnValue(of({ status: 'pending' }));
+    await render();
+    expect(documents.getDocument).toHaveBeenCalledWith('sample-project', 'member-360', capability().request.documentId, false, undefined, true, 'b'.repeat(64));
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-generating"]')).not.toBeNull();
   });
   it('fixes the project and defaults to a twelve-month window with empty run history', async () => {
     await render();

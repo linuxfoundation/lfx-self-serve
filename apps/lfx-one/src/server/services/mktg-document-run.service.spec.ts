@@ -252,7 +252,13 @@ describe('MktgDocumentRunService core', () => {
     flows.get.mockImplementationOnce(() => {
       throw new Error('Synthetic storage unavailable');
     });
-    await expect(service.ownProgress(memberOwner, project, snapshot)).rejects.toThrow('Synthetic storage unavailable');
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('does not make unrelated stale brand-kit coverage an unknown owned Member lookup', async () => {
+    await service.start(req, project, 'brand-kit', 'unrelated-stale-brand');
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs.some((row) => row.agentKey === 'brand-kit')).toBe(true);
+    expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [] });
   });
   it('resolves a private Member session only for the stored creator after writer authorization', async () => {
     await waitingMember();

@@ -457,9 +457,12 @@ export class Member360RunComponent {
         }),
         switchMap(({ key, project, user, retry }) => {
           const current = () => key === this.screenScope() && retry === this.historyRetry();
+          let background = false;
           const fetch = (): Observable<MktgDocumentListItem[]> => {
             if (!project || !user || !this.context.canWrite()) return of([]);
-            return this.documents.listDocuments(project, true, true).pipe(
+            const poll = background;
+            background = true;
+            return this.documents.listDocuments(project, poll, true).pipe(
               tap((response) => {
                 if (current()) {
                   if (response.project !== project || response.progressUnavailable) throw new Error('Owned run state is not confirmed.');
@@ -535,7 +538,7 @@ export class Member360RunComponent {
           canonical !== MKTG_LIVING_DOCUMENT_ID
         )
           return of({ ...result, documentId: canonical });
-        return this.documents.getDocument(pending.request.projectUid, 'member-360', documentId, true, undefined, true, runId).pipe(
+        return this.documents.getDocument(pending.request.projectUid, 'member-360', documentId, false, undefined, true, runId).pipe(
           map((detail): Member360Result | null => {
             if (
               detail.project !== pending.request.projectUid ||
