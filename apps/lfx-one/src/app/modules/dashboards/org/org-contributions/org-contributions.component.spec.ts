@@ -134,6 +134,7 @@ describe('OrgContributionsComponent', () => {
         defaultTab: 'code',
         range: '730d',
         codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+        teamMembers: 'exclude',
       })
     );
   });
@@ -168,8 +169,8 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  // lfx-self-serve#4559 — All code contributions is the default; LF projects stays the default project type.
-  it('offers one code-count dropdown, All code contributions first and by default, LF projects first and by default, and sends the default BFF params', async () => {
+  // lfx-self-serve#4559 — All code contributions is the default; lfx-self-serve#4694 — LF and non-LF projects is the default project type.
+  it('offers one code-count dropdown, All code contributions first and by default, LF and non-LF projects first and by default, and sends the default BFF params', async () => {
     const { fixture, getContributions } = await render(null);
     const { controls } = fixture.componentInstance['filterForm'];
 
@@ -179,14 +180,14 @@ describe('OrgContributionsComponent', () => {
       'Only main branch commits',
     ]);
     expect(fixture.componentInstance['projectScopeOptions'].map((option) => option.label)).toEqual([
-      'LF projects',
       'LF and non-LF projects',
+      'LF projects',
       'Non-LF projects',
     ]);
     expect(controls.metric.value).toBe('code');
-    expect(controls.projectScope.value).toBe('lf');
+    expect(controls.projectScope.value).toBe('all');
     expect('commitScope' in controls).toBe(false);
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'code' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'code' }));
   });
 
   it('opens ?metric=commits on commits and keeps it in the URL, then drops it again for All code contributions', async () => {
@@ -204,22 +205,62 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ metric: null }) }));
   });
 
-  // lfx-self-serve#4160 — LF projects is the default, so it stays out of the URL; LF and non-LF projects (the Insights comparison) is written.
-  it('opens ?projectScope=all on every project and keeps it in the URL, then drops it again for LF projects', async () => {
-    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'all' } });
+  // lfx-self-serve#4694 — LF and non-LF projects is the default, so it stays out of the URL; LF projects is written.
+  it('opens ?projectScope=lf on LF projects and keeps it in the URL, then drops it again for LF and non-LF projects', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'lf' } });
     const { projectScope } = fixture.componentInstance['filterForm'].controls;
 
-    expect(projectScope.value).toBe('all');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all' }));
+    expect(projectScope.value).toBe('lf');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf' }));
     expect(navigate).not.toHaveBeenCalled();
-    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF and non-LF projects, ');
+    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF projects, ');
 
-    projectScope.setValue('lf');
+    projectScope.setValue('all');
     await pastDebounce(fixture);
 
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: null }) }));
-    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF projects, ');
+    expect(fixture.componentInstance['windowCaption']()).toContain(' in LF and non-LF projects, ');
+  });
+
+  it('notes that team members are counted when the team-member data is unavailable, and only then', async () => {
+    const note = (fixture: { nativeElement: HTMLElement }): Element | null =>
+      fixture.nativeElement.querySelector('[data-testid="org-contributions-team-members-unavailable"]');
+    const unavailable = await render(null, { response: { ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, teamMembersUnavailable: true } });
+
+    expect(note(unavailable.fixture)?.textContent).toContain('Team-member data is unavailable; counts include team members.');
+
+    TestBed.resetTestingModule();
+    const available = await render(null);
+    expect(note(available.fixture)).toBeNull();
+  });
+
+  it('opens ?teamMembers=include including team members, then drops the param again for Exclude', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { teamMembers: 'include' } });
+    const { teamMembers } = fixture.componentInstance['filterForm'].controls;
+
+    expect(teamMembers.value).toBe('include');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'include' }));
+    expect(navigate).not.toHaveBeenCalled();
+
+    teamMembers.setValue('exclude');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'exclude' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ teamMembers: null }) }));
+  });
+
+  it('excludes team members by default, and sends teamMembers=include and writes it to the URL when Include is picked, back on page 1', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { page: '3' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.teamMembers.value).toBe('exclude');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'exclude' }));
+
+    fixture.componentInstance['filterForm'].controls.teamMembers.setValue('include');
+    await pastDebounce(fixture);
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ teamMembers: 'include', page: 1 }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ teamMembers: 'include', page: null }) }));
   });
 
   it.each([
@@ -246,14 +287,14 @@ describe('OrgContributionsComponent', () => {
     expect(fixture.componentInstance['metricDefinition']()).toBe(tooltip);
   });
 
-  it('reads an unknown metric as All code contributions and drops it from the URL on load, keeping ?projectScope=all', async () => {
-    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'all', metric: 'bogus' } });
+  it('reads an unknown metric as All code contributions and drops it from the URL on load, keeping ?projectScope=lf', async () => {
+    const { fixture, navigate, getContributions } = await render(null, { queryParams: { projectScope: 'lf', metric: 'bogus' } });
 
     expect(fixture.componentInstance['filterForm'].controls.metric.value).toBe('code');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', commitScope: 'all', metric: 'code' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', commitScope: 'all', metric: 'code' }));
     expect(navigate).toHaveBeenCalledWith(
       [],
-      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'all', commitScope: null, metric: null }), replaceUrl: true })
+      expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: 'lf', commitScope: null, metric: null }), replaceUrl: true })
     );
   });
 
@@ -290,11 +331,12 @@ describe('OrgContributionsComponent', () => {
         view: 'commits',
         q: 'kube',
         range: '90d',
-        projectScope: 'all',
+        projectScope: 'lf',
         metric: 'commits',
         foundation: 'f-cncf',
         projects: 'alpha',
         employees: 'e-1',
+        teamMembers: 'include',
       },
     });
     const el = fixture.nativeElement as HTMLElement;
@@ -306,25 +348,27 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].getRawValue()).toEqual({
       search: '',
-      dateRange: '365d',
+      dateRange: '730d',
       foundation: '',
       projects: [],
       employees: [],
-      projectScope: 'lf',
+      projectScope: 'all',
       metric: 'code',
+      teamMembers: 'exclude',
     });
     expect(getContributions).toHaveBeenLastCalledWith(
       'org-uid-1',
       expect.objectContaining({
         view: 'commits',
         search: '',
-        dateRange: '365d',
+        dateRange: '730d',
         foundation: '',
         projects: [],
         employees: [],
-        projectScope: 'lf',
+        projectScope: 'all',
         commitScope: 'all',
         metric: 'code',
+        teamMembers: 'exclude',
       })
     );
     expect(navigate).toHaveBeenLastCalledWith(
@@ -340,6 +384,7 @@ describe('OrgContributionsComponent', () => {
           foundation: null,
           projects: null,
           employees: null,
+          teamMembers: null,
         }),
       })
     );
@@ -385,19 +430,26 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('opens on Past 2 years and keeps ?range=730d in the URL', async () => {
-    const { fixture, getContributions, navigate } = await render(null, { queryParams: { range: '730d' } });
+  it('opens on Past 365 days and keeps ?range=365d in the URL', async () => {
+    const { fixture, getContributions, navigate } = await render(null, { queryParams: { range: '365d' } });
 
-    expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('730d');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '730d' }));
+    expect(fixture.componentInstance['filterForm'].controls.dateRange.value).toBe('365d');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it.each(['12mo', '365d', '2y'])('reads a retired, default or unknown ?range=%s as Past 365 days and drops it from the URL on load', async (range) => {
+  it.each(['730d', '2y'])('reads a default or unknown ?range=%s as the default Past 2 years and drops it from the URL on load', async (range) => {
     const { getContributions, navigate } = await render(null, { queryParams: { range } });
 
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '730d' }));
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }), replaceUrl: true }));
+  });
+
+  it('reads a legacy ?range=12mo as Past 365 days, as the BFF does, and rewrites it to ?range=365d', async () => {
+    const { getContributions, navigate } = await render(null, { queryParams: { range: '12mo' } });
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: '365d' }));
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: '365d' }), replaceUrl: true }));
   });
 
   it.each([
@@ -507,8 +559,8 @@ describe('OrgContributionsComponent', () => {
     await pastDebounce(fixture);
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'non_lf', foundation: '' }));
 
-    // While the non-LF read is in flight, the user goes back to LF projects and picks CNCF; then the non-LF answer lands.
-    projectScope.setValue('lf');
+    // While the non-LF read is in flight, the user goes back to LF and non-LF projects and picks CNCF; then the non-LF answer lands.
+    projectScope.setValue('all');
     foundation.setValue('f-cncf');
     nonLf.next({ ...cncf, foundationOptions: [] });
     nonLf.complete();
@@ -516,7 +568,7 @@ describe('OrgContributionsComponent', () => {
 
     await pastDebounce(fixture);
     expect(foundation.value).toBe('f-cncf');
-    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'lf', foundation: 'f-cncf' }));
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ projectScope: 'all', foundation: 'f-cncf' }));
     expect(navigate).toHaveBeenLastCalledWith(
       [],
       expect.objectContaining({ queryParams: expect.objectContaining({ projectScope: null, foundation: 'f-cncf' }) })
@@ -680,6 +732,22 @@ describe('OrgContributionsComponent', () => {
       expect(getContributions).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ employees: ['e-1'] }));
       expect(navigate).not.toHaveBeenCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ employees: 'e-1' }) }));
     });
+
+    // The clear must reach the request at once: the debounced filter values still hold the previous org's settled pick.
+    it("sends no Employees on the first request for the new organization, before the clear's debounce", async () => {
+      const { fixture, getContributions, selectedAccount } = await render(null);
+      fixture.componentInstance['filterForm'].controls.employees.setValue(['e-1']);
+      await pastDebounce(fixture);
+      expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ employees: ['e-1'] }));
+
+      selectedAccount.set(ORG_B);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const requestsForB = (getContributions.mock.calls as unknown as [string, { employees: string[] }][]).filter(([uid]) => uid === 'org-uid-2');
+      expect(requestsForB.length).toBeGreaterThan(0);
+      expect(requestsForB[0][1].employees).toEqual([]);
+    });
   });
 
   it('follows a range on a query-only navigation and drops the default from the URL it writes', async () => {
@@ -691,7 +759,7 @@ describe('OrgContributionsComponent', () => {
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ dateRange: 'all' }));
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: 'all' }) }));
 
-    fixture.componentInstance['filterForm'].controls.dateRange.setValue('365d');
+    fixture.componentInstance['filterForm'].controls.dateRange.setValue('730d');
     await pastDebounce(fixture);
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ range: null }) }));

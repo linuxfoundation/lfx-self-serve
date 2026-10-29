@@ -194,7 +194,7 @@ beforeEach(() => {
     CREATE TABLE ORG_PEOPLE_ALL (
       ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT,
       PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER,
-      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
     )
   `);
   // Per-range, per-project-scope roster (lfx-self-serve#4163, #4164); empty unless a test adds someone.
@@ -203,7 +203,16 @@ beforeEach(() => {
       ACCOUNT_ID TEXT, PERSON_KEY TEXT, TIME_RANGE TEXT, PROJECT_SCOPE TEXT, IS_FORMER INTEGER, LFID TEXT, LF_USERNAME TEXT,
       CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER,
       COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER, MERGED_COMMITS_COUNT INTEGER, CODE_ACTIVITIES_COUNT INTEGER,
-      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
+  // Contributors daily rows (foundation labels, Code detail); also read for the account's CDP team members (lfx-self-serve#4685).
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
+      LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
+      DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER,
+      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
     )
   `);
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
@@ -540,11 +549,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
       CREATE TABLE ORG_PEOPLE_TRAINING (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
       );
-      CREATE TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY (
-        ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
-        LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
-        DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER
-      );
     `);
     database
       .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -635,13 +639,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(detail.totalCommits).toBe(7);
   });
 
-  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 365 days by default', async () => {
+  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 730 days by default', async () => {
     database.exec('DELETE FROM ORG_MAINTAINER_ROLES');
     database
       .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 2, 2, '2026-04-11');
     const insert = database.prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)');
-    // Ended 200 days ago: inside the past 365 days and all time, outside the past 90 days.
+    // Ended 200 days ago: inside the past 2 years and all time, outside the past 90 days.
     insert.run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', daysAgo(900), daysAgo(200));
     // Not started yet, another person's role, another account's role: never this person's pill.
     insert.run(ACCOUNT, personKey, 'member-one', 'segment-two', 'project-two', daysAgo(-10), null);
@@ -664,7 +668,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     ]);
     const roleReads = (execute.mock.calls as [string, unknown[]][]).filter(([query]) => query.includes('ORG_MAINTAINER_ROLES'));
     expect(roleReads.map(([, binds]) => binds)).toEqual([
-      [ACCOUNT, personKey, 365],
+      [ACCOUNT, personKey, 730],
       [ACCOUNT, personKey, 90],
       [ACCOUNT, personKey],
     ]);
@@ -685,7 +689,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(detail.maintainerRolesUnavailable).toBe(true);
     expect(detail.code.length).toBeGreaterThan(0);
     expect(detail.code.every((row) => row.isMaintainer === false)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:365d`)!)).toBe(false);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:730d`)!)).toBe(false);
   });
 
   it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
@@ -879,7 +883,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('serves the rows without foundation labels when only the label read fails, and does not cache that answer', async () => {
       database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY RENAME TO SAVED_DAILY');
 
-      const degraded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS);
+      // Team members included: their read shares the renamed table, and this case is about the label read alone.
+      const degraded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
 
       expect(degraded.rows.map((row) => row.personKey)).toEqual([formerKey]);
       expect(degraded.foundations).toEqual([]);
@@ -998,7 +1003,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       await service.getFormerEmployees(REQ, ACCOUNT, 'all', { ...FILTERS, metric: 'code' });
       await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, projectScope: 'lf' });
 
-      expect([...cacheValues.keys()].sort()).toEqual(
+      expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
         ['people-all:v4:30d:all', 'people-all:v4:all:all', 'people-all:v4:all:lf', 'people-former:v3:30d:all', 'people-former:v3:all:all']
           .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
           .sort()
@@ -1033,6 +1038,31 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all')!)).toBe(true);
+    });
+
+    // lfx-self-serve#4685
+    it('drops CDP team members from the current and former rows and their tiles under exclude, and from neither under include', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'kept', 'Kept Person', 'kept@company.example', 3);
+      addRangeRow(ACCOUNT, 'person-team', '365d', false, 'team', 'Team Person', 'team@company.example', 5);
+      addRangeRow(ACCOUNT, 'person-team-left', '365d', true, 'teamleft', 'Team Left', null, 2);
+      database.exec("UPDATE ORG_PEOPLE_ALL_RANGES SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY IN ('person-team', 'person-team-left')");
+
+      const included = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
+      const excluded = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude');
+      const formerIncluded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+      const formerExcluded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'exclude');
+
+      expect(included.rows.map((row) => row.personKey).sort()).toEqual([personKey, 'person-team']);
+      expect(included.stats.codeContributors).toBe(2);
+      expect(excluded.rows.map((row) => row.personKey)).toEqual([personKey]);
+      expect(excluded.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
+      expect(formerIncluded.rows.map((row) => row.personKey)).toEqual(['person-team-left']);
+      expect(formerExcluded.rows).toEqual([]);
+      // One roster entry per range and scope serves both picks; the team members are cached once per account.
+      expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+      );
+      expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
     });
   });
 
@@ -1088,8 +1118,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
     }
 
     beforeEach(() => {
-      // The People → Contributors read filters the maintainer roles by project type.
+      // The People → Contributors read filters the maintainer roles by project type and, under the default, team members.
       database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_LF_PROJECT INTEGER');
+      database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0');
       // A mirrored commit credits each scope once, so an LF day can carry more in-scope than all-project commits.
       addCode(personKey, 'project-lf', 1, 10, [3, 2, 4, 3, 9]);
       addCode(personKey, 'project-lf', 1, 200, [5, 5, 5, 5, 6]);
@@ -1165,6 +1196,34 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(detail.code.map((row) => [row.projectId, row.commits])).toEqual([['project-one', 12]]);
       expect(detail.totalCommits).toBe(12);
       expect(dailyReads()).toEqual([]);
+    });
+
+    // lfx-self-serve#4685
+    it("shows no code for a CDP team member under the opener's Exclude pick, as their row counts none, and their code under Include", async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+
+      const excluded = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+      const included = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'include');
+      const codeFree = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d');
+
+      expect([excluded.code, excluded.totalCommits]).toEqual([[], 0]);
+      expect(included.totalCommits).toBe(4);
+      // Without the opener's code filters the drawer is not a page's view, so the pick does not apply.
+      expect(codeFree.totalCommits).toBe(12);
+    });
+
+    it('keeps the code view while the team-member flag is not in the warehouse yet', async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+      const warehouse = execute.getMockImplementation()!;
+      execute.mockImplementation(async (query: string, binds: string[]) => {
+        if (query.includes('IS_CDP_TEAM_MEMBER'))
+          throw Object.assign(new Error("SQL compilation error:\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+        return warehouse(query, binds);
+      });
+
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+
+      expect(detail.totalCommits).toBe(4);
     });
 
     it('follows the view for a username opener and answers a live-only person with an empty view without a read', async () => {
@@ -1256,7 +1315,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
       })
       .mockResolvedValueOnce({ rows: [] });
 
-    const wire = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+    const wire = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
     expect(execute).toHaveBeenCalledTimes(2);
     expect(wire.rows).toHaveLength(1);
@@ -1338,7 +1397,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(execute).toHaveBeenCalledTimes(2);
     // Tiles are counted over the projected rows, so a cache hit recomputes the same numbers.
-    expect((await service.getAllEmployees(ACCOUNT, '365d', FILTERS)).stats).toEqual({
+    expect((await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include')).stats).toEqual({
       activeInOss: 1,
       inGovernance: 1,
       codeContributors: 1,

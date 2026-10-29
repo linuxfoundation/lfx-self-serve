@@ -27,13 +27,23 @@ The presenter shows the vote's title and description, a live count of how many p
 
 On the right it shows a **Copy link** button and a QR code with the text **In the room? Scan instead**, so people can open the vote on their phones. The page refreshes itself, and a line at the bottom shows how long ago it last updated. If the connection drops, it keeps trying to reconnect.
 
+### Close the vote early
+
+While the vote is open, **Close vote** at the bottom of the presenter ends it now instead of at its deadline. LFX asks **Close the vote now? Members can no longer cast or change ballots.** Select **Close vote** to confirm, or **Cancel** to keep it open. Pressing **Esc** while this question is showing cancels it; it doesn't leave the presenter.
+
+After you confirm, the presenter switches to the final results within a few seconds. The vote keeps its original deadline on record and also shows when it was closed. If the vote can't be closed (for example it hasn't started yet), LFX shows the reason and the vote stays open. You need permission to manage the vote.
+
+### Leave the presenter
+
+While the vote is open, **Exit** (or **Esc**) asks **Leave the presenter? The vote stays open.** Select **Leave** to go to the vote's page, or **Stay** to keep presenting. Pressing **Esc** or clicking outside the question also keeps you on the presenter. The same goes for the questions from **Close vote** and **Send ballots now**: **Esc** only dismisses the question. If you dismiss the question, focus goes back to the button you used. After you close the vote, focus moves to **Exit**.
+
 ### After the vote ends
 
 The same page switches to the final results: the tally for each question, abstentions when the vote allowed them, turnout (how many cast a vote out of those eligible, and how many didn't), and when the vote closed.
 
 If results are still being finalized, the presenter keeps tallies, abstentions, and turnout hidden and checks again for a limited time. A failed check during that wait does not interrupt the finalizing message or stop the remaining checks. If results are still unavailable after the automatic checks stop, exit and reopen the presenter to try again.
 
-Press **Esc** to leave the presenter. It takes you to the vote's page in LFX.
+Press **Exit** or **Esc** to leave the presenter. Once the vote has ended it leaves straight away, with no question. It takes you to the vote's page in LFX.
 
 ### Copy slide
 

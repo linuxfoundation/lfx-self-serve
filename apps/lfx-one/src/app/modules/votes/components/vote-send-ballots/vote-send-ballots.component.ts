@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,7 +10,7 @@ import { VoteService } from '@services/vote.service';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 
 /**
  * "Send ballots now" (#4363): emails each member who hasn't voted a personal, login-free ballot link. Writer-only and
@@ -29,43 +29,90 @@ export class VoteSendBallotsComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly doc = inject(DOCUMENT);
 
   public readonly voteUid = input.required<string>();
+  /** True while the parent has another dialog open: a late voter-list answer must not open this one on top of it. */
+  public readonly blocked = input<boolean>(false);
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
   protected readonly cooling = signal<boolean>(false);
   protected readonly sent = signal<{ count: number; at: Date } | null>(null);
+  /** True from the dialog opening until a tick after it hides, so a parent that handles Esc leaves the keypress to the dialog. */
+  public readonly confirming = signal<boolean>(false);
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
+  private returnFocusTo: HTMLElement | null = null;
+  private pendingRecipients: Subscription | null = null;
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+  private confirmingTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
-    inject(DestroyRef).onDestroy(() => this.clearCooldownTimer());
+    inject(DestroyRef).onDestroy(() => {
+      this.clearCooldownTimer();
+      if (this.focusTimer) clearTimeout(this.focusTimer);
+      if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    });
+  }
+
+  /**
+   * Drops a voter-list request that is still loading (the parent opened its own dialog): no answer will open the Send
+   * confirmation, and the button is usable again. A Send already past its confirmation is not touched.
+   */
+  public abandon(): void {
+    if (!this.checking()) return;
+    this.pendingRecipients?.unsubscribe();
+    this.pendingRecipients = null;
+    this.returnFocusTo = null;
   }
 
   /** Counts the members who haven't voted, then asks for confirmation naming that count before anything is sent. */
   protected onClick(): void {
-    if (this.busy() || this.cooling()) return;
+    if (this.busy() || this.cooling() || this.blocked()) return;
 
+    // The uid is captured now: if the parent switches to another vote while a request or the dialog is pending, the
+    // answer is dropped so a send can never go to a different vote than the one clicked.
+    const uid = this.voteUid();
+    // Read before the button disables itself for the request: a disabled button gives up focus, so the dialog's opener
+    // would no longer be the active element by the time the answer arrives.
+    const active = this.doc.activeElement;
+    this.returnFocusTo = active instanceof HTMLElement ? active : null;
     this.checking.set(true);
-    this.voteService
-      .getReminderRecipients(this.voteUid())
+    this.pendingRecipients = this.voteService
+      .getReminderRecipients(uid)
       .pipe(finalize(() => this.checking.set(false)))
       .subscribe({
         next: (recipients) => {
+          if (uid !== this.voteUid() || this.blocked()) return;
           const count = recipients.length;
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });
             return;
           }
-          this.confirm(count);
+          this.confirm(uid, count);
         },
         error: () => this.loadFailed(),
       });
   }
 
-  private confirm(count: number): void {
+  /** Runs after Send, Cancel, Esc or the close button: hands focus back to the button that opened the dialog. */
+  protected onConfirmHidden(): void {
+    if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    this.confirmingTimer = setTimeout(() => this.confirming.set(false));
+    // A tick later, so the dialog has released focus. After a Send the button is disabled for the request and the
+    // cooldown, so the browser keeps focus where it falls; Cancel, Esc and the close button land on the button.
+    if (this.focusTimer) clearTimeout(this.focusTimer);
+    this.focusTimer = setTimeout(() => {
+      this.returnFocusTo?.focus();
+      this.returnFocusTo = null;
+    });
+  }
+
+  private confirm(uid: string, count: number): void {
+    if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    this.confirming.set(true);
     this.confirmationService.confirm({
       message: `Email a personal ballot link to the ${count} ${count === 1 ? "member who hasn't" : "members who haven't"} voted?`,
       header: 'Send ballots now',
@@ -73,14 +120,16 @@ export class VoteSendBallotsComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-info p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => this.send(),
+      accept: () => {
+        if (uid === this.voteUid()) this.send(uid);
+      },
     });
   }
 
-  private send(): void {
+  private send(uid: string): void {
     this.sending.set(true);
     this.voteService
-      .sendBallots(this.voteUid())
+      .sendBallots(uid)
       .pipe(finalize(() => this.sending.set(false)))
       .subscribe({
         next: ({ sent, skipped }) => {

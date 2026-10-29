@@ -784,9 +784,9 @@ export interface UpdateMeetingRegistrantRequest {
    * Three known gaps, all pre-dating that rename:
    *
    * - `null` does not erase. Every field upstream declares is declared non-nullable, and
-   *   `MeetingService.getChangedFields` nulls each of these whenever it's blank, so the BFF omits a
-   *   `null` rather than sending one — for `job_title` and `username` under their own name, for the
-   *   three renamed fields by skipping the rename. Clearing a stored organization or job title
+   *   `MeetingService.getChangedFields` nulls `job_title` and the three renamed fields whenever they are
+   *   blank, so the BFF omits a `null` rather than sending one — for `job_title` under its own name, for
+   *   the renamed fields by skipping the rename. `username` is never nulled: it goes back as stored or is left out. Clearing a stored organization or job title
    *   therefore doesn't take effect. Fixing it needs upstream to say how these fields are erased —
    *   don't guess between `null` and `''`; `occurrence` already gives blank its own meaning
    *   ("blank = all occurrences").

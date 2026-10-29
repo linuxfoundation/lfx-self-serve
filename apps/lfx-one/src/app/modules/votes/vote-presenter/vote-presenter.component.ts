@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -39,7 +40,8 @@ import {
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
-import { TooltipModule } from 'primeng/tooltip';
+import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, distinctUntilChanged, EMPTY, expand, filter, map, Observable, of, switchMap, tap, timer } from 'rxjs';
 
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
@@ -66,20 +68,23 @@ function tallyBarClass(option: VoteResultsOption): string {
     ButtonComponent,
     CardComponent,
     DatePipe,
+    ConfirmDialogModule,
     NgTemplateOutlet,
-    TooltipModule,
     VoteQrComponent,
     VoteRankedQuestionResultsComponent,
     VoteSendBallotsComponent,
   ],
+  providers: [ConfirmationService],
   templateUrl: './vote-presenter.component.html',
-  host: { '(document:keydown.escape)': 'exit()' },
+  host: { '(document:keydown.escape)': 'onEscape()' },
 })
 export class VotePresenterComponent {
   // === Services ===
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly voteService = inject(VoteService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly doc = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
@@ -100,6 +105,14 @@ export class VotePresenterComponent {
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
   private readonly retryTick = signal(0);
+  /** True from the confirmed Close until the request fails or the next poll lands, so the button cannot be double-fired. */
+  protected readonly closing = signal(false);
+  /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
+  protected readonly confirmOpen = signal(false);
+  /** The Send ballots child owns its own dialog; its `confirming` flag tells Esc to stay out of the way (undefined once the child is destroyed). */
+  private readonly sendBallots = viewChild(VoteSendBallotsComponent);
+  /** The poll generation (`retryTick`) the end request's forced restart started; only a result from that generation or later clears `closing`. */
+  private awaitingTick: number | null = null;
 
   // === Computed Signals ===
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
@@ -109,10 +122,6 @@ export class VotePresenterComponent {
     return vote?.status === PollStatus.ENDED ? vote.uid : null;
   });
   private readonly results: Signal<VoteResultsResponse | null> = this.initResults();
-  private readonly formattedEndTime = computed(() => {
-    const end = this.vote()?.end_time;
-    return end ? formatDate(end, 'medium', this.locale) : 'its deadline';
-  });
   protected readonly phase: Signal<VotePresenterPhase> = this.initPhase();
   protected readonly participation = computed(() => {
     const vote = this.vote();
@@ -130,7 +139,10 @@ export class VotePresenterComponent {
     const vote = this.vote();
     return vote?.early_end_time || vote?.end_time || null;
   });
-  protected readonly closeTooltip = computed(() => `Ending a vote early is coming; this vote ends at ${this.formattedEndTime()}`);
+  /** Exit asks first only while the vote is live; the result, empty, error and loading screens leave at once. */
+  protected readonly confirmsExit = computed(() => this.phase() === 'active' || this.phase() === 'reconnecting');
+  /** The presenter route is writer-guarded (`votePresenterGuard`), so being here means the caller can end the vote; the BFF re-checks. */
+  protected readonly canClose = computed(() => this.vote()?.status === PollStatus.ACTIVE && !this.closing());
   protected readonly showAbstain = computed(() => this.vote()?.allow_abstain === true);
   protected readonly isRanked = computed(() => isRankedPollType(this.vote()?.poll_type));
   protected readonly stats = computed(() => computeVoteParticipationStats(this.results()));
@@ -171,10 +183,16 @@ export class VotePresenterComponent {
   });
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  private confirmHiddenTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The element focused when a confirmation opened, so focus returns to the triggering button when it closes. */
+  private returnFocusTo: HTMLElement | null = null;
   private polledVoteId: string | null = null;
 
   public constructor() {
-    this.destroyRef.onDestroy(() => this.copyResetTimer && clearTimeout(this.copyResetTimer));
+    this.destroyRef.onDestroy(() => {
+      if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
+      if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
+    });
     if (this.isBrowser) {
       this.startPolling();
       timer(VOTE_PRESENTER_CLOCK_TICK_MS, VOTE_PRESENTER_CLOCK_TICK_MS)
@@ -184,9 +202,53 @@ export class VotePresenterComponent {
   }
 
   // === Protected Methods ===
+  /** Exit asks first while the vote is live ("Stay" is the default focus); otherwise it leaves immediately. */
   protected exit(): void {
     const id = this.voteId();
-    void this.router.navigateByUrl(id ? votePermalinkPath(id) : '/votes');
+    if (!this.confirmsExit() || !id) {
+      this.leave(id);
+      return;
+    }
+    this.openConfirm({
+      header: 'Leave presenter',
+      message: 'Leave the presenter? The vote stays open.',
+      acceptLabel: 'Leave',
+      rejectLabel: 'Stay',
+      defaultFocus: 'reject',
+      acceptButtonStyleClass: 'p-button-info p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: this.acceptFor(id, (uid) => this.leave(uid)),
+    });
+  }
+
+  /** Esc is Exit, except while any confirmation is open, where PrimeNG's own handler cancels the dialog and this does nothing. */
+  protected onEscape(): void {
+    if (this.confirmOpen() || this.sendBallots()?.confirming()) return;
+    this.exit();
+  }
+
+  /** Called a tick after a dialog hides, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
+  protected onConfirmHidden(): void {
+    if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
+    this.confirmHiddenTimer = setTimeout(() => {
+      this.confirmOpen.set(false);
+      this.restoreFocus();
+    });
+  }
+
+  /** Close vote: always asks first. Nothing is sent until the dialog is accepted. */
+  protected onCloseClick(): void {
+    const id = this.voteId();
+    if (!id || !this.canClose()) return;
+    this.openConfirm({
+      header: 'Close vote',
+      message: 'Close the vote now? Members can no longer cast or change ballots.',
+      acceptLabel: 'Close vote',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: this.acceptFor(id, (uid) => this.endVote(uid)),
+    });
   }
 
   /** Restarts the poll loop from the error state without waiting out the backoff. */
@@ -212,10 +274,9 @@ export class VotePresenterComponent {
   private startPolling(): void {
     toObservable(computed(() => ({ id: this.voteId(), retry: this.retryTick() })))
       .pipe(
-        map(({ id }) => id),
-        filter((id): id is string => !!id),
+        filter((state): state is { id: string; retry: number } => !!state.id),
         // A new :id reuses this component: drop the previous vote's snapshot (and with it the ended-vote results) before polling it.
-        tap((id) => {
+        tap(({ id }) => {
           if (id !== this.polledVoteId) {
             this.snapshot.set(null);
             this.failures.set(0);
@@ -225,19 +286,25 @@ export class VotePresenterComponent {
         }),
         // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick. They also keep running
         // after `ended`, so a vote another manager reopens flips back to the open state; /results is still requested once per ended period.
-        switchMap((id) =>
+        // Each event carries the poll generation it came from, so a result from before an end request's forced restart
+        // (an in-flight GET that resolved just ahead of the restart) never counts as "the poll that follows the close".
+        switchMap(({ id, retry }) =>
           createVisibilityPoll(this.doc, () => this.voteService.fetchVote(id, { uncached: true }), {
             intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
             backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
             backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
-          })
+          }).pipe(map((event) => ({ event, retry })))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((event) => {
+      .subscribe(({ event, retry }) => {
         if (event.kind === 'ok') {
           this.failures.set(0);
           this.snapshot.set({ vote: event.value, receivedAtMs: Date.now() });
+          if (this.awaitingTick !== null && retry >= this.awaitingTick) {
+            this.awaitingTick = null;
+            this.closing.set(false);
+          }
         } else {
           this.failures.set(event.failures);
         }
@@ -309,5 +376,69 @@ export class VotePresenterComponent {
           return { value: '', rest: 'Count unavailable' };
       }
     });
+  }
+
+  /**
+   * Ends the vote through the dedicated end action (never extend). On success the poll loop is restarted so the very next
+   * GET decides the state: the presenter moves to the result state only when that GET returns `ended`, and `/results` is
+   * then requested once by `initResults`, exactly as for a vote that ended on its own.
+   */
+  private endVote(id: string): void {
+    if (this.closing()) return;
+
+    this.closing.set(true);
+    this.voteService.endVote(id).subscribe({
+      next: () => {
+        this.retryTick.update((n) => n + 1);
+        this.awaitingTick = this.retryTick();
+      },
+      error: (error: unknown) => {
+        this.closing.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Unable to close the vote', detail: this.endErrorDetail(error), life: 8000 });
+      },
+    });
+  }
+
+  /**
+   * Hands focus back to the element that opened the dialog. After an accept that element can be disabled (Close while the
+   * request is in flight) or gone (the phase changed under the dialog), so focus falls back to the current Exit button.
+   */
+  private restoreFocus(): void {
+    const target = this.returnFocusTo;
+    this.returnFocusTo = null;
+    if (target?.isConnected && !(target as HTMLButtonElement).disabled) {
+      target.focus();
+      return;
+    }
+    this.doc.querySelector<HTMLElement>('[data-testid="vote-presenter-exit"] button')?.focus();
+  }
+
+  private leave(id: string | null): void {
+    void this.router.navigateByUrl(id ? votePermalinkPath(id) : '/votes');
+  }
+
+  private openConfirm(options: Confirmation): void {
+    const active = this.doc.activeElement;
+    this.returnFocusTo = active instanceof HTMLElement ? active : null;
+    // A voter-list request still loading in Send ballots must not open its dialog over this one.
+    this.sendBallots()?.abandon();
+    this.confirmOpen.set(true);
+    this.confirmationService.confirm(options);
+  }
+
+  /**
+   * Binds a confirmation's accept to the vote it was opened for: if the route has moved to another vote while the dialog
+   * was up, the accept is dropped (no request, no toast) so it can never act on the wrong vote.
+   */
+  private acceptFor(id: string, action: (uid: string) => void): () => void {
+    return () => {
+      if (id === this.voteId()) action(id);
+    };
+  }
+
+  /** The upstream message when the voting service answered (for example "poll has not started"), a plain fallback otherwise. */
+  private endErrorDetail(error: unknown): string {
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown } | null) : null;
+    return typeof body?.error === 'string' && body.error ? body.error : "We couldn't confirm the vote was closed. Please try again.";
   }
 }

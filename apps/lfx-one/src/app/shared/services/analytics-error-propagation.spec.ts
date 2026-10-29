@@ -276,6 +276,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getOverviewCode({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getOverviewNewsletters',
+      url: '/api/analytics/overview-newsletters',
+      // A swallowed failure would read as a foundation that never sent a newsletter.
+      call: () => service.getOverviewNewsletters({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'loadFoundationProjectsDetailGrouped',
       url: '/api/analytics/foundation-projects-detail-grouped',
       // A swallowed failure would read as a foundation with no projects to select.

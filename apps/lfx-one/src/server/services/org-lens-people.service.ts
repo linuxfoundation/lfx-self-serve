@@ -7,6 +7,7 @@ import {
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -36,6 +37,8 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonMaintainerRoleProjectRow,
   OrgPersonSource,
+  OrgTeamMemberKeys,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
@@ -45,6 +48,7 @@ import { Request } from 'express';
 import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
+import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
@@ -123,9 +127,23 @@ export class OrgLensPeopleService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged roster, which the filters do not scope); the wire projection of the internal roster. */
-  public async getAllEmployees(accountId: string, range: OrgLensTimeRange | null, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    return toWireResponse(await this.getAllEmployeesInternal(accountId, range, filters.projectScope), filters);
+  /**
+   * Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged
+   * roster, which the filters do not scope); the wire projection of the internal roster. `exclude` removes CDP team
+   * members' code from a ranged roster (lfx-self-serve#4685, see `toWireResponse`); the unranged roster lists everyone,
+   * like the commit filters it is not scoped by.
+   */
+  public async getAllEmployees(
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgAllEmployeesResponse> {
+    const [roster, teamMemberKeys] = await Promise.all([
+      this.getAllEmployeesInternal(accountId, range, filters.projectScope),
+      this.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
+    ]);
+    return toWireResponse(roster, filters, teamMemberKeys);
   }
 
   /**
@@ -166,14 +184,25 @@ export class OrgLensPeopleService {
    * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
    * directory — and the reassign pickers that read it — never sees a former employee. Stats are
    * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
-   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name.
+   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name. `exclude`
+   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`).
    */
-  public async getFormerEmployees(req: Request, accountId: string, range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
-    const raw = await this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope);
+  public async getFormerEmployees(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgAllEmployeesResponse> {
+    const [raw, teamMemberKeys] = await Promise.all([
+      this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope),
+      this.getTeamMemberPersonKeys(accountId, teamMembers),
+    ]);
     const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
     return toWireResponse(
       { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
-      filters
+      filters,
+      teamMemberKeys
     );
   }
 
@@ -182,20 +211,22 @@ export class OrgLensPeopleService {
    * shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come from a live warehouse
    * view that takes seconds, so callers render activity without waiting for it. A code project carries the Maintainer
    * pill when the person holds a maintainer role on it overlapping `maintainerRange` (lfx-self-serve#4482) — the page
-   * range for the All Employees row, the opener's range or the past 365 days for the drawer. When the roles table is
-   * missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
+   * range for the All Employees row, the opener's range or the Org Lens default range (last 2 years) for the drawer.
+   * When the roles table is missing no project is pilled and the detail says so with `maintainerRolesUnavailable`.
    *
    * `codeFilters` (lfx-self-serve#4404) are the caller's page's project type and code count (the drawer's opener, or the
    * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
    * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
-   * trailing 12 months.
+   * trailing 12 months. `teamMembers` is that page's Team members pick (lfx-self-serve#4685): under `exclude` a CDP team
+   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code.
    */
   public async getEmployeeDetail(
     req: Request,
     accountId: string,
     personKey: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
-    codeFilters: OrgCommitFilters | null = null
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail> {
     const codeView: OrgPersonCodeView | null = codeFilters ? { range: maintainerRange, ...codeFilters } : null;
     const codeViewField = codeView ? { codeView } : {};
@@ -205,11 +236,13 @@ export class OrgLensPeopleService {
       return { personKey, boardSeats: [], committeeSeats: [], code: [], totalCommits: 0, ...codeViewField, events: [], training: [] };
     }
 
-    const [{ committeeRows, eventRows, trainingRows }, code, maintainerProjectIds] = await Promise.all([
+    const [{ committeeRows, eventRows, trainingRows }, viewCode, maintainerProjectIds, teamMemberKeys] = await Promise.all([
       this.fetchEmployeeActivityRaw(accountId, personKey),
       codeView ? this.readCodeViewContributions(accountId, personKey, codeView) : this.readTrailingYearCodeContributions(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
+      this.getTeamMemberPersonKeys(accountId, codeView ? teamMembers : 'include'),
     ]);
+    const code = teamMemberKeys.excluded?.has(personKey) ? { projects: [], total: 0 } : viewCode;
     const maintainerProjects = new Set(maintainerProjectIds ?? []);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
@@ -306,14 +339,15 @@ export class OrgLensPeopleService {
     accountId: string,
     username: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
-    codeFilters: OrgCommitFilters | null = null
+    codeFilters: OrgCommitFilters | null = null,
+    teamMembers: OrgTeamMembersFilter = 'include'
   ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers) : null;
   }
 
   /**
@@ -322,6 +356,11 @@ export class OrgLensPeopleService {
    */
   public async getFormerUsernames(accountId: string): Promise<string[]> {
     return readOrgFormerUsernames(this.snowflakeService, accountId);
+  }
+
+  /** The account's CDP team members under `exclude` (`include` reads nothing); unavailable while the flag is not in the warehouse. */
+  public async getTeamMemberPersonKeys(accountId: string, teamMembers: OrgTeamMembersFilter): Promise<OrgTeamMemberKeys> {
+    return readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers);
   }
 
   /**
@@ -402,7 +441,8 @@ export class OrgLensPeopleService {
     }
     const views: OrgPeopleDirectoryView[] = [...(directoryView ? [directoryView] : []), { range: '30d', projectScope: 'lf' }];
     for (const { range, projectScope } of views) {
-      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope });
+      // Everyone, team members included: this resolves a person already opened, whichever Team members pick listed them.
+      const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }, 'include');
       const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
       if (username) {
         return username;

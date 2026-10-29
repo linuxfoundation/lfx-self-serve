@@ -80,7 +80,7 @@
       size="small"
       [label]="switching ? 'Switch User' : 'Start Impersonation'"
       [loading]="loading()"
-      [disabled]="!canStart() || loading()"
+      [disabled]="loading()"
       (onClick)="submit()"
       data-testid="impersonation-submit-button" />
   </div>

@@ -4,7 +4,7 @@
 import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
-import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView } from './org-people.interface';
+import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView, OrgTeamMembersFilter } from './org-people.interface';
 
 /** The five content tabs of the shared person-detail drawer (LFXV2-2195). */
 export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance' | 'key-contacts';
@@ -35,7 +35,7 @@ export interface PersonDrawerContext {
   isFormer?: boolean;
   /** The live directory the opener listed the person in; a live-only person's company-email lookup reads that (warm) directory first. */
   directoryView?: OrgPeopleDirectoryView;
-  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (past 365 days when omitted). */
+  /** The range the opener lists the person in; the Code tab's Maintainer pills follow it (the Org Lens default range when omitted). */
   range?: OrgLensTimeRange;
   /**
    * The opener's project type and code count (Code Contributions, People → Contributors, People → All Employees;
@@ -43,6 +43,8 @@ export interface PersonDrawerContext {
    * the Code tab shows every commit of the trailing 12 months.
    */
   codeFilters?: OrgCommitFilters;
+  /** The opener's Team members pick, sent with `codeFilters` (lfx-self-serve#4685): under exclude a CDP team member's Code tab is empty. */
+  teamMembers?: OrgTeamMembersFilter;
 }
 
 /** One rendered address line in the drawer header. */

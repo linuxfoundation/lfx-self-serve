@@ -2844,6 +2844,34 @@ describe('VoteService', () => {
     });
   });
 
+  describe('endVote (#4143)', () => {
+    it('checks writer access before any proxy call', async () => {
+      const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN', {});
+      assertVoteWrite.mockRejectedValueOnce(forbidden);
+
+      await expect(service.endVote(req, CANONICAL_UID)).rejects.toBe(forbidden);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('posts to the upstream end action with no body and returns the vote', async () => {
+      proxyRequest.mockResolvedValue({ uid: CANONICAL_UID, status: 'ended' });
+
+      const vote = await service.endVote(req, CANONICAL_UID);
+
+      expect(assertVoteWrite).toHaveBeenCalledWith(req, CANONICAL_UID, 'end_vote');
+      expect(proxyRequest).toHaveBeenCalledExactlyOnceWith(req, 'LFX_V2_SERVICE', `/votes/${CANONICAL_UID}/end`, 'POST');
+      expect(vote).toEqual({ uid: CANONICAL_UID, status: 'ended' });
+    });
+
+    it('lets an upstream rejection (409 not started, 400 past its end time) through unchanged', async () => {
+      const conflict = new MicroserviceError('poll has not started', 409, 'CONFLICT', {});
+      proxyRequest.mockRejectedValue(conflict);
+
+      await expect(service.endVote(req, CANONICAL_UID)).rejects.toBe(conflict);
+    });
+  });
+
   describe('sendVoteBallots and vote link proxies (#4363)', () => {
     afterEach(() => vi.restoreAllMocks());
 

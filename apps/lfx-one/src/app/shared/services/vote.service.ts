@@ -330,6 +330,14 @@ export class VoteService {
     );
   }
 
+  /** Ends an active vote now (writer only). Drops the cached detail so the next read sees `ended` and `early_end_time`. */
+  public endVote(voteUid: string): Observable<Vote> {
+    return this.http.post<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/end`, {}).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
+  }
+
   public getVoteResults(voteUid: string): Observable<VoteResultsResponse> {
     return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }

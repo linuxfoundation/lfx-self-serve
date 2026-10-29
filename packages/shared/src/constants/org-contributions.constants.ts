@@ -11,6 +11,7 @@ import type {
 } from '../interfaces';
 import { DEFAULT_ORG_COMMIT_FILTERS, ORG_CODE_METRIC_LABEL } from './org-commit-filters.constants';
 import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
+import { DEFAULT_ORG_TEAM_MEMBERS } from './org-people.constants';
 
 // Org Lens → Code Contributions page (LFXV2-1894). Range set shared with the People tabs (org-lens-time-range.constants).
 
@@ -26,7 +27,7 @@ export const CONTRIBUTIONS_METRIC_LABELS: Readonly<Record<OrgCodeMetric, Contrib
   code: { count: ORG_CODE_METRIC_LABEL.code, firstDate: 'First contribution', lastDate: 'Last contribution' },
 };
 
-/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, since the default is LF projects (lfx-self-serve#4160). */
+/** Project-scope phrase in the KPI caption and the Contributors tooltip; every scope is named, the default (LF and non-LF projects, lfx-self-serve#4694) included. */
 export const CONTRIBUTIONS_PROJECT_SCOPE_PHRASE: Readonly<Record<OrgProjectScope, string>> = {
   all: ' in LF and non-LF projects',
   lf: ' in LF projects',
@@ -52,6 +53,7 @@ export const EMPTY_ORG_CONTRIBUTIONS_QUERY: OrgContributionsQuery = {
   foundation: '',
   projects: [],
   employees: [],
+  teamMembers: DEFAULT_ORG_TEAM_MEMBERS,
   sort: 'commits',
   dir: -1,
   commitSort: 'date',
