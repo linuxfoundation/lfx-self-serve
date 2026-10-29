@@ -199,7 +199,8 @@ export class MktgCommentsPanelComponent {
         },
         error: (error: unknown) => {
           if (owner !== this.comments.draftScopeKey()) return;
-          this.runEnded.set(true);
+          // A poll error after an accepted attempt is reconnectable (the agent may still be working): only an attempt that never took closes the feed.
+          if (!this.redrafts.hasAcceptedAttempt(this.scope())) this.runEnded.set(true);
           this.showError(error);
         },
         complete: () => {
