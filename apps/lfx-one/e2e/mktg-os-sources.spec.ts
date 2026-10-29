@@ -6,9 +6,9 @@ import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper'
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
-import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
+import { MKTG_LAST_INTAKE_API, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
-import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
+import { DOCUMENT_PROJECT, documentFixture } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
@@ -20,6 +20,11 @@ test.describe('Marketing OS new run Sources', () => {
       const sources = await setupFreshSources(page);
       const bodies: Record<string, unknown>[] = [];
       const activeRunId = 'b'.repeat(64);
+      const pendingQuestions = {
+        questionsId: 'c'.repeat(64),
+        askedAt: '2026-10-29T05:00:00Z',
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+      };
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
         bodies.push(route.request().postDataJSON());
         if (!bodies.at(-1)?.['discard'])
@@ -37,14 +42,16 @@ test.describe('Marketing OS new run Sources', () => {
               startedAt: '2026-10-19T12:00:00.000Z',
             },
           });
+        // #4592 records the block before exposing the accepted replacement's private questions.
+        sources.handoff.askQuestions(pendingQuestions);
         return route.fallback();
       });
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
         route.fulfill({
           json: {
             status: 'questions',
-            questionsId: 'c'.repeat(64),
-            questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+            questionsId: pendingQuestions.questionsId,
+            questions: pendingQuestions.questions,
           },
         })
       );
@@ -53,8 +60,13 @@ test.describe('Marketing OS new run Sources', () => {
       const dialog = activeRunConfirmDialog(page);
       await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
       await dialog.getByRole('button', { name: choice, exact: true }).click();
-      if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-      else {
+      if (choice === 'Open it') {
+        // #4594: active progress belongs on its recorded run page, never the document reader.
+        await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing…');
+        expect(new URL(page.url()).searchParams.get('run')).toBe(activeRunId);
+        await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+      } else {
         await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
         expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       }
@@ -62,6 +74,133 @@ test.describe('Marketing OS new run Sources', () => {
       expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
       await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
     });
+  test('keeping an active questions run opens that exact run, never its current document', async ({ page }, info) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic asset');
+    const runId = 'b'.repeat(64);
+    const pendingQuestions = {
+      questionsId: 'c'.repeat(64),
+      askedAt: '2026-10-29T09:00:00Z',
+      questions: [{ key: 'goal', label: 'Goal', question: 'Which existing run goal?', why: '', suggestedAnswer: 'Synthetic adoption', basis: [] }],
+    };
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+      route.fulfill({
+        json: {
+          ...documentFixture(),
+          type,
+          documentId: 'living',
+          runs: [
+            {
+              project: DOCUMENT_PROJECT.uid,
+              agentKey: type.agentKey,
+              documentId: 'living',
+              runId,
+              state: 'questions',
+              startedAt: '2026-10-29T09:00:00Z',
+              pendingQuestions,
+            },
+          ],
+        },
+      })
+    );
+    const bodies: Record<string, unknown>[] = [];
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({
+        status: 409,
+        json: {
+          code: 'MKTG_RUN_ACTIVE',
+          message: 'A run is in progress.',
+          activeRunId: runId,
+          state: 'questions',
+          agentKey: type.agentKey,
+          documentId: 'living',
+          startedBy: 'Synthetic writer',
+          startedByViewer: false,
+          startedAt: '2026-10-29T09:00:00Z',
+        },
+      });
+    });
+    await sources.open();
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    const dialog = page.getByRole('alertdialog').filter({ hasText: "Synthetic writer's Brand Kit run is in progress" }).last();
+    await expect(dialog).toBeVisible();
+    const beforeOpen = bodies.length;
+    await dialog.getByRole('button', { name: 'Open it', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}.*run=${runId}`));
+    await expect(page.getByTestId('mktg-run-questions')).toContainText('Which existing run goal?');
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    expect(bodies).toHaveLength(beforeOpen); // Keep/Open never accepts a new Generate or discard.
+    expect(bodies.every((body) => !body['discard'])).toBe(true);
+    await page.screenshot({ path: info.outputPath('keep-existing-run-questions.png'), fullPage: true });
+  });
+
+  test('a finished run record defeats a stale active conflict before any discard dialog', async ({ page }, info) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing synthetic asset');
+    const oldRunId = 'b'.repeat(64);
+    const newRunId = 'c'.repeat(64);
+    const bodies: Record<string, unknown>[] = [];
+    let started = false;
+    let freshChecks = 0;
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      // The real BFF forbids poll=1 with refreshRun: this is an explicit live read, not a background poll.
+      if (params.get('refreshRun')) expect(params.has('poll')).toBe(false);
+      if (!started && params.get('refreshRun') === oldRunId) freshChecks++;
+      return route.fulfill({
+        json: {
+          ...documentFixture(),
+          type,
+          documentId: 'living',
+          runs: started
+            ? [
+                {
+                  project: DOCUMENT_PROJECT.uid,
+                  agentKey: type.agentKey,
+                  documentId: 'living',
+                  runId: newRunId,
+                  state: 'writing',
+                  startedAt: '2026-10-29T09:00:00Z',
+                },
+              ]
+            : [],
+        },
+      });
+    });
+    await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+      bodies.push(route.request().postDataJSON());
+      if (bodies.length === 1)
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ACTIVE',
+            message: 'A run is in progress.',
+            activeRunId: oldRunId,
+            state: 'writing',
+            agentKey: type.agentKey,
+            documentId: 'living',
+            startedBy: 'Synthetic writer',
+            startedByViewer: false,
+            startedAt: '2026-10-29T08:00:00Z',
+          },
+        });
+      started = true;
+      return route.fulfill({ json: { sessionId: 'synthetic-new-session', ownerToken: 'synthetic-new-proof', runId: newRunId } });
+    });
+    await sources.open();
+    await page.getByTestId('mktg-run-start').getByRole('button').click();
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page.getByTestId('mktg-agent-run-status')).toContainText('You can leave this page');
+    await expect(page.getByRole('alertdialog').filter({ hasText: 'run is in progress' })).toHaveCount(0);
+    expect(freshChecks).toBe(1);
+    expect(bodies).toHaveLength(2); // One rejected start, then exactly one accepted replay, never a discard.
+    expect(bodies.every((body) => !body['discard'])).toBe(true);
+    await page.screenshot({ path: info.outputPath('finished-run-no-stale-dialog.png'), fullPage: true });
+  });
+
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
     const sources = await setupFreshSources(page);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
@@ -74,6 +213,20 @@ test.describe('Marketing OS new run Sources', () => {
     });
     let acknowledged = false;
     let askQuestions = false;
+    const pendingQuestions = {
+      questionsId: 'c'.repeat(64),
+      askedAt: new Date().toISOString(),
+      questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+    };
+    const recordedRun = () => ({
+      project: DOCUMENT_PROJECT.uid,
+      agentKey: type.agentKey,
+      documentId: 'living',
+      runId: activeRunId,
+      state: askQuestions ? 'questions' : 'writing',
+      startedAt: new Date().toISOString(),
+      ...(askQuestions && { pendingQuestions }),
+    });
     await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
       await ack;
       acknowledged = true;
@@ -86,8 +239,8 @@ test.describe('Marketing OS new run Sources', () => {
         json: askQuestions
           ? {
               status: 'questions',
-              questionsId: 'c'.repeat(64),
-              questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+              questionsId: pendingQuestions.questionsId,
+              questions: pendingQuestions.questions,
             }
           : { status: 'pending' },
       })
@@ -98,6 +251,13 @@ test.describe('Marketing OS new run Sources', () => {
       path: MKTG_DOCUMENTS_API_PATH,
       project: DOCUMENT_PROJECT.uid,
     });
+    const recordedDetail = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+      path: `${MKTG_DOCUMENTS_API_PATH}/${type.agentKey}/living`,
+      project: DOCUMENT_PROJECT.uid,
+    });
+    await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+      route.fulfill({ json: { ...recordedDetail, revisions: [], current: null, runs: acknowledged ? [recordedRun()] : [] } })
+    );
     await page.getByTestId('mktg-run-start').getByRole('button').click();
     await expect.poll(() => sources.generated.length).toBe(1);
     await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Getting started… Stay on this page for a few seconds.');
@@ -107,18 +267,7 @@ test.describe('Marketing OS new run Sources', () => {
       route.fulfill({
         json: {
           ...listing,
-          runs: acknowledged
-            ? [
-                {
-                  project: DOCUMENT_PROJECT.uid,
-                  agentKey: type.agentKey,
-                  documentId: 'living',
-                  runId: activeRunId,
-                  state: askQuestions ? 'questions' : 'writing',
-                  startedAt: new Date().toISOString(),
-                },
-              ]
-            : [],
+          runs: acknowledged ? [recordedRun()] : [],
         },
       })
     );
@@ -145,7 +294,8 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
     expect(sources.generated).toHaveLength(1);
     await page.getByTestId('mktg-run-waiting-open').getByRole('link').click();
-    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing… You can leave this page');
     await expect(page).not.toHaveURL(/\/documents\//);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
@@ -156,13 +306,13 @@ test.describe('Marketing OS new run Sources', () => {
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     const answer = page.getByTestId(`mktg-documents-open-started-${runId}`);
     await expect(answer).toHaveText('Answer the questions');
-    await expect(answer).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await expect(answer).toHaveAttribute('href', new RegExp(`${base}/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}&run=${runId}$`));
     await answer.click();
     await expect(questions).toContainText('Which synthetic goal?');
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     const waiting = page.getByTestId(`mktg-documents-nav-${type.agentKey}`);
     await expect(waiting).toContainText('Needs answers');
-    await expect(waiting).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+    await expect(waiting).toHaveAttribute('href', new RegExp(`${base}/${BRAND_KIT_INTAKE.agentId}[?]project=${DOCUMENT_PROJECT.slug}&run=${runId}$`));
     await waiting.click();
     await expect(questions).toContainText('Which synthetic goal?');
     await page.evaluate((url) => {
@@ -172,9 +322,16 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText('This run is waiting for your answers.');
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
     await expect(page.getByTestId('mktg-agent-run-form')).toBeHidden();
-    await page.getByTestId('mktg-run-waiting-continue').getByRole('button').click();
+    // Rule 1/#4592: a fresh mode=new entry exposes the recorded block via Answer the questions,
+    // not a Continue button inferred solely from this browser's former private poll.
+    const recordedQuestions = page.getByTestId('mktg-run-waiting-open').getByRole('link', { name: 'Answer the questions', exact: true });
+    await expect(recordedQuestions).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
+    await recordedQuestions.click();
     await expect(questions).toContainText('Which synthetic goal?');
-    await expect(page.getByTestId('mktg-run-questions-return-note')).toContainText('Documents › Started runs › Answer the questions.');
+    // This any-browser route renders the recorded writer questions, not a private-cache return note.
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers.');
+    await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('run')).toBe(runId);
     expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
@@ -253,33 +410,59 @@ test.describe('Marketing OS new run Sources', () => {
   for (const mount of ['project', 'foundation'] as const) {
     test(`${mount}: accepted Start consumes entry mode and reload restores questions without a second session`, async ({ page }) => {
       const sources = await setupFreshSources(page);
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+      if (!type) throw new Error('Missing questions-record fixture type');
+      let recorded = false;
+      let questionsAsked = false;
+      const pendingQuestions = {
+        questionsId: 'c'.repeat(64),
+        askedAt: new Date().toISOString(),
+        questions: [
+          {
+            key: 'goal',
+            label: 'Goal',
+            question: 'Which synthetic goal should guide this run?',
+            why: 'Synthetic research gap.',
+            suggestedAnswer: 'Grow adoption',
+            basis: [],
+          },
+        ],
+      };
+      const recordedRun = () => ({
+        project: DOCUMENT_PROJECT.uid,
+        agentKey: type.agentKey,
+        documentId: 'living',
+        runId: 'b'.repeat(64),
+        state: questionsAsked ? 'questions' : 'writing',
+        startedAt: new Date().toISOString(),
+        ...(questionsAsked && { pendingQuestions }),
+      });
       let releaseAck: () => void = () => undefined;
       const accepted = new Promise<void>((resolve) => {
         releaseAck = resolve;
       });
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, async (route) => {
         await accepted;
+        recorded = true;
         await route.fulfill({ json: { sessionId: 'synthetic-questions-session', ownerToken: 'synthetic-questions-proof', runId: 'b'.repeat(64) } });
       });
-      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
-        route.fulfill({
-          json: {
-            status: 'questions',
-            questionsId: 'c'.repeat(64),
-            questions: [
-              {
-                key: 'goal',
-                label: 'Goal',
-                question: 'Which synthetic goal should guide this run?',
-                why: 'Synthetic research gap.',
-                suggestedAnswer: 'Grow adoption',
-                basis: [],
-              },
-            ],
-          },
-        })
-      );
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) => {
+        questionsAsked = true;
+        return route.fulfill({ json: { status: 'questions', questionsId: pendingQuestions.questionsId, questions: pendingQuestions.questions } });
+      });
       await sources.open(mount);
+      const listing = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+        path: MKTG_DOCUMENTS_API_PATH,
+        project: DOCUMENT_PROJECT.uid,
+      });
+      const recordedDetail = await page.evaluate(async ({ path, project }) => (await fetch(`${path}?project=${encodeURIComponent(project)}`)).json(), {
+        path: `${MKTG_DOCUMENTS_API_PATH}/${type.agentKey}/living`,
+        project: DOCUMENT_PROJECT.uid,
+      });
+      await page.route('**/api/mktg-agents/documents?*', (route) => route.fulfill({ json: { ...listing, runs: recorded ? [recordedRun()] : [] } }));
+      await page.route(new RegExp(`/documents/${type.agentKey}/living(?:[?]|$)`), (route) =>
+        route.fulfill({ json: { ...recordedDetail, revisions: [], current: null, runs: recorded ? [recordedRun()] : [] } })
+      );
       const start = page.getByTestId('mktg-run-start').getByRole('button');
       await expect(start).toBeEnabled();
       expect(sources.generated).toHaveLength(0);
@@ -408,13 +591,31 @@ test.describe('Marketing OS new run Sources', () => {
   for (const state of ['empty', 'error', 'denied', 'loading'] as const) {
     test(`${state} history remains an honest no-auto-start state`, async ({ page }) => {
       const sources = await setupFreshSources(page, { state });
+      const historyRead =
+        state === 'loading'
+          ? page.waitForRequest((request) => new URL(request.url()).pathname.startsWith(MKTG_LAST_INTAKE_API + '/') && request.url().includes('/last?'))
+          : null;
       await sources.open();
       if (state === 'loading') {
-        await expect(page.getByTestId('mktg-run-sources-loading')).toBeVisible();
-        await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
-        await expect(page.getByTestId('mktg-run-start-reason')).toContainText('Wait for your sources');
+        // Rule 5 /119.2: no partial Sources form before its first server observation resolves.
+        await expect(page.getByTestId('mktg-agent-run-checking')).toBeVisible();
+        await expect(page.getByTestId('mktg-agent-run-checking')).toHaveAttribute('aria-busy', 'true');
+        await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
+        expect(sources.generated).toHaveLength(0);
+        expect(sources.polls()).toBe(0);
+        await historyRead;
+        const heldAt = Date.now();
+        // Deliberately delay the NETWORK answer for six real seconds (143 runtime repro), not a UI synchronization sleep.
+        await new Promise<void>((resolve) => setTimeout(resolve, 6000));
+        await expect(page.getByTestId('mktg-agent-run-checking')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
         sources.releaseHistory();
+        await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
         await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
+        await test.info().attach('delayed-history-runtime.json', {
+          body: JSON.stringify({ heldMs: Date.now() - heldAt, landedOnSources: true, generates: sources.generated.length, privatePolls: sources.polls() }),
+          contentType: 'application/json',
+        });
       } else if (state === 'denied') {
         await expect(page.getByTestId('mktg-run-sources-denied')).toContainText('write access');
         await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
@@ -422,6 +623,20 @@ test.describe('Marketing OS new run Sources', () => {
         await expect(page.getByTestId('mktg-run-source-notes')).toHaveCount(0);
       } else {
         await expect(page.getByTestId('mktg-run-sources-note')).toContainText(state === 'empty' ? 'Suggested defaults' : 'could not be loaded');
+        if (state === 'error') {
+          // A failed history read settles to usable Sources; explicit browser retry can load recovered server inputs.
+          await page.screenshot({ path: test.info().outputPath('sources-history-failed-usable.png'), fullPage: true });
+          await page.route(`**${MKTG_LAST_INTAKE_API}/*/last?*`, (route) =>
+            route.fulfill({ json: { intake: { answers: sources.answers, documentCount: 0, logoCount: 0 } } })
+          );
+          await page.reload({ waitUntil: 'domcontentloaded' });
+          await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+          await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
+          await test.info().attach('failed-history-retry-runtime.json', {
+            body: JSON.stringify({ failureSettledToSources: true, explicitReloadRecoveredInputs: true, generates: sources.generated.length }),
+            contentType: 'application/json',
+          });
+        }
       }
       expect(sources.generated).toHaveLength(0);
       expect(sources.polls()).toBe(0);

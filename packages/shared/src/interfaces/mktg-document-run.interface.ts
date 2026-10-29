@@ -116,6 +116,13 @@ export interface MktgRunPendingQuestions {
   askedAt: string;
 }
 
+/** Scoped client presentation of a server-confirmed concurrent-answer conflict; never an API payload. */
+export interface MktgRunAnsweredNotice {
+  runId: string;
+  questionsId: string;
+  message: string;
+}
+
 /** Answers scoped to the opaque public run id in the route. */
 export interface MktgRunAnswersRequest {
   project: string;
@@ -127,6 +134,16 @@ export interface MktgRunAnswersRequest {
 export interface MktgPublicRunAnswersResponse {
   runId: string;
   state: 'writing';
+}
+
+/** Optional navigation-only retired-row hint; never a private run record or capability. */
+export interface MktgRetiredRunHint {
+  runId: string;
+  state: 'discarded' | 'superseded';
+  replacedBy: string | null;
+  /** Safe display name only; no email, subject or member data. */
+  closedBy: string | null;
+  closedAt: string | null;
 }
 
 /** Stored states include completion; closed markers appear only on selected details. */
