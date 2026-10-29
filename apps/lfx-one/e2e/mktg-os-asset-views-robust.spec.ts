@@ -103,14 +103,20 @@ for (const width of [1440, 1280, 390]) {
     await page.screenshot({ path: info.outputPath(`structure-${width}.png`), fullPage: true });
   });
 
-  test(`standalone Draft structure at ${width}px`, async ({ page }, info) => {
+  test(`a Draft lands in the document frame at ${width}px`, async ({ page }, info) => {
     await page.setViewportSize({ width, height: 1000 });
-    await openDraftAssetRun(page);
-    await expect(page.getByTestId('mktg-framework-view-metadata')).toHaveCount(1);
-    await expect(page.getByTestId('mktg-framework-view-approval-state')).toHaveText('Draft');
-    await expect(page.getByTestId('mktg-framework-view-meta')).toContainText('v1');
-    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-approve')).toHaveCount(0);
+    const fixture = await openDraftAssetRun(page);
+    await expect(page.getByTestId('mktg-agent-run-status')).toContainText('You can leave');
+    await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+    fixture.finish();
+    await expect(page).toHaveURL(new RegExp('revision=' + fixture.revisionId), { timeout: 20_000 });
+    await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-metadata')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Draft');
+    await expect(page.getByTestId('mktg-document-view-meta')).toContainText('v1');
+    await expect(page.getByTestId('mktg-framework-view-metadata')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open in Documents', exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-approve')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`draft-structure-${width}.png`), fullPage: true });
   });

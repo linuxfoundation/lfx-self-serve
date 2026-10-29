@@ -598,7 +598,15 @@ export class MktgRunProgressComponent {
       if (this.pausedWithoutAnswers()) return 'The agent is waiting for input.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState() === 'completed') return 'The produced revision is stored.';
-      if (this.runState()) return this.runDocumentType() ? `Writing the ${this.runDocumentType()?.itemLabel}.` : 'Generating the asset.';
+      if (this.runState()) {
+        const type = this.runDocumentType();
+        if (type) {
+          const noun = type.agentKey === 'linkedin-post' ? 'post' : 'report';
+          return `${type.agentName} is working on your ${noun}.`;
+        }
+        return 'Generating the asset.';
+      }
+
       return this.viewSnapshot() ? 'The asset is ready.' : '';
     });
   }

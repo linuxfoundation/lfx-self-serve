@@ -694,6 +694,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
 /** Dedicated per-user profile and source intake; no project dependencies or feedback round. */
 export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
+  liveActivity: true,
   oneOffDocument: true,
   tracksDocumentRun: true,
   lastIntakeFields: ['content_source', 'content_text', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY],

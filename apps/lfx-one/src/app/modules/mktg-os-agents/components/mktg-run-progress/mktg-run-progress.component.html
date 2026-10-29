@@ -122,17 +122,25 @@
     } @else if (state === 'completed') {
       <p class="text-sm text-gray-600">The produced revision is stored.</p>
     } @else {
-      <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
-        @if (runDocumentType()) {
-          <li>{{ state === 'storing' ? 'Written' : 'Writing…' }}</li>
-          <li>{{ state === 'storing' ? 'Saving…' : 'It will appear here when it is ready.' }}</li>
-        } @else {
-          <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
-          <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
-        }
-      </ol>
+      @if (!runDocumentType() || !visibleRunActivity()?.length) {
+        <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
+          @if (runDocumentType()) {
+            <li>{{ state === 'storing' ? 'Written' : 'Writing…' }}</li>
+            <li>{{ state === 'storing' ? 'Saving…' : 'It will appear here when it is ready.' }}</li>
+          } @else {
+            <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
+            <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+          }
+        </ol>
+      }
       @if (runRecorded()) {
-        <p class="text-sm text-gray-500">You can leave this page. The run is recorded and will be checked when you return.</p>
+        <p class="text-sm text-gray-500">
+          @if (runDocumentType()) {
+            You can leave this page — the agent keeps working.
+          } @else {
+            You can leave this page. The run is recorded and will be checked when you return.
+          }
+        </p>
       } @else {
         <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
       }
@@ -149,7 +157,14 @@
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
     }
     @if (visibleRunActivity(); as activity) {
-      <lfx-mktg-run-activity [activity]="activity" [title]="generatingLabel()" [startedAt]="activityStartedAt()" [showQuestions]="false" />
+      @if (!runDocumentType() || activity.length) {
+        <lfx-mktg-run-activity
+          [activity]="activity"
+          [title]="generatingLabel()"
+          [startedAt]="activityStartedAt()"
+          [showQuestions]="false"
+          [showHeader]="!runDocumentType()" />
+      }
     }
     @if (state === 'failed') {
       <div class="flex flex-wrap items-center justify-between gap-4 pt-4" data-testid="mktg-document-view-failure-actions">
