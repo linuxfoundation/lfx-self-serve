@@ -4410,6 +4410,21 @@ export class AnalyticsController {
     );
   }
 
+  /** `GET /api/analytics/overview-newsletters` — the newsletter summary in every period and each newsletter sent. */
+  public async getOverviewNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_newsletters',
+      (query) => this.healthMetricsOverviewService.getNewsletters(req, query),
+      (response) => ({
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
+      })
+    );
+  }
+
   /** One Overview card read: validate the foundation, read every period, log counts only. */
   private async readOverviewCard<T>(
     req: Request,

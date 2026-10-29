@@ -183,6 +183,42 @@ export interface HealthMetricsOverviewCode {
   reviewers: number | null;
 }
 
+/** One period's newsletter figures; rates are 0–1 shares, growth a fraction of the baseline's subscribers. */
+export interface HealthMetricsOverviewNewsletterPeriod {
+  subscribers: number | null;
+  subscribersGrowth: number | null;
+  /** ISO date the growth is measured from. */
+  growthBaselineDate: string | null;
+  newslettersSent: number | null;
+  avgOpenRate: number | null;
+  avgClickToOpenRate: number | null;
+  highEngagement: number | null;
+  mediumEngagement: number | null;
+  lowEngagement: number | null;
+  /** How many newsletters the High / Medium / Low split is based on. */
+  newslettersConsidered: number | null;
+  mostEngagingName: string | null;
+  mostEngagingClickToOpenRate: number | null;
+}
+
+/** One sent newsletter; its rates are `null` when the send carries no engagement data. */
+export interface HealthMetricsOverviewNewsletterSend {
+  key: string;
+  name: string;
+  /** ISO date. */
+  sentDate: string | null;
+  hasEngagementData: boolean;
+  openRate: number | null;
+  clickToOpenRate: number | null;
+}
+
+/** `GET /api/analytics/overview-newsletters` — the summary per period and every newsletter sent, latest first. */
+export interface HealthMetricsOverviewNewsletters {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewNewsletterPeriod | null>;
+  newsletters: HealthMetricsOverviewNewsletterSend[];
+}
+
 /** Where a card's read stands: loading until the first foundation resolves, then ready or failed. */
 export type HealthMetricsOverviewCardStatus = 'loading' | 'failed' | 'ready';
 
@@ -458,6 +494,54 @@ export interface HealthMetricsOverviewCodeView {
   isEmpty: boolean;
   kpis: HealthMetricsOverviewKpiView[];
   roles: HealthMetricsOverviewCodeRoleView[];
+}
+
+/** One newsletter's point on the rate chart; `x` and the `y`s are percentages of the plot, `y` from the top. */
+export interface HealthMetricsOverviewNewsletterPointView {
+  key: string;
+  xPct: string;
+  openYPct: string;
+  clickYPct: string;
+  /** "Name · Mon D, YYYY · open N%, click N%", the point's tooltip and its screen-reader text. */
+  label: string;
+}
+
+/** A month label under the first newsletter sent in that month. */
+export interface HealthMetricsOverviewNewsletterTickView {
+  label: string;
+  xPct: string;
+}
+
+/** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */
+export interface HealthMetricsOverviewNewsletterChartView {
+  openPath: string;
+  openAreaPath: string;
+  clickPath: string;
+  points: HealthMetricsOverviewNewsletterPointView[];
+  ticks: HealthMetricsOverviewNewsletterTickView[];
+}
+
+/** One High / Medium / Low row of the subscriber engagement split. */
+export interface HealthMetricsOverviewNewsletterEngagementRowView {
+  key: 'high' | 'medium' | 'low';
+  label: string;
+  description: string;
+  dotClass: string;
+  countLabel: string;
+  pctLabel: string;
+  /** The segment's share of the bar; 0 draws none. */
+  widthPct: number;
+}
+
+export interface HealthMetricsOverviewNewsletterView {
+  isEmpty: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  /** `null` when no newsletter in the period carries engagement data. */
+  chart: HealthMetricsOverviewNewsletterChartView | null;
+  /** "Based on opens and clicks across the last N newsletters"; empty when the view gives no count. */
+  engagementBasis: string;
+  engagement: HealthMetricsOverviewNewsletterEngagementRowView[];
+  mostEngaging: { name: string; rateLabel: string } | null;
 }
 
 /** How the board table is sorted; the design opens on the lowest attendance first. */

@@ -16,6 +16,7 @@ import {
   buildHealthMetricsOverviewBoardView,
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
+  buildHealthMetricsOverviewNewsletterView,
   buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewEventsView,
@@ -39,6 +40,8 @@ import type {
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewChurnTotals,
   HealthMetricsOverviewCode,
+  HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
@@ -723,6 +726,121 @@ describe('buildHealthMetricsOverviewCodeView', () => {
     expect(buildHealthMetricsOverviewCodeView({ ...code, measured: false }, 'YTD').isEmpty).toBe(true);
     const none = { ...code, periods: everyPeriod({ contributors: 0, newContributors: 0 }), committers: null, maintainers: 0, reviewers: null };
     expect(buildHealthMetricsOverviewCodeView(none, 'YTD').isEmpty).toBe(true);
+  });
+});
+
+describe('buildHealthMetricsOverviewNewsletterView', () => {
+  const year = new Date().getFullYear();
+  const period: HealthMetricsOverviewNewsletterPeriod = {
+    subscribers: 1458,
+    subscribersGrowth: 0.39,
+    growthBaselineDate: `${year}-01-05`,
+    newslettersSent: 10,
+    avgOpenRate: 0.43,
+    avgClickToOpenRate: 0.09,
+    highEngagement: 175,
+    mediumEngagement: 496,
+    lowEngagement: 787,
+    newslettersConsidered: 10,
+    mostEngagingName: 'Monthly: Protocol ships',
+    mostEngagingClickToOpenRate: 0.12,
+  };
+  const send = (key: string, sentDate: string, openRate: number | null, clickToOpenRate: number | null, hasEngagementData = true) => ({
+    key,
+    name: `Newsletter ${key}`,
+    sentDate,
+    hasEngagementData,
+    openRate,
+    clickToOpenRate,
+  });
+  const newsletters: HealthMetricsOverviewNewsletters = {
+    measured: true,
+    periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(period),
+    // Latest first, as the view ranks them.
+    newsletters: [
+      send('n4', `${year}-09-21`, 0.5, 0.12),
+      send('n3', `${year}-08-24`, 0.4, null),
+      send('n2', `${year}-08-03`, 0.3, 0.1),
+      send('test', `${year}-07-30`, null, null, false),
+      send('old', `${year - 1}-12-01`, 0.6, 0.2),
+    ],
+  };
+
+  it('reads the period summary into the KPI strip, with growth since the baseline month', () => {
+    const view = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD');
+
+    expect(view.isEmpty).toBe(false);
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
+      ['Subscribers', '1,458'],
+      ['Newsletters sent', '10'],
+      ['Avg. open rate', '43%'],
+      ['Avg. click-to-open rate', '9%'],
+    ]);
+    expect(view.kpis[0]?.delta).toEqual({ label: '39% since Jan', direction: 'up', good: true });
+    expect(view.engagementBasis).toBe('Based on opens and clicks across the last 10 newsletters');
+    expect(view.mostEngaging).toEqual({ name: 'Monthly: Protocol ships', rateLabel: '12% click-to-open' });
+  });
+
+  it('charts the period’s newsletters with engagement data, oldest first, click rate as open rate × click-to-open', () => {
+    const chart = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').chart;
+
+    expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
+    expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
+    // The scale tops out at 50%, the highest open rate rounded up to the next 10%.
+    expect(chart?.points.map((point) => point.openYPct)).toEqual(['40.00', '20.00', '0.00']);
+    expect(chart?.points[0]?.clickYPct).toBe('94.00');
+    expect(chart?.points[1]?.clickYPct).toBe('');
+    expect(chart?.points[2]?.label).toBe(`Newsletter n4 · Sep 21, ${year} · open 50%, click 6%`);
+    expect(chart?.points[1]?.label).toBe(`Newsletter n3 · Aug 24, ${year} · open 40%, click —`);
+    expect(chart?.ticks).toEqual([
+      { label: 'Aug', xPct: '0.00' },
+      { label: 'Sep', xPct: '100.00' },
+    ]);
+    // The click line skips the newsletter without a click-to-open rate rather than drawing it at zero.
+    expect(chart?.clickPath.split('L')).toHaveLength(2);
+    expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
+  });
+
+  it('centres a lone newsletter and has no chart when none in the period carries engagement data', () => {
+    const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.2)] };
+    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
+
+    const untracked = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null, false)] };
+    expect(buildHealthMetricsOverviewNewsletterView(untracked, 'YTD').chart).toBeNull();
+  });
+
+  it('splits subscribers by engagement, keeping a sliver for a level too small to see', () => {
+    const engagement = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').engagement;
+
+    expect(engagement.map((row) => [row.label, row.description, row.countLabel, row.pctLabel])).toEqual([
+      ['High', 'Opened 7+ newsletters and clicked a link', '175', '12%'],
+      ['Medium', 'Opened 3–6 newsletters', '496', '34%'],
+      ['Low', 'Opened 2 newsletters or fewer', '787', '54%'],
+    ]);
+
+    const tiny = { ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, lowEngagement: 10000 }) };
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.widthPct).toBe(1.5);
+  });
+
+  it('is empty when nothing was sent in the period or the foundation is unmeasured', () => {
+    const none = { ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, newslettersSent: 0 }) };
+
+    expect(buildHealthMetricsOverviewNewsletterView(none, 'YTD').isEmpty).toBe(true);
+    expect(buildHealthMetricsOverviewNewsletterView({ ...newsletters, measured: false }, 'YTD').isEmpty).toBe(true);
+    expect(
+      buildHealthMetricsOverviewNewsletterView({ ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(null) }, 'YTD').isEmpty
+    ).toBe(true);
+  });
+
+  it('drops the growth month and the basis when the view gives neither', () => {
+    const bare = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: null, newslettersConsidered: null }),
+    };
+    const view = buildHealthMetricsOverviewNewsletterView(bare, 'YTD');
+
+    expect(view.kpis[0]?.delta?.label).toBe('39%');
+    expect(view.engagementBasis).toBe('');
   });
 });
 

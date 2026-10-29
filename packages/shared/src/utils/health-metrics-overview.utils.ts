@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_OVERVIEW_GAUGE_TINT,
   HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_STROKES,
@@ -55,6 +56,11 @@ import type {
   HealthMetricsOverviewGaugeCapView,
   HealthMetricsOverviewKpiStripLayout,
   HealthMetricsOverviewKpiView,
+  HealthMetricsOverviewNewsletterChartView,
+  HealthMetricsOverviewNewsletterEngagementRowView,
+  HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletters,
+  HealthMetricsOverviewNewsletterView,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewNpsView,
   HealthMetricsOverviewOrgsHalfView,
@@ -375,6 +381,41 @@ export function buildHealthMetricsOverviewCodeView(code: HealthMetricsOverviewCo
 }
 
 /** The board's meetings and average attendance, and every member invited in the period. */
+/**
+ * The newsletter card: the period's summary, the open and click rate of every newsletter sent in it, and the subscriber
+ * engagement split. Click rate is open rate × click-to-open rate, as both are shares of the same recipients.
+ */
+export function buildHealthMetricsOverviewNewsletterView(
+  newsletters: HealthMetricsOverviewNewsletters,
+  range: HealthMetricsRange
+): HealthMetricsOverviewNewsletterView {
+  const l2 = toHealthMetricsOverviewRange(range);
+  const period = l2 ? newsletters.periods[l2] : null;
+  const considered = period?.newslettersConsidered ?? null;
+
+  return {
+    isEmpty: !newsletters.measured || !period?.newslettersSent,
+    kpis: [
+      {
+        ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
+        delta: buildPctDelta(period?.subscribersGrowth ?? null, true, growthSince(period?.growthBaselineDate ?? null)),
+      },
+      kpi('sent', 'Newsletters sent', formatCount(period?.newslettersSent)),
+      kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null, false)),
+      kpi('cto', 'Avg. click-to-open rate', formatShare(period?.avgClickToOpenRate ?? null, false)),
+    ],
+    chart: buildNewsletterChart(newsletters, getYearForRange(range)),
+    engagementBasis:
+      considered && considered > 0
+        ? `Based on opens and clicks across the last ${considered === 1 ? 'newsletter' : `${formatCount(considered)} newsletters`}`
+        : '',
+    engagement: buildNewsletterEngagement(period),
+    mostEngaging: period?.mostEngagingName
+      ? { name: period.mostEngagingName, rateLabel: `${formatShare(period.mostEngagingClickToOpenRate, false)} click-to-open` }
+      : null,
+  };
+}
+
 export function buildHealthMetricsOverviewBoardView(board: HealthMetricsOverviewBoard, range: HealthMetricsRange): HealthMetricsOverviewBoardView {
   const l2 = toHealthMetricsOverviewRange(range);
   const period = l2 ? board.periods[l2] : null;
@@ -561,6 +602,88 @@ function buildTrendChart(
       pct: (((window - days) / window) * 100).toFixed(2),
     })),
   };
+}
+
+/** " since Jun" from the growth baseline; none when the view gives no baseline. */
+function growthSince(baselineDate: string | null): string {
+  const month = baselineDate ? formatIsoMonth(baselineDate) : '';
+  return month ? ` since ${month}` : '';
+}
+
+/** "Jun" from an ISO date; empty for one that is not a date. */
+function formatIsoMonth(iso: string): string {
+  const parsed = new Date(`${iso.slice(0, 7)}-01T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+}
+
+/**
+ * One point per newsletter sent in the period's year with engagement data, oldest first and evenly spaced, as the design
+ * spaces them. The scale tops out at the highest open rate rounded up to the next 10%.
+ */
+function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
+  const sends = newsletters.newsletters
+    .filter((send) => send.hasEngagementData && send.openRate !== null && send.sentDate?.startsWith(`${year}-`))
+    .sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
+  if (!sends.length) return null;
+
+  const top = Math.min(1, Math.max(0.1, Math.ceil(Math.max(...sends.map((send) => send.openRate as number)) * 10) / 10));
+  const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
+  const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
+  const points = sends.map((send, index) => {
+    const open = send.openRate as number;
+    const click = send.clickToOpenRate === null ? null : open * send.clickToOpenRate;
+    return { send, x: x(index), openY: y(open), clickY: click === null ? null : y(click), open, click };
+  });
+  const path = (coords: [number, number][]): string => coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
+  const openCoords = points.map((point): [number, number] => [point.x, point.openY]);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const seenMonths = new Set<string>();
+
+  return {
+    openPath: path(openCoords),
+    openAreaPath: first && last ? `${path(openCoords)} L${last.x.toFixed(1)} 200 L${first.x.toFixed(1)} 200 Z` : '',
+    clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
+    points: points.map((point) => ({
+      key: point.send.key,
+      xPct: ((point.x / 600) * 100).toFixed(2),
+      openYPct: ((point.openY / 200) * 100).toFixed(2),
+      clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
+      label: [
+        point.send.name,
+        point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : '',
+        `open ${formatShare(point.open, false)}, click ${formatShare(point.click)}`,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    })),
+    ticks: points.flatMap((point) => {
+      const month = point.send.sentDate?.slice(0, 7) ?? '';
+      if (!month || seenMonths.has(month)) return [];
+      seenMonths.add(month);
+      return [{ label: formatIsoMonth(`${month}-01`), xPct: ((point.x / 600) * 100).toFixed(2) }];
+    }),
+  };
+}
+
+/** High / Medium / Low with each level's share of the three; a level too small to see keeps a sliver of the bar. */
+function buildNewsletterEngagement(period: HealthMetricsOverviewNewsletterPeriod | null): HealthMetricsOverviewNewsletterEngagementRowView[] {
+  const levels = [
+    { key: 'high', count: period?.highEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
+    { key: 'medium', count: period?.mediumEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
+    { key: 'low', count: period?.lowEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+  ] as const;
+  const total = levels.reduce((sum, level) => sum + (level.count ?? 0), 0);
+
+  return levels.map((level) => ({
+    key: level.key,
+    label: HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT[level.key].label,
+    description: HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT[level.key].description,
+    dotClass: level.dotClass,
+    countLabel: formatCount(level.count),
+    pctLabel: total > 0 && level.count !== null ? formatShare(level.count / total) : NOT_AVAILABLE,
+    widthPct: total > 0 && level.count ? Math.max((level.count / total) * 100, 1.5) : 0,
+  }));
 }
 
 /** The smallest whole step from 1, 2, 2.5 or 5 times a power of ten that covers `top` in at most 5 steps. */

@@ -1,0 +1,129 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-newsletter">
+  @if (isYtd()) {
+    <div overviewEmptyAction class="mt-[8px]">
+      <lfx-overview-explore-link [link]="createNewsletterLink()" leadingIcon="fa-light fa-plus" testId="overview-newsletter-empty-create" />
+    </div>
+  }
+
+  @if (view(); as view) {
+    <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-newsletter-kpis" />
+
+    <!-- The two panels sit side by side, with a divider, above the 900px the design stacks the other cards' halves at. -->
+    <div class="flex flex-col gap-[24px] min-[901px]:flex-row">
+      <div class="flex min-w-0 flex-col gap-[14px] min-[901px]:flex-[2_1_0%]" data-testid="overview-newsletter-rates">
+        <div class="flex flex-wrap items-center justify-between gap-x-[16px] gap-y-[6px]">
+          <span class="text-[13px] font-medium text-gray-700">Open and click rate by newsletter</span>
+          <div class="flex items-center gap-[14px] text-[12px] text-gray-500" aria-hidden="true">
+            <span class="inline-flex items-center gap-[6px]"><span class="h-[8px] w-[8px] rounded-full" [class]="fills.blue"></span>Open rate</span>
+            <span class="inline-flex items-center gap-[6px]"><span class="h-[8px] w-[8px] rounded-full" [class]="fills.purple"></span>Click rate</span>
+          </div>
+        </div>
+
+        @if (view.chart; as chart) {
+          <div class="flex flex-col gap-[8px]">
+            <div class="relative mx-[6px] h-[200px]">
+              <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 600 200"
+                preserveAspectRatio="none"
+                class="absolute inset-0 block overflow-visible"
+                aria-hidden="true"
+                data-testid="overview-newsletter-chart">
+                <path stroke="none" [attr.fill]="areaFill" [attr.d]="chart.openAreaPath"></path>
+                <path fill="none" stroke-width="2" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.progress" [attr.d]="chart.openPath"></path>
+                @if (chart.clickPath) {
+                  <path fill="none" stroke-width="2" vector-effect="non-scaling-stroke" [attr.stroke]="strokes.thisYear" [attr.d]="chart.clickPath"></path>
+                }
+              </svg>
+              <!-- Points sit over the stretched SVG as HTML, so they stay round at any width. -->
+              @for (point of chart.points; track point.key) {
+                <span
+                  class="absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                  [style.border-color]="strokes.progress"
+                  [style.left.%]="point.xPct"
+                  [style.top.%]="point.openYPct"
+                  [attr.title]="point.label"
+                  [attr.data-testid]="'overview-newsletter-open-' + point.key"></span>
+                @if (point.clickYPct) {
+                  <span
+                    class="absolute h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                    [style.border-color]="strokes.thisYear"
+                    [style.left.%]="point.xPct"
+                    [style.top.%]="point.clickYPct"
+                    [attr.title]="point.label"></span>
+                }
+              }
+            </div>
+            <div class="relative mx-[6px] h-[16px]" aria-hidden="true">
+              @for (tick of chart.ticks; track tick.xPct) {
+                <span class="absolute -translate-x-1/2 text-[11px] text-gray-500" [style.left.%]="tick.xPct">{{ tick.label }}</span>
+              }
+            </div>
+            <ul class="sr-only" aria-label="Open and click rate by newsletter">
+              @for (point of chart.points; track point.key) {
+                <li>{{ point.label }}</li>
+              }
+            </ul>
+          </div>
+        } @else {
+          <p class="text-[13px] text-gray-500" data-testid="overview-newsletter-chart-empty">
+            No opens or clicks are recorded yet for the newsletters sent in this period.
+          </p>
+        }
+      </div>
+
+      <div
+        class="flex min-w-0 flex-col gap-[12px] min-[901px]:flex-[1_1_0%] min-[901px]:border-l min-[901px]:border-gray-200 min-[901px]:pl-[24px]"
+        data-testid="overview-newsletter-engagement">
+        <div class="flex flex-col gap-[2px]">
+          <span class="text-[13px] font-medium text-gray-700">Subscriber engagement</span>
+          @if (view.engagementBasis) {
+            <span class="text-[12px] text-gray-500">{{ view.engagementBasis }}</span>
+          }
+        </div>
+        <div class="flex h-[6px] gap-[2px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+          @for (row of view.engagement; track row.key) {
+            @if (row.widthPct > 0) {
+              <span [class]="row.dotClass" [style.flex]="'0 0 ' + row.widthPct + '%'"></span>
+            }
+          }
+        </div>
+        <div class="flex flex-col">
+          @for (row of view.engagement; track row.key; let last = $last) {
+            <div
+              class="grid grid-cols-[1fr_auto_44px] items-center gap-[10px] py-[8px]"
+              [class.border-b]="!last"
+              [class.border-gray-100]="!last"
+              [attr.data-testid]="'overview-newsletter-engagement-' + row.key">
+              <span class="flex min-w-0 flex-col">
+                <span class="inline-flex items-center gap-[8px] text-[13px] font-medium text-gray-900"
+                  ><span class="h-[8px] w-[8px] flex-none rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}</span
+                >
+                <span class="pl-[16px] text-[12px] text-gray-500">{{ row.description }}</span>
+              </span>
+              <span class="text-right text-[13px] text-gray-900">{{ row.countLabel }}</span>
+              <span class="text-right text-[12px] text-gray-400">{{ row.pctLabel }}</span>
+            </div>
+          }
+        </div>
+        @if (view.mostEngaging; as mostEngaging) {
+          <div class="flex flex-col gap-[2px]" data-testid="overview-newsletter-most-engaging">
+            <span class="text-[12px] text-gray-500">Most engaging newsletter · {{ mostEngaging.rateLabel }}</span>
+            <span class="text-[13px] font-medium text-gray-900">{{ mostEngaging.name }}</span>
+          </div>
+        }
+      </div>
+    </div>
+  }
+</lfx-overview-card>
