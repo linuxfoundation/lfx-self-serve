@@ -15,7 +15,6 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
     '[style.height.px]': 'size()',
     '[style.--size]': 'sizeVar()',
     role: 'status',
-    '[attr.aria-label]': 'label()',
     'data-testid': 'ui-spinner',
   },
 })
@@ -24,7 +23,7 @@ export class UiSpinnerComponent {
   public readonly size = input<number>(20);
   /** `neutral` is the secondary text colour; `current` follows the parent text colour, for use inside a button. */
   public readonly tone = input<'neutral' | 'current'>('neutral');
-  /** Accessible name announced to screen readers. */
+  /** Screen-reader text inside the status region, announced when the spinner appears. */
   public readonly label = input<string>('Loading');
 
   /** One entry per bar; each bar sets its own rotation and animation delay. */

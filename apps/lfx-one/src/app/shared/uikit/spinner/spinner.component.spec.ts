@@ -17,12 +17,9 @@ describe('UiSpinnerComponent', () => {
     await fixture.whenStable();
   });
 
-  it('is a status region named Loading', () => {
+  it('is a status region whose only announced text is the hidden label', () => {
     expect(host.getAttribute('role')).toBe('status');
-    expect(host.getAttribute('aria-label')).toBe('Loading');
-  });
-
-  it('puts the label in screen-reader text inside the live region', () => {
+    expect(host.getAttribute('aria-label')).toBeNull();
     expect(host.querySelector('.sr-only')?.textContent?.trim()).toBe('Loading');
   });
 
@@ -66,7 +63,7 @@ describe('UiSpinnerComponent', () => {
     fixture.componentRef.setInput('label', 'Fetching members');
     await fixture.whenStable();
 
-    expect(host.getAttribute('aria-label')).toBe('Fetching members');
+    expect(host.getAttribute('aria-label')).toBeNull();
     expect(host.querySelector('.sr-only')?.textContent?.trim()).toBe('Fetching members');
   });
 });
