@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FlexibleConnectedPositionStrategy, Overlay, OverlayContainer, OverlayRef } from '@angular/cdk/overlay';
+import { ComponentPortal } from '@angular/cdk/portal';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiTooltipSide } from '@lfx-one/shared/interfaces';
@@ -34,6 +35,9 @@ class TestHostComponent {
   public readonly label = signal<string | null>(null);
   public readonly delay = 40;
 }
+
+@Component({ selector: 'lfx-ui-test-underlay', template: '' })
+class TestUnderlayComponent {}
 
 describe('UiTooltipDirective', () => {
   let fixture: ComponentFixture<TestHostComponent>;
@@ -209,6 +213,34 @@ describe('UiTooltipDirective', () => {
       expect(listener).not.toHaveBeenCalled();
     });
 
+    it('does not take the keyboard away from an overlay underneath, such as a menu or dialog', async () => {
+      await setup();
+      const underneath = vi.fn();
+      const overlayRef = TestBed.inject(Overlay).create();
+      overlayRef.attach(new ComponentPortal(TestUnderlayComponent));
+      overlayRef.keydownEvents().subscribe(underneath);
+      await hover();
+      expect(tooltip()).not.toBeNull();
+
+      pressKey('ArrowDown');
+      pressKey('Tab');
+      pressKey('Enter');
+      expect(underneath).toHaveBeenCalledTimes(3);
+
+      pressKey('Escape');
+      expect(tooltip()).toBeNull();
+      expect(underneath).toHaveBeenCalledTimes(3);
+      overlayRef.dispose();
+    });
+
+    it('ignores Escape pressed with a modifier key', async () => {
+      await setup();
+      await hover();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', shiftKey: true, bubbles: true, cancelable: true }));
+
+      expect(tooltip()).not.toBeNull();
+    });
+
     it('Escape ends keyboard-focus mode, so a later hover closes normally', async () => {
       await setup();
       pressKey('Tab');
@@ -271,6 +303,12 @@ describe('UiTooltipDirective', () => {
       await flush();
 
       expect(descriptions()).toEqual(['Command C']);
+
+      fixture.componentInstance.shortcut.set(['⇧', '⇥', '⌘K']);
+      await flush();
+      expect(descriptions()).toEqual(['Shift Tab Command K']);
+      fixture.componentInstance.shortcut.set(['⌘', 'C']);
+      await flush();
 
       // The description is recomputed when the tooltip inputs change, not when aria-label does.
       fixture.componentInstance.label.set(null);

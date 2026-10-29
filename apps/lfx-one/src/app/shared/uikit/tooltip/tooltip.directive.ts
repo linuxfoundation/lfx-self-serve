@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { AriaDescriber, FocusMonitor } from '@angular/cdk/a11y';
+import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, Injector, input, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UiTooltipSide } from '@lfx-one/shared/interfaces';
-import { filter, take } from 'rxjs';
+import { toSpokenKeys } from '@lfx-one/shared/utils';
+import { take } from 'rxjs';
 
 import { UiTooltipPanelComponent } from './tooltip-panel.component';
 
@@ -115,9 +117,8 @@ export class UiTooltipDirective {
 
   // The visible shortcut is spoken too. When the text only repeats the host's aria-label, the shortcut is all that adds.
   private descriptionOf(config: { text: string; title: string; shortcut: string[] }): string {
-    const names: Record<string, string> = { '⌘': 'Command', '⌥': 'Option', '⇧': 'Shift', '⌃': 'Control', '↵': 'Enter', '⎋': 'Escape' };
     const body = [config.title, config.text].filter(Boolean).join('. ');
-    const spoken = config.shortcut.map((key) => names[key] ?? key).join(' ');
+    const spoken = toSpokenKeys(config.shortcut);
     return [body === this.host.getAttribute('aria-label')?.trim() ? '' : body, spoken].filter(Boolean).join('. ');
   }
 
@@ -133,7 +134,10 @@ export class UiTooltipDirective {
     // Keyboard focus keeps it open, or keeps a pending show alive; blur closes it.
     if (this.keyboardFocused) return;
     this.clearShowTimer();
-    if (!this.overlayRef) return;
+    if (!this.overlayRef) {
+      this.stopListeningForEscape();
+      return;
+    }
     this.cancelHide();
     this.hideTimer = setTimeout(() => {
       this.hideTimer = null;
@@ -143,17 +147,32 @@ export class UiTooltipDirective {
 
   private scheduleShow(): void {
     if (!this.isBrowser || this.overlayRef || this.timer !== null || this.disabled() || !(this.text() || this.title())) return;
-    // Escape during the delay cancels the pending show.
-    this.document.addEventListener('keydown', this.onPendingKeydown);
+    this.listenForEscape();
     this.timer = setTimeout(() => {
-      this.clearShowTimer();
+      this.timer = null;
       this.show();
     }, this.delay());
   }
 
-  private readonly onPendingKeydown = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape') this.dismiss();
+  // Held from the start of the delay until the tooltip is gone, so Escape cancels a pending show and dismisses an open tooltip. It runs
+  // in the capture phase so that, on an open tooltip, the key stops here and an enclosing dialog does not also close. The CDK overlay
+  // keyboard dispatcher is not used: subscribing to it would make this overlay the only one to receive every other key.
+  private readonly onKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || hasModifierKey(event)) return;
+    if (this.overlayRef) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    this.dismiss();
   };
+
+  private listenForEscape(): void {
+    this.document.addEventListener('keydown', this.onKeydown, true);
+  }
+
+  private stopListeningForEscape(): void {
+    this.document.removeEventListener('keydown', this.onKeydown, true);
+  }
 
   private dismiss(): void {
     this.keyboardFocused = false;
@@ -163,6 +182,7 @@ export class UiTooltipDirective {
   private hide(): void {
     this.clearShowTimer();
     this.cancelHide();
+    this.stopListeningForEscape();
     const overlayRef = this.overlayRef;
     if (!overlayRef) return;
     this.overlayRef = null;
@@ -174,7 +194,6 @@ export class UiTooltipDirective {
     if (this.timer === null) return;
     clearTimeout(this.timer);
     this.timer = null;
-    this.document.removeEventListener('keydown', this.onPendingKeydown);
   }
 
   private cancelHide(): void {
@@ -204,6 +223,7 @@ export class UiTooltipDirective {
         this.overlayRef = null;
         this.panel = null;
         this.cancelHide();
+        this.stopListeningForEscape();
       });
     // The tooltip stays open while the pointer is over it (WCAG 1.4.13 hoverable).
     const panelElement: HTMLElement = panel.location.nativeElement;
@@ -213,18 +233,6 @@ export class UiTooltipDirective {
     panelElement.addEventListener('pointerleave', (event) => {
       if ((event as PointerEvent).pointerType !== 'touch') this.scheduleHide();
     });
-    overlayRef
-      .keydownEvents()
-      .pipe(
-        filter((event) => event.key === 'Escape'),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((event) => {
-        // Stop it here so an enclosing dialog does not also close on the same key press.
-        event.preventDefault();
-        event.stopPropagation();
-        this.dismiss();
-      });
   }
 
   private positions(): ConnectedPosition[] {
