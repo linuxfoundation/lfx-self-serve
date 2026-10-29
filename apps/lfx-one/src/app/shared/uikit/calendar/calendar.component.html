@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 280px wide, 12px gaps, 2px row gap, 36px days, 28px weekday row. -->
+<div class="flex w-[280px] flex-col gap-[12px]" data-testid="ui-calendar">
+  <div class="flex items-center justify-between">
+    <lfx-ui-button variant="ghost-neutral" size="md" [iconOnly]="true" icon="fa-light fa-chevron-left" ariaLabel="Previous month" (click)="shiftMonth(-1)" />
+    <span [id]="titleId" class="label-14 font-medium text-ui-neutral-900" aria-live="polite" data-testid="ui-calendar-title">{{ title() }}</span>
+    <lfx-ui-button variant="ghost-neutral" size="md" [iconOnly]="true" icon="fa-light fa-chevron-right" ariaLabel="Next month" (click)="shiftMonth(1)" />
+  </div>
+  <div
+    role="grid"
+    class="flex flex-col gap-[2px]"
+    [attr.aria-labelledby]="ariaLabel() ? null : titleId"
+    [attr.aria-label]="ariaLabel() || null"
+    (keydown)="onKeydown($event)"
+    data-testid="ui-calendar-grid">
+    <div role="row" class="grid grid-cols-7">
+      @for (weekday of weekdays(); track weekday.long) {
+        <div role="columnheader" class="grid h-[28px] place-items-center label-12 uppercase text-ui-neutral-600" [attr.aria-label]="weekday.long">
+          {{ weekday.short }}
+        </div>
+      }
+    </div>
+    @for (week of weeks(); track week.key) {
+      <div role="row" class="grid grid-cols-7">
+        @for (day of week.days; track day.key) {
+          <div role="gridcell" [attr.aria-selected]="day.selected">
+            <button
+              type="button"
+              [class]="dayClasses(day)"
+              [attr.tabindex]="day.key === focusedKey() ? 0 : -1"
+              [attr.aria-label]="day.label"
+              [attr.aria-current]="day.today ? 'date' : null"
+              [attr.aria-disabled]="day.disabled ? 'true' : null"
+              [attr.data-date]="day.key"
+              (click)="select(day)"
+              data-testid="ui-calendar-day">
+              {{ day.number }}
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

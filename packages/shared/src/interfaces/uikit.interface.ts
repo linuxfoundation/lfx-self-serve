@@ -45,6 +45,32 @@ export interface UiModalConfig<D = unknown> {
   describedBy?: boolean;
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
+/** One day button in a uikit calendar month grid. */
+export interface UiCalendarDay {
+  /** Local `YYYY-MM-DD` key. Stable per date. */
+  key: string;
+  /** The date at local midnight. */
+  date: Date;
+  /** Day of the month, shown on the button. */
+  number: number;
+  /** Full spoken date, such as "Monday, October 12, 2026". */
+  label: string;
+  /** True when the day belongs to the previous or next month. */
+  outside: boolean;
+  /** True for today. */
+  today: boolean;
+  /** True for the selected date. */
+  selected: boolean;
+  /** True when the consumer's disabled rule rejects the date. */
+  disabled: boolean;
+}
+
+/** One row of seven days in a uikit calendar month grid. */
+export interface UiCalendarWeek {
+  /** Key of the week's first day. Stable per week. */
+  key: string;
+  /** The seven days, in display order. */
+  days: UiCalendarDay[];
 }
 
 /** Which side of its host a uikit tooltip prefers. */
