@@ -30,32 +30,36 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, copied from the library). `yarn ui:tokens` (from `apps/lfx-one`) regenerates `src/styles/ui-tokens.css`, which `src/styles.scss` loads; a unit spec fails when the two drift. Do not edit the CSS by hand.
 
-- **CSS variables:** every token is a `--ui-*` variable: roles (`--ui-neutral-900`), primitives (`--ui-azure-500`), `--ui-shadow-*`, `--ui-radius-*`, `--ui-height-*`, `--ui-width-*`, `--ui-z-*`, `--ui-breakpoint-*`, `--ui-opacity-*`, `--ui-font-*`, `--ui-spacing-*`. The names carry an extra `--ui-` prefix relative to the library's `bundle.css` (`--shadow-menu` there is `--ui-shadow-menu` here), so they cannot collide with app CSS. Values are on `:root` and `[data-theme='light']`; `[data-theme='dark']` overrides the themed ones. The app has no theme switch yet, so it always renders light.
+- **CSS variables:** every token is a `--ui-*` variable: roles (`--ui-neutral-900`), primitives (`--ui-azure-500`), `--ui-shadow-*`, `--ui-radius-*`, `--ui-height-*`, `--ui-width-*`, `--ui-z-*`, `--ui-breakpoint-*`, `--ui-opacity-*`, `--ui-duration-*`, `--ui-ease*`, `--ui-font-*`, `--ui-spacing-*`. The names carry an extra `--ui-` prefix relative to the library's `bundle.css` (`--shadow-menu` there is `--ui-shadow-menu` here), so they cannot collide with app CSS. Values are on `:root` and `[data-theme='light']`; `[data-theme='dark']` overrides the themed ones. The app has no theme switch yet, so it always renders light.
 - **Tailwind utilities** (v3, `tailwind.config.js`) read those variables, so they follow the theme. Existing classes (`bg-blue-500`, `text-gray-700`, `rounded-md`, `shadow-md`, `text-sm`) are unchanged.
 - **Exact px:** the app root font is 14px, so rem would scale. Library sizes are px values, not Tailwind's rem scale (`h-10` is 35px here; `h-ui-medium` is 40px).
 - **No opacity modifier:** colours are CSS variables, so `bg-ui-accent-500/50` does not work. Use the matching `ui-*-alpha` or lower step (`bg-ui-accent-100`).
 - **Primitives** (`azure`, `slate`, ...) are variables only. Components use the `ui-*` roles; the primitives are for charts, avatars and illustrations (`var(--ui-azure-500)`).
 
-| Need                                                         | Utility                                                                                                                                                | Variable                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| Backgrounds                                                  | `bg-ui-background-100`, `bg-ui-background-200`                                                                                                         | `--ui-background-100/200`     |
-| Role scales (50-900)                                         | `bg-ui-neutral-50`, `text-ui-neutral-600`, `border-ui-accent-200`, `text-ui-danger-700`; also `success`, `warning`, `feature`                          | `--ui-<role>-<step>`          |
-| Translucent neutrals                                         | `bg-ui-neutral-alpha-100`, `border-ui-neutral-alpha-200`                                                                                               | `--ui-neutral-alpha-<step>`   |
-| Focus, scrim                                                 | `ring-ui-focus`, `bg-ui-overlay`                                                                                                                       | `--ui-focus`, `--ui-overlay`  |
-| Shadows                                                      | `shadow-border`, `shadow-small`, `shadow-medium`, `shadow-large`, `shadow-tooltip`, `shadow-menu`, `shadow-modal`, `shadow-fullscreen`, `shadow-focus` | `--ui-shadow-*`               |
-| Edge ring                                                    | `edge`, `edge-hover` (1px translucent ring instead of a border)                                                                                        | `--ui-neutral-alpha-200/300`  |
-| Radii                                                        | `rounded-ui-xs` 6, `rounded-ui-sm` 12, `rounded-ui-md` 16, `rounded-ui-lg` 20, `rounded-ui-full` 9999                                                  | `--ui-radius-*`               |
-| Control heights                                              | `h-ui-tiny` 24, `h-ui-small` 32, `h-ui-medium` 40, `h-ui-large` 48, `h-ui-menu-item` 40, `h-ui-row` 48                                                 | `--ui-height-*`               |
-| Type size and line height                                    | `text-label-14`, `text-copy-14`, `text-button-14`, `text-heading-24`, ...                                                                              | `--ui-font-*`                 |
-| Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono` |
+| Need                                                         | Utility                                                                                                                                                | Variable                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| Backgrounds                                                  | `bg-ui-background-100`, `bg-ui-background-200`                                                                                                         | `--ui-background-100/200`         |
+| Role scales (50-900)                                         | `bg-ui-neutral-50`, `text-ui-neutral-600`, `border-ui-accent-200`, `text-ui-danger-700`; also `success`, `warning`, `feature`                          | `--ui-<role>-<step>`              |
+| Translucent neutrals                                         | `bg-ui-neutral-alpha-100`, `border-ui-neutral-alpha-200`                                                                                               | `--ui-neutral-alpha-<step>`       |
+| Focus, scrim                                                 | `ring-ui-focus`, `bg-ui-overlay`                                                                                                                       | `--ui-focus`, `--ui-overlay`      |
+| Shadows                                                      | `shadow-border`, `shadow-small`, `shadow-medium`, `shadow-large`, `shadow-tooltip`, `shadow-menu`, `shadow-modal`, `shadow-fullscreen`, `shadow-focus` | `--ui-shadow-*`                   |
+| Edge ring                                                    | `edge`, `edge-hover` (1px translucent ring instead of a border)                                                                                        | `--ui-neutral-alpha-200/300`      |
+| Radii                                                        | `rounded-ui-xs` 6, `rounded-ui-sm` 12, `rounded-ui-md` 16, `rounded-ui-lg` 20, `rounded-ui-full` 9999                                                  | `--ui-radius-*`                   |
+| Control heights                                              | `h-ui-tiny` 24, `h-ui-small` 32, `h-ui-medium` 40, `h-ui-large` 48, `h-ui-menu-item` 40, `h-ui-row` 48                                                 | `--ui-height-*`                   |
+| Motion durations                                             | `duration-ui-fast` 120ms, `duration-ui-base` 150ms, `duration-ui-slow` 250ms                                                                           | `--ui-duration-*`                 |
+| Motion easing                                                | `ease-ui` (spring), `ease-ui-standard`                                                                                                                 | `--ui-ease`, `--ui-ease-standard` |
+| Type size and line height                                    | `text-label-14`, `text-copy-14`, `text-button-14`, `text-heading-24`, ...                                                                              | `--ui-font-*`                     |
+| Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono`     |
 
 The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`.
+
+Use `duration-ui-*` / `ease-ui-*` instead of arbitrary `duration-[150ms]` / `ease-[cubic-bezier(...)]` values, and keep `prefers-reduced-motion` gating (`motion-safe:` / `motion-reduce:`).
 
 Review them visually in Storybook under Foundations/Tokens.
 
 ## Storybook
 
-Stories load from `shared/uikit/**/*.stories.ts` only; Foundations/Tokens shows the colour roles, shadows, radii, heights and type roles. Config is in `apps/lfx-one/.storybook/`.
+Stories load from `shared/uikit/**/*.stories.ts` only; Foundations/Tokens shows the colour roles, shadows, radii, heights, type roles and motion. Config is in `apps/lfx-one/.storybook/`.
 
 ```bash
 yarn storybook          # dev server on http://localhost:6006
