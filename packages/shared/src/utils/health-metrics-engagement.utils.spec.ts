@@ -24,6 +24,7 @@ import {
   HealthMetricsEngagementNewsletterPeriod,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRecipient,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
@@ -41,6 +42,10 @@ import {
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
   buildHealthMetricsEngagementNewsletterView,
+  buildHealthMetricsEngagementRecipientRow,
+  countHealthMetricsEngagementRecipients,
+  filterHealthMetricsEngagementRecipients,
+  formatHealthMetricsRelativeTime,
   formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
@@ -67,6 +72,7 @@ function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): H
     neverAttendedReps: 0,
     nonMemberOrgs: 6,
     newsletters: 11,
+    recipients: 1490,
     ...overrides,
   };
 }
@@ -192,6 +198,10 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
 
     expect(nonmem?.count).toBe(6);
     expect(nonmem?.note).toBe('');
+  });
+
+  it('badges recipient engagement with the latest newsletter’s recipients', () => {
+    expect(buildHealthMetricsEngagementSubNavItems(counts()).find((item) => item.key === 'recipients')?.count).toBe(1490);
   });
 
   it('badges newsletter performance with the newsletters sent, and none while unread', () => {
@@ -922,5 +932,73 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
       'YTD'
     );
     expect(flat.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+  });
+});
+
+describe('newsletter recipient rules', () => {
+  const now = new Date('2026-10-28T12:00:00Z');
+  const recipient = (overrides: Partial<HealthMetricsEngagementRecipient>): HealthMetricsEngagementRecipient => ({
+    rank: 1,
+    name: 'Maya Okonkwo',
+    organization: 'Acme Motors',
+    deliveryStatus: 'Delivered',
+    segment: 'opened',
+    clicked: true,
+    opens: 2,
+    lastOpenedAt: '2026-10-28T00:00:00Z',
+    clicks: 5,
+    lastClickedAt: '2026-10-27T11:00:00Z',
+    ...overrides,
+  });
+  const recipients = [
+    recipient({ rank: 1 }),
+    // Clicked without a recorded open: not opened, yet still in the Clicked cut.
+    recipient({ rank: 2, name: 'Daniel Reyes', organization: 'Vendor Corp', segment: 'not-opened', opens: 0, lastOpenedAt: null }),
+    recipient({ rank: 3, name: null, organization: null, segment: 'not-opened', clicked: false, opens: 0, clicks: 0, lastOpenedAt: null, lastClickedAt: null }),
+    // The view can carry an open time on a failed delivery; the row still reads "—".
+    recipient({ rank: 4, name: 'Chen Yu', deliveryStatus: 'Failed', segment: 'failed', clicked: false, opens: null, clicks: null, lastClickedAt: null }),
+  ];
+
+  it('counts each cut, with a click outside any open counted under both Clicked and Not opened', () => {
+    expect(countHealthMetricsEngagementRecipients(recipients)).toEqual({ all: 4, opened: 1, clicked: 2, 'not-opened': 2, failed: 1 });
+  });
+
+  it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'clicked', '').map((row) => row.rank)).toEqual([1, 2]);
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'all', '  vendor ').map((row) => row.rank)).toEqual([2]);
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'not-opened', 'reyes').map((row) => row.rank)).toEqual([2]);
+  });
+
+  it('labels a row, with dashes for a failed delivery and for a missing name or organization', () => {
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now)).toMatchObject({
+      nameLabel: 'Maya Okonkwo',
+      deliveryLabel: 'Delivered',
+      engagementLabel: 'Opened',
+      opensLabel: '2',
+      lastOpenedLabel: '12 hr ago',
+      clicksLabel: '5',
+      lastClickedLabel: '1 day ago',
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[2], now)).toMatchObject({
+      nameLabel: '—',
+      organizationLabel: '—',
+      engagementLabel: 'Not opened',
+    });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[3], now)).toMatchObject({
+      deliveryLabel: 'Failed',
+      engagementLabel: '',
+      opensLabel: '—',
+      clicksLabel: '—',
+      lastOpenedLabel: '—',
+      lastClickedLabel: '—',
+    });
+  });
+
+  it('words a time relative to now, falling back to the date past 30 days', () => {
+    expect(formatHealthMetricsRelativeTime(null, now)).toBe('—');
+    expect(formatHealthMetricsRelativeTime('2026-10-28T11:59:40Z', now)).toBe('Just now');
+    expect(formatHealthMetricsRelativeTime('2026-10-28T11:15:00Z', now)).toBe('45 min ago');
+    expect(formatHealthMetricsRelativeTime('2026-10-24T12:00:00Z', now)).toBe('4 days ago');
+    expect(formatHealthMetricsRelativeTime('2026-08-01T12:00:00Z', now)).toBe('Aug 1, 2026');
   });
 });

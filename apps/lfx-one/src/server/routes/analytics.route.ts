@@ -242,6 +242,11 @@ router.get('/engagement-newsletter-performance', requireDashboardAccess, (req, r
   analyticsController.getEngagementNewsletterPerformance(req, res, next)
 );
 
+// Health Metrics Engagement "Newsletter recipient engagement" section (#4715)
+router.get('/engagement-newsletter-recipients', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterRecipients(req, res, next)
+);
+
 // Health Metrics Engagement "Representatives" section (#2802)
 router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
 

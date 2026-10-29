@@ -32,6 +32,8 @@ import {
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
@@ -1375,6 +1377,86 @@ describe('HealthMetricsEngagementService.getNewsletterPerformance', () => {
     const error = (await service.getNewsletterPerformance(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
 
     expect(error.toResponse()['error']).toBe('Newsletter performance is unavailable right now.');
+  });
+});
+
+describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
+  const service = new HealthMetricsEngagementService();
+  const recipientRow = (overrides: Record<string, unknown> = {}) => ({
+    NEWSLETTER_KEY: 'lfx_v2_n1',
+    NEWSLETTER_NAME: 'Monthly: Latest',
+    SENT_AT: '2026-10-26T16:31:37Z',
+    ENGAGEMENT_RANK: 1,
+    RECIPIENT_NAME: 'Maya Okonkwo',
+    ORGANIZATION_NAME: 'Acme Motors',
+    DELIVERY_STATUS: 'Delivered',
+    ENGAGEMENT_SEGMENT: 'opened',
+    IS_CLICKED: true,
+    OPEN_COUNT: 1,
+    LAST_OPENED_AT: '2026-10-26T16:31:41Z',
+    CLICK_COUNT: '545',
+    LAST_CLICKED_AT: '2026-10-26T16:35:58Z',
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [recipientRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    warning.mockReset();
+  });
+
+  it('reads the latest newsletter’s recipients, most engaged first, scoped to the foundation and without their email', async () => {
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(lastSql()).toContain('AND newsletter_sort_rank = 1');
+    expect(lastSql()).toContain(`ORDER BY engagement_rank ASC NULLS LAST LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}`);
+    expect(lastSql()).not.toMatch(/email|\b_key\b/i);
+    expect(response).toEqual({
+      newsletter: { key: 'lfx_v2_n1', name: 'Monthly: Latest', sentDate: '2026-10-26' },
+      recipients: [
+        {
+          rank: 1,
+          name: 'Maya Okonkwo',
+          organization: 'Acme Motors',
+          deliveryStatus: 'Delivered',
+          segment: 'opened',
+          clicked: true,
+          opens: 1,
+          lastOpenedAt: '2026-10-26T16:31:41Z',
+          clicks: 545,
+          lastClickedAt: '2026-10-26T16:35:58Z',
+        },
+      ],
+    });
+  });
+
+  it('keeps a recipient without a name or organization, and drops one without a rank', async () => {
+    execute.mockResolvedValue({ rows: [recipientRow({ RECIPIENT_NAME: ' ', ORGANIZATION_NAME: null }), recipientRow({ ENGAGEMENT_RANK: null })] });
+
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(response.recipients).toHaveLength(1);
+    expect(response.recipients[0]).toMatchObject({ name: null, organization: null });
+  });
+
+  it('answers with no newsletter for a foundation that has sent none', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(service.getNewsletterRecipients(req, { foundationSlug: 'acme' })).resolves.toEqual(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it('keeps the most engaged recipients and warns when the read hits its cap', async () => {
+    execute.mockResolvedValue({
+      rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1 }, (_, index) => recipientRow({ ENGAGEMENT_RANK: index + 1 })),
+    });
+
+    const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
+
+    expect(response.recipients).toHaveLength(HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_newsletter_recipients', 'Newsletter recipient rows hit the read cap', expect.anything());
   });
 });
 

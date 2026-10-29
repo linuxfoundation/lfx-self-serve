@@ -9,6 +9,7 @@ const {
   getGroupAttendance,
   getMeetingParticipation,
   getNewsletterPerformance,
+  getNewsletterRecipients,
   getNonMemberParticipation,
   getOrgParticipation,
   getRepresentatives,
@@ -17,6 +18,7 @@ const {
   getGroupAttendance: vi.fn(),
   getMeetingParticipation: vi.fn(),
   getNewsletterPerformance: vi.fn(),
+  getNewsletterRecipients: vi.fn(),
   getNonMemberParticipation: vi.fn(),
   getOrgParticipation: vi.fn(),
   getRepresentatives: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
       public getNewsletterPerformance = getNewsletterPerformance;
+      public getNewsletterRecipients = getNewsletterRecipients;
       public getNonMemberParticipation = getNonMemberParticipation;
       public getOrgParticipation = getOrgParticipation;
       public getRepresentatives = getRepresentatives;
@@ -63,6 +66,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
@@ -512,6 +516,52 @@ describe('AnalyticsController.getEngagementNewsletterPerformance', () => {
     getNewsletterPerformance.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callNewsletters({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callRecipients(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementNewsletterRecipients(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementNewsletterRecipients', () => {
+  beforeEach(() => {
+    getNewsletterRecipients.mockReset();
+    getNewsletterRecipients.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it('reads the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callRecipients({ foundationSlug: 'acme', search: 'reyes' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNewsletterRecipients).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not a slug', { foundationSlug: "acme' OR 1=1" }],
+  ])('rejects a foundation slug that is %s', async (_case, queryParams) => {
+    const { next, promise } = callRecipients(queryParams);
+    await promise;
+
+    expect(getNewsletterRecipients).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getNewsletterRecipients.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callRecipients({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();

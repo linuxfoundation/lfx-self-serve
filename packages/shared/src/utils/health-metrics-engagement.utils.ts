@@ -10,6 +10,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX,
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
@@ -42,6 +43,9 @@ import type {
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientFilter,
+  HealthMetricsEngagementRecipientRowView,
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
@@ -168,6 +172,7 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     reps: counts.reps,
     nonmem: counts.nonMemberOrgs,
     newsletters: counts.newsletters,
+    recipients: counts.recipients,
   };
 
   return HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => ({
@@ -459,6 +464,68 @@ export function buildHealthMetricsEngagementNewsletterView(
   };
 }
 
+/** The recipients a cut keeps, narrowed by a name or organization search; the view's engagement order is kept. */
+export function filterHealthMetricsEngagementRecipients(
+  recipients: readonly HealthMetricsEngagementRecipient[],
+  filter: HealthMetricsEngagementRecipientFilter,
+  search: string
+): HealthMetricsEngagementRecipient[] {
+  const term = search.trim().toLowerCase();
+  return recipients.filter(
+    (recipient) =>
+      matchesRecipientFilter(recipient, filter) && (!term || `${recipient.name ?? ''} ${recipient.organization ?? ''}`.toLowerCase().includes(term))
+  );
+}
+
+/** How many recipients each cut holds, for the filter labels. */
+export function countHealthMetricsEngagementRecipients(
+  recipients: readonly HealthMetricsEngagementRecipient[]
+): Record<HealthMetricsEngagementRecipientFilter, number> {
+  const counts: Record<HealthMetricsEngagementRecipientFilter, number> = { all: 0, opened: 0, clicked: 0, 'not-opened': 0, failed: 0 };
+  for (const recipient of recipients) {
+    for (const filter of Object.keys(counts) as HealthMetricsEngagementRecipientFilter[]) {
+      if (matchesRecipientFilter(recipient, filter)) counts[filter] += 1;
+    }
+  }
+  return counts;
+}
+
+/** One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a stray open time. */
+export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
+  const failed = recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
+  const opened = recipient.segment === 'opened';
+  const tags = HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS;
+
+  return {
+    rank: recipient.rank,
+    nameLabel: recipient.name?.trim() || '—',
+    organizationLabel: recipient.organization?.trim() || '—',
+    deliveryLabel: failed ? 'Failed' : 'Delivered',
+    deliveryClass: failed ? tags.failed : tags.delivered,
+    engagementLabel: recipientEngagementLabel(failed, opened),
+    engagementClass: opened ? tags.opened : tags.notOpened,
+    opensLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.opens),
+    lastOpenedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastOpenedAt, now),
+    clicksLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.clicks),
+    lastClickedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastClickedAt, now),
+  };
+}
+
+/** "12 hr ago" for a recent ISO time, as the design words it; the date itself past 30 days, and "—" for none. */
+export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): string {
+  const time = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(time)) return '—';
+
+  const minutes = Math.max(0, Math.floor((now.getTime() - time) / 60_000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days <= 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return formatIsoDateLabel(new Date(time).toISOString().slice(0, 10));
+}
+
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
 function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
   return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
@@ -538,4 +605,16 @@ function buildNewsletterPoint(newsletter: HealthMetricsEngagementNewsletter): He
     recipients: newsletter.recipients,
     uniqueOpens: newsletter.hasEngagementData ? newsletter.uniqueOpens : null,
   };
+}
+
+function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, filter: HealthMetricsEngagementRecipientFilter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'clicked') return recipient.clicked;
+  return recipient.segment === filter;
+}
+
+/** No tag for a failed delivery, which the row shows as "—". */
+function recipientEngagementLabel(failed: boolean, opened: boolean): string {
+  if (failed) return '';
+  return opened ? 'Opened' : 'Not opened';
 }

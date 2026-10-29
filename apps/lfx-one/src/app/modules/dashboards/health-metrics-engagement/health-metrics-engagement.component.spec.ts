@@ -79,6 +79,14 @@ class NewsletterPerformanceStubComponent {
   public readonly settled = output<boolean | null>();
 }
 
+// Same stand-in for Newsletter recipient engagement.
+@Component({ selector: 'lfx-engagement-newsletter-recipients', template: '' })
+class NewsletterRecipientsStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<boolean | null>();
+}
+
 // Covers only what Engagement wires into the shell: its copy, badges and section relays. The
 // scroll-spy and deep-link behaviour is the shell's own spec.
 describe('HealthMetricsEngagementComponent', () => {
@@ -106,6 +114,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(NewsletterPerformanceStubComponent)).componentInstance as NewsletterPerformanceStubComponent;
   }
 
+  function recipientsChild(): NewsletterRecipientsStubComponent {
+    return fixture.debugElement.query(By.directive(NewsletterRecipientsStubComponent)).componentInstance as NewsletterRecipientsStubComponent;
+  }
+
   function repChild(): RepresentativesStubComponent {
     return fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
   }
@@ -126,6 +138,7 @@ describe('HealthMetricsEngagementComponent', () => {
     reps: repChild,
     nonmem: nonMemberChild,
     newsletters: newsletterChild,
+    recipients: recipientsChild,
   };
 
   /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
@@ -160,6 +173,7 @@ describe('HealthMetricsEngagementComponent', () => {
             HealthMetricsL2ShellComponent,
             MeetingParticipationStubComponent,
             NewsletterPerformanceStubComponent,
+            NewsletterRecipientsStubComponent,
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
             RepresentativesStubComponent,
@@ -256,6 +270,13 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-newsletters"]').textContent).toContain('11');
   });
 
+  it('badges Newsletter recipient engagement with the recipients that section reports', () => {
+    recipientsChild().countChange.emit(1490);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-recipients"]').textContent).toContain('1,490');
+  });
+
   it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');
@@ -286,6 +307,7 @@ describe('HealthMetricsEngagementComponent', () => {
       reps: () => repChild().settled.emit(false),
       nonmem: () => nonMemberChild().settled.emit(false),
       newsletters: () => newsletterChild().settled.emit(false),
+      recipients: () => recipientsChild().settled.emit(false),
     } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');

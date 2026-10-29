@@ -10,6 +10,7 @@ import type {
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementQueryParams,
@@ -36,6 +37,7 @@ export const HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS = {
   partMode: 'partMode',
   repFilter: 'repFilter',
   nlMode: 'nlMode',
+  nlFilter: 'nlFilter',
 } as const satisfies { [K in keyof HealthMetricsEngagementQueryParams]-?: K };
 
 /**
@@ -136,6 +138,20 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     description:
       'Every newsletter sent to this foundation’s audience. Open rate shows reach; click-to-open rate shows how compelling the content was to the people who opened it.',
     footnote: [],
+    footnoteCaution: false,
+  },
+  {
+    key: 'recipients',
+    // Always the foundation's latest newsletter, whatever the period, so its empty state never names a past year.
+    empty: { icon: 'fa-light fa-envelope-open-text', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter, snapshot: true },
+    label: 'Newsletter recipient engagement',
+    heading: 'Newsletter recipient engagement',
+    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and organizations surface first.',
+    footnote: [
+      {
+        text: 'Some recipients clicked without a recorded open — their mail client blocks tracking images, so opens are undercounted. Treat open rate as a floor.',
+      },
+    ],
     footnoteCaution: false,
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
@@ -263,6 +279,7 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'reps',
   'nonmem',
   'newsletters',
+  'recipients',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
@@ -441,3 +458,32 @@ export const HEALTH_METRICS_NEWSLETTER_VIEWS = {
   summary: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY',
   byNewsletter: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER',
 } as const;
+
+/** The design's recipient cuts; `clicked` cuts across segments, since a click can come without a recorded open. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'opened', label: 'Opened' },
+  { key: 'clicked', label: 'Clicked' },
+  { key: 'not-opened', label: 'Not opened' },
+  { key: 'failed', label: 'Failed' },
+] as const;
+
+/** Most recipients one read returns; past it the table is cut and a warning logged. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP = 20_000;
+
+/** Rows per page in the recipient table. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_PAGE_SIZE = 25;
+
+/** The design's tags: delivery in green or red, an open in blue, not opened in grey. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS = {
+  delivered: 'bg-emerald-50 text-emerald-700',
+  failed: 'bg-red-50 text-red-700',
+  opened: 'bg-blue-50 text-blue-700',
+  notOpened: 'bg-gray-100 text-gray-600',
+} as const;
+
+/** No newsletter: the pre-hydration render, no foundation selected, and the client's placeholder after a failed read. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED: HealthMetricsEngagementNewsletterRecipients = {
+  newsletter: null,
+  recipients: [],
+};

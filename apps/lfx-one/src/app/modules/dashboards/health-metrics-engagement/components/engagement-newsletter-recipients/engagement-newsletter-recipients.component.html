@@ -1,0 +1,119 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="engagement-newsletter-recipients">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Newsletter recipient engagement unavailable"
+      subtitle="We could not load newsletter recipients for this foundation. Refresh the page to try again."
+      data-testid="engagement-newsletter-recipients-error" />
+  } @else if (loading()) {
+    <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-recipients-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    <p class="text-[13px] text-gray-500" data-testid="engagement-newsletter-recipients-newsletter">
+      Latest newsletter: <span class="font-medium text-gray-900">{{ newsletterLabel() }}</span>
+    </p>
+
+    <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex min-w-0 flex-col gap-2 lg:flex-row lg:items-center">
+        <!-- 280px fits the design's full placeholder. -->
+        <div class="w-full lg:w-[280px]">
+          <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
+          <label class="sr-only" for="engagement-newsletter-recipients-search">Search recipients or organizations</label>
+          <lfx-input-text
+            [form]="searchForm"
+            control="search"
+            inputId="engagement-newsletter-recipients-search"
+            placeholder="Search recipients or organizations..."
+            icon="fa-light fa-search"
+            size="small"
+            styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
+            dataTest="engagement-newsletter-recipients-search-input" />
+        </div>
+        <lfx-filter-pills
+          variant="track"
+          [options]="filterOptions()"
+          [selectedFilter]="filter()"
+          (filterChange)="onFilterChange($event)"
+          data-testid="engagement-newsletter-recipients-filters" />
+      </div>
+      <span class="text-[13px] text-gray-500" data-testid="engagement-newsletter-recipients-count">{{ countLabel() }}</span>
+    </div>
+
+    @if (totalRecords() === 0) {
+      <lfx-empty-state
+        variant="compact"
+        icon="fa-light fa-envelope-open-text"
+        title="No recipients match this view"
+        subtitle="No recipient of the latest newsletter matches the current search and filter."
+        data-testid="engagement-newsletter-recipients-no-match" />
+    } @else {
+      <!-- No [totalRecords]: p-table keeps only its first value and pins the paginator there, so it counts the rows instead. -->
+      <lfx-table
+        styleClass="hm-table"
+        [rowHover]="false"
+        [value]="rowViews()"
+        [paginator]="totalRecords() > size()"
+        [rows]="size()"
+        [first]="first()"
+        [showCurrentPageReport]="true"
+        [showFirstLastIcon]="false"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+        (onPage)="onTablePage($event)"
+        data-testid="engagement-newsletter-recipients-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Recipient</span></th>
+            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Delivery</span></th>
+            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Engagement</span></th>
+            <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Opens</span></th>
+            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Last opened</span></th>
+            <th scope="col" class="text-right"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Clicks</span></th>
+            <th scope="col"><span class="whitespace-nowrap text-[12px] font-normal text-gray-500">Last clicked</span></th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-row>
+          <tr [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank">
+            <td class="min-w-[200px]">
+              <div class="flex flex-col">
+                <span class="text-[13px] font-semibold text-gray-900">{{ row.nameLabel }}</span>
+                <span class="text-[12px] text-gray-500">{{ row.organizationLabel }}</span>
+              </div>
+            </td>
+            <td>
+              <!-- The design's tag: 11px text on a tinted pill. -->
+              <span class="inline-flex h-[20px] items-center whitespace-nowrap rounded-full px-[8px] text-[11px] font-medium" [class]="row.deliveryClass">{{
+                row.deliveryLabel
+              }}</span>
+            </td>
+            <td>
+              @if (row.engagementLabel) {
+                <span class="inline-flex h-[20px] items-center whitespace-nowrap rounded-full px-[8px] text-[11px] font-medium" [class]="row.engagementClass">{{
+                  row.engagementLabel
+                }}</span>
+              } @else {
+                <span class="text-[13px] text-gray-400">—</span>
+              }
+            </td>
+            <td class="text-right">
+              <span class="text-[13px] tabular-nums text-gray-900">{{ row.opensLabel }}</span>
+            </td>
+            <td>
+              <span class="whitespace-nowrap text-[13px] text-gray-500">{{ row.lastOpenedLabel }}</span>
+            </td>
+            <td class="text-right">
+              <span class="text-[13px] tabular-nums text-gray-900">{{ row.clicksLabel }}</span>
+            </td>
+            <td>
+              <span class="whitespace-nowrap text-[13px] text-gray-500">{{ row.lastClickedLabel }}</span>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  }
+</div>

@@ -16,6 +16,7 @@ import { EngagementAttendanceTrendComponent } from './components/engagement-atte
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
 import { EngagementNewsletterPerformanceComponent } from './components/engagement-newsletter-performance/engagement-newsletter-performance.component';
+import { EngagementNewsletterRecipientsComponent } from './components/engagement-newsletter-recipients/engagement-newsletter-recipients.component';
 import { EngagementNonMemberParticipationComponent } from './components/engagement-non-member-participation/engagement-non-member-participation.component';
 import { EngagementOrgParticipationComponent } from './components/engagement-org-participation/engagement-org-participation.component';
 import { EngagementRepresentativesComponent } from './components/engagement-representatives/engagement-representatives.component';
@@ -40,6 +41,7 @@ import type {
     EngagementGroupAttendanceComponent,
     EngagementMeetingParticipationComponent,
     EngagementNewsletterPerformanceComponent,
+    EngagementNewsletterRecipientsComponent,
     EngagementNonMemberParticipationComponent,
     EngagementOrgParticipationComponent,
     EngagementRepresentativesComponent,
@@ -60,6 +62,7 @@ export class HealthMetricsEngagementComponent {
   protected readonly repCounts = signal<HealthMetricsEngagementRepPeriodCounts | null>(null);
   protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberPeriodCounts | null>(null);
   protected readonly newsletterCount = signal<number | null>(null);
+  protected readonly recipientCount = signal<number | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({
@@ -72,6 +75,7 @@ export class HealthMetricsEngagementComponent {
       neverAttendedReps: this.repCounts()?.neverAttendedReps ?? 0,
       nonMemberOrgs: this.nonMemberCounts()?.orgs ?? null,
       newsletters: this.newsletterCount(),
+      recipients: this.recipientCount(),
     })
   );
 }
