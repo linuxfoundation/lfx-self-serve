@@ -21,7 +21,8 @@ const HOST_TEMPLATE = `
       <lfx-ui-menu-separator />
       <lfx-ui-menu-group label="Share">
         <lfx-ui-menu-item id="invite" (triggered)="log('invite')">Invite Members</lfx-ui-menu-item>
-        <lfx-ui-menu-item id="transfer" [disabled]="true" (triggered)="log('transfer')">Transfer Ownership</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="transfer" [disabled]="true" disabledReason="Only owners can transfer" (triggered)="log('transfer')">Transfer Ownership</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
       </lfx-ui-menu-group>
       <lfx-ui-menu-separator />
       <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
@@ -31,6 +32,7 @@ const HOST_TEMPLATE = `
 
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
+  public readonly archiveLocked = signal(false);
   public readonly events = signal<string[]>([]);
 
   public log(name: string): void {
@@ -72,6 +74,8 @@ describe('UiMenuComponent', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     fixture.destroy();
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
@@ -86,7 +90,7 @@ describe('UiMenuComponent', () => {
     expect(menu()?.getAttribute('role')).toBe('menu');
     expect(menu()?.getAttribute('aria-label')).toBe('Project actions');
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(5);
+    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(6);
   });
 
   it('renders icon, shortcut, trailing icon and the danger variant', async () => {
@@ -123,6 +127,8 @@ describe('UiMenuComponent', () => {
     key(item('invite'), 'ArrowDown');
     expect(document.activeElement).toBe(item('transfer'));
     key(item('transfer'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('archive'));
+    key(item('archive'), 'ArrowDown');
     expect(document.activeElement).toBe(item('delete'));
     key(item('delete'), 'ArrowDown');
     expect(document.activeElement).toBe(item('edit'));
@@ -154,8 +160,10 @@ describe('UiMenuComponent', () => {
     key(trigger, 'ArrowDown');
     await settle();
 
+    // Virtual time: the CDK debounces type-ahead.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
     key(item('edit'), 'i');
-    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    await vi.advanceTimersByTimeAsync(250);
     expect(document.activeElement).toBe(item('invite'));
   });
 
@@ -210,9 +218,28 @@ describe('UiMenuComponent', () => {
     expect(menu()).not.toBeNull();
   });
 
+  it('describes a disabled item with its reason and hides the reason from the item name', async () => {
+    await open();
+    const reason = item('transfer').querySelector('[data-testid="ui-menu-item-reason"]') as HTMLElement;
+
+    expect(reason.textContent).toBe('Only owners can transfer');
+    expect(reason.getAttribute('aria-hidden')).toBe('true');
+    expect(reason.className).toContain('sr-only');
+    expect(item('transfer').getAttribute('aria-describedby')).toBe(reason.id);
+    expect(item('edit').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('only points at the reason while the item is disabled', async () => {
+    await open();
+    expect(item('archive').getAttribute('aria-describedby')).toBeNull();
+
+    fixture.componentInstance.archiveLocked.set(true);
+    await settle();
+    expect(item('archive').getAttribute('aria-describedby')).toBe(item('archive').querySelector('[data-testid="ui-menu-item-reason"]')?.id);
+  });
+
   it('closes when the user clicks outside', async () => {
     await open();
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
     document.body.click();
     await settle();
 

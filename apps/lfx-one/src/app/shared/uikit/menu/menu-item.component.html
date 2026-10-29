@@ -1,6 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+@if (disabledReason()) {
+  <!-- Hidden from the item's name; aria-describedby points here while the item is disabled. -->
+  <span class="sr-only" aria-hidden="true" [id]="reasonId" data-testid="ui-menu-item-reason">{{ disabledReason() }}</span>
+}
 @if (icon()) {
   <span [class]="affixClasses()" data-testid="ui-menu-item-icon"><i [class]="icon()" aria-hidden="true"></i></span>
 }

@@ -14,9 +14,28 @@ import { UiMenuComponent } from './menu.component';
 const meta: Meta<UiMenuComponent> = {
   title: 'Uikit/Menu',
   component: UiMenuComponent,
+  subcomponents: { UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent },
   decorators: [moduleMetadata({ imports: [CdkMenuTrigger, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] })],
   parameters: { layout: 'padded' },
   args: { ariaLabel: 'Project actions' },
+  // Aliased CDK menu item inputs and output; Compodoc cannot see host-directive aliases.
+  argTypes: {
+    disabled: {
+      description: 'On `lfx-ui-menu-item`: greys the item out, sets `aria-disabled` and ignores clicks.',
+      control: 'boolean',
+      table: { category: 'lfx-ui-menu-item' },
+    },
+    typeaheadLabel: {
+      description: 'On `lfx-ui-menu-item`: text that type-ahead matches instead of the projected label.',
+      control: 'text',
+      table: { category: 'lfx-ui-menu-item' },
+    },
+    triggered: {
+      description: 'On `lfx-ui-menu-item`: emits when the item is chosen by click, Enter or Space.',
+      action: 'triggered',
+      table: { category: 'lfx-ui-menu-item' },
+    },
+  } as Meta['argTypes'],
   render: (args) => ({
     props: { cfg: args },
     template: `
@@ -56,7 +75,7 @@ export const ItemVariants: Story = {
           <lfx-ui-menu-separator />
           <lfx-ui-menu-group label="Share">
             <lfx-ui-menu-item icon="fa-light fa-user-plus">Invite Members</lfx-ui-menu-item>
-            <lfx-ui-menu-item icon="fa-light fa-lock" [disabled]="true" title="Only owners can transfer">Transfer Ownership</lfx-ui-menu-item>
+            <lfx-ui-menu-item icon="fa-light fa-lock" [disabled]="true" disabledReason="Only owners can transfer">Transfer Ownership</lfx-ui-menu-item>
             <lfx-ui-menu-item trailingIcon="fa-light fa-arrow-up-right-from-square">Documentation</lfx-ui-menu-item>
           </lfx-ui-menu-group>
           <lfx-ui-menu-separator />
@@ -71,7 +90,8 @@ export const IconTrigger: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <button type="button" aria-label="More actions" class="edge inline-flex h-ui-medium w-ui-medium items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
+      <!-- Exact px, not rem; 14px root. No w-ui-* width utility, so the square matches h-ui-medium by hand. -->
+      <button type="button" aria-label="More actions" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
         <i class="fa-light fa-ellipsis" aria-hidden="true"></i>
       </button>
       <ng-template #menu>
