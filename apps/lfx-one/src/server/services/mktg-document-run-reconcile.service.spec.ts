@@ -233,7 +233,12 @@ describe('MktgDocumentRunService', () => {
       'started-at': '2026-10-19T12:00:00.000Z',
       'retry-at': '2026-10-19T12:02:00.000Z',
     });
-    expect(stored().body).toBe(body);
+    expect(hash(stored().body)).not.toBe(hash(body));
+    expect(JSON.parse(stored().body)).toMatchObject({
+      startedAt: JSON.parse(body).startedAt,
+      creatorSubject: JSON.parse(body).creatorSubject,
+      attemptId: 'turn-new',
+    });
     flows.result.mockResolvedValue(ready(type.agentKey));
     expect((await service.reconcile(req, project))[0].state).toBe('writing'); // Prior receipt cannot finish the renewed turn.
     flows.result.mockResolvedValue({
