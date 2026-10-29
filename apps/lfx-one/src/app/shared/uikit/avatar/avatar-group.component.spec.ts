@@ -73,6 +73,15 @@ describe('UiAvatarGroupComponent', () => {
     }
   });
 
+  it('rounds a fractional limit down, so the +N count stays whole', async () => {
+    fixture.componentRef.setInput('limit', 3.5);
+    await fixture.whenStable();
+
+    expect(avatars().length).toBe(4);
+    expect(host.querySelector('[data-testid="ui-avatar-group-more"]')?.textContent?.trim()).toBe('+4');
+    expect(host.querySelector('[data-testid="ui-avatar-group-more"]')?.getAttribute('aria-label')).toBe('4 more');
+  });
+
   it('sizes every avatar', async () => {
     fixture.componentRef.setInput('size', 24);
     await fixture.whenStable();
