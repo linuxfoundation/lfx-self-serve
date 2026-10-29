@@ -19,7 +19,7 @@
   @if (publicReceiver()) {
     <div [ngClass]="pageClass" [class.hidden]="phase() === 'questions'" data-testid="mktg-run-public-progress">
       @if (checkingRun()) {
-        <lfx-mktg-skeleton variant="run-page" data-testid="mktg-run-progress-loading" />
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
       } @else {
         <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
         <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
@@ -57,7 +57,7 @@
       <div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700" data-testid="mktg-agent-run-error">{{ errorText() }}</div>
     }
     @if (!publicReceiver() && checkingRun()) {
-      <lfx-mktg-skeleton variant="run-page" data-testid="mktg-agent-run-checking" />
+      <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-agent-run-checking" />
     }
     <ng-container [ngTemplateOutlet]="(!publicReceiver() || phase() === 'questions') && !checkingRun() ? privateRunPage : null" />
   </div>

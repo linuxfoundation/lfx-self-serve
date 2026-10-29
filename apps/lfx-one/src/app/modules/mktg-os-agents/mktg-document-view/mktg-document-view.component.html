@@ -341,7 +341,11 @@
     }
 
     @if (loading() && !isAeoDocument()) {
-      <lfx-mktg-skeleton variant="card" class="rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-loading" />
+      <lfx-mktg-skeleton
+        variant="card"
+        label="Loading the document…"
+        class="rounded-xl border border-gray-200 bg-white px-6 py-5"
+        data-testid="mktg-document-view-loading" />
     } @else if (linkedinContent(); as content) {
       <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
         <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">

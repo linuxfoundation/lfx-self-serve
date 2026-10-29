@@ -172,7 +172,7 @@
   </section>
 }
 @if (!headless() && runPage() && !detail() && !readFailure()) {
-  <lfx-mktg-skeleton variant="run-page" data-testid="mktg-run-progress-loading" />
+  <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
 }
 @if (!headless() && runPage() && detail() && !selectedRun() && !warning() && !errorText()) {
   <div class="flex flex-wrap items-center gap-2 text-sm text-gray-600" data-testid="mktg-run-progress-empty">
