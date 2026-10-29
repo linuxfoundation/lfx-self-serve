@@ -27,7 +27,7 @@ Your LFX badges are digital credentials that recognize your contributions and ac
 - **Expires on** (or **Expired on** once it has passed) — shown only for badges that have an expiry date
 - **Credential ID**
 
-Selecting the card itself also opens the badge in Credly.
+Selecting the card itself follows the same Credly link as its main button. For an accepted Private badge, this opens your Credly profile editor, not the badge page.
 
 ## Status chips
 
@@ -53,7 +53,7 @@ The main button on a card depends on the badge:
 
 - **Accept Badge** — shown on a Pending badge. It opens the badge in Credly, where you accept it.
 - **View in Credly** — shown on an accepted Public badge. It opens the badge in Credly.
-- **Manage Privacy** — shown on an accepted Private badge. It opens the badge in Credly, where you can change its visibility.
+- **Manage Privacy** — shown on an accepted Private badge. It opens your Credly profile editor, where you manage badge privacy.
 
 ## Share a badge
 

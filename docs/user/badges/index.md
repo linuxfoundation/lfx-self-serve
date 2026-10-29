@@ -16,7 +16,7 @@ The Badges page shows the digital credentials you have earned through your parti
 - See who issued each badge, when it was issued, when it expires, and its credential ID
 - Spot badges that are Pending, Expired, Public, or Private at a glance
 - Filter by category, visibility, and status
-- Accept a pending badge, manage a badge's privacy, or open any badge in Credly
+- Accept a pending badge or view a public badge in Credly, and manage private-badge visibility through your Credly profile editor
 - Share your public badges to LinkedIn or by link
 
 ## Who this applies to

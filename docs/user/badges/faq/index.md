@@ -24,7 +24,7 @@ If the badge is not listed at all, check Credly first. LFX One caches badge resu
 
 ## Are my badges visible to others?
 
-Each card shows a **Public** or **Private** chip. Visibility is managed in Credly. On an accepted Private badge, select **Manage Privacy** to open the badge in Credly and change its visibility. If the badge is Pending, select **Accept Badge** and accept it first.
+Each card shows a **Public** or **Private** chip. Visibility is managed in Credly. On an accepted Private badge, select **Manage Privacy** to open your Credly profile editor and manage badge privacy. If the badge is Pending, select **Accept Badge** and accept it first.
 
 ## Can I share my badges externally?
 
