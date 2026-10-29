@@ -108,6 +108,16 @@ describe('MeetingsRedesignComponent', () => {
     }
   });
 
+  it('keeps the measured column height on a short viewport, with no minimum height', async () => {
+    vi.stubGlobal('innerHeight', 400);
+    const fixture = render();
+    await fixture.whenStable();
+
+    const root = query(fixture, 'meetings-redesign');
+    expect(root?.style.height).toBe('400px');
+    expect(root?.className).not.toContain('min-h-');
+  });
+
   it('clears the impersonation banner when the window scrolls', async () => {
     desktop = false;
     impersonating.set(true);
