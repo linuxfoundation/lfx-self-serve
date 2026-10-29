@@ -70,12 +70,12 @@
           } @else {
             <button
               class="text-sm font-medium"
-              [class.cursor-pointer]="resendCooldown() === 0"
-              [class.text-blue-600]="resendCooldown() === 0"
-              [class.hover:text-blue-700]="resendCooldown() === 0"
-              [class.text-slate-400]="resendCooldown() > 0"
-              [class.cursor-not-allowed]="resendCooldown() > 0"
-              [disabled]="resendCooldown() > 0"
+              [class.cursor-pointer]="resendCooldown() === 0 && !isSendingCode()"
+              [class.text-blue-600]="resendCooldown() === 0 && !isSendingCode()"
+              [class.hover:text-blue-700]="resendCooldown() === 0 && !isSendingCode()"
+              [class.text-slate-400]="resendCooldown() > 0 || isSendingCode()"
+              [class.cursor-not-allowed]="resendCooldown() > 0 || isSendingCode()"
+              [disabled]="resendCooldown() > 0 || isSendingCode()"
               (click)="onResendCode()"
               data-testid="verify-resend">
               @if (resendCooldown() > 0) {

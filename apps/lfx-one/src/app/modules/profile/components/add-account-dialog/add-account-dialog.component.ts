@@ -149,7 +149,7 @@ export class AddAccountDialogComponent {
   }
 
   public onResendCode(): void {
-    if (this.resendCooldown() > 0) {
+    if (this.resendCooldown() > 0 || this.isConnecting() || this.showResendSupport()) {
       return;
     }
 

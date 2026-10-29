@@ -632,8 +632,8 @@ describe('AccountSettingsComponent — resend escalation (#4695)', () => {
 
     expect(component.otpStep()).toBe(true);
     const otpStep = root.querySelector('[data-testid="otp-step"]');
-    expect(normalizedText(otpStep)).toContain("If this address can be added to your account, we'll send a 6-digit code to new-address@example.test");
-    expect(normalizedText(otpStep)).not.toContain('a 6-digit code was sent');
+    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
+    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
     expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
     expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
   });

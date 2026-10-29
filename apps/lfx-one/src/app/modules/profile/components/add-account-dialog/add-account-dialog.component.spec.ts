@@ -306,6 +306,73 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
     });
 
+    it('blocks overlapping resends and further requests after escalation', () => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      const button = resendButton(root) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+
+      button.click();
+      component.onResendCode(); // A second event before change detection must also be ignored.
+      fixture.detectChanges();
+      expect(button.disabled).toBe(true);
+      button.click();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+      expect(component.resendCount()).toBe(0);
+
+      response$.next({ success: true });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(1);
+      expect(resendButton(root)).toBeNull();
+      expect(supportAction(root)).not.toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([false, true])('allows retry after a pending resend fails (HTTP error: %s)', (httpError) => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(true);
+
+      if (httpError) {
+        response$.error(new HttpErrorResponse({ status: 500, error: { message: 'Failed to resend code' } }));
+      } else {
+        response$.next({ success: false, message: 'Failed to resend code' });
+        response$.complete();
+      }
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(false);
+      expect(supportAction(root)).toBeNull();
+
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: true }));
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(3);
+      expect(component.resendCount()).toBe(1);
+      expect(supportAction(root)).not.toBeNull();
+    });
+
     it('does not count a failed resend toward the threshold', () => {
       vi.useFakeTimers();
       const { component, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));

@@ -114,7 +114,7 @@ export class VerifyIdentityDialogComponent {
   }
 
   public onResendCode(): void {
-    if (this.resendCooldown() > 0) {
+    if (this.resendCooldown() > 0 || this.isSendingCode() || this.showResendSupport()) {
       return;
     }
 

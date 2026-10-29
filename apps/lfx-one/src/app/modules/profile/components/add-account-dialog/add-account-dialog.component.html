@@ -72,12 +72,12 @@
             } @else {
               <button
                 class="text-sm font-medium"
-                [class.cursor-pointer]="resendCooldown() === 0"
-                [class.text-blue-600]="resendCooldown() === 0"
-                [class.hover:text-blue-700]="resendCooldown() === 0"
-                [class.text-slate-400]="resendCooldown() > 0"
-                [class.cursor-not-allowed]="resendCooldown() > 0"
-                [disabled]="resendCooldown() > 0"
+                [class.cursor-pointer]="resendCooldown() === 0 && !isConnecting()"
+                [class.text-blue-600]="resendCooldown() === 0 && !isConnecting()"
+                [class.hover:text-blue-700]="resendCooldown() === 0 && !isConnecting()"
+                [class.text-slate-400]="resendCooldown() > 0 || isConnecting()"
+                [class.cursor-not-allowed]="resendCooldown() > 0 || isConnecting()"
+                [disabled]="resendCooldown() > 0 || isConnecting()"
                 (click)="onResendCode()"
                 data-testid="add-account-resend">
                 @if (resendCooldown() > 0) {
