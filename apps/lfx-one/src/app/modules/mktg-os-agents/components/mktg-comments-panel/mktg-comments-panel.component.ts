@@ -164,6 +164,8 @@ export class MktgCommentsPanelComponent {
     const owner = this.comments.draftScopeKey();
     this.work?.unsubscribe();
     this.runPending.set(true);
+    // A new attempt starts its own feed: the closed feed of a failed one never reopens as under way.
+    this.activity.set([]);
     this.runEnded.set(false);
     this.accepted.set(this.redrafts.hasAcceptedAttempt(this.scope()));
     this.releaseAvailable.set(false);
