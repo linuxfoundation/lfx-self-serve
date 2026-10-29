@@ -1,0 +1,66 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<table class="w-full border-collapse" data-testid="ui-table-element">
+  <caption class="sr-only">
+    {{
+      label()
+    }}
+  </caption>
+  <thead>
+    <tr>
+      @for (column of columns(); track column.key) {
+        <th scope="col" [class]="cellClasses(column, 'head')" [attr.aria-sort]="ariaSort(column)" data-testid="ui-table-header">
+          @if (column.sortable) {
+            <button
+              type="button"
+              class="inline-flex cursor-pointer items-center gap-[6px] rounded-ui-xs label-13 font-medium text-inherit focus-visible:shadow-focus focus-visible:outline-none"
+              (click)="toggleSort(column)"
+              data-testid="ui-table-sort">
+              {{ column.header }}
+              <i [class]="sortIcon(column)" class="text-[12px]" aria-hidden="true"></i>
+            </button>
+          } @else {
+            {{ column.header }}
+          }
+        </th>
+      }
+    </tr>
+  </thead>
+  <tbody>
+    @for (row of rows(); track row[rowKey()]; let last = $last) {
+      <tr
+        [class]="rowClasses()"
+        [attr.tabindex]="interactive() ? 0 : null"
+        (click)="activate(row)"
+        (keydown.enter)="onRowKey($event, row)"
+        (keydown.space)="onRowKey($event, row)"
+        data-testid="ui-table-row">
+        @for (column of columns(); track column.key) {
+          <td [class]="cellClasses(column, 'body')" [class.border-b-0]="last" data-testid="ui-table-cell">
+            @if (cellTemplates().get(column.key); as template) {
+              <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="cellContext(row, column)" />
+            } @else {
+              {{ text(row, column.key) }}
+            }
+          </td>
+        }
+      </tr>
+    } @empty {
+      <tr>
+        <td [attr.colspan]="columns().length" class="h-ui-row px-[16px] text-center align-middle text-ui-neutral-600" data-testid="ui-table-empty">
+          {{ emptyLabel() }}
+        </td>
+      </tr>
+    }
+  </tbody>
+  @if (footer(); as totals) {
+    <tfoot>
+      <tr>
+        @for (column of columns(); track column.key) {
+          <td [class]="cellClasses(column, 'foot')" data-testid="ui-table-footer-cell">{{ text(totals, column.key) }}</td>
+        }
+      </tr>
+    </tfoot>
+  }
+</table>

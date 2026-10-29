@@ -71,3 +71,60 @@ export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
 
 /** Colour role of a uikit project banner: `default` for a mode that is on, `gray` for a routine notice. */
 export type UiProjectBannerVariant = 'default' | 'success' | 'warning' | 'error' | 'gray';
+
+import type { TemplateRef } from '@angular/core';
+
+
+/** Horizontal alignment of a uikit table column. `end` right-aligns numbers and uses tabular figures. */
+export type UiTableAlign = 'start' | 'end';
+
+/** Direction a uikit table is sorted in. */
+export type UiTableSortDirection = 'asc' | 'desc';
+
+/** A column of the uikit table. */
+export interface UiTableColumn {
+  /** Row field this column shows. Also the key of the column's custom cell template and of its sort state. */
+  key: string;
+  /** Header text. */
+  header: string;
+  /** `end` for numbers. Defaults to `start`. The header follows the column. */
+  align?: UiTableAlign;
+  /** Shows the cells in the secondary text colour. */
+  muted?: boolean;
+  /** Turns the header into a button that asks for the table to be sorted by this column. */
+  sortable?: boolean;
+}
+
+/** The column and direction a uikit table is sorted by. */
+export interface UiTableSort {
+  /** Key of the sorted column. */
+  key: string;
+  /** Sort direction. */
+  direction: UiTableSortDirection;
+}
+
+/** What a custom uikit table cell template receives: the row as the implicit value and the column as `column`. */
+export interface UiTableCellContext {
+  /** The row object. */
+  $implicit: Record<string, unknown>;
+  /** The column this cell belongs to. */
+  column: UiTableColumn;
+}
+
+/** Everything the uikit table template needs for one column, derived once from the columns, sort and interactive state. */
+export interface UiTableColumnView {
+  /** The column definition. */
+  column: UiTableColumn;
+  /** Classes of the header cell. */
+  headClasses: string;
+  /** Classes of the body cells. */
+  bodyClasses: string;
+  /** Classes of the footer cell. */
+  footClasses: string;
+  /** `aria-sort` of the header cell: set only on the sorted column. */
+  ariaSort: 'ascending' | 'descending' | null;
+  /** Custom body cell template for this column, if the page projected one. */
+  template: TemplateRef<UiTableCellContext> | null;
+  /** Font Awesome classes of the sort arrow of a sortable header. */
+  sortIcon: string;
+}

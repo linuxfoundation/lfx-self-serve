@@ -49,6 +49,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-scroller`       | `UiScrollerComponent`      | Scroll rail or list with edge fades that appear as content clips; optional prev and next buttons; horizontal, vertical, both                                           |
 | `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
 | `lfx-ui-slider`         | `UiSliderComponent`        | Native range with label and live value; min, max, step, value text; `[(value)]` and forms                                                                              |
+| `lfx-ui-table`          | `UiTableComponent`         | Data table from `columns` and `rows`: header, 48px rows, footer, bordered, striped, interactive, sortable headers, empty row                                           |
 
 ## Design tokens
 
