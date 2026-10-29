@@ -538,3 +538,6 @@ export interface HealthMetricsOverviewTrendDialogData {
   event: HealthMetricsOverviewEvent;
   isPast: boolean;
 }
+
+/** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */
+export type HealthMetricsOverviewKpiStripLayout = 'row' | 'stack' | 'grid';
