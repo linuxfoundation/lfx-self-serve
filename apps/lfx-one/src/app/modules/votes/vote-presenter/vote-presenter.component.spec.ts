@@ -385,6 +385,32 @@ describe('VotePresenterComponent', () => {
       expect(navigateByUrl).toHaveBeenCalledOnce();
     });
 
+    it('ignores an accept for a vote the presenter has since navigated away from', async () => {
+      const paramMap = new BehaviorSubject(convertToParamMap({ id: 'v1' }));
+      TestBed.resetTestingModule();
+      fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+          { provide: ActivatedRoute, useValue: { paramMap } },
+          { provide: Router, useValue: { navigateByUrl } },
+          { provide: MessageService, useValue: { add: messageAdd } },
+        ],
+      });
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      paramMap.next(convertToParamMap({ id: 'v2' }));
+      await tick(0);
+      confirm.options?.accept?.();
+      await tick(0);
+
+      expect(endVote).not.toHaveBeenCalled();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
     it('ends the vote once on accept and keeps Close disabled while the request is in flight', async () => {
       const pending = new Subject<Vote>();
       endVote.mockReturnValue(pending);

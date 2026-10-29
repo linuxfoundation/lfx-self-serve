@@ -211,7 +211,8 @@ export class VotePresenterComponent {
 
   /** Close vote: always asks first. Nothing is sent until the dialog is accepted. */
   protected onCloseClick(): void {
-    if (!this.canClose()) return;
+    const id = this.voteId();
+    if (!id || !this.canClose()) return;
     this.closeDialogOpen.set(true);
     this.confirmationService.confirm({
       header: 'Close vote',
@@ -220,7 +221,8 @@ export class VotePresenterComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => this.endVote(),
+      // The uid is captured now: a route change while the dialog is open must not end a different vote.
+      accept: () => this.endVote(id),
     });
   }
 
@@ -340,9 +342,8 @@ export class VotePresenterComponent {
    * GET decides the state: the presenter moves to the result state only when that GET returns `ended`, and `/results` is
    * then requested once by `initResults`, exactly as for a vote that ended on its own.
    */
-  private endVote(): void {
-    const id = this.voteId();
-    if (!id || this.closing()) return;
+  private endVote(id: string): void {
+    if (id !== this.voteId() || this.closing()) return;
 
     this.closing.set(true);
     this.voteService.endVote(id).subscribe({
