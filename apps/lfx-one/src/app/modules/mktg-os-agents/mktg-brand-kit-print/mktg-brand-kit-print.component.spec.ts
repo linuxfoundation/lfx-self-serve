@@ -117,17 +117,33 @@ it('lets eleven contrast rows fill Colour and split only between rows with a rep
   table.querySelectorAll(':scope > tbody > tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
 });
 
-it('prints the typography description once while preserving a distinct font note', async () => {
+it('prints materially repeated typography descriptions once while preserving a distinct font note', async () => {
   const { root, view, fixture } = await setup();
-  const summary = 'Synthetic font description.';
-  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note: ' Synthetic font\n description. ' } });
-  await fixture.whenStable();
+  const summary = 'Instrument Sans is the typeface example.org sets on headings, body and buttons (self-hosted via next/font).';
   const descriptionParagraphs = () =>
     Array.from(root.querySelectorAll('[data-testid="kit-print-type"] p')).map((p) => p.textContent?.replace(/\s+/g, ' ').trim());
-  expect(descriptionParagraphs().filter((text) => text === summary)).toHaveLength(1);
-  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note: 'Distinct synthetic font note.' } });
+  for (const note of [
+    summary,
+    ' INSTRUMENT SANS is the typeface example.org sets on headings,\nbody and buttons — self hosted via next font! ',
+    `${summary} The site uses the supplied font files.`,
+    summary.slice(0, -1),
+    summary.replace('via next/font', 'using bundled files'),
+    'Instrument Sans is the typeface example.org sets on headings, body and buttons (self-hosted via next/font); sourced from the site CSS.',
+  ]) {
+    fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary, note } });
+    await fixture.whenStable();
+    expect(descriptionParagraphs().filter((text) => text?.startsWith('Instrument Sans') || text?.startsWith('INSTRUMENT SANS'))).toEqual([summary]);
+  }
+  // Containment must work in either direction, without treating an empty intro as a match.
+  fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary: `${summary} Extra source detail.`, note: summary } });
   await fixture.whenStable();
-  expect(descriptionParagraphs()).toContain('Distinct synthetic font note.');
+  expect(descriptionParagraphs()).not.toContain(summary);
+  const distinct = 'Instrument Sans: use the supplied fallback stack for documents without embedded fonts.';
+  for (const intro of [summary, '']) {
+    fixture.componentRef.setInput('view', { ...view, type: { ...view.type, summary: intro, note: distinct } });
+    await fixture.whenStable();
+    expect(descriptionParagraphs()).toContain(distinct);
+  }
 });
 
 it('replaces stylesheet asset URLs with a human host source and retains supplied human source labels', async () => {

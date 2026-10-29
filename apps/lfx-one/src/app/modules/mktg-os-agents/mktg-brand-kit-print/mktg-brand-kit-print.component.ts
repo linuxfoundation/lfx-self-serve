@@ -30,8 +30,19 @@ export class MktgBrandKitPrintComponent {
   protected readonly head = computed(() => `${this.projectName()} Brand kit`);
   protected readonly typeNote = computed(() => {
     const { summary, note } = this.view().type;
-    const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
-    return normalize(note) === normalize(summary) ? '' : note;
+    const normalize = (text: string) =>
+      text
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim();
+    const intro = normalize(summary);
+    const detail = normalize(note);
+    // Minor editorial differences or a trailing fragment are not a second description.
+    const duplicate =
+      intro &&
+      detail &&
+      (intro.includes(detail) || detail.includes(intro) || (intro.length >= 80 && detail.length >= 80 && intro.slice(0, 80) === detail.slice(0, 80)));
+    return duplicate ? '' : note;
   });
   protected readonly typeSource = computed(() => {
     const source = this.view().type.source.trim();
