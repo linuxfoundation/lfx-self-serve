@@ -465,18 +465,19 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
  * and a phase that went done between waves and active again on the next one
  * flickered through the whole read (Joan's hand test, 29 Oct 2026). Earlier
  * phases are done, or passed over when nothing of theirs happened; later
- * ones pending. A failed step with nothing running closes its phase, so the
- * feed a failed run leaves on screen does not say "under way".
+ * ones pending. A failed step is not the end of a run (a page that returned
+ * 404 is one, and the agent reads on), so only the caller's `ended` closes
+ * the furthest phase: the feed a failed redraft leaves on screen passes it.
  */
-export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
+export function mktgRunActivityPhases(activity: MktgRunActivity[], ended = false): MktgRunActivityPhase[] {
   const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
   const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
   return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
     const steps = activity.filter((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
     if (position === lastReached) {
-      // A failed step with nothing running after it ended the run there: the feed a failed redraft leaves on screen says so.
-      state = steps.some((step) => step.status === 'failed') && !steps.some((step) => step.status === 'running') ? 'done' : 'active';
+      // Only the caller knows the run is over (a failed page read is a step, not the end): `ended` closes the last phase.
+      state = ended ? 'done' : 'active';
     } else if (position < lastReached) {
       state = steps.length > 0 ? 'done' : 'skipped';
     } else {

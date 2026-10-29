@@ -41,6 +41,7 @@
   @if (accepted() || activity().length) {
     <lfx-mktg-run-activity
       [activity]="activity()"
+      [ended]="runEnded()"
       [startedAt]="startedAt()"
       [title]="'Agent redraft'"
       [showQuestions]="false"
