@@ -11,7 +11,7 @@ import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
 import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
-import { MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgKitComponent } from './mktg-kit.component';
 
 describe('Marketing kit home', () => {
@@ -63,6 +63,15 @@ describe('Marketing kit home', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('describes the framework asset and catalog entry by their visible content', () => {
+    const asset = MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((row) => row.agentKey === 'foundation-message');
+    expect(asset?.description).toBe('Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers');
+    const agent = MKTG_AGENTS.find((entry) => entry.id === 'foundation-setup');
+    expect(agent?.description).toBe(
+      'Vision, mission, positioning, tagline, goal columns, the messaging framework and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.'
+    );
   });
 
   it('re-reads immediately and on visible/focus, updates in place, and stops on destroy', async () => {

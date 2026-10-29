@@ -36,7 +36,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
         label: 'Messaging framework',
         runName: 'messaging framework',
         agentKey: 'foundation-message',
-        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with ICPs, message house and key numbers',
+        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers',
       },
       { id: 'boilerplates', label: 'Boilerplates', runName: 'boilerplates', agentKey: 'boilerplates', description: 'One-liner, 25, 50 and 100 words' },
       { id: 'faq', label: 'FAQ', runName: 'FAQ', agentKey: 'faq', description: 'Questions answered from the sources; unanswered questions flagged' },
