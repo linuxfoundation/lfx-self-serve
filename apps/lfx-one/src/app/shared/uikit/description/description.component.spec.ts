@@ -62,6 +62,15 @@ describe('UiDescriptionComponent', () => {
     expect(value().getAttribute('title')).toBe('Europe (Lisbon)');
   });
 
+  it('caps a right-aligned truncated value at the column width', async () => {
+    fixture.componentRef.setInput('align', 'right');
+    fixture.componentRef.setInput('ellipsis', true);
+    await fixture.whenStable();
+
+    expect(value().className).toContain('max-w-full');
+    expect(value().className).toContain('truncate');
+  });
+
   it('shows a named help icon after the title', async () => {
     fixture.componentRef.setInput('help', 'Your membership tier');
     await fixture.whenStable();

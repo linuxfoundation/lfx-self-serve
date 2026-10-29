@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
 /** A title and a value for short metadata such as Region, Plan, Owner or Created, rendered as a definition list. */
 @Component({
@@ -18,7 +18,7 @@ export class UiDescriptionComponent {
   /** Aligns the title and value to the right and sets the value in tabular figures, for numbers. */
   public readonly align = input<'left' | 'right'>('left');
   /** Truncates a long value to one line with an ellipsis and shows the full value in a native tooltip. Needs a width limit on the host. */
-  public readonly ellipsis = input<boolean>(false);
+  public readonly ellipsis = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Help text for a small question-mark icon after the title. It becomes the icon's accessible name and native tooltip. Leave empty for no icon. */
   public readonly help = input<string>('');
 
@@ -36,7 +36,7 @@ export class UiDescriptionComponent {
   private initValueClasses(): Signal<string> {
     return computed(() => {
       const base = 'copy-14 min-w-0 text-ui-neutral-900';
-      return [base, this.ellipsis() ? 'truncate' : '', this.align() === 'right' ? 'tabular-nums' : ''].filter(Boolean).join(' ');
+      return [base, this.ellipsis() ? 'max-w-full truncate' : '', this.align() === 'right' ? 'tabular-nums' : ''].filter(Boolean).join(' ');
     });
   }
 }
