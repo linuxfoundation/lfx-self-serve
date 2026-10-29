@@ -143,7 +143,7 @@ test.describe('Marketing OS Documents area empty states', () => {
     await expect(empty).toContainText('No Brand Kit yet');
     const prerequisite = page.getByTestId('mktg-documents-run-agent-brand-kit');
     await expect(prerequisite).toHaveText('Create messaging framework');
-    await expect(prerequisite).toHaveAttribute('href', /\/foundation-setup\?project=/);
+    await expect(prerequisite.getByRole('link', { name: 'Create messaging framework', exact: true })).toHaveAttribute('href', /\/foundation-setup\?project=/);
     // No revisions table is rendered for a document that does not exist yet.
     await expect(page.getByTestId('mktg-documents-revisions')).toHaveCount(0);
     await expect(page.getByTestId('mktg-documents-nav-brand-kit')).toContainText('Not generated yet');
