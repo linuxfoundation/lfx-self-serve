@@ -319,7 +319,14 @@ describe('Family export slot', () => {
     expect(frameworkRoot?.classList.contains('flex')).toBe(false);
     expect(frameworkRoot?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
     expect(frameworkRoot?.lastElementChild?.getAttribute('data-testid')).toBe('mktg-framework-print-numbers');
-    expect(document.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
+    const goals = document.querySelector('[data-testid="mktg-framework-print-goals"]');
+    expect(goals).not.toBeNull();
+    expect(goals?.querySelector('thead th')?.classList.contains('w-[1.1in]')).toBe(true);
+    goals?.querySelectorAll('tbody th').forEach((label) => {
+      expect(getComputedStyle(label).overflowWrap).toBe('normal');
+      expect(getComputedStyle(label).wordBreak).toBe('normal');
+      expect(getComputedStyle(label).hyphens).toBe('none');
+    });
     expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
     expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
     const body = root.ownerDocument.body;

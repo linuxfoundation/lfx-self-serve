@@ -138,6 +138,16 @@ describe('MktgFrameworkPrintComponent', () => {
       'Proof',
       'Sound bite',
     ]);
+    expect(goals?.querySelector('thead th')?.classList.contains('w-[1.1in]')).toBe(true);
+    goals?.querySelectorAll('tbody th').forEach((label) => {
+      const style = getComputedStyle(label);
+      expect(style.wordBreak).toBe('normal');
+      expect(style.overflowWrap).toBe('normal');
+      expect(style.hyphens).toBe('none');
+      expect(style.letterSpacing).toBe('normal');
+      expect(style.textTransform).toBe('none');
+      expect(parseFloat(style.minWidth) * (style.minWidth.endsWith('in') ? 96 : 1)).toBeCloseTo(105.6);
+    });
     // Segments belong to the hidden ICPs: the table does not name them.
     expect(goals?.textContent).not.toContain('End users');
     // A proof point stacks its source under the fact: the goal columns are too narrow for the two side by side.

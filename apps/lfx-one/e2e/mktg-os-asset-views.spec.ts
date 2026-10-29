@@ -229,6 +229,15 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      const rowLabels = print.getByTestId('mktg-framework-print-goals').locator('tbody th');
+      await expect(rowLabels).toHaveText(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+      for (const label of await rowLabels.all()) {
+        await expect(label).toHaveCSS('word-break', 'normal');
+        await expect(label).toHaveCSS('overflow-wrap', 'normal');
+        await expect(label).toHaveCSS('hyphens', 'none');
+        await expect(label).toHaveCSS('letter-spacing', 'normal');
+        await expect(label).toHaveCSS('text-transform', 'none');
+      }
       // Visibility-only hiding leaves screen canvas height behind. The entire
       // ancestor chain must be white/content-sized, and siblings out of flow.
       const flow = await print.evaluate((root) => {

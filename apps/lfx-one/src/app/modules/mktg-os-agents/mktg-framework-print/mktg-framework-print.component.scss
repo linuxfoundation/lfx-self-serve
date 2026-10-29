@@ -67,6 +67,17 @@
 /* One semantic goals table: prefer a whole table, otherwise break only between
    value/key-message and proof/sound-bite pairs, never orphan the sound bite. */
 [data-testid='mktg-framework-print-goals'] {
+  /* Row labels are ordinary words, not tokens: override the document's
+     anywhere wrapping and the eyebrow's uppercase/tracking width pressure. */
+  tbody th {
+    min-width: 1.1in;
+    word-break: normal;
+    overflow-wrap: normal;
+    hyphens: none;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+
   thead {
     display: table-header-group;
     break-after: avoid;
