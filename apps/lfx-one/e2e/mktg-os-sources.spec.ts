@@ -19,6 +19,11 @@ test.describe('Marketing OS new run Sources', () => {
       const sources = await setupFreshSources(page);
       const bodies: Record<string, unknown>[] = [];
       const activeRunId = 'b'.repeat(64);
+      const pendingQuestions = {
+        questionsId: 'c'.repeat(64),
+        askedAt: '2026-10-29T05:00:00Z',
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+      };
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
         bodies.push(route.request().postDataJSON());
         if (!bodies.at(-1)?.['discard'])
@@ -36,24 +41,32 @@ test.describe('Marketing OS new run Sources', () => {
               startedAt: '2026-10-19T12:00:00.000Z',
             },
           });
+        // #4592 records the block before exposing the accepted replacement's private questions.
+        sources.handoff.askQuestions(pendingQuestions);
         return route.fallback();
       });
       await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
         route.fulfill({
           json: {
             status: 'questions',
-            questionsId: 'c'.repeat(64),
-            questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+            questionsId: pendingQuestions.questionsId,
+            questions: pendingQuestions.questions,
           },
         })
       );
       await sources.open();
       await page.getByTestId('mktg-run-start').getByRole('button').click();
-      const dialog = page.getByRole('alertdialog');
+      // PrimeNG assigns alertdialog to both host and inner dialog; target the content-bearing leaf.
+      const dialog = page.getByRole('alertdialog').filter({ hasText: "Synthetic writer's Brand Kit run is in progress" }).last();
       await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
       await dialog.getByRole('button', { name: choice, exact: true }).click();
-      if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-      else {
+      if (choice === 'Open it') {
+        // #4594: active progress belongs on its recorded run page, never the document reader.
+        await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing…');
+        expect(new URL(page.url()).searchParams.get('run')).toBe(activeRunId);
+        await expect(page.getByTestId('mktg-document-view-page')).toHaveCount(0);
+      } else {
         await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
         expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
       }
@@ -182,9 +195,16 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText('This run is waiting for your answers.');
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
     await expect(page.getByTestId('mktg-agent-run-form')).toBeHidden();
-    await page.getByTestId('mktg-run-waiting-continue').getByRole('button').click();
+    // Rule 1/#4592: a fresh mode=new entry exposes the recorded block via Answer the questions,
+    // not a Continue button inferred solely from this browser's former private poll.
+    const recordedQuestions = page.getByTestId('mktg-run-waiting-open').getByRole('link', { name: 'Answer the questions', exact: true });
+    await expect(recordedQuestions).toHaveAttribute('href', `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
+    await recordedQuestions.click();
     await expect(questions).toContainText('Which synthetic goal?');
-    await expect(page.getByTestId('mktg-run-questions-return-note')).toContainText('Documents › Started runs › Answer the questions.');
+    // This any-browser route renders the recorded writer questions, not a private-cache return note.
+    await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers.');
+    await expect(page.getByTestId('mktg-run-progress-owner-note')).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get('run')).toBe(runId);
     expect(new URL(page.url()).searchParams.has('mode')).toBe(false);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);

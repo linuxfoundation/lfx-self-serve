@@ -70,8 +70,9 @@ async function publicRunAnswers({ page }: { page: Page }, info: TestInfo) {
     window.history.pushState({}, '', url);
     dispatchEvent(new PopStateEvent('popstate'));
   }, `/project/mktg-os-agents/${ICP_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`);
-  await expect(page.getByTestId('mktg-run-progress-loading')).toHaveAttribute('aria-label', 'Loading');
-  await expect(page.getByTestId('mktg-run-progress-loading')).toHaveText('');
+  // #132/ea04412b3: the neutral shared skeleton exposes its checking label to assistive technology.
+  await expect(page.getByTestId('mktg-run-progress-loading')).toHaveAttribute('aria-label', 'Checking the run…');
+  await expect(page.getByTestId('mktg-run-progress-loading')).toHaveText('Checking the run…');
   await expect(page.getByTestId('mktg-run-public-progress').getByRole('heading')).toHaveCount(0);
   await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
   await expect(page.getByTestId('mktg-run-progress-status')).toHaveCount(0);
