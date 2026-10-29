@@ -22,6 +22,7 @@ const HOST_TEMPLATE = `
       <lfx-ui-menu-group label="Share">
         <lfx-ui-menu-item id="invite" (triggered)="log('invite')">Invite Members</lfx-ui-menu-item>
         <lfx-ui-menu-item id="transfer" [disabled]="true" disabledReason="Only owners can transfer" (triggered)="log('transfer')">Transfer Ownership</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="hidden-label" typeaheadLabel="zzz">Rename</lfx-ui-menu-item>
       <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
       </lfx-ui-menu-group>
       <lfx-ui-menu-separator />
@@ -90,7 +91,7 @@ describe('UiMenuComponent', () => {
     expect(menu()?.getAttribute('role')).toBe('menu');
     expect(menu()?.getAttribute('aria-label')).toBe('Project actions');
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(6);
+    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(7);
   });
 
   it('renders icon, shortcut, trailing icon and the danger variant', async () => {
@@ -127,6 +128,8 @@ describe('UiMenuComponent', () => {
     key(item('invite'), 'ArrowDown');
     expect(document.activeElement).toBe(item('transfer'));
     key(item('transfer'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('hidden-label'));
+    key(item('hidden-label'), 'ArrowDown');
     expect(document.activeElement).toBe(item('archive'));
     key(item('archive'), 'ArrowDown');
     expect(document.activeElement).toBe(item('delete'));
@@ -165,6 +168,28 @@ describe('UiMenuComponent', () => {
     key(item('edit'), 'i');
     await vi.advanceTimersByTimeAsync(250);
     expect(document.activeElement).toBe(item('invite'));
+  });
+
+  it('type-ahead matches the typeaheadLabel instead of the projected label', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
+    key(item('edit'), 'z');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(document.activeElement).toBe(item('hidden-label'));
+  });
+
+  it('type-ahead reaches a disabled item by its label, not by its reason', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
+    key(item('edit'), 't');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(document.activeElement).toBe(item('transfer'));
   });
 
   it('closes on Escape and returns focus to the trigger', async () => {

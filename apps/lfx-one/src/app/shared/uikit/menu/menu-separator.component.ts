@@ -11,7 +11,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   host: {
     role: 'separator',
     // Exact px, not rem; 14px root. The -6px side margins cancel the menu's padding.
-    class: 'my-[6px] -mx-[6px] block h-[1px] bg-ui-neutral-alpha-200',
+    class: 'my-[6px] -mx-[6px] block h-[1px] shrink-0 bg-ui-neutral-alpha-200',
     'data-testid': 'ui-menu-separator',
   },
 })

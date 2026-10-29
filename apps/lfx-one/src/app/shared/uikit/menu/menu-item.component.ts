@@ -51,7 +51,7 @@ export class UiMenuItemComponent {
     return computed(() => {
       // Exact px, not rem; 14px root. 10px radius is the menu radius minus its 6px padding; no rounded-ui-* step.
       const base =
-        'group flex h-ui-menu-item w-full cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 hover:bg-ui-neutral-alpha-50 focus:bg-ui-neutral-alpha-50 focus:outline-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 aria-disabled:hover:bg-transparent';
+        'group flex h-ui-menu-item shrink-0 w-full cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 hover:bg-ui-neutral-alpha-50 focus:bg-ui-neutral-alpha-50 focus:outline-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 aria-disabled:hover:bg-transparent';
       return `${base} ${this.variant() === 'danger' ? 'text-ui-danger-700' : 'text-ui-neutral-900'}`;
     });
   }

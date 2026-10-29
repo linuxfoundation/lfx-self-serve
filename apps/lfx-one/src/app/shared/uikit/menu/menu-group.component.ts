@@ -12,7 +12,7 @@ import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core
   changeDetection: ChangeDetectionStrategy.OnPush,
   hostDirectives: [CdkMenuGroup],
   host: {
-    class: 'flex flex-col',
+    class: 'flex shrink-0 flex-col',
     '[attr.aria-labelledby]': 'label() ? labelId : null',
     'data-testid': 'ui-menu-group',
   },

@@ -1,17 +1,17 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (disabledReason()) {
-  <!-- Hidden from the item's name; aria-describedby points here while the item is disabled. -->
-  <span class="sr-only" aria-hidden="true" [id]="reasonId" data-testid="ui-menu-item-reason">{{ disabledReason() }}</span>
-}
 @if (icon()) {
   <span [class]="affixClasses()" data-testid="ui-menu-item-icon"><i [class]="icon()" aria-hidden="true"></i></span>
 }
 <span class="min-w-0 flex-1 truncate"><ng-content /></span>
 @if (shortcut()) {
-  <kbd [class]="affixClasses()" class="font-sans" data-testid="ui-menu-item-shortcut">{{ shortcut() }}</kbd>
+  <kbd [class]="affixClasses()" class="font-[inherit]" data-testid="ui-menu-item-shortcut">{{ shortcut() }}</kbd>
 }
 @if (trailingIcon()) {
   <span [class]="affixClasses()" data-testid="ui-menu-item-trailing-icon"><i [class]="trailingIcon()" aria-hidden="true"></i></span>
+}
+@if (disabledReason()) {
+  <!-- Last, so type-ahead (which reads the item's text) matches the label. Hidden from the item's name; aria-describedby points here while disabled. -->
+  <span class="sr-only" aria-hidden="true" [id]="reasonId" data-testid="ui-menu-item-reason">{{ disabledReason() }}</span>
 }
