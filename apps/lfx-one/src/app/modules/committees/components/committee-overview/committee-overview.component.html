@@ -229,6 +229,10 @@
           <lfx-weekly-brief-card
             [committee]="committee()"
             [canEdit]="canEdit()"
+            [canShareWeeklyBriefByEmail]="canShareWeeklyBriefByEmail()"
+            [shareAccessLoading]="shareAccessLoading()"
+            [shareAccessError]="shareAccessError()"
+            (shareAccessRetryRequested)="shareAccessRetryRequested.emit()"
             (tabNavigated)="navigateToTab($event)"
             (voteRequested)="openVote($event)"
             data-testid="committee-overview-weekly-brief-card" />
