@@ -17,6 +17,7 @@ import {
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SOURCE_LINK_HINT,
+  MKTG_DRIVE_SHARING_HINT,
   LINKEDIN_CONTENT_SOURCES,
   LINKEDIN_FILE_ACCEPT,
   LINKEDIN_FILE_TYPES_LABEL,
@@ -124,6 +125,7 @@ export class LinkedinPostRunComponent {
   protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
   protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
   protected readonly sourceLinkHint = LINKEDIN_SOURCE_LINK_HINT;
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
   protected readonly freshMode = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('mode') === MKTG_RUN_NEW_MODE)), { initialValue: false });
   private readonly historyGrant = signal('');
   protected readonly lastIntakeLoading = signal(false);

@@ -17,6 +17,7 @@ import {
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
+  MKTG_DRIVE_SHARING_HINT,
   MKTG_INTAKE_LINK_ADVICE,
   MKTG_KIT_FAMILIES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
@@ -518,7 +519,10 @@ describe('LinkedIn profile and post surface', () => {
     expect(textareaEnter.defaultPrevented).toBe(false);
     fixture.componentInstance['onSource']('url');
     fixture.detectChanges();
-    expect(element.querySelector('[data-testid="mktg-linkedin-source-hint"]')?.textContent).toContain(LINKEDIN_SOURCE_LINK_HINT);
+    const hint = element.querySelector('[data-testid="mktg-linkedin-source-hint"]');
+    expect(hint?.textContent?.trim()).toBe(`${LINKEDIN_SOURCE_LINK_HINT} ${MKTG_DRIVE_SHARING_HINT}`);
+    expect(element.querySelector('#linkedin-content-url')?.getAttribute('aria-describedby')).toBe(hint?.id);
+    expect(element.querySelector('#linkedin-share-link')?.getAttribute('aria-describedby')).not.toBe(hint?.id);
     expect(element.textContent).not.toContain('cannot browse');
     expect(element.querySelector('main, aside')).toBeNull();
     expect(api.startForDocument).not.toHaveBeenCalled();

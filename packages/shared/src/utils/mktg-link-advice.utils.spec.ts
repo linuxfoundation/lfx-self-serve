@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { MKTG_INTAKE_LINK_ADVICE } from '../constants/mktg-intake-link-advice.constants';
+import { MKTG_DRIVE_SHARING_HINT, MKTG_INTAKE_LINK_ADVICE } from '../constants/mktg-intake-link-advice.constants';
 import { describeMktgLinkAdvice, mktgLinkWarnings, normalizeMktgLink } from './mktg-link-advice.utils';
 
 describe('Marketing intake link advice', () => {
+  it('uses the operator-approved LF-wide sharing copy without promising public access', () => {
+    expect(MKTG_DRIVE_SHARING_HINT).toBe('Share Google Drive files with everyone at the Linux Foundation so Marketing OS can use them.');
+    expect(MKTG_INTAKE_LINK_ADVICE.drivePrivate).toBe('Share it with everyone at the Linux Foundation, or paste its text.');
+  });
   it.each(['/drive/folders/synthetic', '/drive/u/2/folders/synthetic'])('recognizes Drive folder %s', (path) => {
     expect(describeMktgLinkAdvice(`https://drive.google.com${path}`)).toBe('drive-folder');
   });
