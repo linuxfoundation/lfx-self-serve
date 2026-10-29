@@ -432,6 +432,7 @@ export class MktgRunProgressComponent {
           const observe = () =>
             read(false).pipe(
               expand((cycle) => {
+                if (readMktgRetiredRunHint(cycle.detail.runs?.find((row) => row.runId === this.runId()))) return EMPTY;
                 const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
                 if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
                   this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');

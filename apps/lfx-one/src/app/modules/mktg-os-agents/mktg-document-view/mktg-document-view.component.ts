@@ -76,6 +76,7 @@ import {
   normalizeLinkedinShareLink,
   readBrandKitRevision,
   readLinkedinDocumentContent,
+  readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -761,6 +762,7 @@ export class MktgDocumentViewComponent {
                     () =>
                       read(false).pipe(
                         expand(() => {
+                          if (readMktgRetiredRunHint(this.selectedRun())) return EMPTY;
                           const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
                           if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
                             this.refreshWarning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
