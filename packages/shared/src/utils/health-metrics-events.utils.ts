@@ -365,7 +365,7 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
   return {
     foundationMeasured: revenue.periods.length > 0,
     measured: period !== null,
-    hasRevenue: rows.length > 0 || figures.some((value) => typeof value === 'number' && value !== 0),
+    hasRevenue: rows.length > 0 || period?.hasUnconverted === true || figures.some((value) => typeof value === 'number' && value !== 0),
     headline: stat('total', 'Total event revenue', period?.totalUsd, delta(changes?.total)),
     side: [
       stat('registration', 'Registration', period?.registrationUsd, delta(changes?.registration)),

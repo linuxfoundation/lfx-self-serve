@@ -537,7 +537,10 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasRevenue).toBe(true);
     expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(false);
     expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
-    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [revenuePeriod({ registrationUsd: -500 })], events: [] }), 'YTD').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, registrationUsd: -500 }], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(
+      buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, totalUsd: null, hasUnconverted: true }], events: [] }), 'COMPLETED_YEAR').hasRevenue
+    ).toBe(true);
   });
 
   it('lists only the events in the period, with each goal only where one is set', () => {

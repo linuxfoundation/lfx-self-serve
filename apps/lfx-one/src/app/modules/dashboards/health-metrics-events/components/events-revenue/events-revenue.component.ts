@@ -114,7 +114,7 @@ export class EventsRevenueComponent {
   }
 }
 
-/** Whether the period has nothing to show: never measured, or $0 with no event listed for it. */
+/** Whether the period has nothing to show: never measured, or no event, no non-zero figure and no unconverted revenue. */
 function isEmptyView(view: HealthMetricsEventsRevenueView): boolean {
   return !view.foundationMeasured || !view.measured || !view.hasRevenue;
 }
