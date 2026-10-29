@@ -21,7 +21,9 @@ apps/lfx-one/src/app/modules/
 │   ├── maintainer/             # Maintainer dashboard
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
-│   ├── meetings-dashboard/     # Main meetings route component
+│   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
+│   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
+│   ├── meetings-redesign/      # Me lens meetings redesign, layout shell (flag-gated)
 │   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
 │   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-join/           # Public meeting join page
@@ -58,6 +60,8 @@ apps/lfx-one/src/app/modules/
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 >
 > **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard; `meeting-composer/` is the v2 drawer. The `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`) decides which one a user gets at every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks, the create-artifact dialog, and the `/meetings/create` and `/meetings/:id/edit` deep links. Each deep link is a pair of routes on the same path — a composer entry (`MeetingComposerRouteComponent`) behind the `meetingsV2Guard` CanMatch, then the wizard — so turning the flag off sends the same URL back to the wizard with no deploy. With no answer from LaunchDarkly the browser uses `MEETING_V2_ENABLED_DEFAULT` (`false`). Retiring the wizard means dropping each pair's wizard entry, the guard and the flag.
+>
+> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait. This is unrelated to the `meeting-v2-enabled` composer flag above.
 
 ### Key Principles
 
@@ -88,7 +92,8 @@ When creating new components, follow these guidelines:
 1. **Route Components**: If the component has its own route, place it directly in the section folder
 2. **Section-Specific Components**: If used only within one section, place in that section's `components` folder
 3. **Cross-Section Components**: If used across multiple sections, place in `app/shared/components`
-4. **UI Wrapper Components**: Generic UI components (buttons, cards, etc.) always go in `app/shared/components`
+4. **UI Wrapper Components**: PrimeNG wrappers (`lfx-*`) go in `app/shared/components`
+5. **Uikit Components**: Generic PrimeNG-free UI primitives (`lfx-ui-*`, `Ui*Component`) go in `app/shared/uikit` — see [Uikit](#-uikit-primeng-free-components)
 
 ## 🎯 PrimeNG Component Wrapper Strategy
 
@@ -108,6 +113,18 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 3. **Type Safety**: Proper TypeScript interfaces and validation
 4. **Template Flexibility**: Full support for all PrimeNG template options
 5. **Brand Consistency**: LFX-specific styling and behavior
+
+## 🧱 Uikit (PrimeNG-free components)
+
+`app/shared/uikit/` is a component library built from Angular and Tailwind only, with no PrimeNG imports, inspired by the Insights uikit. It sits beside the PrimeNG wrappers: new generic primitives can be built here instead of wrapping PrimeNG.
+
+- Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
+- Standalone, signal inputs, `model()` for two-way values, `OnPush`
+- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while the four first components still use `lfxColors` until they are realigned
+- Overlays, when needed, build on `@angular/cdk`
+- Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
+
+The component list lives in `apps/lfx-one/src/app/shared/uikit/README.md`, the single source; each component PR adds its entry there.
 
 ## 🧩 Current Wrapper Components
 
@@ -203,7 +220,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 13px subtitle and pins the tab bar inside the header.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 13px subtitle and pins the tab bar inside the header. The Me lens meetings redesign (`meetings-redesign`, behind `MEETINGS_REDESIGN_FLAG`) is the other: it hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height.
 
 ### Tab shells: signal state vs. child routes
 
@@ -485,7 +502,7 @@ AppComponent
     └── MainLayoutComponent (authGuard protected, provides header + sidebar + content area)
         ├── /                    → DashboardComponent (role-based dashboard)
         ├── /projects            → HomeComponent (project listing)
-        ├── /meetings            → MeetingsDashboardComponent (lazy loaded)
+        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
@@ -501,7 +518,7 @@ AppComponent
 
 ## 🎯 Usage Guidelines
 
-1. **Always use LFX wrapper components** instead of PrimeNG directly
+1. **Always use LFX wrapper components** instead of PrimeNG directly (or a `lfx-ui-*` uikit component where one exists)
 2. **Import wrapper components directly** - no barrel exports
 3. **Follow the established patterns** for consistency
 4. **Use shared interfaces** for type safety

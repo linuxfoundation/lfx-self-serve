@@ -64,7 +64,10 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     try {
       await fixture.open();
       const panel = page.getByTestId('mktg-comments-panel');
-      await expect(panel.getByTestId('mktg-comments-loading')).toContainText('Loading comments');
+      const pending = page.getByTestId('mktg-document-view-comments-skeleton');
+      await expect(pending).toBeVisible();
+      await expect(pending).toHaveAttribute('role', 'status');
+      await expect(pending).toHaveAttribute('aria-busy', 'true');
       await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
       await expect(page.getByTestId(`mktg-field-comments-${fixture.key}`)).toBeHidden();
       fixture.state.fail = true;
@@ -74,7 +77,7 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     const panel = page.getByTestId('mktg-comments-panel');
     await expect(panel.getByRole('alert')).toBeVisible();
     await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
-    await expect(panel.getByTestId('mktg-comments-send').getByRole('button')).toBeDisabled();
+    await expect(panel.getByTestId('mktg-comments-send')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-comments-error.png`), fullPage: true });
     fixture.state.fail = false;
     await panel.getByRole('button', { name: 'Retry comments' }).click();

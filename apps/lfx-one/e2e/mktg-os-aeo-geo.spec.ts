@@ -101,7 +101,15 @@ test.describe('AEO/GEO audit content', () => {
       };
     });
     await expect(page.getByTestId('mktg-document-view-download')).toHaveText('Download PDF');
-    await page.getByTestId('mktg-document-view-download').getByRole('button').click();
+    const printedSynchronously = await page
+      .getByTestId('mktg-document-view-download')
+      .getByRole('button')
+      .evaluate((button) => {
+        if (!(button instanceof HTMLButtonElement)) throw new Error('Missing synthetic report PDF action');
+        button.click();
+        return document.documentElement.dataset['auditPrinted'];
+      });
+    expect(printedSynchronously).toBe('yes');
     await expect(page.locator('html')).toHaveAttribute('data-audit-printed', 'yes', { timeout: 10_000 });
     await expect(page.getByTestId('mktg-document-view-print')).toContainText('Add a detailed FAQ');
     expect(downloads).toHaveLength(0);

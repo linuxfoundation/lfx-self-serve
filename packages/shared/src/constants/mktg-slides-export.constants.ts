@@ -15,6 +15,9 @@ import { BRAND_KIT_HEX_REGEX, BRAND_KIT_PROJECT_SLUG_REGEX } from './brand-kit.c
 import { MKTG_ARTIFACT_SHA256_REGEX } from './mktg-artifact.constants';
 import { MKTG_RUN_ERROR_SETTLE_MS, MKTG_RUN_ERROR_TEARDOWN_MS } from './mktg-run.constants';
 
+/** Maximum first-paint wait for a document's secondary export-history read. */
+export const MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS = 3000;
+
 /** The BFF routes of the export. */
 export const MKTG_SLIDES_EXPORT_API_PATH = '/api/mktg-agents/slides-export';
 

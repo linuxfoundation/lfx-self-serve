@@ -65,7 +65,21 @@ test.describe('Marketing family responsive structure', () => {
           }
         }
         await expect(page.getByTestId('mktg-family-approve')).toBeVisible();
-        await expect(page.getByTestId('mktg-family-exports').getByRole('button')).toHaveCount(familyId === MKTG_KIT_POSITIONING_FAMILY_ID ? 2 : 0);
+        // The aside also contains #4498's source/sign-off Show toggles; they are not export actions.
+        const exportSlot = page.getByTestId('mktg-family-exports');
+        const exportActions = exportSlot.getByTestId('family-export-actions');
+        if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
+          await expect(exportActions.getByTestId('family-export-pdf').getByRole('button', { name: 'Download PDF', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-slides').getByRole('button', { name: 'Export to Google Slides', exact: true })).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle').getByRole('button', { name: 'Show', exact: true })).toBeVisible();
+          await expect(exportActions.getByTestId('family-export-unsupported')).toHaveCount(0);
+        } else {
+          await expect(exportActions.getByTestId('family-export-pdf')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-slides')).toHaveCount(0);
+          await expect(exportActions.getByTestId('family-export-unsupported')).toBeVisible();
+          await expect(exportSlot.getByTestId('mktg-family-sources-toggle')).toHaveCount(0);
+        }
+        await expect(exportSlot.getByTestId('mktg-family-sign-off-toggle').getByRole('button', { name: 'Show', exact: true })).toBeVisible();
         const table = await page.getByTestId('mktg-family-assets').boundingBox();
         const exports = await page.getByTestId('mktg-family-exports').boundingBox();
         expect(table).not.toBeNull();

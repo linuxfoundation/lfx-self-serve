@@ -5,8 +5,14 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MktgFamilyExportLastResponse, MktgFamilyExportRunUpdate } from '@lfx-one/shared/interfaces';
-import { MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
+import { MktgFamilyExportLastResponse, MktgFamilyExportRunUpdate, MktgFamilyPrintView } from '@lfx-one/shared/interfaces';
+import {
+  MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
+  MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
+  MKTG_FAMILY_EXPORT_FORMAT_HINT,
+} from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -38,7 +44,7 @@ describe('Family export slot', () => {
     stale: false,
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
-  const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+  const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
   beforeEach(() => {
     vi.clearAllMocks();
     writer.set(true);
@@ -60,7 +66,7 @@ describe('Family export slot', () => {
         weights: [400],
       })
     );
-    print.print.mockResolvedValue(undefined);
+    print.prepare.mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       imports: [MktgFamilyExportActionsComponent],
       providers: [
@@ -82,7 +88,7 @@ describe('Family export slot', () => {
 
   it('eagerly checks last export and starts create only when there is no earlier deck', async () => {
     const { fixture, root, button } = await setup();
-    expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, false);
+    expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, true);
     expect(root.querySelector('h2')?.textContent).toBe('Export the family');
     expect(root.textContent).toContain('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
     expect(root.textContent).toContain('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
@@ -165,9 +171,40 @@ describe('Family export slot', () => {
     pending.next(lookup());
     await fixture.whenStable();
     expect(focus).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(api.run).not.toHaveBeenCalled();
-    expect(api.printView).not.toHaveBeenCalled();
-    expect(print.print).not.toHaveBeenCalled();
+    expect(api.printView).toHaveBeenCalledOnce();
+    expect(print.printNow).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('reveals format choices with temporary paint, focus and no export (reduced motion: %s)', async (reduced) => {
+    const { fixture, root, button } = await setup();
+    root.scrollIntoView = vi.fn();
+    vi.spyOn(root, 'getClientRects').mockReturnValue({ length: 1 } as DOMRectList);
+    expect(fixture.componentInstance.isRendered()).toBe(true);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: reduced }))
+    );
+    const pdf = button('pdf');
+    if (!pdf) throw new Error('Missing synthetic PDF action');
+    const focus = vi.spyOn(pdf, 'focus');
+    try {
+      fixture.componentInstance.focusDownload();
+      await fixture.whenStable();
+      expect(root.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+      expect(root.querySelector('section')?.classList.contains('lfx-mktg-export-highlight')).toBe(true);
+      expect(root.querySelector('[data-testid="family-export-format-hint"]')?.textContent).toBe(MKTG_FAMILY_EXPORT_FORMAT_HINT);
+      expect(focus).toHaveBeenCalledOnce();
+      expect(api.run).not.toHaveBeenCalled();
+      expect(api.printView).toHaveBeenCalledOnce();
+      expect(print.printNow).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, MKTG_FAMILY_EXPORT_HIGHLIGHT_MS + 20));
+      await fixture.whenStable();
+      expect(root.querySelector('section')?.classList.contains('lfx-mktg-export-highlight')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('focuses an already printable PDF on request without a reason line', async () => {
@@ -248,10 +285,12 @@ describe('Family export slot', () => {
   it('prepares approved print renderings, prints with the family body class and clears on destroy', async () => {
     const { fixture, button, root } = await setup();
     expect(root.querySelector('[data-testid="family-export-print-document"]')?.classList.contains(MKTG_FAMILY_PRINT_ONLY_CLASS)).toBe(true);
-    button('pdf')?.click();
-    await fixture.whenStable();
     expect(api.printView).toHaveBeenCalledWith(expect.anything(), [familyExportMember()], 'Synthetic project');
-    expect(print.print).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS, null, [400]);
+    expect(print.prepare).toHaveBeenCalledWith(null, [400]);
+    expect(print.printNow).not.toHaveBeenCalled();
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
     fixture.destroy();
     expect(print.clear).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
   });
@@ -293,24 +332,87 @@ describe('Family export slot', () => {
     expect(Array.from(document?.children ?? []).map((child) => child.tagName.toLowerCase())).toEqual([
       'section',
       'lfx-mktg-framework-print',
-      'lfx-brand-kit-view',
+      'lfx-mktg-brand-kit-print',
       'lfx-mktg-boilerplates-print',
       'lfx-mktg-faq-print',
     ]);
     const cover = document?.querySelector<HTMLElement>('[data-testid="family-export-print-cover"]');
     expect(cover?.textContent).toContain('Synthetic project');
     expect(cover?.textContent).toContain('28 Oct 2026');
-    expect(cover?.querySelectorAll('dd')).toHaveLength(4);
-    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand kit');
+    expect(Array.from(cover?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
+      'Messaging framework',
+      'Brand kit',
+      'Boilerplates',
+      'FAQ',
+    ]);
+    expect(cover?.querySelector('h1')?.textContent).toBe('Positioning & brand');
+    expect(cover?.querySelector('h1')?.classList.contains('text-balance')).toBe(true);
     expect(cover?.classList.contains('grid')).toBe(true);
     expect(cover?.classList.contains('h-screen')).toBe(false);
     expect(cover?.querySelector('.flex-1')).toBeNull();
     expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
     expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
+    if (!document) throw new Error('Missing synthetic family print composition');
+    expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
+    const frameworkRoot = document.querySelector('[data-testid="mktg-framework-print"]');
+    expect(frameworkRoot?.classList.contains('flex')).toBe(false);
+    expect(frameworkRoot?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
+    expect(frameworkRoot?.lastElementChild?.getAttribute('data-testid')).toBe('mktg-framework-print-numbers');
+    const goals = document.querySelector('[data-testid="mktg-framework-print-goals"]');
+    expect(goals).not.toBeNull();
+    expect(goals?.querySelector('thead th')?.classList.contains('w-[1.1in]')).toBe(true);
+    goals?.querySelectorAll('tbody th').forEach((label) => {
+      expect(getComputedStyle(label).overflowWrap).toBe('normal');
+      expect(getComputedStyle(label).wordBreak).toBe('normal');
+      expect(getComputedStyle(label).hyphens).toBe('none');
+      expect(label.classList.contains('uppercase')).toBe(true);
+      expect(label.classList.contains('tracking-[0.16em]')).toBe(true);
+    });
+    expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
+    expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
+    const body = root.ownerDocument.body;
+    const wasPrinting = body.classList.contains(MKTG_FAMILY_PRINT_BODY_CLASS);
+    body.classList.add(MKTG_FAMILY_PRINT_BODY_CLASS);
+    try {
+      expect(document.classList.contains(MKTG_FAMILY_PRINT_ONLY_CLASS)).toBe(true);
+      const frames = document.querySelectorAll<HTMLElement>('lfx-mktg-brand-kit-print .kit-usage-frame');
+      expect(frames).toHaveLength(4);
+      frames.forEach((frame) => {
+        expect(frame.closest(`.${MKTG_FAMILY_PRINT_ONLY_CLASS}`)).toBe(document);
+        expect(frame.closest(`body.${MKTG_FAMILY_PRINT_BODY_CLASS}`)).toBe(body);
+        expect(getComputedStyle(frame).position).toBe('relative');
+        expect(getComputedStyle(frame).overflow).toBe('hidden');
+        expect(getComputedStyle(frame).breakInside).toBe('avoid');
+        const inner = frame.querySelector('.kit-usage-inner');
+        if (!inner) throw new Error('Missing synthetic family-frame content box');
+        expect(getComputedStyle(inner).position).toBe('absolute');
+        inner.querySelectorAll('img, p').forEach((child) => {
+          expect(child.closest('.kit-usage-frame')).toBe(frame);
+          expect(getComputedStyle(child).position).toBe('absolute');
+        });
+      });
+    } finally {
+      if (!wasPrinting) body.classList.remove(MKTG_FAMILY_PRINT_BODY_CLASS);
+    }
+    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(5);
+    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(5);
+    expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();
+    expect(document?.querySelector('lfx-mktg-brand-kit-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project Brand kit');
+    expect(Array.from(document?.querySelectorAll('lfx-mktg-brand-kit-print h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual([
+      '02.1',
+      '02.2',
+      '02.3',
+      '02.4',
+      '02.5',
+    ]);
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
     expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
+    expect(document?.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
+    expect(document?.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
+    expect(document?.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
     expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
     expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');
@@ -325,7 +427,65 @@ describe('Family export slot', () => {
     button('pdf')?.click();
     await fixture.whenStable();
     expect(root.textContent).toContain('could not be prepared for PDF');
-    expect(print.print).not.toHaveBeenCalled();
+    expect(print.printNow).not.toHaveBeenCalled();
+  });
+
+  it('offers an explicit second click if approved revisions are not yet prepared, never auto-printing', async () => {
+    const pending = new Subject<MktgFamilyPrintView>();
+    api.printView.mockReturnValue(pending);
+    const { fixture, root, button } = await setup();
+    expect(api.printView).toHaveBeenCalledOnce();
+    button('pdf')?.click();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    pending.next({
+      framework: null,
+      kit: null,
+      boilerplates: null,
+      faq: null,
+      brand: mktgPrintBrand(null),
+      projectName: 'Synthetic project',
+      printedAt: '2026-10-28T00:00:00Z',
+      fontFamily: null,
+      weights: [400],
+    });
+    pending.complete();
+    await fixture.whenStable();
+    expect(root.textContent).toContain('Your PDF is ready — click to open the print preview');
+    expect(button('pdf')?.textContent).toContain('Open print preview');
+    expect(print.printNow).not.toHaveBeenCalled();
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it.each(['writer', 'project', 'destroy'])('ignores a pending preparation after %s changes', async (change) => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      })
+    );
+    const { fixture, button } = await setup();
+    button('pdf')?.click();
+    if (change === 'writer') writer.set(false);
+    if (change === 'project') activeContext.set({ uid: 'synthetic-other-project', name: 'Other project' });
+    if (change === 'destroy') fixture.destroy();
+    else await fixture.whenStable();
+    ready();
+    if (change !== 'destroy') await fixture.whenStable();
+    expect(print.printNow).not.toHaveBeenCalled();
+    if (change === 'writer') expect(fixture.componentInstance['printView']()).toBeNull();
+  });
+
+  it('refreshes cached server truth on every page entry without restarting a running export', async () => {
+    const first = await setup();
+    first.fixture.destroy();
+    api.last.mockClear();
+    api.running.mockReturnValue(run);
+    await setup();
+    expect(api.last).toHaveBeenCalledWith({ project: 'synthetic-project', familyId: 'positioning-brand' }, true);
+    expect(api.run).not.toHaveBeenCalled();
   });
 
   it('unsupported families show the title and one line, without buttons, PDF or Drive notes', async () => {
@@ -344,8 +504,11 @@ describe('Family export slot', () => {
   });
   it('does not call browser or API operations during SSR', async () => {
     TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
-    const { button } = await setup();
+    const { fixture, button } = await setup();
     expect(button('slides')?.disabled).toBe(true);
     expect(api.last).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.isRendered()).toBe(false);
+    fixture.componentInstance.focusDownload();
+    expect(fixture.componentInstance['highlighted']()).toBe(false);
   });
 });
