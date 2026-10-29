@@ -29,10 +29,17 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return { isFilterSafeIdentifier, agreedUsername };
 });
 vi.mock('./microservice-proxy.service', () => ({
-  MicroserviceProxyService: vi.fn().mockImplementation(() => ({ proxyRequest: proxyRequestMock, proxyRequestWithResponse: proxyRequestWithResponseMock })),
+  MicroserviceProxyService: class {
+    public proxyRequest = proxyRequestMock;
+    public proxyRequestWithResponse = proxyRequestWithResponseMock;
+  },
 }));
 const resolveContext = vi.fn(async () => ({ b2bOrgUid: SYNTHETIC_ORG_ACCOUNT_ID, membershipUid: 'm-active', projectUid: 'p-1' }));
-vi.mock('./org-membership-resolver.service', () => ({ OrgMembershipResolverService: vi.fn().mockImplementation(() => ({ resolveContext })) }));
+vi.mock('./org-membership-resolver.service', () => ({
+  OrgMembershipResolverService: class {
+    public resolveContext = resolveContext;
+  },
+}));
 vi.mock('./logger.service', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn(), startOperation: vi.fn().mockReturnValue(0) },
 }));

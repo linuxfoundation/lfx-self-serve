@@ -52,13 +52,16 @@ export function orgCodeFilterValues(filters: OrgCommitFilters): OrgCodeFilterVal
 
 /**
  * Lenient read of the URL params `projectScope` and `metric` (a code-count option): a missing or unknown value is the
- * default. A link from before the one code-count dropdown carries `commitScope=merged`; it reads as `metric=merged`
- * unless it asked for code contributions.
+ * default. A link from before the one code-count dropdown carries `commitScope=merged` with `metric=commits` or no
+ * `metric` (commits was the default then); it reads as `metric=merged` unless it asked for code contributions.
  */
 export function readOrgCommitFilters(get: OrgCommitFilterParamReader): OrgCommitFilters {
   const projectScope = parseOrgProjectScope(get('projectScope')) ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope;
-  const metric = parseOrgCodeMeasure(get('metric')) ?? DEFAULT_ORG_CODE_MEASURE;
-  return orgCommitFiltersFor({ projectScope, metric: metric === 'commits' && get('commitScope') === 'merged' ? 'merged' : metric });
+  const measure = parseOrgCodeMeasure(get('metric'));
+  if (get('commitScope') === 'merged' && (measure === null || measure === 'commits')) {
+    return orgCommitFiltersFor({ projectScope, metric: 'merged' });
+  }
+  return orgCommitFiltersFor({ projectScope, metric: measure ?? DEFAULT_ORG_CODE_MEASURE });
 }
 
 /**

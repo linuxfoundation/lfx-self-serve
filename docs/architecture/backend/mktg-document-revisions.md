@@ -171,11 +171,11 @@ export. No personal identity is written into export records.
 
 The Family page eagerly checks last export independently of its document-list read.
 A failed check disables export rather than guessing Create. Download PDF composes
-the existing approved framework print and kit book, in exporter order, using the
-family print body class and each rendering's named page size. Boilerplates and FAQ
-are provisionally omitted from PDF because no print layouts exist; the UI says so.
-Slides still exports those approved assets. Neither export changes the on-screen
-asset rendering or grants Google Drive access.
+the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
+with one family cover and contents. The family print body class selects a shared
+portrait layout; the kit's landscape artwork scales to fit portrait pages, rather
+than mixing named page sizes. Slides exports the same supported approved assets.
+Neither export changes the on-screen asset rendering or grants Google Drive access.
 
 ### Asset approval UI
 
@@ -262,21 +262,32 @@ their leftover artifact.
 
 ## Last scalar intake
 
-A separate private snapshot at
-`document-last-intake/{project}/{agentKey}.json` remembers the registered scalar
-fields of the latest accepted Generate for an active living agent. It uses the
-existing `marketing-os-artifacts` purpose and server-resolved writer partition.
+A separate private snapshot remembers the registered scalar fields of the latest accepted
+Generate. Active living agents keep the shared per-project key
+`document-last-intake/{project}/{agentKey}.json`: another writer of the same project
+can restore those inputs, including existing records, with no migration or extra subject
+check beyond the project-writer grant. LinkedIn instead uses
+`document-last-intake/{project}/linkedin-post/{sha256(effectiveSub)}.json`: only that writer's
+record is read, the subject is hashed (never raw in the key), and a missing subject cannot
+read a snapshot. Older per-project LinkedIn records are ignored, never read, shown or
+migrated. LinkedIn's explicit `lastIntakeFields` allowlist contains source kind, selected
+pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
+Both schemes use the existing `marketing-os-artifacts` purpose and server-resolved project partition.
+Per-writer last intake is kept 30 days; expired siblings are deleted on every LinkedIn read or write of the project, using listing timestamps without reading their bodies. All of a writer's snapshots are deleted when the writer deletes their LinkedIn profile. Cleanup is best-effort with count-only warnings. The existing `startedAt` expiry on read remains for every supported agent, including shared per-project records.
 The BFF starts this best-effort write only after sending the Generate acknowledgement;
 a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
 blank fields are retained; absent fields are not invented as last-run answers.
 Dependency attachment answer keys are excluded and dependencies must be resolved afresh,
-not replayed from this snapshot.
+not replayed from this snapshot. If LinkedIn's projected record exceeds
+`MKTG_LAST_INTAKE_MAX_BYTES`, the service writes the current metadata without
+`content_text` (never truncated text), replacing older inputs rather than restoring run N-1.
+The source page asks the writer to paste that omitted text again; uploads are never retained.
 
 This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
 conflict resolution. It holds run ID and start time, scalar answers, and document/logo
-counts only; it does not retain an author identifier because there is no audit consumer.
-Existing snapshots with the former author field remain readable, but that field is ignored
-and never projected in the response. It never stores uploaded bytes,
+counts only; the body does not retain an author identifier because there is no audit consumer.
+Existing living-agent snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response; this does not permit reading old per-project LinkedIn records. It never stores uploaded bytes,
 extracted source text, source filenames, Guild sessions or capability tokens.
 `GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
 `private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
@@ -293,18 +304,53 @@ project, registered agent, document, private Guild session and opaque `creatorSu
 Owner tokens are never written; legacy missing subjects mean unattributed writes.
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
-`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+`failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
+`revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
 concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
 This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
 conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
 The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
-Started, state and plain-text failure text (agent reply or server-authored deadline /
-storage-exhaustion reason); no session capability or starter identity is exposed.
+Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
+and plain-text failure text (agent reply or server-authored deadline / storage-exhaustion reason);
+no session capability, starter identity or private completion context is exposed.
+Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning,
+and is projected only when the effective reader is the stored original creator. Other project writers
+see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
+redactor to activity labels/details before returning them, including to the creator.
+
+The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
+object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes
+`{ oneOff: context }`; the comments redraft service passes `{ basedOnId: revisionId }`
+on both initial submission and ACK replay. A revision ID is never parsed as one-off
+completion data. The captured one-off body and the existing redraft
+`prior-revision-id` semantics stay separate; neither field populates the other.
+
+Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
+LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
+then call `startForOneOff` before returning an opaque `runId` alongside their existing response.
+The destination is the exact session-derived `run-…` document ID, never `living`;
+separate one-off sessions cannot supersede each other's progress. Plain writer-entitled
+Documents reads dispatch to the existing domain result service and persist the same revision
+without any browser cache or owner token. Completion checks the exact receipt's project,
+agent and document. The domain writer receives the original opaque creator attribution,
+not the reading visitor's identity.
+
+LinkedIn's immutable private start also retains validated link answers, source word count and
+whether profile initialization was allowed at Generate. Reconciliation initializes only the
+original creator's profile, never a visitor's; impersonation still disables initialization.
+No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
+tracked session. Member 360 maps `needs_input` to questions without failure text: its question text is
+never exposed and it has no answers endpoint. A Member 360 pause never expires by the clock;
+writing also stays open until Guild reports a session end. Only that session end fails the run,
+not the local writing deadline. The automatic poll window still stops checks without marking
+failure; a plain refresh/reopen read checks Guild again, so the run remains readable.
+Its ready result carries the shared exact persistence receipt as well as the existing `stored`
+flag; existing clients remain compatible.
 
 States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Questions pause the writing deadline until accepted answers renew
+`superseded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the
@@ -314,7 +360,11 @@ matching late receipt can finish a failed attempt on a creator poll or explicit
 detail refresh. Effective start/run-id order retires older same-document runs.
 Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
 Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
-creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+creator attribution (legacy unknown), never the visitor. It also uses the shared Guild outcome
+resolver with an internal catalog-resolved result endpoint; the visiting Documents Request is
+not mutated. A settled runtime failure becomes failed before the writing deadline, projecting
+only the classifier's fixed safe reason as failureText, never provider payloads. Controller calls
+without that optional endpoint keep their existing registered-route behaviour. Retry checks the exact stored session;
 it creates no generation and does not change the document's current pointer.
 
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
@@ -399,7 +449,14 @@ that revision. `POST` to the same path takes `project`, `revisionId`,
 revision membership and the source JSON's own field paths. The Brand Kit uses
 a stable JSON field key internally and captures its verbatim stored string as
 the agent's passage; caller-supplied passages, authors and timestamps are
-rejected. Framework and Boilerplates use their contract's field paths.
+rejected. Framework and Boilerplates use their contract's field paths. FAQ uses
+only answer paths `faq[g][1][q][1]`, resolved against the stored grouped tuples;
+a null answer is a valid target, but missing indexes, group names, questions and
+source labels are not. FAQ allows at most 30 comments per send, matching its agent
+form. The server renders them as `revision: { mode: 'redraft', prior_version,
+previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
+stored approved framework. The agent publishes a supplied answer with source
+label Notes; the host never edits the answer or its source itself.
 
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different

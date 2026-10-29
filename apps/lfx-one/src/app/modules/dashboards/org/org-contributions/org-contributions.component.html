@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-contributions-page">
   <lfx-page-header
     title="Code Contributions"
-    description="Commits, contributors, maintainers, and collaborators across your projects."
+    description="Commits, contributors, and collaborators across your projects."
     titleTestId="org-contributions-title"
     descriptionTestId="org-contributions-subtitle"
     data-testid="org-contributions-header" />
@@ -80,7 +80,7 @@
             size="small"
             [options]="projectScopeOptions"
             styleClass="w-full"
-            ariaLabel="Filter by project scope"
+            [ariaLabel]="projectScopeLabel"
             dataTest="org-contributions-project-scope-filter" />
         </div>
         <div class="w-full sm:w-52">
@@ -94,6 +94,19 @@
             dataTest="org-contributions-metric-filter" />
         </div>
         <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            [options]="foundationOptions()"
+            [filter]="true"
+            filterPlaceholder="Search foundations"
+            emptyFilterMessage="No foundations match."
+            styleClass="w-full"
+            ariaLabel="Filter by foundation"
+            dataTest="org-contributions-foundation-filter" />
+        </div>
+        <div class="w-full sm:w-52" data-testid="org-contributions-projects-filter">
           <lfx-multi-select
             [form]="filterForm"
             control="projects"
@@ -101,7 +114,7 @@
             optionLabel="label"
             optionValue="value"
             optionSubLabel="sublabel"
-            placeholder="All Projects"
+            [placeholder]="anyProjectLabel"
             filterPlaceHolder="Search projects"
             [selectionLimit]="maxFilterValues"
             size="small"

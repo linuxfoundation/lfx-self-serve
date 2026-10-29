@@ -39,6 +39,7 @@ import type {
   CampaignAudience,
   CampaignBriefApproveResult,
   CampaignBriefOutput,
+  CampaignTwitterDraft,
   CampaignCapabilityReadState,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -285,6 +286,20 @@ export class CampaignsComponent {
    * would be machinery guarding against a hazard that is already closed one level down.
    */
   protected readonly implementationDraft = signal<CampaignImplementationDraft | null>(null);
+
+  /**
+   * The X fields of the draft, carried across a proceed for the SAME event — a refine — while the
+   * rest of the draft is cleared (see `onProceedToImplementation`). The generator writes nothing
+   * for X, so there is nothing a refine could regenerate there. Cleared with the draft otherwise.
+   */
+  protected readonly carriedTwitterDraft = signal<CampaignTwitterDraft | null>(null);
+
+  /**
+   * Set when Planning discards its brief (New Brief, Cancel, or a fresh Generate), so the next proceed is a
+   * new generation for which the X fields must not carry, even for the same event. Cleared by that
+   * proceed.
+   */
+  private twitterCarryDiscarded = false;
 
   /**
    * The extension lists of the brief last handed to Implementation, exactly as the GENERATOR
@@ -937,6 +952,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an ad image — `CampaignListResult.metaCreativeEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
+  /** Whether the Reddit section offers a conversion pixel override — `CampaignListResult.redditConversionPixelEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsRedditConversionPixelEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the Google image slots offer the brief's stored-image library — `CampaignListResult.googleAssetUploadEnabled`, read and cleared like the capabilities above. */
@@ -949,6 +966,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /** Whether a Microsoft create carries the flight dates — `CampaignListResult.microsoftScheduleEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftScheduleEnabled = signal<boolean | null>(null);
+  /** Whether the create flow may offer X at all — `CampaignListResult.twitterCreateEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsTwitterCreateEnabled = signal<boolean | null>(null);
   /** Whether a Meta create carries the Instagram id and EU DSA disclosures — `CampaignListResult.metaInstagramDsaEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInstagramDsaEnabled = signal<boolean | null>(null);
   /** Whether the Implement tab searches Google's geo target table — `CampaignListResult.googleGeoSearchEnabled`, read and cleared like the capabilities above. */
@@ -2516,12 +2535,14 @@ export class CampaignsComponent {
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
         this.briefCampaignsMetaCreativeEnabled.set(null);
+        this.briefCampaignsRedditConversionPixelEnabled.set(null);
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsGoogleAssetUploadEnabled.set(null);
         this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+        this.briefCampaignsTwitterCreateEnabled.set(null);
         this.briefCampaignsMetaInstagramDsaEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -2775,6 +2796,12 @@ export class CampaignsComponent {
     }
   }
 
+  /** Planning discarded its brief: see `twitterCarryDiscarded`. */
+  protected onPlanningBriefDiscarded(): void {
+    this.carriedTwitterDraft.set(null);
+    this.twitterCarryDiscarded = true;
+  }
+
   /**
    * Hand a brief to the Implementation tab.
    *
@@ -2820,6 +2847,9 @@ export class CampaignsComponent {
       googleCallouts: brief.googleCallouts ? [...brief.googleCallouts] : undefined,
       googleSitelinks: brief.googleSitelinks?.map((sitelink) => ({ ...sitelink })),
     };
+    // The X fields survive a same-event proceed (see `carriedTwitterDraft`); read BEFORE the clear.
+    this.carriedTwitterDraft.set(this.twitterCarryDiscarded ? null : this.twitterDraftToCarry(brief));
+    this.twitterCarryDiscarded = false;
     this.implementationDraft.set(null);
     this.briefOutput.set(handedOver);
     this.selectedTab.set('implementation');
@@ -4620,12 +4650,14 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
           this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+          this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+          this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
           this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
@@ -4645,12 +4677,14 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
           this.briefCampaignsMetaCreativeEnabled.set(null);
+          this.briefCampaignsRedditConversionPixelEnabled.set(null);
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsGoogleAssetUploadEnabled.set(null);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+          this.briefCampaignsTwitterCreateEnabled.set(null);
           this.briefCampaignsMetaInstagramDsaEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -4716,12 +4750,14 @@ export class CampaignsComponent {
     this.briefCampaignsRedditCreativeEnabled.set(null);
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
     this.briefCampaignsMetaCreativeEnabled.set(null);
+    this.briefCampaignsRedditConversionPixelEnabled.set(null);
     this.briefCampaignsMetaAssetUploadEnabled.set(null);
     this.briefCampaignsGoogleAssetUploadEnabled.set(null);
     this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
     this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+    this.briefCampaignsTwitterCreateEnabled.set(null);
     this.briefCampaignsMetaInstagramDsaEnabled.set(null);
     this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
     this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -4757,12 +4793,14 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
             this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
+            this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
+            this.briefCampaignsTwitterCreateEnabled.set(result.twitterCreateEnabled);
             this.briefCampaignsMetaInstagramDsaEnabled.set(result.metaInstagramDsaEnabled);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleGeoSearchEnabled.set(result.googleGeoSearchEnabled);
@@ -4788,12 +4826,14 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
             this.briefCampaignsMetaCreativeEnabled.set(null);
+            this.briefCampaignsRedditConversionPixelEnabled.set(null);
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsGoogleAssetUploadEnabled.set(null);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
+            this.briefCampaignsTwitterCreateEnabled.set(null);
             this.briefCampaignsMetaInstagramDsaEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleGeoSearchEnabled.set(null);
@@ -6516,6 +6556,7 @@ export class CampaignsComponent {
     // generated next. The child's `eventSlug` guard would catch a DIFFERENT event, but not the
     // same event re-generated, which is exactly what Start Over does.
     this.implementationDraft.set(null);
+    this.carriedTwitterDraft.set(null);
     // Cleared WITH the draft, never separately: the baseline only means anything as the answer to
     // "what was that draft typed over", so a baseline outliving its draft is a claim about edits
     // that no longer exist. Clearing the draft alone would already stop the carry; clearing both
@@ -6626,5 +6667,28 @@ export class CampaignsComponent {
     // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
+  }
+
+  /**
+   * The X fields of the current draft when it was typed against the same event as `brief`, else
+   * `null`. The event slug is the brief's identity across a refine: a different event's tweet must
+   * never follow onto this one.
+   */
+  private twitterDraftToCarry(brief: CampaignBriefOutput): CampaignTwitterDraft | null {
+    const previous = this.implementationDraft() ?? this.carriedTwitterDraft();
+    const slug = brief.eventDetails?.slug ?? '';
+    if (!previous || slug === '' || previous.eventSlug !== slug) return null;
+    return {
+      eventSlug: previous.eventSlug,
+      twitterBudget: previous.twitterBudget,
+      twitterTweetText: previous.twitterTweetText,
+      twitterImageAssetId: previous.twitterImageAssetId,
+      twitterImageAssetName: previous.twitterImageAssetName,
+      twitterImageAssetBriefId: previous.twitterImageAssetBriefId,
+      twitterImageUploadPendingName: previous.twitterImageUploadPendingName,
+      twitterImageUploadPendingBriefId: previous.twitterImageUploadPendingBriefId,
+      twitterImageUploadFailedMessage: previous.twitterImageUploadFailedMessage,
+      twitterImageUploadFailedBriefId: previous.twitterImageUploadFailedBriefId,
+    };
   }
 }

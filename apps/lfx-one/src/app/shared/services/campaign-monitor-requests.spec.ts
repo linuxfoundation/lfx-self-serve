@@ -94,3 +94,32 @@ describe('CampaignService.getGoogleAdsAccounts', () => {
     expect(result).toBe(accounts);
   });
 });
+
+/** The X create flow's two reads: the brief-less capability and the account an X create uses (LFXV2-3319). */
+describe('CampaignService X create reads', () => {
+  function service(get: ReturnType<typeof vi.fn>): CampaignService {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get } },
+        { provide: SseService, useValue: {} },
+      ],
+    });
+    return TestBed.inject(CampaignService);
+  }
+
+  it('scopes the capability read to the project, which the campaign-manager guard authorises on', () => {
+    const get = vi.fn().mockReturnValue(of({ enabled: true }));
+
+    service(get).getTwitterCreateCapability('cncf').subscribe();
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/twitter/create-capability', { params: { project: 'cncf' } });
+  });
+
+  it('GETs the X account read with only the project', () => {
+    const get = vi.fn().mockReturnValue(of({ accounts: [], connection: { state: 'no_connection', accountId: null, label: null } }));
+
+    service(get).getTwitterAdsAccounts('cncf').subscribe();
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/twitter/accounts', { params: { project: 'cncf' } });
+  });
+});

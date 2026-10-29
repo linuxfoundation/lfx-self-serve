@@ -7,7 +7,7 @@
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.
 
-import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow } from './org-people.interface';
+import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgEmploymentFilter } from './org-people.interface';
 
 /**
  * Roster row carrying every code count the commit filters can pick (lfx-self-serve#4164): `commitsCount` is
@@ -89,3 +89,21 @@ export interface OrgPersonCompanyEmailRow {
   /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
   IS_PRIMARY: boolean | number | null;
 }
+
+/** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */
+export type OrgPersonEmployment = Exclude<OrgEmploymentFilter, 'all'>;
+
+/**
+ * One person's ORG_PEOPLE_ALL_RANGES row for a (range, project scope), classified by `IS_FORMER` (lfx-self-serve#4627).
+ * Someone with no row is neither current nor former, so only the Employment filter's `all` lists them.
+ */
+export interface OrgPersonEmploymentRow {
+  PERSON_KEY: string;
+  EMPLOYMENT: OrgPersonEmployment;
+}
+
+/**
+ * The account's classification for a (range, project scope) as stored in Valkey: the person keys of each class, without
+ * the per-row field names (`people-employment:v2`). Someone in neither list has no roster row.
+ */
+export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;

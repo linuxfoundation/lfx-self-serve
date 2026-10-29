@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
 
@@ -82,8 +82,14 @@ test('shows the stale badge without hiding the last link', async ({ page }, info
 
 test('empty approved family disables both actions and explains approval', async ({ page }, info) => {
   await openFamilyExports(page, { empty: true });
-  await expect(page.getByTestId('family-export-empty')).toContainText('Approve a revision first');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  await expect(page.getByTestId('family-export-empty')).toHaveText('Available once the framework is approved: PDF and Slides use the approved current.');
+  for (const action of ['pdf', 'slides']) {
+    const button = page.getByTestId(`family-export-${action}`).getByRole('button');
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveClass(/p-button-outlined/);
+    await button.hover({ force: true });
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+  }
   await page.screenshot({ path: info.outputPath('no-approved-family.png'), fullPage: true });
 });
 
@@ -121,15 +127,16 @@ test('last-export lookup starts even while family document listing is held', asy
   await page.screenshot({ path: info.outputPath('eager-family-lookup.png'), fullPage: true });
 });
 
-test('unsupported family explains its export state and disables both actions', async ({ page }, info) => {
+test('unsupported family shows one line without export buttons or Positioning notes', async ({ page }, info) => {
   await openFamilyExports(page, { familyId: 'website-web' });
   await expect(page.getByTestId('family-export-unsupported')).toContainText('no assets supported by the exporter');
-  for (const action of ['pdf', 'slides']) await expect(page.getByTestId(`family-export-${action}`).getByRole('button')).toBeDisabled();
+  for (const action of ['pdf', 'slides', 'pdf-note']) await expect(page.getByTestId(`family-export-${action}`)).toHaveCount(0);
+  for (const state of ['access', 'loading', 'empty', 'pdf-note', 'skipped']) await expect(page.getByTestId(`family-export-${state}`)).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prints the existing family document under its body class, never a slide view', async ({ page }, info) => {
-  await openFamilyExports(page);
+test('Download PDF prints all four approved assets with one family cover and contents', async ({ page }, info) => {
+  await openFamilyExports(page, { allAssets: true });
   await page.evaluate(() => {
     window.print = () => {
       document.body.dataset['familyPrintClass'] = document.body.className;
@@ -137,9 +144,46 @@ test('Download PDF prints the existing family document under its body class, nev
   });
   await page.getByTestId('family-export-pdf').getByRole('button').click();
   await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
-  await expect(page.getByTestId('family-export-print-document').locator('lfx-mktg-framework-print')).toHaveCount(1);
-  await expect(page.getByTestId('family-export-print-document')).toBeHidden();
-  await expect(page.getByTestId('family-export-pdf-note')).toContainText('Boilerplates and FAQ do not have print layouts yet');
+  await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
+  await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
+  const printDocument = page.getByTestId('family-export-print-document');
+  for (const selector of ['lfx-mktg-framework-print', 'lfx-brand-kit-view', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+    await expect(printDocument.locator(selector)).toHaveCount(1);
+  }
+  await expect(page.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
+  await expect(page.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
+  await expect(page.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  await expect(printDocument).toBeHidden();
+  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+  await page.emulateMedia({ media: 'print' });
+  const cover = page.getByTestId('family-export-print-cover');
+  await expect(cover).toBeVisible();
+  await expect(page.getByTestId('family-export-print-title')).toBeVisible();
+  await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
+  const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
+  expect(coverColors.ground).toBe('rgb(255, 255, 255)');
+  expect(coverColors.ink).not.toBe(coverColors.ground);
+  // The screen shell's canvas must not bleed through below a short print section.
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  const ancestorBackgrounds = await printDocument.evaluate((element) => {
+    const backgrounds: string[] = [];
+    for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) backgrounds.push(getComputedStyle(ancestor).backgroundColor);
+    return backgrounds;
+  });
+  expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
+  await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
+  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2', '01.3', '01.4']);
+  await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
+  await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
+  for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
+    await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
+  }
+  await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
+  await expect(page.getByTestId('brand-kit-page-cover')).toBeHidden();
+  await expect(page.getByTestId('brand-kit-page-contents')).toBeHidden();
+  await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
+  await page.emulateMedia({ media: 'screen' });
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });

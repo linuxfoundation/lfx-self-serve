@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants/mktg-kit.constants';
+import { MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   DOCUMENT_PROJECT,
@@ -82,7 +85,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     fixture.finish();
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
@@ -121,7 +125,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
       await expect(page).toHaveURL(new RegExp('/' + fixture.intake.agentId + '\\?'));
       await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
-      await expect(page.getByTestId('mktg-run-activity')).toContainText('Writing your Boilerplates');
+      await expect(page.getByTestId('mktg-agent-run-status')).toContainText('Writing your Boilerplates');
       await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('direct-boilerplates-run-progress.png'), fullPage: true });
       fixture.finish();
@@ -161,7 +165,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     ask = true;
     await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
@@ -177,7 +182,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await setupDocuments(page);
     await openDocuments(page);
     await page.getByTestId('mktg-kit-tab-documents').click();
-    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
+    await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(2);
     await expect(page.getByTestId('mktg-documents-all')).toContainText(DOCUMENT_TYPE.label);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
     if (!type) throw new Error('Synthetic navigation test requires a catalog run type');

@@ -15,7 +15,7 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { BrandKitWebViewComponent } from './brand-kit-web-view.component';
 
@@ -33,7 +33,7 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
 describe('BrandKitWebViewComponent', () => {
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
@@ -178,6 +178,23 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-footer')?.textContent).toContain('Export to Google Slides builds the kit as a deck');
     });
 
+    it('replaces draft exports with a quiet explanation and restores Slides then solid PDF on approval', async () => {
+      fixture.componentRef.setInput('viewingDraft', true);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-required')?.textContent).toBe('Export is available once this version is approved');
+      expect(button('brand-kit-web-view-download-pdf')).toBeNull();
+      expect(button('brand-kit-web-view-export-slides')).toBeNull();
+      fixture.componentRef.setInput('viewingDraft', false);
+      await fixture.whenStable();
+      const actions = query('brand-kit-web-view-actions');
+      expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
+        'Export to Google Slides',
+        'Download PDF',
+      ]);
+      expect(button('brand-kit-web-view-export-slides')?.classList.contains('p-button-outlined')).toBe(true);
+      expect(button('brand-kit-web-view-download-pdf')?.classList.contains('p-button-outlined')).toBe(false);
+    });
+
     it('heads the page as the framework view does: the title, the kit’s version, the mode, and the actions', async () => {
       expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
@@ -286,7 +303,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-panel-overview')?.getAttribute('aria-labelledby')).toBe('brand-kit-web-view-tab-overview');
     });
 
-    it('Overview: what the kit is built from, the brand at a glance, and the six chapters, each opening its tab', async () => {
+    it('Overview: six plain chapter cards, with navigation only through the tabs', async () => {
       expect(query('brand-kit-web-view-built-from')?.textContent).toContain('Built from the logo file logo.svg, the messaging framework');
       expect(query('brand-kit-web-view-glance')?.querySelector('img')?.getAttribute('alt')).toBe('Primary lockup — logo.svg');
       const chapters = Array.from(query('brand-kit-web-view-chapters')?.querySelectorAll('article') ?? []);
@@ -295,11 +312,12 @@ describe('BrandKitWebViewComponent', () => {
       );
       expect(query('brand-kit-web-view-chapter-color')?.textContent).toContain('Charcoal and white carry the brand.');
 
-      query('brand-kit-web-view-open-color')?.click();
+      expect(host().querySelector('[data-testid^="brand-kit-web-view-open-"]')).toBeNull();
+      tab('color').click();
       await fixture.whenStable();
       expect(tab('color').getAttribute('aria-selected')).toBe('true');
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
-      // The clicked Overview shortcut leaves with its panel; focus moves to the new panel's start.
+      // Selecting a chapter tab moves focus to the new panel's start.
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
@@ -403,7 +421,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-panel-voice')?.textContent).toContain('From the messaging framework');
     });
 
-    it('Sources and gaps: the framework view’s treatment, opened by Report with the count of gaps and failures', async () => {
+    it('Sources and gaps stays reachable through its tab without a duplicate Report control', async () => {
       const kit = brandKitTestRevision();
       kit.report = {
         sources_read: ['https://one.example.org', 'logo.svg'],
@@ -413,9 +431,10 @@ describe('BrandKitWebViewComponent', () => {
       };
       fixture.componentRef.setInput('kit', kit);
       await fixture.whenStable();
-      expect(query('brand-kit-web-view-report')?.querySelector('.p-badge')?.textContent?.trim()).toBe('3');
+      expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (3)');
 
-      button('brand-kit-web-view-report')?.click();
+      tab('sources').click();
       await fixture.whenStable();
 
       expect(tab('sources').getAttribute('aria-selected')).toBe('true');
@@ -425,8 +444,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-report-notes')?.querySelectorAll('li')).toHaveLength(2);
     });
 
-    it('says so where the run left nothing to report, and shows no count on Report', async () => {
-      expect(query('brand-kit-web-view-report')?.querySelector('.p-badge')).toBeNull();
+    it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
+      expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps');
       await open('sources');
 
       expect(query('brand-kit-web-view-sources-failed-empty')).not.toBeNull();

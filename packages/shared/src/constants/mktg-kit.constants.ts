@@ -41,6 +41,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
         id: 'brand-kit',
         label: 'Brand kit',
         runName: 'brand kit',
+        captionName: 'the brand kit',
         agentKey: 'brand-kit',
         description: 'Colours, typeface, logo system, voice · the book as a print page',
       },
@@ -65,7 +66,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
     lead: 'HUB voices',
     leadSummary: 'LinkedIn Post agent',
     description: 'Posts in the project’s voice from a link or a note.',
-    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
+    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', runName: 'LinkedIn post', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
     agentIds: ['linkedin-post'],
     runOrder: '',
   },
@@ -130,8 +131,8 @@ export const MKTG_KIT_STATE_LABELS = {
   'coming-soon': 'Coming soon',
 } as const;
 export const MKTG_KIT_TABS = [
-  { path: '', label: 'Kit' },
-  { path: 'requests', label: 'Requests' },
-  { path: 'access', label: 'Access' },
-  { path: 'documents', label: 'Documents' },
+  { path: '', label: 'Kit', soon: false },
+  { path: 'requests', label: 'Requests', soon: true },
+  { path: 'access', label: 'Access', soon: true },
+  { path: 'documents', label: 'Documents', soon: false },
 ] as const;

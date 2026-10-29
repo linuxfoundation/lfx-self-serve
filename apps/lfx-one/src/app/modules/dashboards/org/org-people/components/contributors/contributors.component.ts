@@ -8,14 +8,23 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_EMPLOYMENT,
   EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_ALL_FOUNDATIONS_LABEL,
+  ORG_ANY_PROJECT_LABEL,
   ORG_CODE_MEASURE_DEFINITION,
   ORG_CODE_METRIC_LABEL,
   ORG_CODE_MEASURE_OPTIONS,
   ORG_CONTRIBUTORS_INITIAL_LIMIT,
+  ORG_EMPLOYMENT_LABEL,
+  ORG_EMPLOYMENT_OPTIONS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_MAINTAINER_ROLES_DEFINITION,
+  ORG_MAINTAINER_ROLES_LABEL,
+  ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT,
+  ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -31,6 +40,8 @@ import type {
   OrgContributorSortColumn,
   OrgContributorSortDirection,
   OrgDropdownOption,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
   OrgProjectScope,
@@ -52,6 +63,7 @@ import {
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
+  parseOrgEmploymentFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
 } from '@lfx-one/shared/utils';
@@ -63,7 +75,7 @@ import { describeContributionsWindow, describeContributorsTooltip } from '../../
 
 import { ContributorsService } from '../../services/contributors.service';
 
-/** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainers / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
+/** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainer roles / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
 @Component({
   selector: 'lfx-org-people-contributors',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
@@ -79,12 +91,19 @@ export class ContributorsComponent {
   protected readonly initialLimit = ORG_CONTRIBUTORS_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
+  protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  protected readonly employmentOptions: OrgEmploymentOption[] = [...ORG_EMPLOYMENT_OPTIONS];
+  protected readonly employmentLabel = ORG_EMPLOYMENT_LABEL;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
-  protected readonly statSkeletonLabels: readonly string[] = ['Maintainers', 'Contributors', 'Projects', 'Foundations'];
+  protected readonly maintainerRolesLabel = ORG_MAINTAINER_ROLES_LABEL;
+  protected readonly maintainerRolesTooltip = ORG_MAINTAINER_ROLES_DEFINITION;
+  protected readonly maintainerRolesUnavailableHint = ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT;
+  protected readonly statSkeletonLabels: readonly string[] = [ORG_MAINTAINER_ROLES_LABEL, 'Contributors', 'Projects', 'Foundations'];
 
-  // The commit filters follow `?projectScope=` / `?metric=` (shared with All Employees) and the range follows
-  // `?range=` (shared with every People tab and Code Contributions); all are written back on change.
+  // The commit filters follow `?projectScope=` / `?metric=` (shared with All Employees), the range follows `?range=`
+  // (shared with every People tab and Code Contributions) and the employment filter follows `?employment=` (lfx-self-serve#4627);
+  // all are written back on change.
   private readonly initialFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name)));
 
   protected readonly filterForm = new FormGroup({
@@ -94,6 +113,7 @@ export class ContributorsComponent {
     timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialFilters.metric, { nonNullable: true }),
+    employment: new FormControl<OrgEmploymentFilter>(readEmployment(this.route.snapshot.queryParamMap.get('employment')), { nonNullable: true }),
   });
 
   // Default sort per Item 4 R4.4 lock: Role asc then Commits desc — encoded as the active column 'role' with secondary tiebreak in initSortedRows.
@@ -127,10 +147,14 @@ export class ContributorsComponent {
   // The commit filters also refetch (they change the read and the most-active project), undebounced like the time range.
   protected readonly commitFilters: Signal<OrgCommitFilters> = this.initCommitFilters();
   private readonly commitFilters$ = toObservable(this.commitFilters).pipe(distinctUntilChanged(sameOrgCommitFilters));
-  // Range and commit filters as one value, so a change to both (Clear filters, a URL step) starts a single read.
-  private readonly contributorsQuery = computed(() => ({ range: this.timeRange(), filters: this.commitFilters() }));
+  // The employment filter refetches too (the BFF keeps current or former employees), undebounced like the range.
+  private readonly employment: Signal<OrgEmploymentFilter> = toSignal(this.filterForm.controls.employment.valueChanges, {
+    initialValue: this.filterForm.controls.employment.value,
+  });
+  // Range, commit filters and employment as one value, so a change to several (Clear filters, a URL step) starts a single read.
+  private readonly contributorsQuery = computed(() => ({ range: this.timeRange(), filters: this.commitFilters(), employment: this.employment() }));
   private readonly contributorsQuery$ = toObservable(this.contributorsQuery).pipe(
-    distinctUntilChanged((a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters))
+    distinctUntilChanged((a, b) => a.range === b.range && sameOrgCommitFilters(a.filters, b.filters) && a.employment === b.employment)
   );
   protected readonly countLabel = computed(() => ORG_CODE_METRIC_LABEL[this.commitFilters().metric]);
   protected readonly countTooltip = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.commitFilters()).metric]);
@@ -138,11 +162,14 @@ export class ContributorsComponent {
     describeContributorsTooltip(
       this.commitFilters().projectScope,
       this.accountContext.selectedAccount().accountName,
-      describeContributionsWindow(this.timeRange())
+      describeContributionsWindow(this.timeRange()),
+      this.employment()
     )
   );
 
   protected readonly response: Signal<OrgContributorsResponse> = this.initResponse();
+  /** Roles table missing: every row's role reads 'Contributor', which is "unknown" here, so no role badge is shown. */
+  protected readonly maintainerRolesUnavailable = computed(() => this.response().stats.maintainerRoles === null);
 
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
   protected readonly projectOptions: Signal<OrgDropdownOption[]> = computed(() => this.initProjectOptions());
@@ -209,6 +236,28 @@ export class ContributorsComponent {
       });
 
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
+
+    // A pick is written to `?employment=` (dropped at the default) unless the URL already selects it, so following a URL
+    // change does not navigate again; a query-only navigation sets the picker.
+    this.filterForm.controls.employment.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed()).subscribe((employment) => {
+      if (employment === readEmployment(this.route.snapshot.queryParamMap.get('employment'))) return;
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { employment: employment === DEFAULT_ORG_EMPLOYMENT ? null : employment },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
+
+    this.route.queryParamMap
+      .pipe(
+        map((params) => readEmployment(params.get('employment'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((employment) => {
+        if (employment !== this.filterForm.controls.employment.value) this.filterForm.controls.employment.setValue(employment);
+      });
   }
 
   protected onSort(column: OrgContributorSortColumn): void {
@@ -231,8 +280,8 @@ export class ContributorsComponent {
   }
 
   /**
-   * Every filter back to its default. The range and commit filters are URL state, so one URL write resets them and the
-   * URL sync sets their pickers; `tab` and other params are kept.
+   * Every filter back to its default. The range, commit filters and employment are URL state, so one URL write resets
+   * them and the URL sync sets their pickers; `tab` and other params are kept.
    */
   protected clearFilters(): void {
     this.filterForm.patchValue({ search: '', foundation: '', project: '' });
@@ -241,6 +290,7 @@ export class ContributorsComponent {
       queryParams: {
         [ORG_LENS_TIME_RANGE_QUERY_PARAM]: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE),
         ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS),
+        employment: null,
       },
       queryParamsHandling: 'merge',
       replaceUrl: true,
@@ -263,6 +313,8 @@ export class ContributorsComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'code',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.timeRange(),
     });
   }
 
@@ -275,11 +327,14 @@ export class ContributorsComponent {
   }
 
   private initFoundationOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
   private initProjectOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Projects', value: '' }, ...this.response().projectOptions.map((p) => ({ label: p.projectName, value: p.projectId }))];
+    return [{ label: ORG_ANY_PROJECT_LABEL, value: '' }, ...this.response().projectOptions.map((p) => ({ label: p.projectName, value: p.projectId }))];
   }
 
   private initFilteredContributors(): OrgContributorRow[] {
@@ -377,9 +432,10 @@ export class ContributorsComponent {
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
     const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
-    // A project scope changes who the BFF returns, so an empty LF or non-LF result is a filtered result, not an empty org.
+    // A project scope or employment other than the default changes who the BFF returns, so an empty result under it is a filtered result, not an empty org.
     const hasProjectScope = this.commitFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope;
-    return hasSearch || hasFoundation || hasProject || hasTimeFilter || hasProjectScope;
+    const hasEmployment = this.employment() !== DEFAULT_ORG_EMPLOYMENT;
+    return hasSearch || hasFoundation || hasProject || hasTimeFilter || hasProjectScope || hasEmployment;
   }
 
   private initAriaSortMap(): Record<OrgContributorSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -436,12 +492,12 @@ export class ContributorsComponent {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, { range: timeRange, filters }]) => {
+        switchMap(([orgUid, { range: timeRange, filters, employment }]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange });
           }
-          return this.dataService.getContributors(orgUid, timeRange, filters).pipe(
+          return this.dataService.getContributors(orgUid, timeRange, filters, employment).pipe(
             tap((res) => {
               this.dropSelectionsAbsentFrom(res);
               this.loadingState.set(false);
@@ -475,8 +531,8 @@ export class ContributorsComponent {
   }
 
   /**
-   * A new range or project scope can drop the picked foundation or project from the response, and filtering on it would
-   * hide every row. The selection is cleared before the response renders.
+   * A new range, project scope or employment can drop the picked foundation or project from the response, and filtering
+   * on it would hide every row. The selection is cleared before the response renders.
    */
   private dropSelectionsAbsentFrom(res: OrgContributorsResponse): void {
     const { foundation, project } = this.filterForm.getRawValue();
@@ -489,13 +545,18 @@ export class ContributorsComponent {
   }
 
   private resetAllState(): void {
-    // The commit filters and range are page-level URL state, not per-org, so an org switch keeps them.
+    // The commit filters, range and employment are page-level URL state, not per-org, so an org switch keeps them.
     this.filterForm.patchValue({ search: '', foundation: '', project: '' });
     this.sortColumn.set('role');
     this.sortDirection.set(1);
     this.limit.set(ORG_CONTRIBUTORS_INITIAL_LIMIT);
     this.expansion.set({});
   }
+}
+
+/** `?employment=` value → employment filter; anything unknown (or absent) is everyone, like the Overview's Active Contributors. */
+function readEmployment(value: string | null): OrgEmploymentFilter {
+  return parseOrgEmploymentFilter(value) ?? DEFAULT_ORG_EMPLOYMENT;
 }
 
 /** Collapse per-(person, project) rows; pre-sorted by the metric's count DESC → last_active DESC → name (Item 5 R5 — sub-table non-interactive). */

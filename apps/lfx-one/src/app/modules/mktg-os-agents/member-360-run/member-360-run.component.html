@@ -3,10 +3,10 @@
 
 <!-- Run.dc.html uses exact pixel spacing because this app's rem base is 14px. The app shell supplies the global header. -->
 <div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
-  <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'member-360' }" data-testid="member-360-breadcrumb" />
+  <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: 'member-360', label: 'Member 360' }" data-testid="member-360-breadcrumb" />
   <section class="flex w-full min-w-0 flex-col gap-[20px]">
     <header class="flex flex-col gap-[6px]">
-      <h1 class="text-[30px] font-bold">Member 360</h1>
+      <h1 class="font-display font-light text-xl text-gray-900">Member 360</h1>
       <p class="text-[15px] text-gray-500">{{ intro }}</p>
       <span class="text-sm text-gray-500" data-testid="member-360-last-run">
         @if (latest(); as last) {
@@ -79,7 +79,7 @@
                 <span class="break-all"
                   ><span class="mr-2 rounded border border-gray-200 px-2 py-1 font-mono text-xs">{{ upload.format }}</span
                   >{{ upload.tracker.filename }}
-                  <span class="text-sm text-emerald-700"
+                  <span class="text-sm text-gray-500" data-testid="member-360-tracker-summary"
                     >{{ upload.tracker.rows.length }} {{ upload.tracker.rows.length === 1 ? 'row' : 'rows' }} · {{ upload.summary }}</span
                   ></span
                 >
@@ -102,7 +102,7 @@
                 [maxFileSize]="trackerMaxBytes"
                 [disabled]="uploading() || submitting()"
                 chooseLabel="Upload tracker"
-                chooseStyleClass="p-button-outlined p-button-secondary !border-dashed"
+                chooseStyleClass="p-button-outlined p-button-secondary"
                 (onSelect)="rejectUnsupportedTrackers($event.files)"
                 (onCustomUpload)="upload($event.files)"
                 dataTest="member-360-upload" />
@@ -116,9 +116,13 @@
           <div class="flex flex-col gap-2">
             <b>Sources this run will use</b>
             <div class="grid gap-2 text-sm md:grid-cols-3">
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">LFX: roster, memberships, key contacts, committees, meetings</div>
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">Web research: speaking, content, ambassadors (capped)</div>
-              <div class="rounded-lg bg-emerald-50 p-3 text-emerald-800">
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
+                LFX: roster, memberships, key contacts, committees, meetings
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
+                Web research: speaking, content, ambassadors (capped)
+              </div>
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-gray-700" data-testid="member-360-source-tile">
                 Your trackers: {{ trackers().length }} {{ trackers().length === 1 ? 'file' : 'files' }}
               </div>
             </div>
@@ -128,22 +132,19 @@
             </p>
           </div>
           @if (error()) {
-            <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+            <div aria-live="polite">
+              <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+            </div>
           }
           @if (historyError()) {
             <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
             <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
           }
-          <div class="flex flex-wrap items-center gap-3">
-            <lfx-button
-              type="submit"
-              [label]="submitting() ? 'Starting run…' : 'Run Member 360'"
-              [loading]="submitting()"
-              [disabled]="submitting() || uploading() || historyLoading() || (form.controls.compare.value && !!historyError())"
-              data-testid="member-360-run" />
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="text-sm text-gray-500"
-              >About 5 to 10 minutes for 12 members. The result is stored as a new run with its workbook; nothing is overwritten.</span
+              >About 5 to 10 minutes for 40 members. Saved as a new Member 360 report, with its workbook; nothing is overwritten.</span
             >
+            <lfx-button type="submit" class="ml-auto" [label]="submitting() ? 'Starting…' : 'Create Member 360'" data-testid="member-360-run" />
           </div>
         </section>
       </form>

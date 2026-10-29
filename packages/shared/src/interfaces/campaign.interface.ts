@@ -111,7 +111,7 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
  * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
  * upload still running in another, as a second Meta pick replaces the first.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
 
 /**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
@@ -224,6 +224,66 @@ export interface CreativeAssetLibrary {
   countLimit: number;
   bytesUsed: number;
   bytesLimit: number;
+}
+
+/**
+ * Where one file of a library upload stands.
+ *
+ * Every file an operator picks ends in exactly one of the four outcomes — `uploaded`, `present`
+ * (identical bytes were already stored, so nothing was added), `refused` (the file can never be
+ * stored as it is) or `failed` (it might be on another try) — or in `cancelled`. None is ever
+ * dropped from the list: a file that was skipped without saying so is the one an operator later
+ * hunts for in six ad managers.
+ */
+export type CreativeAssetQueueItemStatus = 'waiting' | 'uploading' | 'uploaded' | 'present' | 'refused' | 'failed' | 'cancelled';
+
+/** Why a file was refused. `quota` is campaign-service's 409; the rest are checked before sending. */
+export type CreativeAssetQueueRefusal = 'type' | 'size' | 'quota' | 'subfolder' | 'other';
+
+/** One file of a library upload, as `CampaignService` reports it. */
+export interface CreativeAssetQueueItem {
+  /** Unique within the queue — two files can share a name when picked from different folders. */
+  id: string;
+  /**
+   * The brief the file is stored against. The queue is one serial lane across briefs, so a pick on
+   * a second brief waits its turn rather than erasing what the first brief's run reported.
+   */
+  briefId: string;
+  projectSlug: string;
+  name: string;
+  byteSize: number;
+  status: CreativeAssetQueueItemStatus;
+  /** Set only on `refused`. */
+  refusal: CreativeAssetQueueRefusal | null;
+  /** The outcome as a sentence for the operator; empty while waiting or uploading. */
+  message: string;
+  /** The stored asset's id on `uploaded` and `present`; empty otherwise. */
+  assetId: string;
+}
+
+/** How one library upload outcome reads: its label and its badge's Tailwind classes. */
+export interface CreativeAssetQueueStatusView {
+  label: string;
+  badge: string;
+}
+
+/** A library upload item as the upload list renders it, its outcome's label and badge resolved. */
+export interface CreativeAssetQueueRow extends CreativeAssetQueueItem {
+  statusLabel: string;
+  statusBadge: string;
+  retryable: boolean;
+}
+
+/** The library upload's read of the brief's quota. `error` keeps no library: a guessed headroom would mislead. */
+export interface CreativeAssetLibraryQuotaState {
+  status: 'loading' | 'ready' | 'error';
+  library: CreativeAssetLibrary | null;
+}
+
+/** One quota read tagged with the brief it was for, so a re-read can keep showing that brief's last answer. */
+export interface CreativeAssetLibraryQuotaRead {
+  briefId: string;
+  quota: CreativeAssetLibraryQuotaState;
 }
 
 /** One platform image slot and the stored assets that fill it, best fit first. */
@@ -1065,6 +1125,11 @@ export interface CampaignImplementationDraft {
   redditImageUrl?: string;
   redditCallToAction?: RedditCallToAction | '';
   /**
+   * The per-campaign conversion pixel override (`RedditCampaignCreateRequest.conversionPixelId`).
+   * Round-trips regardless of `redditConversionPixelEnabled`, for the reason the three above do.
+   */
+  redditConversionPixelId?: string;
+  /**
    * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
    * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
    * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
@@ -1120,6 +1185,21 @@ export interface CampaignImplementationDraft {
   linkedInImageUploadPendingBriefId?: string;
   linkedInImageUploadFailedMessage?: string;
   linkedInImageUploadFailedBriefId?: string;
+  /**
+   * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
+   * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
+   * upload fields' terms above. All optional and restored only when present, so a draft written
+   * before the section existed changes nothing. Round-trips regardless of `twitterCreateEnabled`.
+   */
+  twitterBudget?: string;
+  twitterTweetText?: string;
+  twitterImageAssetId?: string;
+  twitterImageAssetName?: string;
+  twitterImageAssetBriefId?: string;
+  twitterImageUploadPendingName?: string;
+  twitterImageUploadPendingBriefId?: string;
+  twitterImageUploadFailedMessage?: string;
+  twitterImageUploadFailedBriefId?: string;
   /**
    * The Microsoft image extension, an upload only, on the Meta upload fields' terms above.
    * Round-trips regardless of `microsoftAssetUploadEnabled`.
@@ -1645,8 +1725,8 @@ export interface RedditBriefCopy {
  *
  * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
  * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
- * `conversionPixelId` is still campaign-service only: the legacy creator does not read it and
- * sending it there is silently dropped, so it matters only AFTER the cutover (#3484).
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it, so the
+ * control is offered and the field accepted only while campaign-service serves the create (#3484).
  */
 export interface RedditCampaignCreateRequest {
   eventName: string;
@@ -1694,15 +1774,14 @@ export interface RedditCampaignCreateRequest {
    * Overrides the ad account's own conversion pixel for this campaign.
    *
    * Upstream prefers this campaign-level value and falls back to the connection's pixel, refusing
-   * the create when neither supplies one — for EVERY objective, not just conversions. Its own
-   * comment argues the connection is the right source, since the pixel identifies the advertiser
-   * and is one per ad account, so per-campaign entry turns an account-level constant into
-   * something an operator can get wrong once per campaign.
+   * the create when neither supplies one — for EVERY objective, not just conversions. So it is an
+   * optional override, normally left blank, and it matters when the connection carries no pixel
+   * or the campaign needs a different one.
    *
-   * Declared for the wire contract only — NO control populates it, so the implementation tab
-   * cannot resolve that refusal and a deploy whose connection carries no pixel cannot create a
-   * Reddit campaign from here at all. Offering it is a product decision nobody has taken; this
-   * field is the half that would be needed if they did.
+   * The implementation tab collects it only while `CampaignListResult.redditConversionPixelEnabled`
+   * says campaign-service serves the create, and omits the key when blank: upstream reads empty as
+   * "use the connection's pixel", the same thing an absent key means (#3484). The create route
+   * refuses the field on the legacy arm rather than dropping it.
    */
   conversionPixelId?: string;
   /**
@@ -1924,6 +2003,63 @@ export interface MicrosoftCampaignCreateRequest {
   imageAssetId?: string;
 }
 
+/**
+ * X's per-platform config, typed to the wire: the `twitterConfig` campaign-service decodes
+ * (`internal/dispatch/twitter.go`, `type twitterConfig`), less the two fields this app never sends.
+ *
+ * Unlike the Meta and Microsoft requests it carries the service's own field names, so the BFF's
+ * `buildTwitterConfig` validates and projects rather than renames. What the wire does NOT have is
+ * as load-bearing as what it does:
+ *
+ * - No geo. campaign-service sets no location targeting on an X line item, so an X campaign
+ *   created here is eligible to serve in every market X serves once it is enabled. The Implement
+ *   tab says so rather than offering a control that would be sent nowhere.
+ * - No destination URL and no objective. The destination is the SAVED brief's registration URL,
+ *   which campaign-service tags with UTM parameters and appends to the tweet; every campaign is
+ *   `WEBSITE_CLICKS`.
+ * - No `tweetId` / `asUserId`. This app always authors a new promoted-only (nullcast) tweet from
+ *   `tweetText`, which never posts to the public timeline, and leaves the publishing handle to the
+ *   connection: campaign-service prefers the connection's `as_user_id` over a caller's for exactly
+ *   that reason.
+ *
+ * Every X campaign is created PAUSED (campaign and line item), so nothing spends until a human
+ * enables it.
+ */
+export interface TwitterCampaignCreateRequest {
+  /**
+   * DAILY budget in the ad ACCOUNT's currency, not USD — sent as `daily_budget_amount_local_micro`,
+   * with no FX conversion (the known gap LFXV2-3251 shares with Meta and Microsoft). Finite, at
+   * least 1 and at most `TWITTER_MAX_BUDGET`.
+   */
+  budgetAmount: number;
+  /**
+   * Flight start, `"YYYY-MM-DD"`, REQUIRED. Sent to X as UTC midnight, which X requires to be in
+   * the future (with five minutes' headroom), so today's date is always refused: the earliest
+   * start is tomorrow, UTC.
+   */
+  startDate: string;
+  /** Flight end, `"YYYY-MM-DD"`, REQUIRED and strictly after `startDate`. */
+  endDate: string;
+  /**
+   * The authored tweet's copy, REQUIRED. campaign-service appends the UTM-tagged destination link
+   * (unless the copy already carries it) and refuses the composed text above
+   * `TWITTER_MAX_TWEET_WEIGHTED_CHARS` weighted characters, every link counting
+   * `TWITTER_TCO_URL_WEIGHT`.
+   */
+  tweetText: string;
+  /**
+   * OPTIONAL creative asset uploaded to THIS brief, attached to the authored tweet as its image. At
+   * most `TWITTER_IMAGE_MAX_BYTES`; refused at dispatch otherwise.
+   */
+  imageAssetId?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means X AUTO; a
+   * manual bid must be at most `budgetAmount`, since X does not accept a line-item bid above its
+   * campaign's daily budget.
+   */
+  bidding?: CampaignBiddingConfig;
+}
+
 // ---------------------------------------------------------------------------
 // Meta Ads Monitoring
 // ---------------------------------------------------------------------------
@@ -1993,6 +2129,35 @@ export interface MetaAccountOption {
 export interface GoogleAdsAccountOption {
   key: string;
   label: string;
+}
+
+/** One X Ads account the connection's credential can reach, in the same option shape. `key` is X's alphanumeric account id verbatim. */
+export interface TwitterAdsAccountOption {
+  key: string;
+  label: string;
+}
+
+/** `GET /api/campaigns/twitter/create-capability`: the deployment-wide `canCreateTwitter` answer, with no brief. */
+export interface TwitterCreateCapability {
+  enabled: boolean;
+}
+
+/**
+ * `GET /api/campaigns/twitter/accounts` (LFXV2-3319): which X ad account an X create will use, and
+ * what the credential can reach.
+ *
+ * `twitterConfig` takes no account id: campaign-service creates under the account bound on the
+ * project's X connection (`account_id`), and refuses the create with `ErrAccountNotSelected` when
+ * that is empty. So `connection` is the answer that matters — `connected` names the account,
+ * `no_account` is a create that will be refused, and `no_connection` means campaign-service falls
+ * back to the LF system X connection. One case this cannot see: a campaign-service running with
+ * `LFX_FORCE_SYSTEM_ADS_ACCOUNT` creates every paid campaign on the LF system connection whatever
+ * the project's says, so the UI states the project connection's account and never blocks on it. `accounts` is `list-twitter-ads-accounts`, the choices an
+ * administrator can bind the connection to.
+ */
+export interface TwitterAdsAccountsResult {
+  accounts: TwitterAdsAccountOption[];
+  connection: MonitorConnectionAccount;
 }
 
 /**
@@ -3060,6 +3225,8 @@ export interface CampaignCreateRequest {
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
   microsoftConfig?: MicrosoftCampaignCreateRequest;
+  /** Sent only while `CampaignListResult.twitterCreateEnabled` is an explicit yes; see {@link TwitterCampaignCreateRequest}. */
+  twitterConfig?: TwitterCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 
@@ -5157,6 +5324,17 @@ export interface CampaignListResult {
    */
   redditAssetUploadEnabled: boolean;
   /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override, sent as
+   * `redditConfig.conversionPixelId` (#3484).
+   *
+   * Exactly the campaign-service create path: upstream prefers this value over the connection's own
+   * pixel (`internal/platform/reddit/client.go`), while the legacy creator never reads it, so a
+   * pixel typed while the cutover is dark would be accepted and silently dropped. Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which withholds
+   * the control.
+   */
+  redditConversionPixelEnabled: boolean;
+  /**
    * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
    * brief and naming them by asset id in the Google creative fields.
    *
@@ -5238,6 +5416,17 @@ export interface CampaignListResult {
    * which sends no dates and keeps the "ignores the flight dates" warning.
    */
   microsoftScheduleEnabled: boolean;
+  /**
+   * Whether the create flow may offer X (`twitter-ads`) at all, sent as `twitterConfig`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE` flag is on. The cutover half is not optional:
+   * the legacy creator has no X path. `CAMPAIGN_PLATFORMS` keeps X `disabled: true` as the static
+   * default, and the Plan picker and the Implement tab consult this instead, on an explicit yes
+   * only. Modelled on the client like the capabilities above (`boolean | null`, `null` for
+   * unanswered), which keeps X unselectable and blocks a create that still holds it.
+   */
+  twitterCreateEnabled: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
    *
@@ -5515,6 +5704,53 @@ export interface CampaignGoogleImageAssetBlock {
 /** `CampaignMetaImageAssetBlock`'s LinkedIn sibling, with the same kinds. */
 export interface CampaignLinkedInImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */
+export interface CampaignTwitterImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * The X section's typed fields, carried across a Plan → Implement round trip for the SAME event
+ * (a refine), when the rest of the draft is cleared. Nothing the generator produces feeds X, so a
+ * refine has nothing to regenerate there and clearing would only lose what the operator typed.
+ */
+export type CampaignTwitterDraft = Pick<
+  CampaignImplementationDraft,
+  | 'eventSlug'
+  | 'twitterBudget'
+  | 'twitterTweetText'
+  | 'twitterImageAssetId'
+  | 'twitterImageAssetName'
+  | 'twitterImageAssetBriefId'
+  | 'twitterImageUploadPendingName'
+  | 'twitterImageUploadPendingBriefId'
+  | 'twitterImageUploadFailedMessage'
+  | 'twitterImageUploadFailedBriefId'
+>;
+
+/** The X section's read of which ad account an X create uses (LFXV2-3319). */
+export interface CampaignTwitterAccountState {
+  /**
+   * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
+   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `error` for any
+   * other failure. Only `loaded` carries a `result`.
+   */
+  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'error';
+  result: TwitterAdsAccountsResult | null;
+}
+
+/**
+ * Why Create is blocked while the Implement tab holds X (`twitter-ads`) but this deployment has not
+ * said, with an explicit yes, that it can create there (`CampaignListResult.twitterCreateEnabled`).
+ * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
+ * brief is saved, or answered no.
+ */
+export interface CampaignTwitterCreateBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
   message: string;
 }
 
@@ -6537,6 +6773,13 @@ export interface AudienceListRef {
 
 export type AudienceQaVerdict = 'PASS' | 'NEEDS VERIFY' | 'FAIL';
 
+/**
+ * One check's verdict. `NOT APPLICABLE` is check-level only and only the current-registrants
+ * check returns it -- for a Post-Event send, whose intended audience IS this edition's attendees
+ * (lfx-v2-campaign-service#244). `overall` never takes it.
+ */
+export type AudienceQaCheckVerdict = AudienceQaVerdict | 'NOT APPLICABLE';
+
 export type AudienceQaSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
 
 export interface AudienceQaFinding {
@@ -6565,9 +6808,17 @@ export interface AudienceQaChecks {
   /**
    * Is this edition's own registration list suppressed rather than included? Absent when the
    * request named no event or the event name could not decide it — absent is "not checked",
-   * never a pass.
+   * never a pass. `NOT APPLICABLE` (with `note`) when the request's stage was Post-Event.
    */
-  currentRegistrants?: AudienceQaCheck;
+  currentRegistrants?: AudienceQaStageScopedCheck;
+}
+
+/** A check whose question depends on the send's stage, so it can also be `NOT APPLICABLE`. */
+export interface AudienceQaStageScopedCheck {
+  verdict: AudienceQaCheckVerdict;
+  findings: AudienceQaFinding[];
+  /** Why the check does not apply; set only with `NOT APPLICABLE`. */
+  note?: string;
 }
 
 export interface AudienceQaCandidate {
@@ -6611,7 +6862,7 @@ export type AudienceQaReport = Extract<AudienceQaResult, { needsDisambiguation: 
 export interface AudienceQaCheckRow {
   key: keyof AudienceQaChecks;
   name: string;
-  verdict: AudienceQaVerdict;
+  verdict: AudienceQaCheckVerdict;
   findings: readonly AudienceQaFinding[];
   note: string | null;
 }
@@ -6623,6 +6874,11 @@ export interface AudienceQaRunRequest {
   targetsCa?: boolean;
   /** This edition's event name; enables the current-registrants check. */
   eventName?: string;
+  /**
+   * The send's email stage. `Post-Event` marks the current-registrants check NOT APPLICABLE --
+   * that send is FOR this edition's attendees. Absent or any other stage runs it as before.
+   */
+  stage?: CampaignEmailStage;
   /**
    * Suppression lists the send applies on top of the list. Custom lists and directly attached
    * lists carry none of their own, so without these QA judges them on their filters alone.

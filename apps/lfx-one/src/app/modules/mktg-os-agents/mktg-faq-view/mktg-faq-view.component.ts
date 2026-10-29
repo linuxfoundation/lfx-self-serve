@@ -8,6 +8,7 @@ import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab, MktgAssetHeader
 import { faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 
 // The FAQ asset view, an app page in the Messaging Framework view's look
 // (full width, a tab bar, white cards, the version chip): the FAQ itself —
@@ -17,7 +18,7 @@ import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset
 // gaps. Purely presentational: the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-faq-view',
-  imports: [NgClass, MktgAssetMetaComponent],
+  imports: [NgClass, MktgAssetMetaComponent, MktgFieldCommentsComponent],
   templateUrl: './mktg-faq-view.component.html',
 })
 export class MktgFaqViewComponent {
@@ -35,6 +36,8 @@ export class MktgFaqViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
+  /** Only the authorized stored-document host enables comments. */
+  public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
   public readonly note = input('');
@@ -98,17 +101,6 @@ export class MktgFaqViewComponent {
         { injector: this.injector }
       );
     }
-  }
-
-  /**
-   * A shortcut into a tab from outside the tablist (the header's "need an
-   * answer" chip, the FAQ tab's callout): the button that was clicked may go
-   * with the panel it sat in, so focus moves to the new panel's start once it
-   * has rendered. afterNextRender is bound to this component's injector, so
-   * the hook is dropped with the component and never fires after it is gone.
-   */
-  protected onGoToTab(id: FaqViewTab): void {
-    void this.onSelectTab(id);
   }
 
   /**

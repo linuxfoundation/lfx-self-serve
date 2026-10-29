@@ -17,7 +17,21 @@ describe('MktgRunActivityComponent form-only runs', () => {
     fixture.componentRef.setInput('showQuestions', false);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-phase-questions"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-starting"]').textContent).toContain('Starting the agent');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-starting"]').textContent).toContain('Getting started');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-elapsed"]').textContent).toContain('this usually takes a few minutes');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-starting-line"]')).not.toBeNull();
+    fixture.destroy();
+  });
+
+  it('renders only the steps when its run-page owner supplies the heading and status', () => {
+    const fixture = TestBed.createComponent(MktgRunActivityComponent);
+    fixture.componentRef.setInput('title', 'Working on the asset');
+    fixture.componentRef.setInput('startedAt', Date.now());
+    fixture.componentRef.setInput('showHeader', false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('h2')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-elapsed"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-activity-steps"]')).not.toBeNull();
     fixture.destroy();
   });
 

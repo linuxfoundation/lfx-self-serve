@@ -22,6 +22,7 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     getPendingCommitteeInvites: vi.fn(),
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
     getMyCommittees: vi.fn(),
+    uploadCommitteeDocument: vi.fn(),
   },
 }));
 
@@ -99,6 +100,7 @@ vi.mock('../helpers/validation.helper', async () => {
 
 import { CommitteeController } from './committee.controller';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
@@ -528,5 +530,31 @@ describe('CommitteeController roster reads — member_visibility', () => {
       expect(committeeSvc.getCommitteeMemberById).toHaveBeenCalledWith(req, COMMITTEE_ID, MEMBER_ID);
       expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
     });
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('CommitteeController.uploadCommitteeDocument body type', () => {
+  let controller: CommitteeController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    const query: Record<string, string> = { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' };
+    vi.mocked(getStringQueryParam).mockImplementation((_req, key: string) => query[key]);
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const next = vi.fn();
+
+    await controller.uploadCommitteeDocument({ ...buildReq(), body } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(committeeSvc.uploadCommitteeDocument).not.toHaveBeenCalled();
   });
 });

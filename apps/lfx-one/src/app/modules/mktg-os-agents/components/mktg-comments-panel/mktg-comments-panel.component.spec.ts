@@ -15,6 +15,7 @@ import { MktgCommentsPanelComponent } from './mktg-comments-panel.component';
 describe('MktgCommentsPanelComponent', () => {
   it('sends only measured open comments, shows feed, retries the same intent and reports release409 without resubmission', async () => {
     const loaded = signal(false);
+    const threads = signal([mktgCommentFixture()]);
     const stream = new Subject<MktgRedraftProgress>();
     let pending = false;
     const runner = {
@@ -25,7 +26,7 @@ describe('MktgCommentsPanelComponent', () => {
       send: vi.fn(() => stream),
       release: vi.fn<() => Observable<void>>(() => throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MKTG_REDRAFT_COMMENTS_BUSY' } }))),
     };
-    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded, threads: signal([mktgCommentFixture()]) })] });
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded, threads })] });
     TestBed.overrideProvider(MktgDocumentRedraftClientService, { useValue: runner });
     const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
     const scope = mktgCommentScopeFixture();
@@ -34,13 +35,22 @@ describe('MktgCommentsPanelComponent', () => {
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
-    expect(send()?.disabled).toBe(true);
-    expect(send()?.textContent).toContain('Send comments to the agent');
+    expect(send()).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')).toBeNull();
     const live = el.querySelector('[data-testid="mktg-comments-run-message"]');
     expect(live?.getAttribute('aria-live')).toBe('polite');
     expect(live?.textContent).toBe('');
     loaded.set(true);
+    threads.set([]);
     fixture.detectChanges();
+    expect(send()).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-disabled-reason"]')).toBeNull();
+    threads.set([mktgCommentFixture({ status: 'resolved' })]);
+    fixture.detectChanges();
+    expect(send()).toBeNull();
+    threads.set([mktgCommentFixture()]);
+    fixture.detectChanges();
+    expect(send()?.textContent).toContain('Send 1 open comment to the agent');
     expect(send()?.disabled).toBe(false);
     send()?.click();
     fixture.detectChanges();
@@ -54,9 +64,13 @@ describe('MktgCommentsPanelComponent', () => {
     fixture.detectChanges();
     expect(el.querySelector('[data-testid="mktg-comments-feed"]')).not.toBeNull();
     stream.next({ type: 'activity', activity: [] });
+    threads.set([mktgCommentFixture({ status: 'sent' })]);
+    fixture.detectChanges();
+    expect(send()).not.toBeNull();
     pending = true;
     stream.error(new HttpErrorResponse({ status: 503, error: { code: 'MKTG_REDRAFT_START_UNCERTAIN' } }));
     fixture.detectChanges();
+    expect(send()?.textContent).toContain('Retry the same redraft');
     expect(el.textContent).toContain('Try the same send again');
     expect(el.textContent).toContain('hold expires');
     el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-release"] button')?.click();
@@ -87,18 +101,18 @@ describe('MktgCommentsPanelComponent', () => {
     const el = fixture.nativeElement as HTMLElement;
     const send = () => el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button');
     const reason = () => el.querySelector('[data-testid="mktg-comments-disabled-reason"]');
-    expect(reason()?.textContent).toContain('Loading comments…');
-    expect(send()?.textContent).toContain('Send comments to the agent');
-    expect(send()?.getAttribute('aria-describedby')).toBe(reason()?.id);
+    expect(send()).toBeNull();
+    expect(reason()).toBeNull();
     loadError.set('Synthetic failure');
     loaded.set(true);
     await fixture.whenStable();
-    expect(send()?.textContent).not.toMatch(/\d/);
-    expect(send()?.disabled).toBe(true);
+    expect(send()).toBeNull();
+    expect(reason()).toBeNull();
     loadError.set('');
     rows.set([]);
     await fixture.whenStable();
-    expect(reason()?.textContent?.trim()).toBe('Add an open comment first');
+    expect(send()).toBeNull();
+    expect(reason()).toBeNull();
     rows.set(Array.from({ length: cap + 1 }, (_, index) => mktgCommentFixture({ id: `comment-${index}` })));
     await fixture.whenStable();
     expect(reason()?.textContent?.trim()).toBe(`This agent takes up to ${cap} comments per send — resolve or remove some`);
@@ -167,7 +181,7 @@ describe('MktgCommentsPanelComponent', () => {
   });
 
   it('gives concurrent panels distinct declaratively-bound description idrefs without DOM effects', async () => {
-    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub()] });
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture()]) })] });
     const first = TestBed.createComponent(MktgCommentsPanelComponent);
     const second = TestBed.createComponent(MktgCommentsPanelComponent);
     for (const fixture of [first, second]) fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
@@ -225,7 +239,9 @@ describe('MktgCommentsPanelComponent', () => {
     loaded.set(true);
     threads.set([]);
     fixture.detectChanges();
-    expect(element.textContent).toContain('No comments on this revision');
+    expect(element.querySelector('[data-testid="mktg-comments-empty"]')?.textContent).toBe(
+      'No comments yet. To ask for a change, hover a field and choose Comment.'
+    );
     threads.set([mktgCommentFixture({ anchor: { kind: 'field', key: 'mf.goals[1].bite' }, text: 'Shorten the sound bite.' })]);
     fixture.detectChanges();
     expect(element.textContent).toContain('Shorten the sound bite.');

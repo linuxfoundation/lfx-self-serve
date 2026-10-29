@@ -57,7 +57,7 @@
       @if (!activeRun()) {
         <form class="flex flex-col gap-6" [formGroup]="form" (ngSubmit)="onSubmit()" data-testid="mktg-aeo-run-form" novalidate>
           <div class="flex flex-col gap-2">
-            <h1 class="text-2xl font-bold text-gray-900">AEO / GEO audit</h1>
+            <h1 class="font-display font-light text-xl text-gray-900">AEO/GEO audit</h1>
             <p class="text-gray-700">{{ intake().intro }}</p>
           </div>
           <section class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white px-6 py-5">
@@ -65,7 +65,7 @@
               <label for="mktg-aeo-domain" class="font-semibold"
                 >The website to audit <span class="text-sm font-normal text-gray-500">a domain or a URL</span>
                 @if (prefill() && answers().domain === prefill()) {
-                  <span class="ml-2 text-xs text-blue-600" data-testid="mktg-aeo-run-from-lfx">From LFX</span>
+                  <span class="ml-2 text-xs font-medium text-blue-700" data-testid="mktg-aeo-run-from-lfx">From LFX</span>
                 }
               </label>
               <!-- 44px input height matches the design's minimum touch target at a 14px root. -->
@@ -79,6 +79,9 @@
                 dataTest="mktg-aeo-domain"
                 [invalid]="!!domainError()"
                 [describedBy]="domainError() ? 'mktg-aeo-domain-error' : 'mktg-aeo-domain-hint'" />
+              @if (linkWarnings()['domain']; as warning) {
+                <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-aeo-link-warning-domain">{{ warning }}</span>
+              }
               @if (domainError()) {
                 <p id="mktg-aeo-domain-error" class="text-sm text-red-600" role="alert">{{ domainError() }}</p>
               }
@@ -108,35 +111,34 @@
                   [dataTest]="'mktg-aeo-' + field.key"
                   [invalid]="!!pagesError()"
                   describedBy="mktg-aeo-pages-hint mktg-aeo-pages-error" />
+                @if (linkWarnings()[field.key]; as warning) {
+                  <span class="text-xs text-amber-700" role="status" aria-live="polite" [attr.data-testid]="'mktg-aeo-link-warning-' + field.key">{{
+                    warning
+                  }}</span>
+                }
               }
               @if (visiblePages() < 5) {
-                <button
+                <lfx-button
+                  label="Add a page"
                   type="button"
-                  class="min-h-10 self-start rounded-lg border border-gray-300 bg-white px-3 font-semibold"
-                  (click)="visiblePages.set(visiblePages() + 1)"
-                  data-testid="mktg-aeo-run-add-page">
-                  Add a page
-                </button>
+                  size="small"
+                  [outlined]="true"
+                  severity="secondary"
+                  class="self-start"
+                  (onClick)="visiblePages.set(visiblePages() + 1)"
+                  data-testid="mktg-aeo-run-add-page" />
               }
               <p id="mktg-aeo-pages-error" class="text-sm text-red-600" role="alert" data-testid="mktg-aeo-run-pages-error">{{ pagesError() }}</p>
             </fieldset>
           </section>
-          <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-6 py-4 text-sm text-gray-700">
-            <h2 class="font-semibold text-gray-900">What the agent does</h2>
-            <p>
-              Fetches the site and the key pages, checks AI crawler access and llms.txt, scores content answerability, technical metadata, external authority
-              and content depth and freshness, runs web searches, and writes the report with an overall score out of 10 and a verdict. Three to six minutes.
-            </p>
-          </section>
-          <div class="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              class="min-h-12 rounded-lg bg-blue-600 px-5 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-              [disabled]="submitDisabled()"
-              data-testid="mktg-aeo-run-submit">
-              {{ busy() ? 'Starting audit…' : 'Run audit' }}
-            </button>
+          <p class="text-sm text-gray-500" data-testid="mktg-aeo-run-method">
+            <span class="font-semibold text-gray-600">What the agent does:</span>
+            fetches the site and the key pages, checks AI crawler access and llms.txt, scores content answerability, technical metadata, external authority and
+            content depth and freshness, runs web searches, and writes the report with an overall score out of 10 and a verdict. Three to six minutes.
+          </p>
+          <div class="flex flex-wrap items-center justify-end gap-3.5">
             <p class="text-sm text-gray-500">Stored as a new report under AEO/GEO reports; previous runs stay.</p>
+            <lfx-button [label]="busy() ? 'Starting audit…' : 'Start the audit'" type="submit" data-testid="mktg-aeo-run-submit" />
           </div>
         </form>
       }
@@ -147,7 +149,7 @@
             [routerLink]="['..', 'documents']"
             [queryParams]="{ type: type.agentKey }"
             queryParamsHandling="merge"
-            class="text-blue-600"
+            class="font-medium text-blue-700 hover:underline"
             data-testid="mktg-aeo-run-all-reports-link"
             >All reports in Documents</a
           >
@@ -173,7 +175,7 @@
                 [routerLink]="['..', 'documents', type.agentKey, run.documentId]"
                 [attr.data-testid]="'mktg-aeo-run-open-' + run.documentId"
                 queryParamsHandling="preserve"
-                class="font-semibold text-blue-600"
+                class="font-medium text-blue-700 hover:underline"
                 [attr.aria-label]="'Open report from ' + (run.revision.createdAt | date: 'd MMM y')"
                 >Open</a
               >

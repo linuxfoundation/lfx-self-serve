@@ -130,6 +130,14 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-proximity-withheld-live">
   {{ googleProximityWithheldMessage() }}
 </div>
+<!--
+  Campaign languages held by a channel that takes none (Demand Gen), announced. Top-level for the
+  reason the radius region above is: the visible notice is created by the switch that gives it its
+  text. Polite, because the campaign is still created; the visible `<p>` carries no role (#3568).
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-languages-withheld-live">
+  {{ googleLanguagesWithheldMessage() }}
+</div>
 <!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
   {{ googleLocationsCapabilityMessage() }}
@@ -844,10 +852,9 @@
         none. The list is held, not sent, so the campaign serves in every language — said out loud
         here rather than left for the operator to infer from the section disappearing.
       -->
-      @if (googleLanguagesWithheldOn(); as channelLabel) {
+      @if (googleLanguagesWithheldMessage(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-languages-withheld">
-          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take campaign languages, so the
-          {{ googleLanguages().length }} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
 
@@ -1040,10 +1047,14 @@
         same withholding the payload makes, in the one place the operator can see it.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-callouts-section">
-          <label class="mb-2 block text-xs font-medium text-gray-700" for="google-callout-add">
+        <div
+          class="rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-callouts-section"
+          role="group"
+          aria-labelledby="google-callouts-heading">
+          <p id="google-callouts-heading" class="mb-2 block text-xs font-medium text-gray-700">
             Google Callouts ({{ googleCallouts().length }}/{{ googleMaxCallouts }})
-          </label>
+          </p>
           <div class="flex flex-wrap items-center gap-2">
             @for (callout of googleCallouts(); track callout; let i = $index) {
               <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
@@ -1067,6 +1078,7 @@
               -->
               <input
                 id="google-callout-add"
+                aria-label="Callout text"
                 type="text"
                 placeholder="+ Add callout"
                 [value]="googleCalloutDraft()"
@@ -1116,10 +1128,14 @@
         required fields are filled, which no single input can express.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-sitelinks-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-sitelink-text">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-sitelinks-section"
+          role="group"
+          aria-labelledby="google-sitelinks-heading">
+          <p id="google-sitelinks-heading" class="block text-xs font-medium text-gray-700">
             Google Sitelinks ({{ googleSitelinks().length }}/{{ googleMaxSitelinks }})
-          </label>
+          </p>
           @if (googleSitelinks().length > 0) {
             <div class="flex flex-col gap-2">
               @for (sitelink of googleSitelinks(); track sitelink.text; let i = $index) {
@@ -1153,14 +1169,17 @@
               browser cap counts UTF-16 units, so it would clip an emoji-bearing label that Google
               would have accepted. The message lines below carry the feedback instead.
 
-              The section's `<label for>` names only the link-text box — the other three carry an
-              `aria-label`, because a placeholder is not an accessible name and disappears as soon
-              as the operator types. Each box points at its own message line with
-              `aria-describedby`, as the Meta pixel field does.
+              Every box, the link-text one included, carries its own `aria-label`, because a
+              placeholder is not an accessible name and disappears as soon as the operator types.
+              The section heading names the group (`aria-labelledby`), not the first box: bound to
+              it with `<label for>`, the heading and its entry count became that input's name (#3644).
+              Each box points at its own message line with `aria-describedby`, as the Meta pixel
+              field does.
             -->
             <div class="flex flex-col gap-2">
               <input
                 id="google-sitelink-text"
+                aria-label="Sitelink link text"
                 type="text"
                 placeholder="Link text"
                 [value]="googleSitelinkDraft().text"
@@ -1265,10 +1284,14 @@
         this is a sub-form with its own add button rather than an enter-to-add box.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-structured-snippets-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-snippet-header">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-structured-snippets-section"
+          role="group"
+          aria-labelledby="google-structured-snippets-heading">
+          <p id="google-structured-snippets-heading" class="block text-xs font-medium text-gray-700">
             Google Structured Snippets ({{ googleStructuredSnippets().length }}/{{ googleMaxStructuredSnippets }})
-          </label>
+          </p>
           @if (googleStructuredSnippets().length > 0) {
             <div class="flex flex-col gap-2">
               @for (snippet of googleStructuredSnippetRows(); track snippet.header; let i = $index) {
@@ -1299,12 +1322,14 @@
               rules before it counts runes, and a browser cap counts UTF-16 units. The message lines
               below carry the feedback instead.
 
-              The section's `<label for>` names the header box; the textarea carries an `aria-label`,
-              since its placeholder is neither an accessible name nor durable once typing starts.
+              The header box and the textarea each carry an `aria-label`, since a placeholder is
+              neither an accessible name nor durable once typing starts. The heading names the group,
+              as the sitelink section's does.
             -->
             <div class="flex flex-col gap-2">
               <input
                 id="google-snippet-header"
+                aria-label="Structured snippet header"
                 type="text"
                 placeholder="Header (e.g. Courses, Brands, Types)"
                 [value]="googleStructuredSnippetDraft().header"
@@ -1380,10 +1405,14 @@
         create would be refused for.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-call-extensions-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-call-country">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-call-extensions-section"
+          role="group"
+          aria-labelledby="google-call-extensions-heading">
+          <p id="google-call-extensions-heading" class="block text-xs font-medium text-gray-700">
             Google Call Extensions ({{ googleCallExtensions().length }}/{{ googleMaxCallExtensions }})
-          </label>
+          </p>
           @if (googleCallExtensions().length > 0) {
             <div class="flex flex-col gap-2">
               @for (call of googleCallExtensions(); track call.countryCode + call.phoneNumber; let i = $index) {
@@ -1411,6 +1440,7 @@
                 [form]="googleCallExtensionForm"
                 control="countryCode"
                 inputId="google-call-country"
+                ariaLabel="Call extension country code"
                 type="text"
                 size="small"
                 placeholder="Country code (e.g. US)"
@@ -1460,10 +1490,14 @@
         field is in use, the one case upstream reads it.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-promotions-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-promotion-target">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-promotions-section"
+          role="group"
+          aria-labelledby="google-promotions-heading">
+          <p id="google-promotions-heading" class="block text-xs font-medium text-gray-700">
             Google Promotions ({{ googlePromotions().length }}/{{ googleMaxPromotions }})
-          </label>
+          </p>
           @if (googlePromotions().length > 0) {
             <div class="flex flex-col gap-2">
               @for (promotion of googlePromotionRows(); track promotion.key; let i = $index) {
@@ -1495,6 +1529,7 @@
                 [form]="googlePromotionForm"
                 control="promotionTarget"
                 inputId="google-promotion-target"
+                ariaLabel="Promotion target"
                 type="text"
                 size="small"
                 placeholder="What is on sale (e.g. Conference passes)"
@@ -1689,10 +1724,14 @@
         currency box for the table, copied onto each row's `currencyCode` on the wire.
       -->
       @if (googleCalloutsAvailable()) {
-        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-prices-section">
-          <label class="block text-xs font-medium text-gray-700" for="google-price-type">
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-prices-section"
+          role="group"
+          aria-labelledby="google-prices-heading">
+          <p id="google-prices-heading" class="block text-xs font-medium text-gray-700">
             Google Price Extensions ({{ googlePrices().length }}/{{ googleMaxPrices }})
-          </label>
+          </p>
           @if (googlePrices().length > 0) {
             <div class="flex flex-col gap-2">
               @for (price of googlePriceRows(); track price.key; let i = $index) {
@@ -1724,6 +1763,7 @@
                   [form]="googlePriceForm"
                   control="type"
                   inputId="google-price-type"
+                  ariaLabel="Price type"
                   [options]="googlePriceTypeOptions"
                   size="small"
                   data-testid="implementation-google-price-type" />
@@ -3236,6 +3276,29 @@
                 }
               </div>
             }
+
+            <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
+                 falls back to the connection's own pixel. Offered only on an explicit yes from
+                 `redditConversionPixelAvailable()`, because the legacy creator never reads the field
+                 and would drop a typed pixel without saying so. Nothing typed is cleared when it is
+                 withheld — the draft keeps it. Not validated here: upstream trims it and Reddit
+                 judges it, so a check on this side could only refuse a pixel that would work. -->
+            @if (redditConversionPixelAvailable()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="reddit-conversion-pixel">Conversion Pixel ID (optional)</label>
+                <lfx-input-text
+                  [form]="redditConversionPixelForm"
+                  control="conversionPixelId"
+                  inputId="reddit-conversion-pixel"
+                  type="text"
+                  size="small"
+                  describedBy="reddit-conversion-pixel-hint"
+                  dataTest="implementation-reddit-conversion-pixel" />
+                <p id="reddit-conversion-pixel-hint" class="text-xs text-gray-500">
+                  Find it in Reddit Ads under Events Manager. Leave it blank to use the pixel on this project's Reddit connection.
+                </p>
+              </div>
+            }
           </div>
 
           <!-- The ad itself. Without one of these two routes the create still succeeds and still
@@ -3513,12 +3576,319 @@
       }
 
       <!--
+        X (Twitter) Ads Section, behind `twitterCreateEnabled`. Held without an explicit yes, the
+        section is only the `twitterCreateBlock` and its Remove: nothing here is sent until the
+        deployment says it can create X campaigns. The live region stays mounted while X is held,
+        like the other blocks' regions, and only its text changes.
+      -->
+      @if (showTwitterSection()) {
+        <div class="rounded-lg border border-gray-300 bg-white p-5" data-testid="implementation-twitter-section">
+          <div class="mb-4 flex items-center gap-2">
+            <i class="fa-brands fa-x-twitter text-gray-900" aria-hidden="true"></i>
+            <h3 class="text-sm font-semibold text-gray-900">X / Twitter Ads</h3>
+          </div>
+
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-create-block-live">
+            {{ twitterCreateBlockMessage() }}
+          </div>
+          @if (twitterCreateBlock(); as block) {
+            <div
+              class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-twitter-create-block-' + block.kind">
+              <p class="flex items-center gap-2">
+                @if (block.kind === 'pending') {
+                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                }
+                {{ block.message }}
+              </p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-twitter-create-block-retry" />
+                }
+                <lfx-button
+                  label="Remove X"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="onTwitterRemove()"
+                  data-testid="implementation-twitter-create-block-remove" />
+              </div>
+            </div>
+          }
+
+          @if (twitterCreateAvailable()) {
+            <!--
+              Stated, not hidden: `twitterConfig` has no location field, so campaign-service creates
+              the line item with no location targeting at all. The campaign is created PAUSED, but
+              once enabled it can serve wherever X serves.
+            -->
+            <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-twitter-no-geo">
+              <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+              X campaigns are created paused and with no location targeting: once enabled, the campaign can serve in every market X serves. Narrow it in X Ads
+              Manager before enabling it if it should not.
+            </p>
+
+            <!--
+              Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
+              carries no account id, and campaign-service creates under the account bound on the
+              project's X connection (or, on a deployment forcing it, the LF system one).
+            -->
+            <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
+              <span class="font-medium text-gray-700">Ad account</span>
+              @switch (twitterAccountState().status) {
+                @case ('loading') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-loading">
+                    <i class="fa-light fa-spinner-third fa-spin mr-1" aria-hidden="true"></i>Checking the X ad account…
+                  </p>
+                }
+                @case ('restricted') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-restricted">
+                    Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
+                  </p>
+                }
+                @case ('error') {
+                  <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
+                    <p class="text-amber-800">
+                      Could not read the X ad account. The campaign is still created under the account bound on this project's X connection.
+                    </p>
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [text]="true"
+                      (onClick)="onTwitterAccountRetry()"
+                      data-testid="implementation-twitter-account-retry" />
+                  </div>
+                }
+                @case ('loaded') {
+                  @switch (twitterAccountState().result?.connection?.state) {
+                    <!--
+                      Stated as the project connection's account, not as THE account: a deployment
+                      with LFX_FORCE_SYSTEM_ADS_ACCOUNT creates every paid campaign on the LF system
+                      connection instead, which this app cannot see. So an unbound connection warns
+                      rather than blocking Create, and offers Retry for after it is bound.
+                    -->
+                    @case ('connected') {
+                      <p class="text-sm text-gray-900" data-testid="implementation-twitter-account-connected">{{ twitterAccountLabel() }}</p>
+                      <p class="text-gray-500">
+                        The project's X connection is bound to this account. A deployment that forces the LF system account creates there instead.
+                      </p>
+                    }
+                    @case ('no_account') {
+                      <div
+                        class="flex flex-col items-start gap-1 rounded-md bg-amber-50 px-3 py-2 text-amber-800"
+                        data-testid="implementation-twitter-account-unbound">
+                        <p role="alert">
+                          This project's X connection has no ad account chosen. Unless this deployment creates on the LF system account, campaign-service will
+                          refuse the create. Bind one of the {{ twitterAccountState().result?.accounts?.length ?? 0 }} accounts its credential reaches to the
+                          connection, then check again.
+                        </p>
+                        <lfx-button
+                          label="Check again"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onTwitterAccountRetry()"
+                          data-testid="implementation-twitter-account-unbound-retry" />
+                      </div>
+                    }
+                    @case ('no_connection') {
+                      <p class="text-gray-700" data-testid="implementation-twitter-account-shared">
+                        This project has no X connection of its own, so the campaign is created under the LF shared X connection's ad account.
+                      </p>
+                    }
+                    @default {
+                      <p class="text-gray-500" data-testid="implementation-twitter-account-unknown">
+                        The X connection could not be read. The campaign is created under the account bound on it.
+                      </p>
+                    }
+                  }
+                }
+              }
+            </div>
+
+            <!-- Budget and flight -->
+            <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="twitter-budget">Daily Budget</label>
+                <lfx-input-text
+                  [form]="campaignForm"
+                  control="twitterBudget"
+                  inputId="twitter-budget"
+                  type="text"
+                  inputmode="decimal"
+                  size="small"
+                  placeholder="e.g. 50"
+                  [invalid]="!!twitterBudgetError()"
+                  [describedBy]="twitterBudgetError() ? 'twitter-budget-error' : 'twitter-budget-hint'"
+                  data-testid="implementation-twitter-budget" />
+                <!-- "account currency", not "USD": X's budget is sent in the ad account's own currency, with no FX conversion. -->
+                <span id="twitter-budget-hint" class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
+                @if (twitterBudgetError(); as error) {
+                  <p id="twitter-budget-error" role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-budget-error">{{ error }}</p>
+                }
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-xs font-medium text-gray-700">Flight</span>
+                <p class="text-sm text-gray-900" data-testid="implementation-twitter-flight">
+                  {{ campaignForm.controls.startDate.value || '—' }} to {{ campaignForm.controls.endDate.value || '—' }}
+                </p>
+                <span class="text-xs text-gray-400">The flight dates above, applied to the X line item from midnight UTC.</span>
+                @if (twitterFlightError(); as error) {
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-flight-error">{{ error }}</p>
+                }
+              </div>
+            </div>
+
+            <!-- The authored tweet -->
+            <div class="mb-4 flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="twitter-tweet-text">Tweet</label>
+              <lfx-textarea
+                [form]="campaignForm"
+                control="twitterTweetText"
+                inputId="twitter-tweet-text"
+                [rows]="4"
+                placeholder="What the promoted tweet says. The registration link is added for you."
+                [invalid]="!!twitterTweetError() && twitterTweetText() !== ''"
+                describedBy="twitter-tweet-hint"
+                styleClass="w-full"
+                data-testid="implementation-twitter-tweet-text" />
+              <p id="twitter-tweet-hint" class="text-xs text-gray-500" data-testid="implementation-twitter-tweet-count">
+                {{ twitterTweetLength() }}/{{ twitterMaxTweetChars }} characters, including the registration link (every link counts 23). Posted as a
+                promoted-only tweet, never to the public timeline.
+              </p>
+              @if (twitterTweetError(); as error) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-tweet-error">{{ error }}</p>
+              }
+            </div>
+
+            <!-- Tweet image (optional): an upload to this brief, attached to the authored tweet. -->
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-image-status-live">
+              {{ twitterImageUploadLiveMessage() }}
+            </div>
+            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-twitter-image-upload">
+              <label class="text-xs font-medium text-gray-700" for="twitter-image-file">Tweet image (optional)</label>
+              <!-- A raw file input, as the Meta and LinkedIn pickers are: there is no LFX file wrapper bound to the creative-asset upload. -->
+              <input
+                id="twitter-image-file"
+                type="file"
+                [attr.accept]="creativeAssetAccept"
+                (change)="onTwitterImageFileChange($event)"
+                [disabled]="twitterImagePickerDisabled()"
+                [attr.aria-describedby]="twitterImageFileDescribedBy()"
+                [attr.aria-invalid]="twitterImageUploadStatus() === 'error' ? 'true' : null"
+                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                data-testid="implementation-twitter-image-file" />
+              <p id="twitter-image-file-hint" class="text-xs text-gray-500">PNG or JPEG, up to 5 MB.</p>
+              <p id="twitter-image-file-status" class="text-xs text-gray-700" data-testid="implementation-twitter-image-status">
+                {{ twitterImageUploadStatusMessage() }}
+              </p>
+              @if (twitterImageUploadStatus() === 'uploading') {
+                <div>
+                  <lfx-button
+                    label="Cancel upload"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onTwitterImageAssetRemove()"
+                    data-testid="implementation-twitter-image-cancel" />
+                </div>
+              } @else if (twitterImageAssetId()) {
+                <div>
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onTwitterImageAssetRemove()"
+                    data-testid="implementation-twitter-image-remove" />
+                </div>
+              }
+              @if (twitterImageUploadStatus() === 'error') {
+                <p id="twitter-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-twitter-image-error">
+                  {{ twitterImageUploadError() }}
+                </p>
+              }
+            </div>
+
+            <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+            @if (biddingAvailable()) {
+              <div class="mb-4">
+                <lfx-campaign-bidding-control [view]="biddingViews()['twitter-ads']" (biddingChange)="onBiddingChange('twitter-ads', $event)" />
+              </div>
+            }
+
+            <!-- Preview, read from the same values the request sends. -->
+            <div>
+              <span class="mb-2 block text-xs font-medium text-gray-700">Tweet Preview</span>
+              <div class="rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="implementation-twitter-preview">
+                @if (twitterPreviewImageLabel(); as imageLabel) {
+                  <p class="mb-1 text-xs text-gray-500" data-testid="implementation-twitter-preview-image">
+                    <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                  </p>
+                }
+                <p class="whitespace-pre-line text-sm text-gray-800" data-testid="implementation-twitter-preview-text">
+                  {{ twitterTweetText().trim() || 'No tweet text yet.' }}
+                </p>
+                <p class="mt-1 break-all text-xs text-blue-700" data-testid="implementation-twitter-preview-link">
+                  {{ twitterDestinationUrl() || 'No registration URL' }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500">
+                  The saved brief's registration link, tagged with UTM parameters before posting. Change it on the Plan tab.
+                </p>
+              </div>
+            </div>
+          }
+
+          <!-- An X image the request cannot carry, or a failed upload; see `initTwitterImageAssetBlock`. -->
+          <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-twitter-image-asset-block-live">
+            {{ twitterImageAssetBlockMessage() }}
+          </div>
+          @if (twitterImageAssetBlock(); as block) {
+            <div
+              class="mt-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+              [class.bg-gray-50]="block.kind === 'pending'"
+              [class.text-gray-700]="block.kind === 'pending'"
+              [class.bg-amber-50]="block.kind !== 'pending'"
+              [class.text-amber-800]="block.kind !== 'pending'"
+              [attr.data-testid]="'implementation-twitter-image-asset-block-' + block.kind">
+              <p>{{ block.message }}</p>
+              <lfx-button
+                label="Remove image"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onTwitterImageAssetRemove()"
+                data-testid="implementation-twitter-image-asset-block-remove" />
+            </div>
+          }
+        </div>
+      }
+
+      <!--
         Which stored images cover each platform's image slots. Only rendered once the brief is
         saved: campaign-service plans against a stored brief, and an unsaved one has no library to
-        plan against. The revision token re-reads the plan after an upload in the section above.
+        plan against. The revision token re-reads the plan after an upload in the section above,
+        or in the library upload that sits on top of the grid it feeds.
       -->
       @if (briefPersistence().briefId) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+        <div class="flex flex-col gap-5 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-library-upload
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [available]="libraryUploadAvailable()"
+            [reloadToken]="creativeLibraryRevision()"
+            (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"

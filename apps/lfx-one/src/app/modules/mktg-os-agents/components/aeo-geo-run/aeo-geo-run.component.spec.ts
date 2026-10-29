@@ -8,8 +8,8 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { provideRouter, Router } from '@angular/router';
-import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
-import { MktgAgentIntake } from '@lfx-one/shared/interfaces';
+import { AEO_GEO_INTAKE, AEO_GEO_INTAKE_ERRORS, MKTG_INTAKE_LINK_ADVICE, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MktgAgentIntake, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -43,7 +43,9 @@ describe('AeoGeoRunComponent', () => {
     savedAt: new Date().toISOString(),
   });
   function query(id: string): HTMLElement {
-    return fixture.nativeElement.querySelector(`[data-testid="${id}"], [data-test="${id}"]`);
+    const element: HTMLElement = fixture.nativeElement.querySelector(`[data-testid="${id}"], [data-test="${id}"]`);
+    // Wrapper actions must be clicked/asserted through their native button.
+    return element?.tagName === 'LFX-BUTTON' ? (element.querySelector('button') ?? element) : element;
   }
   async function render(intake: MktgAgentIntake = AEO_GEO_INTAKE) {
     fixture = TestBed.createComponent(AeoGeoRunComponent);
@@ -91,6 +93,28 @@ describe('AeoGeoRunComponent', () => {
       ],
     });
   });
+  it('advises on website/key-page Drive links and normalized repeats without adding a submission gate', async () => {
+    await render();
+    const url = 'https://drive.google.com/drive/folders/synthetic';
+    await fill('mktg-aeo-domain', url);
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+    await fill('mktg-aeo-page_1', url);
+    await fill('mktg-aeo-page_2', url + '?usp=sharing');
+    expect(query('mktg-aeo-link-warning-page_1').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(query('mktg-aeo-link-warning-page_2').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect(query('mktg-aeo-link-warning-domain').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('advises on a Drive website prefilled from LFX without editing', async () => {
+    getProject.mockReturnValue(of({ writer: true, website_url: 'https://drive.google.com/file/d/synthetic/view' }));
+    await render();
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it('prefills the website from LFX and distinguishes empty previous runs', async () => {
     await render();
     expect((query('mktg-aeo-domain') as HTMLInputElement).value).toBe('https://project.example/');
@@ -104,13 +128,19 @@ describe('AeoGeoRunComponent', () => {
     const disabled = () => (query('mktg-aeo-run-submit') as HTMLButtonElement).disabled;
     expect(disabled()).toBe(false);
     await fill('mktg-aeo-page_1', 'https://project.example/about');
-    expect(disabled()).toBe(true);
+    expect(disabled()).toBe(false);
+    query('mktg-aeo-run-submit').click();
+    expect(start).not.toHaveBeenCalled();
     expect(query('mktg-aeo-run-pages-error').textContent).toContain('Add at least one more');
     await fill('mktg-aeo-page_2', 'https://project.example/about');
-    expect(disabled()).toBe(true);
+    expect(disabled()).toBe(false);
+    query('mktg-aeo-run-submit').click();
+    expect(start).not.toHaveBeenCalled();
     expect(query('mktg-aeo-run-pages-error').textContent).toContain('repeats');
     await fill('mktg-aeo-page_2', 'ftp://project.example/faq');
-    expect(disabled()).toBe(true);
+    expect(disabled()).toBe(false);
+    query('mktg-aeo-run-submit').click();
+    expect(start).not.toHaveBeenCalled();
     await fill('mktg-aeo-page_2', 'https://project.example/faq');
     expect(disabled()).toBe(false);
   });
@@ -118,9 +148,104 @@ describe('AeoGeoRunComponent', () => {
     await render();
     await fill('mktg-aeo-page_1', 'https://project.example/about');
     await fill('mktg-aeo-page_2', page);
-    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(true);
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+    query('mktg-aeo-run-submit').click();
     expect(query('mktg-aeo-run-pages-error').textContent).toContain(AEO_GEO_INTAKE_ERRORS.key_pages);
     expect(start).not.toHaveBeenCalled();
+  });
+  it('points out an empty website in words on press without disabling Start', async () => {
+    getProject.mockReturnValue(of({ writer: true }));
+    await render();
+    expect(fixture.nativeElement.querySelector('#mktg-aeo-domain-error')).toBeNull();
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+    query('mktg-aeo-run-submit').click();
+    fixture.detectChanges();
+    const error = fixture.nativeElement.querySelector('#mktg-aeo-domain-error');
+    expect(error?.textContent).toContain(AEO_GEO_INTAKE_ERRORS.domain);
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(start).not.toHaveBeenCalled();
+  });
+  it.each(['loading', 'writer', 'documentType'] as const)('explains the %s guard on press instead of silently returning', async (guard) => {
+    await render();
+    if (guard === 'loading') fixture.componentInstance['loading'].set(true);
+    else if (guard === 'writer') fixture.componentInstance['writer'].set(false);
+    else fixture.componentRef.setInput('intake', { ...AEO_GEO_INTAKE, agentId: 'unregistered-audit' });
+    fixture.componentInstance['onSubmit']();
+    fixture.detectChanges();
+    const messages = { loading: 'still loading', writer: 'write access', documentType: 'no registered document type' };
+    expect(query('mktg-aeo-run-error').textContent).toContain(messages[guard]);
+    expect(start).not.toHaveBeenCalled();
+  });
+  it('uses the board title, intro, quiet complete note and standard rightmost actions', async () => {
+    await render();
+    const root: HTMLElement = fixture.nativeElement;
+    const title = root.querySelector('h1');
+    expect(title?.textContent).toBe('AEO/GEO audit');
+    for (const token of ['font-display', 'font-light', 'text-xl', 'text-gray-900']) expect(title?.classList.contains(token)).toBe(true);
+    expect(title?.nextElementSibling?.textContent).toBe(
+      'Scores how a website shows up in AI search and answer engines, with prioritised recommendations. One input: the site. Each audit is its own report; to update it, audit again.'
+    );
+    const method = query('mktg-aeo-run-method');
+    expect(method.tagName).toBe('P');
+    expect(method.classList.contains('text-gray-500')).toBe(true);
+    expect(method.querySelector('h2')).toBeNull();
+    expect(method.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'What the agent does: fetches the site and the key pages, checks AI crawler access and llms.txt, scores content answerability, technical metadata, external authority and content depth and freshness, runs web searches, and writes the report with an overall score out of 10 and a verdict. Three to six minutes.'
+    );
+    const add = query('mktg-aeo-run-add-page');
+    for (const token of ['p-button-outlined', 'p-button-secondary', 'p-button-sm']) expect(add.classList.contains(token)).toBe(true);
+    add.click();
+    fixture.detectChanges();
+    expect(root.querySelector('#mktg-aeo-page_4')).not.toBeNull();
+    const submit = query('mktg-aeo-run-submit');
+    expect(submit.textContent).toContain('Start the audit');
+    expect(submit.closest('lfx-button')?.parentElement?.lastElementChild).toBe(submit.closest('lfx-button'));
+    expect(submit.closest('lfx-button')?.previousElementSibling?.textContent).toBe('Stored as a new report under AEO/GEO reports; previous runs stay.');
+    expect(submit.classList.contains('p-button-outlined')).toBe(false);
+    fixture.componentInstance['busy'].set(true);
+    fixture.detectChanges();
+    expect(submit.textContent).toContain('Starting audit…');
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    submit.click();
+    expect(start).not.toHaveBeenCalled();
+  });
+  it('uses the standard quiet link treatment for From LFX and previous-report links', async () => {
+    await render();
+    const type = fixture.componentInstance['documentType']();
+    if (!type) throw new Error('Expected the registered audit document type');
+    const revision = {
+      id: '000001-' + 'a'.repeat(64),
+      number: 1,
+      createdAt: '2026-10-01T10:00:00Z',
+      origin: 'generated' as const,
+      restoredFromNumber: null,
+      intakeMode: 'form' as const,
+      status: '',
+      contentSha256: 'a'.repeat(64),
+      format: 'markdown' as const,
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    };
+    const report: MktgRevisionResponse = {
+      project: 'project-1',
+      type,
+      documentId: 'run-' + 'a'.repeat(24),
+      revisions: [revision],
+      revision,
+      approvedCurrent: null,
+      approval: null,
+      markdown: 'Synthetic audit',
+      sidecar: null,
+    };
+    fixture.componentInstance['runs'].set([report]);
+    fixture.detectChanges();
+    for (const id of ['mktg-aeo-run-from-lfx', 'mktg-aeo-run-all-reports-link', 'mktg-aeo-run-open-' + report.documentId]) {
+      const link = query(id);
+      expect(link.classList.contains('text-blue-700')).toBe(true);
+      expect(link.classList.contains('font-medium')).toBe(true);
+      expect(link.classList.contains('font-semibold')).toBe(false);
+    }
   });
   it.each([
     { count: 1, label: 'previous run' },
@@ -205,7 +330,7 @@ describe('AeoGeoRunComponent', () => {
     query('mktg-aeo-run-submit').click();
     fixture.detectChanges();
     await fixture.whenStable();
-    query('mktg-run-questions-next').querySelector<HTMLButtonElement>('button')?.click();
+    query('mktg-run-questions-next').click();
     fixture.detectChanges();
     await fill('mktg-run-questions-answer-aeo-comparison-targets', 'Another synthetic comparison target.');
     stored.saveQuestionDraft({ ...run(), sessionId: 'another-synthetic-session' }, { index: 0, answers: {} });
@@ -215,7 +340,7 @@ describe('AeoGeoRunComponent', () => {
     expect((query('mktg-run-questions-answer-aeo-comparison-targets') as HTMLTextAreaElement).value).toBe('Another synthetic comparison target.');
     query('mktg-run-questions-chip-aeo-project-identity').click();
     fixture.detectChanges();
-    query('mktg-run-questions-send').querySelector<HTMLButtonElement>('button')?.click();
+    query('mktg-run-questions-send').click();
     await fixture.whenStable();
     const sent = pollPost.mock.calls.find(([url]) => url === AEO_GEO_INTAKE.endpoints.answers)?.[1];
     expect(sent.answers[1]).toEqual({ id: 'comparison-targets', text: 'Another synthetic comparison target.', origin: 'edited' });

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS, MKTG_ONE_OFF_STOPPED_MESSAGE } from './mktg-one-off.constants';
 import type { Member360FailureReason, Member360SortColumn } from '../interfaces/member-360.interface';
 
 // Mirrored from marketing-os-agents main 45734bc6, agents/member-360/src/model.ts.
@@ -62,9 +63,9 @@ export const CATEGORY_SCORE_KEYS = Object.fromEntries(CATEGORY_KEYS.map((k) => [
 >;
 export const MEMBER_360_COMPARISON_UNAVAILABLE = 'MEMBER_360_COMPARISON_UNAVAILABLE';
 export const MEMBER_360_INVALID_RESULT = 'MEMBER_360_INVALID_RESULT';
-export const MEMBER_360_FAILURE_MESSAGE_MAX_CHARS = 600;
+export const MEMBER_360_FAILURE_MESSAGE_MAX_CHARS = MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS;
 export const MEMBER_360_FAILURE_MESSAGE = 'The run ended without a Member 360 result.';
-export const MEMBER_360_STOPPED_MESSAGE = 'The agent stopped before producing a result.';
+export const MEMBER_360_STOPPED_MESSAGE = MKTG_ONE_OFF_STOPPED_MESSAGE;
 export const MEMBER_360_ACCESS_REFUSAL_REGEX = /\b(?:no entitled project|entitlement (?:check )?(?:denied|reports no)|not entitled|scope[\s_-]*guard)\b/i;
 export const MEMBER_360_FAILURE_MESSAGES: Readonly<Record<Member360FailureReason, string>> = {
   no_edit_access: "Member 360 couldn't run: your account doesn't have edit access to this project's member data.",
@@ -81,6 +82,10 @@ export const MEMBER_360_FINALIZE_RECEIPT_ID = 'member-360-finalize/v1';
 export const MEMBER_360_PARTIAL_SUMMARY_PREFIX = 'Partial report.';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';
 export const MEMBER_360_API = '/api/mktg-agents/member-360';
+/** A Member 360 pause never expires by the clock; only a Guild session end fails it. */
+export const MEMBER_360_PAUSED_MESSAGE = 'Member 360 is waiting for input; the run stays open.';
+/** @deprecated A pause is not a timeout or failure. Kept for existing consumers; use MEMBER_360_PAUSED_MESSAGE. */
+export const MEMBER_360_INPUT_TIMEOUT_MESSAGE = MEMBER_360_PAUSED_MESSAGE;
 export const MEMBER_360_MAX_BYTES = 5 * 1024 * 1024;
 export const MEMBER_360_MAX_TRACKERS = 10;
 export const MEMBER_360_MAX_TRACKER_ROWS = 2000;

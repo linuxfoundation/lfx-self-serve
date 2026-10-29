@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { FOUNDATION_MESSAGE_INTAKE, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, LINKEDIN_POST_INTAKE, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { MktgGenerateRequest, User } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserService } from './user.service';
@@ -23,6 +23,37 @@ describe('MktgRunAttemptService', () => {
     user.set({ sub: 'synthetic-subject' } as User);
     TestBed.configureTestingModule({ providers: [{ provide: UserService, useValue: { user } }] });
     service = TestBed.inject(MktgRunAttemptService);
+  });
+
+  it('reads only the newest live same-subject/project/agent pending document from memory for advisory UI', () => {
+    expect(service.latestPending(request.projectUid, LINKEDIN_POST_INTAKE.agentId)).toBeNull();
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24) };
+    const save = (documentId: string, state: 'writing' | 'questions' | 'failed' | 'draft' = 'writing') =>
+      service.save({ request: { ...accepted, documentId }, state, updatedAt: new Date().toISOString() });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-24T10:00:00Z'));
+    try {
+      save(accepted.documentId);
+      vi.advanceTimersByTime(1);
+      const newer = 'run-' + 'b'.repeat(24);
+      save(newer, 'questions');
+      save('run-' + 'c'.repeat(24), 'failed');
+      save('run-' + 'd'.repeat(24), 'draft');
+      save('living');
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toEqual({ documentId: newer, state: 'questions' });
+      expect(service.latestPending('other-project', accepted.agentId)).toBeNull();
+      expect(service.latestPending(request.projectUid, 'other-agent')).toBeNull();
+      user.set({ sub: 'other-subject' } as User);
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toBeNull();
+      user.set({ sub: 'synthetic-subject' } as User);
+      const fresh = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+      expect(fresh.latestPending(request.projectUid, accepted.agentId)).toBeNull(); // No storage scan.
+      vi.advanceTimersByTime(MKTG_RUN_STORAGE_TTL_MS + 1);
+      expect(service.latestPending(request.projectUid, accepted.agentId)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 
   it('restores only the exact subject/revision redraft nonce, with no source text or serialized endpoint', () => {
@@ -47,6 +78,144 @@ describe('MktgRunAttemptService', () => {
     expect(service.loadRedraft(scope)).toMatchObject({ clientRequestId: intent.clientRequestId, commentIds: intent.commentIds });
     expect(service.loadRedraft(scope)?.attempt).toBeUndefined();
     expect(Object.values(window.localStorage).join('')).not.toContain('synthetic-expired-capability');
+  });
+
+  it('keeps redraft intents and document-scoped one-off proofs in disjoint namespaces through reload and cleanup', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const intent = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    service.saveRedraft(intent);
+    const oneOff = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'b'.repeat(24), answers: {} };
+    service.prepareAccepted(oneOff, { documentId: oneOff.documentId, runId: 'c'.repeat(64), sessionId: 'synthetic-oneoff', ownerToken: 'synthetic-proof' });
+    expect(localStorage.length).toBe(2);
+    expect(service['redraftKey'](scope, service.subject())).toContain(':redraft:');
+    expect(service['redraftKey'](scope, service.subject())).not.toBe(service['key'](scope.projectUid, scope.agentKey, service.subject(), scope.documentId));
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+    expect(restored.load(oneOff.projectUid, oneOff.agentId, oneOff.documentId)?.attempt?.session.sessionId).toBe('synthetic-oneoff');
+    restored.clearRedraft(scope);
+    expect(restored.load(oneOff.projectUid, oneOff.agentId, oneOff.documentId)).not.toBeNull();
+    restored.saveRedraft(intent);
+    restored.clear(oneOff.projectUid, oneOff.agentId, restored.subject(), oneOff.documentId);
+    expect(restored.loadRedraft(scope)).toEqual(intent);
+  });
+
+  it.each(['a'.repeat(64), 'b'.repeat(8), 'invalid-digest'])('validates a one-off answered digest at save and reload: %s', (digest) => {
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
+    service.save({
+      request: accepted,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+      answeredQuestionsId: digest,
+      attempt: {
+        documentId: accepted.documentId,
+        runId: 'c'.repeat(64),
+        session: { agentId: accepted.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+      },
+    });
+    const stored = JSON.parse(localStorage.getItem(localStorage.key(0) ?? '') ?? '{}');
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load(request.projectUid, accepted.agentId, accepted.documentId);
+    const expected = digest === 'invalid-digest' ? undefined : digest;
+    expect(stored.answeredQuestionsId).toBe(expected);
+    expect(restored?.answeredQuestionsId).toBe(expected);
+  });
+
+  it('projects an accepted one-off into a single-use document-scoped handoff, never a fresh Generate draft', () => {
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, answers: { content_text: 'private-source' } };
+    const run = { documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-capability' };
+    expect(service.prepare(accepted)).toBe('');
+    expect(service.prepareAccepted(accepted, { ...run, documentId: 'living' })).toBe('');
+    const token = service.prepareAccepted(accepted, run);
+    expect(token).toMatch(/^generation-/);
+    expect(service.consume(token, request.projectUid, accepted.agentId, 'run-' + 'c'.repeat(24))).toBeNull();
+    const prepared = service.consume(token, request.projectUid, accepted.agentId, run.documentId);
+    expect(prepared?.pending).toMatchObject({
+      state: 'writing',
+      request: { documentId: run.documentId },
+      attempt: { documentId: run.documentId, runId: run.runId },
+    });
+    if (!prepared) throw new Error('Missing synthetic accepted handoff');
+    expect(service.takeFreshDraft(prepared.pending)).toBe(false);
+    expect(service.consume(token, request.projectUid, accepted.agentId, run.documentId)).toBeNull();
+    expect(service.load(request.projectUid, accepted.agentId)).toBeNull();
+  });
+
+  it('uses the same map for a failed public intake hint after reload without granting Generate provenance', () => {
+    const failed = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
+    service.save({ request: failed, state: 'failed', updatedAt: new Date().toISOString() });
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.prepare({ ...failed, documentId: 'living' }, true)).toBe('');
+    expect(restored.prepare({ ...failed, documentId: 'invalid' }, true)).toBe('');
+    const token = restored.prepare(failed, true);
+    const hint = restored.consumeQuestions(token, failed.projectUid, failed.agentId)?.pending;
+    expect(hint?.state).toBe('failed');
+    expect(hint?.attempt).toBeUndefined();
+    if (!hint) throw new Error('Missing synthetic hint');
+    expect(restored.takeFreshDraft(hint)).toBe(false);
+    expect(restored.consumeQuestions(token, failed.projectUid, failed.agentId)).toBeNull();
+  });
+
+  it('consumes a one-off questions handoff on the intake using its retained destination and subject', () => {
+    const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, answers: {} };
+    const documentId = 'run-' + 'a'.repeat(24);
+    const token = service.prepareAccepted(accepted, { documentId, runId: 'b'.repeat(64), sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' });
+    expect(service.consumeQuestions(token, request.projectUid, accepted.agentId)).toBeNull();
+    const pending = service.load(request.projectUid, accepted.agentId, documentId);
+    if (!pending?.attempt) throw new Error('Missing synthetic accepted proof');
+    service.save({ ...pending, state: 'questions', pendingQuestions: { attempt: pending.attempt, questionsId: 'c'.repeat(64), questions: [] } });
+    const questions = service.prepare({ ...accepted, documentId }, true);
+    expect(service.consumeQuestions(questions, 'other-project', accepted.agentId)).toBeNull();
+    expect(service.consumeQuestions(questions, request.projectUid, accepted.agentId)?.pending.request.documentId).toBe(documentId);
+    expect(service.consumeQuestions(questions, request.projectUid, accepted.agentId)).toBeNull();
+  });
+
+  it('keeps independent one-off proofs per document and only digests/capabilities across reload', () => {
+    const first = 'run-' + 'a'.repeat(24);
+    const second = 'run-' + 'b'.repeat(24);
+    const accepted = {
+      ...request,
+      agentId: LINKEDIN_POST_INTAKE.agentId,
+      intake: LINKEDIN_POST_INTAKE,
+      documentId: first,
+      answers: { content_text: 'private-source' },
+      feedback: 'private-feedback',
+    };
+    const run = {
+      documentId: first,
+      runId: 'c'.repeat(64),
+      sessionId: 'synthetic-session',
+      ownerToken: 'synthetic-capability',
+      retryInputs: { setup: 'private-setup' },
+      source: 'private-source-label',
+    };
+    service.prepareAccepted(accepted, run);
+    const pending = service.load(request.projectUid, accepted.agentId, first);
+    if (!pending) throw new Error('Missing synthetic accepted proof');
+    service.save({
+      ...pending,
+      answered: {
+        questions: [{ key: 'gap', question: 'private-question', label: 'Gap', why: '', suggestedAnswer: '', basis: [] }],
+        answers: [{ key: 'gap', text: 'private-answer', origin: 'requester' }],
+        questionsId: 'd'.repeat(64),
+      },
+    });
+    service.prepareAccepted(accepted, { ...run, documentId: second, sessionId: 'other-session' });
+    const serialized = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index) ?? '')).join('');
+    for (const text of ['private-source', 'private-feedback', 'private-question', 'private-answer', 'private-setup', 'private-source-label', 'retryInputs'])
+      expect(serialized).not.toContain(text);
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    expect(restored.load(request.projectUid, accepted.agentId, first)).toMatchObject({
+      answeredQuestionsId: 'd'.repeat(64),
+      request: { answers: {}, documentId: first },
+    });
+    expect(restored.load(request.projectUid, accepted.agentId, first)?.answered).toBeUndefined();
+    expect(restored.load(request.projectUid, accepted.agentId, first)?.pendingQuestions).toBeUndefined();
+    expect(restored.load(request.projectUid, accepted.agentId, second)?.attempt?.session.sessionId).toBe('other-session');
+    restored.clear(request.projectUid, accepted.agentId, restored.subject(), first);
+    expect(restored.load(request.projectUid, accepted.agentId, first)).toBeNull();
+    expect(restored.load(request.projectUid, accepted.agentId, second)).not.toBeNull();
+    user.set({ sub: 'another-subject' } as User);
+    expect(restored.load(request.projectUid, accepted.agentId, second)).toBeNull();
   });
 
   it('keeps completed source payloads for same-visit reuse without retaining a recoverable attempt or persisting bytes', () => {

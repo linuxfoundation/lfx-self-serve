@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, OnInit, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { skip, take, type Observable, type Subscription } from 'rxjs';
@@ -481,7 +482,7 @@ export class MonitoringTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
-          this.error.set(extractErrorMessage(err, 'Failed to load campaign data'));
+          this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });
 
@@ -1903,4 +1904,16 @@ export class MonitoringTabComponent implements OnInit {
     this.messageService.add({ severity: 'info', summary: 'Foundation changed', detail: CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, life: 8000 });
     return false;
   }
+}
+
+/**
+ * Appends the HTTP status to the Google panel's error detail (#4526). The detail is the server's own
+ * message for a 4xx but the generic fallback for a 5xx or a dropped connection, so without the status
+ * a guard's 403, a Google Ads 5xx and a network failure all read alike on a screenshot.
+ */
+function withHttpStatus(message: string, err: unknown): string {
+  if (err instanceof HttpErrorResponse && err.status > 0) {
+    return `${message} (HTTP ${err.status})`;
+  }
+  return message;
 }

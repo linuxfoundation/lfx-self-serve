@@ -112,12 +112,36 @@ vi.mock('../utils/auth-helper', () => ({
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
-vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
-vi.mock('../services/ai.service', () => ({ AiService: vi.fn(() => aiSvc) }));
-vi.mock('../services/committee.service', () => ({ CommitteeService: vi.fn(() => committeeSvc) }));
-vi.mock('../services/nats.service', () => ({ NatsService: vi.fn(() => ({})) }));
-vi.mock('../services/user.service', () => ({ UserService: vi.fn(() => ({})) }));
-vi.mock('../services/access-check.service', () => ({ AccessCheckService: vi.fn(() => ({})) }));
+vi.mock('../services/meeting.service', () => ({
+  MeetingService: vi.fn(function () {
+    return meetingSvc;
+  }),
+}));
+vi.mock('../services/ai.service', () => ({
+  AiService: vi.fn(function () {
+    return aiSvc;
+  }),
+}));
+vi.mock('../services/committee.service', () => ({
+  CommitteeService: vi.fn(function () {
+    return committeeSvc;
+  }),
+}));
+vi.mock('../services/nats.service', () => ({
+  NatsService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/user.service', () => ({
+  UserService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -698,6 +722,21 @@ describe('MeetingController', () => {
       await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX + 1) }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids' })] }));
+      expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a string', 'reg-0,reg-1'],
+      ['an object with a length', { length: 2, 0: 'reg-0', 1: 'reg-1' }],
+    ])('rejects %s body without counting it as registrants', async (_label, body) => {
+      const req = buildReq({ body });
+
+      await controller.deleteMeetingRegistrants(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'delete_meeting_registrants', expect.objectContaining({ registrant_count: 0 }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids', message: 'Array of registrant UIDs is required' })] })
+      );
       expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
     });
 

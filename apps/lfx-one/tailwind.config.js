@@ -42,8 +42,6 @@ import {
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
   HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
   HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
-  HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
-  HEALTH_METRICS_OVERVIEW_ERROR_COPY,
   HEALTH_METRICS_OVERVIEW_FILL_CLASSES,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
   lfxColors,
@@ -187,9 +185,8 @@ export default {
     'bg-emerald-100',
     'bg-red-100',
     'bg-gray-100',
-    // Health Metrics Overview fills and empty-state circles (HEALTH_METRICS_OVERVIEW_* in @lfx-one/shared) — applied via [class].
+    // Health Metrics Overview fills (HEALTH_METRICS_OVERVIEW_FILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_OVERVIEW_FILL_CLASSES),
-    ...[...Object.values(HEALTH_METRICS_OVERVIEW_EMPTY_COPY), HEALTH_METRICS_OVERVIEW_ERROR_COPY].flatMap((c) => [c.circleClass, c.iconClass]),
     // Events speaker-proposal status badges (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS in @lfx-one/shared, not scanned
     // here) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => g.badgeClass.split(' ')),
