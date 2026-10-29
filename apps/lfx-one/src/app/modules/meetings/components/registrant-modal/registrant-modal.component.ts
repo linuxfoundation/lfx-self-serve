@@ -84,9 +84,13 @@ export class RegistrantModalComponent {
 
       if (this.isEditMode) {
         // For edit mode, call update API
+        // The form has no control for the guest's `user_id` or `username`, so they come from the saved
+        // registrant: ITX rejects an update that doesn't send both back as stored for a linked guest.
         const updateData = this.meetingService.getChangedFields({
           meeting_id: this.meetingId,
           ...formValue,
+          user_id: this.registrant?.user_id,
+          username: this.registrant?.username,
         });
 
         this.meetingService
