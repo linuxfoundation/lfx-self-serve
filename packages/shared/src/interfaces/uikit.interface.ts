@@ -39,6 +39,8 @@ export interface UiModalConfig<D = unknown> {
   closeOnBackdropClick?: boolean;
   /** Close when the user presses Escape. Defaults to `true`. */
   closeOnEscape?: boolean;
+  /** Describe the dialog by its subtitle, so a screen reader reads the consequence when it opens. Set it only when the layout has a subtitle. */
+  describedBy?: boolean;
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
 }

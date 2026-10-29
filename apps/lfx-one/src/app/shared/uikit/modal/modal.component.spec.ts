@@ -121,20 +121,19 @@ describe('UiModalComponent and UiModalService', () => {
     expect(modal()?.className).toContain('w-[420px]');
   });
 
-  it('can use the alertdialog role, described by its subtitle', async () => {
+  it('can use the alertdialog role', async () => {
     await open((host) => (host.config = { role: 'alertdialog' }));
     expect(dialog()?.getAttribute('role')).toBe('alertdialog');
-    const subtitle = container.querySelector('[data-testid="ui-modal-subtitle"]') as HTMLElement;
-    expect(dialog()?.getAttribute('aria-describedby')).toBe(subtitle.id);
   });
 
-  it('does not point an alertdialog at a subtitle that is not there', async () => {
-    await open((host) => {
-      host.config = { role: 'alertdialog' };
-      host.subtitle = '';
-    });
-    expect(dialog()?.getAttribute('role')).toBe('alertdialog');
-    expect(dialog()?.hasAttribute('aria-describedby')).toBe(false);
+  it('is described by its subtitle when the config asks for it, and keeps that through later change detection', async () => {
+    await open((host) => (host.config = { role: 'alertdialog', describedBy: true }));
+    const subtitle = container.querySelector('[data-testid="ui-modal-subtitle"]') as HTMLElement;
+    expect(dialog()?.getAttribute('aria-describedby')).toBe(subtitle.id);
+
+    fixture.detectChanges();
+    await settle();
+    expect(dialog()?.getAttribute('aria-describedby')).toBe(subtitle.id);
   });
 
   it('does not describe a plain dialog', async () => {

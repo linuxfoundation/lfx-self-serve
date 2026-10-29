@@ -57,7 +57,7 @@ export const Default: Story = {};
 export const DestructiveConfirm: Story = {
   render: () => ({
     template: `
-      <lfx-ui-button variant="destructive" [lfxStoryOpensModal]="dialog" [lfxStoryOpensModalConfig]="{ role: 'alertdialog', autoFocus: '[data-autofocus] button' }">Delete Project</lfx-ui-button>
+      <lfx-ui-button variant="destructive" [lfxStoryOpensModal]="dialog" [lfxStoryOpensModalConfig]="{ role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' }">Delete Project</lfx-ui-button>
       <ng-template #dialog let-ref="dialogRef">
         <lfx-ui-modal size="sm" heading="Delete Project" subtitle="This deletes Q3 Roadmap and its 24 issues for everyone. It can't be undone.">
           <ng-container modalActions>
