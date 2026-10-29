@@ -5,6 +5,34 @@ import { expect, test } from '@playwright/test';
 import { setupStructuredComments } from './helpers/mktg-os-kit-comments.helper';
 import { ASSET_PROJECT, ASSET_REVISION } from './helpers/mktg-os-assets.helper';
 
+test('FAQ: server-resolved answer comments clear the team callout and unanswered count even before the asset changes', async ({ page }) => {
+  // setupStructuredComments calls suppressCookieBanner and stubs the page's reads and writer access.
+  const fixture = await setupStructuredComments(page, 'faq');
+  fixture.state.rows.push({
+    id: 'synthetic-resolved-answer',
+    revisionId: ASSET_REVISION,
+    anchor: { kind: 'field', key: fixture.key },
+    author: { name: 'Project writer' },
+    text: 'Membership is free for this synthetic project.',
+    createdAt: '2026-10-21T10:00:00Z',
+    status: 'resolved',
+    sentInRun: 'c'.repeat(64),
+    resultRevisionId: fixture.nextId,
+    resolution: 'Added the supplied answer as Notes.',
+  });
+  await fixture.open();
+  await expect(page.getByTestId('mktg-comments-panel')).toContainText('Resolved by the agent');
+  await expect(page.getByTestId('mktg-faq-view-unanswered-callout')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="mktg-faq-view-needs-answer-"]')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-faq-view-question-0-2').getByTestId('mktg-field-comment-open')).toHaveText('Comment');
+  await expect(page.getByTestId('mktg-faq-view-tab-unanswered')).toHaveText('Needs an answer');
+  await page.getByTestId('mktg-faq-view-tab-unanswered').click();
+  await expect(page.getByTestId('mktg-faq-view-unanswered-list')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-faq-view-unanswered-empty')).toBeVisible();
+  expect(fixture.state.sends).toHaveLength(0);
+  await page.screenshot({ path: test.info().outputPath('faq-resolved-answer-count.png'), fullPage: true });
+});
+
 test('FAQ: answer a gap by commenting and sending; the new Draft shows Notes and no unanswered question', async ({ page }) => {
   // setupStructuredComments calls suppressCookieBanner through its fixture helper.
   const fixture = await setupStructuredComments(page, 'faq');
