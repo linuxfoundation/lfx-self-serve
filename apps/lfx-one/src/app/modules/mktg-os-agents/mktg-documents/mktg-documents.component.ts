@@ -501,7 +501,12 @@ export class MktgDocumentsComponent {
     return 'The document could not be updated or loaded. Reload to check its state, then try again.';
   }
 
-  /** Labels and actions are measured server state, never a private browser draft. */
+  /**
+   * Documents/kit waiting action: a run is waiting only when the server state is questions,
+   * and the link carries run=<runId> (land on the active run from any device, rule 1).
+   * Replaces #4588 b0e6ed9f4 local-attempt matching (attempts.load(...).pendingQuestions)
+   * and its component test, dropped in the main merge f8d007d7d deliberately.
+   */
   private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
     if (type.kind !== 'living' || !type.catalogAgentId) return false;
     return state === 'questions';
