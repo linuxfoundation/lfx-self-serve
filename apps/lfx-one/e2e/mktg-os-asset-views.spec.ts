@@ -224,7 +224,35 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.locator('.lfx-brand-kit-page')).toHaveCount(0);
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
-    } else await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+    } else {
+      await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+      await expect(print).toHaveCSS('position', 'static');
+      await expect(print).toHaveCSS('display', 'block');
+      await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
+      // Visibility-only hiding leaves screen canvas height behind. The entire
+      // ancestor chain must be white/content-sized, and siblings out of flow.
+      const flow = await print.evaluate((root) => {
+        const ancestors = [];
+        let parent = root.parentElement;
+        while (parent) {
+          const css = getComputedStyle(parent);
+          ancestors.push({ background: css.backgroundColor, minHeight: css.minHeight, overflow: css.overflow });
+          parent = parent.parentElement;
+        }
+        return {
+          ancestors,
+          end: root.getBoundingClientRect().bottom,
+          bodyEnd: document.body.getBoundingClientRect().bottom,
+        };
+      });
+      for (const ancestor of flow.ancestors) {
+        expect(ancestor.background).toBe('rgb(255, 255, 255)');
+        expect(ancestor.minHeight).toBe('0px');
+        expect(ancestor.overflow).toBe('visible');
+      }
+      expect(Math.abs(flow.bodyEnd - flow.end)).toBeLessThan(2);
+      await expect(page.getByTestId('mktg-document-view-revisions')).toHaveCSS('display', 'none');
+    }
     if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
     await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
   });

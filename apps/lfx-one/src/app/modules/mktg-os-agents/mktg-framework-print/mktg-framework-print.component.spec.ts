@@ -149,6 +149,21 @@ describe('MktgFrameworkPrintComponent', () => {
     expect(query('mktg-framework-print-pillars')).toBeNull();
   });
 
+  it('ends in content flow with no viewport-height flex child or hidden trailing sections', async () => {
+    await configure('browser', printView(null));
+    const root = query('mktg-framework-print');
+    const cover = query('mktg-framework-print-cover');
+    expect(root?.classList.contains('flex')).toBe(false);
+    expect(cover?.classList.contains('grid')).toBe(true);
+    expect(root?.querySelector('.h-screen, .min-h-screen, .flex-1')).toBeNull();
+    expect(Array.from(root?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
+      'mktg-framework-print-cover',
+      'mktg-framework-print-framework',
+      'mktg-framework-print-numbers',
+    ]);
+    expect(root?.lastElementChild?.classList.contains('break-after-page')).toBe(false);
+  });
+
   it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {
     const kit = brandKitTestRevision();
     const pale: BrandKitRevision = { ...kit, kit: { ...kit.kit, dark: '#FFFFFF' } };

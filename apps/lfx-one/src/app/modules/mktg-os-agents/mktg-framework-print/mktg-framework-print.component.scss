@@ -24,6 +24,19 @@
   -webkit-print-color-adjust: exact;
 }
 
+@media print {
+  .lfx-framework-print {
+    page: mktg-framework;
+  }
+
+  .mfp-cover {
+    /* The named page reserves 0.55in at each edge on A4 and Letter. */
+    min-height: calc(100vh - 1.1in);
+    box-sizing: border-box;
+    break-inside: avoid;
+  }
+}
+
 /* Shared chapter chrome is always Inter; brand typography belongs to content/samples. */
 .lfx-print-chapter-title {
   display: flex;

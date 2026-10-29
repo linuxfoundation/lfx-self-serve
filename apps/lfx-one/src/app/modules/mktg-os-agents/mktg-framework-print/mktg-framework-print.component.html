@@ -25,7 +25,7 @@
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its column instead of running off the page. -->
 <div
-  class="lfx-framework-print flex flex-col bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
+  class="lfx-framework-print bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
   [style.--mfp-dark]="v.brand.dark"
   [style.--mfp-accent]="v.brand.accent"
   [style.--mfp-tint]="v.brand.tint"
@@ -34,9 +34,10 @@
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
-  <!-- COVER: the whole first page area, on the brand's dark. In print a viewport height is the page area's height, so the cover fills the first page of either paper and its contents list stays on it. -->
+  <!-- A bounded cover grid, not a viewport-height flexbox: native pagination
+       keeps the title and contents on one sheet without a growing child. -->
   <section
-    class="flex h-screen flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
+    class="mfp-cover grid content-between gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
     aria-label="Cover"
     data-testid="mktg-framework-print-cover">
     <div class="flex items-baseline justify-between gap-[12pt] text-[7.5pt] uppercase tracking-[0.2em] opacity-80">
@@ -53,7 +54,7 @@
         [style.filter]="logo.filter || null"
         data-testid="mktg-framework-print-cover-logo" />
     }
-    <div class="flex flex-1 flex-col justify-center gap-[14pt]">
+    <div class="flex flex-col justify-center gap-[14pt]">
       <span [class]="accentBar"></span>
       <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="mktg-framework-print-title">{{ v.title }}</h1>
       <p class="max-w-[5.6in] text-[17pt] leading-[1.3] opacity-90" data-testid="mktg-framework-print-tagline">{{ v.mf.tagline }}</p>
