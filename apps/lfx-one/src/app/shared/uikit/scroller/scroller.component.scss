@@ -1,0 +1,13 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Tailwind v3 has no mask utilities; the fade lengths are 0 until an edge is actually clipped.
+.scroller-x {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-start, 0px), #000 calc(100% - var(--fade-end, 0px)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade-start, 0px), #000 calc(100% - var(--fade-end, 0px)), transparent);
+}
+
+.scroller-y {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-end, 0px)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-end, 0px)), transparent);
+}

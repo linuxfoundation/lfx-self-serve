@@ -65,3 +65,6 @@ export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'searc
 
 /** Virtual keyboard hint of a uikit text input, the native `inputmode` values. */
 export type UiInputMode = 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search';
+
+/** Scroll axis of the uikit scroller: a snapping rail, a fading list, or a free two-axis pane. */
+export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
