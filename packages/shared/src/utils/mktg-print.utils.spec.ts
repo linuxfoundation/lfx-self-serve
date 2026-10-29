@@ -199,12 +199,10 @@ describe('the print’s brand', () => {
 });
 
 describe('the framework’s print', () => {
-  it('holds the framework, the ICPs, the message house and the key numbers — never the run’s sources and gaps', () => {
+  it('holds the framework and the key numbers — never the hidden ICPs and message house, nor the run’s sources and gaps', () => {
     expect(foundationMessagePrintSections()).toEqual([
       { id: 'framework', number: '01', title: 'Framework' },
-      { id: 'icps', number: '02', title: 'ICPs' },
-      { id: 'message-house', number: '03', title: 'Message house' },
-      { id: 'numbers', number: '04', title: 'Key numbers' },
+      { id: 'numbers', number: '02', title: 'Key numbers' },
     ]);
   });
 

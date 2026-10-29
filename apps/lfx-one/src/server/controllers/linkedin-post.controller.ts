@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
@@ -159,7 +161,7 @@ export class LinkedinPostController {
       const questionsId = body['questionsId'];
       const answers = body['answers'];
       if (typeof questionsId !== 'string' || !/^[a-f0-9]{64}$/.test(questionsId) || !validLinkedinAnswers(answers))
-        throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
+        throw ServiceValidationError.forField('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
       const project = await this.writableProject(req, body['project']);
       await this.runs.assertRunOpen(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
       const prepared = await this.posts.prepareAnswers(req, sessionId, questionsId, answers);

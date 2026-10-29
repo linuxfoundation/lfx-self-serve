@@ -310,7 +310,7 @@ describe('Family export slot', () => {
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
-    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`, `${numbers[0]}.3`, `${numbers[0]}.4`]);
+    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
     expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');

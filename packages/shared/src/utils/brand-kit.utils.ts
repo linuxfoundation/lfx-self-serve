@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
+
 // Pure Brand Kit helpers (brand-kit-output/v2 and the questions/answers
 // turns): request validation, the draft form payload and its rendering into
 // the one text message the agent receives, the questions block the agent
@@ -58,12 +61,7 @@ import {
   BRAND_KIT_SHA256_REGEX,
   BRAND_KIT_TYPE_STEPS,
 } from '../constants/brand-kit.constants';
-import {
-  FOUNDATION_MESSAGE_ANSWER_ORIGINS,
-  FOUNDATION_MESSAGE_CONTRACT_ID,
-  FOUNDATION_MESSAGE_NONE_ANSWER,
-  FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
-} from '../constants/foundation-message.constants';
+import { FOUNDATION_MESSAGE_ANSWER_ORIGINS, FOUNDATION_MESSAGE_CONTRACT_ID, FOUNDATION_MESSAGE_NONE_ANSWER } from '../constants/foundation-message.constants';
 import { MKTG_ARTIFACT_SPECS } from '../constants/mktg-artifact.constants';
 import {
   BrandKitBookPage,
@@ -657,7 +655,7 @@ export function validateBrandKitAnswers(answers: unknown): BrandKitValidationRes
   }
   const errors: string[] = [];
   if (answers.length === 0 || answers.length > BRAND_KIT_ANSWER_KEYS.length) {
-    errors.push(`answers takes 1 to ${BRAND_KIT_ANSWER_KEYS.length} entries`);
+    errors.push(answers.length === 0 ? MKTG_ANSWERS_INCOMPLETE_MESSAGE : `answers takes 1 to ${BRAND_KIT_ANSWER_KEYS.length} entries`);
   }
   const seen = new Set<string>();
   answers.forEach((entry: unknown, index) => {
@@ -679,9 +677,10 @@ export function validateBrandKitAnswers(answers: unknown): BrandKitValidationRes
       seen.add(key);
     }
     const text = entry['text'];
-    if (typeof text !== 'string' || !text.trim() || FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(text.trim())) {
-      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
-    } else if (text.length > BRAND_KIT_ANSWER_MAX_CHARS) {
+    const problem = mktgAnswerProblem(text);
+    if (problem) {
+      errors.push(`${problem}: ${typeof key === 'string' ? key : at}`);
+    } else if (typeof text === 'string' && text.length > BRAND_KIT_ANSWER_MAX_CHARS) {
       errors.push(`${at}.text must be at most ${BRAND_KIT_ANSWER_MAX_CHARS} characters`);
     }
     if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(entry['origin'] as string)) {

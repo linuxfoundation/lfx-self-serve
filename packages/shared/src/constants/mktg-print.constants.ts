@@ -17,11 +17,11 @@ export const FOUNDATION_MESSAGE_PRINT_BODY_CLASS = 'lfx-print-framework';
 export const FOUNDATION_MESSAGE_PRINT_ONLY_CLASS = 'lfx-framework-print-only';
 
 /**
- * The framework view's tabs that print, in order: the framework, the ICPs,
- * the message house and the key numbers. The run's sources and gaps (and the
+ * The framework view's tabs that print, in order: the framework and the key
+ * numbers. The run's sources and gaps (and the
  * reviewer's note) stay on screen: they are for the reviewer, not the reader.
  */
-export const FOUNDATION_MESSAGE_PRINT_TAB_IDS = ['framework', 'icps', 'message-house', 'numbers'] as const;
+export const FOUNDATION_MESSAGE_PRINT_TAB_IDS = ['framework', 'numbers'] as const;
 
 /** Printed marker for an unanswered FAQ; independent of the screen's tab labels. */
 export const MKTG_FAQ_PRINT_UNANSWERED = 'Needs an answer';
