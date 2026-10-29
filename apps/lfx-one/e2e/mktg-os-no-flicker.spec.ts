@@ -3,7 +3,7 @@
 
 import { expect } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { kitTest as test, kitJson, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
+import { kitTest as test, kitDocuments, kitRevision, kitJson, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 import { DOCUMENTS_URL, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
 import { MEMBER_360_DOCUMENT_ID, openMember360, setupMember360 } from './helpers/member-360.helper';
 import { member360Revision } from './fixtures/mock-data/member-360.mock';
@@ -27,6 +27,58 @@ test('living document lands with its catalog title and resolved action, never Ru
   release();
   await expect(page.getByTestId('mktg-document-view-title')).toHaveText(`${KIT_PROJECT.name} Messaging framework`);
   await expect(page.getByTestId('mktg-document-view-run-again')).toHaveText('Create a new version');
+});
+
+test('the last-export answer fills its reserved line without moving the framework tabs', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await setupKit(page, { loaded: true, approvedFramework: true });
+  const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
+  if (!type) throw new Error('Missing synthetic framework type');
+  const revision = kitRevision(type).revision;
+  let release = () => {};
+  const hold = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === '/api/mktg-agents/slides-export/last',
+    async (route) => {
+      await hold;
+      await kitJson(route, {
+        last: {
+          schema: 'mktg-slides-export/v1',
+          project: KIT_PROJECT.uid,
+          agentKey: type.agentKey,
+          documentId: 'living',
+          revisionId: revision.id,
+          revisionNumber: revision.number,
+          contentSha256: revision.contentSha256,
+          mode: 'create',
+          deckId: 'SyntheticDeck',
+          link: 'https://docs.google.com/presentation/d/SyntheticDeck/edit',
+          title: 'Synthetic framework export',
+          slideCount: 1,
+          assets: ['framework'],
+          branded: { kit: false, logo: false, backgrounds: 0, text_colors: 0, fonts: 0, bars: 0, logos: 0, logos_skipped: 0, tables_header: null },
+          exportedAt: '2026-10-28T09:39:00Z',
+          agentVersion: '1.0.0',
+        },
+        latestRevision: { id: revision.id, number: revision.number, contentSha256: revision.contentSha256 },
+      });
+    }
+  );
+  await openKit(page, '/documents/foundation-message/living');
+  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-about')).toBeVisible();
+  const tabs = page.getByTestId('mktg-framework-view-tabs');
+  const before = await tabs.boundingBox();
+  expect(before).not.toBeNull();
+  if (!before) throw new Error('Missing synthetic framework tabs');
+  await page.screenshot({ path: test.info().outputPath('export-history-pending.png'), fullPage: true });
+  release();
+  await expect(page.getByTestId('mktg-slides-export-last-link')).toHaveText(/Open the last export/);
+  await expect(page.getByTestId('mktg-slides-export-lookup-loading')).toHaveCount(0);
+  const after = await tabs.boundingBox();
+  expect(after).not.toBeNull();
+  if (!after) throw new Error('Missing settled framework tabs');
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
 });
 
 test('Member 360 title waits for the resolved reporting period', async ({ page }) => {
