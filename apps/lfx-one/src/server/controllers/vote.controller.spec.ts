@@ -385,14 +385,15 @@ describe('VoteController endVote (#4143)', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('logs the vote uid and the opaque actor only, never a name or email', async () => {
+  it('logs the vote uid only, never the caller subject, name or email', async () => {
     endVoteSvc.mockResolvedValue({ uid: 'vote-1', status: 'ended' });
 
     await controller.endVote(req('vote-1'), res, next);
 
-    expect(success).toHaveBeenCalledWith(expect.anything(), 'end_vote', undefined, { vote_uid: 'vote-1', actor: 'auth0|synthetic' });
+    expect(success).toHaveBeenCalledWith(expect.anything(), 'end_vote', undefined, { vote_uid: 'vote-1' });
     // The first argument is the request itself (which the real logger whitelists); only the logged metadata matters here.
     expect(JSON.stringify(success.mock.calls.map(([, , , metadata]) => metadata))).not.toContain('acme-motors');
+    expect(JSON.stringify(success.mock.calls.map(([, , , metadata]) => metadata))).not.toContain('synthetic');
   });
 
   it('rejects a missing uid without calling the service', async () => {

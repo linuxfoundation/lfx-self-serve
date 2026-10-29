@@ -308,8 +308,8 @@ export class VoteController {
   }
 
   /**
-   * POST /votes/:uid/end — ends an active vote now (vote#writer only). Logs the vote uid and the opaque OIDC subject of
-   * the caller as the actor; no name, email or request body.
+   * POST /votes/:uid/end — ends an active vote now (vote#writer only). Logs the vote uid only; the gateway records the
+   * principal upstream, and the OIDC subject is a username here, so it is never logged.
    */
   public async endVote(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -322,10 +322,7 @@ export class VoteController {
 
       const vote = await this.voteService.endVote(req, uid);
 
-      logger.success(req, 'end_vote', startTime, {
-        vote_uid: uid,
-        actor: req.oidc?.user?.['sub'],
-      });
+      logger.success(req, 'end_vote', startTime, { vote_uid: uid });
 
       res.json(vote);
     } catch (error) {
