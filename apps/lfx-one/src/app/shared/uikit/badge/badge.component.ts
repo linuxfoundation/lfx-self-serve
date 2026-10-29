@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { UiBadgeTone } from '@lfx-one/shared/interfaces';
 
 /**
  * Small pill that labels a status, category or plan, such as "Beta", "Secure" or "Gold". Project the text as content.
@@ -18,13 +19,13 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
 })
 export class UiBadgeComponent {
   /** Colour role. `neutral` is the default; `accent` comes first among the coloured roles. Ignored by the `outline` form. */
-  public readonly tone = input<'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success'>('neutral');
+  public readonly tone = input<UiBadgeTone>('neutral');
   /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. */
   public readonly variant = input<'subtle' | 'solid' | 'outline'>('subtle');
   /** `sm` is 20px tall with 11px text; `md` is 24px tall with 12px text. */
   public readonly size = input<'sm' | 'md'>('md');
   /** Shows a 6px status dot before the text in the given role colour, for plain status badges such as "Active". */
-  public readonly dot = input<'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success' | null>(null);
+  public readonly dot = input<UiBadgeTone | null>(null);
 
   protected readonly classes: Signal<string> = this.initClasses();
   protected readonly dotClasses: Signal<string> = this.initDotClasses();
@@ -37,7 +38,7 @@ export class UiBadgeComponent {
         sm: 'h-[20px] px-[6px] text-[11px] leading-[16px] [&_svg]:h-[10px] [&_svg]:w-[10px] [&_i]:text-[10px]',
         md: 'h-ui-tiny px-[10px] text-label-12 [&_svg]:h-[12px] [&_svg]:w-[12px] [&_i]:text-[12px]',
       };
-      const solid = {
+      const solid: Record<UiBadgeTone, string> = {
         // shortcut: dark theme not handled (light only). revisit: when a theme switch lands — library pins neutral solid to slate-600 in both themes
         neutral: 'bg-ui-neutral-600 text-white',
         accent: 'bg-ui-accent-500 text-white',
@@ -47,7 +48,7 @@ export class UiBadgeComponent {
         danger: 'bg-ui-danger-600 text-white',
         success: 'bg-ui-success-600 text-white',
       };
-      const subtle = {
+      const subtle: Record<UiBadgeTone, string> = {
         neutral: 'bg-ui-neutral-100 text-ui-neutral-900',
         accent: 'bg-ui-accent-100 text-ui-accent-700',
         feature: 'bg-ui-feature-100 text-ui-feature-700',
@@ -64,7 +65,7 @@ export class UiBadgeComponent {
 
   private initDotClasses(): Signal<string> {
     return computed(() => {
-      const fills = {
+      const fills: Record<UiBadgeTone, string> = {
         neutral: 'bg-ui-neutral-600',
         accent: 'bg-ui-accent-500',
         feature: 'bg-ui-feature-600',
