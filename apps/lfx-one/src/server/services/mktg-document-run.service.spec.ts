@@ -236,7 +236,7 @@ describe('MktgDocumentRunService core', () => {
   }
   it('filters the same public snapshot per viewer without adding identity fields or caching ownership', async () => {
     await waitingMember();
-    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as Request;
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
     await service.startForOneOff(other, 'member-360', project, 'other-session');
     const snapshot = await service.readProgress(req, project);
     const own = await service.ownProgress(memberOwner, project, snapshot);
@@ -254,7 +254,7 @@ describe('MktgDocumentRunService core', () => {
   it('resolves a private Member session only for the stored creator after writer authorization', async () => {
     await waitingMember();
     await expect(service.ownedMember360Session(memberOwner, project, hash(session))).resolves.toBe(session);
-    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as Request;
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
     await expect(service.ownedMember360Session(other, project, hash(session))).rejects.toMatchObject({ statusCode: 404 });
     await expect(service.ownedMember360Session(other, project, hash('missing'))).rejects.toMatchObject({ statusCode: 404 });
     flows.project.mockResolvedValueOnce({ uid: project, writer: false });
