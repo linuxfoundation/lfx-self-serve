@@ -33,7 +33,7 @@ const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, h
 class AtAGlanceStubComponent {
   public readonly glance = input.required<HealthMetricsEventsAtAGlance>();
   public readonly status = input.required<HealthMetricsEventsAtAGlanceStatus>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -41,7 +41,7 @@ class AtAGlanceStubComponent {
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
 class ForecastStubComponent {
   public readonly countsChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -49,7 +49,7 @@ class ForecastStubComponent {
 @Component({ selector: 'lfx-events-past-events', template: '<div data-testid="events-past-stub"></div>' })
 class PastStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
   public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
@@ -57,7 +57,7 @@ class PastStubComponent {
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registrations-growth', template: '<div data-testid="events-reg-stub"></div>' })
 class RegistrationsGrowthStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
   public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
@@ -65,14 +65,14 @@ class RegistrationsGrowthStubComponent {
 /** Stands in for Revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-revenue', template: '<div data-testid="events-rev-stub"></div>' })
 class RevenueStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for Sponsorship, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-sponsorship', template: '<div data-testid="events-spon-stub"></div>' })
 class SponsorshipStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -80,7 +80,7 @@ class SponsorshipStubComponent {
 @Component({ selector: 'lfx-events-speakers', template: '<div data-testid="events-spk-stub"></div>' })
 class SpeakersStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -88,7 +88,7 @@ class SpeakersStubComponent {
 @Component({ selector: 'lfx-events-organizations', template: '<div data-testid="events-orgs-stub"></div>' })
 class OrganizationsStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -96,7 +96,7 @@ class OrganizationsStubComponent {
 @Component({ selector: 'lfx-events-geography', template: '<div data-testid="events-geo-stub"></div>' })
 class GeographyStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -170,23 +170,23 @@ describe('HealthMetricsEventsComponent', () => {
   ): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
-    atAGlanceStub().settled.emit();
+    atAGlanceStub().settled.emit(false);
     forecast.countsChange.emit(note);
-    forecast.settled.emit();
+    forecast.settled.emit(false);
     pastStub.countChange.emit(pastCount);
-    pastStub.settled.emit();
-    (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit();
-    (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit();
-    (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit();
+    pastStub.settled.emit(false);
+    (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit(false);
+    (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit(false);
+    (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit(false);
     const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
     speakersStub.noteChange.emit(speakersNote);
-    speakersStub.settled.emit();
+    speakersStub.settled.emit(false);
     const orgsStub = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
     orgsStub.countChange.emit(orgsCount);
-    orgsStub.settled.emit();
+    orgsStub.settled.emit(false);
     const geoStub = fixture.debugElement.query(By.directive(GeographyStubComponent)).componentInstance as GeographyStubComponent;
     geoStub.countChange.emit(geoCount);
-    geoStub.settled.emit();
+    geoStub.settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -338,13 +338,29 @@ describe('HealthMetricsEventsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
   });
 
-  it('swaps the whole shell for one empty state when the foundation has no events', async () => {
+  it('keeps the shell for a foundation with no events until every section settles empty, then shows the Events blank card', async () => {
     await setup(null, { ...GLANCE, upcomingEvents: 0, hasEvents: false });
-    const empty = fixture.nativeElement.querySelector('[data-testid="events-empty"]');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-blank"]')).toBeNull();
 
-    expect(empty.textContent).toContain('No events yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid^="events-section-"]')).toBeNull();
+    const stubs = [
+      AtAGlanceStubComponent,
+      ForecastStubComponent,
+      PastStubComponent,
+      RegistrationsGrowthStubComponent,
+      RevenueStubComponent,
+      SponsorshipStubComponent,
+      SpeakersStubComponent,
+      OrganizationsStubComponent,
+      GeographyStubComponent,
+    ];
+    for (const type of stubs)
+      (fixture.debugElement.query(By.directive(type)).componentInstance as { settled: { emit(empty: boolean): void } }).settled.emit(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="events-blank"] h2').textContent).toBe('No event data yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-events-page"]').className).toContain('hidden');
   });
 
   it("drops a landed empty state back to loading on a foundation switch, never showing the next one's as empty", async () => {

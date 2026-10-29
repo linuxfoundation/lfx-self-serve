@@ -24,10 +24,12 @@ import type {
   AudiencePreviewCount,
   AudienceQaCandidate,
   AudienceQaCheck,
+  AudienceQaCheckVerdict,
   AudienceQaFinding,
   AudienceQaResult,
   AudienceQaRunRequest,
   AudienceQaSeverity,
+  AudienceQaStageScopedCheck,
   AudienceQaVerdict,
   AudienceSignal,
   AudienceSpeakerScope,
@@ -205,7 +207,12 @@ interface WireQaChecks {
   signal_mapping: WireQaCheck;
   suppression: WireQaSuppressionCheck;
   exclusion_completeness: WireQaExclusionCheck;
-  current_registrants?: WireQaCheck;
+  current_registrants?: WireQaStageScopedCheck;
+}
+
+/** Check 4's wire shape: it may also be NOT APPLICABLE, with a note saying why. */
+interface WireQaStageScopedCheck extends WireQaCheck {
+  note?: string;
 }
 
 interface WireCustomPropertyFilter {
@@ -558,6 +565,15 @@ function toCheck(wire: WireQaCheck): AudienceQaCheck {
   };
 }
 
+/** Check 4, which keeps upstream's NOT APPLICABLE verdict and its note. */
+function toStageScopedCheck(wire: WireQaStageScopedCheck): AudienceQaStageScopedCheck {
+  return {
+    verdict: wire.verdict as AudienceQaCheckVerdict,
+    findings: (wire.findings ?? []).map(toFinding),
+    ...(typeof wire.note === 'string' && wire.note.trim() ? { note: wire.note.trim() } : {}),
+  };
+}
+
 /**
  * Narrows upstream's one QA struct into this app's discriminated union.
  *
@@ -609,7 +625,7 @@ function narrowQaResult(wire: WireQaResult): AudienceQaResult {
       },
       // Omitted, not defaulted: absent means the check did not run, and a defaulted verdict
       // would read as a result.
-      ...(checks.current_registrants ? { currentRegistrants: toCheck(checks.current_registrants) } : {}),
+      ...(checks.current_registrants ? { currentRegistrants: toStageScopedCheck(checks.current_registrants) } : {}),
     },
     findings: (wire.findings ?? []).map(toFinding),
     overall: (wire.overall ?? 'NEEDS VERIFY') as AudienceQaVerdict,
@@ -896,6 +912,9 @@ export class AudienceBuilderProxyService {
       targets_eu: request.targetsEu === true,
       targets_ca: request.targetsCa === true,
       ...(request.eventName ? { event_name: request.eventName } : {}),
+      // Same spelling as campaign-service's stage enum, so it is forwarded as is. A
+      // campaign-service that predates the field ignores it (its JSON decoder drops unknown keys).
+      ...(request.stage ? { stage: request.stage } : {}),
       ...(request.sendSuppressionListIds?.length ? { send_suppression_list_ids: request.sendSuppressionListIds } : {}),
     });
     return narrowQaResult(wire);

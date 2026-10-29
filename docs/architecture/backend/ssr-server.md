@@ -123,6 +123,15 @@ The SSR integration represents the **fallback handler** in the middleware chain,
 
 Angular's `AngularNodeAppEngine` receives the complete request context, including user authentication state, enabling fully personalized server-side rendering.
 
+### Allowed Hosts and Trusted Proxy Headers
+
+`AngularNodeAppEngine` is constructed with an explicit `allowedHosts` and `trustProxyHeaders`, which also disables Angular's `NG_ALLOWED_HOSTS` / `NG_TRUST_PROXY_HEADERS` env fallbacks:
+
+- **`allowedHosts`** is only the hostname of `PCC_BASE_URL`. Serving the app on a second hostname means adding it here.
+- **`trustProxyHeaders`** lists exactly the headers the ingress sends: `x-forwarded-for`, `-host`, `-port`, `-proto` and `-server`. If the ingress starts sending another `x-forwarded-*` header, add it here.
+
+Getting either wrong does not fail loudly. Angular serves the client-only shell (`<lfx-root></lfx-root>` with no `ng-state`), which carries no auth state, so `authGuard` bounces signed-in users from `/` to `/login` and back in a loop (#4649). The server logs `Received "x-forwarded-…" header but "trustProxyHeaders" was not set up to allow it` or `Header "host" with value "…" is not allowed`.
+
 ### Error Handling Strategy
 
 The server implements **graceful degradation** for rendering errors:

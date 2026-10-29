@@ -14,6 +14,53 @@ import { DATA_LOAD_TIMEOUT } from './helpers/mktg-os-assets.helper';
 
 test.describe('Marketing OS new run Sources', () => {
   test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+  for (const choice of ['Open it', 'Discard and start over'])
+    test(`catalog active-run conflict: ${choice}`, async ({ page }, info) => {
+      const sources = await setupFreshSources(page);
+      const bodies: Record<string, unknown>[] = [];
+      const activeRunId = 'b'.repeat(64);
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.generate}`, (route) => {
+        bodies.push(route.request().postDataJSON());
+        if (!bodies.at(-1)?.['discard'])
+          return route.fulfill({
+            status: 409,
+            json: {
+              code: 'MKTG_RUN_ACTIVE',
+              message: 'A run is in progress.',
+              activeRunId,
+              state: 'writing',
+              agentKey: 'brand-kit',
+              documentId: 'living',
+              startedBy: 'Synthetic writer',
+              startedByViewer: false,
+              startedAt: '2026-10-19T12:00:00.000Z',
+            },
+          });
+        return route.fallback();
+      });
+      await page.route(`**${BRAND_KIT_INTAKE.endpoints.result}`, (route) =>
+        route.fulfill({
+          json: {
+            status: 'questions',
+            questionsId: 'c'.repeat(64),
+            questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Grow adoption', basis: [] }],
+          },
+        })
+      );
+      await sources.open();
+      await page.getByTestId('mktg-run-start').getByRole('button').click();
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toContainText("Synthetic writer's Brand Kit run is in progress");
+      await dialog.getByRole('button', { name: choice, exact: true }).click();
+      if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+      else {
+        await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
+        expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
+      }
+      expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
+      await page.screenshot({ path: info.outputPath('catalog-active-run-choice.png'), fullPage: true });
+    });
   test('a waiting run is reachable through Documents and a fresh entry without creating another session', async ({ page }) => {
     const sources = await setupFreshSources(page);
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
@@ -52,7 +99,7 @@ test.describe('Marketing OS new run Sources', () => {
     });
     await page.getByTestId('mktg-run-start').getByRole('button').click();
     await expect.poll(() => sources.generated.length).toBe(1);
-    await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Starting the agent — stay on this page for a few seconds.');
+    await expect(page.getByTestId('mktg-agent-run-starting-note')).toHaveText('Getting started… Stay on this page for a few seconds.');
     await expect(page.getByTestId('mktg-agent-run-leave-note')).toHaveCount(0);
     const questions = page.getByTestId('mktg-run-questions');
     await page.route('**/api/mktg-agents/documents?*', (route) =>
@@ -92,9 +139,13 @@ test.describe('Marketing OS new run Sources', () => {
     await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText(`This ${mktgSentenceCaseLabel(type.itemLabel)} is being written.`);
     await expect(page.getByTestId('mktg-run-waiting-open').getByRole('link', { name: 'Open it', exact: true })).toHaveAttribute(
       'href',
-      `${base}/documents/${type.agentKey}/living?project=${DOCUMENT_PROJECT.slug}&run=${runId}`
+      `${base}/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&run=${runId}`
     );
     await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
+    expect(sources.generated).toHaveLength(1);
+    await page.getByTestId('mktg-run-waiting-open').getByRole('link').click();
+    await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
+    await expect(page).not.toHaveURL(/\/documents\//);
     expect(sources.generated).toHaveLength(1);
     await open(`${base}/documents?project=${DOCUMENT_PROJECT.slug}`);
     await expect(page.getByTestId(`mktg-documents-started-run-${runId}`)).toContainText('Writing the document');
@@ -148,6 +199,41 @@ test.describe('Marketing OS new run Sources', () => {
     expect(sources.generated[1]['answers']).toEqual(sources.generated[0]['answers']);
     await page.screenshot({ path: test.info().outputPath('waiting-questions-recovered.png'), fullPage: true });
   });
+  test('dates stale public questions without starting over automatically', async ({ page }) => {
+    const sources = await setupFreshSources(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!type) throw new Error('Missing living fixture');
+    await page.route('**/api/mktg-agents/documents?*', (route) =>
+      route.fulfill({
+        json: {
+          project: DOCUMENT_PROJECT.uid,
+          groups: [],
+          runs: [
+            {
+              project: DOCUMENT_PROJECT.uid,
+              agentKey: type.agentKey,
+              documentId: 'living',
+              runId: 'e'.repeat(64),
+              state: 'questions',
+              startedAt: '2026-10-01T12:00:00Z',
+            },
+          ],
+        },
+      })
+    );
+    await page.evaluate((url) => {
+      history.pushState({}, '', url);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, `/project/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=new`);
+    await expect(page.getByTestId('mktg-run-waiting-notice')).toContainText(
+      'Waiting for your answers since 1 Oct. Continue to answer them — if the agent no longer responds, start over.'
+    );
+    await expect(page.getByTestId('mktg-run-waiting-open').getByRole('link')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-waiting-start-over')).toBeVisible();
+    expect(sources.generated).toHaveLength(0);
+    await page.screenshot({ path: test.info().outputPath('stale-public-questions.png'), fullPage: true });
+  });
+
   test('Drive and duplicate source warnings leave Start enabled', async ({ page }) => {
     const sources = await setupFreshSources(page);
     await sources.open();

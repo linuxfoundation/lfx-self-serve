@@ -213,6 +213,7 @@ export class MktgAgentsController {
     try {
       const project = await this.documentRuns.resolveCatalogProject(req, agent.id, rawProject);
       if (!validSessionId) {
+        if (project) await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
         if (project) {
@@ -236,6 +237,7 @@ export class MktgAgentsController {
       if (await this.redrafts.forSession(req, validSessionId)) {
         throw new AuthorizationError('Generic chat follow-ups are refused on comments-only redraft sessions.');
       }
+      if (project) await this.documentRuns.assertRunOpen(req, project, agent.id, validSessionId);
       const turnId = randomUUID();
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
       if (project) {
@@ -402,6 +404,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
@@ -474,7 +477,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
+      const project = await this.answersProject(req, agent.id, validSessionId);
       if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
@@ -710,6 +713,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
@@ -790,7 +794,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
+      const project = await this.answersProject(req, agent.id, validSessionId);
       if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
@@ -1001,6 +1005,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
@@ -1074,7 +1079,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
+      const project = await this.answersProject(req, agent.id, validSessionId);
       if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
@@ -1275,6 +1280,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, rawProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId, priorVersion ?? 0);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
@@ -1515,6 +1521,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
       const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
       const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'faq_generate', startTime, { session_created: true });
@@ -1589,7 +1596,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_answers', { answers: validAnswers.length });
 
     try {
-      const project = await this.answersProject(req);
+      const project = await this.answersProject(req, agent.id, validSessionId);
       if (await this.redrafts.forSession(req, validSessionId)) throw new AuthorizationError('Free-text answers are refused on comments-only redraft sessions.');
       await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
       if (project) {
@@ -1715,11 +1722,13 @@ export class MktgAgentsController {
     return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
   }
 
-  private async answersProject(req: Request): Promise<string | undefined> {
+  private async answersProject(req: Request, agentId: string, sessionId: string): Promise<string> {
     if (req.body.questionsId !== undefined && (typeof req.body.questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(req.body.questionsId))) {
       throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
     }
-    return req.body.project === undefined ? undefined : this.documentRuns.resolveProject(req, req.body.project);
+    const project = await this.documentRuns.resolveProject(req, req.body.project);
+    await this.documentRuns.assertRunOpen(req, project, agentId, sessionId);
+    return project;
   }
 
   private async trackResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { z } from 'zod';
+import { MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
   CATEGORY_KEYS,
   CATEGORY_LABELS,
@@ -59,6 +60,7 @@ export const trackerSchema = z
 export const member360GenerateSchema = z
   .object({
     project: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
+    discard: z.string().regex(MKTG_STARTED_RUN_ID_REGEX).optional(),
     window: z.enum(['12', '6', 'year']).optional(),
     compare: z.boolean().optional(),
     trackerIds: z.array(z.string().regex(MEMBER_360_TRACKER_ID_REGEX)).max(MEMBER_360_MAX_TRACKERS).optional(),

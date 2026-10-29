@@ -324,6 +324,7 @@
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
           [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
+          [emailStage]="selectedEmailStage() ?? ''"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
@@ -1440,6 +1441,7 @@
             [savedBriefRefreshToken]="savedBriefRefreshToken()"
             [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
             (proceedToImplementation)="onProceedToImplementation($event)"
+            (briefDiscarded)="onPlanningBriefDiscarded()"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
         }
@@ -1478,6 +1480,7 @@
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
               [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
               [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
+              [twitterDraft]="carriedTwitterDraft()"
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"

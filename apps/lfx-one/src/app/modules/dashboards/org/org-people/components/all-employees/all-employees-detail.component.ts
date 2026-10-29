@@ -3,7 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
-import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import { ORG_COMMITS_DEFINITION, ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeDetail } from '@lfx-one/shared/interfaces';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -20,6 +20,7 @@ export class AllEmployeesDetailComponent {
   public readonly retry = output<void>();
 
   protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
+  protected readonly maintainerRolesUnavailableHint = ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT;
 
   protected readonly hasAnyDetail: Signal<boolean> = computed(() => this.initHasAnyDetail());
 

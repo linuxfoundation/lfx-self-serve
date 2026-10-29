@@ -44,10 +44,12 @@ export class MktgDocumentStoreService {
     documentId: string,
     poll = false,
     refreshRunId?: string,
-    expectedPending = false
+    expectedPending = false,
+    selectedRunId?: string
   ): Observable<MktgDocumentDetailResponse> {
     let params = this.projectParams(projectUid, poll);
     if (refreshRunId) params = params.set('refreshRun', refreshRunId);
+    if (selectedRunId) params = params.set('run', selectedRunId);
     return this.http.get<MktgDocumentDetailResponse>(this.documentPath(agentKey, documentId), { params }).pipe(
       catchError((error: unknown) => {
         if (expectedPending && error instanceof HttpErrorResponse && error.status === 404) {

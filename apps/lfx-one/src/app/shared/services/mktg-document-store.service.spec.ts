@@ -53,6 +53,16 @@ describe('MktgDocumentStoreService', () => {
     revision.flush({});
   });
 
+  it('carries a selected run on detail timer reads without requesting a failure refresh', () => {
+    const runId = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', true, undefined, false, runId).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents/brand-kit/living');
+    expect(request.request.params.get('run')).toBe(runId);
+    expect(request.request.params.get('poll')).toBe('1');
+    expect(request.request.params.has('refreshRun')).toBe(false);
+    request.flush({});
+  });
+
   function approvedRevision(): MktgRevisionResponse {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'foundation-message');
     if (!type) throw new Error('Missing document type');

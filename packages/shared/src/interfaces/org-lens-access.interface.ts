@@ -52,6 +52,12 @@ export interface OrgAccessUser {
   inviteStatus: OrgAccessListedInviteStatus;
   /** `true` when `inviteStatus !== 'accepted'`. Drives the "Invited" filter and hides Edit. */
   isPending: boolean;
+  /**
+   * On the Access tab's list only (lfx-self-serve#4627): `true` when the accepted principal's username is one of the
+   * account's former employees — they left but still hold access. Drives the Employment filter. A pending invite has
+   * no username, so it is never former. Absent on the people directory's principals read.
+   */
+  isFormer?: boolean;
 }
 
 /** Derived counts for the summary cards. */
@@ -72,6 +78,11 @@ export interface OrgAccessListResponse {
   summary: OrgAccessSummary;
   /** Caller may edit this org: a direct or inherited admin, or `writer` from the authorizer (#3136). UX-only gate; backend enforces. */
   canManage: boolean;
+  /**
+   * Present (`true`) only when the account's former employees could not be read (lfx-self-serve#4627): nobody is
+   * flagged `isFormer`, so the Employment filter cannot tell current from former. Such a list is never cached.
+   */
+  employmentUnavailable?: true;
 }
 
 /** GET /api/orgs/:orgUid/lens/edit-check — #3136: whether the caller may edit this organization. UX-only; every write is authorized again. */

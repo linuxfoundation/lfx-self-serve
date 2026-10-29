@@ -112,12 +112,36 @@ vi.mock('../utils/auth-helper', () => ({
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
-vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
-vi.mock('../services/ai.service', () => ({ AiService: vi.fn(() => aiSvc) }));
-vi.mock('../services/committee.service', () => ({ CommitteeService: vi.fn(() => committeeSvc) }));
-vi.mock('../services/nats.service', () => ({ NatsService: vi.fn(() => ({})) }));
-vi.mock('../services/user.service', () => ({ UserService: vi.fn(() => ({})) }));
-vi.mock('../services/access-check.service', () => ({ AccessCheckService: vi.fn(() => ({})) }));
+vi.mock('../services/meeting.service', () => ({
+  MeetingService: vi.fn(function () {
+    return meetingSvc;
+  }),
+}));
+vi.mock('../services/ai.service', () => ({
+  AiService: vi.fn(function () {
+    return aiSvc;
+  }),
+}));
+vi.mock('../services/committee.service', () => ({
+  CommitteeService: vi.fn(function () {
+    return committeeSvc;
+  }),
+}));
+vi.mock('../services/nats.service', () => ({
+  NatsService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/user.service', () => ({
+  UserService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),

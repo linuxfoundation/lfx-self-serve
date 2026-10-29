@@ -183,6 +183,12 @@
                 </div>
               }
             }
+            @if (canSendBallots()) {
+              <!-- Writer-only, active votes: emails each non-responder a personal login-free ballot link (#4363). The BFF re-checks vote#writer. -->
+              <div class="w-full sm:w-auto sm:ml-auto" data-testid="vote-results-drawer-send-ballots">
+                <lfx-vote-send-ballots [voteUid]="voteData.uid" />
+              </div>
+            }
           </div>
         }
       </div>

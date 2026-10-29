@@ -33,6 +33,13 @@ describe('Member 360 form-only contract', () => {
     expect(createHash('sha256').update(weightsLine).digest('hex')).toBe('a034f2d693896d65c4b4c103599d4a3544b9bf33c150446cba5e3b2a2de01846');
     expect(text).toContain('PRIOR MEMBER 360 RUN: none supplied');
   });
+  it('accepts only a tracking run id for explicit discard without changing the agent intake', () => {
+    expect(member360GenerateSchema.parse({ project: 'sample-project', discard: 'a'.repeat(64) }).discard).toBe('a'.repeat(64));
+    for (const discard of ['../run', '', 'a'.repeat(63), 42, null]) {
+      expect(member360GenerateSchema.safeParse({ project: 'sample-project', discard }).success).toBe(false);
+    }
+  });
+
   it('rejects unsafe tracker filenames on Generate and flattens delimiters defensively', () => {
     for (const filename of ['tracker.csv\nSCOPE: other', 'tracker\r.csv', '../tracker.csv', 'folder\\tracker.xlsx', 'tracker.txt']) {
       expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackers: [{ filename, rows: [{ company: 'Acme Motors' }] }] }).success).toBe(
