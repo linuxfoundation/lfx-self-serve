@@ -88,7 +88,8 @@ When creating new components, follow these guidelines:
 1. **Route Components**: If the component has its own route, place it directly in the section folder
 2. **Section-Specific Components**: If used only within one section, place in that section's `components` folder
 3. **Cross-Section Components**: If used across multiple sections, place in `app/shared/components`
-4. **UI Wrapper Components**: Generic UI components (buttons, cards, etc.) always go in `app/shared/components`
+4. **UI Wrapper Components**: PrimeNG wrappers (`lfx-*`) go in `app/shared/components`
+5. **Uikit Components**: Generic PrimeNG-free UI primitives (`lfx-ui-*`, `Ui*Component`) go in `app/shared/uikit` — see [Uikit](#-uikit-primeng-free-components)
 
 ## 🎯 PrimeNG Component Wrapper Strategy
 
@@ -108,6 +109,18 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 3. **Type Safety**: Proper TypeScript interfaces and validation
 4. **Template Flexibility**: Full support for all PrimeNG template options
 5. **Brand Consistency**: LFX-specific styling and behavior
+
+## 🧱 Uikit (PrimeNG-free components)
+
+`app/shared/uikit/` is a component library built from Angular and Tailwind only, with no PrimeNG imports, inspired by the Insights uikit. It sits beside the PrimeNG wrappers: new generic primitives can be built here instead of wrapping PrimeNG.
+
+- Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
+- Standalone, signal inputs, `model()` for two-way values, `OnPush`
+- Styled with Tailwind and `lfxColors` scales only
+- Overlays, when needed, build on `@angular/cdk`
+- Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
+
+Components: `lfx-ui-button`, `lfx-ui-tabs`, `lfx-ui-search-input`, `lfx-ui-badge`. See `apps/lfx-one/src/app/shared/uikit/README.md`.
 
 ## 🧩 Current Wrapper Components
 
@@ -501,7 +514,7 @@ AppComponent
 
 ## 🎯 Usage Guidelines
 
-1. **Always use LFX wrapper components** instead of PrimeNG directly
+1. **Always use LFX wrapper components** instead of PrimeNG directly (or a `lfx-ui-*` uikit component where one exists)
 2. **Import wrapper components directly** - no barrel exports
 3. **Follow the established patterns** for consistency
 4. **Use shared interfaces** for type safety

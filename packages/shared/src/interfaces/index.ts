@@ -454,3 +454,4 @@ export * from './mktg-family-export.interface';
 export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
+export * from './uikit.interface';
