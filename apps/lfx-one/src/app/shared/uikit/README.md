@@ -10,6 +10,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Button, tabs and search-input still use `lfxColors` until they are realigned.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
+- **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
 - **Every component has** a `*.stories.ts` (JSDoc on every input and output feeds the autodocs) and a `*.component.spec.ts`.
@@ -36,6 +37,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-menu-item`      | `UiMenuItemComponent`      | Menu row, 40px: default or danger, leading and trailing icon, shortcut hint, disabled (`aria-disabled`); emits `triggered`                                             |
 | `lfx-ui-menu-group`     | `UiMenuGroupComponent`     | Labelled `role="group"` of menu items with a 12px heading                                                                                                              |
 | `lfx-ui-menu-separator` | `UiMenuSeparatorComponent` | Full-bleed 1px rule between menu groups                                                                                                                                |
+| `lfx-ui-modal`          | `UiModalComponent`         | Modal layout: title, subtitle, body, inset band and actions footer slots; 540px or 420px, sticky title, single-action footer                                           |
+| `UiModalService`        | `UiModalService`           | Opens a component or template on CDK Dialog: focus trap, focus return, scroll lock, `ui-overlay` backdrop, split Escape and backdrop close                             |
 
 ## Design tokens
 

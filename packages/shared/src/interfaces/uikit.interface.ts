@@ -28,3 +28,19 @@ export interface UiAvatarItem {
   /** Colour role that tints the initials circle, to tell people apart in dense lists. */
   tone?: UiAvatarTone;
 }
+
+/** Options for `UiModalService.open`. Every field is optional. */
+export interface UiModalConfig<D = unknown> {
+  /** Passed to the modal content, which reads it with the CDK `DIALOG_DATA` token. */
+  data?: D;
+  /** `alertdialog` for confirmations that need an answer, such as deleting something. Defaults to `dialog`. */
+  role?: 'dialog' | 'alertdialog';
+  /** Close when the user clicks the dimmed backdrop. Defaults to `true`. */
+  closeOnBackdropClick?: boolean;
+  /** Close when the user presses Escape. Defaults to `true`. */
+  closeOnEscape?: boolean;
+  /** Describe the dialog by its subtitle, so a screen reader reads the consequence when it opens. Set it only when the layout has a subtitle. */
+  describedBy?: boolean;
+  /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
+  autoFocus?: string;
+}
