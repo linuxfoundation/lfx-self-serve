@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from './persona.interface';
-
 /**
  * Decoded claims from an LFX access token (JWT payload).
  */
@@ -42,7 +40,6 @@ export interface Impersonator {
  */
 export interface ImpersonationStartRequest {
   targetUser: string;
-  personaContext?: PersonaType;
 }
 
 /**
@@ -68,14 +65,20 @@ export interface ImpersonationStartResponse {
 export type ImpersonationTransition = 'starting' | 'switching' | 'stopping';
 
 /**
- * A previously impersonated profile, persisted client-side for quick re-selection.
+ * A person offered by the impersonation picker, from the directory search or the recents list.
+ * `targetUser` is the string the start request sends.
  */
-export interface RecentImpersonation {
+export interface ImpersonationSuggestion {
   targetUser: string;
   email: string;
   username: string;
   name?: string;
   picture?: string;
-  personaContext?: PersonaType | null;
+}
+
+/**
+ * A previously impersonated profile, persisted client-side for quick re-selection.
+ */
+export interface RecentImpersonation extends ImpersonationSuggestion {
   lastUsedAt: number;
 }

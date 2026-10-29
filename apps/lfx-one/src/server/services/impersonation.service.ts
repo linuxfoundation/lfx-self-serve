@@ -11,7 +11,7 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse, PersonaType } from '@lfx-one/shared/interfaces';
+import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse } from '@lfx-one/shared/interfaces';
 import { classifyImpersonationExchangeFailure } from '@lfx-one/shared/utils/impersonation.utils';
 import { Request, Response } from 'express';
 
@@ -134,8 +134,7 @@ export class ImpersonationService {
     res: Response,
     tokenResponse: M2MTokenResponse,
     targetClaims: LfxAccessTokenClaims,
-    profile?: { name?: string; picture?: string },
-    personaContext?: PersonaType
+    profile?: { name?: string; picture?: string }
   ): void {
     if (!req.appSession) {
       req.appSession = {};
@@ -165,12 +164,6 @@ export class ImpersonationService {
     req.appSession['impersonationUser'] = targetUser;
     req.appSession['impersonator'] = impersonator;
 
-    if (personaContext) {
-      req.appSession['impersonationPersonaContext'] = personaContext;
-    } else {
-      delete req.appSession['impersonationPersonaContext'];
-    }
-
     // Clear impersonator's persona/lens/nav-lens/account/project/foundation cookies so the impersonated session re-detects cleanly on reload.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
@@ -185,7 +178,6 @@ export class ImpersonationService {
       target_sub: targetUser.sub,
       target_email: targetUser.email,
       previous_target_sub: previousTargetSub,
-      persona_context: personaContext ?? null,
     });
   }
 
