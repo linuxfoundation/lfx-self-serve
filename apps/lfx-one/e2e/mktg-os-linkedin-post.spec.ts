@@ -186,6 +186,8 @@ test.describe('Marketing OS LinkedIn posts', () => {
   test('a fresh browser lands a plain document URL after its creator leaves early', async ({ page, browser }, info) => {
     const runs = createLinkedinRuns();
     await setupLinkedin(page, { saved: true, runs });
+    // Leave before private completion; the fresh browser must finish through server document observation alone.
+    await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
     await openLinkedin(page);
     await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic source, never browser recovery.');
     await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
@@ -197,13 +199,41 @@ test.describe('Marketing OS LinkedIn posts', () => {
     try {
       const returned = await fresh.newPage();
       await setupLinkedin(returned, { saved: true, runs }); // Same synthetic SERVER records; no client capability copied.
+      let releaseOwnRead = () => {};
+      const ownRead = new Promise<void>((resolve) => {
+        releaseOwnRead = resolve;
+      });
+      await returned.route(
+        (url) => url.pathname === MKTG_DOCUMENTS_API_PATH && url.searchParams.get('ownRuns') === '1',
+        async (route) => {
+          await ownRead;
+          await route.fallback();
+        }
+      );
+      let freshGenerates = 0;
+      returned.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`${LINKEDIN_API}/generate`)) freshGenerates++;
+      });
       await openLinkedin(returned);
+      // #139/#4591: the fresh browser first paints a neutral skeleton, never the saved profile/intake.
+      await expect(returned.getByTestId('mktg-linkedin-header-loading')).toBeVisible();
+      await expect(returned.getByTestId('mktg-linkedin-loading')).toHaveAttribute('aria-label', 'Checking the run…');
+      await expect(returned.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(returned.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
+      await returned.screenshot({ path: info.outputPath('fresh-browser-checking.png'), fullPage: true });
+      releaseOwnRead();
+      await expect(returned.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: LINKEDIN_RUN_TIMEOUT });
+      expect(new URL(returned.url()).pathname).toBe(new URL(documentUrl).pathname);
+      // The public document URL remains a reader destination too; no private generation capability is copied.
       await returned.evaluate((url) => {
         history.pushState({}, '', url);
         dispatchEvent(new PopStateEvent('popstate'));
       }, documentUrl);
       await expect(returned.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
       expect(runs.size).toBe(1);
+      expect(freshGenerates).toBe(0);
+      await expect(returned.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
+      await expect(returned.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
       await returned.screenshot({ path: info.outputPath('fresh-browser-document.png'), fullPage: true });
     } finally {
       await fresh.close();

@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { BRAND_KIT_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { MKTG_INTAKE_LINK_ADVICE } from '../../../packages/shared/src/constants/mktg-intake-link-advice.constants';
-import { MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
+import { MKTG_LAST_INTAKE_API, MKTG_RUN_RESUME_QUERY_CLEAR } from '../../../packages/shared/src/constants/mktg-last-intake.constants';
 import { mktgSentenceCaseLabel } from '../../../packages/shared/src/utils/mktg-navigation.utils';
 import { DOCUMENT_PROJECT } from './helpers/mktg-os-documents.helper';
 import { setupFreshSources, withDesktopSourcesSetup } from './helpers/mktg-os-sources.helper';
@@ -464,6 +464,10 @@ test.describe('Marketing OS new run Sources', () => {
   for (const state of ['empty', 'error', 'denied', 'loading'] as const) {
     test(`${state} history remains an honest no-auto-start state`, async ({ page }) => {
       const sources = await setupFreshSources(page, { state });
+      const historyRead =
+        state === 'loading'
+          ? page.waitForRequest((request) => new URL(request.url()).pathname.startsWith(MKTG_LAST_INTAKE_API + '/') && request.url().includes('/last?'))
+          : null;
       await sources.open();
       if (state === 'loading') {
         // Rule 5 /119.2: no partial Sources form before its first server observation resolves.
@@ -472,9 +476,19 @@ test.describe('Marketing OS new run Sources', () => {
         await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
         expect(sources.generated).toHaveLength(0);
         expect(sources.polls()).toBe(0);
+        await historyRead;
+        const heldAt = Date.now();
+        // Deliberately delay the NETWORK answer for six real seconds (143 runtime repro), not a UI synchronization sleep.
+        await new Promise<void>((resolve) => setTimeout(resolve, 6000));
+        await expect(page.getByTestId('mktg-agent-run-checking')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-sources')).toHaveCount(0);
         sources.releaseHistory();
         await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
         await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
+        await test.info().attach('delayed-history-runtime.json', {
+          body: JSON.stringify({ heldMs: Date.now() - heldAt, landedOnSources: true, generates: sources.generated.length, privatePolls: sources.polls() }),
+          contentType: 'application/json',
+        });
       } else if (state === 'denied') {
         await expect(page.getByTestId('mktg-run-sources-denied')).toContainText('write access');
         await expect(page.getByTestId('mktg-run-start').getByRole('button')).toBeEnabled();
@@ -482,6 +496,20 @@ test.describe('Marketing OS new run Sources', () => {
         await expect(page.getByTestId('mktg-run-source-notes')).toHaveCount(0);
       } else {
         await expect(page.getByTestId('mktg-run-sources-note')).toContainText(state === 'empty' ? 'Suggested defaults' : 'could not be loaded');
+        if (state === 'error') {
+          // A failed history read settles to usable Sources; explicit browser retry can load recovered server inputs.
+          await page.screenshot({ path: test.info().outputPath('sources-history-failed-usable.png'), fullPage: true });
+          await page.route(`**${MKTG_LAST_INTAKE_API}/*/last?*`, (route) =>
+            route.fulfill({ json: { intake: { answers: sources.answers, documentCount: 0, logoCount: 0 } } })
+          );
+          await page.reload({ waitUntil: 'domcontentloaded' });
+          await expect(page.getByTestId('mktg-run-sources')).toBeVisible();
+          await expect(page.getByTestId('mktg-run-source-notes')).toContainText(sources.answers.notes);
+          await test.info().attach('failed-history-retry-runtime.json', {
+            body: JSON.stringify({ failureSettledToSources: true, explicitReloadRecoveredInputs: true, generates: sources.generated.length }),
+            contentType: 'application/json',
+          });
+        }
       }
       expect(sources.generated).toHaveLength(0);
       expect(sources.polls()).toBe(0);
