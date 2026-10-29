@@ -5,7 +5,7 @@ import { AriaDescriber, FocusMonitor } from '@angular/cdk/a11y';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, input, PLATFORM_ID } from '@angular/core';
+import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, Injector, input, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { filter, take } from 'rxjs';
@@ -49,6 +49,7 @@ export class UiTooltipDirective {
   private readonly focusMonitor = inject(FocusMonitor);
   private readonly ariaDescriber = inject(AriaDescriber);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   // Distance between the host and the tooltip, in px.
   private readonly gap = 6;
@@ -99,14 +100,25 @@ export class UiTooltipDirective {
 
   private apply(config: { text: string; title: string; shortcut: string[]; disabled: boolean }): void {
     const empty = config.disabled || !(config.text || config.title);
-    this.describe(empty ? '' : [config.title, config.text].filter(Boolean).join('. '));
+    this.describe(empty ? '' : this.descriptionOf(config));
     if (empty) {
       this.hide();
       return;
     }
-    this.panel?.setInput('text', config.text);
-    this.panel?.setInput('heading', config.title);
-    this.panel?.setInput('shortcut', config.shortcut);
+    if (!this.panel) return;
+    this.panel.setInput('text', config.text);
+    this.panel.setInput('heading', config.title);
+    this.panel.setInput('shortcut', config.shortcut);
+    // The new content may be taller or wider, so place it again once it has rendered.
+    afterNextRender(() => this.overlayRef?.updatePosition(), { injector: this.injector });
+  }
+
+  // The visible shortcut is spoken too. When the text only repeats the host's aria-label, the shortcut is all that adds.
+  private descriptionOf(config: { text: string; title: string; shortcut: string[] }): string {
+    const names: Record<string, string> = { '⌘': 'Command', '⌥': 'Option', '⇧': 'Shift', '⌃': 'Control', '↵': 'Enter', '⎋': 'Escape' };
+    const body = [config.title, config.text].filter(Boolean).join('. ');
+    const spoken = config.shortcut.map((key) => names[key] ?? key).join(' ');
+    return [body === this.host.getAttribute('aria-label')?.trim() ? '' : body, spoken].filter(Boolean).join('. ');
   }
 
   // The CDK skips a description that equals the host's aria-label, so it is not read twice.
@@ -173,7 +185,7 @@ export class UiTooltipDirective {
 
   private show(): void {
     const overlayRef = this.overlay.create({
-      positionStrategy: this.overlay.position().flexibleConnectedTo(this.host).withFlexibleDimensions(false).withPush(false).withPositions(this.positions()),
+      positionStrategy: this.overlay.position().flexibleConnectedTo(this.host).withFlexibleDimensions(false).withPush(true).withPositions(this.positions()),
       scrollStrategy: this.overlay.scrollStrategies.reposition(),
       disposeOnNavigation: true,
     });

@@ -264,6 +264,41 @@ describe('UiTooltipDirective', () => {
       expect(descriptions()).toEqual([]);
     });
 
+    it('speaks the shortcut in the description, even when the text only repeats the aria-label', async () => {
+      await setup();
+      fixture.componentInstance.label.set('Copy link');
+      fixture.componentInstance.shortcut.set(['⌘', 'C']);
+      await flush();
+
+      expect(descriptions()).toEqual(['Command C']);
+
+      // The description is recomputed when the tooltip inputs change, not when aria-label does.
+      fixture.componentInstance.label.set(null);
+      fixture.componentInstance.shortcut.set(['⌘', 'C']);
+      await flush();
+      expect(descriptions()).toEqual(['Copy link. Command C']);
+    });
+
+    it('places the tooltip again when its content changes while open', async () => {
+      await setup();
+      await hover();
+      const update = vi.spyOn(OverlayRef.prototype, 'updatePosition');
+      fixture.componentInstance.heading.set('Health score');
+      fixture.componentInstance.text.set('A longer explanation that wraps onto several lines.');
+      await flush();
+      await advance(0);
+
+      expect(update).toHaveBeenCalled();
+    });
+
+    it('lets the CDK push a tooltip into view when no placement fits', async () => {
+      await setup();
+      const push = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPush');
+      await hover();
+
+      expect(push).toHaveBeenCalledWith(true);
+    });
+
     it('renders the rich layout with a title, a description and key caps', async () => {
       await setup();
       fixture.componentInstance.heading.set('Health score');
