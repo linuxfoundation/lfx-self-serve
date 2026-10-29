@@ -62,7 +62,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     throw new Error('Missing registered document type');
   }
   const revisionId = `000001-${'a'.repeat(64)}`;
-  const revision: MktgRevisionSummary = {
+  const revision = {
     id: revisionId,
     number: 1,
     createdAt: '2026-10-19T08:00:00Z',
@@ -76,7 +76,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     latest: true,
     author: null,
     approval: null,
-  };
+  } satisfies MktgRevisionSummary;
   const stored: MktgRevisionResponse = {
     project: project.uid,
     type,
@@ -117,7 +117,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     if (!type) throw new Error('Missing recorded fixture type');
     const run: MktgDocumentRunProgress = {
       project: project.uid,
-      agentKey,
+      agentKey: type.agentKey,
       documentId: 'living',
       runId: 'b'.repeat(64),
       state,
