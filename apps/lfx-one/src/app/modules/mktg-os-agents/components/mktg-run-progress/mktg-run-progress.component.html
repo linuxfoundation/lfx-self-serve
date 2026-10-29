@@ -160,6 +160,7 @@
       @if (!runDocumentType() || activity.length) {
         <lfx-mktg-run-activity
           [activity]="activity"
+          [ended]="runState() === 'failed'"
           [title]="generatingLabel()"
           [startedAt]="activityStartedAt()"
           [showQuestions]="false"
