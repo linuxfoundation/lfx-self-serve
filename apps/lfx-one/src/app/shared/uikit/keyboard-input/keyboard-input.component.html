@@ -2,5 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @for (key of keys(); track $index) {
-  <kbd [class]="keyClasses()" data-testid="ui-keyboard-input-key">{{ key }}</kbd>
+  <kbd [class]="keyClasses()" data-testid="ui-keyboard-input-key">
+    @if (spokenKeys()[$index]; as spoken) {
+      <span aria-hidden="true">{{ key }}</span>
+      <span class="sr-only">{{ spoken }}</span>
+    } @else {
+      {{ key }}
+    }
+  </kbd>
 }

@@ -19,9 +19,10 @@ describe('UiKeyboardInputComponent', () => {
   });
 
   const keys = () => Array.from(host.querySelectorAll('kbd'));
+  const visibleText = (key: HTMLElement) => (key.querySelector('[aria-hidden="true"]') ?? key).textContent?.trim();
 
   it('renders one kbd per key, in order', () => {
-    expect(keys().map((key) => key.textContent?.trim())).toEqual(['⌘', 'K']);
+    expect(keys().map(visibleText)).toEqual(['⌘', 'K']);
   });
 
   it('groups the keys with a 4px gap', () => {
@@ -34,7 +35,7 @@ describe('UiKeyboardInputComponent', () => {
     await fixture.whenStable();
 
     expect(keys().length).toBe(1);
-    expect(keys()[0].textContent?.trim()).toBe('⌘K');
+    expect(visibleText(keys()[0])).toBe('⌘K');
   });
 
   it('renders a word key such as Enter', async () => {
@@ -42,6 +43,30 @@ describe('UiKeyboardInputComponent', () => {
     await fixture.whenStable();
 
     expect(keys()[0].textContent?.trim()).toBe('Enter');
+    expect(keys()[0].querySelector('.sr-only')).toBeNull();
+  });
+
+  it('gives glyph keys a spoken name and hides the glyph from screen readers', async () => {
+    fixture.componentRef.setInput('keys', ['⌘', '⇧', '⌥', '⌃', '↵', '⌫', '⎋', '⇥', '←', '→', '↑', '↓', '⌘K', 'K']);
+    await fixture.whenStable();
+
+    expect(keys().map((key) => key.querySelector('.sr-only')?.textContent?.trim() ?? null)).toEqual([
+      'Command',
+      'Shift',
+      'Option',
+      'Control',
+      'Enter',
+      'Delete',
+      'Escape',
+      'Tab',
+      'Left arrow',
+      'Right arrow',
+      'Up arrow',
+      'Down arrow',
+      'Command K',
+      null,
+    ]);
+    expect(keys()[0].querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('⌘');
   });
 
   it('is 24px tall with a hairline ring and 14px secondary text by default', () => {

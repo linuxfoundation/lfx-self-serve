@@ -24,17 +24,43 @@ export class UiKeyboardInputComponent {
   public readonly size = input<'sm' | 'md'>('md');
 
   protected readonly keyClasses: Signal<string> = this.initKeyClasses();
+  protected readonly spokenKeys: Signal<string[]> = this.initSpokenKeys();
 
   private initKeyClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: the app root font is 14px. The type-role class sets the sans family, which `<kbd>` would not inherit.
       const base =
-        'inline-flex items-center justify-center gap-[2px] whitespace-nowrap rounded-ui-xs bg-ui-background-100 leading-none text-ui-neutral-600 tabular-nums edge';
+        'inline-flex items-center justify-center whitespace-nowrap rounded-ui-xs bg-ui-background-100 leading-none text-ui-neutral-600 tabular-nums edge';
       const sizes = {
         md: 'h-ui-tiny min-w-[24px] px-[6px] label-14',
         sm: 'h-[20px] min-w-[20px] px-[4px] label-12',
       };
       return `${base} ${sizes[this.size()]}`;
+    });
+  }
+
+  private initSpokenKeys(): Signal<string[]> {
+    return computed(() => {
+      // Screen readers skip or misread these glyphs, so each key with one gets a spoken name.
+      const names: Record<string, string> = {
+        '⌘': 'Command',
+        '⇧': 'Shift',
+        '⌥': 'Option',
+        '⌃': 'Control',
+        '↵': 'Enter',
+        '⏎': 'Enter',
+        '⌫': 'Delete',
+        '⎋': 'Escape',
+        '⇥': 'Tab',
+        '←': 'Left arrow',
+        '→': 'Right arrow',
+        '↑': 'Up arrow',
+        '↓': 'Down arrow',
+      };
+      return this.keys().map((key) => {
+        const chars = Array.from(key);
+        return chars.some((char) => names[char]) ? chars.map((char) => names[char] ?? char).join(' ') : '';
+      });
     });
   }
 }
