@@ -22,6 +22,10 @@ describe('UiSpinnerComponent', () => {
     expect(host.getAttribute('aria-label')).toBe('Loading');
   });
 
+  it('puts the label in screen-reader text inside the live region', () => {
+    expect(host.querySelector('.sr-only')?.textContent?.trim()).toBe('Loading');
+  });
+
   it('draws twelve decorative bars', () => {
     const bars = host.querySelectorAll('i');
     expect(bars.length).toBe(12);
@@ -63,5 +67,6 @@ describe('UiSpinnerComponent', () => {
     await fixture.whenStable();
 
     expect(host.getAttribute('aria-label')).toBe('Fetching members');
+    expect(host.querySelector('.sr-only')?.textContent?.trim()).toBe('Fetching members');
   });
 });
