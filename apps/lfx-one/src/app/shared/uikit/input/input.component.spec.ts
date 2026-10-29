@@ -186,6 +186,14 @@ describe('UiInputComponent', () => {
     expect(field().disabled).toBe(true);
   });
 
+  it('drops the hover ring when disabled', async () => {
+    expect(wrapper().className).toContain('edge-hover');
+
+    await set('disabled', true);
+
+    expect(wrapper().className).not.toContain('edge-hover');
+  });
+
   describe('with a reactive form control', () => {
     let formFixture: ComponentFixture<FormHostComponent>;
 

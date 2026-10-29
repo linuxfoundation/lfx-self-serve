@@ -145,8 +145,10 @@ export class UiInputComponent implements ControlValueAccessor {
     return computed(() => {
       // Library recipe: 1px ring at rest, stronger ring plus a 4px halo on focus (accent) or error (danger).
       const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
-      const rest =
-        'edge [&:hover:not(:focus-within)]:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+      const interactive =
+        '[&:hover:not(:focus-within)]:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+      // A disabled field keeps the resting ring only, so it does not look interactive on hover.
+      const rest = this.isDisabled() ? 'edge' : `edge ${interactive}`;
       const ring = this.error() ? dangerHalo : rest;
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline on the wrapper (not clipped by it) marks focus.
       const forced = `forced-colors:border ${this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]'} forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]`;
