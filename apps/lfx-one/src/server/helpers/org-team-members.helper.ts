@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_CDP_TEAM_MEMBER_COLUMN, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type { OrgTeamMemberKeys, OrgTeamMembersFilter, SnowflakeQueryOptions } from '@lfx-one/shared/interfaces';
 
 import { logger } from '../services/logger.service';
@@ -9,12 +9,13 @@ import type { SnowflakeService } from '../services/snowflake.service';
 import { withOrgCache } from '../services/valkey.service';
 import { isInvalidIdentifierError } from './snowflake-error.helper';
 
-/** The person-level flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
-const TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
-
-/** SQL predicate dropping CDP team members under `exclude` (empty under `include`); `column` is the model's person-level IS_CDP_TEAM_MEMBER flag. */
+/**
+ * SQL predicate dropping CDP team members under `exclude` (empty under `include`); `column` is the model's person-level
+ * IS_CDP_TEAM_MEMBER flag. Only a row flagged TRUE is dropped: an unknown (NULL) flag keeps the row, so a model that
+ * leaves the flag NULL never silently empties the default view.
+ */
 export function orgTeamMembersPredicate(teamMembers: OrgTeamMembersFilter, column = 'is_cdp_team_member'): string {
-  return teamMembers === 'exclude' ? `AND NOT ${column}` : '';
+  return teamMembers === 'exclude' ? `AND NOT COALESCE(${column}, FALSE)` : '';
 }
 
 /**
@@ -22,7 +23,7 @@ export function orgTeamMembersPredicate(teamMembers: OrgTeamMembersFilter, colum
  * invalid identifier, which is expected during the rollout and must not count toward the circuit breaker. `column` is
  * the identifier the `exclude` read depends on: the flag, or a model's count without team members.
  */
-export function orgTeamMembersQueryOptions(teamMembers: OrgTeamMembersFilter, column = TEAM_MEMBER_COLUMN): SnowflakeQueryOptions | undefined {
+export function orgTeamMembersQueryOptions(teamMembers: OrgTeamMembersFilter, column = ORG_CDP_TEAM_MEMBER_COLUMN): SnowflakeQueryOptions | undefined {
   return teamMembers === 'exclude' ? { expectInvalidIdentifier: column } : undefined;
 }
 
@@ -35,7 +36,7 @@ export async function readWithOrgTeamMembersFallback<T>(
   teamMembers: OrgTeamMembersFilter,
   operation: string,
   read: (teamMembers: OrgTeamMembersFilter) => Promise<T>,
-  column = TEAM_MEMBER_COLUMN
+  column = ORG_CDP_TEAM_MEMBER_COLUMN
 ): Promise<{ value: T; teamMembersUnavailable: boolean }> {
   try {
     return { value: await read(teamMembers), teamMembersUnavailable: false };
@@ -80,7 +81,7 @@ export async function readOrgTeamMemberPersonKeys(
           await snowflakeService.execute<{ PERSON_KEY: string }>(query, [accountId, accountId, accountId], orgTeamMembersQueryOptions(teamMembers))
         ).rows.map((row) => row.PERSON_KEY);
       } catch (error) {
-        if (!isInvalidIdentifierError(error, TEAM_MEMBER_COLUMN)) throw error;
+        if (!isInvalidIdentifierError(error, ORG_CDP_TEAM_MEMBER_COLUMN)) throw error;
         logger.warning(undefined, 'read_org_team_members', 'Team-member flag is not in the warehouse yet; serving team members included', { err: error });
         return null;
       }

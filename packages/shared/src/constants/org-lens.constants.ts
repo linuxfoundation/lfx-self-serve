@@ -57,5 +57,11 @@ export const ORG_OVERVIEW_CONTRIBUTORS_TREND_VIEW = 'ORG_OVERVIEW_CONTRIBUTORS_T
 /** ORG_OVERVIEW_CONTRIBUTORS_TREND's monthly count without CDP team members, read under the default Team members = Exclude (lfx-self-serve#4685). */
 export const ORG_OVERVIEW_CONTRIBUTORS_TREND_EXCLUDING_COLUMN = 'UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS';
 
-/** ORG_OVERVIEW_MAINTAINER_ROLES_TREND's monthly roles without CDP team members', read under the default Team members = Exclude (lfx-self-serve#4685). */
+/** ORG_OVERVIEW_MAINTAINER_ROLES_TREND's monthly roles without CDP team members, read under the default Team members = Exclude (lfx-self-serve#4685). */
 export const ORG_OVERVIEW_MAINTAINER_ROLES_TREND_EXCLUDING_COLUMN = 'ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS';
+
+/** ORG_CODE_CONTRIBUTIONS' lifetime first commit per account and repository without CDP team members' commits, read under Exclude (lfx-self-serve#4685). */
+export const ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN = 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS';
+
+/** Project Detail's Maintainer roles sparkline: the account's roles per point without CDP team members', read under the default (lfx-self-serve#4685). */
+export const ORG_LENS_PROJECT_ACCOUNT_ROLES_EXCLUDING_COLUMN = 'ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS';

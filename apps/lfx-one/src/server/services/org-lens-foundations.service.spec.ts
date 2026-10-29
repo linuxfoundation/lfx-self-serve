@@ -96,7 +96,7 @@ describe('OrgLensFoundationsService maintainer roles (lfx-self-serve#4482)', () 
     await new OrgLensFoundationsService().getFoundationsAndProjects('acc-1');
 
     const [rolesSql, , options] = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_MAINTAINER_ROLES'))!;
-    expect(rolesSql).toContain('AND NOT IS_CDP_TEAM_MEMBER');
+    expect(rolesSql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
     expect(withOrgCache.mock.calls[0]?.[1]).toBe('foundations:v4');
   });

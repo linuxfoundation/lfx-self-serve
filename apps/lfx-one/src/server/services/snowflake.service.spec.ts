@@ -271,6 +271,30 @@ describe('SnowflakeService circuit breaker', () => {
     expect(SnowflakeService.isMissingObjectError(thrown)).toBe(true);
   });
 
+  // lfx-self-serve#4685: a read can depend on more than one not-yet-built column; any of them is expected, nothing else.
+  describe('expected invalid identifiers', () => {
+    const invalidIdentifier = (identifier: string) => () =>
+      Promise.reject(Object.assign(new Error(`SQL compilation error: error line 3 at position 9\ninvalid identifier '${identifier}'`), { code: '000904' }));
+    const EXPECTED = ['IS_CDP_TEAM_MEMBER', 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'] as const;
+
+    it.each(EXPECTED)('keeps the circuit closed when %s, one of the listed identifiers, is the invalid one', async (identifier) => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier(identifier)));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_invalid_identifier', identifier);
+    });
+
+    it('still opens the circuit when an unlisted identifier is the invalid one', async () => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier('SOME_OTHER_COLUMN')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+  });
+
   // The exemption is what keeps an optional table's absence from opening the POD-WIDE breaker. The
   // boundary has to hold in both directions, and only `execute` can show that: the matcher spec
   // proves what the predicate answers, not what the breaker then does with it.

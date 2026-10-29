@@ -699,7 +699,7 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
   const rolesWithoutTeamMembers = async (sql?: string) => {
     if (isTeamMembersSql(sql)) return { rows: [{ PERSON_KEY: 'person-two' }] };
     if (!sql?.includes('ORG_MAINTAINER_ROLES')) return { rows: CONTRIBUTOR_ROWS };
-    return { rows: sql.includes('AND NOT IS_CDP_TEAM_MEMBER') ? ROLE_ROWS.filter((role) => role.PERSON_KEY !== 'person-no-code') : ROLE_ROWS };
+    return { rows: sql.includes('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)') ? ROLE_ROWS.filter((role) => role.PERSON_KEY !== 'person-no-code') : ROLE_ROWS };
   };
 
   it("leaves a role-only team member's maintainer roles out of the tile and the badges under exclude, as LFX Insights does", async () => {
@@ -710,7 +710,7 @@ describe('OrgPeopleContributorsService team members filter (lfx-self-serve#4685)
 
     expect([include.stats.maintainerRoles, exclude.stats.maintainerRoles]).toEqual([4, 2]);
     const [sql, , options] = readsOf('ORG_MAINTAINER_ROLES').at(-1)!;
-    expect(String(sql)).toContain('AND NOT IS_CDP_TEAM_MEMBER');
+    expect(String(sql)).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:include')!)).toBe(true);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors-roles:v2:365d:all:exclude')!)).toBe(true);

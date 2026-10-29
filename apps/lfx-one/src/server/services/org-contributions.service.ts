@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ORG_CDP_TEAM_MEMBER_COLUMN, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitRow,
   ContributionsCommitSortColumn,
@@ -55,8 +55,8 @@ export class OrgContributionsService {
     }
 
     // `v5`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559), and filter arrays
-    // delimited by JSON in the signature. A payload read while the team-member flag is missing (Exclude asked, team
-    // members served, lfx-self-serve#4685) is never stored.
+    // delimited by JSON in the signature. A payload read while the team-member flag or the non-team First Commit column
+    // is missing (Exclude asked, team members served, lfx-self-serve#4685) is never stored.
     const raw = await withOrgCache(
       accountId,
       `contributions:v5:${contributionsSignature(query)}`,
@@ -121,6 +121,7 @@ export class OrgContributionsService {
       foundationOptionRows: foundationResult.rows,
       projectOptionRows: projectResult.rows,
       employeeOptionRows: employeeResult.rows,
+      ...('firstCommitUnavailable' in repoResult && repoResult.firstCommitUnavailable ? { teamMembersUnavailable: true as const } : {}),
     };
   }
 
@@ -167,27 +168,16 @@ export class OrgContributionsService {
     repoSearch: SearchFilter,
     query: OrgContributionsQuery,
     pagination: ViewAwarePagination
-  ): Promise<{ rows: ContributionsRepoRow[] }> {
+  ): Promise<{ rows: ContributionsRepoRow[]; firstCommitUnavailable: boolean }> {
     const offset = (pagination.page - 1) * pagination.size;
     const orderBy = repoOrderByColumn(query.sort);
     const sortDir = query.dir === 1 ? 'ASC' : 'DESC';
 
-    // `org_repo_first_commit_ts` is the repo's lifetime first authored commit by anyone; under Exclude team members
-    // (lfx-self-serve#4685) the first commit is read the same way — every project, any branch — without them.
-    const excludeTeamMembers = query.teamMembers === 'exclude';
-    const sql = `
-      WITH ${
-        excludeTeamMembers
-          ? `repo_first AS (
-        SELECT repository_url, MIN(activity_ts) AS first_commit_ts
-        FROM ${PLATINUM_TABLE}
-        WHERE account_id = ?
-          ${orgTeamMembersPredicate(query.teamMembers)}
-        GROUP BY repository_url
-      ),`
-          : ''
-      }
-      repo_rows AS (
+    // The lifetime First Commit is lf-dbt's, per account and repository: `org_repo_first_commit_ts` by anyone, or under
+    // Exclude team members (lfx-self-serve#4685) `org_repo_first_non_team_commit_ts`, without them. Until that column is
+    // built the inclusive one is read, and the payload is flagged and never stored.
+    const sql = (firstCommitColumn: string): string => `
+      WITH repo_agg AS (
         SELECT
           repository_url,
           ANY_VALUE(repository_path) AS repository_path,
@@ -197,7 +187,7 @@ export class OrgContributionsService {
           ANY_VALUE(project_logo) AS project_logo,
           ANY_VALUE(source) AS source,
           COUNT(DISTINCT commit_id) AS commits,
-          ${excludeTeamMembers ? '' : 'MIN(org_repo_first_commit_ts) AS first_commit_ts,'}
+          MIN(${firstCommitColumn}) AS first_commit_ts,
           MAX(activity_ts) AS last_commit_ts
         FROM ${PLATINUM_TABLE}
         WHERE account_id = ?
@@ -208,9 +198,6 @@ export class OrgContributionsService {
           ${scope.employeePredicate}
           ${repoSearch.predicate}
         GROUP BY repository_url
-      ),
-      repo_agg AS (
-        ${excludeTeamMembers ? 'SELECT r.*, f.first_commit_ts FROM repo_rows r LEFT JOIN repo_first f ON f.repository_url = r.repository_url' : 'SELECT * FROM repo_rows'}
       )
       SELECT
         repository_url,
@@ -228,8 +215,19 @@ export class OrgContributionsService {
       ORDER BY ${orderBy} ${sortDir}, repository_url ASC
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
-    const binds = [...(excludeTeamMembers ? [accountId] : []), accountId, ...scope.binds, ...repoSearch.binds];
-    return this.snowflakeService.execute<ContributionsRepoRow>(sql, binds, scope.queryOptions);
+    const binds = [accountId, ...scope.binds, ...repoSearch.binds];
+    const read = await readWithOrgTeamMembersFallback(
+      query.teamMembers,
+      'get_org_lens_contributions_first_commit',
+      (firstCommit) =>
+        firstCommit === 'exclude'
+          ? this.snowflakeService.execute<ContributionsRepoRow>(sql(ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN), binds, {
+              expectInvalidIdentifier: [ORG_CDP_TEAM_MEMBER_COLUMN, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN],
+            })
+          : this.snowflakeService.execute<ContributionsRepoRow>(sql('org_repo_first_commit_ts'), binds, scope.queryOptions),
+      ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN
+    );
+    return { rows: read.value.rows, firstCommitUnavailable: read.teamMembersUnavailable };
   }
 
   /**

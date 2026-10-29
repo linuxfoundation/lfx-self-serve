@@ -70,7 +70,7 @@ describe('OrgInvolvementService.getMaintainersMonthly (lfx-self-serve#4482, #468
     await new OrgInvolvementService().getMaintainersMonthly('acc-1');
 
     const [sql, , options] = execute.mock.calls.find(([query]) => !isRolesTrend(String(query)))!;
-    expect(sql).toContain('AND NOT IS_CDP_TEAM_MEMBER');
+    expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(options).toMatchObject({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
     const [trendSql, , trendOptions] = execute.mock.calls.find(([query]) => isRolesTrend(String(query)))!;
     expect(trendSql).toContain('SELECT MONTH_START_DATE, ACTIVE_ROLES_EXCLUDING_TEAM_MEMBERS AS ACTIVE_ROLES');
@@ -195,7 +195,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
     expect(sql).toContain('AND activity_date >= DATEADD(day, -730, CURRENT_DATE())');
     expect(sql).not.toContain('is_lf_project');
     // CDP team members are left out, as on the People -> Contributors default (lfx-self-serve#4685).
-    expect(sql).toContain('AND NOT is_cdp_team_member');
+    expect(sql).toContain('AND NOT COALESCE(is_cdp_team_member, FALSE)');
     expect(execute.mock.calls.find(([query]) => !isContributorsTrend(String(query)))?.[2]).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
     expect(binds).toEqual(['acc-1']);
   });

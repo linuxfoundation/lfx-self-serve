@@ -239,9 +239,9 @@ describe('OrgContributionsService — exact project and foundation filters', () 
   );
 
   it.each([
-    // The lifetime first-commit / first-activity CTE takes its own account bind (under Exclude team members, the
-    // default, the commits read computes the first commit without them, lfx-self-serve#4685).
-    ['commits', [ACCOUNT, ACCOUNT]],
+    // The code metric's lifetime first-activity CTE takes its own account bind; the commits metric reads lf-dbt's
+    // lifetime first commit column, so it binds the account once.
+    ['commits', [ACCOUNT]],
     ['code', [ACCOUNT, ACCOUNT]],
   ] as const)(
     'adds foundation_id = ? to every data read and the employee options, bound before the project, employee and search binds (metric=%s)',
@@ -334,7 +334,7 @@ describe('OrgContributionsService — team members', () => {
 
     expect(execute).toHaveBeenCalledTimes(6);
     for (const { sql } of calls()) {
-      expect(sql).toContain('NOT is_cdp_team_member');
+      expect(sql).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
     }
   });
 
@@ -350,9 +350,13 @@ describe('OrgContributionsService — team members', () => {
     'tells Snowflake a missing flag column is expected on every read under exclude, and nothing under include (metric=%s)',
     async (metric) => {
       await service.getContributions(ACCOUNT, query({ metric }));
-      expect(
-        execute.mock.calls.every((call) => (call[2] as { expectInvalidIdentifier?: string } | undefined)?.expectInvalidIdentifier === 'IS_CDP_TEAM_MEMBER')
-      ).toBe(true);
+      // The commits metric's repository read also expects lf-dbt's non-team first commit column (lfx-self-serve#4685).
+      const repoSql = repoCall().sql;
+      for (const [sql, , options] of execute.mock.calls as [string, unknown, { expectInvalidIdentifier?: string | string[] } | undefined][]) {
+        expect(options?.expectInvalidIdentifier).toEqual(
+          metric === 'commits' && sql === repoSql ? ['IS_CDP_TEAM_MEMBER', 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'] : 'IS_CDP_TEAM_MEMBER'
+        );
+      }
 
       execute.mockClear();
       await service.getContributions(ACCOUNT, query({ metric, teamMembers: 'include' }));
@@ -360,23 +364,45 @@ describe('OrgContributionsService — team members', () => {
     }
   );
 
-  it('reads the first commit under the commits metric without team members, every project and branch', async () => {
+  it("reads lf-dbt's lifetime first commit without team members under the commits metric, with no first-commit CTE", async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'commits', projectScope: 'lf', commitScope: 'merged' }));
 
-    const { sql } = repoCall();
-    const firstCommit = sql.slice(sql.indexOf('repo_first AS ('), sql.indexOf('repo_rows AS ('));
-    expect(firstCommit).toContain('MIN(activity_ts) AS first_commit_ts');
-    expect(firstCommit).toContain('NOT is_cdp_team_member');
-    expect(firstCommit).not.toContain('is_lf_project');
-    expect(firstCommit).not.toContain('is_merged');
+    const { sql, binds } = repoCall();
+    expect(sql).toContain('MIN(ORG_REPO_FIRST_NON_TEAM_COMMIT_TS) AS first_commit_ts');
     expect(sql).not.toContain('org_repo_first_commit_ts');
+    expect(sql).not.toContain('repo_first');
+    expect(binds[0]).toBe(ACCOUNT);
+    expect(binds.filter((bind) => bind === ACCOUNT)).toHaveLength(1);
   });
 
   it("keeps the warehouse's lifetime first commit under include", async () => {
     await service.getContributions(ACCOUNT, query({ metric: 'commits', teamMembers: 'include' }));
 
     expect(repoCall().sql).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
-    expect(repoCall().sql).not.toContain('repo_first AS');
+    expect(repoCall().sql).not.toContain('FIRST_NON_TEAM');
+  });
+
+  it('reads the inclusive first commit, says so and never stores the payload while the non-team column is not built yet', async () => {
+    const missingFirstCommit = Object.assign(
+      new Error("SQL compilation error: error line 11 at position 14\ninvalid identifier 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'"),
+      {
+        code: '000904',
+      }
+    );
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingFirstCommit;
+      return { rows: [] };
+    });
+
+    const response = await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
+
+    expect(response.teamMembersUnavailable).toBe(true);
+    const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
+    expect(repoReads.at(-1)?.[0]).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
+    // Only the First Commit falls back: team members stay out of the counts.
+    expect(repoReads.at(-1)?.[0]).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
+    const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
+    expect(storable({ teamMembersUnavailable: true })).toBe(false);
   });
 
   describe('while the warehouse has no team-member flag yet', () => {

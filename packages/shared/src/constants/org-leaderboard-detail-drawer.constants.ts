@@ -85,7 +85,7 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     bullets: [
       {
         label: ORG_MAINTAINER_ROLES_LABEL,
-        text: '— 10 pts from the influence score when the company has maintainers on the project in the selected range; the score only covers companies with code contributions in that range. The count shown is the maintainer roles the company holds, counted separately, so a company can hold roles and still earn 0 points.',
+        text: "— 10 pts from the influence score when the company has maintainers on the project in the selected range; the score only covers companies with code contributions in that range. The count shown is the maintainer roles the company holds, CDP team members left out, against every company's roles on the project; it is counted separately, so a company can hold roles and still earn 0 points.",
       },
       {
         label: 'Contributors, PRs Opened',

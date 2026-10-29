@@ -42,7 +42,7 @@ export const ORG_PROJECTS_MAINTAINER_ROLES_RANGE: OrgLensTimeRange = '730d';
 
 /** The counting rule on Project Detail's Maintainer roles card and drawer, which follow the page toggle. */
 export const ORG_PROJECT_MAINTAINER_ROLES_DEFINITION =
-  "Maintainer roles: people named as maintainers in this project's governance files, counted once per project, credited to their current employer, in the selected range.";
+  "Maintainer roles: people named as maintainers in this project's governance files, counted once per project, credited to their current employer, in the selected range, team members left out.";
 
 /** ROLE_START_DATE the warehouse stores when a role's start is unknown; shown as unknown, never as a date. */
 export const ORG_MAINTAINER_ROLE_UNKNOWN_START_DATE = '2000-01-01';

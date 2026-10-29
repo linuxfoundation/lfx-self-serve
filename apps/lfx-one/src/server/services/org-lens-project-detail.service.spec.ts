@@ -73,6 +73,11 @@ function placeholderCount(sql: string): number {
   return (sql.match(/\?/g) ?? []).length;
 }
 
+/** Snowflake's answer while lf-dbt has not built the team-member flag yet (lfx-self-serve#4685). */
+const MISSING_TEAM_MEMBER_FLAG = Object.assign(new Error("SQL compilation error: error line 5 at position 14\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), {
+  code: '000904',
+});
+
 describe('OrgLensProjectDetailService.getTrendBlock', () => {
   const service = new OrgLensProjectDetailService();
 
@@ -533,8 +538,37 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
 
     await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
 
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-technical:v2:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-technical:v3:/));
     expect(setJson).toHaveBeenCalledWith('breakdown-key', expect.objectContaining({ organizationId: SUBJECT }), expect.anything());
+  });
+
+  // lfx-self-serve#4685: the clicked organization's roles (N) leave CDP team members out; every company's (M) do not.
+  it("leaves CDP team members' roles out of the organization's count, not out of every company's total", async () => {
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    const [[sql, , options]] = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes('PROJECT_MAINTAINER_ROLES'));
+    const credited = 'ORGANIZATION_ID = ? AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)';
+    expect(sql).toContain(`COUNT(DISTINCT IFF(${credited}, MEMBER_ID, NULL), IFF(${credited}, SEGMENT_ID, NULL)) AS ORGANIZATION_ROLES`);
+    expect(sql).toContain('COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS PROJECT_ROLES');
+    expect(options).toMatchObject({ expectMissingObject: 'PROJECT_MAINTAINER_ROLES', expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+  });
+
+  it('counts team members, and does not store the breakdown, while the roles table has no team-member flag yet', async () => {
+    buildOrgCacheKey.mockReturnValue('breakdown-key');
+    getJson.mockResolvedValue(null);
+    mockWarehouse({ breakdown: populatedBreakdownRow });
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('IS_CDP_TEAM_MEMBER')) throw MISSING_TEAM_MEMBER_FLAG;
+      return answer(sql);
+    });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+
+    expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5, count: 2, projectTotal: 20 });
+    expect(setJson).not.toHaveBeenCalled();
   });
 });
 
@@ -558,7 +592,7 @@ describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
     const commits = block!.technical.find((card) => card.key === 'commits');
     expect(commits?.label).toBe('Commits');
     expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v4:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v5:/));
   });
 });
 
@@ -778,6 +812,41 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
 
     await expect(service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).rejects.toThrow('Warehouse timeout');
   });
+
+  // lfx-self-serve#4685: the account's roles leave CDP team members out, as the Overview and Contributors counts do.
+  it("leaves CDP team members' roles out of the card count and its roster", async () => {
+    await service.getInfluenceBlock(ORG, SLUG, '1y');
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+
+    const reads = (execute.mock.calls as [string, unknown[], unknown][]).filter(([sql]) => sql.includes('ORG_MAINTAINER_ROLES'));
+    expect(reads).toHaveLength(3);
+    for (const [sql, , options] of reads) {
+      expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
+      expect(options).toMatchObject({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    }
+    expect(reads.some(([sql]) => sql.includes('r.ROLE_END_DATE, r.IS_CDP_TEAM_MEMBER,'))).toBe(true);
+  });
+
+  it('counts and lists team members, storing neither, while the roles table has no team-member flag yet', async () => {
+    // The key is the sub-resource itself, so the stored keys show which blocks were written.
+    buildOrgCacheKey.mockImplementation((...args: unknown[]) => String(args[1]));
+    getJson.mockResolvedValue(null);
+    setJson.mockClear();
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('IS_CDP_TEAM_MEMBER')) throw MISSING_TEAM_MEMBER_FLAG;
+      return answer(sql);
+    });
+
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+
+    expect(block!.technical.find((entry) => entry.key === 'maintainers')?.caption.emphasis).toBe('3');
+    expect(page.total).toBe(2);
+    const storedKeys = (setJson.mock.calls as [string][]).map(([key]) => key);
+    expect(storedKeys.some((key) => key.startsWith('project-detail-influence:'))).toBe(false);
+    expect(storedKeys.some((key) => key.startsWith('project-detail-roster:v3:'))).toBe(false);
+  });
 });
 
 describe('OrgLensProjectDetailService maintainer roles sparkline and drawer total (lfx-self-serve#4605)', () => {
@@ -911,8 +980,51 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
 
     await service.getInfluenceBlock(ORG, SLUG, '1y');
 
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v4:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v5:/));
     expect(setJson).toHaveBeenCalledWith('influence-key', expect.objectContaining({ technical: expect.anything() }), expect.anything());
+  });
+
+  // lfx-self-serve#4685: the account's series leaves CDP team members' roles out; the grey all-companies line does not.
+  it.each([
+    ['1y', 'ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY'],
+    ['all', 'ORG_LENS_PROJECT_MAINTAINER_ROLES_LIFETIME'],
+  ] as const)("reads the %s account series without team members' roles from %s, every company's with them", async (range, table) => {
+    mockWarehouse();
+
+    await service.getInfluenceBlock(ORG, SLUG, range);
+
+    const [[sql, , options]] = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes(`.${table}`));
+    expect(sql).toContain('ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS AS ACCOUNT_ROLES, PROJECT_ROLES');
+    expect(options).toMatchObject({ expectMissingObject: table, expectInvalidIdentifier: 'ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS' });
+  });
+
+  it('draws the inclusive account series, and does not store the block, while the series has no team-member count yet', async () => {
+    buildOrgCacheKey.mockReturnValue('influence-key');
+    mockWarehouse();
+    const answer = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS')) {
+        throw Object.assign(new Error("SQL compilation error: error line 2 at position 32\ninvalid identifier 'ACCOUNT_ROLES_EXCLUDING_TEAM_MEMBERS'"), {
+          code: '000904',
+        });
+      }
+      return answer(sql);
+    });
+
+    const maintainers = card(await service.getInfluenceBlock(ORG, SLUG, '1y'), 'maintainers');
+
+    expect(maintainers.sparkline.slice(-3)).toEqual([0, 2, 3]);
+    expect(callsOn('ORG_LENS_PROJECT_MAINTAINER_ROLES_MONTHLY').at(-1)?.[0]).toContain('SELECT SPAN_MONTH, ACCOUNT_ROLES, PROJECT_ROLES');
+    expect(setJson).not.toHaveBeenCalledWith('influence-key', expect.anything(), expect.anything());
+  });
+
+  it("keeps team members' roles in the drawer's every-company total", async () => {
+    mockWarehouse();
+
+    await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+
+    const [[sql]] = callsOn('PROJECT_MAINTAINER_ROLES');
+    expect(sql).not.toContain('IS_CDP_TEAM_MEMBER');
   });
 
   it.each([
