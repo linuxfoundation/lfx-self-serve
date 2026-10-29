@@ -288,7 +288,13 @@ describe('MktgDocumentStoreService', () => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
     if (!type) throw new Error('Missing fixture type');
     const member360 = member360Fixture();
-    const research = { searches: ['synthetic-contact@example.test'], fetches: [{ url: 'https://profile.example/synthetic-contact' }] };
+    const research = {
+      searches: ['synthetic-contact@example.test'],
+      fetches: [{ url: 'https://profile.example/synthetic-contact', ok: true, status: 200, final_url: 'https://profile.example/synthetic-contact' }],
+      lfx_reads: [],
+      questions: [],
+      answers: [],
+    };
     const generated = { ...envelope('# Report'), member360: { ...member360, inputs: { ...member360.inputs, research } } };
     const saved = await service.recordGeneration(req, type, PROJECT, generated, 'private-research');
     const view = await service.getRevision(req, PROJECT, type, saved.record.documentId, saved.id);

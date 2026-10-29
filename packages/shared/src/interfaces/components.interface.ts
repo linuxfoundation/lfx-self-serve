@@ -905,3 +905,6 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/** Neutral Marketing OS loading shapes; never a guessed domain state. */
+export type MktgSkeletonVariant = 'run-page' | 'header' | 'card' | 'rows';

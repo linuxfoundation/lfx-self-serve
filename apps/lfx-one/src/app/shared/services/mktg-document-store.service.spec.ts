@@ -41,6 +41,13 @@ describe('MktgDocumentStoreService', () => {
     request.flush({ project: 'proj-1', groups: [] });
   });
 
+  it('opts into a viewer-owned roster without transporting a creator identity', () => {
+    service.listDocuments('proj-1', true, true).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
+    expect(request.request.params.keys().sort()).toEqual(['ownRuns', 'poll', 'project']);
+    expect(request.request.params.get('ownRuns')).toBe('1');
+    request.flush({ project: 'proj-1', groups: [], runs: [] });
+  });
   it('reads one document and one revision under the document’s path', () => {
     service.getDocument('proj-1', 'brand-kit', 'living').subscribe();
     service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID).subscribe();

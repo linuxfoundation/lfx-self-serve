@@ -6,6 +6,7 @@ import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_KIT_FAMILIES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
@@ -46,6 +47,7 @@ import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-brea
     PageHeaderComponent,
     MktgRebuildComponent,
     MktgBreadcrumbComponent,
+    MktgSkeletonComponent,
   ],
   providers: [MktgKitService],
   templateUrl: './mktg-family.component.html',
@@ -149,7 +151,7 @@ export class MktgFamilyComponent {
 
   private initHeaderRun() {
     return computed(() => {
-      if (this.kit.loading() || this.kit.error() || !this.context.canWrite()) return null;
+      if (!this.kit.documents() || this.kit.accessDenied() || !this.context.canWrite()) return null;
       const rows = this.rows();
       const newest = [...(this.kit.documents()?.runs ?? [])]
         .filter((run) => run.state !== 'failed')
@@ -165,7 +167,7 @@ export class MktgFamilyComponent {
       const definition = this.definition();
       if (!definition) return null;
       return resolveMktgFamilyActions(this.family() ?? { family: definition, rows: [], agents: [], live: this.live() }, {
-        loaded: !this.kit.loading() && (!this.kit.error() || this.kit.accessDenied()),
+        loaded: !!this.kit.documents() || (!this.kit.loading() && (!this.kit.error() || this.kit.accessDenied())),
         canWrite: this.context.canWrite() && !this.kit.accessDenied(),
         approvedFramework: !!this.kit.documents()?.approvedFramework,
       });

@@ -82,6 +82,7 @@
     #slidesExport
     [target]="exportTarget()"
     [lookupTarget]="exportLookupTarget()"
+    (lookupAnswered)="exportLookupAnswered.emit($event)"
     [viewingDraft]="viewingDraft()"
     data-testid="brand-kit-web-view-slides-export" />
 

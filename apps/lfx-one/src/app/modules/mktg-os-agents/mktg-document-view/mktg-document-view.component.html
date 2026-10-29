@@ -8,9 +8,15 @@
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
-        <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
-          {{ isAeoDocument() ? aeoHeaderTitle() : title() }}
-        </h1>
+        @if (loading() || (!title() && !errorText())) {
+          <div class="h-6 w-56 overflow-hidden" data-testid="mktg-document-view-title-loading">
+            <lfx-mktg-skeleton variant="header" />
+          </div>
+        } @else {
+          <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
+            {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
+          </h1>
+        }
         @if (header(); as meta) {
           @if (!isLinkedinDocument() && hasAssetMetadata()) {
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
@@ -21,6 +27,11 @@
         }
       </div>
       <div class="grow"></div>
+      @if (loading()) {
+        <div class="ml-auto h-6 w-40 overflow-hidden" data-testid="mktg-document-view-action-loading">
+          <lfx-mktg-skeleton variant="header" />
+        </div>
+      }
       @if (!loading() && hasAssetView() && proseView(); as current) {
         <div class="ml-auto flex flex-wrap items-center justify-end gap-4" data-testid="mktg-document-view-title-actions">
           @if (runAgainLink(); as link) {
@@ -120,7 +131,7 @@
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
 
-    @if (!closedRun() && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
+    @if (!closedRun() && !loading() && view() && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
       <a
         [routerLink]="runAgainLink()"
         [queryParams]="runAgainParams()"
@@ -146,6 +157,11 @@
       <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
     }
     @if (!isAeoDocument()) {
+      @if (memberQuestionsCreator() && selectedRun()?.state === 'questions') {
+        <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+          Member 360 needs your answers — continue from the Member 360 page in the tab where you started it.
+        </p>
+      }
       <lfx-mktg-run-progress
         [project]="projectUid()"
         [announceState]="false"
@@ -166,9 +182,10 @@
         [retrying]="retrying()"
         [errorText]="errorText()"
         [waitingForQuestions]="waitingForQuestions()"
+        [answersSupported]="params().agentKey === 'member-360' ? false : null"
         [runAgentId]="runAgentId()"
         [externalActivity]="visibleRunActivity()"
-        [suppressCard]="runFailed() || !!closedRun()"
+        [suppressCard]="runFailed() || !!closedRun() || (memberQuestionsCreator() && selectedRun()?.state === 'questions')"
         [headless]="!!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
         (observed)="onPublicProgress($event)"
         (readError)="onPublicProgressError($event)"
@@ -420,7 +437,19 @@
     } @else if (proseView(); as current) {
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
-        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3">
+        @if (exportLookupTarget() && !contentReady()) {
+          <lfx-mktg-skeleton
+            variant="card"
+            [rows]="3"
+            class="min-h-80 rounded-xl border border-gray-200 bg-white p-6"
+            data-testid="mktg-document-view-content-skeleton" />
+        }
+        <!-- Readers stay mounted while the whole exportable document area waits for its first answers. -->
+        <section
+          aria-label="Document content"
+          class="flex min-w-0 flex-col gap-3 print:block"
+          [class.hidden]="exportLookupTarget() && !contentReady()"
+          data-testid="mktg-document-view-content">
           @if (isAeoDocument() && current.aeoGeoReport?.report) {
             <ng-container [ngTemplateOutlet]="auditReport" />
           }
@@ -505,6 +534,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-framework" />
@@ -524,6 +554,7 @@
               class="block min-w-0"
               [projectName]="projectName()"
               [asset]="faqAsset"
+              [revisions]="revisionRows()"
               [commentsEnabled]="commentScope() !== null"
               [version]="current.revision.number"
               [showMetadata]="false"
@@ -543,6 +574,7 @@
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
               [viewingDraft]="!current.revision.approval"
               [approval]="current.revision.approval"
               data-testid="mktg-document-view-brand-kit" />
@@ -573,7 +605,16 @@
 
         <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
           @if (commentScope(); as scope) {
+            @if (!railReady()) {
+              <lfx-mktg-skeleton
+                variant="card"
+                [rows]="2"
+                class="min-h-96 rounded-xl border border-gray-200 bg-white p-4"
+                data-testid="mktg-document-view-comments-skeleton" />
+            }
             <lfx-mktg-comments-panel
+              class="block"
+              [class.hidden]="!railReady()"
               [scope]="scope"
               [content]="commentContent()"
               [priorVersion]="current.revision.draftVersion ?? null"
@@ -584,8 +625,9 @@
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
               @for (revision of visibleRevisionRows(); track revision.id) {
+                <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->
                 <li
-                  class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
+                  class="flex min-h-16 items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
                   [ngClass]="revision.id === current.revision.id && !isAeoDocument() ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
                   [class.bg-gray-50]="isAeoDocument()"
                   [attr.data-testid]="'mktg-document-view-revision-' + revision.number">
@@ -651,7 +693,7 @@
                 </li>
               }
             </ol>
-            @if (showAllRevisions() || visibleRevisionRows().length < revisionRows().length) {
+            @if (revisionRows().length > revisionPreviewCount) {
               <button
                 type="button"
                 class="self-start text-sm text-blue-700 underline hover:text-blue-900"
@@ -666,15 +708,35 @@
           </div>
 
           @if (current.type.agentKey === frameworkKey) {
+            @if (!railReady()) {
+              <lfx-mktg-skeleton
+                variant="card"
+                [rows]="2"
+                class="min-h-56 rounded-xl border border-gray-200 bg-white p-4"
+                data-testid="mktg-document-view-downstream-skeleton" />
+            }
             <lfx-mktg-downstream
+              class="block empty:hidden"
+              [class.hidden]="!railReady()"
               [project]="current.project"
               [projectSlug]="projectSlug()"
               [refreshKey]="current.approvedCurrent?.revisionId ?? ''"
-              [writer]="writer()" />
+              [writer]="writer()"
+              (settled)="downstreamSettledKey.set($event)" />
           }
 
-          <!-- About this document -->
-          <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-about">
+          <!-- Reveal the lower rail and exportable content together after all first reads answer. -->
+          @if (!railReady()) {
+            <lfx-mktg-skeleton
+              variant="card"
+              [rows]="2"
+              class="min-h-56 rounded-xl border border-gray-200 bg-white p-4"
+              data-testid="mktg-document-view-about-skeleton" />
+          }
+          <div
+            class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4"
+            [class.hidden]="!railReady()"
+            data-testid="mktg-document-view-about">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">About this document</h2>
             <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
               <dt class="text-gray-500">Agent</dt>

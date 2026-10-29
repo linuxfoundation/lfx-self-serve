@@ -24,9 +24,13 @@
       <lfx-button label="Refresh progress" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-documents-refresh-progress" />
     }
 
-    @if (!loading() && !listFailed() && runs().length) {
+    @if (loading() && !documents()) {
+      <div class="h-28 overflow-hidden rounded-xl border border-gray-200 bg-white p-4" data-testid="mktg-documents-started-loading">
+        <lfx-mktg-skeleton variant="card" [rows]="1" />
+      </div>
+    } @else if (!listFailed() && startedRunsVisible()) {
       <section
-        class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
+        class="flex min-h-28 flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
         aria-label="Started runs"
         data-testid="mktg-documents-started-runs">
         <h2 class="text-sm font-semibold text-gray-700">Started runs</h2>
@@ -40,11 +44,7 @@
                     Writing the document
                   }
                   @case ('questions') {
-                    @if (run.agentKey === 'member-360') {
-                      Paused — the run needs input
-                    } @else {
-                      Waiting for your answers
-                    }
+                    Waiting for your answers
                   }
                   @case ('storing') {
                     Storing the revision
@@ -67,6 +67,8 @@
               >
             }
           </div>
+        } @empty {
+          <p class="text-sm text-gray-500" data-testid="mktg-documents-no-started-runs">No runs in progress</p>
         }
       </section>
     }
@@ -119,10 +121,8 @@
 
       <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
       <section #documentPanel aria-label="Documents and revisions" class="flex min-w-0 scroll-mt-20 flex-col gap-5">
-        @if (loading()) {
-          <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
-            Loading documents…
-          </div>
+        @if ((loading() && !documents()) || (listPending() && (showAll() ? !allDocuments().length : !selectedGroup()?.documents?.length))) {
+          <lfx-mktg-skeleton variant="card" class="min-h-80 rounded-xl border border-gray-200 bg-white p-6" data-testid="mktg-documents-loading" />
         } @else if (listFailed()) {
           <!-- The list read failed: the error above is the only answer; no empty state may claim nothing is stored. -->
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-list-failed">
@@ -276,8 +276,10 @@
                   Agents read the current revision. To switch back to an older one, open it and choose Make current there; nothing is added or deleted.
                 </p>
               </div>
+            } @else if (living.document && detailLoading()) {
+              <lfx-mktg-skeleton variant="rows" [rows]="4" class="min-h-80" data-testid="mktg-documents-detail-loading" />
             } @else if (living.document) {
-              <div class="py-6 text-sm text-gray-500" role="status">{{ detailLoading() ? 'Loading revisions…' : 'The revisions could not be loaded.' }}</div>
+              <div class="py-6 text-sm text-gray-500" role="status">The revisions could not be loaded.</div>
             } @else if (selectedRuns().length || documents()?.progressUnavailable) {
               <div class="flex flex-col gap-2 py-4" data-testid="mktg-documents-pending-document">
                 <h2 class="text-lg font-semibold text-gray-900">{{ projectName() }} {{ living.type.label }}</h2>

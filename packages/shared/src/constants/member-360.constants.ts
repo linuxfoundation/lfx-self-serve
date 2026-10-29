@@ -3,6 +3,7 @@
 
 import { MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS, MKTG_ONE_OFF_STOPPED_MESSAGE } from './mktg-one-off.constants';
 import type { Member360FailureReason, Member360SortColumn } from '../interfaces/member-360.interface';
+export { MEMBER_360_ACTIVITY_LABELS, MEMBER_360_ACTIVITY_TOOLS } from './mktg-run-activity.constants';
 
 // Mirrored from marketing-os-agents main 45734bc6, agents/member-360/src/model.ts.
 export const CATEGORY_KEYS = ['committees', 'events', 'speaking', 'content', 'community_programs', 'marketing_social'] as const;
@@ -61,6 +62,11 @@ export const CATEGORY_SCORE_KEYS = Object.fromEntries(CATEGORY_KEYS.map((k) => [
   (typeof CATEGORY_KEYS)[number],
   `${(typeof CATEGORY_KEYS)[number]}_score`
 >;
+export const MEMBER_360_QUESTIONS_CONTRACT = 'member-360-questions/v1';
+export const MEMBER_360_ANSWERS_CONTRACT = 'member-360-answers/v1';
+export const MEMBER_360_QUESTIONS_HEADER = `MEMBER 360 — QUESTIONS (${MEMBER_360_QUESTIONS_CONTRACT})`;
+export const MEMBER_360_ANSWERS_HEADER = `MEMBER 360 — ANSWERS (${MEMBER_360_ANSWERS_CONTRACT})`;
+export const MEMBER_360_MAX_QUESTIONS = 6;
 export const MEMBER_360_COMPARISON_UNAVAILABLE = 'MEMBER_360_COMPARISON_UNAVAILABLE';
 export const MEMBER_360_INVALID_RESULT = 'MEMBER_360_INVALID_RESULT';
 export const MEMBER_360_FAILURE_MESSAGE_MAX_CHARS = MKTG_ONE_OFF_FAILURE_MESSAGE_MAX_CHARS;
@@ -111,15 +117,6 @@ export const MEMBER_360_TRACKER_TTL_MS = 21_600_000;
 /** Cap deletion attempts per activity-driven cleanup pass. */
 export const MEMBER_360_TRACKER_SWEEP_LIMIT = 25;
 export const MEMBER_360_TRACKER_ID_REGEX = /^[0-9a-f]{64}$/;
-/** Fixed activity copy: never derive these labels from tool arguments. */
-export const MEMBER_360_ACTIVITY_LABELS = {
-  reading: 'Reading sources',
-  search: 'Searching the web',
-  lfx: 'Checking LFX',
-  questions: 'Preparing questions',
-  writing: 'Writing',
-  checking: 'Checking the report',
-} as const;
 export const MEMBER_360_TRACKER_KINDS = ['event_sponsors', 'attendees', 'speaking', 'ambassadors', 'content', 'webinars', 'other'] as const;
 export const MEMBER_360_HEAT_ORDER = ['events', 'speaking', 'community_programs', 'committees', 'content', 'marketing_social'] as const;
 export const MEMBER_360_WINDOW_OPTIONS = [
@@ -151,3 +148,8 @@ export const MEMBER_360_RANKING_COLUMNS = [
   ['Priority', 'priority'],
 ] as const;
 export const MEMBER_360_INTRO = 'Choose a window and add any trackers you have; it reads LFX, searches the web and ranks every member with one next action.';
+
+/** Confirmed pre-accept HTTP rejections; 408/409 and all 5xx remain ambiguous. */
+export const MEMBER_360_DEFINITE_SEND_HTTP_STATUSES: readonly number[] = [400, 401, 403, 404, 405, 413, 415, 422, 429];
+/** These transport failures occur before a connection can deliver a user turn. */
+export const MEMBER_360_DEFINITE_CONNECT_CODES: readonly string[] = ['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED'];

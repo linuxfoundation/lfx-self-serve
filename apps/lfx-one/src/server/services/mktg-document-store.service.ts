@@ -476,11 +476,13 @@ export class MktgDocumentStoreService {
     if (!view || type.agentKey !== 'member-360') return view;
     const candidate = view.sidecar?.['member360'];
     const parsed = member360Schema.safeParse(candidate);
+    const inputs = parsed.success ? { ...parsed.data.inputs } : undefined;
+    if (inputs) delete inputs.research;
     const member360 =
-      parsed.success && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
-        ? { ...(candidate as typeof parsed.data), inputs: { ...parsed.data.inputs } }
+      parsed.success && inputs && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
+        ? { ...(candidate as typeof parsed.data), inputs }
         : undefined;
-    // Research provenance is server-only; schema projection drops inputs.research
+    // Research provenance is server-only even when the schema recognizes it.
     // without modifying the immutable stored envelope or report tabs/hash.
     const sidecar = { ...view.sidecar };
     delete sidecar['member360'];

@@ -103,6 +103,7 @@ router.delete(
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+router.post('/member-360/answers', (req, res, next) => member360Controller.answers(req, res, next));
 // Project-writer answers for a durable kit run; one-offs keep their creator-owned endpoints.
 router.post('/runs/:runId/answers', (req, res, next) => mktgAgentsController.runAnswers(req, res, next));
 router.post('/aeo-geo/generate', (req, res, next) => aeoGeoController.generate(req, res, next));
