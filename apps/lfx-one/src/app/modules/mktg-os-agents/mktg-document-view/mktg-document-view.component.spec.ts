@@ -1554,6 +1554,42 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-progress-retry')).toBeNull();
   });
 
+  it.each([
+    ['prepared', 'discarded'],
+    ['recovered', 'discarded'],
+    ['recovered', 'superseded'],
+  ] as const)('cancels the %s creator stream when server metadata becomes %s and ignores late questions', async (kind, state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const pending = preparedPending();
+    const attempt = {
+      runId: 'b'.repeat(64),
+      priorVersion: 0,
+      session: { agentId: pending.request.agentId, sessionId: 'synthetic-closed-session', ownerToken: 'synthetic-proof' },
+    };
+    pending.attempt = attempt;
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    if (kind === 'prepared') vi.mocked(attempts.consume).mockReturnValue({ subject: 'synthetic-owner', pending });
+    else vi.mocked(attempts.load).mockReturnValue(pending);
+    const events = new Subject<MktgGenerateProgress>();
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(events);
+    store.getDocument.mockReturnValueOnce(of({ ...detail, revisions: [], runs: [started('writing')] }));
+    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started(state)] }));
+    await render('/documents/brand-kit/living?' + (kind === 'prepared' ? 'generation=synthetic-closed-handoff' : `run=${attempt.runId}`));
+    expect(events.observed).toBe(true);
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    navigate.mockClear();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(events.observed).toBe(false);
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    events.next({ type: 'questions', pending: { attempt, questionsId: 'c'.repeat(64), questions: [] } });
+    await settle();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(attempts.prepare).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-closed-run')).not.toBeNull();
+    events.complete();
+  });
+
   it('does not invent a closure time or person for a legacy discarded run', async () => {
     store.getDocument.mockReturnValue(of({ ...detail, current: null, revisions: [], runs: [started('discarded')] }));
     await render('/documents/brand-kit/living?run=' + 'b'.repeat(64));

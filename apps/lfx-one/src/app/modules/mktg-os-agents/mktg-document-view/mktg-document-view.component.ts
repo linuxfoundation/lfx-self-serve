@@ -111,6 +111,7 @@ import {
   take,
   takeUntil,
   Subject,
+  ReplaySubject,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -616,8 +617,11 @@ export class MktgDocumentViewComponent {
               saved && (saved.state === 'writing' || needsQuestions) && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId)
                 ? saved
                 : null;
+            const closedAttempt$ = new ReplaySubject<void>(1);
             const resume = (pending: MktgPendingGeneration) =>
               this.runService.resume(pending).pipe(
+                takeUntil(closedAttempt$),
+                filter(() => !this.closedRun()),
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
                 catchError((error: unknown) => {
@@ -733,6 +737,7 @@ export class MktgDocumentViewComponent {
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
                   if (this.closedRun()) {
+                    closedAttempt$.next();
                     this.localProgress.set(null);
                     this.runFailed.set(false);
                     this.errorText.set('');
@@ -766,6 +771,7 @@ export class MktgDocumentViewComponent {
                     tap((cycle) => {
                       this.runDetail.set(cycle.detail);
                       if (this.closedRun()) {
+                        closedAttempt$.next();
                         this.localProgress.set(null);
                         this.runFailed.set(false);
                         this.errorText.set('');

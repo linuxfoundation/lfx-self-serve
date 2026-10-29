@@ -526,6 +526,36 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it.each([false, true])('reads and reconciles an uncached selected active run beyond the navigation window (poll=%s)', async (poll) => {
+    await service.start(req, project, types[0].agentKey, session);
+    for (let i = 0; i < 129; i++)
+      objects.set(key(`selected-window-${i}`), {
+        body: '{}',
+        metadata: { state: 'discarded' },
+        lastModified: new Date(Date.now() + i + 1),
+      });
+    const reader = new MktgDocumentRunService();
+    const snapshot = await reader.readProgress(req, project, types[0].agentKey, 'living', poll);
+    expect(snapshot.runs).toEqual([]);
+    expect(flows.result).not.toHaveBeenCalled();
+    const detail = await reader.detailWithProgress(req, project, types[0], 'living', null, snapshot, poll, undefined, hash(session));
+    expect(detail).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state: 'writing' }] });
+    expect(flows.result).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(detail)).not.toContain(session);
+  });
+
+  it('keeps selected closed records lightweight even when omitted from discovery', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'discarded';
+    flows.get.mockClear();
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state: 'discarded' });
+    expect(flows.get).toHaveBeenCalledTimes(1);
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+  });
+
   it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {
     const creator = Object.assign({}, req, { oidc: { ...req.oidc, user: { sub: 'synthetic-creator' } } });
     const id = `run-${hash(session).slice(0, 24)}`;
