@@ -211,7 +211,9 @@ describe('Member360RunComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="member-360-intake"]')).toBeNull();
-    expect(fixture.nativeElement.textContent.trim()).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"] .sr-only')?.textContent.trim()).toBe('Loading…');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-skeleton"] [aria-hidden="true"]')?.textContent.trim()).toBe('');
+    expect(fixture.nativeElement.textContent.trim()).toBe('Loading…');
     response.next({ project: 'sample-project', groups: [] });
     response.complete();
     await fixture.whenStable();

@@ -3,7 +3,20 @@
 
 import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  linkedSignal,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -11,6 +24,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
@@ -78,6 +92,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
@@ -175,6 +190,7 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     InputTextComponent,
     Member360ResultComponent,
     MktgRunActivityComponent,
+    MktgSkeletonComponent,
     MktgRunProgressComponent,
     MktgClosedRunMessageComponent,
   ],
@@ -189,6 +205,7 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
@@ -239,6 +256,8 @@ export class MktgDocumentViewComponent {
   protected readonly unconfirmed = signal(false);
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
+  protected readonly downstreamSettledKey = signal('');
+  protected readonly exportLookupAnsweredKey = signal('');
   protected readonly retrying = signal(false);
   protected readonly submittingGeneration = signal(false);
   private readonly reloads = signal(0);
@@ -274,6 +293,7 @@ export class MktgDocumentViewComponent {
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
+  protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
@@ -295,6 +315,16 @@ export class MktgDocumentViewComponent {
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
+  /** Only scope navigation resets the first-paint barrier; refreshes update the visible cards in place. */
+  protected readonly railReady = linkedSignal({
+    source: this.initRailReady(),
+    computation: (ready, previous) => ready || Boolean(previous?.value),
+  });
+  /** Once painted, keep this document's content in place during later refreshes. */
+  protected readonly contentReady = linkedSignal({
+    source: () => ({ key: JSON.stringify(this.exportLookupTarget()), ready: this.railReady() }),
+    computation: (current, previous) => current.ready || Boolean(previous?.source.key === current.key && previous.value),
+  });
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -560,6 +590,9 @@ export class MktgDocumentViewComponent {
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.downstreamSettledKey.set('');
+              const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
+              if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -578,6 +611,7 @@ export class MktgDocumentViewComponent {
               this.refreshedFailures.clear();
               this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
+              this.railReady.set(false);
               this.notice.set('');
               this.restoringId.set(null);
               this.restoreEpoch++;
@@ -1294,6 +1328,26 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private initRailReady(): Signal<boolean> {
+    return computed(() => {
+      const view = this.view();
+      const scope = this.commentScope();
+      const selected = this.documentComments.selectedScope();
+      const commentsReady =
+        !scope ||
+        (selected?.projectUid === scope.projectUid &&
+          selected.agentKey === scope.agentKey &&
+          selected.documentId === scope.documentId &&
+          selected.revisionId === scope.revisionId &&
+          !!(this.documentComments.loaded() || this.documentComments.loadError()));
+      const downstreamReady =
+        view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
+      const exportLookup = this.exportLookupTarget();
+      const exportReady = !exportLookup || this.exportLookupAnsweredKey() === JSON.stringify(exportLookup);
+      return !!view && commentsReady && downstreamReady && exportReady;
+    });
+  }
+
   private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
     return computed(() => {
       const view = this.view();
@@ -1370,7 +1424,11 @@ export class MktgDocumentViewComponent {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
+      // Current/open rows use slots within the cap, never extra rows beyond it.
+      const pinned = new Set(rows.filter((revision) => revision.latest || revision.id === openId).map((revision) => revision.id));
+      const newest = rows.filter((revision) => !pinned.has(revision.id)).slice(0, MKTG_DOCUMENT_REVISION_PREVIEW_COUNT - pinned.size);
+      const visible = new Set([...pinned, ...newest.map((revision) => revision.id)]);
+      return rows.filter((revision) => visible.has(revision.id));
     });
   }
 
@@ -1399,13 +1457,15 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       if (!view) {
-        const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
+        const type = this.runDetail()?.type;
+        // A confirmed run with no revision can name its asset; never guess from route params.
+        if (!type || type.agentKey === 'member-360') return '';
+        const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
+        return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
-        return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
+        return `${this.projectContext.activeContext()?.name ?? ''} ${mktgKitAssetLabel(view.type.agentKey) ?? view.type.itemLabel}`.trim();
       }
       const source = this.linkedinContent()?.source;
       return source ? `${view.type.itemLabel} · ${source.label}` : view.type.itemLabel;
@@ -1448,6 +1508,10 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'restored') {
       this.localProgress.set(null);
       this.restoreNotice.set(progress.message);
+      // A restored intake has no accepted run or stored view to wait for.
+      // Land on the form with its saved inputs; navigation grants no Generate authority.
+      const commands = this.runAgainLink();
+      if (commands) void this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true });
       return;
     }
     if (progress.type === 'submitted') {
