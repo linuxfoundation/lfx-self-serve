@@ -528,6 +528,39 @@ describe('MktgDocumentsComponent', () => {
     expect(new URL(link, 'https://synthetic.example').pathname).toBe('/' + type.agentKey + '/' + run.documentId);
   });
 
+  it('keeps type navigation, row focus and DOM identity through two list/detail poll updates', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    let reads = 0;
+    store.listDocuments.mockImplementation(() => {
+      const listing = documentsResponse();
+      reads++;
+      for (const group of listing.groups) for (const document of group.documents) document.revisionCount += reads;
+      return of({ ...listing, runs: [startedRun(reads > 1 ? 'storing' : 'writing')] });
+    });
+    store.getDocument.mockImplementation(() => of(structuredClone(detail)));
+    await render();
+    const nav = query('mktg-documents-nav-brand-kit');
+    const link = query('mktg-documents-view-1');
+    const table = query('mktg-documents-revisions');
+    if (!link || !nav) throw new Error('Missing selected type or revision link');
+    link.focus();
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-view-1')).toBe(link);
+      expect(document.activeElement).toBe(link);
+      expect(query('mktg-documents-revisions')).toBe(table);
+      expect(query('mktg-documents-nav-brand-kit')).toBe(nav);
+      expect(nav.getAttribute('aria-current')).toBe('page');
+      expect(TestBed.inject(Router).url).toBe('/?type=brand-kit');
+      expect(query('mktg-documents-loading')).toBeNull();
+    }
+    expect(store.listDocuments).toHaveBeenCalledTimes(3);
+    expect(store.getDocument).toHaveBeenCalledTimes(3);
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Storing');
+  });
+
   it('retains loaded documents on transient refresh failure, retries and removes completed progress', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     store.listDocuments

@@ -29,6 +29,61 @@ test('living document lands with its catalog title and resolved action, never Ru
   await expect(page.getByTestId('mktg-document-view-run-again')).toHaveText('Create a new version');
 });
 
+test('two document progress polls keep the selected tab, expanded history, composer, focus and scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await setupKit(page, { loaded: true });
+  const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
+  if (!type) throw new Error('Missing synthetic framework type');
+  const stored = kitRevision(type);
+  const revisions = Array.from({ length: 9 }, (_, index) => {
+    const number = 9 - index;
+    return number === stored.revision.number
+      ? stored.revision
+      : { ...stored.revision, number, id: `${String(number).padStart(6, '0')}-${'a'.repeat(64)}`, latest: false };
+  });
+  const response = {
+    ...stored,
+    revisions,
+    runs: [{ ...startedDocumentRun('writing'), project: KIT_PROJECT.uid, agentKey: type.agentKey }],
+  };
+  const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
+  let polls = 0;
+  await page.route(
+    (url) => url.pathname === path,
+    (route) => kitJson(route, response)
+  );
+  await page.route(
+    (url) => url.pathname.startsWith(`${path}/revisions/`),
+    async (route) => {
+      await kitJson(route, response);
+      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
+    }
+  );
+  await openKit(page, `/documents/${type.agentKey}/living`);
+  const tab = page.getByTestId('mktg-framework-view-tab-numbers');
+  await tab.click();
+  const disclosure = page.getByTestId('mktg-document-view-show-all-revisions');
+  await disclosure.click();
+  const field = page.getByTestId('mktg-field-comments-nums[0]');
+  await field.hover();
+  await field.getByRole('button', { name: /^Comment on/ }).click();
+  const composer = field.getByRole('textbox');
+  await composer.fill('Synthetic draft kept while document progress refreshes.');
+  await composer.focus();
+  await composer.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
+  const scroll = await page.evaluate(() => window.scrollY);
+  const before = polls;
+  await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page).toHaveURL(/tab=numbers/);
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(9);
+  await expect(composer).toHaveValue('Synthetic draft kept while document progress refreshes.');
+  await expect(composer).toHaveAttribute('data-refresh-identity', 'kept');
+  await expect(composer).toBeFocused();
+  expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+});
+
 test('the first framework content settles with its last-export answer and the rail', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setupKit(page, { loaded: true, approvedFramework: true });

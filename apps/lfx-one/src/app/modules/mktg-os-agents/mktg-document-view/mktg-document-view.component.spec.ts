@@ -3328,6 +3328,60 @@ describe('MktgDocumentViewComponent', () => {
     for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
   });
 
+  it.each(['brand-kit', 'foundation-message'] as const)(
+    'keeps %s selected tab, expanded history, composer text and focus through two progress polls',
+    async (agentKey) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      if (agentKey === 'foundation-message') useFrameworkRevision();
+      else store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), revision: { ...LATEST, format: 'json' }, sidecar: kitSidecar() }));
+      const comments = TestBed.inject(MktgDocumentCommentsService);
+      vi.spyOn(comments, 'loaded').mockReturnValue(true);
+      vi.spyOn(comments, 'selectedScope').mockReturnValue({ projectUid: PROJECT.uid, agentKey, documentId: 'living', revisionId: LATEST.id });
+      await render(`/documents/${agentKey}/living`);
+      const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+      const loaded = component['view']();
+      if (!loaded) throw new Error('Missing synthetic loaded asset');
+      const revisions = Array.from({ length: 9 }, (_, index) => revision(9 - index, { latest: 9 - index === 2 }));
+      const response = { ...loaded, revisions, runs: [{ ...started('writing'), agentKey }] };
+      store.getDocument.mockImplementation(() => of(structuredClone(response)));
+      store.getRevision.mockImplementation(() => of(structuredClone(response)));
+      component['onRefreshProgress']();
+      await settle();
+      const tabId = agentKey === 'brand-kit' ? 'brand-kit-web-view-tab-voice' : 'mktg-framework-view-tab-numbers';
+      query(tabId)?.click();
+      await settle();
+      query('mktg-document-view-show-all-revisions')?.click();
+      await settle();
+      const field = query(`mktg-field-comments-${agentKey === 'brand-kit' ? 'chapters.voice.line' : 'nums[0]'}`);
+      field?.querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button')?.click();
+      await settle();
+      const textarea = field?.querySelector('textarea');
+      if (!textarea) throw new Error('Missing selected-tab composer');
+      textarea.value = 'Synthetic text being typed while progress refreshes.';
+      textarea.dispatchEvent(new Event('input'));
+      textarea.focus();
+      await settle();
+      const selectedTab = query(tabId);
+      const card = query('mktg-document-view-revisions');
+      const reads = store.getDocument.mock.calls.length;
+      for (let cycle = 0; cycle < 2; cycle++) {
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        await settle();
+        expect(store.getDocument.mock.calls.length).toBeGreaterThan(reads + cycle);
+        expect(query(tabId)).toBe(selectedTab);
+        expect(selectedTab?.getAttribute('aria-selected')).toBe('true');
+        expect(TestBed.inject(Router).url).toContain(agentKey === 'brand-kit' ? 'tab=voice' : 'tab=numbers');
+        expect(query('mktg-document-view-revisions')).toBe(card);
+        expect(card?.querySelectorAll('ol > li')).toHaveLength(9);
+        expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('true');
+        expect(field?.querySelector('textarea')).toBe(textarea);
+        expect(textarea.value).toBe('Synthetic text being typed while progress refreshes.');
+        expect(document.activeElement).toBe(textarea);
+        expect(query('mktg-document-view-content')?.classList.contains('hidden')).toBe(false);
+      }
+    }
+  );
+
   it('keeps content and an accepted approval alive through progressive refresh', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const response = faqResponse();

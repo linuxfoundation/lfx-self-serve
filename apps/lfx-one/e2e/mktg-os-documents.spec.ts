@@ -292,6 +292,27 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
   });
 
+  test('two background list polls keep type selection, revision-link focus and scroll', async ({ page }) => {
+    await setupDocuments(page, { runs: [startedDocumentRun('writing')] });
+    let polls = 0;
+    page.on('response', (response) => {
+      const url = new URL(response.url());
+      if (url.pathname === '/api/mktg-agents/documents' && url.searchParams.get('poll') === '1' && response.ok()) polls++;
+    });
+    await openDocuments(page, DOCUMENTS_URL);
+    const link = page.getByTestId('mktg-documents-view-1');
+    await link.focus();
+    await link.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
+    const scroll = await page.evaluate(() => window.scrollY);
+    const before = polls;
+    await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+    await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toHaveAttribute('aria-current', 'page');
+    await expect(link).toBeFocused();
+    await expect(link).toHaveAttribute('data-refresh-identity', 'kept');
+    expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+    await expect(page).toHaveURL(new RegExp(`type=${DOCUMENT_TYPE.agentKey}`));
+  });
+
   test('a history within four rows has no expansion control', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page, DOCUMENT_VIEW_URL);
