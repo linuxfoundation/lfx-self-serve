@@ -406,7 +406,7 @@ describe('VotePresenterComponent', () => {
     fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
     TestBed.configureTestingModule({
       providers: [
-        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote, getReminderRecipients } },
         { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: Router, useValue: { navigateByUrl } },
         { provide: MessageService, useValue: { add: messageAdd } },
@@ -575,7 +575,7 @@ describe('VotePresenterComponent', () => {
       fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
       TestBed.configureTestingModule({
         providers: [
-          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote, getReminderRecipients } },
           { provide: ActivatedRoute, useValue: { paramMap } },
           { provide: Router, useValue: { navigateByUrl } },
           { provide: MessageService, useValue: { add: messageAdd } },
@@ -649,7 +649,7 @@ describe('VotePresenterComponent', () => {
       fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
       TestBed.configureTestingModule({
         providers: [
-          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
+          { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote, getReminderRecipients } },
           { provide: ActivatedRoute, useValue: { paramMap } },
           { provide: Router, useValue: { navigateByUrl } },
           { provide: MessageService, useValue: { add: messageAdd } },

@@ -10,7 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
@@ -821,8 +821,8 @@ describe('VotesTableComponent — row More menu', () => {
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
       hasPMOAccess
-        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
-        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list']
+        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote', 'Clone']
+        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
@@ -1674,5 +1674,115 @@ describe('VotesTableComponent — mobile cards (#4148)', () => {
     expect(info).toBeTruthy();
     expect(info!.className).toContain('max-sm:min-w-[44px]');
     expect(info!.className).toContain('max-sm:min-h-[44px]');
+  });
+});
+
+describe('VotesTableComponent — Close vote (#4740)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let endVote: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('other', { writer: false }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+
+  const menuLabels = async (uid: string): Promise<string[]> => {
+    const more = fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`) as HTMLButtonElement | null;
+    if (!more) return []; // drafts have no row menu at all
+    more.click();
+    await settle();
+    return table['rowActionMenuItems']().map((item) => item.label as string);
+  };
+  const closeItem = async (uid: string) => {
+    await menuLabels(uid);
+    return table['rowActionMenuItems']().find((item) => item.label === 'Close vote');
+  };
+  const rowStatus = (uid: string) => table['displayedVotes']().find((row) => row.uid === uid)?.status;
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    endVote = vi.fn().mockReturnValue(of(vote('active', { status: PollStatus.ENDED, early_end_time: '2026-10-12T10:00:00Z' })));
+    add = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { endVote, isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: { add } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.detectChanges();
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('offers Close only on a writer row whose vote is active', async () => {
+    expect(await menuLabels('active')).toContain('Close vote');
+    expect(await menuLabels('other')).not.toContain('Close vote');
+    expect(await menuLabels('ended')).not.toContain('Close vote');
+    expect(await menuLabels('draft')).not.toContain('Close vote');
+  });
+
+  it('asks with the shared Close copy and sends nothing until it is accepted', async () => {
+    (await closeItem('active'))!.command!({});
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining(VOTE_CLOSE_CONFIRMATION));
+    expect(endVote).not.toHaveBeenCalled();
+  });
+
+  it('closes once on accept, flips the row to ended, tells the host and toasts', async () => {
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    await settle();
+
+    expect(endVote).toHaveBeenCalledTimes(1);
+    expect(endVote).toHaveBeenCalledWith('active');
+    expect(rowStatus('active')).toBe(PollStatus.ENDED);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Vote closed' }));
+  });
+
+  it('toasts the upstream message on failure and leaves the row as it was', async () => {
+    endVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'Vote has not started' } })));
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Vote has not started' }));
+    expect(rowStatus('active')).toBe(PollStatus.ACTIVE);
+    expect(closed).not.toHaveBeenCalled();
+  });
+
+  it('ignores an accept for a row that has left the list', async () => {
+    (await closeItem('active'))!.command!({});
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+
+    expect(endVote).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
   });
 });

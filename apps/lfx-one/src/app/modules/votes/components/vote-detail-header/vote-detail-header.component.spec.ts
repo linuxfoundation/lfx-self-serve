@@ -9,6 +9,7 @@ import { VOTE_DETAIL_TABS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { of } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -38,7 +39,7 @@ describe('VoteDetailHeaderComponent', () => {
       providers: [
         { provide: PLATFORM_ID, useValue: 'server' },
         // The real Send ballots button renders for managers; it only touches these once clicked.
-        { provide: VoteService, useValue: {} },
+        { provide: VoteService, useValue: { getReminderRecipients: () => of([]) } },
         { provide: MessageService, useValue: { add: () => undefined } },
       ],
     }).compileComponents();

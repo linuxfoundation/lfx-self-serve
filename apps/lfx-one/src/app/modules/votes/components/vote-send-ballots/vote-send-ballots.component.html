@@ -8,9 +8,14 @@
     severity="secondary"
     styleClass="min-h-[44px]"
     [loading]="busy()"
-    [disabled]="busy() || cooling()"
+    [disabled]="busy() || cooling() || everyoneVoted()"
+    [tooltip]="everyoneVoted() ? 'Everyone has voted' : undefined"
+    [ariaDescribedBy]="everyoneVoted() ? 'vote-send-ballots-everyone-voted' : undefined"
     (onClick)="onClick()"
     data-testid="vote-send-ballots-button" />
+  @if (everyoneVoted()) {
+    <span id="vote-send-ballots-everyone-voted" class="sr-only">Everyone has voted</span>
+  }
   @if (sent(); as result) {
     <p class="m-0 text-sm text-gray-600 text-center" role="status" data-testid="vote-send-ballots-success">
       Ballots sent to {{ result.count }} {{ result.count === 1 ? 'member' : 'members' }} · {{ result.at | date: 'HH:mm' }}

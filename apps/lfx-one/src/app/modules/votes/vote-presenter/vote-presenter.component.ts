@@ -9,6 +9,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import {
+  VOTE_CLOSE_CONFIRMATION,
   VOTE_PRESENTER_BACKOFF_BASE_MS,
   VOTE_PRESENTER_BACKOFF_MAX_MS,
   VOTE_PRESENTER_COPY_CONFIRMATION_MS,
@@ -241,12 +242,7 @@ export class VotePresenterComponent {
     const id = this.voteId();
     if (!id || !this.canClose()) return;
     this.openConfirm({
-      header: 'Close vote',
-      message: 'Close the vote now? Members can no longer cast or change ballots.',
-      acceptLabel: 'Close vote',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      ...VOTE_CLOSE_CONFIRMATION,
       accept: this.acceptFor(id, (uid) => this.endVote(uid)),
     });
   }

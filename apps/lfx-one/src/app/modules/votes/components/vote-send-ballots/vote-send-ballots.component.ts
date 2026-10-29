@@ -3,14 +3,15 @@
 
 import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { finalize, Subscription } from 'rxjs';
+import { catchError, EMPTY, finalize, Subscription, switchMap } from 'rxjs';
 
 /**
  * "Send ballots now" (#4363): emails each member who hasn't voted a personal, login-free ballot link. Writer-only and
@@ -30,6 +31,7 @@ export class VoteSendBallotsComponent {
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly doc = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
 
   public readonly voteUid = input.required<string>();
   /** True while the parent has another dialog open: a late voter-list answer must not open this one on top of it. */
@@ -41,6 +43,9 @@ export class VoteSendBallotsComponent {
   protected readonly sent = signal<{ count: number; at: Date } | null>(null);
   /** True from the dialog opening until a tick after it hides, so a parent that handles Esc leaves the keypress to the dialog. */
   public readonly confirming = signal<boolean>(false);
+  /** Members who haven't voted, as last read from the voter list; null until the list is known (or when reading it failed). */
+  protected readonly remaining = signal<number | null>(null);
+  protected readonly everyoneVoted = computed(() => this.remaining() === 0);
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +55,19 @@ export class VoteSendBallotsComponent {
   private confirmingTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
+    // Reads the voter list once per vote so the button can say "Everyone has voted" before it is clicked. Reading sends
+    // nothing, and a failure leaves the button usable: the click reads the list again and reports the error.
+    toObservable(this.voteUid)
+      .pipe(
+        switchMap((uid) => {
+          this.remaining.set(null);
+          if (!isPlatformBrowser(this.platformId)) return EMPTY;
+          return this.voteService.getReminderRecipients(uid).pipe(catchError(() => EMPTY));
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((recipients) => this.remaining.set(recipients.length));
+
     inject(DestroyRef).onDestroy(() => {
       this.clearCooldownTimer();
       if (this.focusTimer) clearTimeout(this.focusTimer);
@@ -87,6 +105,8 @@ export class VoteSendBallotsComponent {
         next: (recipients) => {
           if (uid !== this.voteUid() || this.blocked()) return;
           const count = recipients.length;
+          this.remaining.set(count);
+          // The list was not known to be empty when the button was clicked, so this is the race (or an unknown list).
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });
             return;
@@ -147,14 +167,13 @@ export class VoteSendBallotsComponent {
       });
   }
 
-  /** Reading the non-voter list sends nothing, so retrying is safe. */
+  /** Reading the non-voter list sends nothing, so retrying is safe. No dialog opens; the button is usable and focused again. */
   private loadFailed(): void {
-    this.messageService.add({
-      severity: 'error',
-      summary: 'Unable to send ballots',
-      detail: "We couldn't load the members who haven't voted. Nothing was sent. Please try again.",
-      life: 5000,
-    });
+    this.messageService.add({ severity: 'error', summary: 'Voter list unavailable', detail: "Couldn't load the voter list. Try again.", life: 5000 });
+    // The button was disabled for the request and gave up focus; once it renders enabled again, hand focus back.
+    const target = this.returnFocusTo;
+    this.returnFocusTo = null;
+    afterNextRender(() => target?.focus(), { injector: this.injector });
   }
 
   /** A timeout or 5xx can leave the emails already queued, so only a clear rejection invites an immediate retry. */
