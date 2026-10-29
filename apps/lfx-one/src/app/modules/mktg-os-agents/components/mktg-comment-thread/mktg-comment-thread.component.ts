@@ -18,7 +18,12 @@ export class MktgCommentThreadComponent {
   public readonly labelContext = input<MktgDocumentCommentLabelContext | null>(null);
   public readonly expanded = model(false);
   protected readonly detailsId = this.ids.getId('mktg-comment-details-');
-  protected readonly preview = computed(() => this.comment().text.split(/\r?\n/, 1)[0] ?? '');
+  protected readonly preview = computed(
+    () =>
+      this.comment()
+        .text.split(/\r?\n/)
+        .find((line) => line.trim()) ?? ''
+  );
   protected readonly field = computed(
     () => this.fieldLabel() || describeMktgDocumentCommentField(this.labelContext()?.agentKey, this.comment().anchor.key, this.labelContext()?.content)
   );

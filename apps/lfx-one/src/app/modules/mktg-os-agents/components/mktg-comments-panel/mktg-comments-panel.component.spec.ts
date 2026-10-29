@@ -13,10 +13,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { MktgCommentsPanelComponent } from './mktg-comments-panel.component';
 
 describe('MktgCommentsPanelComponent', () => {
-  it('renders eight compact one-line summaries with status chips and no full bodies or resolutions', async () => {
+  it('renders eight compact two-line rows with separate previews, status chips and no full bodies or resolutions', async () => {
     const threads = signal(
       Array.from({ length: 8 }, (_, index) =>
-        mktgCommentFixture({ id: `comment-${index}`, text: `Preview ${index}\nLong explanation ${index}`, status: 'resolved', resolution: 'Agent explanation' })
+        mktgCommentFixture({
+          id: `comment-${index}`,
+          text: `\nPreview ${index}\nLong explanation ${index}`,
+          status: 'resolved',
+          resolution: 'Agent explanation',
+        })
       )
     );
     TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads })] });
@@ -28,9 +33,12 @@ describe('MktgCommentsPanelComponent', () => {
     expect(rows).toHaveLength(8);
     for (const [index, row] of Array.from(rows).entries()) {
       const summary = row.querySelector('[data-testid="mktg-comment-summary"]');
-      const preview = summary?.querySelector('[data-testid="mktg-comment-preview"]');
+      const preview = row.querySelector('[data-testid="mktg-comment-preview"]');
+      expect(preview?.previousElementSibling).toBe(summary);
+      expect(preview?.classList.contains('w-full')).toBe(true);
       expect(preview?.classList.contains('truncate')).toBe(true);
-      expect(preview?.textContent).toContain(`Preview ${index}`);
+      expect(preview?.textContent?.trim()).toBe(`Preview ${index}`);
+      expect(summary?.textContent).not.toContain(`Preview ${index}`);
       expect(summary?.textContent).toContain('Project writer');
       expect(summary?.textContent).toContain('21 Oct');
       expect(summary?.textContent).toContain('Resolved by the agent');

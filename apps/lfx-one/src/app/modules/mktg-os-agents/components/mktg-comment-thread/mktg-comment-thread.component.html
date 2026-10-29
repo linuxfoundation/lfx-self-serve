@@ -2,9 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 <div class="flex min-w-0 flex-col gap-1 text-sm [overflow-wrap:anywhere]" data-testid="mktg-comment-thread">
   <div class="flex min-w-0 items-center gap-2" data-testid="mktg-comment-summary">
-    <p class="min-w-0 flex-1 truncate text-xs text-gray-500" data-testid="mktg-comment-preview">
-      {{ author() }} · {{ comment().createdAt | date: 'd MMM' }} · on {{ field() }} · <span class="text-gray-900">{{ preview() }}</span>
-    </p>
+    <p class="min-w-0 flex-1 truncate text-xs text-gray-500">{{ author() }} · {{ comment().createdAt | date: 'd MMM' }} · on {{ field() }}</p>
     <div class="shrink-0 whitespace-nowrap">
       <p class="inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700">{{ status() }}</p>
     </div>
@@ -21,6 +19,7 @@
       (onClick)="expanded.set(!expanded())"
       data-testid="mktg-comment-toggle" />
   </div>
+  <p class="w-full min-w-0 truncate text-xs text-gray-900" data-testid="mktg-comment-preview">{{ preview() }}</p>
   <div [id]="detailsId" [hidden]="!expanded()" data-testid="mktg-comment-details">
     @if (expanded()) {
       <div class="flex min-w-0 flex-col gap-1">

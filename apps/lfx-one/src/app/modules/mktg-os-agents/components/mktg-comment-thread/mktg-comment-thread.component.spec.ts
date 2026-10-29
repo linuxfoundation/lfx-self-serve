@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { MktgCommentThreadComponent } from './mktg-comment-thread.component';
 
 describe('MktgCommentThreadComponent', () => {
-  it('previews only the first line and uses a native disclosure button with a stable controlled region', () => {
+  it('previews only the first non-blank line and uses a native disclosure button with a stable controlled region', () => {
     const fixture = TestBed.createComponent(MktgCommentThreadComponent);
     fixture.componentRef.setInput('comment', mktgCommentFixture({ text: 'First line\r\nFull explanation\nMore detail' }));
     fixture.detectChanges();
@@ -36,6 +36,23 @@ describe('MktgCommentThreadComponent', () => {
     expect(details?.hidden).toBe(true);
     expect(details?.textContent).not.toContain('Full explanation');
     expect(change).toEqual([true, false]);
+  });
+
+  it.each(['\nFirst readable line\nHidden detail', '\r\n  \r\nFirst readable line\r\nHidden detail'])('skips leading blank lines in %j', (text) => {
+    const fixture = TestBed.createComponent(MktgCommentThreadComponent);
+    fixture.componentRef.setInput('comment', mktgCommentFixture({ text }));
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const summary = element.querySelector('[data-testid="mktg-comment-summary"]');
+    const preview = element.querySelector('[data-testid="mktg-comment-preview"]');
+    expect(preview?.textContent?.trim()).toBe('First readable line');
+    expect(preview?.previousElementSibling).toBe(summary);
+    expect(preview?.classList.contains('w-full')).toBe(true);
+    expect(preview?.classList.contains('truncate')).toBe(true);
+    expect(summary?.textContent).toContain('Project writer');
+    expect(summary?.textContent).not.toContain('First readable line');
+    expect(element.querySelector('[data-testid="mktg-comment-body"]')).toBeNull();
+    expect(element.textContent).not.toContain('Hidden detail');
   });
 
   it('keeps details idrefs unique when the same comment appears in the field and the panel', () => {

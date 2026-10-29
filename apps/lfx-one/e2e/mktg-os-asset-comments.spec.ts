@@ -10,7 +10,7 @@ test.describe('asset field comments', () => {
   test.beforeEach(async ({ page }) => {
     await suppressCookieBanner(page);
   });
-  test('eight threads stay one-line until their own keyboard disclosure is opened', async ({ page }) => {
+  test('eight threads stay compact with separate preview lines until their own keyboard disclosure is opened', async ({ page }) => {
     const fixture = await setupComments(page);
     fixture.state.rows = Array.from({ length: 8 }, (_, index) => ({
       id: `synthetic-compact-${index}`,
