@@ -425,15 +425,27 @@ describe('VotePresenterComponent', () => {
       const confirm = captureConfirm();
       const send = fixture.debugElement.query(By.directive(VoteSendBallotsComponent)).componentInstance as VoteSendBallotsComponent;
 
-      send.confirmOpenChange.emit(true);
+      send.confirming.set(true);
       escape();
       expect(confirm.options).toBeUndefined();
       expect(navigateByUrl).not.toHaveBeenCalled();
 
-      send.confirmOpenChange.emit(false);
-      await tick(1);
+      send.confirming.set(false);
       escape();
       expect(confirm.options?.header).toBe('Leave presenter');
+    });
+
+    it('does not stay stuck on Esc if the Send ballots dialog goes away with the vote ending', async () => {
+      fetchVote.mockReturnValueOnce(of(baseVote())).mockReturnValue(of(baseVote({ status: PollStatus.ENDED })));
+      await mount();
+      const send = fixture.debugElement.query(By.directive(VoteSendBallotsComponent)).componentInstance as VoteSendBallotsComponent;
+      send.confirming.set(true);
+
+      await tick(10_000);
+      escape();
+
+      expect(has('vote-presenter-result')).toBe(true);
+      expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
     });
 
     it('leaves immediately, with no dialog, once the vote has ended', async () => {
@@ -572,6 +584,24 @@ describe('VotePresenterComponent', () => {
       await tick(1);
 
       expect(document.activeElement).toBe(button);
+    });
+
+    it('puts focus on Exit after an accept leaves the Close button disabled (#4691)', async () => {
+      endVote.mockReturnValue(new Subject<Vote>());
+      await mount();
+      const confirm = captureConfirm();
+      const button = closeButton()!;
+      button.focus();
+      button.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+      fixture.detectChanges();
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+
+      expect(button.disabled).toBe(true);
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('[data-testid="vote-presenter-exit"] button'));
     });
 
     it('ends the vote once on accept and keeps Close disabled while the request is in flight', async () => {

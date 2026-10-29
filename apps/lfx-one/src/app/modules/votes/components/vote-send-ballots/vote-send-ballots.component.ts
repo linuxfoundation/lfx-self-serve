@@ -1,10 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { DOCUMENT } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_SEND_BALLOTS_COOLDOWN_MS } from '@lfx-one/shared/constants';
 import { VoteService } from '@services/vote.service';
@@ -33,20 +32,26 @@ export class VoteSendBallotsComponent {
   private readonly doc = inject(DOCUMENT);
 
   public readonly voteUid = input.required<string>();
-  /** True while the confirmation is up, so a parent that handles Esc can leave it to the dialog. */
-  public readonly confirmOpenChange = output<boolean>();
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
   protected readonly cooling = signal<boolean>(false);
   protected readonly sent = signal<{ count: number; at: Date } | null>(null);
+  /** True from the dialog opening until a tick after it hides, so a parent that handles Esc leaves the keypress to the dialog. */
+  public readonly confirming = signal<boolean>(false);
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   private returnFocusTo: HTMLElement | null = null;
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
+  private confirmingTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
-    inject(DestroyRef).onDestroy(() => this.clearCooldownTimer());
+    inject(DestroyRef).onDestroy(() => {
+      this.clearCooldownTimer();
+      if (this.focusTimer) clearTimeout(this.focusTimer);
+      if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    });
   }
 
   /** Counts the members who haven't voted, then asks for confirmation naming that count before anything is sent. */
@@ -56,6 +61,10 @@ export class VoteSendBallotsComponent {
     // The uid is captured now: if the parent switches to another vote while a request or the dialog is pending, the
     // answer is dropped so a send can never go to a different vote than the one clicked.
     const uid = this.voteUid();
+    // Read before the button disables itself for the request: a disabled button gives up focus, so the dialog's opener
+    // would no longer be the active element by the time the answer arrives.
+    const active = this.doc.activeElement;
+    this.returnFocusTo = active instanceof HTMLElement ? active : null;
     this.checking.set(true);
     this.voteService
       .getReminderRecipients(uid)
@@ -76,18 +85,20 @@ export class VoteSendBallotsComponent {
 
   /** Runs after Send, Cancel, Esc or the close button: hands focus back to the button that opened the dialog. */
   protected onConfirmHidden(): void {
-    this.confirmOpenChange.emit(false);
-    // A tick later, so the dialog has released focus and the button is enabled again where it will be.
-    setTimeout(() => {
+    if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    this.confirmingTimer = setTimeout(() => this.confirming.set(false));
+    // A tick later, so the dialog has released focus. After a Send the button is disabled for the request and the
+    // cooldown, so the browser keeps focus where it falls; Cancel, Esc and the close button land on the button.
+    if (this.focusTimer) clearTimeout(this.focusTimer);
+    this.focusTimer = setTimeout(() => {
       this.returnFocusTo?.focus();
       this.returnFocusTo = null;
     });
   }
 
   private confirm(uid: string, count: number): void {
-    const active = this.doc.activeElement;
-    this.returnFocusTo = active instanceof HTMLElement ? active : null;
-    this.confirmOpenChange.emit(true);
+    if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
+    this.confirming.set(true);
     this.confirmationService.confirm({
       message: `Email a personal ballot link to the ${count} ${count === 1 ? "member who hasn't" : "members who haven't"} voted?`,
       header: 'Send ballots now',

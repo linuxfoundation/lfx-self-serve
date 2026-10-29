@@ -107,20 +107,30 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  it('reports the dialog opening and closing so the presenter can leave Esc to it (#4691)', () => {
-    const states: boolean[] = [];
-    fixture.componentInstance.confirmOpenChange.subscribe((open) => states.push(open));
+  it('is confirming while the dialog is up and a tick after it hides, so the parent leaves Esc to it (#4691)', async () => {
+    expect(fixture.componentInstance.confirming()).toBe(false);
 
     clickAndCapture();
-    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+    expect(fixture.componentInstance.confirming()).toBe(true);
 
-    expect(states).toEqual([true, false]);
+    (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+    expect(fixture.componentInstance.confirming()).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fixture.componentInstance.confirming()).toBe(false);
   });
 
-  it('returns focus to the Send ballots button once the dialog closes (#4691)', async () => {
+  it('returns focus to the Send ballots button after Cancel, though the button disables while the voter list loads (#4691)', async () => {
+    const answer = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReturnValue(answer);
+    const confirmSpy = vi.spyOn(confirmation, 'confirm');
     button().focus();
-    clickAndCapture();
+    button().click();
+    fixture.detectChanges();
     button().blur();
+    answer.next(recipients(3));
+    answer.complete();
+    fixture.detectChanges();
+    expect(confirmSpy).toHaveBeenCalledOnce();
 
     (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
     await vi.advanceTimersByTimeAsync(1);

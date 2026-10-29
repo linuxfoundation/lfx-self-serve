@@ -3,7 +3,7 @@
 
 import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -107,8 +107,8 @@ export class VotePresenterComponent {
   protected readonly closing = signal(false);
   /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
   private readonly confirmOpen = signal(false);
-  /** True while the Send ballots confirmation (owned by `lfx-vote-send-ballots`) is up, for the same reason. */
-  private readonly sendConfirmOpen = signal(false);
+  /** The Send ballots child owns its own dialog; its `confirming` flag tells Esc to stay out of the way (undefined once the child is destroyed). */
+  private readonly sendBallots = viewChild(VoteSendBallotsComponent);
   /** The poll generation (`retryTick`) the end request's forced restart started; only a result from that generation or later clears `closing`. */
   private awaitingTick: number | null = null;
 
@@ -137,9 +137,9 @@ export class VotePresenterComponent {
     const vote = this.vote();
     return vote?.early_end_time || vote?.end_time || null;
   });
-  /** The presenter route is writer-guarded (`votePresenterGuard`), so being here means the caller can end the vote; the BFF re-checks. */
   /** Exit asks first only while the vote is live; the result, empty, error and loading screens leave at once. */
   protected readonly confirmsExit = computed(() => this.phase() === 'active' || this.phase() === 'reconnecting');
+  /** The presenter route is writer-guarded (`votePresenterGuard`), so being here means the caller can end the vote; the BFF re-checks. */
   protected readonly canClose = computed(() => this.vote()?.status === PollStatus.ACTIVE && !this.closing());
   protected readonly showAbstain = computed(() => this.vote()?.allow_abstain === true);
   protected readonly isRanked = computed(() => isRankedPollType(this.vote()?.poll_type));
@@ -180,7 +180,6 @@ export class VotePresenterComponent {
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmHiddenTimer: ReturnType<typeof setTimeout> | null = null;
-  private sendHiddenTimer: ReturnType<typeof setTimeout> | null = null;
   /** The element focused when a confirmation opened, so focus returns to the triggering button when it closes. */
   private returnFocusTo: HTMLElement | null = null;
   private polledVoteId: string | null = null;
@@ -189,7 +188,6 @@ export class VotePresenterComponent {
     this.destroyRef.onDestroy(() => {
       if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
       if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
-      if (this.sendHiddenTimer) clearTimeout(this.sendHiddenTimer);
     });
     if (this.isBrowser) {
       this.startPolling();
@@ -221,7 +219,7 @@ export class VotePresenterComponent {
 
   /** Esc is Exit, except while any confirmation is open, where PrimeNG's own handler cancels the dialog and this does nothing. */
   protected onEscape(): void {
-    if (this.confirmOpen() || this.sendConfirmOpen()) return;
+    if (this.confirmOpen() || this.sendBallots()?.confirming()) return;
     this.exit();
   }
 
@@ -230,19 +228,8 @@ export class VotePresenterComponent {
     if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
     this.confirmHiddenTimer = setTimeout(() => {
       this.confirmOpen.set(false);
-      this.returnFocusTo?.focus();
-      this.returnFocusTo = null;
+      this.restoreFocus();
     });
-  }
-
-  /** The Send ballots dialog lives in the child; a hide is delayed a tick for the same reason as `onConfirmHidden`. */
-  protected onSendConfirmChange(open: boolean): void {
-    if (this.sendHiddenTimer) clearTimeout(this.sendHiddenTimer);
-    if (open) {
-      this.sendConfirmOpen.set(true);
-      return;
-    }
-    this.sendHiddenTimer = setTimeout(() => this.sendConfirmOpen.set(false));
   }
 
   /** Close vote: always asks first. Nothing is sent until the dialog is accepted. */
@@ -390,6 +377,20 @@ export class VotePresenterComponent {
         this.messageService.add({ severity: 'error', summary: 'Unable to close the vote', detail: this.endErrorDetail(error), life: 8000 });
       },
     });
+  }
+
+  /**
+   * Hands focus back to the element that opened the dialog. After an accept that element can be disabled (Close while the
+   * request is in flight) or gone (the phase changed under the dialog), so focus falls back to the current Exit button.
+   */
+  private restoreFocus(): void {
+    const target = this.returnFocusTo;
+    this.returnFocusTo = null;
+    if (target?.isConnected && !(target as HTMLButtonElement).disabled) {
+      target.focus();
+      return;
+    }
+    this.doc.querySelector<HTMLElement>('[data-testid="vote-presenter-exit"] button')?.focus();
   }
 
   private leave(id: string | null): void {
