@@ -751,17 +751,15 @@ export class VoteDetailComponent {
 
   /** Opens the cast drawer once per loaded vote for an invited voter still awaiting a ballot — the reminder email's intent. */
   private initCastDrawerAutoOpen(): void {
-    let autoOpenedFor: string | null = null;
     const awaitingVoteUid = computed(() => (this.canCastVote() ? (this.vote()?.uid ?? null) : null));
     toObservable(awaitingVoteUid)
       .pipe(
-        filter((uid): uid is string => !!uid && uid !== autoOpenedFor),
+        // A null in between (another vote, or no ballot owed) re-arms the auto-open for a vote the voter returns to.
+        distinctUntilChanged(),
+        filter((uid): uid is string => !!uid),
         takeUntilDestroyed()
       )
-      .subscribe((uid) => {
-        autoOpenedFor = uid;
-        this.castDrawerVisible.set(true);
-      });
+      .subscribe(() => this.castDrawerVisible.set(true));
   }
 
   // === Private Helpers ===

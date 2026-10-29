@@ -113,12 +113,18 @@ describe('VoteDetailFactsComponent', () => {
     trigger.click();
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    });
 
     trigger.click();
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    });
   });
 
   it.each(['button', 'nested content'] as const)('labels the visibility dialog, focuses its rules and returns focus on Escape (%s)', async (clickTarget) => {
@@ -151,7 +157,10 @@ describe('VoteDetailFactsComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    });
     expect(document.activeElement).toBe(trigger);
     await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"][aria-label="Visibility rules"]')).toBeNull());
   });

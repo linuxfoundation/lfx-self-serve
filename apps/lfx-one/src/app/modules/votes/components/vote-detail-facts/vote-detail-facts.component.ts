@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { PollStatus } from '@lfx-one/shared/enums';
@@ -49,6 +49,8 @@ export class VoteDetailFactsComponent {
     if (prompts === 0) return 'Not enabled';
     return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
   });
+  /** Live popover state from `onShow`/`onHide` — `overlayVisible` isn't a signal and goes stale on outside-click/Escape dismissals. */
+  protected readonly visibilityOpen: WritableSignal<boolean> = signal(false);
   protected readonly visibilityRules: Signal<string[]> = this.initVisibilityRules();
   /** The audience-specific first rule; the popover lists every rule including this one. */
   protected readonly visibilityHeadline: Signal<string> = computed(() => this.visibilityRules()[0] ?? '');

@@ -1225,6 +1225,24 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'castDrawerVisible')).toBe(true);
     });
 
+    it('re-arms the drawer auto-open when the route returns to an awaiting vote', async () => {
+      voteService.fetchVote.mockImplementation((id: string) => of(makeVote({ uid: id })));
+      voteService.getMyVoteResponse
+        .mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)))
+        .mockReturnValueOnce(of(null))
+        .mockReturnValueOnce(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+
+      paramMap.next(convertToParamMap({ id: 'vote-2' }));
+      TestBed.tick();
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+
+      paramMap.next(convertToParamMap({ id: 'vote-1' }));
+      TestBed.tick();
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+    });
+
     it('clears another vote’s totals and comments while cached next-vote results are loading', async () => {
       const nextResults = new Subject<VoteResultsResponse>();
       const previousResults: VoteResultsResponse = {

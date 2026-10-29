@@ -31,11 +31,17 @@
           [text]="true"
           size="small"
           (onClick)="toggleVisibilityRules($event, visibilityPopover)"
-          [ariaExpanded]="visibilityPopover.overlayVisible"
+          [ariaExpanded]="visibilityOpen()"
           ariaHaspopup="dialog"
           ariaControls="vote-detail-facts-visibility-rules"
           data-testid="vote-detail-facts-visibility-more" />
-        <p-popover #visibilityPopover ariaLabel="Visibility rules" [style]="{ width: '320px' }" data-testid="vote-detail-facts-visibility-popover">
+        <p-popover
+          #visibilityPopover
+          ariaLabel="Visibility rules"
+          [style]="{ width: '320px' }"
+          (onShow)="visibilityOpen.set(true)"
+          (onHide)="visibilityOpen.set(false)"
+          data-testid="vote-detail-facts-visibility-popover">
           <ul
             id="vote-detail-facts-visibility-rules"
             class="flex flex-col gap-2 text-sm text-gray-600"
