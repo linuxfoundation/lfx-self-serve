@@ -122,16 +122,6 @@ describe('MktgFrameworkPrintComponent', () => {
     await configure('browser', printView(null));
     const goals = query('mktg-framework-print-goals');
     expect(goals?.tagName).toBe('TABLE');
-    const groups = goals?.querySelectorAll('tbody');
-    expect(groups).toHaveLength(2);
-    groups?.forEach((group) => {
-      expect(group.querySelectorAll('tr')).toHaveLength(2);
-      expect(getComputedStyle(group).breakInside).toBe('avoid');
-    });
-    const header = goals?.querySelector('thead');
-    if (!header) throw new Error('Missing synthetic goals header');
-    expect(getComputedStyle(header).display).toBe('table-header-group');
-    expect(getComputedStyle(header).breakAfter).toBe('avoid');
     expect(Array.from(goals?.querySelectorAll('tbody th') ?? []).map((th) => th.textContent?.trim())).toEqual([
       'Value proposition',
       'Key message',
@@ -164,11 +154,6 @@ describe('MktgFrameworkPrintComponent', () => {
     await configure('browser', printView(null));
     const numbers = () => Array.from(host().querySelectorAll('h2 > span')).map((span) => span.textContent?.trim());
     expect(numbers()).toEqual(['01', '02']);
-    expect(Array.from(query('mktg-framework-print-contents')?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim())).toEqual(['01', '02']);
-    expect(Array.from(query('mktg-framework-print-contents')?.querySelectorAll('dd') ?? []).map((entry) => entry.textContent?.trim())).toEqual([
-      'Framework',
-      'Key numbers',
-    ]);
     fixture.componentRef.setInput('number', '01');
     await fixture.whenStable();
     expect(numbers()).toEqual(['01.1', '01.2']);

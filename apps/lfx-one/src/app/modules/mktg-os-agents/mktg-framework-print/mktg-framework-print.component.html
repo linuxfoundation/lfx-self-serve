@@ -129,10 +129,6 @@
               <td class="p-[6pt] font-semibold">{{ goal.key }}</td>
             }
           </tr>
-        </tbody>
-        <!-- If the table cannot fit whole, keep the statements together and proof
-             with its sound bite; the goal-column header repeats on continuation. -->
-        <tbody>
           <tr class="border-t border-black/10 align-top">
             <th [class]="eyebrow" class="p-[6pt] text-left">Proof</th>
             @for (goal of v.goals; track goal.id) {
