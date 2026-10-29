@@ -117,6 +117,7 @@ export * from './server-request-context.interface';
 
 // Poll interfaces
 export * from './poll.interface';
+export * from './vote-presenter.interface';
 
 // Survey interfaces
 export * from './survey.interface';
@@ -280,6 +281,7 @@ export * from './org-key-contacts.internal.interface';
 export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+export * from './org-maintainer-roles.internal.interface';
 
 // Org Lens commit filters (lfx-self-serve#4164, #4322)
 export * from './org-commit-filters.interface';
@@ -443,6 +445,7 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './mktg-family-actions.interface';
 export * from './mktg-rebuild.interface';
 export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';

@@ -98,6 +98,10 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     TestBed.resetTestingModule();
     await mount('/?tab=training&range=30d');
     expect(getTrainees).toHaveBeenLastCalledWith(ORG, '30d');
+
+    TestBed.resetTestingModule();
+    await mount('/?tab=training&range=730d');
+    expect(getTrainees).toHaveBeenLastCalledWith(ORG, '730d');
   });
 
   it('fetches the picked range, writes it to the URL and recomputes the stat cards for it', async () => {
@@ -146,5 +150,17 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     form().controls['timeRange'].setValue('30d');
 
     expect(isFiltering()).toBe(true);
+  });
+
+  it('opens the person drawer for the range the tab lists the person in', async () => {
+    await mount('/?tab=trainees&range=30d');
+    const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
+
+    (fixture.componentInstance as unknown as { onPersonClick(row: object, event: Event): void }).onPersonClick(
+      { personKey: 'p-1', name: 'Ada Lovelace', title: null, initials: 'AL', avatarColorClass: '' },
+      new Event('click')
+    );
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', defaultTab: 'training', range: '30d' }));
   });
 });

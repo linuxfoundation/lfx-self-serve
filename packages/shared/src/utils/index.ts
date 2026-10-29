@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+export * from './ai.utils';
 export * from './avatar.utils';
 export * from './color.utils';
 export * from './date-time.utils';
@@ -44,6 +45,7 @@ export * from './badge.utils';
 export * from './button.utils';
 export * from './marketing.utils';
 export * from './mktg-intake.utils';
+export * from './mktg-link-advice.utils';
 export * from './mktg-intake-validation.utils';
 export * from './marketing-impact.utils';
 export * from './flywheel.utils';
@@ -123,6 +125,9 @@ export * from './health-metrics-training.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
+export * from './campaign-twitter.utils';
+export * from './campaign-google-assets.utils';
+export * from './campaign-google-creative.utils';
 export * from './campaign-event-details.utils';
 export * from './campaign.utils';
 export * from './campaign-optimize.utils';
@@ -132,6 +137,7 @@ export * from './mktg-asset.utils';
 export * from './mktg-kit.utils';
 export * from './mktg-rebuild.utils';
 export * from './mktg-navigation.utils';
+export * from './mktg-family-actions.utils';
 export * from './mktg-breadcrumb.utils';
 export * from './linkedin-post.utils';
 export * from './linkedin-post-envelope.utils';
@@ -142,6 +148,8 @@ export * from './member-360.utils';
 export * from './mktg-family-export.utils';
 export * from './aeo-geo.utils';
 export * from './display-name.utils';
+export * from './mktg-run-active.utils';
 export * from './mktg-run-failure.utils';
 export * from './org-people-stats.utils';
 export * from './org-commit-filters.utils';
+export * from './org-employment.utils';

@@ -5,7 +5,32 @@ import { describe, expect, it } from 'vitest';
 import { MKTG_HOST_ASSET_STATES } from '../constants/mktg-asset.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgRevisionResponse, MktgRevisionSummary } from '../interfaces/mktg-document-store.interface';
-import { mktgAssetHeaderFallback, mktgAssetHeaderMetadata } from './mktg-asset.utils';
+import { describeMktgAssetReadiness, mktgAssetHeaderFallback, mktgAssetHeaderMetadata } from './mktg-asset.utils';
+
+describe('Asset readiness', () => {
+  it('uses singular source when the only source failed', () => {
+    expect(describeMktgAssetReadiness({ sources_read: [], sources_failed: [{ name: 'Docs', reason: '404' }], gaps: [], notes: '' })).toBe(
+      'Ready — 1 of 1 source could not be read.'
+    );
+  });
+  it.each([
+    [0, 0, 'Ready.'],
+    [1, 0, 'Ready — 1 of 3 sources could not be read.'],
+    [0, 1, 'Ready — 1 gap.'],
+    [0, 2, 'Ready — 2 gaps.'],
+    [2, 1, 'Ready — 2 of 4 sources could not be read; 1 gap.'],
+    [2, 2, 'Ready — 2 of 4 sources could not be read; 2 gaps.'],
+  ] as const)('counts %i failed sources and %i gaps', (failed, gaps, expected) => {
+    expect(
+      describeMktgAssetReadiness({
+        sources_read: ['Docs', 'Website'],
+        sources_failed: Array.from({ length: failed }, () => ({ name: 'Members', reason: 'Unavailable' })),
+        gaps: Array.from({ length: gaps }, () => 'Missing evidence'),
+        notes: '',
+      })
+    ).toBe(expected);
+  });
+});
 
 describe('Common asset header metadata and host states', () => {
   function headerView(): MktgRevisionResponse {

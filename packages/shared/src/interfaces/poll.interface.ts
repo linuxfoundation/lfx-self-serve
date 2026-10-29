@@ -625,6 +625,63 @@ export interface SendVoteReminderResponse {
   recipient_count: number;
 }
 
+/** Response for POST /api/votes/:uid/send-ballots — personalized ballot links emailed to non-responders */
+export interface SendVoteBallotsResponse {
+  /** Voters whose personalized ballot email was queued */
+  sent: number;
+  /** Voters whose batch was rejected upstream and therefore not emailed */
+  skipped: number;
+}
+
+/**
+ * Ballot state returned by POST /vote_links/ballot (login-free vote links).
+ * `abstained`, `poll_answers` and `comment_responses` are present only after voting and never on pseudo-anonymous votes.
+ */
+export interface VoteLinkBallotState {
+  vote_status: string;
+  already_voted: boolean;
+  voter_removed: boolean;
+  abstained?: boolean;
+  poll_answers?: IndexedPollAnswer[];
+  comment_responses?: CommentResponseInput[];
+}
+
+/** Response of POST /vote_links/ballot — deliberately carries no project, committee, creator or counts. */
+export interface VoteLinkBallot {
+  vote_uid: string;
+  name: string;
+  description?: string;
+  status: string;
+  end_time: string;
+  poll_type: string;
+  allow_abstain?: boolean;
+  pseudo_anonymity?: boolean;
+  poll_questions: PollQuestion[];
+  poll_comment_prompts?: PollCommentPrompt[];
+  ballot: VoteLinkBallotState;
+}
+
+/** What a ballot form hands back when the voter submits (before it is wrapped for POST/PUT). */
+export interface VoteBallotSubmission {
+  abstain: boolean;
+  userVoteContent?: VoteAnswerInput[];
+  /** Undefined = keep existing comments; an empty array = clear them. */
+  commentResponses?: CommentResponseInput[];
+}
+
+/** Request body for POST /public/api/votes/link-ballot (the token travels only in the body). */
+export interface VoteLinkBallotRequest {
+  vote_token: string;
+}
+
+/** Request body for POST/PUT /public/api/votes/link-responses. Omitting `comment_responses` keeps existing comments; `[]` clears them. */
+export interface VoteLinkResponseRequest {
+  vote_token: string;
+  abstain: boolean;
+  user_vote_content?: VoteAnswerInput[];
+  comment_responses?: CommentResponseInput[];
+}
+
 /**
  * Identity-only vote recipient for the on-demand close summary (#3662). Same underlying
  * `vote_response` row as `VoteVoter`, but not gated on `pseudo_anonymity` — the summary email
@@ -1406,3 +1463,6 @@ export interface VoteMailingListReminderListOption {
   /** `{group_name} ({address})` — the radio wrapper's label is a plain string. */
   label: string;
 }
+
+/** Page states of the login-free vote link ballot page (#4363). */
+export type VoteLinkState = 'loading' | 'ready' | 'not-open' | 'submitted' | 'updated' | 'invalid' | 'ended' | 'removed' | 'error';

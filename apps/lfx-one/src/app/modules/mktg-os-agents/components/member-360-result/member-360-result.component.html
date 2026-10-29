@@ -10,15 +10,6 @@
       {{ envelope().period.focus_quarter }} emphasised ·
       {{ envelope().inputs.prior_run_provided ? 'compared with the previous run' : 'no previous run comparison' }}
     </p>
-    <div class="flex flex-wrap gap-2 xl:col-start-2 xl:row-start-1" data-testid="member-360-result-actions">
-      <a
-        [routerLink]="runRoute()"
-        data-testid="member-360-new-run"
-        [queryParams]="projectParams()"
-        class="inline-flex min-h-12 items-center rounded-lg border border-gray-300 bg-white px-4 font-semibold"
-        >New run</a
-      >
-    </div>
   </header>
   @if (notice()) {
     <lfx-message severity="info" [text]="notice()" data-testid="member-360-notice" />
@@ -42,7 +33,7 @@
       }
     </div>
     <div class="flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white p-4">
-      <span class="text-gray-500">Sources</span><span class="text-emerald-700">{{ sourcesUsed() }}</span
+      <span class="text-gray-500">Sources</span><span class="text-gray-700" data-testid="member-360-sources-used">{{ sourcesUsed() }}</span
       ><span class="text-gray-500"
         >unavailable: {{ sourcesUnavailable() }}
         @if (method().reweighted) {
@@ -312,7 +303,7 @@
               <a
                 [routerLink]="['../', run.documentId]"
                 [queryParams]="projectParams()"
-                class="text-blue-600"
+                class="font-medium text-blue-700 hover:text-blue-800 hover:underline"
                 [attr.data-testid]="'member-360-history-open-' + run.documentId"
                 >Open</a
               >

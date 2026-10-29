@@ -17,7 +17,13 @@ import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
-import { EMPTY_ORG_TRAINEES_RESPONSE, ORG_LENS_DEFAULT_TIME_RANGE, ORG_LENS_TIME_RANGE_OPTIONS, ORG_TRAINEES_INITIAL_LIMIT } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_TRAINEES_RESPONSE,
+  ORG_ALL_FOUNDATIONS_LABEL,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGE_OPTIONS,
+  ORG_TRAINEES_INITIAL_LIMIT,
+} from '@lfx-one/shared/constants';
 import type {
   OrgDropdownOption,
   OrgLensTimeRange,
@@ -176,6 +182,8 @@ export class TraineesComponent {
       initials: row.initials,
       avatarColorClass: row.avatarColorClass,
       defaultTab: 'training',
+      // The Code tab's Maintainer pills follow the range this tab lists the person in.
+      range: this.timeRange(),
     });
   }
 
@@ -188,7 +196,10 @@ export class TraineesComponent {
   }
 
   private initFoundationOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Foundations', value: '' }, ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId }))];
+    return [
+      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
+    ];
   }
 
   private initCourseOptions(): OrgDropdownOption[] {

@@ -71,6 +71,8 @@ import type {
   CampaignServiceCampaign,
   CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
+  CampaignServiceAccessibleAccounts,
+  CampaignServiceGoogleAdsGeoTargetSuggestions,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
   CampaignServiceCreativeAsset,
@@ -323,10 +325,11 @@ export function isCampaignServiceJobId(jobId: string): boolean {
  * through queued a job whose dispatcher reads an absent key as a zero value — exactly the defect
  * the mapped platforms are protected from.
  *
- * `twitter-ads` is the remaining example: nothing builds a `twitterConfig`, so it is refused here.
- * `microsoft-ads` was one too until LFXV2-3312 added `buildMicrosoftConfig` and mapped it below —
- * which is the order this guard enforces, and why the roster is stated as a rule rather than a
- * list that goes stale the next time a platform is enabled.
+ * `microsoft-ads` was one until LFXV2-3312 added `buildMicrosoftConfig` and mapped it below, and
+ * `twitter-ads` until `buildTwitterConfig` did — which is the order this guard enforces, and why
+ * the roster is stated as a rule rather than a list that goes stale the next time a platform is
+ * enabled. Like Microsoft's, the X builder returns null for a config it would not dispatch, so an
+ * invalid one is refused here by name.
  *
  * `hubspot` joined the map when `buildHubSpotConfig` landed (LFXV2-3256), which is the order this
  * guard is designed to enforce: map a platform only once something builds its config. Note that a
@@ -344,6 +347,7 @@ function hasPlatformConfig(platform: string, envelope: Record<string, unknown>):
     'reddit-ads': 'redditConfig',
     'meta-ads': 'metaConfig',
     'microsoft-ads': 'microsoftConfig',
+    'twitter-ads': 'twitterConfig',
     hubspot: 'hubspotConfig',
   };
   const key = requiredKey[platform];
@@ -533,6 +537,77 @@ export function canCreateWithBidding(): boolean {
 }
 
 /**
+ * Whether a Google create may carry postal-code ids in `geoTargets` or any `proximityTargets`.
+ *
+ * Needs only the campaign-service create path — upstream has read both since LFXV2-3283, so there
+ * is no second flag. The LEGACY creator is the hazard: it resolves `geoTargets` through the
+ * 30-country map and drops every other entry, and never reads `proximityTargets` at all, so a
+ * postal-only or radius-only create would serve with no location limit while reporting success.
+ */
+export function canCreateWithFinerGoogleGeo(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a Google create may carry the criteria and ad extension fields in
+ * `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` — excluded locations, languages, ad schedules, device bid
+ * modifiers, demographic exclusions and the six extension lists.
+ *
+ * Needs only the campaign-service create path: upstream reads all of them, and each has its own
+ * BFF guard on that path. The LEGACY creator reads none of them, so with the cutover dark a create
+ * carrying any would serve without it while reporting success — `deviceBidModifiers` set to stop
+ * mobile serving, and the campaign serves on mobile anyway (#3692).
+ */
+export function canCreateWithGoogleCriteria(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether a Microsoft create may carry `microsoftConfig.startDate` / `endDate`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Microsoft-schedule flag.
+ * Either alone is not enough, and both failures are silent: the legacy creator never reads the
+ * dates, and a campaign-service older than linuxfoundation/lfx-v2-campaign-service#409 drops the
+ * unknown keys. Both would create the campaign with no flight while the operator set one.
+ */
+export function canCreateMicrosoftSchedule(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftSchedule);
+}
+
+/**
+ * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Meta Instagram/DSA flag. The
+ * legacy creator never reads the three keys, and the flag says the deployed campaign-service
+ * enforces the EU disclosure rule (linuxfoundation/lfx-v2-campaign-service#414) that the form's required inputs mirror.
+ */
+export function canCreateMetaInstagramDsa(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaInstagramDsa);
+}
+
+/**
+ * Whether this deployment's create path can carry Google `audienceSegments` at all — the
+ * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
+ * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
+ * creator never does, and would create the campaign without the user lists while reporting success.
+ */
+export function canCreateWithAudienceSegments(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
+ * Whether the Implement tab may search Google's geo target table for postal-code targets.
+ *
+ * Needs the campaign-service create path AND the geo-search flag. The path, because a picked id is a
+ * postal-code `geoTargets` entry and those reach a campaign on that road only (the legacy creator
+ * drops them). The flag, because a campaign-service older than linuxfoundation/lfx-v2-campaign-service#411
+ * has no suggest route, so every search would fail.
+ */
+export function canSearchGoogleGeoTargets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleGeoSearch);
+}
+
+/**
  * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
  *
  * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
@@ -546,24 +621,88 @@ export function canUseRedditCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry a per-campaign `conversionPixelId` override (#3484).
+ *
+ * Needs only the campaign-service create path, which passes the field to the Reddit client as its
+ * preferred pixel. The LEGACY creator never reads it, so there it would be accepted and silently
+ * dropped, and the campaign would use (or fail for want of) the connection's pixel instead.
+ */
+export function canSetRedditConversionPixel(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
  * Reddit sibling the flag is NOT about URL signing — Google's dispatch path POSTs the stored bytes
  * to `assets:mutate` and never builds a URL — it is about whether the deployed service resolves the
- * ids at all. Either half missing is silent: the legacy creator reads no Google creative key, and an
- * older campaign-service ignores the ids and dispatches a campaign with no images.
+ * ids at all. The legacy creator reads no Google creative key, so the cutover half missing would
+ * drop the image silently; a campaign-service older than v1.0.21 types the image arrays as strings,
+ * cannot decode an `{ imageAssetId }` entry, and fails the Google create.
  *
- * It gates the upload route alongside `canUseRedditCreativeAssets` — either flag admits an upload,
- * because the stored library is one library and either platform having a use for it is reason enough
- * to let an image into it.
+ * It gates the create field — a `{ imageAssetId }` entry in any Google creative image slot, which
+ * `createCampaign` refuses by name while this is false rather than letting the normalizer forward or
+ * drop it — and is served to the client as `googleAssetUploadEnabled`, which offers the library
+ * controls in those slots. It also admits an upload into the brief's library alongside the Reddit
+ * and Meta flags: the stored library is one library, and any platform having a use for it is reason
+ * enough to let an image in.
  *
- * At this commit the upload route is ALL it gates: the Google creative interfaces carry image URLs
- * only, with no asset-id key, so there is no create field for a true answer to unlock yet. It is
- * served to the client as `googleAssetUploadEnabled` and wired ahead of that field.
+ * Every campaign-service release from v1.0.21 resolves the ids (lfx-v2-campaign-service#394), which
+ * is why the chart turns the flag on.
  */
 export function canUseGoogleCreativeAssets(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceGoogleAssets);
+}
+
+/**
+ * Whether a Meta create may reference an uploaded image by `imageAssetId` on its variants.
+ *
+ * Needs the campaign-service create path to serve the create AND the Meta-assets flag. Like the
+ * Google sibling, the flag is not about URL signing: Meta's dispatch path uploads the stored bytes
+ * to the ad account's image library. The legacy creator reads no Meta image, hence the cutover
+ * half. Admits an upload into the brief's library alongside the Reddit and Google flags.
+ */
+export function canUseMetaCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaAssets);
+}
+
+/**
+ * Whether a LinkedIn create may reference an uploaded image by `imageAssetId` on its variants.
+ *
+ * Needs the campaign-service create path to serve the create AND the LinkedIn-assets flag. Like the
+ * Meta sibling, the flag is not about URL signing: LinkedIn's dispatch path uploads the stored bytes
+ * through the Images API and uses the image as the dark post's thumbnail. The legacy creator reads
+ * no `imageAssetId`, hence the cutover half. Admits an upload into the brief's library alongside the
+ * other asset flags.
+ */
+export function canUseLinkedInCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInAssets);
+}
+
+/**
+ * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
+ *
+ * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
+ * half is not a formality: the legacy creator has no X path, so with the cutover dark an X create
+ * would be dropped while the rest of the request went ahead. It also admits an upload into the
+ * brief's library alongside the asset flags, since the tweet image is a stored asset.
+ */
+export function canCreateTwitter(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceTwitterCreate);
+}
+
+/**
+ * Whether a Microsoft create may reference an uploaded image by `microsoftConfig.imageAssetId`.
+ *
+ * Needs the campaign-service create path to serve the create AND the Microsoft-assets flag. Like
+ * the Meta sibling, the flag is not about URL signing: Microsoft's dispatch path uploads the stored
+ * bytes to the account's media library and attaches them as an image ad extension. The legacy
+ * creator reads no `imageAssetId`, hence the cutover half. Admits an upload into the brief's library
+ * alongside the other asset flags.
+ */
+export function canUseMicrosoftCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMicrosoftAssets);
 }
 
 /**
@@ -759,8 +898,19 @@ export class CampaignServiceClient {
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+        redditConversionPixelEnabled: canSetRedditConversionPixel(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
+        metaCreativeEnabled: cutoverOwnsCreate(),
+        metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+        linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+        microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
+        microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+        twitterCreateEnabled: canCreateTwitter(),
+        metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+        // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+        googleAudienceSegmentsEnabled: false,
+        googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
       };
     }
 
@@ -818,8 +968,19 @@ export class CampaignServiceClient {
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
+      redditConversionPixelEnabled: canSetRedditConversionPixel(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
+      metaCreativeEnabled: cutoverOwnsCreate(),
+      metaAssetUploadEnabled: canUseMetaCreativeAssets(),
+      linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+      microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
+      microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
+      twitterCreateEnabled: canCreateTwitter(),
+      metaInstagramDsaEnabled: canCreateMetaInstagramDsa(),
+      // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
+      googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
     };
   }
 
@@ -2998,6 +3159,88 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}`,
       'GET'
+    );
+  }
+
+  /**
+   * The Google Ads accounts the project's connection credential can reach (`list-google-ads-accounts`
+   * on campaign-service): account discovery, the step between a credentials-first create and the PUT
+   * that binds an account. A project with no connection of its own is answered from the LF system
+   * credential upstream, so the list can be the LF's own accounts.
+   *
+   * Upstream failures are left to the caller: campaign-service's discovery messages are fixed
+   * sentences (a 404 for no connection, a 503 for a platform failure) that never echo platform text.
+   */
+  public async listGoogleAdsAccounts(req: Request, projectSlug: string): Promise<CampaignServiceAccessibleAccounts> {
+    if (projectSlug === '') {
+      // `/projects//connection-…` 404s at the gateway, which a caller would read as "no connection".
+      throw ServiceValidationError.forField('project', 'An account discovery read requires the project it belongs to.', {
+        operation: 'list_google_ads_accounts',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccessibleAccounts>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-google-ads/accounts`,
+      'GET'
+    );
+  }
+
+  /**
+   * The X Ads accounts the project's connection credential can reach (`list-twitter-ads-accounts`,
+   * LFXV2-3319) — `listGoogleAdsAccounts`'s X sibling, on the same resolution: a project with no X
+   * connection of its own is answered from the LF system credential upstream (`creds.resolve`), so
+   * the list can be the LF's own accounts. Upstream failures are left to the caller.
+   */
+  public async listTwitterAdsAccounts(req: Request, projectSlug: string): Promise<CampaignServiceAccessibleAccounts> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An account discovery read requires the project it belongs to.', {
+        operation: 'list_twitter_ads_accounts',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceAccessibleAccounts>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/connection-twitter-ads/accounts`,
+      'GET'
+    );
+  }
+
+  /**
+   * Search Google's geo target table (`suggest-google-ads-geo-targets` on campaign-service,
+   * linuxfoundation/lfx-v2-campaign-service#411) for the Implement tab's location picker.
+   *
+   * Public data, not account data, so upstream answers it from the LF system credential when the
+   * project has no Google Ads connection of its own — the same fallback account discovery uses. The
+   * parameters arrive validated by the controller; `target_types` repeats on the query string, which
+   * is how Goa decodes an array parameter, and an absent `limit` is omitted so upstream's default of
+   * 20 applies (its generated client must not send `limit=0`).
+   */
+  public async suggestGoogleAdsGeoTargets(
+    req: Request,
+    projectSlug: string,
+    params: { q: string; country_code?: string; target_types?: string[]; limit?: number }
+  ): Promise<CampaignServiceGoogleAdsGeoTargetSuggestions> {
+    if (projectSlug === '') {
+      // `/projects//google-ads/…` 404s at the gateway, which a caller would read as "not found".
+      throw ServiceValidationError.forField('project', 'A geo target search requires the project it is made for.', {
+        operation: 'suggest_google_ads_geo_targets',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsGeoTargetSuggestions>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/geo-targets`,
+      'GET',
+      {
+        q: params.q,
+        ...(params.country_code ? { country_code: params.country_code } : {}),
+        ...(params.target_types && params.target_types.length > 0 ? { target_types: params.target_types } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+      }
     );
   }
 

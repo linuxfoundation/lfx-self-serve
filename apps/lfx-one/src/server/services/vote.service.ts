@@ -8,6 +8,7 @@ import {
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
+  VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
@@ -26,10 +27,14 @@ import {
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SendVoteBallotsResponse,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
   UpdateVoteRequest,
   Vote,
+  VoteLinkBallot,
+  VoteLinkBallotRequest,
+  VoteLinkResponseRequest,
   VoteListResponse,
   VoteReminderRecipient,
   VoteResponseDetail,
@@ -349,8 +354,8 @@ export class VoteService {
    * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
    * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
    */
-  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
-    const { includeProject = false } = options;
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean; includeWriter?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false, includeWriter = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
@@ -375,11 +380,19 @@ export class VoteService {
       }
     }
 
+    // Additive `writer` flag (vote#writer) so the presenter guard and entry points share one source of truth.
+    // Opt-in: server-internal callers (reminders, voters, summary) skip the extra FGA lookup. The lookup is strict: an
+    // access-check outage propagates (the presenter guard shows its error path) instead of reading as `writer: false`,
+    // which would send an authorized chair to Access Denied.
+    const result = includeWriter
+      ? { ...vote, writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'vote', id: vote.uid, access: 'writer' }) }
+      : vote;
+
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {
       vote_uid: voteUid,
     });
 
-    return vote;
+    return result;
   }
 
   /**
@@ -789,6 +802,78 @@ export class VoteService {
     });
 
     return { recipient_count: recipientIds.length };
+  }
+
+  // ============================================
+  // Personalized vote links (#4363)
+  // ============================================
+
+  /**
+   * Emails every eligible non-responder a personalized ballot link via POST /votes/{uid}/bulk_resend with
+   * `personalized_links: true`, using the manager's bearer token (the gateway enforces `vote:{uid}#writer`).
+   * Recipients are re-resolved server-side from the index (awaiting, not removed) so the client never chooses them.
+   * Sent in batches because ITX rejects a whole call when any recipient is invalid; a validation-rejected batch counts as
+   * skipped and the rest still go out; a timeout/5xx stops the run (the batch may already be queued) and the unsent
+   * remainder counts as skipped. Throws only when nothing could be sent. Logs counts only.
+   */
+  public async sendVoteBallots(req: Request, voteUid: string): Promise<SendVoteBallotsResponse> {
+    await assertVoteWrite(req, voteUid, 'send_vote_ballots');
+
+    const recipients = await this.getVoteReminderRecipients(req, voteUid);
+    const recipientIds = recipients.map((recipient) => recipient.uid);
+    if (recipientIds.length === 0) {
+      return { sent: 0, skipped: 0 };
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    let firstError: unknown;
+
+    for (let start = 0; start < recipientIds.length; start += VOTE_SEND_BALLOTS_BATCH_SIZE) {
+      const batch = recipientIds.slice(start, start + VOTE_SEND_BALLOTS_BATCH_SIZE);
+      try {
+        await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/bulk_resend`, 'POST', undefined, {
+          recipient_ids: batch,
+          personalized_links: true,
+        });
+        sent += batch.length;
+      } catch (error) {
+        firstError ??= error;
+        logger.warning(req, 'send_vote_ballots', 'bulk_resend batch failed', { vote_uid: voteUid, batch_size: batch.length });
+        const rejected =
+          error instanceof BaseApiError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408 && error.statusCode !== 429;
+        if (rejected) {
+          // ITX validation rejection: nothing in this batch was queued, so the remaining batches can still go out.
+          skipped += batch.length;
+          continue;
+        }
+        // Timeout, rate limit or 5xx: the batch may already have been queued, so stop here rather than risk double sends.
+        skipped += recipientIds.length - start;
+        break;
+      }
+    }
+
+    if (sent === 0 && firstError) {
+      throw firstError;
+    }
+
+    return { sent, skipped };
+  }
+
+  /**
+   * Reads the ballot for a vote link token via POST /vote_links/ballot. The token is the only credential: no user or
+   * M2M bearer is sent (an empty `bearerToken` option overrides `req.bearerToken`, which the optional-auth
+   * `/public/api` surface may have populated for a signed-in visitor). Nothing is cached; the body is never logged.
+   */
+  public async getVoteLinkBallot(req: Request, body: VoteLinkBallotRequest): Promise<VoteLinkBallot> {
+    return this.microserviceProxy.proxyRequest<VoteLinkBallot>(req, 'LFX_V2_SERVICE', '/vote_links/ballot', 'POST', undefined, body, undefined, {
+      bearerToken: '',
+    });
+  }
+
+  /** Submits (POST) or updates (PUT) a ballot by vote link token. 204 on success; same no-bearer rule as the ballot read. */
+  public async submitVoteLinkResponse(req: Request, method: 'POST' | 'PUT', body: VoteLinkResponseRequest): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_links/responses', method, undefined, body, undefined, { bearerToken: '' });
   }
 
   /**

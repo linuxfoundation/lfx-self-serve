@@ -27,12 +27,24 @@
         [activeTab]="activeTab()"
         [tabs]="tabs()"
         [canCastVote]="canCastVote()"
+        [canPresent]="canPresent()"
+        [canSendBallots]="canSendBallots()"
+        [slideBusy]="slideBusy()"
         [limited]="!showVoteDetails()"
         (tabChange)="switchTab($event)"
         (sendReminder)="onSendReminder()"
+        (present)="onPresent()"
+        (copySlide)="onCopySlide()"
         (castVote)="onCastVote()"
         (viewResults)="onViewResults()"
         (back)="goBack()" />
+
+      @if (canPresent() && showVoteDetails()) {
+        <!-- Off-screen artboard that Copy slide captures; rendered only for managers, in the browser (the server never loads the vote). -->
+        <div class="fixed -left-[10000px] top-0 pointer-events-none" aria-hidden="true">
+          <div #slide><lfx-vote-slide [title]="voteData.name" [link]="slideLink()" /></div>
+        </div>
+      }
 
       @if (accessLoading()) {
         <div class="flex flex-col gap-4" data-testid="vote-detail-access-loading">

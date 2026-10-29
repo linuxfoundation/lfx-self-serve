@@ -43,6 +43,7 @@ export const MKTG_STARTED_RUN_STATE_ORDER: Record<MktgStoredDocumentRunState, nu
   failed: 3,
   superseded: 4,
   completed: 5,
+  discarded: 6,
 };
 
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
@@ -179,6 +180,9 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
 
 /** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
 export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
+
+/** Side-panel action help, shared by its tooltip and accessible description. */
+export const MKTG_DOCUMENT_MAKE_CURRENT_HINT = 'Agents read the current version. Nothing is added or deleted.';
 
 /** Maximum status characters stored in S3 metadata, including the truncation ellipsis. */
 export const MKTG_REVISION_STATUS_METADATA_MAX_CHARS = 200;

@@ -18,6 +18,7 @@ import {
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
+  VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
@@ -50,6 +51,7 @@ const {
   stripAuthPrefix,
   computeIsFoundation,
   addAccessToResources,
+  checkSingleAccessStrict,
   assertVoteWrite,
   sendEmail,
 } = vi.hoisted(() => ({
@@ -67,6 +69,7 @@ const {
   stripAuthPrefix: vi.fn((username: string) => username),
   computeIsFoundation: vi.fn(() => false),
   addAccessToResources: vi.fn(async (_req: unknown, resources: unknown[]) => resources),
+  checkSingleAccessStrict: vi.fn(async () => false),
   assertVoteWrite: vi.fn(),
   sendEmail: vi.fn(),
 }));
@@ -118,6 +121,7 @@ vi.mock('./project.service', () => ({
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public addAccessToResources = addAccessToResources;
+    public checkSingleAccessStrict = checkSingleAccessStrict;
   },
 }));
 vi.mock('./email.service', () => ({
@@ -231,6 +235,26 @@ describe('VoteService', () => {
       );
       expect(toEntityProjectFields).toHaveBeenCalledWith(project);
       expect(vote).toMatchObject(mappedFields);
+    });
+
+    it('decorates vote#writer only when includeWriter is set', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      checkSingleAccessStrict.mockResolvedValueOnce(true);
+
+      const withWriter = await service.getVoteById(req, CANONICAL_UID, { includeWriter: true });
+      expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'vote', id: voteFixture.uid, access: 'writer' });
+      expect(withWriter.writer).toBe(true);
+
+      checkSingleAccessStrict.mockClear();
+      await service.getVoteById(req, CANONICAL_UID);
+      expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    });
+
+    it('propagates an access-check outage instead of reporting writer: false', async () => {
+      proxyRequest.mockResolvedValue({ ...voteFixture });
+      checkSingleAccessStrict.mockRejectedValueOnce(new Error('access-check unavailable'));
+
+      await expect(service.getVoteById(req, CANONICAL_UID, { includeWriter: true })).rejects.toThrow('access-check unavailable');
     });
 
     it('leaves the vote unenriched when the project lookup finds nothing', async () => {
@@ -2817,6 +2841,101 @@ describe('VoteService', () => {
       const loggedMetadata = JSON.stringify(vi.mocked(logger.debug).mock.calls);
       expect(loggedMetadata).not.toContain('avery@acme-motors.example');
       expect(loggedMetadata).not.toContain('Avery Example');
+    });
+  });
+
+  describe('sendVoteBallots and vote link proxies (#4363)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const bulkResendCalls = () => proxyRequest.mock.calls.filter(([, , path]) => String(path).endsWith('/bulk_resend'));
+
+    it('checks writer access before resolving recipients', async () => {
+      const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN', {});
+      assertVoteWrite.mockRejectedValueOnce(forbidden);
+      const recipients = vi.spyOn(service, 'getVoteReminderRecipients');
+
+      await expect(service.sendVoteBallots(req, CANONICAL_UID)).rejects.toBe(forbidden);
+
+      expect(recipients).not.toHaveBeenCalled();
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('sends personalized links to exactly the resolved non-responder uids', async () => {
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue([{ uid: 'r-1' }, { uid: 'r-2' }]);
+      proxyRequest.mockResolvedValue(undefined);
+
+      const result = await service.sendVoteBallots(req, CANONICAL_UID);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/votes/${CANONICAL_UID}/bulk_resend`, 'POST', undefined, {
+        recipient_ids: ['r-1', 'r-2'],
+        personalized_links: true,
+      });
+      expect(result).toEqual({ sent: 2, skipped: 0 });
+    });
+
+    it('makes no upstream call when everyone has voted', async () => {
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue([]);
+
+      const result = await service.sendVoteBallots(req, CANONICAL_UID);
+
+      expect(bulkResendCalls()).toHaveLength(0);
+      expect(result).toEqual({ sent: 0, skipped: 0 });
+    });
+
+    it('counts a rejected batch as skipped and still sends the others', async () => {
+      const uids = Array.from({ length: VOTE_SEND_BALLOTS_BATCH_SIZE + 3 }, (_, i) => ({ uid: `r-${i}` }));
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue(uids);
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('invalid recipient', 400, 'BAD_REQUEST', {})).mockResolvedValue(undefined);
+
+      const result = await service.sendVoteBallots(req, CANONICAL_UID);
+
+      expect(result).toEqual({ sent: 3, skipped: VOTE_SEND_BALLOTS_BATCH_SIZE });
+    });
+
+    it('stops after a timeout or 5xx, reporting the unsent remainder as skipped, so a possibly-queued batch is never re-sent', async () => {
+      const uids = Array.from({ length: VOTE_SEND_BALLOTS_BATCH_SIZE * 2 + 5 }, (_, i) => ({ uid: `r-${i}` }));
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue(uids);
+      proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new MicroserviceError('unavailable', 503, 'UNAVAILABLE', {}));
+
+      const result = await service.sendVoteBallots(req, CANONICAL_UID);
+
+      expect(result).toEqual({ sent: VOTE_SEND_BALLOTS_BATCH_SIZE, skipped: VOTE_SEND_BALLOTS_BATCH_SIZE + 5 });
+      expect(bulkResendCalls()).toHaveLength(2);
+    });
+
+    it('throws when nothing could be sent', async () => {
+      vi.spyOn(service, 'getVoteReminderRecipients').mockResolvedValue([{ uid: 'r-1' }]);
+      const upstream = new MicroserviceError('down', 503, 'UNAVAILABLE', {});
+      proxyRequest.mockRejectedValue(upstream);
+
+      await expect(service.sendVoteBallots(req, CANONICAL_UID)).rejects.toBe(upstream);
+    });
+
+    it('forwards the ballot read and writes unchanged with no bearer token', async () => {
+      proxyRequest.mockResolvedValue({ vote_uid: CANONICAL_UID });
+      const body = { vote_token: 'v1.synthetic.token' };
+
+      await service.getVoteLinkBallot(req, body);
+      await service.submitVoteLinkResponse(req, 'POST', { ...body, abstain: true });
+      await service.submitVoteLinkResponse(req, 'PUT', { ...body, abstain: true });
+
+      expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/vote_links/ballot', 'POST', undefined, body, undefined, { bearerToken: '' });
+      expect(proxyRequest).toHaveBeenNthCalledWith(
+        2,
+        req,
+        'LFX_V2_SERVICE',
+        '/vote_links/responses',
+        'POST',
+        undefined,
+        { ...body, abstain: true },
+        undefined,
+        {
+          bearerToken: '',
+        }
+      );
+      expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', '/vote_links/responses', 'PUT', undefined, { ...body, abstain: true }, undefined, {
+        bearerToken: '',
+      });
     });
   });
 

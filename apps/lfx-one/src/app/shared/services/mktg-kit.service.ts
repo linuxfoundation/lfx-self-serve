@@ -22,6 +22,8 @@ export class MktgKitService {
 
   public readonly loading = signal(true);
   public readonly error = signal('');
+  /** A denied read resolves access, not private document state. */
+  public readonly accessDenied = signal(false);
   public readonly documents = signal<MktgDocumentsResponse | null>(null);
   public readonly projectUid = computed(() => this.context.activeContext()?.uid ?? '');
   public readonly projectName = computed(() => this.context.activeContext()?.name ?? 'Project');
@@ -41,11 +43,13 @@ export class MktgKitService {
           switchMap(({ project }) => {
             this.documents.set(null);
             this.error.set('');
+            this.accessDenied.set(false);
             if (project) this.contextSeen = true;
             this.loading.set(!!project || !this.contextSeen);
             if (!project) return of(null);
             return this.store.listDocuments(project).pipe(
               catchError((error: HttpErrorResponse) => {
+                this.accessDenied.set(error.status === 403);
                 this.error.set(
                   error.status === 403 ? 'You need write access to this project to see its Marketing kit.' : 'The Marketing kit could not be loaded. Try again.'
                 );

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
 import { ProfileController } from './controllers/profile.controller';
+import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
@@ -60,6 +61,7 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -119,7 +121,13 @@ installAsyncRouteErrorBridge();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-const angularApp = new AngularNodeAppEngine();
+// @angular/ssr 20.3.42+ serves the client-only shell (no auth state, so authGuard loops through
+// /login) for any request whose Host is not allowed or that carries an untrusted x-forwarded-*
+// header. Trust exactly the headers our ingress sends (#4649).
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').hostname],
+  trustProxyHeaders: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-forwarded-server'],
+});
 const app = express();
 
 // Cold-start phase marks (see #1378) — performance.now() is monotonic and
@@ -395,7 +403,15 @@ app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
 app.use('/login', authRateLimiter);
 
+// Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
+// document must also never leak the page URL via Referer to anything it links to or loads (#4363).
+app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
@@ -824,6 +840,8 @@ export function startServer() {
       routes_ms: Math.round(routesReadyMs),
       boot_ms: Math.round(performance.now()),
     });
+    // Once per process: which model AI_MODEL resolved to and which sampling params it gets.
+    logAiModelConfig();
   });
   // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
   // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev

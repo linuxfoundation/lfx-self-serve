@@ -5,16 +5,11 @@
   class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
   aria-labelledby="family-export-title"
   data-testid="family-export-actions">
-  <h2 id="family-export-title" class="text-base font-bold">Export the whole family</h2>
-  <p class="text-sm text-gray-500">
-    Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
-  </p>
-  <span
-    [pTooltip]="pdfDisabledReason()"
-    tooltipPosition="bottom"
-    tooltipEvent="both"
-    [attr.aria-label]="pdfDisabledReason() || null"
-    [attr.tabindex]="pdfDisabledReason() ? 0 : null">
+  <h2 id="family-export-title" class="text-base font-bold">Export the family</h2>
+  @if (!target()) {
+    <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
+  } @else {
+    <p class="text-sm text-gray-500">{{ slidesNote }}</p>
     <lfx-button
       label="Download PDF"
       [disabled]="!canPrint()"
@@ -23,100 +18,136 @@
       [fluid]="true"
       data-testid="family-export-pdf"
       (onClick)="downloadPdf()" />
-  </span>
-  <span
-    [pTooltip]="exportDisabledReason()"
-    tooltipPosition="bottom"
-    tooltipEvent="both"
-    [attr.aria-label]="exportDisabledReason() || null"
-    [attr.tabindex]="exportDisabledReason() ? 0 : null">
     <lfx-button
       label="Export to Google Slides"
       [disabled]="!canExport()"
       [loading]="phase() === 'running'"
+      [outlined]="true"
       [fluid]="true"
       data-testid="family-export-slides"
       (onClick)="export()" />
-  </span>
-  @if (!writer()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
-  } @else if (!target()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
-  } @else if (checking()) {
-    <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
-  } @else if (lookupError()) {
-    <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />
-    <lfx-button label="Check again" [text]="true" size="small" data-testid="family-export-check-again" (onClick)="checkAgain()" />
-  } @else if (!lookup()?.currentMembers?.length) {
-    <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
-  }
-  <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
-    @switch (phase()) {
-      @case ('choosing') {
-        <p class="text-sm text-gray-700">
-          A deck already exists for this family. Update it in place (same link, same sharing), or create a new deck in Google Drive.
-        </p>
-        <lfx-button label="Update the existing deck" [disabled]="!canExport()" size="small" data-testid="family-export-update" (onClick)="choose('update')" />
-        <lfx-button
-          label="Create a new deck"
-          [disabled]="!canExport()"
-          [outlined]="true"
-          size="small"
-          data-testid="family-export-create"
-          (onClick)="choose('create')" />
-        <lfx-button label="Cancel" [text]="true" size="small" data-testid="family-export-cancel" (onClick)="cancel()" />
-      }
-      @case ('running') {
-        <p role="status" class="text-sm text-gray-700" data-testid="family-export-progress">
-          Exporting the family to Google Slides… This usually takes a minute or two.
-        </p>
-      }
-      @case ('done') {
-        <p class="text-sm font-semibold text-gray-900" data-testid="family-export-success">Your deck is ready</p>
-      }
-      @case ('failed') {
-        <p class="text-xs text-gray-500">Try exporting again. If the existing deck is unavailable, choose Create a new deck.</p>
-      }
+    @if (!writer()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
+    } @else if (checking()) {
+      <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
+    } @else if (lookupError()) {
+      <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />
+      <lfx-button label="Check again" [text]="true" size="small" data-testid="family-export-check-again" (onClick)="checkAgain()" />
+    } @else if (!lookup()?.currentMembers?.length) {
+      <p class="text-xs text-gray-500" data-testid="family-export-empty">{{ approvalNote }}</p>
     }
-    @if (message()) {
-      <lfx-message severity="error" [text]="message()" data-testid="family-export-error" />
-    }
-    @if (partialLink(); as link) {
-      <a [href]="link" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-700 underline" data-testid="family-export-partial"
-        >Open the incomplete deck (opens in a new tab)</a
-      >
-    }
-    @if (last(); as previous) {
-      <div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500" data-testid="family-export-last">
-        <a [href]="previous.link" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-700 underline" data-testid="family-export-last-link"
-          >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
-        >
-        <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from {{ memberVersions() }}</span>
-        @if (lookup()?.stale) {
-          <span class="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-700" data-testid="family-export-stale"
-            >Out of date: the family's approved assets have changed</span
-          >
+    <div aria-live="polite" class="flex min-w-0 flex-col gap-2">
+      @switch (phase()) {
+        @case ('choosing') {
+          <p class="text-sm text-gray-700">
+            A deck already exists for this family. Update it in place (same link, same sharing), or create a new deck in Google Drive.
+          </p>
+          <lfx-button label="Update the existing deck" [disabled]="!canExport()" size="small" data-testid="family-export-update" (onClick)="choose('update')" />
+          <lfx-button
+            label="Create a new deck"
+            [disabled]="!canExport()"
+            [outlined]="true"
+            size="small"
+            data-testid="family-export-create"
+            (onClick)="choose('create')" />
+          <lfx-button label="Cancel" [text]="true" size="small" data-testid="family-export-cancel" (onClick)="cancel()" />
         }
-      </div>
+        @case ('running') {
+          <p role="status" class="text-sm text-gray-700" data-testid="family-export-progress">
+            Exporting the family to Google Slides… This usually takes a minute or two.
+          </p>
+        }
+        @case ('done') {
+          <p class="text-sm font-semibold text-gray-900" data-testid="family-export-success">Your deck is ready</p>
+        }
+        @case ('failed') {
+          <p class="text-xs text-gray-500">Try exporting again. If the existing deck is unavailable, choose Create a new deck.</p>
+        }
+      }
+      @if (message()) {
+        <lfx-message severity="error" [text]="message()" data-testid="family-export-error" />
+      }
+      @if (partialLink(); as link) {
+        <a [href]="link" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-700 underline" data-testid="family-export-partial"
+          >Open the incomplete deck (opens in a new tab)</a
+        >
+      }
+      @if (last(); as previous) {
+        <div class="flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500" data-testid="family-export-last">
+          <a [href]="previous.link" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-700 underline" data-testid="family-export-last-link"
+            >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
+          >
+          <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from {{ memberVersions() }}</span>
+          @if (lookup()?.stale) {
+            <span class="rounded-full bg-amber-50 px-2 py-1 font-medium text-amber-700" data-testid="family-export-stale"
+              >Out of date: the family's approved assets have changed</span
+            >
+          }
+        </div>
+      }
+    </div>
+    @if (skipped()) {
+      <p class="text-xs text-gray-500" data-testid="family-export-skipped">Not included (no approved current): {{ skipped() }}.</p>
     }
-  </div>
-  @if (skipped()) {
-    <p class="text-xs text-gray-500" data-testid="family-export-skipped">Not included (no approved current): {{ skipped() }}.</p>
+    <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
+    <p class="text-xs text-gray-500">
+      Slides builds a native deck on the LF template in the Marketing OS folder on Drive. Drive access follows that folder's sharing; exporting does not grant
+      access.
+    </p>
   }
-  <p class="text-xs text-gray-500" data-testid="family-export-pdf-note">{{ pdfNote }}</p>
-  <p class="text-xs text-gray-500">
-    Slides builds a native deck on the LF template in the Marketing OS folder on Drive. Drive access follows that folder's sharing; exporting does not grant
-    access.
-  </p>
 </section>
-<!-- Only existing print renderings, in exporter order; never a second on-screen asset view. -->
+<!-- Print renderings in exporter order, with one family cover and contents. -->
 <div [class]="printOnlyClass" data-testid="family-export-print-document">
   @if (printView(); as document) {
+    @let frameworkNumber = '01';
+    @let kitNumber = '02';
+    @let boilerplatesNumber = '03';
+    @let faqNumber = '04';
+    <section
+      class="lfx-family-print-cover grid gap-[18pt] rounded-[10pt] p-[0.55in] font-[family-name:var(--mfp-font)] break-inside-avoid break-after-page [overflow-wrap:anywhere]"
+      [style.--mfp-font]="document.brand.fontStack"
+      [style.--mfp-dark]="document.brand.dark"
+      [style.--mfp-accent]="document.brand.accent"
+      [style.--mfp-ink]="document.brand.ink"
+      aria-label="Family cover"
+      data-testid="family-export-print-cover">
+      <p class="text-[9.5pt] uppercase tracking-[0.18em]">{{ document.projectName }}</p>
+      @if (document.brand.logoOnLight; as logo) {
+        <img
+          class="h-[0.6in] max-w-[3.2in] self-start object-contain object-left"
+          [src]="logo.src"
+          [alt]="logo.alt"
+          [style.filter]="logo.filter || null"
+          data-testid="family-export-print-logo" />
+      }
+      <div class="flex flex-col gap-[14pt]">
+        <span class="h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]"></span>
+        <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="family-export-print-title">{{ familyName() }} kit</h1>
+        <p class="text-[11pt]">Approved current · {{ document.printedAt | date: 'd MMM y' }}</p>
+      </div>
+      <div class="h-px bg-[color:var(--mfp-ink)] opacity-20" aria-hidden="true"></div>
+      <dl class="grid grid-cols-[28pt_1fr] gap-y-[4pt] text-[9.5pt]" data-testid="family-export-print-contents">
+        <dt class="opacity-60">{{ frameworkNumber }}</dt>
+        <dd>Messaging framework{{ document.framework ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ kitNumber }}</dt>
+        <dd>Brand kit{{ document.kit ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ boilerplatesNumber }}</dt>
+        <dd>Boilerplates{{ document.boilerplates ? '' : ' — no approved current' }}</dd>
+        <dt class="opacity-60">{{ faqNumber }}</dt>
+        <dd>FAQ{{ document.faq ? '' : ' — no approved current' }}</dd>
+      </dl>
+    </section>
     @if (document.framework; as framework) {
-      <lfx-mktg-framework-print [view]="framework" />
+      <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" />
     }
     @if (document.kit; as kit) {
       <lfx-brand-kit-view [view]="kit" />
+    }
+    @if (document.boilerplates; as boilerplates) {
+      <lfx-mktg-boilerplates-print [view]="boilerplates" [number]="boilerplatesNumber" [projectName]="document.projectName" />
+    }
+    @if (document.faq; as faq) {
+      <lfx-mktg-faq-print [view]="faq" [number]="faqNumber" [projectName]="document.projectName" />
     }
   }
 </div>

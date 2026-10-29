@@ -18,23 +18,16 @@
     </span>
   }
 
-  @if (addPastMeetingUrl()) {
-    <div overviewEmptyAction class="mt-[4px]">
-      <a
-        class="inline-flex h-[30px] items-center gap-[6px] rounded-full border border-blue-400 bg-white px-[13px] text-[12px] font-medium text-blue-600 transition-colors hover:bg-blue-100"
-        target="_blank"
-        rel="noopener noreferrer"
-        [href]="addPastMeetingUrl()"
-        data-testid="overview-board-empty-add-meeting"
-        >Add Past Meeting<i class="fa-light fa-plus text-[12px]" aria-hidden="true"></i><span class="sr-only"> (opens in a new tab)</span></a
-      >
+  @if (addPastMeetingUrl(); as addMeetingUrl) {
+    <div overviewEmptyAction class="mt-[8px]">
+      <lfx-overview-explore-link [href]="addMeetingUrl" label="Add Past Meeting" leadingIcon="fa-light fa-plus" testId="overview-board-empty-add-meeting" />
     </div>
   }
 
   @if (view(); as view) {
     <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-board-kpis" />
 
-    <div class="flex flex-col overflow-x-auto" role="table" aria-label="Board members' meeting attendance" data-testid="overview-board-table">
+    <div class="relative flex flex-col overflow-x-auto" role="table" aria-label="Board members' meeting attendance" data-testid="overview-board-table">
       <div
         class="grid min-w-[760px] grid-cols-[minmax(220px,2fr)_minmax(180px,1.5fr)_minmax(200px,1.4fr)_minmax(110px,0.9fr)] gap-[16px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
         role="row">

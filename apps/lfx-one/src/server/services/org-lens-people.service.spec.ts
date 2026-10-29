@@ -14,6 +14,7 @@ const { execute, getLive, cacheValues } = vi.hoisted(() => ({
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),
@@ -30,6 +31,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   // hand-written copy here would let a column-drift regression pass.
   ...(await import('../../../../../packages/shared/src/constants/org-cache-compact.constants')),
   ...(await import('../../../../../packages/shared/src/constants/org-commit-filters.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/org-maintainer-roles.constants')),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -102,6 +104,8 @@ const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primary
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
 const SQLITE_ENROLLED_WINDOW = `date(ACTIVITY_TS) >= date('now', '-12 months') AND date(ACTIVITY_TS) < date('now')`;
+// SQLite form of the bound range start in the maintainer roles overlap predicate.
+const SQLITE_DAYS_BEFORE_TODAY = "date('now', '-' || ? || ' days')";
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
@@ -202,10 +206,16 @@ beforeEach(() => {
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const rows = database
-      .prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '').replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW))
+      .prepare(
+        query
+          .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
+          .replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW)
+          .replaceAll('DATEADD(day, 0 - ?, CURRENT_DATE())', SQLITE_DAYS_BEFORE_TODAY)
+          .replaceAll('CURRENT_DATE()', "date('now')")
+      )
       .all(...binds);
     for (const row of rows) {
-      for (const column of ['IS_BOARD', 'IS_MAINTAINER', 'IS_SPEAKER']) {
+      for (const column of ['IS_BOARD', 'IS_SPEAKER']) {
         if (column in row) row[column] = row[column] === 1;
       }
     }
@@ -512,7 +522,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
       );
       CREATE TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, PROJECT_NAME TEXT, FOUNDATION_ID TEXT,
-        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, PROJECT_COMMITS INTEGER, IS_MAINTAINER INTEGER, LAST_ACTIVITY_DATE TEXT
+        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, PROJECT_COMMITS INTEGER, LAST_ACTIVITY_DATE TEXT
+      );
+      CREATE TABLE ORG_MAINTAINER_ROLES (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, MEMBER_ID TEXT, SEGMENT_ID TEXT, PROJECT_ID TEXT, ROLE_START_DATE TEXT, ROLE_END_DATE TEXT
       );
       CREATE TABLE ORG_PEOPLE_EVENTS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, EVENT_END_DATE TEXT,
@@ -532,8 +545,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'committee-one', 'Technical Committee', 'Technical', 0, 'Member', 'Observer', 'foundation-one', 'Foundation One');
     database
-      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 12, 1, '2026-04-12');
+      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 12, '2026-04-12');
+    // An open role with the unknown-start sentinel: the person maintains project-one in every range.
+    database
+      .prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', '2000-01-01', null);
     database
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
@@ -571,7 +588,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['course-recent', 'Enrolled'],
     ]);
     expect(detail.training[0]?.coursesCount).toBe(3);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v3:${personKey}`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v4:${personKey}`)!)).toBe(true);
   });
 
   it('shows one row per course, a certificate superseding a later re-enrollment, and counts the rows shown', async () => {
@@ -597,9 +614,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
   it("counts a mirrored commit in every project's row and once in the total", async () => {
     // 3 commits only in project-one, 4 more mirrored into project-two: credit 7 + 0, distinct per project 7 and 4.
     database.exec('DELETE FROM ORG_PEOPLE_CODE_CONTRIBUTIONS');
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    insert.run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 7, 7, 0, '2026-04-12');
-    insert.run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 0, 4, 0, '2026-04-11');
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 7, 7, '2026-04-12');
+    insert.run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 0, 4, '2026-04-11');
 
     const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
@@ -608,6 +625,59 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['project-two', 4],
     ]);
     expect(detail.totalCommits).toBe(7);
+  });
+
+  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 365 days by default', async () => {
+    database.exec('DELETE FROM ORG_MAINTAINER_ROLES');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 2, 2, '2026-04-11');
+    const insert = database.prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)');
+    // Ended 200 days ago: inside the past 365 days and all time, outside the past 90 days.
+    insert.run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', daysAgo(900), daysAgo(200));
+    // Not started yet, another person's role, another account's role: never this person's pill.
+    insert.run(ACCOUNT, personKey, 'member-one', 'segment-two', 'project-two', daysAgo(-10), null);
+    insert.run(ACCOUNT, 'person-two', 'member-two', 'segment-two', 'project-two', daysAgo(900), null);
+    insert.run('other-account', personKey, 'member-one', 'segment-two', 'project-two', daysAgo(900), null);
+    const pills = async (range?: '90d' | 'all'): Promise<[string, boolean][]> =>
+      (await service.getEmployeeDetail({} as never, ACCOUNT, personKey, range)).code.map((row) => [row.projectId, row.isMaintainer]);
+
+    expect(await pills()).toEqual([
+      ['project-one', true],
+      ['project-two', false],
+    ]);
+    expect(await pills('90d')).toEqual([
+      ['project-one', false],
+      ['project-two', false],
+    ]);
+    expect(await pills('all')).toEqual([
+      ['project-one', true],
+      ['project-two', false],
+    ]);
+    const roleReads = (execute.mock.calls as [string, unknown[]][]).filter(([query]) => query.includes('ORG_MAINTAINER_ROLES'));
+    expect(roleReads.map(([, binds]) => binds)).toEqual([
+      [ACCOUNT, personKey, 365],
+      [ACCOUNT, personKey, 90],
+      [ACCOUNT, personKey],
+    ]);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:90d`)!)).toBe(true);
+  });
+
+  it('flags the roles unavailable, shows no pill, and stores no roles, when the roles table is missing', async () => {
+    const warehouse = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[]) => {
+      if (query.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return warehouse(query, binds);
+    });
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.maintainerRolesUnavailable).toBe(true);
+    expect(detail.code.length).toBeGreaterThan(0);
+    expect(detail.code.every((row) => row.isMaintainer === false)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:365d`)!)).toBe(false);
   });
 
   it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
@@ -859,6 +929,22 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '30d', 'all']);
     });
 
+    it("reads Past 2 years as the warehouse's 730d rows, apart from the other ranges", async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'recent', 'Recent Person', 'recent@company.example', 7);
+      addRangeRow(ACCOUNT, 'person-two-years', '730d', false, 'twoyears', 'Two Years', 'twoyears@company.example', 2);
+
+      const response = await service.getAllEmployees(ACCOUNT, '730d', FILTERS);
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        [personKey, 7],
+        ['person-two-years', 2],
+      ]);
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
+      expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:730d:all')!)).toBe(true);
+    });
+
     it('lists the rows of the requested project scope only', async () => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 3);
       addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 1, { projectScope: 'lf' });
@@ -871,12 +957,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(nonLf.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-non-lf', 2]]);
     });
 
+    // The code tile counts Code Contributors under every option (lfx-self-serve#4160): the reviewer has no commit but counts.
     it.each([
-      [{ commitScope: 'all', metric: 'commits' }, 10, 1],
-      [{ commitScope: 'merged', metric: 'commits' }, 4, 1],
-      [{ commitScope: 'all', metric: 'code' }, 25, 2],
-      [{ commitScope: 'merged', metric: 'code' }, 25, 2],
-    ] as const)('shows the count %o picks, with the code tile counting people who have one', async (picked, expected, codeContributors) => {
+      [{ commitScope: 'all', metric: 'commits' }, 10],
+      [{ commitScope: 'merged', metric: 'commits' }, 4],
+      [{ commitScope: 'all', metric: 'code' }, 25],
+      [{ commitScope: 'merged', metric: 'code' }, 25],
+    ] as const)('shows the count %o picks, with the code tile counting every code contributor', async (picked, expected) => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'coder', 'Coder', 'coder@company.example', 10, { merged: 4, code: 25 });
       // Reviews only: no commit at all, but code contributions.
       addRangeRow(ACCOUNT, 'person-reviewer', '365d', false, 'reviewer', 'Reviewer', 'reviewer@company.example', 0, { merged: 0, code: 6 });
@@ -884,7 +971,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       const response = await service.getAllEmployees(ACCOUNT, '365d', { ...FILTERS, ...picked });
 
       expect(response.rows.find((row) => row.personKey === personKey)?.commitsCount).toBe(expected);
-      expect(response.stats.codeContributors).toBe(codeContributors);
+      expect(response.rows.find((row) => row.personKey === 'person-reviewer')?.commitsCount).toBe(picked.metric === 'code' ? 6 : 0);
+      expect(response.stats.codeContributors).toBe(2);
     });
 
     it('caches per range and project scope, one entry serving every commit scope and metric', async () => {

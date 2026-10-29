@@ -74,12 +74,9 @@ export const VALKEY_CACHE = {
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
    * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
-   * `unlinkIdentity` (5s) + `cdpService.rejectIdentityForUser`. That last call's own worst case is
-   * ~50s, not a flat 10s: `resolveMember` first calls `resolveMemberId` (a cold `generateToken`,
-   * 10s, + a 10s resolve fetch), and on a still-unresolved member falls through to `createMember`
-   * (another 10s fetch); if that create races a concurrent request and CDP returns 409, it retries
-   * `resolveMemberId` once more (a 10s fetch, token already cached by then) before
-   * `rejectIdentityForUser`'s own reject call (10s). Set with real margin above that ~60s total so
+   * `unlinkIdentity` (5s) + the primary-email read (5s). `cdpService.rejectIdentityForUser` runs
+   * after the lock is released (#4523): meeting-invite resolution never reads CDP, and that call can
+   * wait behind the member's queued reconcile writes. Set with wide margin above that ~15s region so
    * the lock never expires (and gets silently re-acquired by a second request) while this request's
    * own upstream calls are still legitimately in flight. Also acts as the safety-net auto-release
    * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica
@@ -258,7 +255,10 @@ export const VALKEY_CACHE = {
     // each. Largest `all`-range value 6.85 MiB estimated (largest org measured), ≈ 7.3 MiB compact; 12
     // accounts exceed 1 MiB there and 5 exceed 3 MiB, and 3 accounts exceed 1 MiB on the default 12-month
     // all-projects view (largest 1.21 MiB estimated). 7.3 MiB × 1.25 rounds up to 10 MiB.
-    'org-lens-sf:v1:people-contributors:v4': 10 * 1_048_576,
+    // `v5` (lfx-self-serve#4482) drops the two declared-maintainer flags from each row, so it is no larger than the
+    // `v4` measured here; the cap carries over. Maintainer roles are a separate entry (`people-contributors-roles:v1`,
+    // four short ids per role, a few thousand roles at most for the largest org) under the 1 MiB default.
+    'org-lens-sf:v1:people-contributors:v5': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over

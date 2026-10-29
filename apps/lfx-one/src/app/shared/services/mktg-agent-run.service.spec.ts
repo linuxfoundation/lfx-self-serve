@@ -7,7 +7,9 @@ import { TestBed } from '@angular/core/testing';
 import {
   FOUNDATION_MESSAGE_INTAKE,
   ICP_INTAKE,
+  LINKEDIN_POST_INTAKE,
   MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_ACTIVE,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -29,7 +31,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
-import { concatMap, NEVER, of, throwError, TimeoutError, timer } from 'rxjs';
+import { ProjectContextService } from '@services/project-context.service';
+import { concatMap, NEVER, of, Subject, throwError, TimeoutError, timer } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -62,6 +65,7 @@ describe('MktgAgentRunService', () => {
 
   let service: MktgAgentRunService;
   let userSignal: WritableSignal<User | null>;
+  let projectUid: WritableSignal<string>;
   let httpPost: ReturnType<typeof vi.fn>;
   /** Result-endpoint responses, consumed one per poll (last one repeats). An HttpErrorResponse entry makes that poll attempt error. */
   let resultResponses: (MktgRunResultResponse | HttpErrorResponse)[];
@@ -123,6 +127,7 @@ describe('MktgAgentRunService', () => {
     resultDelayMs = 0;
     chatError = null;
     userSignal = signal<User | null>({ sub: USER_SUB } as User);
+    projectUid = signal('proj-1');
     httpPost = vi.fn((url: string) => {
       if (url === CHAT_INTAKE.endpoints.generate) {
         return of({ sessionId: 'sess-1', ownerToken: 'token-1' });
@@ -143,6 +148,7 @@ describe('MktgAgentRunService', () => {
         // against) or other verb fails loudly instead of silently passing.
         { provide: HttpClient, useValue: { post: httpPost } },
         { provide: UserService, useValue: { user: userSignal } },
+        { provide: ProjectContextService, useValue: { activeContextUid: projectUid } },
       ],
     });
     service = TestBed.inject(MktgAgentRunService);
@@ -185,12 +191,78 @@ describe('MktgAgentRunService', () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual(original);
   });
 
-  it('reads the private scalar history using the catalog agent key, never a POST', () => {
+  it('never POSTs a dedicated one-off Generate through the shared resume service', () => {
+    const error = vi.fn();
+    service.generate({ ...generateRequest(), agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE }).subscribe({ error });
+    expect(error).toHaveBeenCalled();
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('resumes an accepted one-off with only session proof, preserves its receipt/profile warning, and never persists personalized history', async () => {
+    const intake = LINKEDIN_POST_INTAKE;
+    const documentId = 'run-' + 'a'.repeat(24);
+    const request = { ...generateRequest(), agentId: intake.agentId, intake, documentId, answers: { content_text: 'private-source-marker' } };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.prepareAccepted(request, { documentId, runId: 'b'.repeat(64), sessionId: 'oneoff-session', ownerToken: 'oneoff-proof' });
+    const pending = attempts.load(request.projectUid, intake.agentId, documentId);
+    if (!pending) throw new Error('Missing synthetic accepted attempt');
+    const receipt = {
+      project: request.projectUid,
+      version: 1,
+      s3_key: 'synthetic-key',
+      content_sha256: 'c'.repeat(64),
+      document_location: { agent_key: 'linkedin-post' as const, document_id: documentId, revision_id: '000001-' + 'c'.repeat(64) },
+    };
+    httpPost.mockReturnValue(of({ status: 'ready', version: 1, documentMarkdown: '# private-personalized-marker', profileSaved: false, persistence: receipt }));
+    const events: MktgGenerateProgress[] = [];
+    service.resume(pending).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    expect(httpPost).toHaveBeenCalledExactlyOnceWith(intake.endpoints.result, {
+      sessionId: 'oneoff-session',
+      ownerToken: 'oneoff-proof',
+      project: request.projectUid,
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'document', profileSaved: false, documentLocation: { agentKey: 'linkedin-post', documentId } });
+    expect(localStorage.length).toBe(0);
+    expect(service.loadRun(request.projectUid, intake.agentId)).toBeNull();
+    expect(service.loadRun(request.projectUid, intake.agentId, documentId)?.versions[0].document).toContain('private-personalized-marker');
+    expect(service.loadRun(request.projectUid, intake.agentId, 'run-' + 'd'.repeat(24))).toBeNull();
+    expect(TestBed.runInInjectionContext(() => new MktgAgentRunService()).loadRun(request.projectUid, intake.agentId, documentId)).toBeNull();
+  });
+
+  it('ignores a reloaded one-off answered digest without retaining private Q&A or posting answers again', async () => {
+    const intake = LINKEDIN_POST_INTAKE;
+    const documentId = 'run-' + 'a'.repeat(24);
+    const request = { ...generateRequest(), agentId: intake.agentId, intake, documentId, answers: {} };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.prepareAccepted(request, { documentId, runId: 'b'.repeat(64), sessionId: 'oneoff-session', ownerToken: 'oneoff-proof' });
+    const pending = attempts.load(request.projectUid, intake.agentId, documentId);
+    if (!pending) throw new Error('Missing synthetic accepted attempt');
+    attempts.save({ ...pending, answeredQuestionsId: 'c'.repeat(64) });
+    const restored = TestBed.runInInjectionContext(() => new MktgRunAttemptService()).load(request.projectUid, intake.agentId, documentId);
+    if (!restored) throw new Error('Missing synthetic reload proof');
+    httpPost
+      .mockReturnValueOnce(of({ status: 'questions', questionsId: 'c'.repeat(64), questions: [{ key: 'gap', question: 'private-question-marker' }] }))
+      .mockReturnValue(of({ status: 'failed', failureText: 'Synthetic stopped run' }));
+    const events: MktgGenerateProgress[] = [];
+    service.resume(restored).subscribe((event) => events.push(event));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+    expect(events.some((event) => event.type === 'questions')).toBe(false);
+    expect(events.at(-1)?.type).toBe('failed');
+    expect(httpPost.mock.calls.every(([url]) => url === intake.endpoints.result)).toBe(true);
+    const serialized = Array.from({ length: localStorage.length }, (_, index) => localStorage.getItem(localStorage.key(index) ?? '')).join('');
+    expect(serialized).not.toContain('private-question-marker');
+  });
+
+  it.each([
+    ['foundation-setup', 'foundation-message'],
+    ['linkedin-post', 'linkedin-post'],
+  ])('reads %s scalar history using its catalog key, never a POST', (agentId, key) => {
     const get = vi.fn(() => of({ intake: null }));
     Object.assign(TestBed.inject(HttpClient), { get });
     const received = vi.fn();
-    service.lastIntake('synthetic-project', 'foundation-setup').subscribe(received);
-    expect(get).toHaveBeenCalledWith('/api/mktg-agents/intakes/foundation-message/last', { params: { project: 'synthetic-project' }, transferCache: false });
+    service.lastIntake('synthetic-project', agentId).subscribe(received);
+    expect(get).toHaveBeenCalledWith(`/api/mktg-agents/intakes/${key}/last`, { params: { project: 'synthetic-project' }, transferCache: false });
     expect(received).toHaveBeenCalledWith(null);
     expect(httpPost).not.toHaveBeenCalled();
   });
@@ -201,6 +273,167 @@ describe('MktgAgentRunService', () => {
     const error = vi.fn();
     service.lastIntake('synthetic-project', 'brand-kit').subscribe({ error });
     expect(error).toHaveBeenCalledWith(failure);
+  });
+
+  it('keeps the Generate ACK subscribed after its page leaves, tracks the attempt and does not poll without a page', () => {
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const page = service.generate(generateRequest()).subscribe();
+    expect(attempts.load('proj-1', 'brand-kit')?.state).toBe('draft');
+    page.unsubscribe();
+    expect(ack.observed).toBe(true);
+    ack.next({ sessionId: 'synthetic-accepted', ownerToken: 'synthetic-proof', runId: 'b'.repeat(64) });
+    expect(attempts.load('proj-1', 'brand-kit')).toMatchObject({ state: 'writing', attempt: { runId: 'b'.repeat(64) } });
+    expect(service.acknowledgementVersion()).toBe(1);
+    expect(ack.observed).toBe(false); // The held leg drops at its first ACK.
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs * 2);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.generate)).toHaveLength(1);
+    expect(httpPost.mock.calls.some(([url]) => url === CHAT_INTAKE.endpoints.result)).toBe(false);
+  });
+
+  it('records a failed ACK even after the page unsubscribes', () => {
+    const ack = new Subject<never>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate(generateRequest()).subscribe({ error: vi.fn() });
+    page.unsubscribe();
+    ack.error(new HttpErrorResponse({ status: 503 }));
+    expect(TestBed.inject(MktgRunAttemptService).load('proj-1', 'brand-kit')?.state).toBe('failed');
+    expect(ack.observed).toBe(false);
+    expect(service.acknowledgementVersion()).toBe(0);
+  });
+
+  it.each(['subject', 'project'] as const)('drops a held ACK on %s change without recording it in the new scope', (change) => {
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate(generateRequest()).subscribe();
+    page.unsubscribe();
+    TestBed.tick();
+    if (change === 'subject') userSignal.set({ sub: 'synthetic-other-subject' } as User);
+    else projectUid.set('synthetic-other-project');
+    TestBed.tick();
+    expect(ack.observed).toBe(false);
+    ack.next({ sessionId: 'synthetic-late-session', ownerToken: 'synthetic-late-proof', runId: 'c'.repeat(64) });
+    expect(service.acknowledgementVersion()).toBe(0);
+    expect(TestBed.inject(MktgRunAttemptService).load(projectUid(), 'brand-kit')?.attempt).toBeUndefined();
+  });
+
+  it('does not cancel a new-project POST because the scope observable still replays the prior project', () => {
+    TestBed.tick();
+    projectUid.set('synthetic-next-project'); // Generate may happen before toObservable's effect flushes.
+    const ack = new Subject<{ sessionId: string; ownerToken: string; runId: string }>();
+    httpPost.mockReturnValueOnce(ack);
+    const page = service.generate({ ...generateRequest(), projectUid: projectUid() }).subscribe();
+    expect(ack.observed).toBe(true);
+    page.unsubscribe();
+    ack.next({ sessionId: 'synthetic-new-project', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) });
+    expect(TestBed.inject(MktgRunAttemptService).load(projectUid(), 'brand-kit')).toMatchObject({ state: 'writing', attempt: { runId: 'c'.repeat(64) } });
+  });
+
+  it('replays a fully retained direct-start body after 409, adding only the explicit discard ID', () => {
+    const request: MktgGenerateRequest = {
+      ...generateRequest(),
+      documents: [{ kind: 'file', title: 'Synthetic source', text: 'Synthetic retained bytes.' }],
+      logoFiles: [{ name: 'synthetic.svg', text: '<svg />' }],
+    };
+    const conflict = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Another writer has a run in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    };
+    const failure = new HttpErrorResponse({ status: 409, error: conflict });
+    httpPost.mockReturnValueOnce(throwError(() => failure));
+    const error = vi.fn();
+    service.generate(request).subscribe({ error });
+    expect(error).toHaveBeenCalledWith(failure);
+    expect(service.activeRunConflict(failure, request)).toEqual(conflict);
+    const retained = TestBed.inject(MktgRunAttemptService).load(request.projectUid, request.agentId)?.request;
+    if (!retained) throw new Error('Missing synthetic retained start');
+    expect(service.canRetryActiveConflict(retained)).toBe(true);
+    expect(JSON.stringify({ ...localStorage })).not.toContain('Synthetic retained bytes.');
+    const originalBody = httpPost.mock.calls[0][1];
+    httpPost.mockReturnValueOnce(throwError(() => failure));
+    service.recheckActiveConflict(retained).subscribe({ error });
+    expect(httpPost.mock.calls[1][1]).toEqual(originalBody);
+    expect(httpPost.mock.calls[1][1]).not.toHaveProperty('discard');
+    httpPost.mockReturnValueOnce(of({ sessionId: 'synthetic-new-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64) }));
+    const retry = service.generate(retained, conflict.activeRunId).subscribe();
+    expect(httpPost.mock.calls[2][1]).toEqual({ ...originalBody, discard: conflict.activeRunId });
+    retry.unsubscribe();
+  });
+
+  it.each(['missing-body', 'reattach'] as const)('refuses silent replay when %s makes the original start unreconstructible', (kind) => {
+    const request = generateRequest();
+    if (kind === 'reattach')
+      TestBed.inject(MktgRunAttemptService).save({ request, state: 'failed', requiresReattachment: true, updatedAt: new Date().toISOString() });
+    expect(service.canRetryActiveConflict(request)).toBe(false);
+    const error = vi.fn();
+    service.generate(request, 'b'.repeat(64)).subscribe({ error });
+    expect(error).toHaveBeenCalledOnce();
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
+  it('retains the actual priorVersion and feedback rather than rebuilding a retry from changed version history', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const request = { ...generateRequest('Retained synthetic feedback'), intake: { ...CHAT_INTAKE, regenerateViaGenerate: true } };
+    httpPost.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409 })));
+    service.generate(request).subscribe({ error: vi.fn() });
+    const body = httpPost.mock.calls[0][1];
+    expect(body).toMatchObject({ priorVersion: 1, feedback: 'Retained synthetic feedback' });
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...storedV1Run(),
+        versions: [...storedV1Run().versions, { ...storedV1Run().versions[0], version: 2, document: 'Other synthetic version' }],
+      })
+    );
+    httpPost.mockReturnValueOnce(of({ sessionId: 'synthetic-retry', ownerToken: 'synthetic-proof' }));
+    const retry = service.generate(request, 'b'.repeat(64)).subscribe();
+    expect(httpPost.mock.calls[1][1]).toEqual({ ...body, discard: 'b'.repeat(64) });
+    retry.unsubscribe();
+  });
+
+  it('allows an explicit reviewed fresh request to carry discard without claiming an identical-body replay', () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedV1Run()));
+    const request = { ...generateRequest(), newRun: true, discard: 'b'.repeat(64) };
+    const start = service.generate(request).subscribe();
+    expect(httpPost).toHaveBeenCalledWith(
+      CHAT_INTAKE.endpoints.generate,
+      expect.objectContaining({ answers: ANSWERS, project: 'proj-1', discard: request.discard })
+    );
+    expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
+    start.unsubscribe();
+  });
+
+  it.each([
+    { code: 'OTHER' },
+    { activeRunId: 'not-an-opaque-run' },
+    { state: 'failed' },
+    { agentKey: 'synthetic-other' },
+    { documentId: 'other' },
+    { startedBy: undefined },
+    { startedByViewer: undefined },
+    { startedByViewer: 'true' },
+  ])('rejects malformed or out-of-scope active conflict metadata: %j', (override) => {
+    const body = {
+      code: MKTG_RUN_ACTIVE,
+      message: 'Synthetic conflict',
+      activeRunId: 'b'.repeat(64),
+      state: 'writing',
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedBy: 'Another writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+      ...override,
+    };
+    expect(service.activeRunConflict(new HttpErrorResponse({ status: 409, error: body }), generateRequest())).toBeNull();
   });
 
   it('starts a new session without changing previous history before any result arrives', () => {
@@ -907,15 +1140,18 @@ describe('MktgAgentRunService', () => {
 
     it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
       resultResponses = [READY_NO_RECEIPT];
-      service.generate({ ...generateRequest(), projectUid: '' }).subscribe();
+      const events: MktgGenerateProgress[] = [];
+      service.generate({ ...generateRequest(), projectUid: '' }).subscribe((event) => events.push(event));
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
       expect(resultCalls()).toHaveLength(1);
+      expect(events.map((event) => event.type)).toEqual(['submitted', 'document']);
       // The poll carries no project, and no retry poll follows it.
       expect(resultCalls()[0][1]).toEqual({ sessionId: 'sess-1', ownerToken: 'token-1' });
 
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
       expect(resultCalls()).toHaveLength(1);
+      expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
 
     it('does not retry a receipted result — a successful write is terminal', async () => {

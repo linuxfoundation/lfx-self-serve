@@ -46,7 +46,7 @@ test.describe('Marketing OS breadcrumb structure', () => {
       await expect(page.getByTestId('mktg-documents-error')).toBeVisible();
       await expect(page.getByTestId('mktg-documents-empty-all')).toHaveCount(0);
       await expect(page.getByTestId('mktg-breadcrumb-link-0')).toBeVisible();
-      await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(4);
+      await expect(page.getByTestId('mktg-kit-tabs').getByRole('link')).toHaveCount(2);
     });
   }
 

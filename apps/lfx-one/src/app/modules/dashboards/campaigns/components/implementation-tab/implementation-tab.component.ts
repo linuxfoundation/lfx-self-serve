@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SlicePipe } from '@angular/common';
+import { LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -18,6 +18,10 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   CAMPAIGN_BIDDING_CREATE_PLATFORMS,
   CAMPAIGN_BIDDING_PLATFORMS,
@@ -32,13 +36,24 @@ import {
   isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
+  LINKEDIN_IMAGE_MAX_BYTES,
+  TWITTER_IMAGE_MAX_BYTES,
+  TWITTER_IMAGE_TOO_LARGE_MESSAGE,
+  TWITTER_MAX_BUDGET,
+  TWITTER_MAX_TWEET_WEIGHTED_CHARS,
+  LINKEDIN_IMAGE_TOO_LARGE_MESSAGE,
   META_CHAR_LIMITS,
   META_DEFAULT_PLACEMENTS,
   META_MESSENGER_INBOX_RETIRED_REASON,
+  META_DSA_NAME_MAX_LENGTH,
+  META_DSA_TERRITORIES,
   META_NUMERIC_ID_PATTERN,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
+  MICROSOFT_IMAGE_MAX_BYTES,
+  MICROSOFT_IMAGE_PIXEL_BOUNDS,
+  MICROSOFT_IMAGE_TOO_LARGE_MESSAGE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
   MICROSOFT_MAX_GEO_TARGETS,
@@ -56,13 +71,26 @@ import {
   CAMPAIGN_PLATFORMS,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DECIMAL_NUMBER_PATTERN,
+  GOOGLE_ADS_GEO_SEARCH_BOUNDS,
+  GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS,
+  GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT,
+  GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
+  GOOGLE_ADS_MAX_CALL_EXTENSIONS,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+  GOOGLE_ADS_MAX_PRICE_OFFERINGS,
+  GOOGLE_ADS_MAX_PROMOTIONS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
+  GOOGLE_ADS_MAX_RADIUS,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
@@ -71,7 +99,14 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MIN_PRICE_OFFERINGS,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
+  GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS,
+  GOOGLE_ADS_PRICE_QUALIFIERS,
+  GOOGLE_ADS_PRICE_TYPES,
+  GOOGLE_ADS_PRICE_UNITS,
+  GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -82,16 +117,25 @@ import {
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_LANGUAGES,
+  GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_LINKEDIN_BUDGET_USD,
+  DEFAULT_LINKEDIN_TARGETING_PROFILE,
+  DEFAULT_META_BUDGET_USD,
+  DEFAULT_META_OBJECTIVE,
+  DEFAULT_MICROSOFT_BUDGET_USD,
+  DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
   REDDIT_CALL_TO_ACTIONS,
@@ -102,12 +146,14 @@ import {
   REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isCanonicalGoogleAdsResourceId,
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { filter, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { catchError, filter, from, map, merge, Observable, of, scan, skip, startWith, Subscription, switchMap, take, timer } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -123,31 +169,61 @@ import type {
   CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
+  CampaignGoogleAudienceSegmentsBlock,
   CampaignGoogleExtensionsCapabilityBlock,
+  CampaignGoogleLocationsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignGoogleImageAssetBlock,
+  CampaignLinkedInImageAssetBlock,
+  CampaignTwitterAccountState,
+  CampaignTwitterDraft,
+  CampaignTwitterCreateBlock,
+  CampaignTwitterImageAssetBlock,
+  TwitterCampaignCreateRequest,
+  CampaignMetaImageAssetBlock,
+  CampaignMicrosoftImageAssetBlock,
+  CampaignProximityTarget,
+  CampaignProximityTargetDraft,
   CampaignRedditImageAssetBlock,
+  CampaignCallExtension,
+  CampaignCallExtensionDraft,
+  CampaignPriceExtension,
+  CampaignPriceExtensionDraft,
+  CampaignPriceOfferingDraft,
+  CampaignPromotion,
+  CampaignPromotionDraft,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignStructuredSnippetDraft,
   CampaignType,
+  CreativeAssetLibraryState,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
+  GoogleAdsGeoTargetOption,
+  GoogleAdsGeoTargetSearchState,
+  GoogleAdsGeoTargetSuggestion,
+  GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
+  GoogleCreativeHeldImage,
+  GoogleCreativeImageRef,
+  GoogleCreativeImageShape,
+  GoogleCreativeImageSlotView,
   GoogleCreativeSection,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
   MetaAdVariant,
+  MetaCampaignCreateRequest,
   MetaObjective,
   MetaPlacement,
   MicrosoftKeyword,
@@ -155,6 +231,7 @@ import type {
   RedditCallToAction,
   RedditObjective,
   RedditVideoGoal,
+  StoredCreativeAsset,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
@@ -162,10 +239,23 @@ import {
   codePointLength,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
+  googleAdsToUpperCode,
+  googleCallExtensionRefusal,
+  googleCreativeImageDrift,
+  googleCreativeImageFit,
+  googleCreativeImageRequirement,
+  googlePriceExtensionRefusal,
+  googlePromotionRefusal,
+  storedCreativeAssetLabel,
+  twitterComposedTweetLength,
+  twitterStartDateTooSoon,
+  twitterTweetTextError,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { CreativeSlotGridComponent } from '../creative-slot-grid/creative-slot-grid.component';
+import { GoogleCreativeImageLibraryComponent } from '../google-creative-image-library/google-creative-image-library.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
@@ -204,7 +294,20 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent, CreativeSlotGridComponent],
+  imports: [
+    ReactiveFormsModule,
+    ButtonComponent,
+    AutocompleteComponent,
+    InputTextComponent,
+    SelectComponent,
+    TextareaComponent,
+    LowerCasePipe,
+    SlicePipe,
+    CampaignBiddingControlComponent,
+    CreativeLibraryUploadComponent,
+    CreativeSlotGridComponent,
+    GoogleCreativeImageLibraryComponent,
+  ],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -332,6 +435,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
   /**
+   * Whether the Google image slots may offer the brief's stored-image LIBRARY
+   * (`CampaignListResult.googleAssetUploadEnabled`) — upload into it, or pick a stored image that
+   * fits. Read only together with `googleCreativeAvailable()`, as `metaAssetUploadEnabled` is with
+   * its sibling; the pasted image URLs stay offered whatever this answers. `null` (unknown)
+   * withholds the controls, and a stored image already held then blocks Create instead of being
+   * dropped (`googleImageAssetBlock`).
+   */
+  public readonly googleAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see googleAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly googleAssetUploadAvailable = computed<boolean>(() => this.googleCreativeAvailable() && this.googleAssetUploadEnabled() === true);
+
+  /**
    * Whether a Reddit post AUTHORED here will actually be created. `null` (unknown) withholds the
    * controls that depend on it; nothing typed is ever cleared.
    *
@@ -360,6 +476,74 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
 
   /**
+   * Whether the Meta section may offer an ad image (`CampaignListResult.metaCreativeEnabled`).
+   * `null` (unknown) withholds it, as for Reddit: the legacy creator reads no Meta image.
+   */
+  public readonly metaCreativeEnabled = input<boolean | null>(null);
+
+  /** @see metaCreativeEnabled — an explicit yes, never a `null`. */
+  protected readonly metaCreativeAvailable = computed<boolean>(() => this.metaCreativeEnabled() === true);
+
+  /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override
+   * (`CampaignListResult.redditConversionPixelEnabled`, #3484). Only campaign-service reads the
+   * field; the legacy creator would drop it. `null` until the parent has an answer, which withholds
+   * the control.
+   */
+  public readonly redditConversionPixelEnabled = input<boolean | null>(null);
+
+  /** @see redditConversionPixelEnabled — an explicit yes, never a `null`. */
+  protected readonly redditConversionPixelAvailable = computed<boolean>(() => this.redditConversionPixelEnabled() === true);
+
+  /**
+   * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
+   * Read only together with `metaCreativeAvailable()`, as `redditAssetUploadEnabled` is with its
+   * sibling; the pasted image URL stays offered whatever this answers.
+   */
+  public readonly metaAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see metaAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly metaAssetUploadAvailable = computed<boolean>(() => this.metaCreativeAvailable() && this.metaAssetUploadEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section may offer an image UPLOAD (`CampaignListResult.linkedInAssetUploadEnabled`).
+   * `null` (unknown) withholds it, as for Meta. LinkedIn has no pasted-URL path, so this one
+   * capability is the whole of the image control.
+   */
+  public readonly linkedInAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see linkedInAssetUploadEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInAssetUploadAvailable = computed<boolean>(() => this.linkedInAssetUploadEnabled() === true);
+
+  /**
+   * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
+   * attached to the campaign as an image ad extension. `null` (unknown) withholds it, as for Meta.
+   * There is no pasted-URL path, so this one capability is the whole of the image control.
+   */
+  public readonly microsoftAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see microsoftAssetUploadEnabled — an explicit yes, never a `null`. */
+  protected readonly microsoftAssetUploadAvailable = computed<boolean>(() => this.microsoftAssetUploadEnabled() === true);
+  /**
+   * The library upload is admitted on ANY platform's asset capability, as the BFF route is: the
+   * library is one pool, and a deployment that can use an image anywhere may add to it. `null`
+   * while no flag says yes and one is still unanswered — unknown, not a no.
+   */
+  protected readonly libraryUploadAvailable = computed<boolean | null>(() => {
+    const flags = [
+      this.redditAssetUploadEnabled(),
+      this.metaAssetUploadEnabled(),
+      this.linkedInAssetUploadEnabled(),
+      this.googleAssetUploadEnabled(),
+      this.microsoftAssetUploadEnabled(),
+      // The tweet image: the BFF route admits the upload on `canCreateTwitter()` alone.
+      this.twitterCreateEnabled(),
+    ];
+    if (flags.some((enabled) => enabled === true)) return true;
+    return flags.some((enabled) => enabled !== false) ? null : false;
+  });
+
+  /**
    * Whether this deployment can honour a per-platform Bidding choice (#3299) —
    * `CampaignListResult.biddingEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`. `null`
    * (unanswered) and `false` hide the control and send no `bidding` at all, which is the create
@@ -369,6 +553,70 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see biddingEnabled — an explicit yes, never a `null`. */
   protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
+
+  /**
+   * Whether this deployment applies the flight dates to Microsoft Ads —
+   * `CampaignListResult.microsoftScheduleEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE`. `null` (unanswered) and `false` send no
+   * Microsoft dates and keep the "ignores the flight dates" warning, which is the create exactly as
+   * it was before campaign-service could schedule a Microsoft ad group.
+   */
+  public readonly microsoftScheduleEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether THIS caller may send Google audience segments — `CampaignListResult.googleAudienceSegmentsEnabled`.
+   * Root only, until a user list can be mapped to a project: every foundation's Google Ads connection
+   * points at one shared LF customer. `null` (unanswered) and `false` hide the section, and a draft
+   * that still holds segments raises `googleAudienceSegmentsBlock` rather than dropping them.
+   */
+  public readonly googleAudienceSegmentsEnabled = input<boolean | null>(null);
+
+  /** @see microsoftScheduleEnabled — an explicit yes, never a `null`. */
+  protected readonly microsoftScheduleAvailable = computed<boolean>(() => this.microsoftScheduleEnabled() === true);
+
+  /**
+   * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`,
+   * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`. `CAMPAIGN_PLATFORMS` keeps X
+   * `disabled: true`; this is what the tab consults instead. `null` (unanswered) and `false` render
+   * no X fields and send no `twitterConfig`: a brief still holding X is blocked by
+   * `twitterCreateBlock`, never created without it.
+   */
+  public readonly twitterCreateEnabled = input<boolean | null>(null);
+
+  /**
+   * The X fields the parent carried across a same-event proceed (`CampaignsComponent.carriedTwitterDraft`),
+   * restored when there is no full `draft`. Read once per mount, like `draft`.
+   */
+  public readonly twitterDraft = input<CampaignTwitterDraft | null>(null);
+
+  /** @see twitterCreateEnabled — an explicit yes, never a `null`. */
+  protected readonly twitterCreateAvailable = computed<boolean>(() => this.twitterCreateEnabled() === true);
+
+  /**
+   * Whether this deployment collects the Meta Instagram account id and the EU DSA
+   * beneficiary/payor — `CampaignListResult.metaInstagramDsaEnabled`, behind
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA`. `null` (unanswered) and `false` hide the
+   * three inputs and send none of the keys, which is the Meta create exactly as it was before.
+   */
+  public readonly metaInstagramDsaEnabled = input<boolean | null>(null);
+
+  /** @see metaInstagramDsaEnabled — an explicit yes, never a `null`. */
+  protected readonly metaInstagramDsaAvailable = computed<boolean>(() => this.metaInstagramDsaEnabled() === true);
+
+  /**
+   * Whether this deployment can SEARCH Google's geo target table for postal-code targets —
+   * `CampaignListResult.googleGeoSearchEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH`.
+   * `null` (unanswered) and `false` keep the typed-id box, which is the section exactly as it was
+   * before campaign-service could search the table (linuxfoundation/lfx-v2-campaign-service#411).
+   */
+  public readonly googleGeoSearchEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether the location picker replaces the typed-id box: an explicit yes from the capability AND
+   * the postal-code section itself being offered (`googlePostalGeoAvailable` — the campaign-service
+   * road with a Google channel selected). A picked id is sent exactly as a typed one is.
+   */
+  protected readonly googleGeoSearchAvailable = computed<boolean>(() => this.googleGeoSearchEnabled() === true && this.googlePostalGeoAvailable());
 
   /**
    * Where the create-capability read stands — what tells "still checking" from "the check failed"
@@ -623,8 +871,66 @@ export class ImplementationTabComponent implements OnInit {
     // that has nothing to do with LinkedIn.
     linkedInAccountId: [''],
     linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
-    linkedInTargetingProfile: ['cloud-native' as LinkedInTargetingProfile],
+    linkedInTargetingProfile: [DEFAULT_LINKEDIN_TARGETING_PROFILE as LinkedInTargetingProfile],
+    // The X section's two typed fields, on the FORM so the `lfx-input-text` / `lfx-textarea`
+    // wrappers can bind them and `valueChanges` drives the draft, as for the LinkedIn controls
+    // above. Both RAW strings: a blank budget is "not entered", which 0 cannot say. No validators,
+    // for the LinkedIn reason — `campaignForm.invalid` gates Google, and an empty X field must not
+    // block a Google-only create. `twitterBudgetError` and `twitterTweetError` do the checking.
+    twitterBudget: [''],
+    twitterTweetText: [''],
   });
+
+  /**
+   * The call, promotion and price sub-forms, on the LFX form-control API the `lfx-input-text` and
+   * `lfx-select` wrappers bind to. TRANSIENT, as the sitelink and snippet boxes are: what is typed
+   * here reaches the saved draft only when an entry is ADDED, so none of these is listed in
+   * `emitDraft`. Raw text throughout, numbers included, so a refused entry stays on screen as typed.
+   *
+   * The price table's rows are a `FormArray` held at Google's three to eight, one `FormGroup` per row,
+   * so each row's boxes bind to their own group.
+   */
+  protected readonly googleCallExtensionForm = this.fb.nonNullable.group<CampaignCallExtensionDraft>({ countryCode: '', phoneNumber: '' });
+  protected readonly googlePromotionForm = this.fb.nonNullable.group<CampaignPromotionDraft>(this.emptyGooglePromotionDraft());
+  protected readonly googlePriceForm = this.fb.nonNullable.group({
+    type: this.fb.nonNullable.control<string>(GOOGLE_ADS_PRICE_TYPES[0]),
+    priceQualifier: '',
+    languageCode: '',
+    currencyCode: '',
+    offerings: this.fb.nonNullable.array(Array.from({ length: GOOGLE_ADS_MIN_PRICE_OFFERINGS }, () => this.googlePriceRowGroup())),
+  });
+  /**
+   * The postal-code box and the radius sub-form, on the same terms as the call, promotion and price
+   * sub-forms above: the wrappers' form-control API, TRANSIENT (reaching the draft only when a target
+   * is added, so neither is listed in `emitDraft`), raw text throughout. `radiusUnit` starts `''`,
+   * not a unit — upstream supplies no default and neither does the form.
+   */
+  protected readonly googlePostalGeoForm = this.fb.nonNullable.group({ postalId: '' });
+  /**
+   * The location picker's control, used when `googleGeoSearchAvailable` replaces the typed-id box. It
+   * holds the autocomplete's own value — the typed text, then the picked option — and is cleared on
+   * every pick, so like the boxes above it never reaches the draft itself; the picked id does.
+   */
+  protected readonly googleGeoSearchForm = this.fb.group({ location: this.fb.control<GoogleAdsGeoTargetOption | string | null>(null) });
+  protected readonly googleProximityForm = this.fb.nonNullable.group<CampaignProximityTargetDraft>({ latitude: '', longitude: '', radius: '', radiusUnit: '' });
+  /**
+   * The Meta Instagram account id and EU DSA beneficiary/payor, on the wrappers' form-control API.
+   * Its own group rather than `campaignForm`, so `campaignForm.invalid` (Google's gate) never reads
+   * it. NOT transient: every edit reaches the draft (`emitDraft` names all three), and raw text is
+   * kept so a refused value stays on screen as typed.
+   */
+  protected readonly metaInstagramDsaForm = this.fb.nonNullable.group({ instagramUserId: '', dsaBeneficiary: '', dsaPayor: '' });
+  private readonly metaInstagramDsaDraft = this.initFormDraft(this.metaInstagramDsaForm);
+
+  /**
+   * The Reddit per-campaign conversion pixel override (#3484), on the wrapper's form-control API.
+   * Its own group for the reason `metaInstagramDsaForm` is. The raw text goes to the draft so a value
+   * stays on screen as typed; the request reads the trimmed `redditConversionPixelId`, where blank
+   * means "use the connection's pixel".
+   */
+  protected readonly redditConversionPixelForm = this.fb.nonNullable.group({ conversionPixelId: '' });
+  private readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
+  protected readonly redditConversionPixelId = computed<string>(() => this.redditConversionPixelDraft().conversionPixelId.trim());
 
   // === WritableSignals ===
   protected readonly step = signal<ImplementationStep>('form');
@@ -715,7 +1021,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
   protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
-  protected readonly linkedInBudgetUsd = signal(500);
+  protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
@@ -724,7 +1030,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditInterests = signal<string[]>([]);
   protected readonly redditKeywords = signal<string[]>([]);
   protected readonly redditGeoTargets = signal<string[]>([]);
-  protected readonly redditBudgetUsd = signal(500);
+  protected readonly redditBudgetUsd = signal(DEFAULT_REDDIT_BUDGET_USD);
   /**
    * Reddit campaign objective. Seeded from `DEFAULT_REDDIT_OBJECTIVE` for the reason the Meta
    * objective is seeded from upstream's: nothing has ever sent this field, so both creators have
@@ -827,6 +1133,102 @@ export class ImplementationTabComponent implements OnInit {
    */
   private redditImageUploadSub: Subscription | null = null;
   /**
+   * The Meta ad image, set on EVERY variant at create (see `metaVariantsForCreate`): a pasted URL,
+   * or an upload made for this brief. The upload state mirrors the Reddit fields above one for one,
+   * and for the same reasons; only the platform differs.
+   */
+  protected readonly metaImageUrl = signal('');
+  protected readonly metaImageAssetId = signal('');
+  protected readonly metaImageAssetName = signal('');
+  protected readonly metaImageAssetBriefId = signal('');
+  protected readonly metaImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly metaImageUploadPendingName = signal('');
+  private readonly metaImageUploadPendingBriefId = signal('');
+  private readonly metaImageUploadFailedBriefId = signal('');
+  protected readonly metaImageUploadError = signal('');
+  protected readonly metaImageFileDescribedBy = computed(() =>
+    ['meta-image-file-hint', 'meta-image-file-status', ...(this.metaImageUploadStatus() === 'error' ? ['meta-image-file-error'] : [])].join(' ')
+  );
+  private metaImageUploadSub: Subscription | null = null;
+  /**
+   * The stored images held in the Google image slots, keyed `<request key>.<control>`, each with
+   * the brief it was stored for. Sent as `{ imageAssetId }` entries after the slot's pasted URLs
+   * (see `googleImageRefsFor`). The upload state beside it mirrors the Meta image's, with the slot
+   * the upload is for: ONE Google upload runs at a time across every slot, because
+   * `CampaignService` keeps one per owner, so a pick in a second slot replaces the first.
+   */
+  protected readonly googleHeldImages = signal<Record<string, GoogleCreativeHeldImage[]>>({});
+  protected readonly googleImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  /** The slot the running or failed upload is for, or `''`. */
+  private readonly googleImageUploadSlot = signal('');
+  private readonly googleImageUploadPendingName = signal('');
+  private readonly googleImageUploadPendingBriefId = signal('');
+  private readonly googleImageUploadFailedBriefId = signal('');
+  private readonly googleImageUploadError = signal('');
+  private googleImageUploadSub: Subscription | null = null;
+  /**
+   * The LinkedIn ad image, set on EVERY variant at create (see `linkedInVariantsForCreate`): an
+   * upload made for this brief, and nothing else, since LinkedIn takes no image URL. The upload
+   * state mirrors the Meta fields above one for one.
+   */
+  protected readonly linkedInImageAssetId = signal('');
+  protected readonly linkedInImageAssetName = signal('');
+  protected readonly linkedInImageAssetBriefId = signal('');
+  protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly linkedInImageUploadPendingName = signal('');
+  private readonly linkedInImageUploadPendingBriefId = signal('');
+  private readonly linkedInImageUploadFailedBriefId = signal('');
+  protected readonly linkedInImageUploadError = signal('');
+  protected readonly linkedInImageFileDescribedBy = computed(() =>
+    ['linkedin-image-file-hint', 'linkedin-image-file-status', ...(this.linkedInImageUploadStatus() === 'error' ? ['linkedin-image-file-error'] : [])].join(' ')
+  );
+  private linkedInImageUploadSub: Subscription | null = null;
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  /**
+   * The X tweet image: an upload made for this brief, attached to the authored tweet as its image
+   * (`twitterConfig.imageAssetId`). X takes no image URL here, so the upload is the whole control,
+   * and its state mirrors the LinkedIn fields above one for one.
+   */
+  protected readonly twitterImageAssetId = signal('');
+  protected readonly twitterImageAssetName = signal('');
+  protected readonly twitterImageAssetBriefId = signal('');
+  protected readonly twitterImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly twitterImageUploadPendingName = signal('');
+  private readonly twitterImageUploadPendingBriefId = signal('');
+  private readonly twitterImageUploadFailedBriefId = signal('');
+  protected readonly twitterImageUploadError = signal('');
+  protected readonly twitterImageFileDescribedBy = computed(() =>
+    ['twitter-image-file-hint', 'twitter-image-file-status', ...(this.twitterImageUploadStatus() === 'error' ? ['twitter-image-file-error'] : [])].join(' ')
+  );
+  private twitterImageUploadSub: Subscription | null = null;
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly twitterImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  protected readonly twitterMaxTweetChars = TWITTER_MAX_TWEET_WEIGHTED_CHARS;
+  /**
+   * The Microsoft image extension, sent as `microsoftConfig.imageAssetId` (see `microsoftImageSent`):
+   * an upload made for this brief, and nothing else. The upload state mirrors the Meta fields above
+   * one for one.
+   */
+  protected readonly microsoftImageAssetId = signal('');
+  protected readonly microsoftImageAssetName = signal('');
+  protected readonly microsoftImageAssetBriefId = signal('');
+  protected readonly microsoftImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly microsoftImageUploadPendingName = signal('');
+  private readonly microsoftImageUploadPendingBriefId = signal('');
+  private readonly microsoftImageUploadFailedBriefId = signal('');
+  protected readonly microsoftImageUploadError = signal('');
+  protected readonly microsoftImageFileDescribedBy = computed(() =>
+    ['microsoft-image-file-hint', 'microsoft-image-file-status', ...(this.microsoftImageUploadStatus() === 'error' ? ['microsoft-image-file-error'] : [])].join(
+      ' '
+    )
+  );
+  private microsoftImageUploadSub: Subscription | null = null;
+  /** Whether the picked Microsoft image's pixel size is being read, which holds Create like an upload does. */
+  protected readonly microsoftImageChecking = signal(false);
+  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
+  protected readonly microsoftImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
+  /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
    *
@@ -856,7 +1258,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywordDraft = signal('');
   protected readonly microsoftGeoTargets = signal<string[]>([]);
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
-  protected readonly microsoftBudgetUsd = signal(500);
+  protected readonly microsoftBudgetUsd = signal(DEFAULT_MICROSOFT_BUDGET_USD);
   protected readonly microsoftCpcBid = signal('');
 
   /**
@@ -871,7 +1273,8 @@ export class ImplementationTabComponent implements OnInit {
    * A SEPARATE list from the form's single `countryCode`, not a replacement for it. `countryCode` is
    * read by five other things — the campaign-name region token, the Meta, Microsoft and Reddit geo
    * fallbacks, and the draft — and widening it to a list would change what every one of them
-   * targets. This list is additive: empty means "use the event country", exactly as before.
+   * targets. This list is additive: empty means "use the event country", exactly as before — unless
+   * a postal code or radius target will be sent, which {@link googleEffectiveGeoTargets} explains.
    */
   protected readonly googleGeoTargets = signal<string[]>([]);
   protected readonly googleMaxGeoTargets = GOOGLE_ADS_MAX_GEO_TARGETS;
@@ -885,6 +1288,98 @@ export class ImplementationTabComponent implements OnInit {
    * the control that cannot express it is the kinder one.
    */
   protected readonly googleGeoOptions = Object.keys(GOOGLE_ADS_GEO_TARGET_MAP).sort();
+  /**
+   * Google's postal-code targets, as raw geo target constant ids.
+   *
+   * Ids rather than the postal codes themselves, because that is all the wire takes: upstream's
+   * `resolveGeoList` (`internal/platform/googleads/geo.go`) reads a numeric `geoTargets` entry as a
+   * constant id from Google's published geo-targets table, and neither campaign-service nor the BFF
+   * exposes a lookup from a postal code to its id. The operator finds the id in that table. Sent in
+   * the same `geoTargets` list as {@link googleGeoTargets}, after the countries — see
+   * {@link googleEffectiveGeoTargets}.
+   *
+   * Free text rather than a select, the opposite choice from {@link googleGeoOptions}: Google's table
+   * has ~100k rows and changes, so the accepted set is not enumerable here. What upstream judges
+   * locally is the SHAPE — digits, canonical — and the add path mirrors exactly that.
+   */
+  protected readonly googlePostalGeoTargets = signal<string[]>([]);
+  /**
+   * The postal-code box's live text, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when an id is added. Derived from {@link googlePostalGeoForm},
+   * which the wrapper binds to, so readers keep a signal while the form stays the source of truth.
+   */
+  protected readonly googlePostalGeoDraft: Signal<string> = computed(() => this.googlePostalGeoFormDraft().postalId);
+  private readonly googlePostalGeoFormDraft: Signal<{ postalId: string }> = this.initFormDraft(this.googlePostalGeoForm);
+  protected readonly googlePostalGeoIdMinDigits = GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  /**
+   * Display labels for picked postal-code ids, by id — Google's canonical name, recorded when an id
+   * comes from the location picker. Display only: the request carries the ids, and an id with no
+   * label (typed, or restored from a draft saved before labels existed) renders as itself.
+   */
+  protected readonly googlePostalGeoLabels = signal<Record<string, string>>({});
+  /** The postal-code chips with the label each renders, so the template binds data, not a lookup. */
+  protected readonly googlePostalGeoChips = computed(() => {
+    const labels = this.googlePostalGeoLabels();
+    return this.googlePostalGeoTargets().map((id) => ({ id, label: Object.hasOwn(labels, id) ? labels[id] : id }));
+  });
+  /**
+   * The location picker's latest query text, trimmed; the search below is debounced off it.
+   *
+   * NO equality check: every completion the autocomplete asks for must reach the search, even one
+   * that trims to the query already searched (`Austin` then `Austin `). PrimeNG shows its loading
+   * state until suggestions are set again, so a deduplicated repeat would leave it spinning — and it
+   * is also how the operator retries a search that failed.
+   */
+  protected readonly googleGeoSearchQuery = signal('', { equal: () => false });
+  private readonly googleGeoSearchState: Signal<GoogleAdsGeoTargetSearchState> = this.initGoogleGeoSearchState();
+  /** The picker's rows, an id already on the list marked `disabled` so it cannot be picked twice. */
+  protected readonly googleGeoSearchOptions = computed<GoogleAdsGeoTargetOption[]>(() => {
+    const added = new Set(this.googlePostalGeoTargets());
+    return this.googleGeoSearchState().suggestions.map((s) => ({ ...s, disabled: added.has(s.id) }));
+  });
+  protected readonly googleGeoSearchFailed = computed(() => this.googleGeoSearchState().failed);
+  /**
+   * Whether a search is waiting on its debounce or its request: its stale rows are already cleared,
+   * but nothing has answered yet, so "nothing matched" would be false.
+   */
+  protected readonly googleGeoSearchPending = computed(() => this.googleGeoSearchState().pending);
+  /**
+   * What the picker's popup says while it has no rows — searching, failed, or nothing matched.
+   *
+   * A custom `#empty` template, NOT a toggled `showEmptyMessage`. PrimeNG opens or closes its popup
+   * only while it is `loading`, on the first suggestions update after a completion
+   * (`handleSuggestionsChange`). The cleared rows a new query starts with ARE that update, so with
+   * the empty message switched off they closed the popup and spent the loading cycle, and the real
+   * rows then landed in a popup that never reopened. An empty template keeps the popup open through
+   * that first update and lets it say which empty state it is.
+   */
+  protected readonly googleGeoSearchEmptyMessage = computed(() => {
+    if (this.googleGeoSearchPending()) return 'Searching…';
+    if (this.googleGeoSearchFailed()) return 'The location search did not come back. Try again in a moment.';
+    return 'No matching locations.';
+  });
+  protected readonly googleGeoSearchTruncated = computed(() => this.googleGeoSearchState().truncated);
+  /** What the picker's input points `aria-describedby` at: the failure line when a search failed, else the hint. */
+  protected readonly googleGeoSearchDescribedBy = computed(() => (this.googleGeoSearchFailed() ? 'google-geo-search-failed' : 'google-postal-hint'));
+  /**
+   * Google's radius targets — "everyone within N miles of the venue" — the one location shape that
+   * is not a place in Google's table.
+   *
+   * A point in decimal degrees, not an address: `googleAdsProximityConfig` upstream carries
+   * `latitude`, `longitude`, `radius` and `radiusUnit` and nothing else, so an address has nowhere
+   * to go on the wire. An entry arrives through {@link addGoogleProximityTarget} or a restored
+   * draft; the BFF guard re-checks every entry against `validateProximityTargets` before dispatch.
+   */
+  protected readonly googleProximityTargets = signal<CampaignProximityTarget[]>([]);
+  protected readonly googleMaxProximityTargets = GOOGLE_ADS_MAX_PROXIMITY_TARGETS;
+  /** The unit select's options, labelled in lower case as the chips read ("25 kilometers around …"). */
+  protected readonly googleRadiusUnitOptions = GOOGLE_ADS_RADIUS_UNITS.map((unit) => ({ label: unit.toLowerCase(), value: unit }));
+  /**
+   * The radius sub-form's live values, on the same rule as {@link googleSitelinkDraft}: transient,
+   * reaching the saved draft only when a radius target is added. Derived from
+   * {@link googleProximityForm} through `initFormDraft`, as the call, promotion and price drafts are.
+   */
+  protected readonly googleProximityDraft: Signal<CampaignProximityTargetDraft> = this.initFormDraft(this.googleProximityForm);
   /**
    * The languages the Google campaign serves in, as ISO 639-1 codes.
    *
@@ -927,6 +1422,24 @@ export class ImplementationTabComponent implements OnInit {
    * rather than calling a lookup on every change-detection pass.
    */
   protected readonly googleLanguageChips = computed(() => this.googleLanguages().map((code) => ({ code, name: this.googleLanguageNames.get(code) ?? code })));
+  /**
+   * Google's audience segments — existing Customer Match or remarketing user lists the Search ad
+   * group targets, as full resource names (`customers/{customerId}/userLists/{id}`).
+   *
+   * Free text rather than a select, unlike {@link googleGeoOptions}, because there is nothing to
+   * enumerate from: campaign-service creates no audiences and exposes no listing of an account's
+   * user lists — its Google audience read is an age/gender/device breakdown, and the brief's
+   * audience rows are HubSpot lists. The resource name is what upstream takes, so it is the input.
+   * Its SHAPE is what upstream judges, and that judgement is mirrored on the add path.
+   */
+  protected readonly googleAudienceSegments = signal<string[]>([]);
+  protected readonly googleMaxAudienceSegments = GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS;
+  /**
+   * The segment box's live text, so the shape warning describes what is in the box rather than
+   * what was last committed. Transient: it reaches the draft only when a segment is ADDED, exactly
+   * as {@link googleCalloutDraft} does.
+   */
+  protected readonly googleAudienceSegmentDraft = signal('');
   /**
    * Google's callout extensions — short claims appended to the Search ad, each carrying no link.
    *
@@ -982,16 +1495,70 @@ export class ImplementationTabComponent implements OnInit {
    * see {@link CampaignStructuredSnippetDraft} for why it is not parsed here.
    */
   protected readonly googleStructuredSnippetDraft = signal<CampaignStructuredSnippetDraft>({ header: '', values: '' });
+  /**
+   * Google's call, promotion and price extensions — the three remaining Search extension types
+   * campaign-service creates (`assets_extended.go`).
+   *
+   * TYPED, as the snippets are: no generator event exists for any of them, so each list grows only
+   * through its add method or a restored draft. Every add is judged by the SAME functions the BFF
+   * refuses by (`campaign-google-assets.utils`), which mirror upstream's validators branch for branch.
+   */
+  protected readonly googleCallExtensions = signal<CampaignCallExtension[]>([]);
+  protected readonly googleMaxCallExtensions = GOOGLE_ADS_MAX_CALL_EXTENSIONS;
+  protected readonly googlePromotions = signal<CampaignPromotion[]>([]);
+  protected readonly googleMaxPromotions = GOOGLE_ADS_MAX_PROMOTIONS;
+  protected readonly googlePrices = signal<CampaignPriceExtension[]>([]);
+  protected readonly googleMaxPrices = GOOGLE_ADS_MAX_PRICE_EXTENSIONS;
+  protected readonly googleMinPriceRows = GOOGLE_ADS_MIN_PRICE_OFFERINGS;
+  protected readonly googleMaxPriceRows = GOOGLE_ADS_MAX_PRICE_OFFERINGS;
+  /**
+   * The price selects' options. Google's own enum names, offered as a closed list for the reason the
+   * language select is one — the operator picks rather than spells — while the BFF checks only their
+   * shape, so a value Google adds later is not refused there.
+   */
+  protected readonly googlePriceTypeOptions = GOOGLE_ADS_PRICE_TYPES.map((value) => ({ label: value, value }));
+  protected readonly googlePriceQualifierOptions = [
+    { label: 'No qualifier', value: '' },
+    ...GOOGLE_ADS_PRICE_QUALIFIERS.map((value) => ({ label: value, value })),
+  ];
+  protected readonly googlePriceUnitOptions = [{ label: 'No unit', value: '' }, ...GOOGLE_ADS_PRICE_UNITS.map((value) => ({ label: value, value }))];
+  /** The promotion's two oneofs, one select each, so the form cannot express both arms of either. */
+  protected readonly googlePromotionDiscountOptions = [
+    { label: 'Percent off', value: 'percent' },
+    { label: 'Amount off', value: 'amount' },
+  ];
+  protected readonly googlePromotionConditionOptions = [
+    { label: 'No condition', value: 'none' },
+    { label: 'Promotion code', value: 'code' },
+    { label: 'Orders over', value: 'ordersOver' },
+  ];
+  /**
+   * The three sub-forms' live values as signals, so the refusal computeds below re-run as the
+   * operator types — the forms are the source of truth, these are their read side.
+   */
+  protected readonly googleCallExtensionDraft: Signal<CampaignCallExtensionDraft> = this.initFormDraft(this.googleCallExtensionForm);
+  protected readonly googlePromotionDraft: Signal<CampaignPromotionDraft> = this.initFormDraft(this.googlePromotionForm);
+  protected readonly googlePriceDraft: Signal<CampaignPriceExtensionDraft> = this.initFormDraft(this.googlePriceForm);
+  /**
+   * The price table's row groups, for the template's `@for`. A `FormArray`'s `controls` is not a
+   * signal, so the template cannot read it directly under zoneless change detection; reading
+   * {@link googlePriceDraft} here re-runs this on every row pushed or removed. Tracked by the group
+   * itself, which is a stable identity a typed row does not otherwise have.
+   */
+  protected readonly googlePriceRowForms = computed(() => {
+    this.googlePriceDraft();
+    return [...this.googlePriceForm.controls.offerings.controls];
+  });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
-  protected readonly metaBudgetUsd = signal(500);
+  protected readonly metaBudgetUsd = signal(DEFAULT_META_BUDGET_USD);
   protected readonly metaLifetimeBudget = signal(false);
   /**
    * Meta campaign objective. Defaults to `traffic`, matching what campaign-service assumes when
    * the field is absent, so turning the selector on does not silently change any existing
    * caller's campaign.
    */
-  protected readonly metaObjective = signal<MetaObjective>('traffic');
+  protected readonly metaObjective = signal<MetaObjective>(DEFAULT_META_OBJECTIVE);
   /**
    * Placement toggles, seeded from the shared defaults so the initial state is the one the
    * service would have applied anyway.
@@ -1190,8 +1757,185 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleEffectiveGeoTargets = computed<string[]>(() => {
     const chips = this.googleGeoTargets();
-    if (chips.length > 0) return chips;
+    const postal = this.googleDispatchedPostalGeoTargets();
+    // Countries first, then postal-code ids, in the ONE list upstream reads both spellings from.
+    if (chips.length > 0 || postal.length > 0) return [...chips, ...postal];
+    // A radius-only campaign sends NO geo list. Falling back to the event country here would be
+    // worse than redundant: Google serves the UNION of every location criterion, so a country beside
+    // a 25-mile radius would buy the whole country and make the radius mean nothing.
+    if (this.googleDispatchedProximityTargets().length > 0) return [];
     return [this.googleGeoFallbackCode()];
+  });
+
+  /**
+   * Whether the request falls back to the event country — true only when the operator added no
+   * country, no postal code and no radius that will be sent. The template's two fallback lines
+   * read this rather than the country list alone, so they cannot claim the event country is
+   * targeted while the request carries only postal codes.
+   */
+  protected readonly googleGeoUsesEventCountry = computed(
+    () => this.googleGeoTargets().length === 0 && this.googleDispatchedPostalGeoTargets().length === 0 && this.googleDispatchedProximityTargets().length === 0
+  );
+
+  /**
+   * The postal-code ids a create would carry: the list on the campaign-service road, nothing on the
+   * legacy one. The in-process creator resolves `geoTargets` through the 30-country map and DROPS
+   * any entry the map lacks, so a postal-code id sent there would be discarded while the campaign
+   * was created targeting something else.
+   */
+  private readonly googleDispatchedPostalGeoTargets = computed(() => (this.googlePostalGeoAvailable() ? this.googlePostalGeoTargets() : []));
+
+  /** The radius targets a create would carry: the list on a channel that takes them, else nothing. */
+  private readonly googleDispatchedProximityTargets = computed(() => (this.googleProximityChannel() ? this.googleProximityTargets() : []));
+
+  /**
+   * Countries and postal codes count against ONE cap, because they are one list upstream:
+   * `resolveGeoList` checks `maxGeoTargets` against the `geoTargets` slice as a whole.
+   *
+   * Only the postal ids that will be SENT are counted. Ids held on the legacy road are neither shown
+   * nor sent there, so counting them would refuse countries for a reason the operator cannot see or
+   * remove. The postal box itself renders only where the ids are sent, so its own cap is unaffected.
+   */
+  protected readonly googleGeoTargetCount = computed(() => this.googleGeoTargets().length + this.googleDispatchedPostalGeoTargets().length);
+  protected readonly googleGeoTargetsFull = computed(() => this.googleGeoTargetCount() >= GOOGLE_ADS_MAX_GEO_TARGETS);
+  /**
+   * Whether the list a create would send is OVER the cap — reachable only when postal ids held while
+   * the capability was unanswered are released by a late yes, after countries were added in the
+   * meantime (the add guards cannot see held ids). Create waits rather than letting the BFF refuse it.
+   */
+  protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
+
+  /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
+  private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
+
+  /**
+   * Whether the text in the postal-code box is not a geo target constant id at all — a postal code
+   * typed as itself (`94103`, `SW1A 1AA`) is the likely case. False while the box is empty. A
+   * five-digit US ZIP is digits too and is NOT caught here: it is a well-formed id that names some
+   * other place, which only Google can tell, and the hint under the box says so.
+   */
+  protected readonly googlePostalGeoDraftNotId = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && !GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(text);
+  });
+
+  /** Digits, but not the canonical spelling upstream requires — `02840`, `0`, a 21-digit run. */
+  protected readonly googlePostalGeoDraftNotCanonical = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(text) && !isCanonicalGoogleAdsResourceId(text);
+  });
+
+  /** Already a chip. Upstream collapses the repeat, so refusing it here only spares a dead chip. */
+  protected readonly googlePostalGeoDraftDuplicate = computed(() => {
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && this.googlePostalGeoTargets().includes(text);
+  });
+
+  /** The message line describing the postal-code box, or null when it is clean. */
+  protected readonly googlePostalGeoDraftErrorId = computed<string | null>(() => {
+    if (this.googlePostalGeoDraftNotId()) return 'google-postal-not-id';
+    if (this.googlePostalGeoDraftNotCanonical()) return 'google-postal-not-canonical';
+    if (this.googlePostalGeoDraftDuplicate()) return 'google-postal-duplicate';
+    return null;
+  });
+
+  /**
+   * A well-formed id SHORTER than any postal-code id in Google's table — most likely a ZIP typed as
+   * itself (`94103`). A WARNING, not a refusal: upstream accepts the entry, which names some other
+   * criterion or nothing, and an operator who really meant a region id must still be able to add it.
+   * Only raised when the box is otherwise clean, so it never competes with a real error line.
+   */
+  protected readonly googlePostalGeoDraftLooksLikePostalCode = computed(() => {
+    if (this.googlePostalGeoDraftErrorId() !== null) return false;
+    const text = this.googlePostalGeoDraftText();
+    return text !== '' && text.length < GOOGLE_ADS_POSTAL_GEO_ID_MIN_DIGITS;
+  });
+
+  /** What the postal-code box points `aria-describedby` at: its error, else the warning, else the hint. */
+  protected readonly googlePostalGeoDraftDescribedBy = computed(() => {
+    if (this.googlePostalGeoDraftErrorId()) return this.googlePostalGeoDraftErrorId();
+    return this.googlePostalGeoDraftLooksLikePostalCode() ? 'google-postal-looks-like-code' : 'google-postal-hint';
+  });
+
+  /**
+   * The radius sub-form's three numbers, parsed: `null` for an empty box (not filled in yet), `NaN`
+   * for text that is not a number. Kept apart so the warnings below fire on what was typed, and the
+   * add button's disabled state alone covers what was not.
+   */
+  private readonly googleProximityDraftNumbers = computed(() => {
+    const draft = this.googleProximityDraft();
+    return {
+      latitude: this.parseGoogleProximityNumber(draft.latitude),
+      longitude: this.parseGoogleProximityNumber(draft.longitude),
+      radius: this.parseGoogleProximityNumber(draft.radius),
+    };
+  });
+
+  /** Typed and not a finite latitude in -90..90 — `validateProximityTargets`' first two checks. */
+  protected readonly googleProximityLatitudeInvalid = computed(() => {
+    const { latitude } = this.googleProximityDraftNumbers();
+    return latitude !== null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90);
+  });
+
+  /** Typed and not a finite longitude in -180..180. */
+  protected readonly googleProximityLongitudeInvalid = computed(() => {
+    const { longitude } = this.googleProximityDraftNumbers();
+    return longitude !== null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180);
+  });
+
+  /** Typed and not a finite radius above zero. */
+  protected readonly googleProximityRadiusInvalid = computed(() => {
+    const { radius } = this.googleProximityDraftNumbers();
+    return radius !== null && (!Number.isFinite(radius) || radius <= 0);
+  });
+
+  /**
+   * The picked unit's ceiling, or null before a unit is picked. Each unit has its OWN ceiling — the
+   * two are not a converted pair — so the bound cannot be shown until the unit is known.
+   */
+  protected readonly googleProximityMaxRadius = computed<number | null>(() => {
+    const unit = this.googleProximityDraft().radiusUnit;
+    return unit === '' ? null : GOOGLE_ADS_MAX_RADIUS[unit];
+  });
+
+  /** Over the picked unit's ceiling. Equal is accepted: upstream refuses only `radius > max`. */
+  protected readonly googleProximityRadiusOverMax = computed(() => {
+    const { radius } = this.googleProximityDraftNumbers();
+    const max = this.googleProximityMaxRadius();
+    return max !== null && radius !== null && Number.isFinite(radius) && radius > max;
+  });
+
+  /** The message line describing the radius box, or null when it is clean. */
+  protected readonly googleProximityRadiusErrorId = computed<string | null>(() => {
+    if (this.googleProximityRadiusInvalid()) return 'google-proximity-radius-invalid';
+    if (this.googleProximityRadiusOverMax()) return 'google-proximity-radius-too-large';
+    return null;
+  });
+
+  /** The same point, radius and unit as an entry already on the list. */
+  protected readonly googleProximityDuplicate = computed(() => {
+    const { latitude, longitude, radius } = this.googleProximityDraftNumbers();
+    const unit = this.googleProximityDraft().radiusUnit;
+    return this.googleProximityTargets().some((t) => t.latitude === latitude && t.longitude === longitude && t.radius === radius && t.radiusUnit === unit);
+  });
+
+  protected readonly googleProximityFull = computed(() => this.googleProximityTargets().length >= GOOGLE_ADS_MAX_PROXIMITY_TARGETS);
+
+  /**
+   * Whether the radius add button is withheld — {@link googleSitelinkAddDisabled}'s rule: the empty
+   * boxes and the unpicked unit are "not filled in yet", and every warning above withholds it too.
+   */
+  protected readonly googleProximityAddDisabled = computed(() => {
+    const { latitude, longitude, radius } = this.googleProximityDraftNumbers();
+    if (latitude === null || longitude === null || radius === null || this.googleProximityDraft().radiusUnit === '') return true;
+    return (
+      this.googleProximityFull() ||
+      this.googleProximityLatitudeInvalid() ||
+      this.googleProximityLongitudeInvalid() ||
+      this.googleProximityRadiusInvalid() ||
+      this.googleProximityRadiusOverMax() ||
+      this.googleProximityDuplicate()
+    );
   });
 
   /**
@@ -1222,6 +1966,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly showMetaSection = computed(() => this.selectedPlatforms().includes('meta-ads'));
 
   protected readonly showMicrosoftSection = computed(() => this.selectedPlatforms().includes('microsoft-ads'));
+
+  /**
+   * Whether the tab holds X at all. The section renders its fields only on `twitterCreateAvailable`;
+   * held without it, the section is the `twitterCreateBlock` and a Remove.
+   */
+  protected readonly showTwitterSection = computed(() => this.selectedPlatforms().includes('twitter-ads'));
 
   /**
    * The geo list a Microsoft create would ACTUALLY send — one value for the preview and `submit()`,
@@ -1354,6 +2104,28 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
+
+  /**
+   * Why the text in the segment box would be refused, or `null` when it is blank or well formed.
+   *
+   * `validateAudienceSegments`' per-entry branches, after Go's trim: a custom audience is named for
+   * what it is — upstream parses it and refuses it on Search — and anything else that is not a
+   * `.../userLists/{id}` resource name is refused as unrecognized. A repeat is not here: upstream
+   * collapses it rather than refusing, so the add simply declines to chip it twice.
+   */
+  protected readonly googleAudienceSegmentDraftError = computed<'custom' | 'shape' | null>(() => {
+    const trimmed = googleAdsTrimSpace(this.googleAudienceSegmentDraft());
+    if (trimmed === '' || GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return null;
+    return GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN.test(trimmed) ? 'custom' : 'shape';
+  });
+
+  /** The id of the message line describing the segment box, for `aria-describedby`, or `null`. */
+  protected readonly googleAudienceSegmentDraftErrorId = computed<string | null>(() => {
+    const error = this.googleAudienceSegmentDraftError();
+    return error ? `google-audience-segment-${error}` : null;
+  });
+
+  protected readonly googleAudienceSegmentsFull = computed(() => this.googleAudienceSegments().length >= GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS);
 
   /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
   protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
@@ -1570,6 +2342,94 @@ export class ImplementationTabComponent implements OnInit {
   });
 
   /**
+   * Why the call extension in the sub-form would be refused, or `null` when it would not — or when
+   * either box is still EMPTY, on the rule {@link googleSitelinkUrlInvalid} follows: an unfilled field
+   * is not yet a mistake, and the add button's own disabled state withholds the add until it is filled.
+   *
+   * One computed for the whole sub-form rather than one per refusal, because the refusals come from
+   * the shared judge as sentences already; the add button and {@link addGoogleCallExtension} read the
+   * same judge, so the three cannot disagree.
+   */
+  protected readonly googleCallExtensionDraftError = computed<string | null>(() => {
+    const call = this.googleCallExtensionFromDraft(this.googleCallExtensionDraft());
+    if (call.countryCode === '' || call.phoneNumber === '') return null;
+    return googleCallExtensionRefusal(call, this.googleCallExtensions());
+  });
+
+  protected readonly googleCallExtensionsFull = computed(() => this.googleCallExtensions().length >= GOOGLE_ADS_MAX_CALL_EXTENSIONS);
+
+  protected readonly googleCallExtensionAddDisabled = computed(() => {
+    const call = this.googleCallExtensionFromDraft(this.googleCallExtensionDraft());
+    return this.googleCallExtensionsFull() || call.countryCode === '' || call.phoneNumber === '' || this.googleCallExtensionDraftError() !== null;
+  });
+
+  /**
+   * The promotion sub-form's refusal, on {@link googleCallExtensionDraftError}'s rule: silent until
+   * the three boxes every promotion needs — what is on sale, the discount and the destination — are
+   * filled, then the selected condition's own refusal ({@link googlePromotionConditionRefusal}), then
+   * upstream's first refusal for what is in the form.
+   */
+  protected readonly googlePromotionDraftError = computed<string | null>(() => {
+    const draft = this.googlePromotionDraft();
+    if ([draft.promotionTarget, draft.discount, draft.finalUrl].some((text) => googleAdsTrimSpace(text) === '')) return null;
+    return this.googlePromotionConditionRefusal(draft) ?? googlePromotionRefusal(this.googlePromotionFromDraft(draft), this.googlePromotions());
+  });
+
+  protected readonly googlePromotionsFull = computed(() => this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS);
+
+  /** Whether the promotion form needs a currency: only when one of its two money fields is in use. */
+  protected readonly googlePromotionNeedsCurrency = computed(() => {
+    const draft = this.googlePromotionDraft();
+    return draft.discountKind === 'amount' || draft.eligibilityKind === 'ordersOver';
+  });
+
+  protected readonly googlePromotionAddDisabled = computed(() => {
+    const draft = this.googlePromotionDraft();
+    if ([draft.promotionTarget, draft.discount, draft.finalUrl].some((text) => googleAdsTrimSpace(text) === '')) return true;
+    return this.googlePromotionsFull() || this.googlePromotionDraftError() !== null;
+  });
+
+  /**
+   * The price sub-form's refusal, on the same rule: silent until every box a price table needs is
+   * filled — type, language, currency, and each row's header, description, price and destination —
+   * then upstream's first refusal for the table.
+   */
+  protected readonly googlePriceDraftError = computed<string | null>(() => {
+    const draft = this.googlePriceDraft();
+    if (!this.googlePriceDraftFilled(draft)) return null;
+    return googlePriceExtensionRefusal(this.googlePriceFromDraft(draft));
+  });
+
+  protected readonly googlePricesFull = computed(() => this.googlePrices().length >= GOOGLE_ADS_MAX_PRICE_EXTENSIONS);
+
+  protected readonly googlePriceAddDisabled = computed(
+    () => this.googlePricesFull() || !this.googlePriceDraftFilled(this.googlePriceDraft()) || this.googlePriceDraftError() !== null
+  );
+
+  /**
+   * The added promotions and price tables as display rows, so the template binds labels rather than
+   * formatting on every change-detection pass — the reason {@link googleStructuredSnippetRows} gives.
+   * `key` is the identity the add guard makes unique (the case-folded target), or the list position
+   * for prices, which upstream does not de-duplicate against one another.
+   */
+  protected readonly googlePromotionRows = computed(() =>
+    this.googlePromotions().map((promotion) => ({
+      key: promotion.promotionTarget,
+      label: promotion.promotionTarget,
+      detail: this.googlePromotionDetail(promotion),
+      finalUrl: promotion.finalUrl,
+    }))
+  );
+
+  protected readonly googlePriceRows = computed(() =>
+    this.googlePrices().map((price, index) => ({
+      key: index,
+      label: [price.type, price.priceQualifier].filter(Boolean).join(' · '),
+      detail: price.offerings.map((row) => `${row.header} ${row.amount} ${row.currencyCode}`).join(', '),
+    }))
+  );
+
+  /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
    * not logic-bearing calls, which re-run on every change-detection pass.
@@ -1643,6 +2503,55 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaHasPlacement = computed(() => {
     const placements = this.metaPlacements();
     return this.metaSelectablePlacements.some((key) => placements[key]);
+  });
+
+  /**
+   * Whether the ad set runs on Instagram — Instagram Feed, Stories or Reels, the three placements
+   * campaign-service maps to Instagram positions (`meta.UsesInstagram`). Only then is the Instagram
+   * account id sent, and only then does Meta need it to publish.
+   */
+  protected readonly metaUsesInstagram = computed(() => {
+    const placements = this.metaPlacements();
+    return placements.instagramFeed || placements.stories || placements.reels;
+  });
+
+  /** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
+  protected readonly metaDsaCountries = computed<string[]>(() => this.metaEffectiveGeoTargets().filter((c) => META_DSA_TERRITORIES.has(c)));
+
+  /**
+   * Why the Instagram account id cannot be sent, or `null`. Required only when the capability is on
+   * AND an Instagram placement is enabled — Meta creates the ad without it but will not publish it.
+   * Numeric, as campaign-service's `numericIDRE` requires; trimmed first because upstream trims.
+   */
+  protected readonly metaInstagramUserIdError = computed<string | null>(() => {
+    if (!this.metaInstagramDsaAvailable() || !this.metaUsesInstagram()) return null;
+    const id = this.metaInstagramDsaDraft().instagramUserId.trim();
+    if (id === '') return 'An Instagram account ID is required for the Instagram placements. Enter it, or turn off Instagram Feed, Stories and Reels.';
+    if (!META_NUMERIC_ID_PATTERN.test(id)) return 'The Instagram account ID must be numeric.';
+    return null;
+  });
+
+  /** Why the DSA beneficiary cannot be sent, or `null` — see `metaDsaFieldError`. */
+  protected readonly metaDsaBeneficiaryError = computed<string | null>(() => this.metaDsaFieldError('dsaBeneficiary'));
+  /** Why the DSA payor cannot be sent, or `null` — see `metaDsaFieldError`. */
+  protected readonly metaDsaPayorError = computed<string | null>(() => this.metaDsaFieldError('dsaPayor'));
+
+  /**
+   * The three keys `submit` adds to `metaConfig`, or none. Off: nothing, so the create is exactly
+   * the one before this shipped (and the create route refuses the keys). On: the Instagram id only
+   * for an Instagram placement, and the disclosures only as a pair — `canSubmit` has already blocked
+   * a one-sided or an EU-without-both state, so a lone value is never sent.
+   */
+  protected readonly metaInstagramDsaFields = computed<Pick<MetaCampaignCreateRequest, 'instagramUserId' | 'dsaBeneficiary' | 'dsaPayor'>>(() => {
+    if (!this.metaInstagramDsaAvailable()) return {};
+    const draft = this.metaInstagramDsaDraft();
+    const instagramUserId = draft.instagramUserId.trim();
+    const dsaBeneficiary = draft.dsaBeneficiary.trim();
+    const dsaPayor = draft.dsaPayor.trim();
+    return {
+      ...(this.metaUsesInstagram() && instagramUserId !== '' ? { instagramUserId } : {}),
+      ...(dsaBeneficiary !== '' && dsaPayor !== '' ? { dsaBeneficiary, dsaPayor } : {}),
+    };
   });
 
   /**
@@ -1738,6 +2647,203 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
 
+  /**
+   * Why Create is blocked for an uploaded Meta image this tab still holds but cannot send, or
+   * `null` — `redditImageAssetBlock`'s sibling, for the same reasons: a restored upload must never
+   * be silently left out of the request.
+   */
+  protected readonly metaImageAssetBlock: Signal<CampaignMetaImageAssetBlock | null> = this.initMetaImageAssetBlock();
+  /** Whether the draft holds an uploaded Meta image made for the brief now open — the only one sent. */
+  protected readonly metaImageAssetForThisBrief = computed(
+    () => this.metaImageAssetId() !== '' && this.metaImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly metaAssetWithheld = computed(
+    () => (this.metaImageAssetForThisBrief() || this.metaImageUploadStatus() === 'uploading') && !this.metaAssetUploadAvailable()
+  );
+  /** A pasted image URL the request cannot carry: the image capability is not an explicit yes. */
+  private readonly metaImageUrlWithheld = computed(() => this.metaImageUrl() !== '' && !this.metaCreativeAvailable());
+  protected readonly metaImageAssetBlockMessage = computed(() => this.metaImageAssetBlock()?.message ?? '');
+  protected readonly metaImageUploadStatusMessage = computed(() => {
+    if (this.metaImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.metaImageAssetForThisBrief() ? `Uploaded: ${this.metaImageAssetName() || 'image'}` : '';
+  });
+  protected readonly metaImageUploadLiveMessage = computed(() => (this.metaAssetUploadAvailable() ? this.metaImageUploadStatusMessage() : ''));
+  /**
+   * What the variant preview says about the image each ad will carry, read from the same field the
+   * payload is (`metaImageField`), so the preview never promises an image the request leaves out.
+   */
+  protected readonly metaPreviewImageLabel = computed(() => {
+    const image = this.metaImageField();
+    if ('imageAssetId' in image) return `Image: ${this.metaImageAssetName() || 'uploaded image'}`;
+    if ('imageUrl' in image) return `Image: ${image.imageUrl}`;
+    return '';
+  });
+
+  /**
+   * The brief's stored images, read while a Google image slot offers the library. Re-read on every
+   * `creativeLibraryRevision` bump, so an upload here or in the Reddit and Meta sections is
+   * offered as soon as it is stored.
+   */
+  protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
+  /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
+  protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /**
+   * Why Create is blocked for a stored Google image the request cannot carry, or that
+   * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
+   */
+  protected readonly googleImageAssetBlock: Signal<CampaignGoogleImageAssetBlock | null> = this.initGoogleImageAssetBlock();
+  protected readonly googleImageAssetBlockMessage = computed(() => this.googleImageAssetBlock()?.message ?? '');
+
+  /**
+   * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
+   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have.
+   */
+  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = this.initLinkedInImageAssetBlock();
+  /** Whether the draft holds an uploaded LinkedIn image made for the brief now open — the only one sent. */
+  protected readonly linkedInImageAssetForThisBrief = computed(
+    () => this.linkedInImageAssetId() !== '' && this.linkedInImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly linkedInAssetWithheld = computed(
+    () => (this.linkedInImageAssetForThisBrief() || this.linkedInImageUploadStatus() === 'uploading') && !this.linkedInAssetUploadAvailable()
+  );
+  protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
+  protected readonly linkedInImageUploadStatusMessage = computed(() => {
+    if (this.linkedInImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.linkedInImageAssetForThisBrief() ? `Uploaded: ${this.linkedInImageAssetName() || 'image'}` : '';
+  });
+  protected readonly linkedInImageUploadLiveMessage = computed(() => (this.linkedInAssetUploadAvailable() ? this.linkedInImageUploadStatusMessage() : ''));
+  /**
+   * What the variant preview says about the thumbnail each dark post will carry, read from the same
+   * condition the payload is (`linkedInImageSent`), so the preview never promises an image the
+   * request leaves out.
+   */
+  protected readonly linkedInPreviewImageLabel = computed(() =>
+    this.linkedInImageSent() ? `Image: ${this.linkedInImageAssetName() || 'uploaded image'}` : ''
+  );
+
+  /**
+   * Why Create is blocked while the tab holds X without an explicit yes from `twitterCreateEnabled`,
+   * or `null`. Held, never dropped: a create that silently left X out would launch the other
+   * platforms while the brief on screen still names X. Offers Remove X (`onTwitterRemove`).
+   */
+  protected readonly twitterCreateBlock: Signal<CampaignTwitterCreateBlock | null> = this.initTwitterCreateBlock();
+  protected readonly twitterCreateBlockMessage = computed(() => this.twitterCreateBlock()?.message ?? '');
+
+  /**
+   * The X daily budget as a number, or `null` when the field is blank or not a plain decimal. Read
+   * through `campaignFormRevision` because the control is not a signal. The shape is checked before
+   * `Number`, which would otherwise read `1e3` as 1000 and `0x10` as 16 — a typo spent as a budget.
+   */
+  protected readonly twitterBudgetAmount = computed<number | null>(() => {
+    void this.campaignFormRevision();
+    const raw = this.campaignForm.controls.twitterBudget.value.trim();
+    if (!/^\d+(\.\d+)?$/.test(raw)) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  });
+
+  /** Why the X budget cannot be sent, or `null`: the house floor of 1 and the client's cap (`TWITTER_MAX_BUDGET`). */
+  protected readonly twitterBudgetError = computed<string | null>(() => {
+    const amount = this.twitterBudgetAmount();
+    if (amount === null) return 'Enter a daily budget for X.';
+    if (amount < 1 || amount > TWITTER_MAX_BUDGET) return `Enter a daily budget from 1 to ${TWITTER_MAX_BUDGET.toLocaleString('en-US')}.`;
+    return null;
+  });
+
+  /** The authored tweet's copy as typed. */
+  protected readonly twitterTweetText = computed<string>(() => {
+    void this.campaignFormRevision();
+    return this.campaignForm.controls.twitterTweetText.value;
+  });
+
+  /** The composed tweet's weighted length — the copy plus the registration link campaign-service appends. */
+  protected readonly twitterTweetLength = computed(() => twitterComposedTweetLength(this.twitterTweetText()));
+
+  /** Why the tweet copy cannot be sent, or `null` — the same rule the BFF applies (`twitterTweetTextError`). */
+  protected readonly twitterTweetError = computed(() => twitterTweetTextError(this.twitterTweetText()));
+
+  /**
+   * Why the flight cannot be sent to X, or `null` — `twitterFlightErrorAt` at the time of the last
+   * form edit. A memo cannot see the clock move, so `submit` asks again at the moment it sends.
+   */
+  protected readonly twitterFlightError = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    return this.twitterFlightErrorAt(Date.now());
+  });
+
+  /** Bumped by the X account Retry; joins the read's key below, so a click re-reads. */
+  private readonly twitterAccountAttempt = signal(0);
+
+  /**
+   * Which X ad account the create will use (LFXV2-3319), read while the X section is offered.
+   * `twitterConfig` names no account — campaign-service creates under the connection's bound one —
+   * so the section shows this rather than a choice. A derived signal over the read, not an effect:
+   * `switchMap` drops an answer for a foundation or attempt the operator has moved past.
+   */
+  protected readonly twitterAccountState: Signal<CampaignTwitterAccountState> = this.initTwitterAccountState();
+
+  /** The bound account's label, when the connection names one the credential also lists. */
+  protected readonly twitterAccountLabel = computed(() => {
+    const result = this.twitterAccountState().result;
+    if (result?.connection.state !== 'connected' || !result.connection.accountId) return '';
+    const listed = result.accounts.find((a) => a.key === result.connection.accountId);
+    return listed ? `${listed.label} (${listed.key})` : (result.connection.label ?? result.connection.accountId);
+  });
+
+  /**
+   * The registration link campaign-service appends to the tweet, as the preview shows it: the SAVED
+   * brief's, not the form's. campaign-service reads the destination from the stored brief, and an
+   * edit to Registration URL here is never saved to it, so the form value could name a link the
+   * tweet will not carry.
+   */
+  protected readonly twitterDestinationUrl = computed(() => (this.briefData()?.eventDetails?.registrationUrl ?? '').trim());
+
+  /** Why Create is blocked for an X image this tab holds but cannot send, or `null` — `linkedInImageAssetBlock`'s sibling. */
+  protected readonly twitterImageAssetBlock: Signal<CampaignTwitterImageAssetBlock | null> = this.initTwitterImageAssetBlock();
+  /** Whether the draft holds an uploaded X image made for the brief now open — the only one sent. */
+  protected readonly twitterImageAssetForThisBrief = computed(
+    () => this.twitterImageAssetId() !== '' && this.twitterImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: X creation is not an explicit yes. */
+  private readonly twitterAssetWithheld = computed(
+    () => (this.twitterImageAssetForThisBrief() || this.twitterImageUploadStatus() === 'uploading') && !this.twitterCreateAvailable()
+  );
+  protected readonly twitterImageAssetBlockMessage = computed(() => this.twitterImageAssetBlock()?.message ?? '');
+  protected readonly twitterImageUploadStatusMessage = computed(() => {
+    if (this.twitterImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.twitterImageAssetForThisBrief() ? `Uploaded: ${this.twitterImageAssetName() || 'image'}` : '';
+  });
+  protected readonly twitterImageUploadLiveMessage = computed(() => (this.twitterCreateAvailable() ? this.twitterImageUploadStatusMessage() : ''));
+  /** What the tweet preview says about its image, read from the same condition the payload is (`twitterImageSent`). */
+  protected readonly twitterPreviewImageLabel = computed(() => (this.twitterImageSent() ? `Image: ${this.twitterImageAssetName() || 'uploaded image'}` : ''));
+
+  /**
+   * Why Create is blocked for an uploaded Microsoft image this tab still holds but cannot send, or
+   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL Microsoft does not have here.
+   */
+  protected readonly microsoftImageAssetBlock: Signal<CampaignMicrosoftImageAssetBlock | null> = this.initMicrosoftImageAssetBlock();
+  /** Whether the draft holds an uploaded Microsoft image made for the brief now open — the only one sent. */
+  protected readonly microsoftImageAssetForThisBrief = computed(
+    () => this.microsoftImageAssetId() !== '' && this.microsoftImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
+  private readonly microsoftAssetWithheld = computed(
+    () =>
+      (this.microsoftImageAssetForThisBrief() || this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking()) &&
+      !this.microsoftAssetUploadAvailable()
+  );
+  protected readonly microsoftImageAssetBlockMessage = computed(() => this.microsoftImageAssetBlock()?.message ?? '');
+  protected readonly microsoftImageUploadStatusMessage = computed(() => {
+    if (this.microsoftImageChecking()) return 'Checking image…';
+    if (this.microsoftImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.microsoftImageAssetForThisBrief() ? `Uploaded: ${this.microsoftImageAssetName() || 'image'}` : '';
+  });
+  protected readonly microsoftImageUploadLiveMessage = computed(() => (this.microsoftAssetUploadAvailable() ? this.microsoftImageUploadStatusMessage() : ''));
+  /** Whether the uploaded Microsoft image goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
+  private readonly microsoftImageSent = computed(() => this.microsoftAssetUploadAvailable() && this.microsoftImageAssetForThisBrief());
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -1749,7 +2855,8 @@ export class ImplementationTabComponent implements OnInit {
     const redditSelected = platforms.includes('reddit-ads');
     const metaSelected = platforms.includes('meta-ads');
     const microsoftSelected = platforms.includes('microsoft-ads');
-    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected) return false;
+    const twitterSelected = platforms.includes('twitter-ads');
+    if (!googleSelected && !linkedInSelected && !redditSelected && !metaSelected && !microsoftSelected && !twitterSelected) return false;
 
     const form = this.campaignForm.controls;
     const sharedFieldsValid = !!form.eventName.value?.trim() && !!form.registrationUrl.value?.trim() && !!form.startDate.value && !!form.endDate.value;
@@ -1800,6 +2907,11 @@ export class ImplementationTabComponent implements OnInit {
     // carries a warning instead ({@link googleCreativeEmptyWarning}), because blocking it would
     // refuse a create upstream makes.
     if (googleSelected && this.googleCreativeError() !== null) return false;
+    // Postal-code or radius targets the request cannot carry yet. Withholding them would not shrink
+    // the campaign but WIDEN it to the event country, so Create waits — see the block's own doc.
+    if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
+    // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
+    if (googleSelected && this.googleGeoTargetsOverCap()) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -1843,6 +2955,9 @@ export class ImplementationTabComponent implements OnInit {
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
+    // The Instagram id and EU DSA disclosures (behind `metaInstagramDsaAvailable`; each error is
+    // `null` while it is off). campaign-service refuses the same EU and one-sided states with a 400.
+    if (metaSelected && (this.metaInstagramUserIdError() || this.metaDsaBeneficiaryError() || this.metaDsaPayorError())) return false;
 
     // Microsoft's three blocking conditions (LFXV2-3312). Each is a SILENT failure upstream rather
     // than a refusal, which is why they are caught here — the operator would otherwise learn at
@@ -1874,6 +2989,11 @@ export class ImplementationTabComponent implements OnInit {
     // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
     // a stale value in it must not block a create the operator cannot see the reason for.
     if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
+    // X: held without an explicit yes, never dropped (`twitterCreateBlock`); with one, every field
+    // campaign-service would refuse during dispatch — after the job exists — is caught here, each
+    // with its message on screen in the X section.
+    if (this.twitterCreateBlock() !== null) return false;
+    if (twitterSelected && (this.twitterBudgetError() !== null || this.twitterTweetError() !== null || this.twitterFlightError() !== null)) return false;
     // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
     // under that platform's control.
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
@@ -1888,6 +3008,14 @@ export class ImplementationTabComponent implements OnInit {
     // that is the worse failure, so the create goes ahead and the block says what was left out.
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
+    if (this.metaImageAssetBlock() !== null) return false;
+    if (this.googleImageAssetBlock() !== null) return false;
+    if (this.linkedInImageAssetBlock() !== null) return false;
+    if (this.twitterImageAssetBlock() !== null) return false;
+    if (this.microsoftImageAssetBlock() !== null) return false;
+    // Retained audience segments this caller may not (or may not yet be known to) send: held, never
+    // dropped. Unlike the extensions they change who the campaign is aimed at, so the create waits.
+    if (this.googleAudienceSegmentsBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -1928,6 +3056,19 @@ export class ImplementationTabComponent implements OnInit {
     // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
     // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
+    // Meta's sibling of the hold above, on the same terms.
+    if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading') return false;
+    // And Google's, for an upload into an image slot of a section still on screen — an upload for a
+    // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
+    if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach()) return false;
+    if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading') return false;
+    if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading') return false;
+    if (
+      this.showMicrosoftSection() &&
+      this.microsoftAssetUploadAvailable() &&
+      (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageChecking())
+    )
+      return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -1961,6 +3102,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
+  /**
+   * The creative channels whose creative this request would carry, BEFORE the capability gate —
+   * the sections' own channel rule, read by `googleImageAssetBlock` too, so a stored image held in
+   * a section the capability is withholding blocks Create rather than vanishing with it.
+   */
+  private readonly googleCreativeChannelsInReach: Signal<GoogleCreativeChannel[]> = this.initGoogleCreativeChannelsInReach();
 
   /**
    * Every creative field that currently has something to say, keyed `groupName.control`.
@@ -1980,6 +3127,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleStructuredSnippetsWithheldWarning: Signal<string | null> = this.initGoogleStructuredSnippetsWithheldWarning();
+  protected readonly googleCallExtensionsWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(
+    this.googleCallExtensions,
+    'call extensions'
+  );
+  protected readonly googlePromotionsWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(this.googlePromotions, 'promotions');
+  protected readonly googlePricesWithheldWarning: Signal<string | null> = this.initGoogleAssetWithheldWarning(this.googlePrices, 'price extensions');
   /**
    * Why generated callouts and sitelinks are being withheld because the CAPABILITY is not an
    * explicit yes, or `null`. The two warnings above cover the other reason — the channel takes no
@@ -1999,6 +3152,41 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   protected readonly googleLanguagesWithheldOn: Signal<string | null> = this.initGoogleLanguagesWithheldOn();
+  /**
+   * The held-languages sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, as {@link googleProximityWithheldMessage}
+   * does: the notice is created by the channel switch that gives it its text, so a region mounted with
+   * it would not reliably announce (#3568).
+   */
+  protected readonly googleLanguagesWithheldMessage = computed(() => {
+    const channelLabel = this.googleLanguagesWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleLanguages().length;
+    return `${channelLabel} campaigns do not take campaign languages, so the ${count} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.`;
+  });
+  protected readonly googlePostalGeoAvailable: Signal<boolean> = this.initGooglePostalGeoAvailable();
+  protected readonly googleProximityChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleProximityChannel();
+  protected readonly googleProximityWithheldOn: Signal<string | null> = this.initGoogleProximityWithheldOn();
+  /**
+   * The held-radius sentence, or `''` when nothing is held. ONE string feeds the visible notice and
+   * the always-mounted live region at the top of the template, the callout warnings' arrangement: the
+   * notice appears with the channel switch that gives it its text, so a region mounted with it would
+   * never announce.
+   */
+  protected readonly googleProximityWithheldMessage = computed(() => {
+    const channelLabel = this.googleProximityWithheldOn();
+    if (channelLabel === null) return '';
+    const count = this.googleProximityTargets().length;
+    return `${channelLabel} campaigns do not take radius targets, so the ${count} you added will not be sent. Switch the channel back to keep them.`;
+  });
+  protected readonly googleLocationsCapabilityBlock: Signal<CampaignGoogleLocationsCapabilityBlock | null> = this.initGoogleLocationsCapabilityBlock();
+  /** The always-mounted live region's text for `googleLocationsCapabilityBlock`; `''` when nothing is withheld. */
+  protected readonly googleLocationsCapabilityMessage = computed(() => this.googleLocationsCapabilityBlock()?.message ?? '');
+  protected readonly googleAudienceSegmentsAvailable: Signal<boolean> = this.initGoogleAudienceSegmentsAvailable();
+  protected readonly googleAudienceSegmentsWithheldWarning: Signal<string | null> = this.initGoogleAudienceSegmentsWithheldWarning();
+  protected readonly googleAudienceSegmentsBlock: Signal<CampaignGoogleAudienceSegmentsBlock | null> = this.initGoogleAudienceSegmentsBlock();
+  /** The always-mounted live region's text for `googleAudienceSegmentsBlock`; `''` when nothing blocks. */
+  protected readonly googleAudienceSegmentsBlockMessage = computed(() => this.googleAudienceSegmentsBlock()?.message ?? '');
   protected readonly googleTakesCpcBid: Signal<boolean> = this.initGoogleTakesCpcBid();
   private readonly googleStrategyNeedsTarget: Signal<boolean> = this.initGoogleStrategyNeedsTarget();
   protected readonly googleTakesConversionActions: Signal<boolean> = this.initGoogleTakesConversionActions();
@@ -2051,7 +3239,9 @@ export class ImplementationTabComponent implements OnInit {
       // seed's own patchValue emits a brief-shaped snapshot that overwrites the very draft this
       // mount is about to restore, and the user's edits die on the NEXT tab leave.
       this.seeding = true;
-      this.populateFromBrief(brief);
+      // UNTRACKED, so `briefData` is the one dependency: the seed's writes run validators that read
+      // signals the brief-switch resets move and `applyDraft` moves back (#4624), so tracked, the effect never settles.
+      untracked(() => this.populateFromBrief(brief));
       // AFTER seeding from the brief, so a carried-over draft wins over the generated copy —
       // that is the whole point. Inside the same effect rather than a second one because the two
       // must not race: a separate effect could apply the draft first and have the brief overwrite
@@ -2089,6 +3279,26 @@ export class ImplementationTabComponent implements OnInit {
       untracked(() => this.emitDraft());
     });
 
+    // A same-event refine restores a pending X upload while `persistBrief` has the brief id
+    // cleared, so `resumeTwitterImageUpload` parks it. The save hands the same id back without a
+    // remount, so the parked upload is resumed here once its brief is the open one again.
+    // Observed through `toObservable` rather than an `effect()`, which this repo reserves for
+    // logging: resuming subscribes to the upload and writes several signals.
+    toObservable(
+      computed(() => {
+        const briefId = this.briefPersistence().briefId ?? '';
+        const pendingName = this.twitterImageUploadPendingName();
+        const pendingBriefId = this.twitterImageUploadPendingBriefId();
+        if (!briefId || pendingName === '' || pendingBriefId !== briefId || this.twitterImageUploadStatus() !== 'idle') return null;
+        return { pendingName, pendingBriefId };
+      })
+    )
+      .pipe(
+        filter((parked): parked is { pendingName: string; pendingBriefId: string } => parked !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ pendingName, pendingBriefId }) => this.resumeTwitterImageUpload(pendingName, pendingBriefId));
+
     // Emit as the user edits. `valueChanges` covers everything on `campaignForm` — copy, budget,
     // flight, campaign types, and since LFXV2-3230 the three LinkedIn picks (ad account, geo
     // targets, targeting profile). Moving those three onto the form is what makes their restore
@@ -2105,6 +3315,16 @@ export class ImplementationTabComponent implements OnInit {
     // from a fetch on every mount rather than edited. The snapshot is scoped to what a user EDITS,
     // which is broader than what they type.
     this.campaignForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
+    // The Meta Instagram/DSA group is not on `campaignForm`, so it needs its own trigger.
+    this.metaInstagramDsaForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.seeding) return;
+      this.emitDraft();
+    });
+    // Nor is the Reddit pixel group.
+    this.redditConversionPixelForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.seeding) return;
       this.emitDraft();
     });
@@ -2396,15 +3616,331 @@ export class ImplementationTabComponent implements OnInit {
       return;
     }
 
-    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId), briefId, file.name);
+    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'reddit'), briefId, file.name);
     // Told to the parent at once: a tab switch now destroys this component but not the request,
     // and the remount resumes it from the draft (`resumeRedditImageUpload`).
     this.emitDraft();
   }
 
+  /** A library upload stored a new image: re-read the slot coverage and the Google image slots' library. */
+  protected onCreativeLibraryChanged(): void {
+    this.creativeLibraryRevision.update((revision) => revision + 1);
+  }
+
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
   protected onRedditImageAssetRemove(): void {
     this.clearRedditImageAsset();
+    this.emitDraft();
+  }
+
+  protected onMetaImageUrlInput(event: Event): void {
+    this.metaImageUrl.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
+  /** Upload the chosen Meta image for this brief — `onRedditImageFileChange`'s sibling, step for step. */
+  protected onMetaImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearMetaImageAsset();
+    this.emitDraft();
+
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failMetaImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
+      this.failMetaImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
+      return;
+    }
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failMetaImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followMetaImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'meta'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Forget the uploaded Meta image (the stored asset stays upstream, unused) and fall back to the image URL. */
+  protected onMetaImageAssetRemove(): void {
+    this.clearMetaImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * The block's Remove: drops only what the block is about. An upload it names (failed, made for
+   * another brief, or withheld) is cleared; a pasted URL only when the URL itself is withheld, so
+   * removing a refused upload never also discards a URL the request can still carry.
+   */
+  protected onMetaImageBlockRemove(): void {
+    if (this.metaImageUrlWithheld()) this.metaImageUrl.set('');
+    if (this.metaImageAssetId() !== '' || this.metaImageUploadStatus() !== 'idle' || this.metaImageUploadPendingName() !== '') {
+      this.clearMetaImageAsset();
+    }
+    this.emitDraft();
+  }
+  /**
+   * Upload the chosen LinkedIn image for this brief — `onMetaImageFileChange`'s sibling, step for
+   * step, plus LinkedIn's own 5 MB limit: campaign-service refuses a larger image at dispatch, so it
+   * is refused here before anything is stored.
+   */
+  protected onLinkedInImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearLinkedInImageAsset();
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, like a failed upload: the image
+    // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failLinkedInImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    if (file.size > LINKEDIN_IMAGE_MAX_BYTES) {
+      this.failLinkedInImageUpload(LINKEDIN_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failLinkedInImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followLinkedInImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'linkedin'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Forget the uploaded LinkedIn image (the stored asset stays upstream, unused). */
+  protected onLinkedInImageAssetRemove(): void {
+    this.clearLinkedInImageAsset();
+    this.emitDraft();
+  }
+  /**
+   * Upload the chosen Microsoft image for this brief — `onMetaImageFileChange`'s sibling, step for
+   * step, plus Microsoft's own 76,800-byte limit: far below the shared upload cap, and
+   * campaign-service refuses a larger image at dispatch, so it is refused here before anything is
+   * stored.
+   */
+  protected onMicrosoftImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearMicrosoftImageAsset();
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, like a failed upload: the image
+    // it replaced is gone, so Create stays blocked and the reason survives a tab switch.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failMicrosoftImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    if (file.size > MICROSOFT_IMAGE_MAX_BYTES) {
+      this.failMicrosoftImageUpload(MICROSOFT_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failMicrosoftImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    // The pixel bounds are read from the image itself, which is asynchronous. A size that cannot be
+    // read (no decoder in this browser, or an image it cannot decode) is left to campaign-service,
+    // which checks the same bounds before anything is created.
+    //
+    // The pick is recorded as pending, and told to the parent, BEFORE the read: a tab switch during
+    // it destroys this component, and the remount then finds no upload to resume and raises the
+    // interrupted-upload block rather than restoring an empty selection. The read rides the upload
+    // subscription, so a clear or the component's destruction drops its answer.
+    this.microsoftImageChecking.set(true);
+    this.microsoftImageUploadPendingName.set(file.name);
+    this.microsoftImageUploadPendingBriefId.set(briefId);
+    this.emitDraft();
+    this.microsoftImageUploadSub = from(this.readImageSize(file))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((size) => {
+        this.microsoftImageChecking.set(false);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        const bounds = MICROSOFT_IMAGE_PIXEL_BOUNDS;
+        if (size && (size.width < bounds.minWidth || size.height < bounds.minHeight || size.width > bounds.maxWidth || size.height > bounds.maxHeight)) {
+          this.failMicrosoftImageUpload(
+            `Microsoft Advertising accepts images from ${bounds.minWidth}x${bounds.minHeight} to ${bounds.maxWidth}x${bounds.maxHeight} pixels; this one is ${size.width}x${size.height}.`,
+            briefId
+          );
+          this.emitDraft();
+          return;
+        }
+        this.followMicrosoftImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'microsoft'), briefId, file.name);
+        this.emitDraft();
+      });
+  }
+
+  /** Forget the uploaded Microsoft image (the stored asset stays upstream, unused). */
+  protected onMicrosoftImageAssetRemove(): void {
+    this.clearMicrosoftImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen X tweet image for this brief — `onLinkedInImageFileChange`'s sibling, step for
+   * step, against X's own 5 MB limit: campaign-service refuses a larger image at dispatch.
+   */
+  protected onTwitterImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    this.clearTwitterImageAsset();
+    this.emitDraft();
+
+    // A refused pick is recorded against the open brief and saved, as LinkedIn's is.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failTwitterImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    if (file.size > TWITTER_IMAGE_MAX_BYTES) {
+      this.failTwitterImageUpload(TWITTER_IMAGE_TOO_LARGE_MESSAGE, briefId);
+      this.emitDraft();
+      return;
+    }
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failTwitterImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followTwitterImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'twitter'), briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Re-read the X account after a failed read. */
+  protected onTwitterAccountRetry(): void {
+    this.twitterAccountAttempt.update((attempt) => attempt + 1);
+  }
+
+  /** Forget the uploaded X image (the stored asset stays upstream, unused). */
+  protected onTwitterImageAssetRemove(): void {
+    this.clearTwitterImageAsset();
+    this.emitDraft();
+  }
+
+  /**
+   * Take X out of this create — the `twitterCreateBlock`'s way forward when the deployment cannot
+   * create there. The brief is untouched, so a remount re-seeds X from it and blocks again until the
+   * capability answers yes or a new brief leaves X out.
+   */
+  protected onTwitterRemove(): void {
+    this.selectedPlatforms.update((platforms) => platforms.filter((p) => p !== 'twitter-ads'));
+  }
+
+  /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
+  protected onGoogleImagePick(slotKey: string, assetId: string): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!briefId) return;
+    this.holdGoogleImage(slotKey, { id: assetId, name: '', briefId });
+    this.emitDraft();
+  }
+
+  /** Take a held image out of a Google image slot. The stored asset stays in the library. */
+  protected onGoogleImageRemove(slotKey: string, assetId: string): void {
+    this.googleHeldImages.update((held) => ({ ...held, [slotKey]: (held[slotKey] ?? []).filter((image) => image.id !== assetId) }));
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen file into the brief's library and hold it in the slot it was chosen for —
+   * `onMetaImageFileChange`'s sibling, step for step.
+   */
+  protected onGoogleImageUpload(slotKey: string, file: File): void {
+    this.clearGoogleImageUpload();
+
+    // A file refused before upload is still one the operator chose for this slot, so the refusal
+    // is recorded against the open brief — it blocks Create (`uploadFailed`) and survives a tab
+    // switch until they remove it or choose again — rather than leaving the slot without it unsaid.
+    const briefId = this.briefPersistence().briefId ?? '';
+    const refuse = (message: string): void => {
+      this.failGoogleImageUpload(message, briefId, slotKey);
+      this.emitDraft();
+    };
+    if (!isCreativeAssetMimeType(file.type)) {
+      refuse(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    // Google's own cap, tighter than the library's: an image stored at 6 MB would be refused at
+    // dispatch, so it is refused before it is uploaded.
+    if (file.size > GOOGLE_CREATIVE_IMAGE_MAX_BYTES) {
+      refuse(`Google takes images of up to ${GOOGLE_CREATIVE_IMAGE_MAX_BYTES / (1024 * 1024)} MB. Choose a smaller file.`);
+      return;
+    }
+    // `activeFoundationSlug`, the same source the library read keys on, so an upload lands in the
+    // library the slot then reads.
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug) {
+      refuse('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followGoogleImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'google'), briefId, file.name, slotKey);
+    this.emitDraft();
+  }
+
+  protected onGoogleImageUploadCancel(): void {
+    this.clearGoogleImageUpload();
+    this.emitDraft();
+  }
+
+  /**
+   * The block's Remove: drops only what the block names. Images stored for another brief, a failed
+   * upload, or the images that are missing or do not fit are cleared on their own; when the block
+   * is about the capability, every held image the request would carry is, with any upload still
+   * running. Pasted URLs are never touched — the request can carry them either way.
+   */
+  protected onGoogleImageBlockRemove(): void {
+    const block = this.googleImageAssetBlock();
+    if (block === null) return;
+    const briefId = this.briefPersistence().briefId ?? '';
+    const library = this.googleCreativeLibrary();
+    const inReach = new Set<string>(this.googleCreativeChannelsInReach().map((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel]));
+    if (block.kind === 'uploadFailed') {
+      this.clearGoogleImageUpload();
+      this.emitDraft();
+      return;
+    }
+    const drop = (slotKey: string, image: GoogleCreativeHeldImage): boolean => {
+      if (!inReach.has(slotKey.split('.')[0])) return false;
+      if (block.kind === 'otherBrief') return image.briefId !== briefId;
+      // With no brief id every held image in reach is the block's subject.
+      if (block.kind === 'unsaved' && !briefId) return true;
+      if (block.kind === 'missing' || block.kind === 'misfit') {
+        return this.googleHeldImageIssue(image, slotKey, library, briefId) === block.kind;
+      }
+      return image.briefId === briefId;
+    };
+    this.googleHeldImages.update((held) =>
+      Object.fromEntries(Object.entries(held).map(([slotKey, images]) => [slotKey, images.filter((image) => !drop(slotKey, image))]))
+    );
+    if (block.kind !== 'otherBrief' && block.kind !== 'missing' && block.kind !== 'misfit') this.clearGoogleImageUpload();
     this.emitDraft();
   }
 
@@ -2568,7 +4104,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected addGoogleGeoTarget(code: string): void {
     if (code === '') return;
-    if (this.googleGeoTargets().length >= GOOGLE_ADS_MAX_GEO_TARGETS) return;
+    // The COMBINED count, because the countries and the postal-code ids are one list upstream.
+    if (this.googleGeoTargetsFull()) return;
     if (this.googleGeoTargets().includes(code)) return;
     this.googleGeoTargets.update((targets) => [...targets, code]);
     this.emitDraft();
@@ -2584,6 +4121,139 @@ export class ImplementationTabComponent implements OnInit {
 
   protected removeGoogleGeoTarget(index: number): void {
     this.googleGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one postal-code target, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleCallout} is: a refusal must leave the text in the box
+   * beside the warning naming what to change. One refusal per check upstream's `resolveGeoEntry`
+   * can make locally — digits only, canonical — plus the combined cap and the repeat. Whether the
+   * id names a real postal code is NOT checked, because nothing on this road can: upstream declines
+   * that lookup, and a well-formed id naming nothing is refused by Google at the criteria mutate.
+   */
+  protected addGooglePostalGeoTarget(text: string): boolean {
+    if (this.googleGeoTargetsFull()) return false;
+    const id = googleAdsTrimSpace(text);
+    if (!GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(id)) return false;
+    if (!isCanonicalGoogleAdsResourceId(id)) return false;
+    if (this.googlePostalGeoTargets().includes(id)) return false;
+    this.googlePostalGeoTargets.update((ids) => [...ids, id]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGooglePostalGeoAdd(): void {
+    const control = this.googlePostalGeoForm.controls.postalId;
+    // Cleared ONLY on success, so a refused id stays in the box with its warning beside it. No
+    // `emitDraft()` for the text itself, matching the callout box: it reaches the draft on ADD.
+    if (this.addGooglePostalGeoTarget(control.value)) {
+      control.setValue('');
+    }
+  }
+
+  protected removeGooglePostalGeoTarget(index: number): void {
+    const removed = this.googlePostalGeoTargets()[index];
+    this.googlePostalGeoTargets.update((ids) => ids.filter((_, i) => i !== index));
+    // Its label goes with it, so the draft never carries a label for an id it does not hold.
+    if (removed !== undefined && Object.hasOwn(this.googlePostalGeoLabels(), removed)) {
+      this.googlePostalGeoLabels.update((labels) => Object.fromEntries(Object.entries(labels).filter(([id]) => id !== removed)));
+    }
+    this.emitDraft();
+  }
+
+  /**
+   * Add one location PICKED from the search, reporting whether it was added.
+   *
+   * Through {@link addGooglePostalGeoTarget}, so a picked id passes every check a typed one does —
+   * the shared cap, the canonical shape, the repeat — and dispatches identically. The label is
+   * recorded first so the draft that add emits already carries it, and withdrawn if the add refuses.
+   */
+  protected addGooglePickedGeoTarget(suggestion: GoogleAdsGeoTargetSuggestion): boolean {
+    const previous = this.googlePostalGeoLabels();
+    this.googlePostalGeoLabels.set({ ...previous, [suggestion.id]: suggestion.canonicalName || suggestion.name });
+    if (this.addGooglePostalGeoTarget(suggestion.id)) return true;
+    this.googlePostalGeoLabels.set(previous);
+    return false;
+  }
+
+  protected onGoogleGeoSearch(event: AutoCompleteCompleteEvent): void {
+    // Cut to upstream's 100 characters rather than sent long and refused; a postal code or place
+    // name never needs more.
+    this.googleGeoSearchQuery.set([...googleAdsTrimSpace(event.query)].slice(0, GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength).join(''));
+  }
+
+  protected onGoogleGeoSearchSelect(event: AutoCompleteSelectEvent): void {
+    const option = event.value as GoogleAdsGeoTargetOption;
+    if (option && !option.disabled) this.addGooglePickedGeoTarget(option);
+    // Cleared whatever the outcome, so the box reads "search another" rather than naming the pick.
+    this.googleGeoSearchForm.controls.location.setValue(null);
+    this.googleGeoSearchQuery.set('');
+  }
+
+  protected onGoogleGeoSearchClear(): void {
+    this.googleGeoSearchQuery.set('');
+  }
+
+  /**
+   * Add one radius target, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleSitelink} is: a refusal leaves the sub-form filled. One
+   * refusal per branch of upstream's `validateProximityTargets`, in its order — the cap on the list,
+   * finite coordinates in range, a finite radius above zero, a unit (no default is invented), the
+   * radius against THAT unit's ceiling — then the exact repeat, which upstream would collapse and
+   * this list simply does not grow by.
+   */
+  protected addGoogleProximityTarget(draft: CampaignProximityTargetDraft): boolean {
+    if (this.googleProximityTargets().length >= GOOGLE_ADS_MAX_PROXIMITY_TARGETS) return false;
+    const latitude = this.parseGoogleProximityNumber(draft.latitude);
+    const longitude = this.parseGoogleProximityNumber(draft.longitude);
+    const radius = this.parseGoogleProximityNumber(draft.radius);
+    if (latitude === null || longitude === null || radius === null) return false;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return false;
+    if (!Number.isFinite(radius) || radius <= 0) return false;
+    if (!(GOOGLE_ADS_RADIUS_UNITS as readonly string[]).includes(draft.radiusUnit)) return false;
+    const radiusUnit = draft.radiusUnit as GoogleAdsRadiusUnit;
+    if (radius > GOOGLE_ADS_MAX_RADIUS[radiusUnit]) return false;
+    const target: CampaignProximityTarget = { latitude, longitude, radius, radiusUnit };
+    if (this.googleProximityTargets().some((t) => t.latitude === latitude && t.longitude === longitude && t.radius === radius && t.radiusUnit === radiusUnit)) {
+      return false;
+    }
+    this.googleProximityTargets.update((targets) => [...targets, target]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleProximityAdd(): void {
+    // Cleared ONLY on success, so a refused target keeps all four fields and its warning. The unit
+    // resets to unpicked too — the next target picks its own, as the first one did.
+    if (this.addGoogleProximityTarget(this.googleProximityDraft())) {
+      this.googleProximityForm.reset();
+    }
+  }
+
+  protected removeGoogleProximityTarget(index: number): void {
+    this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Drop every postal-code and radius target held while the capability is not an explicit yes — the
+   * operator's explicit choice to create with country targeting instead, which is the only way past
+   * {@link googleLocationsCapabilityBlock} short of the check succeeding. Their sections are hidden
+   * on that road, so the chips cannot be removed one by one.
+   */
+  protected removeHeldGoogleLocationTargets(): void {
+    this.googlePostalGeoTargets.set([]);
+    this.googlePostalGeoLabels.set({});
+    // Radius targets only when the block COUNTED them. On Demand Gen they are held by the channel,
+    // not the capability, for a switch back — the banner does not name them, so it must not drop them.
+    const channel = this.resolveGoogleChannel();
+    if (channel !== null && (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) {
+      this.googleProximityTargets.set([]);
+    }
     this.emitDraft();
   }
 
@@ -2609,6 +4279,57 @@ export class ImplementationTabComponent implements OnInit {
 
   protected removeGoogleLanguage(index: number): void {
     this.googleLanguages.update((codes) => codes.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one audience segment, reporting whether it was actually added.
+   *
+   * Each refusal mirrors upstream's `validateAudienceSegments` (`internal/platform/googleads/
+   * targeting.go`), so a segment that becomes a chip is one the create will accept:
+   *   - CAP: upstream compares the RAW list length first, so the cap is the door here too.
+   *   - BLANK: never chipped. Upstream refuses an empty entry, which would cost the whole create.
+   *   - SHAPE: only `customers/{id}/userLists/{id}` is attached; a custom audience or any other
+   *     resource name is refused upstream, so it stays in the box with its warning beside it.
+   *   - REPEAT: declined quietly. Upstream collapses a repeat rather than refusing it, so a second
+   *     chip would show the operator a segment the request does not carry twice.
+   *
+   * Trimmed with Go's rules ({@link googleAdsTrimSpace}), as the callout add is. The BOOLEAN keeps
+   * the text in the box on a refusal, the same contract as {@link addGoogleCallout}.
+   */
+  protected addGoogleAudienceSegment(text: string): boolean {
+    if (this.googleAudienceSegments().length >= GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) return false;
+    const trimmed = googleAdsTrimSpace(text);
+    if (!GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(trimmed)) return false;
+    if (this.googleAudienceSegments().includes(trimmed)) return false;
+    this.googleAudienceSegments.update((segments) => [...segments, trimmed]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleAudienceSegmentDraftInput(event: Event): void {
+    // Draft text only — no `emitDraft()`, exactly as the callout box: it reaches the draft when the
+    // segment is ADDED.
+    this.googleAudienceSegmentDraft.set((event.target as HTMLInputElement).value);
+  }
+
+  protected onGoogleAudienceSegmentAdd(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    // Cleared ONLY on success, so a refused resource name stays in the box with its warning.
+    if (this.addGoogleAudienceSegment(input.value)) {
+      input.value = '';
+      this.googleAudienceSegmentDraft.set('');
+    }
+  }
+
+  protected removeGoogleAudienceSegment(index: number): void {
+    this.googleAudienceSegments.update((segments) => segments.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /** The block's way out: drop every retained segment, the only action that never needs the read. */
+  protected onGoogleAudienceSegmentsRemoveAll(): void {
+    this.googleAudienceSegments.set([]);
     this.emitDraft();
   }
 
@@ -2782,6 +4503,103 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one call extension from the sub-form's raw text, reporting whether it was actually added.
+   *
+   * Boolean for the reason {@link addGoogleSitelink} is. The cap first, as upstream checks the raw
+   * list before any entry; then every per-entry branch of `validateCallExtensions` in its order,
+   * through the shared judge the BFF refuses by — so a call extension added here is one upstream
+   * accepts. Stored normalised (trimmed, country upper-cased), which is what is judged and sent.
+   */
+  protected addGoogleCallExtension(draft: CampaignCallExtensionDraft): boolean {
+    if (this.googleCallExtensions().length >= GOOGLE_ADS_MAX_CALL_EXTENSIONS) return false;
+    const call = this.googleCallExtensionFromDraft(draft);
+    if (googleCallExtensionRefusal(call, this.googleCallExtensions()) !== null) return false;
+    this.googleCallExtensions.update((calls) => [...calls, call]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleCallExtensionAdd(): void {
+    // Cleared ONLY on success, so a refused number keeps both boxes and its warning.
+    if (this.addGoogleCallExtension(this.googleCallExtensionDraft())) {
+      this.googleCallExtensionForm.reset();
+    }
+  }
+
+  protected removeGoogleCallExtension(index: number): void {
+    this.googleCallExtensions.update((calls) => calls.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one promotion from the sub-form, on {@link addGoogleCallExtension}'s contract: the cap, then
+   * `validatePromotionExtensions`' branches through the shared judge, then a store of the entry
+   * exactly as it will be sent — only the discount and eligibility arms the form selected, and an
+   * empty optional box omitted rather than sent as `""`.
+   */
+  protected addGooglePromotion(draft: CampaignPromotionDraft): boolean {
+    if (this.googlePromotions().length >= GOOGLE_ADS_MAX_PROMOTIONS) return false;
+    if (this.googlePromotionConditionRefusal(draft) !== null) return false;
+    const promotion = this.googlePromotionFromDraft(draft);
+    if (googlePromotionRefusal(promotion, this.googlePromotions()) !== null) return false;
+    this.googlePromotions.update((promotions) => [...promotions, promotion]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGooglePromotionAdd(): void {
+    // Cleared ONLY on success, as the call box is.
+    if (this.addGooglePromotion(this.googlePromotionDraft())) {
+      this.googlePromotionForm.reset();
+    }
+  }
+
+  protected removeGooglePromotion(index: number): void {
+    this.googlePromotions.update((promotions) => promotions.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
+  /**
+   * Add one price table from the sub-form, on the same contract: the cap, then
+   * `validatePriceExtensions`' branches through the shared judge. The table's one currency box is
+   * copied onto every row, which is where the wire carries it.
+   */
+  protected addGooglePrice(draft: CampaignPriceExtensionDraft): boolean {
+    if (this.googlePrices().length >= GOOGLE_ADS_MAX_PRICE_EXTENSIONS) return false;
+    const price = this.googlePriceFromDraft(draft);
+    if (googlePriceExtensionRefusal(price) !== null) return false;
+    this.googlePrices.update((prices) => [...prices, price]);
+    this.emitDraft();
+    return true;
+  }
+
+  /** One more row, up to Google's eight. The button is hidden at the ceiling; this holds it anyway. */
+  protected addGooglePriceRow(): void {
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length < GOOGLE_ADS_MAX_PRICE_OFFERINGS) rows.push(this.googlePriceRowGroup());
+  }
+
+  /** One row fewer, down to Google's three — a table below that is refused, so it cannot be built. */
+  protected removeGooglePriceRow(index: number): void {
+    const rows = this.googlePriceForm.controls.offerings;
+    if (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(index);
+  }
+
+  protected onGooglePriceAdd(): void {
+    // Cleared ONLY on success, and back to Google's three empty rows.
+    if (this.addGooglePrice(this.googlePriceDraft())) {
+      const rows = this.googlePriceForm.controls.offerings;
+      while (rows.length > GOOGLE_ADS_MIN_PRICE_OFFERINGS) rows.removeAt(rows.length - 1);
+      this.googlePriceForm.reset();
+    }
+  }
+
+  protected removeGooglePrice(index: number): void {
+    this.googlePrices.update((prices) => prices.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -2866,6 +4684,13 @@ export class ImplementationTabComponent implements OnInit {
 
   protected submit(): void {
     if (!this.canSubmit()) return;
+    // The X start rule depends on the clock, which `canSubmit`'s memo cannot see move: a form left
+    // open across midnight UTC would otherwise send a start campaign-service now refuses.
+    const twitterFlightError = this.selectedPlatforms().includes('twitter-ads') ? this.twitterFlightErrorAt(Date.now()) : null;
+    if (twitterFlightError !== null) {
+      this.errors.set([twitterFlightError]);
+      return;
+    }
 
     const platforms = this.selectedPlatforms();
     this.step.set('creating');
@@ -2896,6 +4721,9 @@ export class ImplementationTabComponent implements OnInit {
       // exists: deriving the request's targets separately from the displayed ones is how a screen
       // ends up claiming one country while the request buys another.
       geoTargets: this.googleEffectiveGeoTargets(),
+      // The radius targets, Google-gated for the same reason the creative is below, and already
+      // withheld unless the dispatched channel is one upstream accepts proximity on.
+      ...(platforms.includes('google-ads') ? this.googleProximityPayload() : {}),
       // The per-channel creative objects, present only for a selected channel that has one and
       // only when something was actually typed into it. Google-gated for the same reason the
       // section is: a LinkedIn-only create must not carry a Google creative the operator left
@@ -2907,6 +4735,9 @@ export class ImplementationTabComponent implements OnInit {
       // The language narrowing, Google-gated for the same reason, and already withheld unless the
       // dispatched channel is one upstream accepts campaign languages on.
       ...(platforms.includes('google-ads') ? this.googleLanguagesPayload() : {}),
+      // The audience segments, Google-gated for the same reason, and already withheld unless the
+      // dispatched channel is Search, the one channel upstream attaches audience criteria on.
+      ...(platforms.includes('google-ads') ? this.googleAudienceSegmentsPayload() : {}),
       // The callout extensions, Google-gated for the same reason the creative and the bidding plan
       // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
       // extensions on.
@@ -2915,6 +4746,8 @@ export class ImplementationTabComponent implements OnInit {
       // upstream refuses the whole create when any extension list reaches a non-Search campaign.
       ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       ...(platforms.includes('google-ads') ? this.googleStructuredSnippetsPayload() : {}),
+      // The call, promotion and price extensions, on the same gate as the three above.
+      ...(platforms.includes('google-ads') ? this.googleAssetExtensionsPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2931,7 +4764,7 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
-              variants: this.linkedInVariants(),
+              variants: this.linkedInVariantsForCreate(),
               adAccountId: this.linkedInAccountId(),
               ...this.biddingField('linkedin-ads'),
             },
@@ -2984,6 +4817,10 @@ export class ImplementationTabComponent implements OnInit {
               // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
               ...this.redditImageField(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
+              // Omitted when blank — upstream reads empty as "use the connection's pixel", the same
+              // thing an absent key means — and gated on the capability, because the legacy
+              // creator never reads it and the create route refuses it there (#3484).
+              ...(this.redditConversionPixelAvailable() && this.redditConversionPixelId() ? { conversionPixelId: this.redditConversionPixelId() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('reddit-ads'),
             },
@@ -3002,7 +4839,7 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
               geoTargets: this.metaEffectiveGeoTargets(),
-              variants: this.metaVariants(),
+              variants: this.metaVariantsForCreate(),
               objective: this.metaObjective(),
               placements: this.metaPlacementOverrides(),
               // Sent only under `conversions`. Under every other objective the promoted object is
@@ -3010,6 +4847,7 @@ export class ImplementationTabComponent implements OnInit {
               // would be a field the service ignores — and one a reader of the payload would
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
+              ...this.metaInstagramDsaFields(),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('meta-ads'),
             },
@@ -3023,8 +4861,10 @@ export class ImplementationTabComponent implements OnInit {
               registrationUrl: form.registrationUrl,
               hsToken: this.briefHsToken() ?? undefined,
               budgetUsd: this.microsoftBudgetUsd(),
-              // No startDate/endDate: `microsoftConfig` declares no scheduling fields, so sending
-              // them put values on the wire that were silently discarded. See the interface note.
+              // The flight dates, exactly as `metaConfig` sends them — but ONLY on an explicit yes.
+              // A campaign-service without linuxfoundation/lfx-v2-campaign-service#409 discards
+              // them silently, and the create route refuses them while the capability is off.
+              ...(this.microsoftScheduleAvailable() ? { startDate: form.startDate, endDate: form.endDate } : {}),
 
               // The SAME computeds the section renders and `canSubmit` gates on, so the screen,
               // the guard and the request cannot disagree — see `microsoftEffectiveGeoTargets`.
@@ -3038,8 +4878,16 @@ export class ImplementationTabComponent implements OnInit {
               ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
               ...this.biddingField('microsoft-ads'),
+              // Sent only while `microsoftImageSent()`; `microsoftImageAssetBlock` holds Create for
+              // an upload the request cannot carry, so it is never left out without a word.
+              ...(this.microsoftImageSent() ? { imageAssetId: this.microsoftImageAssetId() } : {}),
             },
           }
+        : {}),
+      // X only on an explicit yes. `canSubmit` already refuses a held X without one
+      // (`twitterCreateBlock`); the gate here is what makes the request agree with that on its own.
+      ...(platforms.includes('twitter-ads') && this.twitterCreateAvailable()
+        ? { twitterConfig: this.twitterConfigForCreate(form.startDate, form.endDate) }
         : {}),
       // Gated on the id, NOT on `platforms.includes('hubspot')`. `selectedPlatforms` is typed
       // `CampaignPlatform[]`, whose union has no 'hubspot' member, so a platform test here could
@@ -3227,7 +5075,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditImageUploadPendingBriefId.set(briefId);
     this.redditImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
-        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.campaignService.forgetCreativeAssetUpload('reddit', upload$);
         this.redditImageUploadPendingName.set('');
         this.redditImageUploadPendingBriefId.set('');
         // The brief changed while the upload was in flight: the asset belongs to the old one.
@@ -3245,10 +5093,10 @@ export class ImplementationTabComponent implements OnInit {
         this.emitDraft();
       },
       error: (err: unknown) => {
-        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.campaignService.forgetCreativeAssetUpload('reddit', upload$);
         this.redditImageUploadPendingName.set('');
         this.redditImageUploadPendingBriefId.set('');
-        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err), briefId);
+        this.failRedditImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
         this.emitDraft();
       },
     });
@@ -3271,7 +5119,7 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageUploadPendingBriefId.set(briefId);
       return;
     }
-    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('reddit', briefId) : null;
     if (!upload$) {
       this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
       return;
@@ -3287,7 +5135,7 @@ export class ImplementationTabComponent implements OnInit {
     // parked upload (another brief's, kept across a foundation switch) is replaced the same way: a
     // new pick replaces the previous upload outright, so it is cancelled, not left running unowned.
     if (this.redditImageUploadStatus() === 'uploading' || this.redditImageUploadPendingName() !== '') {
-      this.campaignService.cancelCreativeAssetUpload();
+      this.campaignService.cancelCreativeAssetUpload('reddit');
     }
     this.redditImageUploadPendingName.set('');
     this.redditImageUploadPendingBriefId.set('');
@@ -3306,17 +5154,838 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The Meta variants as sent: the brief's copy, each carrying the one Meta image when there is one.
+   * The uploaded asset wins over a pasted URL, and is sent only while the upload capability is an
+   * explicit yes and the asset was made for the open brief; the URL only while
+   * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
+   */
+  private metaVariantsForCreate(): MetaAdVariant[] {
+    const image = this.metaImageField();
+    return Object.keys(image).length > 0 ? this.metaVariants().map((variant) => ({ ...variant, ...image })) : this.metaVariants();
+  }
+
+  private metaImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
+    if (this.metaAssetUploadAvailable() && this.metaImageAssetForThisBrief()) return { imageAssetId: this.metaImageAssetId() };
+    if (this.metaCreativeAvailable() && this.metaImageUrl()) return { imageUrl: this.metaImageUrl() };
+    return {};
+  }
+
+  /**
+   * `initRedditImageAssetBlock`'s sibling, widened to the pasted URL and to a failed upload.
+   *
+   * Two departures from the Reddit block, both so a Meta image the operator chose is never left
+   * out of the request without a word. A failed upload for the open brief blocks whatever the
+   * capability says: with the upload control shown, its alert names the failure, but Create would
+   * otherwise launch the campaign with the pasted URL or no image instead of the chosen file. And a
+   * pasted URL held while `metaCreativeAvailable()` is not an explicit yes (a tab round-trip or a
+   * failed capability read clears it, and hides the URL input) blocks the same way a retained
+   * upload does, since `metaImageField` would withhold it.
+   */
+  private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showMetaSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.metaImageAssetId() !== '' && briefId && this.metaImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'The uploaded Meta image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
+        };
+      }
+      if (this.metaImageUploadStatus() === 'error' && briefId && this.metaImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Meta image upload did not complete: ${this.metaImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.metaAssetWithheld() && !this.metaImageUrlWithheld()) return null;
+      if (this.metaCreativeEnabled() === false || (this.metaAssetWithheld() && this.metaAssetUploadEnabled() === false)) {
+        return {
+          kind: 'unsupported',
+          message: 'Meta ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Meta ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Meta ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followRedditImageUpload`'s sibling. */
+  private followMetaImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.metaImageUploadStatus.set('uploading');
+    this.metaImageUploadError.set('');
+    this.metaImageUploadPendingName.set(fileName);
+    this.metaImageUploadPendingBriefId.set(briefId);
+    this.metaImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('meta', upload$);
+        this.metaImageUploadPendingName.set('');
+        this.metaImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failMetaImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.metaImageAssetId.set(asset.id);
+        this.metaImageAssetName.set(fileName);
+        this.metaImageAssetBriefId.set(briefId);
+        this.metaImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('meta', upload$);
+        this.metaImageUploadPendingName.set('');
+        this.metaImageUploadPendingBriefId.set('');
+        this.failMetaImageUpload(this.creativeAssetUploadErrorMessage(err), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeRedditImageUpload`'s sibling. */
+  private resumeMetaImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.metaImageUploadPendingName.set(fileName);
+      this.metaImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('meta', briefId) : null;
+    if (!upload$) {
+      this.failMetaImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followMetaImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearMetaImageAsset(): void {
+    this.metaImageUploadSub?.unsubscribe();
+    this.metaImageUploadSub = null;
+    if (this.metaImageUploadStatus() === 'uploading' || this.metaImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('meta');
+    }
+    this.metaImageUploadPendingName.set('');
+    this.metaImageUploadPendingBriefId.set('');
+    this.metaImageAssetId.set('');
+    this.metaImageAssetName.set('');
+    this.metaImageAssetBriefId.set('');
+    this.metaImageUploadStatus.set('idle');
+    this.metaImageUploadError.set('');
+    this.metaImageUploadFailedBriefId.set('');
+  }
+
+  private failMetaImageUpload(message: string, briefId = ''): void {
+    this.metaImageUploadStatus.set('error');
+    this.metaImageUploadError.set(message);
+    this.metaImageUploadFailedBriefId.set(briefId);
+  }
+  /**
+   * The LinkedIn variants as sent: the brief's copy, each carrying the uploaded image when one is
+   * sent (see `linkedInImageSent`). The asset replaces any `imageUrn` the plan named, since
+   * campaign-service refuses a variant carrying both.
+   */
+  private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
+    if (!this.linkedInImageSent()) return this.linkedInVariants();
+    const imageAssetId = this.linkedInImageAssetId();
+    return this.linkedInVariants().map((variant) => {
+      const sent: LinkedInCreativeVariant = { ...variant, imageAssetId };
+      delete sent.imageUrn;
+      return sent;
+    });
+  }
+
+  /** Whether the uploaded LinkedIn image goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
+  private linkedInImageSent(): boolean {
+    return this.linkedInAssetUploadAvailable() && this.linkedInImageAssetForThisBrief();
+  }
+
+  /** `initMetaImageAssetBlock`'s sibling, for the upload alone. */
+  private initLinkedInImageAssetBlock(): Signal<CampaignLinkedInImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showLinkedInSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.linkedInImageAssetId() !== '' && briefId && this.linkedInImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded LinkedIn image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.linkedInImageUploadStatus() === 'error' && briefId && this.linkedInImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The LinkedIn image upload did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.linkedInAssetWithheld()) return null;
+      if (this.linkedInAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'LinkedIn ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that LinkedIn ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followMetaImageUpload`'s sibling. */
+  private followLinkedInImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.linkedInImageUploadStatus.set('uploading');
+    this.linkedInImageUploadError.set('');
+    this.linkedInImageUploadPendingName.set(fileName);
+    this.linkedInImageUploadPendingBriefId.set(briefId);
+    this.linkedInImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failLinkedInImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.linkedInImageAssetId.set(asset.id);
+        this.linkedInImageAssetName.set(fileName);
+        this.linkedInImageAssetBriefId.set(briefId);
+        this.linkedInImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('linkedin', upload$);
+        this.linkedInImageUploadPendingName.set('');
+        this.linkedInImageUploadPendingBriefId.set('');
+        this.failLinkedInImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeLinkedInImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.linkedInImageUploadPendingName.set(fileName);
+      this.linkedInImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('linkedin', briefId) : null;
+    if (!upload$) {
+      this.failLinkedInImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followLinkedInImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearLinkedInImageAsset(): void {
+    this.linkedInImageUploadSub?.unsubscribe();
+    this.linkedInImageUploadSub = null;
+    if (this.linkedInImageUploadStatus() === 'uploading' || this.linkedInImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('linkedin');
+    }
+    this.linkedInImageUploadPendingName.set('');
+    this.linkedInImageUploadPendingBriefId.set('');
+    this.linkedInImageAssetId.set('');
+    this.linkedInImageAssetName.set('');
+    this.linkedInImageAssetBriefId.set('');
+    this.linkedInImageUploadStatus.set('idle');
+    this.linkedInImageUploadError.set('');
+    this.linkedInImageUploadFailedBriefId.set('');
+  }
+
+  /**
+   * The `twitterConfig` as sent: exactly the wire `TwitterCampaignCreateRequest` describes, read
+   * from the same computeds the section renders and `canSubmit` gates on. The shared flight dates
+   * travel as they do for Meta.
+   */
+  private twitterConfigForCreate(startDate: string, endDate: string): TwitterCampaignCreateRequest {
+    return {
+      budgetAmount: this.twitterBudgetAmount() ?? 0,
+      startDate,
+      endDate,
+      tweetText: this.twitterTweetText().trim(),
+      ...(this.twitterImageSent() ? { imageAssetId: this.twitterImageAssetId() } : {}),
+      ...this.biddingField('twitter-ads'),
+    };
+  }
+
+  /** Whether the uploaded X image goes out: X creation is an explicit yes and the asset was made for the open brief. */
+  private twitterImageSent(): boolean {
+    return this.twitterCreateAvailable() && this.twitterImageAssetForThisBrief();
+  }
+
+  /** The X account read behind `twitterAccountState`, keyed on the foundation, the offer and the Retry count. */
+  private initTwitterAccountState(): Signal<CampaignTwitterAccountState> {
+    const idle: CampaignTwitterAccountState = { status: 'idle', result: null };
+    const key = computed(() => ({
+      slug: this.activeFoundationSlug(),
+      offered: this.showTwitterSection() && this.twitterCreateAvailable(),
+      attempt: this.twitterAccountAttempt(),
+    }));
+    return toSignal(
+      toObservable(key).pipe(
+        switchMap(({ slug, offered }) => {
+          if (!offered || slug === '') return of(idle);
+          return this.campaignService.getTwitterAdsAccounts(slug).pipe(
+            // A connection campaign-service could not read comes back inside a 200 as
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
+            map(
+              (result): CampaignTwitterAccountState =>
+                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
+            ),
+            catchError((err: unknown) =>
+              of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
+            ),
+            startWith<CampaignTwitterAccountState>({ status: 'loading', result: null })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  /**
+   * Why the flight cannot be sent to X at `nowMs`, or `null`. campaign-service sends the start date
+   * as UTC midnight and refuses one not more than `TWITTER_MIN_START_LEAD_MS` ahead
+   * (`twitterStartDateTooSoon`), so near midnight UTC even tomorrow can be too soon. The end must be
+   * after the start, as for Meta and Reddit.
+   */
+  private twitterFlightErrorAt(nowMs: number): string | null {
+    const { startDate, endDate } = this.campaignForm.controls;
+    if (!startDate.value || !endDate.value) return null;
+    if (twitterStartDateTooSoon(startDate.value, nowMs)) {
+      return 'X needs the start date more than five minutes ahead of now: it starts the campaign at midnight UTC on that date. Pick a later start date.';
+    }
+    if (endDate.value <= startDate.value) return 'X needs an end date after the start date.';
+    return null;
+  }
+
+  /** `initBiddingCapabilityBlock`'s sibling for X as a whole, on the same capability read. */
+  private initTwitterCreateBlock(): Signal<CampaignTwitterCreateBlock | null> {
+    return computed(() => {
+      if (!this.showTwitterSection() || this.twitterCreateAvailable()) return null;
+      if (this.twitterCreateEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'X campaign creation is not available on this deployment, so X cannot be created with this brief. Remove X to create the other platforms.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking X campaign support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "X campaign support can't be checked until this brief is saved. Save the brief, or remove X." };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that X campaign creation is supported, so X cannot be created yet. Retry the check, or remove X.',
+      };
+    });
+  }
+
+  /** `initLinkedInImageAssetBlock`'s sibling, for the tweet image. */
+  private initTwitterImageAssetBlock(): Signal<CampaignTwitterImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showTwitterSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.twitterImageAssetId() !== '' && briefId && this.twitterImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded X image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.twitterImageUploadStatus() === 'error' && briefId && this.twitterImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The X image upload did not complete: ${this.twitterImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.twitterAssetWithheld()) return null;
+      if (this.twitterCreateEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'X campaign creation is not available on this deployment, so the X image cannot be sent. Remove it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking X campaign support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "X campaign support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that X campaign creation is supported, so the X image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /**
+   * Restore the X section from a draft, present-only: the two typed fields, then the tweet image on
+   * the LinkedIn upload's terms. Shared by the full-draft restore and the same-event carry.
+   */
+  private applyTwitterDraft(draft: CampaignTwitterDraft): void {
+    if (draft.twitterBudget !== undefined) this.campaignForm.controls.twitterBudget.setValue(draft.twitterBudget);
+    if (draft.twitterTweetText !== undefined) this.campaignForm.controls.twitterTweetText.setValue(draft.twitterTweetText);
+    if (draft.twitterImageAssetId !== undefined) {
+      this.twitterImageAssetId.set(draft.twitterImageAssetId);
+      this.twitterImageAssetName.set(draft.twitterImageAssetName ?? '');
+      this.twitterImageAssetBriefId.set(draft.twitterImageAssetBriefId ?? '');
+    }
+    if (draft.twitterImageUploadFailedMessage && draft.twitterImageUploadFailedBriefId) {
+      this.failTwitterImageUpload(draft.twitterImageUploadFailedMessage, draft.twitterImageUploadFailedBriefId);
+    }
+    if (draft.twitterImageUploadPendingName) {
+      this.resumeTwitterImageUpload(draft.twitterImageUploadPendingName, draft.twitterImageUploadPendingBriefId ?? '');
+    }
+  }
+
+  /** `followLinkedInImageUpload`'s sibling. */
+  private followTwitterImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.twitterImageUploadStatus.set('uploading');
+    this.twitterImageUploadError.set('');
+    this.twitterImageUploadPendingName.set(fileName);
+    this.twitterImageUploadPendingBriefId.set(briefId);
+    this.twitterImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('twitter', upload$);
+        this.twitterImageUploadPendingName.set('');
+        this.twitterImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failTwitterImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.twitterImageAssetId.set(asset.id);
+        this.twitterImageAssetName.set(fileName);
+        this.twitterImageAssetBriefId.set(briefId);
+        this.twitterImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('twitter', upload$);
+        this.twitterImageUploadPendingName.set('');
+        this.twitterImageUploadPendingBriefId.set('');
+        this.failTwitterImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeLinkedInImageUpload`'s sibling. */
+  private resumeTwitterImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.twitterImageUploadPendingName.set(fileName);
+      this.twitterImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('twitter', briefId) : null;
+    if (!upload$) {
+      this.failTwitterImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followTwitterImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearTwitterImageAsset(): void {
+    this.twitterImageUploadSub?.unsubscribe();
+    this.twitterImageUploadSub = null;
+    if (this.twitterImageUploadStatus() === 'uploading' || this.twitterImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('twitter');
+    }
+    this.twitterImageUploadPendingName.set('');
+    this.twitterImageUploadPendingBriefId.set('');
+    this.twitterImageAssetId.set('');
+    this.twitterImageAssetName.set('');
+    this.twitterImageAssetBriefId.set('');
+    this.twitterImageUploadStatus.set('idle');
+    this.twitterImageUploadError.set('');
+    this.twitterImageUploadFailedBriefId.set('');
+  }
+
+  private failTwitterImageUpload(message: string, briefId = ''): void {
+    this.twitterImageUploadStatus.set('error');
+    this.twitterImageUploadError.set(message);
+    this.twitterImageUploadFailedBriefId.set(briefId);
+  }
+
+  private failLinkedInImageUpload(message: string, briefId = ''): void {
+    this.linkedInImageUploadStatus.set('error');
+    this.linkedInImageUploadError.set(message);
+    this.linkedInImageUploadFailedBriefId.set(briefId);
+  }
+  /** `initMetaImageAssetBlock`'s sibling, for the upload alone. */
+  private initMicrosoftImageAssetBlock(): Signal<CampaignMicrosoftImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showMicrosoftSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      if (this.microsoftImageAssetId() !== '' && briefId && this.microsoftImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message: 'The uploaded Microsoft image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
+        };
+      }
+      if (this.microsoftImageUploadStatus() === 'error' && briefId && this.microsoftImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Microsoft image upload did not complete: ${this.microsoftImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      if (!this.microsoftAssetWithheld()) return null;
+      if (this.microsoftAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: 'Microsoft ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Microsoft ad image support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Microsoft ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message: 'Could not confirm that Microsoft ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
+      };
+    });
+  }
+
+  /** `followMetaImageUpload`'s sibling. */
+  private followMicrosoftImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.microsoftImageUploadStatus.set('uploading');
+    this.microsoftImageUploadError.set('');
+    this.microsoftImageUploadPendingName.set(fileName);
+    this.microsoftImageUploadPendingBriefId.set(briefId);
+    this.microsoftImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('microsoft', upload$);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failMicrosoftImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.microsoftImageAssetId.set(asset.id);
+        this.microsoftImageAssetName.set(fileName);
+        this.microsoftImageAssetBriefId.set(briefId);
+        this.microsoftImageUploadStatus.set('idle');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('microsoft', upload$);
+        this.microsoftImageUploadPendingName.set('');
+        this.microsoftImageUploadPendingBriefId.set('');
+        this.failMicrosoftImageUpload(this.creativeAssetUploadErrorMessage(err, false), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeMicrosoftImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.microsoftImageUploadPendingName.set(fileName);
+      this.microsoftImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('microsoft', briefId) : null;
+    if (!upload$) {
+      this.failMicrosoftImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followMicrosoftImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearMicrosoftImageAsset(): void {
+    this.microsoftImageChecking.set(false);
+    this.microsoftImageUploadSub?.unsubscribe();
+    this.microsoftImageUploadSub = null;
+    if (this.microsoftImageUploadStatus() === 'uploading' || this.microsoftImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('microsoft');
+    }
+    this.microsoftImageUploadPendingName.set('');
+    this.microsoftImageUploadPendingBriefId.set('');
+    this.microsoftImageAssetId.set('');
+    this.microsoftImageAssetName.set('');
+    this.microsoftImageAssetBriefId.set('');
+    this.microsoftImageUploadStatus.set('idle');
+    this.microsoftImageUploadError.set('');
+    this.microsoftImageUploadFailedBriefId.set('');
+  }
+
+  private failMicrosoftImageUpload(message: string, briefId = ''): void {
+    this.microsoftImageUploadStatus.set('error');
+    this.microsoftImageUploadError.set(message);
+    this.microsoftImageUploadFailedBriefId.set(briefId);
+  }
+  /** The image's pixel size, or `null` when this browser cannot read it. Only ever called from a file pick, so never on the server. */
+  private async readImageSize(file: Blob): Promise<{ width: number; height: number } | null> {
+    if (typeof createImageBitmap !== 'function') return null;
+    try {
+      // `imageOrientation: 'none'`: the ENCODED frame's size, which is what campaign-service's header
+      // check reads. The default applies a JPEG's EXIF rotation and would swap width and height.
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'none' });
+      const size = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return size;
+    } catch {
+      return null;
+    }
+  }
+
+  /** `followMetaImageUpload`'s sibling, holding the stored image in `slotKey` once it lands. */
+  private followGoogleImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string, slotKey: string): void {
+    this.googleImageUploadStatus.set('uploading');
+    this.googleImageUploadError.set('');
+    this.googleImageUploadSlot.set(slotKey);
+    this.googleImageUploadPendingName.set(fileName);
+    this.googleImageUploadPendingBriefId.set(briefId);
+    this.googleImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('google', upload$);
+        this.googleImageUploadPendingName.set('');
+        this.googleImageUploadPendingBriefId.set('');
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failGoogleImageUpload('The brief changed during the upload. Choose the image again.', briefId, slotKey);
+          this.emitDraft();
+          return;
+        }
+        this.holdGoogleImage(slotKey, { id: asset.id, name: fileName, briefId });
+        this.googleImageUploadStatus.set('idle');
+        this.googleImageUploadSlot.set('');
+        this.creativeLibraryRevision.update((revision) => revision + 1);
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('google', upload$);
+        this.googleImageUploadPendingName.set('');
+        this.googleImageUploadPendingBriefId.set('');
+        this.failGoogleImageUpload(this.creativeAssetUploadErrorMessage(err), briefId, slotKey);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** `resumeMetaImageUpload`'s sibling. */
+  private resumeGoogleImageUpload(fileName: string, uploadBriefId: string, slotKey: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      this.googleImageUploadPendingName.set(fileName);
+      this.googleImageUploadPendingBriefId.set(briefId);
+      this.googleImageUploadSlot.set(slotKey);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload('google', briefId) : null;
+    if (!upload$) {
+      this.failGoogleImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId, slotKey);
+      return;
+    }
+    this.followGoogleImageUpload(upload$, briefId, fileName, slotKey);
+  }
+
+  /** Whether the running Google upload is for a slot in a channel the request would carry. */
+  private googleImageUploadInReach(): boolean {
+    const groupName = this.googleImageUploadSlot().split('.')[0];
+    return this.googleCreativeChannelsInReach().some((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel] === groupName);
+  }
+
+  /** Forget the Google upload — running, parked or failed. Held images are untouched. */
+  private clearGoogleImageUpload(): void {
+    this.googleImageUploadSub?.unsubscribe();
+    this.googleImageUploadSub = null;
+    if (this.googleImageUploadStatus() === 'uploading' || this.googleImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload('google');
+    }
+    this.googleImageUploadPendingName.set('');
+    this.googleImageUploadPendingBriefId.set('');
+    this.googleImageUploadStatus.set('idle');
+    this.googleImageUploadError.set('');
+    this.googleImageUploadFailedBriefId.set('');
+    this.googleImageUploadSlot.set('');
+  }
+
+  private failGoogleImageUpload(message: string, briefId: string, slotKey: string): void {
+    this.googleImageUploadStatus.set('error');
+    this.googleImageUploadError.set(message);
+    this.googleImageUploadFailedBriefId.set(briefId);
+    this.googleImageUploadSlot.set(slotKey);
+  }
+
+  /**
+   * Hold an image in a slot, once. An identical upload answers with the asset already stored
+   * (campaign-service dedupes on checksum), so the same id can come back for a file already held.
+   */
+  private holdGoogleImage(slotKey: string, image: GoogleCreativeHeldImage): void {
+    this.googleHeldImages.update((held) => {
+      const current = held[slotKey] ?? [];
+      return current.some((existing) => existing.id === image.id) ? held : { ...held, [slotKey]: [...current, image] };
+    });
+  }
+
+  /**
+   * The `{ imageAssetId }` entries a slot sends after its pasted URLs: its held images stored for
+   * the open brief, and only while the library capability is an explicit yes. Anything held but not
+   * sent here is `googleImageAssetBlock`'s to name — never dropped without a word.
+   */
+  private googleImageRefsFor(slotKey: string): GoogleCreativeImageRef[] {
+    if (!this.googleAssetUploadAvailable()) return [];
+    const briefId = this.briefPersistence().briefId ?? '';
+    return (this.googleHeldImages()[slotKey] ?? []).filter((image) => image.briefId === briefId).map((image) => ({ imageAssetId: image.id }));
+  }
+
+  /**
+   * What is wrong with one held image, or `null`. `missing` and `misfit` are judged only on a
+   * library that was READ: a failed or pending read is not evidence that an image was deleted, and
+   * campaign-service still refuses a missing or misshapen asset by name before anything is created.
+   * An image whose dimensions were never recorded is let through for the same reason.
+   */
+  private googleHeldImageIssue(
+    image: GoogleCreativeHeldImage,
+    slotKey: string,
+    library: CreativeAssetLibraryState,
+    briefId: string
+  ): 'otherBrief' | 'missing' | 'misfit' | null {
+    if (image.briefId !== briefId) return 'otherBrief';
+    if (library.status !== 'ready') return null;
+    const asset = library.assets.find((stored) => stored.id === image.id);
+    if (!asset) return 'missing';
+    const shape = this.googleImageShape(slotKey);
+    return shape && googleCreativeImageFit(asset, shape) === 'misfit' ? 'misfit' : null;
+  }
+
+  /** The catalogued shape of the slot `<request key>.<control>` names, or `null` for no image slot. */
+  private googleImageShape(slotKey: string): GoogleCreativeImageShape | null {
+    const [groupName, control] = slotKey.split('.');
+    const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+    if (!channel) return null;
+    const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+    return fields.find((field) => field.control === control)?.image ?? null;
+  }
+
+  /** The line under a held image saying why it cannot be sent, or `''`. */
+  private googleHeldImageProblem(
+    image: GoogleCreativeHeldImage,
+    slotKey: string,
+    library: CreativeAssetLibraryState,
+    briefId: string,
+    asset: StoredCreativeAsset | undefined
+  ): string {
+    switch (this.googleHeldImageIssue(image, slotKey, library, briefId)) {
+      case 'otherBrief':
+        return 'Stored for a different brief.';
+      case 'missing':
+        return "No longer in the brief's library.";
+      case 'misfit': {
+        const shape = this.googleImageShape(slotKey);
+        if (!asset || !shape) return '';
+        const what =
+          asset.width && asset.height
+            ? `${asset.width}x${asset.height}, ${Math.ceil(asset.byteSize / 1024)} KB,`
+            : `At ${Math.ceil(asset.byteSize / 1024)} KB it`;
+        return `${what} does not fit. This slot needs ${googleCreativeImageRequirement(shape)}.`;
+      }
+      default:
+        return '';
+    }
+  }
+
+  /** Why a slot's picker offers nothing, or `''` when it offers something. */
+  private googleImageOptionsNote(library: CreativeAssetLibraryState, optionCount: number, canAdd: boolean): string {
+    if (!canAdd) return 'This slot is full.';
+    if (optionCount > 0) return '';
+    switch (library.status) {
+      case 'loading':
+        return "Loading the brief's images…";
+      case 'error':
+        return "Couldn't load the brief's images. You can still upload one.";
+      case 'ready':
+        return library.assets.length === 0 ? 'No images are stored for this brief yet.' : 'No stored image fits this slot yet.';
+      default:
+        return '';
+    }
+  }
+
+  /** A held image's label: the file it was uploaded from, else the library's description of it. */
+  private googleHeldImageLabel(image: GoogleCreativeHeldImage, asset: StoredCreativeAsset | undefined): string {
+    if (image.name) return image.name;
+    return asset ? storedCreativeAssetLabel(asset) : `Stored image ${image.id.slice(0, 8)}`;
+  }
+
+  /**
+   * A draft's held images, kept only where they are the shape this writes. The draft is persisted
+   * JSON, so an entry can be anything; one with no id would be sent as an empty ref upstream refuses.
+   */
+  private restoreGoogleHeldImages(saved: unknown): Record<string, GoogleCreativeHeldImage[]> {
+    if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {};
+    const out: Record<string, GoogleCreativeHeldImage[]> = {};
+    for (const [slotKey, images] of Object.entries(saved as Record<string, unknown>)) {
+      if (!Array.isArray(images)) continue;
+      out[slotKey] = images
+        .filter((image): image is GoogleCreativeHeldImage => !!image && typeof image === 'object' && typeof image.id === 'string' && image.id !== '')
+        .map((image) => ({
+          id: image.id,
+          name: typeof image.name === 'string' ? image.name : '',
+          briefId: typeof image.briefId === 'string' ? image.briefId : '',
+        }));
+    }
+    return out;
+  }
+
+  /**
    * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
    * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
    * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
-   * names the problem with the image (not decodable, too many pixels, …).
+   * names the problem with the image (not decodable, too many pixels, …). `offersImageUrl` is false
+   * for a control with no pasted-URL alternative (LinkedIn, Microsoft), whose fallback says to remove
+   * the image.
    */
-  private redditImageUploadErrorMessage(err: unknown): string {
+  private creativeAssetUploadErrorMessage(err: unknown, offersImageUrl = true): string {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
+    const alternative = offersImageUrl ? 'paste an image URL instead' : 'remove the image to continue without it';
     if (status === 413) return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
     if (status === 415) return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
-    if (status === 0 || status === 503) return 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.';
-    return serverAuthoredMessage(err, 'The image could not be uploaded. Try again, or paste an image URL instead.');
+    if (status === 0 || status === 503) return `The image service is unavailable right now. Try again in a moment, or ${alternative}.`;
+    return serverAuthoredMessage(err, `The image could not be uploaded. Try again, or ${alternative}.`);
   }
 
   private loadLinkedInAccounts(): void {
@@ -3390,9 +6059,14 @@ export class ImplementationTabComponent implements OnInit {
 
   private applyDraft(): void {
     const draft = this.draft();
-    if (!draft) return;
-
     const currentSlug = this.campaignForm.controls.eventSlug.value ?? '';
+    if (!draft) {
+      // No full draft — a fresh proceed — but possibly the X fields of a same-event refine.
+      const carried = this.twitterDraft();
+      if (carried && carried.eventSlug === currentSlug) this.applyTwitterDraft(carried);
+      return;
+    }
+
     if (draft.eventSlug !== currentSlug) return;
 
     // EMITS, unlike the first version of this method, and the difference is visible to the user.
@@ -3457,10 +6131,36 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleCreatives !== undefined) {
       this.restoreGoogleCreatives(draft.googleCreatives);
     }
+    // The stored images held in the Google image slots, on the Meta image's terms.
+    if (draft.googleImageAssets !== undefined) {
+      this.googleHeldImages.set(this.restoreGoogleHeldImages(draft.googleImageAssets));
+    }
+    if (draft.googleImageUploadFailedMessage && draft.googleImageUploadFailedBriefId) {
+      this.failGoogleImageUpload(draft.googleImageUploadFailedMessage, draft.googleImageUploadFailedBriefId, draft.googleImageUploadFailedSlot ?? '');
+    }
+    if (draft.googleImageUploadPendingName) {
+      this.resumeGoogleImageUpload(draft.googleImageUploadPendingName, draft.googleImageUploadPendingBriefId ?? '', draft.googleImageUploadPendingSlot ?? '');
+    }
     // Copied rather than referenced, so the restored form does not share an array with the draft
     // the parent still holds — the same rule `metaGeoTargets` follows below.
     if (draft.googleGeoTargets !== undefined) {
       this.googleGeoTargets.set([...draft.googleGeoTargets]);
+    }
+    // Copied on the same rule, and restored whatever the capability is: the section and the request
+    // both gate on `googlePostalGeoAvailable`, so a list restored on the legacy road is held, not sent.
+    if (draft.googlePostalGeoTargets !== undefined) {
+      this.googlePostalGeoTargets.set([...draft.googlePostalGeoTargets]);
+    }
+    // Copied, and only string labels kept: the draft is in-memory, but a label is display text and a
+    // non-string one would render as "[object Object]". Absent leaves the labels alone, as every field does.
+    if (draft.googlePostalGeoLabels !== undefined) {
+      this.googlePostalGeoLabels.set(Object.fromEntries(Object.entries(draft.googlePostalGeoLabels).filter(([, label]) => typeof label === 'string')));
+    }
+    // Each entry copied as well as the array, for the reason the sitelinks below are: an entry is an
+    // object. Restored whatever the channel is — a list saved under Search and reopened on Demand Gen
+    // is held by `googleProximityChannel`, not sent, and is still there on a switch back.
+    if (draft.googleProximityTargets !== undefined) {
+      this.googleProximityTargets.set(draft.googleProximityTargets.map((t) => ({ ...t })));
     }
     // Copied on the same rule, and restored whatever the channel selection is: the chips section
     // and `googleLanguagesPayload` both gate on `googleLanguagesChannel`, so a list restored under
@@ -3468,6 +6168,12 @@ export class ImplementationTabComponent implements OnInit {
     // switches back.
     if (draft.googleLanguages !== undefined) {
       this.googleLanguages.set([...draft.googleLanguages]);
+    }
+    // Copied on the same rule, and restored whatever the channel selection is: the section and
+    // `googleAudienceSegmentsPayload` both gate on `googleAudienceSegmentsAvailable`, so a list
+    // restored under a non-Search channel is held, not sent.
+    if (draft.googleAudienceSegments !== undefined) {
+      this.googleAudienceSegments.set([...draft.googleAudienceSegments]);
     }
     // Copied on the same rule, and restored WHATEVER channel the draft was saved under: the section
     // and the payload both gate on the dispatched channel, so a list restored under Performance Max
@@ -3487,6 +6193,17 @@ export class ImplementationTabComponent implements OnInit {
     // carries them between visits.
     if (draft.googleStructuredSnippets !== undefined) {
       this.googleStructuredSnippets.set(draft.googleStructuredSnippets.map((s) => ({ ...s, values: [...s.values] })));
+    }
+    // The call, promotion and price lists on the snippets' rule exactly: typed, so this draft is the
+    // only thing that carries them between visits, and each entry copied — a price table's rows too.
+    if (draft.googleCallExtensions !== undefined) {
+      this.googleCallExtensions.set(draft.googleCallExtensions.map((c) => ({ ...c })));
+    }
+    if (draft.googlePromotions !== undefined) {
+      this.googlePromotions.set(draft.googlePromotions.map((p) => ({ ...p })));
+    }
+    if (draft.googlePrices !== undefined) {
+      this.googlePrices.set(this.copyGooglePrices(draft.googlePrices));
     }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
@@ -3508,6 +6225,7 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaPixelId !== undefined) {
       this.metaPixelId.set(draft.metaPixelId);
     }
+    this.restoreMetaInstagramDsa(draft);
     if (draft.metaGeoTargets !== undefined) {
       this.metaGeoTargets.set(this.acceptedMetaGeos(draft.metaGeoTargets));
     }
@@ -3552,6 +6270,11 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
+    // An emitting patch, as `metaInstagramDsaForm`'s restore is: `redditConversionPixelDraft` follows
+    // the group's `valueChanges`, and the draft subscription honours `seeding`, so it cannot loop.
+    if (typeof draft.redditConversionPixelId === 'string') {
+      this.redditConversionPixelForm.patchValue({ conversionPixelId: draft.redditConversionPixelId });
+    }
     if (draft.redditImageAssetId !== undefined) {
       this.redditImageAssetId.set(draft.redditImageAssetId);
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
@@ -3565,6 +6288,47 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (draft.redditVideoGoal !== undefined) {
       this.redditVideoGoal.set(draft.redditVideoGoal);
+    }
+    // The Meta image, on the Reddit image's terms above.
+    if (draft.metaImageUrl !== undefined) {
+      this.metaImageUrl.set(draft.metaImageUrl);
+    }
+    if (draft.metaImageAssetId !== undefined) {
+      this.metaImageAssetId.set(draft.metaImageAssetId);
+      this.metaImageAssetName.set(draft.metaImageAssetName ?? '');
+      this.metaImageAssetBriefId.set(draft.metaImageAssetBriefId ?? '');
+    }
+    if (draft.metaImageUploadFailedMessage && draft.metaImageUploadFailedBriefId) {
+      this.failMetaImageUpload(draft.metaImageUploadFailedMessage, draft.metaImageUploadFailedBriefId);
+    }
+    if (draft.metaImageUploadPendingName) {
+      this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
+    }
+    // The LinkedIn image, on the Meta upload's terms above.
+    if (draft.linkedInImageAssetId !== undefined) {
+      this.linkedInImageAssetId.set(draft.linkedInImageAssetId);
+      this.linkedInImageAssetName.set(draft.linkedInImageAssetName ?? '');
+      this.linkedInImageAssetBriefId.set(draft.linkedInImageAssetBriefId ?? '');
+    }
+    if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
+      this.failLinkedInImageUpload(draft.linkedInImageUploadFailedMessage, draft.linkedInImageUploadFailedBriefId);
+    }
+    if (draft.linkedInImageUploadPendingName) {
+      this.resumeLinkedInImageUpload(draft.linkedInImageUploadPendingName, draft.linkedInImageUploadPendingBriefId ?? '');
+    }
+    // The X section, on the same present-only rule.
+    this.applyTwitterDraft(draft);
+    // The Microsoft image, on the Meta upload's terms above.
+    if (draft.microsoftImageAssetId !== undefined) {
+      this.microsoftImageAssetId.set(draft.microsoftImageAssetId);
+      this.microsoftImageAssetName.set(draft.microsoftImageAssetName ?? '');
+      this.microsoftImageAssetBriefId.set(draft.microsoftImageAssetBriefId ?? '');
+    }
+    if (draft.microsoftImageUploadFailedMessage && draft.microsoftImageUploadFailedBriefId) {
+      this.failMicrosoftImageUpload(draft.microsoftImageUploadFailedMessage, draft.microsoftImageUploadFailedBriefId);
+    }
+    if (draft.microsoftImageUploadPendingName) {
+      this.resumeMicrosoftImageUpload(draft.microsoftImageUploadPendingName, draft.microsoftImageUploadPendingBriefId ?? '');
     }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
@@ -3653,14 +6417,33 @@ export class ImplementationTabComponent implements OnInit {
       // draft field, and a user who tries Display, types a headline, then switches to Performance
       // Max must not lose the Display copy the moment they look away.
       googleCreatives: this.googleCreativeSnapshot(),
+      // Copied per slot, so the parent holds a snapshot rather than this component's arrays.
+      googleImageAssets: Object.fromEntries(
+        Object.entries(this.googleHeldImages()).map(([slotKey, images]) => [slotKey, images.map((image) => ({ ...image }))])
+      ),
+      googleImageUploadPendingName: this.googleImageUploadPendingName(),
+      googleImageUploadPendingBriefId: this.googleImageUploadPendingBriefId(),
+      googleImageUploadPendingSlot: this.googleImageUploadPendingName() ? this.googleImageUploadSlot() : '',
+      googleImageUploadFailedMessage: this.googleImageUploadFailedBriefId() ? this.googleImageUploadError() : '',
+      googleImageUploadFailedBriefId: this.googleImageUploadFailedBriefId(),
+      googleImageUploadFailedSlot: this.googleImageUploadFailedBriefId() ? this.googleImageUploadSlot() : '',
       // Spread, not referenced, for the same reason the Meta and Microsoft geo lists below are.
       googleGeoTargets: [...this.googleGeoTargets()],
+      googlePostalGeoTargets: [...this.googlePostalGeoTargets()],
+      // Copied, as the list is. Pruned by `removeGooglePostalGeoTarget`, so it names held ids only.
+      googlePostalGeoLabels: { ...this.googlePostalGeoLabels() },
+      // Entries copied too, matching the restore.
+      googleProximityTargets: this.googleProximityTargets().map((t) => ({ ...t })),
       googleLanguages: [...this.googleLanguages()],
+      googleAudienceSegments: [...this.googleAudienceSegments()],
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
       googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // `values` copied as its own array, matching the restore.
       googleStructuredSnippets: this.googleStructuredSnippets().map((s) => ({ ...s, values: [...s.values] })),
+      googleCallExtensions: this.googleCallExtensions().map((c) => ({ ...c })),
+      googlePromotions: this.googlePromotions().map((p) => ({ ...p })),
+      googlePrices: this.copyGooglePrices(this.googlePrices()),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -3677,6 +6460,10 @@ export class ImplementationTabComponent implements OnInit {
       metaPlacements: { ...this.metaPlacements() },
       metaPixelId: this.metaPixelId(),
       metaGeoTargets: [...this.metaGeoTargets()],
+      // As typed, whether or not the capability is on, so a draft survives the answer arriving late.
+      metaInstagramUserId: this.metaInstagramDsaDraft().instagramUserId,
+      metaDsaBeneficiary: this.metaInstagramDsaDraft().dsaBeneficiary,
+      metaDsaPayor: this.metaInstagramDsaDraft().dsaPayor,
       metaBudgetUsd: this.metaBudgetUsd(),
       metaLifetimeBudget: this.metaLifetimeBudget(),
       // Microsoft's four (LFXV2-3312), snapshotted rather than referenced for the same reason as
@@ -3732,6 +6519,7 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
+      redditConversionPixelId: this.redditConversionPixelDraft().conversionPixelId,
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
@@ -3742,6 +6530,37 @@ export class ImplementationTabComponent implements OnInit {
       redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
       redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
+      metaImageUrl: this.metaImageUrl(),
+      metaImageAssetId: this.metaImageAssetId(),
+      metaImageAssetName: this.metaImageAssetName(),
+      metaImageAssetBriefId: this.metaImageAssetBriefId(),
+      metaImageUploadPendingName: this.metaImageUploadPendingName(),
+      metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
+      metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
+      metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
+      linkedInImageAssetId: this.linkedInImageAssetId(),
+      linkedInImageAssetName: this.linkedInImageAssetName(),
+      linkedInImageAssetBriefId: this.linkedInImageAssetBriefId(),
+      linkedInImageUploadPendingName: this.linkedInImageUploadPendingName(),
+      linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
+      linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
+      linkedInImageUploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
+      twitterBudget: form.twitterBudget,
+      twitterTweetText: form.twitterTweetText,
+      twitterImageAssetId: this.twitterImageAssetId(),
+      twitterImageAssetName: this.twitterImageAssetName(),
+      twitterImageAssetBriefId: this.twitterImageAssetBriefId(),
+      twitterImageUploadPendingName: this.twitterImageUploadPendingName(),
+      twitterImageUploadPendingBriefId: this.twitterImageUploadPendingBriefId(),
+      twitterImageUploadFailedMessage: this.twitterImageUploadFailedBriefId() ? this.twitterImageUploadError() : '',
+      twitterImageUploadFailedBriefId: this.twitterImageUploadFailedBriefId(),
+      microsoftImageAssetId: this.microsoftImageAssetId(),
+      microsoftImageAssetName: this.microsoftImageAssetName(),
+      microsoftImageAssetBriefId: this.microsoftImageAssetBriefId(),
+      microsoftImageUploadPendingName: this.microsoftImageUploadPendingName(),
+      microsoftImageUploadPendingBriefId: this.microsoftImageUploadPendingBriefId(),
+      microsoftImageUploadFailedMessage: this.microsoftImageUploadFailedBriefId() ? this.microsoftImageUploadError() : '',
+      microsoftImageUploadFailedBriefId: this.microsoftImageUploadFailedBriefId(),
     });
   }
 
@@ -3751,6 +6570,37 @@ export class ImplementationTabComponent implements OnInit {
     this.results.set([]);
     this.platformResults.set([]);
     this.errors.set([]);
+    // Cleared here because nothing else clears it: the group is standalone, and `applyDraft` only
+    // patches it when the draft holds a pixel. Without this, a brief switch on a live mount carries
+    // the previous brief's pixel into the new brief's draft and create (#3484). Inside `seeding`,
+    // so the reset does not emit a draft of its own.
+    this.redditConversionPixelForm.reset();
+    // The other Reddit values the brief does not derive, cleared for the same reason (#4589): each
+    // is restored only from a draft, so with the draft cleared by a brief switch they would carry
+    // the previous brief's typed post, image, button, objective, goal and budget into this one.
+    // The uploaded image is left alone on purpose: it is scoped to its brief, and
+    // `redditImageAssetBlock` already holds Create with a Remove for one made for another brief.
+    this.redditPostUrl.set('');
+    this.redditImageUrl.set('');
+    this.redditCallToAction.set('');
+    this.redditObjective.set(DEFAULT_REDDIT_OBJECTIVE);
+    this.redditVideoGoal.set('');
+    this.redditBudgetUsd.set(DEFAULT_REDDIT_BUDGET_USD);
+    // The lists seeded only from Reddit copy, emptied first so a brief without any opens on none
+    // rather than the previous brief's (#4648); the seed below refills them when the copy is there.
+    this.redditVariants.set([]);
+    this.redditSubreddits.set([]);
+    this.redditInterests.set([]);
+    this.redditKeywords.set([]);
+    this.redditGeoTargets.set([]);
+    // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
+    // only when present, back to its default, so the seed below is all that survives a switch.
+    this.resetMetaFields();
+    this.resetLinkedInFields();
+    this.resetMicrosoftFields();
+    this.resetGoogleFields();
+    this.resetTwitterFields();
+    this.biddingDrafts.set({});
     const details = brief.eventDetails;
     this.campaignForm.patchValue({
       eventName: details.name,
@@ -3760,6 +6610,10 @@ export class ImplementationTabComponent implements OnInit {
       budgetUsd: brief.totalBudget ?? 500,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
+      // The X fields are typed, never generated, so a new brief starts them blank. A same-event
+      // refine gets them back from `twitterDraft` in `applyDraft`, which runs after this seed.
+      twitterBudget: '',
+      twitterTweetText: '',
     });
 
     if (brief.selectedPlatforms?.length) {
@@ -3777,7 +6631,12 @@ export class ImplementationTabComponent implements OnInit {
       //
       // Empty is the honest answer: `canSubmit()` requires at least one selected platform, so the
       // brief opens blocked rather than dispatching something unchosen.
-      const selectable = new Set(CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id));
+      //
+      // X is the one disabled platform KEPT. Its `disabled` is a static default the capability
+      // (`twitterCreateEnabled`) overrides, and the capability may answer after this seed runs, so
+      // filtering on it here would drop an X the operator chose. Kept, it is either created (an
+      // explicit yes) or blocked with a Remove (`twitterCreateBlock`) — never sent unconfirmed.
+      const selectable = new Set<CampaignPlatform>([...CAMPAIGN_PLATFORMS.filter((o) => !o.disabled).map((o) => o.id), 'twitter-ads']);
       this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
@@ -3788,19 +6647,15 @@ export class ImplementationTabComponent implements OnInit {
 
       this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, true);
       this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
+    } else {
+      // Back to the form's one empty box each, so a brief with no Search copy does not open on the last one's.
+      this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, [''], CAMPAIGN_CHAR_LIMITS.searchHeadline, true);
+      this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, [''], CAMPAIGN_CHAR_LIMITS.searchDescription, true);
     }
 
-    // Seeded on PRESENCE, not unconditionally, and NOT dead the way the `linkedInCopy` guard below
-    // was. `applyDraft` runs after this and makes the same present-only distinction for both fields,
-    // so on a mount that HAS a draft this gate changes nothing. The mount that has none is what it
-    // is for: a brief generated before extension generation shipped — or restored from a row written
-    // then — carries neither field, and `set([])` for it is indistinguishable from "the generator
-    // produced nothing". On a re-mount where the operator has typed their own entries and no draft
-    // has been written yet (drafts are saved on tab LEAVE, and a brief can re-emit before one), this
-    // is their only protection. Mutation-tested one `if` at a time: replacing either with
-    // `if (true)` fails `leaves hand-typed entries alone for a brief that carries no lists`, which
-    // adds to BOTH editors for exactly that reason — it did not, and the sitelink gate could be
-    // deleted green.
+    // Seeded on PRESENCE over `resetGoogleFields`' empty lists (#4624). A same-brief re-emit keeps
+    // typed entries, since `applyDraft` restores the parent's live draft after this, and the edits a
+    // refine carries arrive inside the brief itself (`briefWithCarriedExtensions`).
     //
     // Capped and de-duplicated server-side already; the editors' own add-guards are what hold the
     // line against everything the operator does after this point.
@@ -3933,16 +6788,98 @@ export class ImplementationTabComponent implements OnInit {
     );
     // Geo chips are left EMPTY here rather than seeded from the country code.
     //
-    // `countryCodeValue` must not be read in this method: `populateFromBrief` runs inside the
-    // TRACKED `briefData` effect, and that signal is a `toSignal` over `campaignForm.valueChanges`.
-    // Reading it makes the seed's own `patchValue` a dependency of the effect performing the seed,
-    // which re-enters continuously — the spec suite hung before running a single test.
+    // `countryCodeValue` must not be read in this method: it is a `toSignal` over
+    // `campaignForm.valueChanges`, and when this seed ran tracked, reading it made the seed's own
+    // `patchValue` re-enter the effect continuously — the spec suite hung before running a single test.
     //
     // Nothing is lost by leaving it empty: `microsoftEffectiveGeoTargets` already falls back to
     // the country code, so the request still carries a target, and the template renders that
     // fallback explicitly ("defaults to XX") rather than leaving it invisible.
     this.briefHsToken.set(brief.hsUtm);
     this.briefDriveFolderUrl.set(brief.driveFolderUrl);
+  }
+
+  /*
+   * The per-platform resets `populateFromBrief` runs inside `seeding` (#4624). A brief switch clears the
+   * draft, so `applyDraft` restores nothing and these values would otherwise ride into the next brief.
+   * Uploaded images are left alone, as Reddit's is: each is scoped to its brief, and its asset block
+   * already holds Create, with a Remove, for one made for another.
+   */
+
+  /** Meta: objective, placements, pixel, Instagram/DSA, budget and its mode, image URL; geos and variants until the brief's Meta copy seeds them. */
+  private resetMetaFields(): void {
+    this.metaObjective.set(DEFAULT_META_OBJECTIVE);
+    this.metaPlacements.set({ ...META_DEFAULT_PLACEMENTS });
+    this.metaPixelId.set('');
+    // Another brief's payor and beneficiary must never reach a live create.
+    this.metaInstagramDsaForm.reset();
+    this.metaBudgetUsd.set(DEFAULT_META_BUDGET_USD);
+    this.metaLifetimeBudget.set(false);
+    this.metaImageUrl.set('');
+    this.metaGeoTargets.set([]);
+    this.metaVariants.set([]);
+  }
+
+  /**
+   * LinkedIn: budget and mode, geos, profile, variants, and the ad account — back to the catalog's first,
+   * what a fresh mount settles on and the selector shows, not `''`, which no catalog contains.
+   */
+  private resetLinkedInFields(): void {
+    this.linkedInBudgetUsd.set(DEFAULT_LINKEDIN_BUDGET_USD);
+    this.linkedInLifetimeBudget.set(false);
+    this.linkedInVariants.set([]);
+    this.campaignForm.patchValue({
+      linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
+      linkedInGeoTargets: [],
+      linkedInTargetingProfile: DEFAULT_LINKEDIN_TARGETING_PROFILE,
+    });
+  }
+
+  /** Microsoft: budget, CPC bid and geos. The keywords are not here: the brief re-seeds them every time. */
+  private resetMicrosoftFields(): void {
+    this.microsoftBudgetUsd.set(DEFAULT_MICROSOFT_BUDGET_USD);
+    this.microsoftCpcBid.set('');
+    this.microsoftGeoTargets.set([]);
+  }
+
+  /**
+   * Google: channels and split, creatives, bidding, every targeting and extension list. Not the add
+   * sub-forms: they reach neither the draft nor a create until an entry is added.
+   */
+  private resetGoogleFields(): void {
+    this.campaignForm.patchValue({
+      searchBudgetPct: CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
+      includeSearch: true,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeVideo: false,
+      includeDisplay: false,
+      googleBiddingStrategy: '',
+      googleTargetCpa: '',
+      googleTargetRoas: '',
+      googleCpcBid: '',
+      googleConversionActions: '',
+    });
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].reset();
+    }
+    this.googleGeoTargets.set([]);
+    this.googlePostalGeoTargets.set([]);
+    this.googlePostalGeoLabels.set({});
+    this.googleProximityTargets.set([]);
+    this.googleLanguages.set([]);
+    this.googleAudienceSegments.set([]);
+    this.googleCallouts.set([]);
+    this.googleSitelinks.set([]);
+    this.googleStructuredSnippets.set([]);
+    this.googleCallExtensions.set([]);
+    this.googlePromotions.set([]);
+    this.googlePrices.set([]);
+  }
+
+  /** X: the budget and tweet text. */
+  private resetTwitterFields(): void {
+    this.campaignForm.patchValue({ twitterBudget: '', twitterTweetText: '' });
   }
 
   private pollJob(jobId: string, projectSlug: string): void {
@@ -4144,12 +7081,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleCreativeSections(): Signal<GoogleCreativeSection[]> {
     return computed(() => {
-      void this.campaignFormRevision();
-      if (!this.showGoogleSection()) return [];
       if (!this.googleCreativeAvailable()) return [];
-      const selected = this.selectedGoogleChannels();
-      const reachesGoogle = selected.includes('search') ? selected.filter((channel) => channel !== 'demand-gen') : selected;
-      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => reachesGoogle.includes(channel)).map((channel) => ({
+      return this.googleCreativeChannelsInReach().map((channel) => ({
         channel,
         label: GOOGLE_CREATIVE_SECTION_TITLES[channel],
         groupName: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
@@ -4157,6 +7090,204 @@ export class ImplementationTabComponent implements OnInit {
         // assembled when the section resolves instead of on every change-detection pass.
         fields: GOOGLE_CREATIVE_FIELD_SPECS[channel].map((field) => ({ ...field, guidance: this.creativeFieldGuidance(field) })),
       }));
+    });
+  }
+
+  /** The channel half of {@link initGoogleCreativeSections}: Google picked, and Demand Gen dropped beside Search. */
+  private initGoogleCreativeChannelsInReach(): Signal<GoogleCreativeChannel[]> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.showGoogleSection()) return [];
+      const selected = this.selectedGoogleChannels();
+      const reachesGoogle = selected.includes('search') ? selected.filter((channel) => channel !== 'demand-gen') : selected;
+      return GOOGLE_CHANNELS_WITH_CREATIVE.filter((channel) => reachesGoogle.includes(channel));
+    });
+  }
+
+  /**
+   * One library read per request identity, `switchMap` dropping an answer the operator has moved
+   * past — the slot grid's pattern (`CreativeSlotGridComponent.initState`).
+   *
+   * Read only while a Google image slot is on screen with the library offered; otherwise `idle`,
+   * which nothing reads as "empty". A failure is `error`, never an empty `ready` list: an empty
+   * library would tell every held image it had been deleted.
+   */
+  private initGoogleCreativeLibrary(): Signal<CreativeAssetLibraryState> {
+    const idle: CreativeAssetLibraryState = { status: 'idle', assets: [] };
+    const request = computed(
+      () => ({
+        projectSlug: this.activeFoundationSlug(),
+        briefId: this.briefPersistence().briefId ?? '',
+        revision: this.creativeLibraryRevision(),
+        wanted: this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0,
+      }),
+      {
+        equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,
+      }
+    );
+    return toSignal(
+      toObservable(request).pipe(
+        switchMap((target) => {
+          if (!target.wanted || target.projectSlug === '' || target.briefId === '') return of(idle);
+          return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
+            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets })),
+            catchError(() => of<CreativeAssetLibraryState>({ status: 'error', assets: [] })),
+            startWith<CreativeAssetLibraryState>({ status: 'loading', assets: [] })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
+  }
+
+  /**
+   * Each rendered image slot's library controls.
+   *
+   * The picker offers only stored images that FIT the slot (`googleCreativeImageFit`), best fit
+   * first — closest ratio, then larger area, as campaign-service's classifier ranks — and never one
+   * already held there. An image with no recorded dimensions is not offered: nothing here can say
+   * it fits. `canAdd` counts the slot's pasted URLs with its held images against the catalogued
+   * `max`, which for a marketing shape is the channel's combined cap, the permissive direction the
+   * catalogue already takes.
+   */
+  private initGoogleImageSlots(): Signal<Record<string, GoogleCreativeImageSlotView>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const views: Record<string, GoogleCreativeImageSlotView> = {};
+      if (!this.googleAssetUploadAvailable()) return views;
+      const library = this.googleCreativeLibrary();
+      const briefId = this.briefPersistence().briefId ?? '';
+      const heldBySlot = this.googleHeldImages();
+      const uploadSlot = this.googleImageUploadSlot();
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const key = `${section.groupName}.${field.control}`;
+          const held = heldBySlot[key] ?? [];
+          const heldIds = new Set(held.map((image) => image.id));
+          const options = library.assets
+            .filter((asset) => !heldIds.has(asset.id) && googleCreativeImageFit(asset, shape) === 'fits')
+            .sort(
+              (a, b) =>
+                googleCreativeImageDrift(a, shape) - googleCreativeImageDrift(b, shape) || (b.width ?? 0) * (b.height ?? 0) - (a.width ?? 0) * (a.height ?? 0)
+            )
+            .map((asset) => ({ label: storedCreativeAssetLabel(asset), value: asset.id }));
+          const count = this.splitCreativeLines(raw[field.control]).length + held.length;
+          const canAdd = field.max === undefined || count < field.max;
+          views[key] = {
+            key,
+            label: field.label,
+            requirement: googleCreativeImageRequirement(shape),
+            held: held.map((image) => {
+              const asset = library.assets.find((stored) => stored.id === image.id);
+              return {
+                id: image.id,
+                label: this.googleHeldImageLabel(image, asset),
+                problem: this.googleHeldImageProblem(image, key, library, briefId, asset),
+              };
+            }),
+            options,
+            optionsNote: this.googleImageOptionsNote(library, options.length, canAdd),
+            canAdd,
+            uploading: this.googleImageUploadStatus() === 'uploading' && uploadSlot === key,
+            error: this.googleImageUploadStatus() === 'error' && uploadSlot === key ? this.googleImageUploadError() : '',
+          };
+        }
+      }
+      return views;
+    });
+  }
+
+  /**
+   * `initMetaImageAssetBlock`'s sibling, over every stored image held in a slot the request would
+   * carry, plus two kinds of its own so campaign-service never has to refuse what this tab can see
+   * first: an image no longer in the brief's library (`missing`), and one whose recorded size does
+   * not meet its slot (`misfit`).
+   *
+   * Only slots in a channel the request would carry count. An image held in a section the
+   * operator un-ticked is not sent, exactly as that section's pasted URLs are not, and is kept for
+   * if they tick it again. The capability withholding a section is a different case — the
+   * operator did not take the image away — so the capability kinds read past that gate.
+   */
+  private initGoogleImageAssetBlock(): Signal<CampaignGoogleImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showGoogleSection()) return null;
+      const briefId = this.briefPersistence().briefId;
+      const inReach = new Set<string>(this.googleCreativeChannelsInReach().map((channel) => GOOGLE_CREATIVE_REQUEST_KEYS[channel]));
+      const held = Object.entries(this.googleHeldImages())
+        .filter(([slotKey]) => inReach.has(slotKey.split('.')[0]))
+        .flatMap(([slotKey, images]) => images.map((image) => ({ slotKey, image })));
+      if (briefId && held.some(({ image }) => image.briefId !== briefId)) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'A Google image held in a slot was uploaded for a different brief, so it cannot be sent with this one. Remove it, then pick or upload an image for this brief.',
+        };
+      }
+      // A failure blocks only while its slot is one the request would carry, as a held image does:
+      // a failed upload in a section the operator un-ticked must not hold up the rest.
+      if (
+        this.googleImageUploadStatus() === 'error' &&
+        briefId &&
+        this.googleImageUploadFailedBriefId() === briefId &&
+        inReach.has(this.googleImageUploadSlot().split('.')[0])
+      ) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Google image upload did not complete: ${this.googleImageUploadError()} Remove it, or choose the image again.`,
+        };
+      }
+      // No brief id — a save in flight, or a re-save that failed and cleared it — means no held image
+      // can be matched to the brief, so none would be sent. Held, never dropped: Create waits.
+      if (!briefId && held.length > 0) {
+        return {
+          kind: 'unsaved',
+          message: "The Google images held in this campaign can't be sent until the brief is saved. Save the brief, or remove the images.",
+        };
+      }
+      const forThisBrief = held.filter(({ image }) => image.briefId === (briefId ?? ''));
+      const uploadingInReach = this.googleImageUploadStatus() === 'uploading' && inReach.has(this.googleImageUploadSlot().split('.')[0]);
+      const withheld = (forThisBrief.length > 0 || uploadingInReach) && !this.googleAssetUploadAvailable();
+      if (withheld) {
+        if (this.googleCreativeEnabled() === false || this.googleAssetUploadEnabled() === false) {
+          return {
+            kind: 'unsupported',
+            message:
+              'Stored Google images are not available on this deployment, so the held images cannot be sent. Remove them to create the campaign without them.',
+          };
+        }
+        if (this.createCapabilityRead() === 'pending') {
+          return { kind: 'pending', message: 'Checking Google stored-image support…' };
+        }
+        if (!briefId) {
+          return {
+            kind: 'unsaved',
+            message: "Google stored-image support can't be checked until this brief is saved. Save the brief, or remove the images.",
+          };
+        }
+        return {
+          kind: 'failed',
+          message: 'Could not confirm that stored Google images are supported, so the held images cannot be sent yet. Retry the check, or remove them.',
+        };
+      }
+      const library = this.googleCreativeLibrary();
+      for (const kind of ['missing', 'misfit'] as const) {
+        const hit = forThisBrief.find(({ slotKey, image }) => this.googleHeldImageIssue(image, slotKey, library, briefId ?? '') === kind);
+        if (!hit) continue;
+        return kind === 'missing'
+          ? {
+              kind,
+              message: "A Google image held in a slot is no longer in the brief's library, so it cannot be sent. Remove it, then pick or upload another.",
+            }
+          : {
+              kind,
+              message:
+                "A Google image held in a slot does not meet that slot's size or aspect ratio, and Google would refuse it. Remove it, then pick or upload one that fits.",
+            };
+      }
+      return null;
     });
   }
 
@@ -4264,6 +7395,195 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Whether postal-code targets are offered and sent — on the campaign-service road with a Google
+   * channel selected, which is exactly when `googleBiddingChannel` is non-null.
+   *
+   * NO channel fence beyond that, unlike {@link initGoogleProximityChannel}: `validateGeoPlan` reads
+   * `geoTargets` on every channel, Demand Gen included (attached at the ad group there). The LEGACY
+   * road is the one gate: the in-process creator resolves `geoTargets` through the 30-country map
+   * and drops anything else, so an id sent there would vanish and the campaign target something the
+   * operator did not pick.
+   */
+  private initGooglePostalGeoAvailable(): Signal<boolean> {
+    return computed(() => this.googleBiddingChannel() !== null);
+  }
+
+  /**
+   * The channel the radius control is rendered against, or null when it should not be rendered.
+   *
+   * {@link initGoogleLanguagesChannel}'s shape exactly — `googleBiddingChannel` for the Google
+   * section and the legacy-road gate, then a channel fence — with {@link GOOGLE_CHANNELS_WITH_PROXIMITY}
+   * as the fence. Demand Gen is the one channel outside it: `validateGeoPlan` REFUSES proximity there
+   * before any mutate, so offering the control would offer a refusal.
+   */
+  private initGoogleProximityChannel(): Signal<GoogleCampaignChannel | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (!channel) return null;
+      return (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel) ? channel : null;
+    });
+  }
+
+  /**
+   * The label of the channel a radius list is being WITHHELD on, or null when nothing is. The list is
+   * held for a switch back, not sent, and the template says so rather than letting the control vanish.
+   *
+   * Asks {@link resolveGoogleChannel}, NOT `googleBiddingChannel` — the callouts warning's rule and
+   * for its reason. This sentence is about the CHANNEL alone, and `googleBiddingChannel` is null
+   * whenever the create capability is not an explicit yes, which would mute it on Demand Gen exactly
+   * when {@link googleLocationsCapabilityBlock} leaves Demand Gen radii to it. Then a held radius list
+   * would be dropped with nothing on screen, while the request fell back to the event country.
+   */
+  private initGoogleProximityWithheldOn(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || this.googleProximityTargets().length === 0) return null;
+      if ((GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel)) return null;
+      return GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel];
+    });
+  }
+
+  /**
+   * Why Create is blocked for postal-code or radius targets the capability does not let this request
+   * carry, or null when nothing is held for that reason.
+   *
+   * The extensions block's shape — {@link initGoogleExtensionsCapabilityBlock}: the same kinds, the
+   * same reads, `resolveGoogleChannel` rather than `googleBiddingChannel` because the latter's
+   * capability gate is the thing being reported on — with ONE difference: this block gates Create.
+   * A withheld extension list ships a campaign without extensions; a withheld location list ships a
+   * campaign that falls back to the event country, so a radius around the venue would become the
+   * whole country. Retry the check, or remove the targets explicitly.
+   *
+   * Radius targets on a channel that refuses them (Demand Gen) are NOT counted: they are withheld
+   * whatever the capability answers, and {@link googleProximityWithheldOn} already says so.
+   */
+  private initGoogleLocationsCapabilityBlock(): Signal<CampaignGoogleLocationsCapabilityBlock | null> {
+    return computed(() => {
+      if (this.googleCreativeAvailable()) return null;
+      const channel = this.resolveGoogleChannel();
+      if (channel === null) return null;
+
+      const postal = this.googlePostalGeoTargets().length;
+      const radius = (GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(channel) ? this.googleProximityTargets().length : 0;
+      if (postal + radius === 0) return null;
+
+      const parts: string[] = [];
+      if (postal > 0) parts.push(`${postal} postal-code target${postal === 1 ? '' : 's'}`);
+      if (radius > 0) parts.push(`${radius} radius target${radius === 1 ? '' : 's'}`);
+      const held = parts.join(' and ');
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Postal-code and radius targeting is not available on this deployment, so the ${held} on this brief cannot be sent. Remove them to create the campaign with country targeting instead.`,
+        };
+      }
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether the ${held} on this brief can be sent. Create waits for the check, because without them this campaign would target the whole event country.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Postal-code and radius support can't be checked until this brief is saved, so the ${held} on it cannot be sent yet. Save the brief, or remove them to create with country targeting.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that the ${held} on this brief can be sent. Retry the check, or remove them to create with country targeting.`,
+      };
+    });
+  }
+
+  /**
+   * Whether the request will carry audience segments: the dispatched channel is one in
+   * {@link GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS}, which is Search alone.
+   *
+   * Built on `googleBiddingChannel` for the reason {@link initGoogleLanguagesChannel} is — it is
+   * already the channel the REQUEST will carry, null on the legacy road, whose in-process creator
+   * reads nothing on `googleAdsConfig`. Upstream REFUSES audience segments off Search rather than
+   * dropping them, so the section and `googleAudienceSegmentsPayload` both open on this one signal.
+   */
+  private initGoogleAudienceSegmentsAvailable(): Signal<boolean> {
+    return computed(() => {
+      // Root only: the per-caller capability must be an explicit yes, never a `null`.
+      if (this.googleAudienceSegmentsEnabled() !== true) return false;
+      const channel = this.googleBiddingChannel();
+      return channel !== null && (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel);
+    });
+  }
+
+  /**
+   * Why Create is held for audience segments the draft still holds but the request cannot carry, or
+   * `null` — the {@link initRedditImageAssetBlock} pattern, on the same capability read.
+   *
+   * Speaks only on a channel that takes segments: anywhere else the channel is the reason, and
+   * {@link initGoogleAudienceSegmentsWithheldWarning} says so whatever the capability answers.
+   * `restricted` is the root-only rule — the caller is not a root writer or root campaign manager,
+   * so the create route would answer 403. It HOLDS Create rather than dropping the list, because
+   * segments change who the campaign is aimed at; Remove is offered in every state.
+   */
+  private initGoogleAudienceSegmentsBlock(): Signal<CampaignGoogleAudienceSegmentsBlock | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || !(GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel)) return null;
+      const count = this.googleAudienceSegments().length;
+      if (count === 0 || this.googleAudienceSegmentsAvailable()) return null;
+      const held = `${count} audience segment${count === 1 ? '' : 's'}`;
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Google audience segments are not available on this deployment, so the ${held} on this brief cannot be sent. Remove them to create the campaign.`,
+        };
+      }
+      if (this.googleAudienceSegmentsEnabled() === false) {
+        return {
+          kind: 'restricted',
+          message: `Only LF administrators can add Google audience segments, because every foundation shares one Google Ads account. Remove the ${held} on this brief to create the campaign.`,
+        };
+      }
+      // `unknown` is treated like a failure, as the bidding block records: nothing else starts the read.
+      if (this.createCapabilityRead() === 'pending') {
+        return {
+          kind: 'pending',
+          message: `Checking whether you can send Google audience segments. Create waits for the answer so the ${held} on this brief are not dropped.`,
+        };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Google audience segment access can't be checked until this brief is saved. Save the brief, or remove the ${held} on it.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that you can send Google audience segments, so Create waits rather than dropping the ${held} on this brief. Retry the check, or remove them.`,
+      };
+    });
+  }
+
+  /**
+   * The sentence saying an entered segment list is being WITHHELD because of the CHANNEL, or null
+   * when it is not — the audience twin of {@link initGoogleCalloutsWithheldWarning}, on the same
+   * terms and for the same reason: it asks {@link resolveGoogleChannel} and tests the channel
+   * directly, so it neither goes quiet on Demand Gen while a capability read is unanswered nor claims
+   * Search takes no segments. The capability reason, root-only rule included, belongs to
+   * {@link initGoogleAudienceSegmentsBlock}. One string feeds both the visible notice and its live
+   * region.
+   */
+  private initGoogleAudienceSegmentsWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      const count = this.googleAudienceSegments().length;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take audience segments, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+
+  /**
    * The sentence saying callouts are held back, or null when none are. Set when the channel a
    * create would carry takes no callouts and the operator added some — in practice callouts typed
    * under Search and left behind by a switch to another channel. Held is not silent: the section
@@ -4305,6 +7625,19 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take structured snippets, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
+  /**
+   * The call, promotion and price twins of {@link initGoogleCalloutsWithheldWarning}, on the same
+   * channel gate and in the same words. One initializer for the three because they differ only in
+   * the list they count and the noun they name.
+   */
+  private initGoogleAssetWithheldWarning(list: Signal<readonly unknown[]>, noun: string): Signal<string | null> {
+    return computed(() => {
+      const channel = this.resolveGoogleChannel();
+      const count = list().length;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take ${noun}, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
 
   /**
    * Why the callouts, sitelinks and structured snippets on this brief are being withheld for want of
@@ -4341,18 +7674,19 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.resolveGoogleChannel();
       if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
 
-      const callouts = this.googleCallouts().length;
-      const sitelinks = this.googleSitelinks().length;
-      const snippets = this.googleStructuredSnippets().length;
-      if (callouts + sitelinks + snippets === 0) return null;
-
       // "N callouts, M sitelinks and K structured snippets", dropping whichever parts are empty. The
       // counts are the point: they are what the operator is about to lose, and they are the only way
       // to tell this notice from a generic capability warning.
-      const parts: string[] = [];
-      if (callouts > 0) parts.push(`${callouts} callout${callouts === 1 ? '' : 's'}`);
-      if (sitelinks > 0) parts.push(`${sitelinks} sitelink${sitelinks === 1 ? '' : 's'}`);
-      if (snippets > 0) parts.push(`${snippets} structured snippet${snippets === 1 ? '' : 's'}`);
+      const counted: [number, string][] = [
+        [this.googleCallouts().length, 'callout'],
+        [this.googleSitelinks().length, 'sitelink'],
+        [this.googleStructuredSnippets().length, 'structured snippet'],
+        [this.googleCallExtensions().length, 'call extension'],
+        [this.googlePromotions().length, 'promotion'],
+        [this.googlePrices().length, 'price extension'],
+      ];
+      const parts = counted.filter(([count]) => count > 0).map(([count, noun]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
+      if (parts.length === 0) return null;
       // Oxford-free list: "a", "a and b", "a, b and c" — the same shape the two-part version read as.
       const lost = parts.length > 2 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join(' and ');
 
@@ -4725,7 +8059,7 @@ export class ImplementationTabComponent implements OnInit {
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
-  private googleCreativeShortfall(channel: GoogleCreativeChannel, creative: Record<string, string | string[]>): string | null {
+  private googleCreativeShortfall(channel: GoogleCreativeChannel, creative: Record<string, string | GoogleCreativeImageRef[]>): string | null {
     // Widened to the interface, as every other reader of the catalogue does: the constant's
     // `as const` gives each entry a literal type carrying only the keys that entry happens to set,
     // so `field.min` and `field.requiredOnce` are not readable across the union without this.
@@ -4737,8 +8071,15 @@ export class ImplementationTabComponent implements OnInit {
         if (field.requiredOnce === true && value === undefined) return `needs a ${field.label.toLowerCase()}.`;
         continue;
       }
-      if (field.min === undefined) continue;
       const count = Array.isArray(value) ? value.length : 0;
+      // The cap on an IMAGE slot is checked here, over pasted URLs AND held images together, because
+      // the per-control validator sees only the textarea: a picked image followed by five pasted
+      // URLs would otherwise reach upstream as six. `max` on a marketing shape is the channel's
+      // combined cap, so a single field over it is over the combined cap too — never tighter.
+      if (field.image && field.max !== undefined && count > field.max) {
+        return `has ${count} entries in ${field.label} (pasted URLs and stored images together) — ${count - field.max} over the cap of ${field.max}.`;
+      }
+      if (field.min === undefined) continue;
       if (count < field.min) {
         const entries = field.min === 1 ? 'entry' : 'entries';
         return `needs at least ${field.min} ${entries} in ${field.label} — ${count} given.`;
@@ -4905,6 +8246,90 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The radius targets as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate and omit-when-empty are {@link googleLanguagesPayload}'s, through
+   * `googleDispatchedProximityTargets` — the SAME list {@link googleEffectiveGeoTargets} reads to
+   * decide whether the event-country fallback applies, so the two halves of the location plan cannot
+   * disagree about whether a radius is being sent. Entries copied, as the sitelinks are.
+   */
+  private googleProximityPayload(): Partial<CampaignCreateRequest> {
+    const targets = this.googleDispatchedProximityTargets();
+    return targets.length > 0 ? { proximityTargets: targets.map((t) => ({ ...t })) } : {};
+  }
+
+  /**
+   * The location picker's search, debounced off {@link googleGeoSearchQuery} and answered as a state
+   * rather than a bare list, so the template can tell "nothing matched" from "the search failed".
+   *
+   * The delay sits INSIDE the outer `switchMap`, not before it. Every new query therefore cancels the
+   * request still in flight for the previous one and clears its rows at once (`startWith`), and only
+   * then waits out the debounce. With `debounceTime` in front instead, the old request stayed
+   * subscribed for the whole pause and its answer — for text the operator had already changed — could
+   * land as pickable rows. A blank query, no active project, or the picker not being offered answers
+   * the empty state without a request, the last because a query typed before the capability flipped
+   * off must not reach a 404 route.
+   */
+  private initGoogleGeoSearchState(): Signal<GoogleAdsGeoTargetSearchState> {
+    // A FRESH object every time, never one shared constant: `toSignal` drops an update equal by
+    // reference to the last, so a second blank completion would set no new suggestions and leave
+    // PrimeNG in its loading state with no request out.
+    const idle = (): GoogleAdsGeoTargetSearchState => ({ suggestions: [], truncated: false, failed: false, pending: false });
+    // The project and the picker's availability are read INSIDE the trigger, not at search time, so a
+    // foundation switch or the capability going away cancels a search mid-debounce and clears its
+    // answer, rather than finishing it for the previous project and showing that on the next open.
+    const trigger = computed(() => ({
+      query: this.googleGeoSearchQuery(),
+      projectSlug: this.activeFoundationSlug(),
+      available: this.googleGeoSearchAvailable(),
+    }));
+    return toSignal(
+      toObservable(trigger).pipe(
+        switchMap(({ query, projectSlug, available }) => {
+          if (query === '' || projectSlug === '' || !available) return of(idle());
+          return timer(GOOGLE_ADS_GEO_SEARCH_DEBOUNCE_MS).pipe(
+            switchMap(() =>
+              this.campaignService.searchGoogleAdsGeoTargets(projectSlug, query, { limit: GOOGLE_ADS_GEO_SEARCH_PICKER_LIMIT }).pipe(
+                map(
+                  (result): GoogleAdsGeoTargetSearchState => ({ suggestions: result.suggestions, truncated: result.truncated, failed: false, pending: false })
+                ),
+                catchError(() => of<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: true, pending: false }))
+              )
+            ),
+            startWith<GoogleAdsGeoTargetSearchState>({ suggestions: [], truncated: false, failed: false, pending: true })
+          );
+        })
+      ),
+      { initialValue: idle() }
+    );
+  }
+
+  /**
+   * One radius sub-form box as a number: `null` when it is empty (not filled in yet), `NaN` when it
+   * is not a plain decimal. The shape is checked BEFORE `Number()`, which would also accept `0x1A`,
+   * `0b11` and `1e2` and put a value on the chip the operator never typed.
+   */
+  private parseGoogleProximityNumber(text: string): number | null {
+    const trimmed = googleAdsTrimSpace(text);
+    if (trimmed === '') return null;
+    return GOOGLE_ADS_DECIMAL_NUMBER_PATTERN.test(trimmed) ? Number(trimmed) : Number.NaN;
+  }
+
+  /**
+   * The audience segments as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gated by `googleAudienceSegmentsAvailable`, the SAME computed the section opens on, so a list
+   * entered under Search and then left behind by a channel switch is withheld rather than forwarded
+   * into a refusal. Omitted rather than sent empty, by the absent-key route every caller predating
+   * the field takes.
+   */
+  private googleAudienceSegmentsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleAudienceSegmentsAvailable()) return {};
+    const segments = this.googleAudienceSegments();
+    return segments.length > 0 ? { audienceSegments: [...segments] } : {};
+  }
+
+  /**
    * The callout extensions as the request carries them, or `{}` when there is nothing to send.
    *
    * Gated by {@link googleCalloutsAvailable} — the same computed the section renders on — so what
@@ -4950,6 +8375,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The call, promotion and price extensions as the request carries them, each key omitted when its
+   * list is empty.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. Every entry is
+   * COPIED, and a price table's rows with it — the rows are an array inside the entry, as a
+   * snippet's values are.
+   */
+  private googleAssetExtensionsPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const calls = this.googleCallExtensions();
+    const promotions = this.googlePromotions();
+    const prices = this.googlePrices();
+    return {
+      ...(calls.length > 0 ? { callExtensions: calls.map((c) => ({ ...c })) } : {}),
+      ...(promotions.length > 0 ? { promotions: promotions.map((p) => ({ ...p })) } : {}),
+      ...(prices.length > 0 ? { prices: this.copyGooglePrices(prices) } : {}),
+    };
+  }
+
+  /**
    * Whether a destination URL is one the ad platforms will serve.
    *
    * The accept set itself is {@link isGoogleAdsServableUrl}, which the brief-restore path
@@ -4966,6 +8411,142 @@ export class ImplementationTabComponent implements OnInit {
    */
   private isServableDestination(raw: string): boolean {
     return isGoogleAdsServableUrl(googleAdsTrimSpace(raw));
+  }
+
+  /** The call sub-form's text as upstream normalises it: both boxes trimmed, the country upper-cased. */
+  private googleCallExtensionFromDraft(draft: CampaignCallExtensionDraft): CampaignCallExtension {
+    return { countryCode: googleAdsToUpperCode(googleAdsTrimSpace(draft.countryCode)), phoneNumber: googleAdsTrimSpace(draft.phoneNumber) };
+  }
+
+  /**
+   * One typed amount: `undefined` for an empty box, otherwise `Number` of the trimmed text — NaN
+   * included, so a box holding "ten" reaches the shared judge and is refused by name rather than
+   * read as "not filled in".
+   */
+  private googleAssetAmount(raw: string): number | undefined {
+    const text = googleAdsTrimSpace(raw);
+    return text === '' ? undefined : Number(text);
+  }
+
+  /**
+   * The promotion sub-form as the entry it would add. Only the arm of each oneof the form selected
+   * is read, so text left in a box the operator switched away from is never sent; a zero amount is
+   * left off, as upstream reads zero as unset; and the currency is carried only when a money field
+   * uses it, the one case upstream reads it.
+   */
+  private googlePromotionFromDraft(draft: CampaignPromotionDraft): CampaignPromotion {
+    const promotion: CampaignPromotion = { promotionTarget: googleAdsTrimSpace(draft.promotionTarget), finalUrl: googleAdsTrimSpace(draft.finalUrl) };
+    const discount = this.googleAssetAmount(draft.discount);
+    if (discount !== undefined && discount !== 0) promotion[draft.discountKind === 'percent' ? 'discountPercent' : 'discountAmount'] = discount;
+    if (draft.eligibilityKind === 'code') {
+      const code = googleAdsTrimSpace(draft.promotionCode);
+      if (code !== '') promotion.promotionCode = code;
+    }
+    if (draft.eligibilityKind === 'ordersOver') {
+      const ordersOver = this.googleAssetAmount(draft.ordersOverAmount);
+      if (ordersOver !== undefined && ordersOver !== 0) promotion.ordersOverAmount = ordersOver;
+    }
+    if (promotion.discountAmount !== undefined || promotion.ordersOverAmount !== undefined) {
+      const currency = googleAdsToUpperCode(googleAdsTrimSpace(draft.currencyCode));
+      if (currency !== '') promotion.currencyCode = currency;
+    }
+    for (const field of ['occasion', 'languageCode', 'startDate', 'endDate', 'redemptionStartDate', 'redemptionEndDate'] as const) {
+      const value = googleAdsTrimSpace(draft[field]);
+      if (value !== '') promotion[field] = value;
+    }
+    return promotion;
+  }
+
+  /**
+   * Why the condition the promotion form SELECTED is unusable, or `null`. Upstream treats both
+   * conditions as optional, so an empty code box or a zero minimum order would pass its check — by
+   * being dropped, and the ad would then advertise an unconditional offer while the select still
+   * names a condition. Only the explicit "No condition" choice may produce one.
+   */
+  private googlePromotionConditionRefusal(draft: CampaignPromotionDraft): string | null {
+    if (draft.eligibilityKind === 'code' && googleAdsTrimSpace(draft.promotionCode) === '') return 'Enter the promotion code, or choose No condition.';
+    if (draft.eligibilityKind === 'ordersOver') {
+      const ordersOver = this.googleAssetAmount(draft.ordersOverAmount);
+      if (ordersOver === undefined || ordersOver === 0) return 'Enter a minimum order amount greater than 0, or choose No condition.';
+    }
+    return null;
+  }
+
+  /** The price sub-form as the entry it would add, the table's currency copied onto every row. */
+  private googlePriceFromDraft(draft: CampaignPriceExtensionDraft): CampaignPriceExtension {
+    const currencyCode = googleAdsToUpperCode(googleAdsTrimSpace(draft.currencyCode));
+    const qualifier = googleAdsTrimSpace(draft.priceQualifier);
+    return {
+      type: googleAdsTrimSpace(draft.type),
+      ...(qualifier !== '' ? { priceQualifier: qualifier } : {}),
+      languageCode: googleAdsTrimSpace(draft.languageCode),
+      offerings: draft.offerings.map((row) => {
+        const unit = googleAdsTrimSpace(row.unit);
+        return {
+          header: googleAdsTrimSpace(row.header),
+          description: googleAdsTrimSpace(row.description),
+          // An empty box is already withheld by `googlePriceDraftFilled`; NaN here only for text.
+          amount: this.googleAssetAmount(row.amount) ?? Number.NaN,
+          currencyCode,
+          ...(unit !== '' ? { unit } : {}),
+          finalUrl: googleAdsTrimSpace(row.finalUrl),
+        };
+      }),
+    };
+  }
+
+  /** Whether every box a price table requires holds something — not yet whether it is valid. */
+  private googlePriceDraftFilled(draft: CampaignPriceExtensionDraft): boolean {
+    if ([draft.type, draft.languageCode, draft.currencyCode].some((text) => googleAdsTrimSpace(text) === '')) return false;
+    return draft.offerings.every((row) => [row.header, row.description, row.amount, row.finalUrl].every((text) => googleAdsTrimSpace(text) !== ''));
+  }
+
+  /** "25% off · code SPRING" — the discount and its condition, as a promotion row reads on screen. */
+  private googlePromotionDetail(promotion: CampaignPromotion): string {
+    const discount =
+      promotion.discountPercent !== undefined ? `${promotion.discountPercent}% off` : `${promotion.discountAmount} ${promotion.currencyCode ?? ''} off`.trim();
+    const parts = [discount];
+    if (promotion.promotionCode) parts.push(`code ${promotion.promotionCode}`);
+    if (promotion.ordersOverAmount !== undefined) parts.push(`orders over ${promotion.ordersOverAmount} ${promotion.currencyCode ?? ''}`.trim());
+    if (promotion.occasion) parts.push(promotion.occasion);
+    return parts.join(' · ');
+  }
+
+  /** Price tables copied with their rows, so no list shares a row array with another. */
+  private copyGooglePrices(prices: readonly CampaignPriceExtension[]): CampaignPriceExtension[] {
+    return prices.map((price) => ({ ...price, offerings: price.offerings.map((row) => ({ ...row })) }));
+  }
+
+  private emptyGooglePromotionDraft(): CampaignPromotionDraft {
+    return {
+      promotionTarget: '',
+      discountKind: 'percent',
+      discount: '',
+      eligibilityKind: 'none',
+      promotionCode: '',
+      ordersOverAmount: '',
+      currencyCode: '',
+      occasion: '',
+      languageCode: '',
+      startDate: '',
+      endDate: '',
+      redemptionStartDate: '',
+      redemptionEndDate: '',
+      finalUrl: '',
+    };
+  }
+
+  /** One empty price row's controls. */
+  private googlePriceRowGroup(): FormGroup<{ [K in keyof CampaignPriceOfferingDraft]: FormControl<string> }> {
+    return this.fb.nonNullable.group<CampaignPriceOfferingDraft>({ header: '', description: '', amount: '', unit: '', finalUrl: '' });
+  }
+
+  /**
+   * A sub-form's raw value as a signal, re-read on every change — including a row pushed onto or
+   * removed from the price table's `FormArray`, which `valueChanges` also reports.
+   */
+  private initFormDraft<T>(form: { valueChanges: Observable<unknown>; getRawValue(): T }): Signal<T> {
+    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */
@@ -5146,22 +8727,31 @@ export class ImplementationTabComponent implements OnInit {
    * creative on the wire that the operator was never shown. Reading the rendered set makes "we
    * send only what could be seen" true by construction instead of by two gates agreeing.
    */
-  private googleCreativePayload(): Record<string, Record<string, string | string[]>> {
-    const payload: Record<string, Record<string, string | string[]>> = {};
+  private googleCreativePayload(): Record<string, Record<string, string | GoogleCreativeImageRef[]>> {
+    const payload: Record<string, Record<string, string | GoogleCreativeImageRef[]>> = {};
     for (const { channel } of this.googleCreativeSections()) {
-      const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue();
-      const creative: Record<string, string | string[]> = {};
-      for (const field of GOOGLE_CREATIVE_FIELD_SPECS[channel]) {
+      const groupName = GOOGLE_CREATIVE_REQUEST_KEYS[channel];
+      const raw = this.campaignForm.controls[groupName].getRawValue() as Record<string, string | null | undefined>;
+      const creative: Record<string, string | GoogleCreativeImageRef[]> = {};
+      // Widened for `image`, which only the image entries of the `as const` catalogue carry.
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      for (const field of fields) {
         const value = raw[field.control] ?? '';
         if (field.kind === 'list') {
-          const lines = this.splitCreativeLines(value);
-          if (lines.length > 0) creative[field.control] = lines;
+          // An image slot's stored images ride AFTER its pasted URLs, in the same array — the wire
+          // shape campaign-service decodes (`googleAdsImageRef`) — so the minimums and the empty
+          // check below count them like any other entry.
+          const entries: GoogleCreativeImageRef[] = [
+            ...this.splitCreativeLines(value),
+            ...(field.image ? this.googleImageRefsFor(`${groupName}.${field.control}`) : []),
+          ];
+          if (entries.length > 0) creative[field.control] = entries;
           continue;
         }
         const trimmed = value.trim();
         if (trimmed !== '') creative[field.control] = trimmed;
       }
-      if (Object.keys(creative).length > 0) payload[GOOGLE_CREATIVE_REQUEST_KEYS[channel]] = creative;
+      if (Object.keys(creative).length > 0) payload[groupName] = creative;
     }
     return payload;
   }
@@ -5219,6 +8809,9 @@ export class ImplementationTabComponent implements OnInit {
         return { objective: this.metaObjective(), dailyBudget: this.metaLifetimeBudget() ? null : this.metaBudgetUsd() };
       case 'reddit-ads':
         return { objective: this.redditObjective() };
+      // X's manual bid may not exceed the daily budget (`twitterBidPlan`).
+      case 'twitter-ads':
+        return { dailyBudget: this.twitterBudgetAmount() };
       default:
         return {};
     }
@@ -5236,6 +8829,53 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.biddingAvailable()) return {};
     const bidding = this.biddingPayloads()[platform];
     return bidding === null ? {} : { bidding };
+  }
+
+  /**
+   * Restores the Meta Instagram id and DSA disclosures, each only when present and a string — the
+   * same present-only rule as `restoreGoogleBidding`.
+   */
+  private restoreMetaInstagramDsa(draft: CampaignImplementationDraft): void {
+    const fields = [
+      ['metaInstagramUserId', 'instagramUserId'],
+      ['metaDsaBeneficiary', 'dsaBeneficiary'],
+      ['metaDsaPayor', 'dsaPayor'],
+    ] as const;
+    const patch: Partial<Record<(typeof fields)[number][1], string>> = {};
+    for (const [draftKey, control] of fields) {
+      const value = draft[draftKey];
+      if (typeof value === 'string') patch[control] = value;
+    }
+    // ONE emitting patch, unlike `restoreGoogleBidding`: `metaInstagramDsaDraft` (what validation,
+    // `submit` and `emitDraft` read) follows this group's `valueChanges`, so a silent write would
+    // leave the inputs showing the restored text while every check still saw blanks (PR #4483
+    // review). The emit cannot loop: `applyDraft` runs only while `seeding`, which the group's
+    // draft subscription honours.
+    if (Object.keys(patch).length > 0) this.metaInstagramDsaForm.patchValue(patch);
+  }
+
+  /**
+   * Why one EU DSA disclosure cannot be sent, or `null` while the capability is off. Mirrors
+   * campaign-service's `CheckPublishIdentity`: at most `META_DSA_NAME_MAX_LENGTH` characters
+   * (counted as code points, as Go counts runes — which is why the inputs carry no native
+   * `maxlength`: the browser counts UTF-16 units and would cut a valid astral-plane name short), no C0/C1 control, Unicode line/paragraph separator
+   * or bidi control (its `isLineBreakingOrControl`), and present whenever the
+   * other one is OR an EU country is targeted. Trimmed first, as upstream trims.
+   */
+  private metaDsaFieldError(field: 'dsaBeneficiary' | 'dsaPayor'): string | null {
+    if (!this.metaInstagramDsaAvailable()) return null;
+    const draft = this.metaInstagramDsaDraft();
+    const value = draft[field].trim();
+    const other = (field === 'dsaBeneficiary' ? draft.dsaPayor : draft.dsaBeneficiary).trim();
+    if ([...value].length > META_DSA_NAME_MAX_LENGTH) return `Enter at most ${META_DSA_NAME_MAX_LENGTH} characters.`;
+    // eslint-disable-next-line no-control-regex -- matching control characters is the point.
+    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value))
+      return 'Enter the name on one line, without tabs, line breaks or invisible formatting characters.';
+    if (value !== '') return null;
+    const eu = this.metaDsaCountries();
+    if (eu.length > 0) return `Required when targeting the EU/EEA (${eu.join(', ')}).`;
+    if (other !== '') return 'Enter both the beneficiary and the payor, or neither.';
+    return null;
   }
 
   /**

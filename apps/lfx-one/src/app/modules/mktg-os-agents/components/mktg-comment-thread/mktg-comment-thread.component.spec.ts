@@ -20,6 +20,19 @@ describe('MktgCommentThreadComponent', () => {
     expect(element.textContent).toContain('<img');
     expect(element.querySelector('img')).toBeNull();
   });
+  it.each([
+    ['open', 'Open'],
+    ['sent', 'Sent to the agent'],
+    ['resolved', 'Resolved by the agent'],
+  ] as const)('shows %s as a grey status label, not a blue action', (status, label) => {
+    const fixture = TestBed.createComponent(MktgCommentThreadComponent);
+    fixture.componentRef.setInput('comment', mktgCommentFixture({ status }));
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    const badge = Array.from(element.querySelectorAll('p')).find((paragraph) => paragraph.textContent?.trim() === label);
+    expect(badge?.className).toBe('inline-flex w-fit items-center rounded-full bg-gray-100 px-2 py-px text-xs font-medium text-gray-700');
+    expect(badge?.closest('a, button')).toBeNull();
+  });
   it('distinguishes absent attribution and shows sent/resolved context without interpreting resolution markup', () => {
     const fixture = TestBed.createComponent(MktgCommentThreadComponent);
     fixture.componentRef.setInput('comment', mktgCommentFixture({ author: { name: null }, status: 'resolved', resolution: '<script>plain result</script>' }));

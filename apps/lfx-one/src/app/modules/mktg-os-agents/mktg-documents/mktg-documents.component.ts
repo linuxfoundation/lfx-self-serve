@@ -3,9 +3,9 @@
 
 import { DatePipe, I18nPluralPipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_POLL, MKTG_DOCUMENT_PROGRESS_POLL } from '@lfx-one/shared/constants';
@@ -20,8 +20,17 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
+import {
+  describeMktgRevision,
+  describeMktgRevisionAuthor,
+  resolveMktgKit,
+  resolveMktgFamilyNextStep,
+  mktgKitAssetLabel,
+  mktgKitRootPath,
+  mktgRunRouteFor,
+} from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -50,7 +59,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
 // The Marketing OS Documents area (design of record: "Document store", Main
 // board): living documents in run order with their revision state, the
 // one-off runs grouped by agent, and the selected living document's Revisions
-// table with View and Restore. Data is fetched in the browser only, after
+// table with Open links; restoring lives in the document view. Data is fetched in the browser only, after
 // hydration, so SSR output stays stable — same pattern as the marketplace.
 @Component({
   selector: 'lfx-mktg-documents',
@@ -72,11 +81,12 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
 })
 export class MktgDocumentsComponent {
   // === Injections ===
-  private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly attempts = inject(MktgRunAttemptService);
   private readonly injector = inject(Injector);
   private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
   private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
@@ -94,20 +104,18 @@ export class MktgDocumentsComponent {
   protected readonly documents = signal<MktgDocumentsResponse | null>(null);
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
-  protected readonly restoringId = signal<string | null>(null);
-  protected readonly notice = signal('');
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
   private readonly reloads = signal(0);
   private listedScope = '';
   private detailedScope = '';
-  private restoreEpoch = 0;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
   // === Computed ===
   protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly kitRoot = computed(() => mktgKitRootPath(this.router.url));
   protected readonly selectedType: Signal<MktgDocumentType> = this.initSelectedType();
   protected readonly showAll = computed(() => !MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === this.selectedParam()));
   protected readonly allDocuments = computed(() =>
@@ -147,6 +155,34 @@ export class MktgDocumentsComponent {
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
+  protected readonly runTargets = computed(() =>
+    Object.fromEntries(
+      this.runs().map((run) => {
+        const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === run.agentKey);
+        if (type?.catalogAgentId && this.waitingForAnswers(type, run))
+          return [
+            run.runId,
+            {
+              label: 'Answer the questions',
+              commands: [this.kitRoot(), type.catalogAgentId],
+              params: { project: this.projectSlug(), type: null, mode: null, questions: null, generation: null, revision: null, run: null },
+            },
+          ];
+        const commands =
+          type?.kind === 'living' && run.state !== 'failed' ? (mktgRunRouteFor(run.agentKey, this.kitRoot()) ?? []) : [run.agentKey, run.documentId];
+        return [
+          run.runId,
+          {
+            label: 'Open',
+            commands,
+            params: { project: this.projectSlug(), type: null, mode: null, questions: null, revision: null, generation: null, run: run.runId },
+          },
+        ];
+      })
+    )
+  );
+
+  protected readonly emptyAction = this.initEmptyAction();
 
   // Type navigation follows main; identity/reload changes cancel scoped reads and timers.
   private readonly listRequest$ = toObservable(
@@ -189,7 +225,6 @@ export class MktgDocumentsComponent {
             if (scope !== this.detailedScope) {
               this.detailedScope = scope;
               this.detail.set(null);
-              this.notice.set('');
               if (!this.listFailed()) this.errorText.set('');
             }
           }),
@@ -228,46 +263,22 @@ export class MktgDocumentsComponent {
     this.listRefresh.next();
   }
 
-  protected onRestore(revision: MktgRevisionSummary): void {
-    const detail = this.detail();
-    const project = this.projectContext.activeContextUid();
-    const userSub = this.userService.user()?.sub;
-    if (!detail || detail.type.kind === 'run' || !project || !userSub || this.restoringId()) {
-      return;
-    }
-
-    const epoch = ++this.restoreEpoch;
-    this.restoringId.set(revision.id);
-    this.notice.set('');
-    this.errorText.set('');
-    // Do not cancel an accepted write when the component is destroyed.
-    this.documentStore.restoreRevision(project, detail.type.agentKey, detail.documentId, revision.id).subscribe({
-      next: (restored) => {
-        if (
-          epoch !== this.restoreEpoch ||
-          this.destroyRef.destroyed ||
-          this.projectContext.activeContextUid() !== project ||
-          this.userService.user()?.sub !== userSub
-        )
-          return;
-        this.restoringId.set(null);
-        this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
-        this.reloads.update((value) => value + 1);
-        // Cancel and replace list reads synchronously so pre-write responses cannot undo this ACK.
-        this.listRefresh.next();
-        if (!this.sameDocument(project, detail.type.agentKey)) return;
-        this.detail.set(restored);
-        this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
-      },
-      error: (error: HttpErrorResponse) => {
-        if (epoch !== this.restoreEpoch || this.userService.user()?.sub !== userSub) return;
-        this.restoringId.set(null);
-        if (this.sameDocument(project, detail.type.agentKey)) this.errorText.set(this.actionErrorText(error));
-      },
+  // === Private initializers ===
+  private initEmptyAction() {
+    return computed(() => {
+      const listing = this.documents();
+      if (!listing) return null;
+      const family = resolveMktgKit(listing).find((view) => view.rows.some((row) => row.asset.agentKey === this.selectedType().agentKey));
+      if (!family) return null;
+      const step = resolveMktgFamilyNextStep(family, {
+        loaded: !this.loading() && !this.listFailed(),
+        canWrite: this.projectContext.canWrite(),
+        approvedFramework: !!listing.approvedFramework,
+      });
+      return step ? { ...step, commands: ['..', ...step.commands], queryParams: { project: this.projectSlug() ?? '', ...step.queryParams } } : null;
     });
   }
 
-  // === Private initializers ===
   private initRuns(): Signal<MktgDocumentRunRow[]> {
     return computed(() =>
       (this.documents()?.runs ?? []).map((run) => ({
@@ -293,11 +304,8 @@ export class MktgDocumentsComponent {
         if (typeChanged) this.loading.set(true);
         if (scope !== this.listedScope) {
           this.listedScope = scope;
-          this.restoreEpoch++;
-          this.restoringId.set(null);
           this.loading.set(true);
           this.documents.set(null);
-          this.notice.set('');
           this.errorText.set('');
           this.refreshWarning.set('');
           this.listFailed.set(false);
@@ -431,7 +439,7 @@ export class MktgDocumentsComponent {
           items: family.types.map((type) => {
             const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
             return {
-              type,
+              type: { ...type, label: mktgKitAssetLabel(type.agentKey) ?? type.label },
               position: type.kind === 'living' && living.length > 1 ? living.indexOf(type) + 1 : null,
               ...(countsUnknown
                 ? { badge: '', badgeClass: '' }
@@ -445,27 +453,6 @@ export class MktgDocumentsComponent {
   }
 
   // === Private helpers ===
-  private withCurrentRevision(
-    documents: MktgDocumentsResponse | null,
-    detail: MktgDocumentDetailResponse,
-    revision: MktgRevisionSummary
-  ): MktgDocumentsResponse | null {
-    if (!documents) return null;
-    return {
-      ...documents,
-      groups: documents.groups.map((group) => {
-        if (group.type.agentKey !== detail.type.agentKey) return group;
-        return {
-          ...group,
-          documents: group.documents.map((document) => {
-            if (document.documentId !== detail.documentId) return document;
-            return { ...document, latestRevisionId: revision.id, currentRevisionNumber: revision.number };
-          }),
-        };
-      }),
-    };
-  }
-
   private scrollToSelection(): void {
     if (!this.pendingSelectionScroll || this.loading() || this.detailLoading() || (this.selectedLiving()?.document && !this.detail())) return;
     this.pendingSelectionScroll = false;
@@ -483,10 +470,6 @@ export class MktgDocumentsComponent {
     );
   }
 
-  private sameDocument(project: string, agentKey: string): boolean {
-    return !this.destroyRef.destroyed && this.projectContext.activeContextUid() === project && this.selectedType().agentKey === agentKey;
-  }
-
   private actionErrorText(error: HttpErrorResponse): string {
     if (error.status === 403) return 'You need write access to this project to use its Marketing OS documents.';
     if (error.status === 404)
@@ -495,10 +478,20 @@ export class MktgDocumentsComponent {
     return 'The document could not be updated or loaded. Reload to check its state, then try again.';
   }
 
+  /** The row action and type badge use one policy; private questions can precede the next server projection. */
+  private waitingForAnswers(type: MktgDocumentType, run?: MktgDocumentRunRow): boolean {
+    if (type.kind !== 'living' || !type.catalogAgentId || !run || run.state === 'failed') return false;
+    return (
+      run.state === 'questions' ||
+      this.attempts.load(this.projectContext.activeContextUid(), type.catalogAgentId)?.pendingQuestions?.attempt.runId === run.runId
+    );
+  }
+
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
     const active = this.runs().find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
+    if (this.waitingForAnswers(type, active)) return { badge: 'Needs answers', badgeClass: 'text-blue-600' };
     if (active) {
-      if (active.state === 'questions') return { badge: type.agentKey === 'member-360' ? 'Paused' : 'Needs answers', badgeClass: 'text-blue-600' };
+      if (active.state === 'questions') return { badge: 'Paused', badgeClass: 'text-blue-600' };
       return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };
     }
     if (documentCount === 0 && this.documents()?.progressUnavailable) return { badge: '', badgeClass: '' };

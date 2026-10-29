@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformServer, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal } from '@angular/core';
+import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -52,12 +52,17 @@ import {
   mergeCommentResults,
   normalizePollStatus,
   resolveVoterResultsState,
+  toAbsoluteUrl,
+  votePermalinkPath,
+  votePresenterPath,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
+import { exportVoteSlide, voteSlideFileName, voteSlideToast } from '@shared/utils/vote-slide.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -75,6 +80,7 @@ import { VoteOptionResultsComponent } from '../components/vote-option-results/vo
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteSlideComponent } from '../components/vote-slide/vote-slide.component';
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
@@ -121,6 +127,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteOptionResultsComponent,
     VoteParticipationCardComponent,
     VoteRankedQuestionResultsComponent,
+    VoteSlideComponent,
     VoteVotersComponent,
   ],
   providers: [DialogService],
@@ -135,6 +142,8 @@ export class VoteDetailComponent {
   private readonly projectService = inject(ProjectService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
+  private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
@@ -143,6 +152,7 @@ export class VoteDetailComponent {
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
+  protected readonly slideBusy = signal<boolean>(false);
   protected readonly impersonating = this.userService.impersonating;
   protected readonly impersonationReadOnlyNotice = VOTE_IMPERSONATION_READ_ONLY_NOTICE;
   protected readonly impersonationPrivateNotice = VOTE_IMPERSONATION_PRIVATE_NOTICE;
@@ -223,6 +233,19 @@ export class VoteDetailComponent {
   protected readonly commentAnonymityReason: Signal<VoteCommentAnonymityReason> = computed(() =>
     this.isPseudoAnonymous() ? 'pseudo_anonymous' : 'voter_view'
   );
+  /** Present and Copy slide: a manager on an active or ended vote; votePresenterGuard re-checks `vote#writer`. */
+  protected readonly canPresent: Signal<boolean> = computed(() => {
+    const status = normalizePollStatus(this.vote()?.status);
+    return this.audience() === 'creator' && (status === PollStatus.ACTIVE || status === PollStatus.ENDED);
+  });
+  /** Send ballots now (#4363): a manager on an active vote; the BFF re-checks `vote#writer`. */
+  protected readonly canSendBallots: Signal<boolean> = computed(
+    () => this.audience() === 'creator' && normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE
+  );
+  protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
+  private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
+  private readonly slideComponent = viewChild(VoteSlideComponent);
+
   /** Results (and comments) render for a manager, or for a voter once the vote closed; every other voter gets a state panel. */
   protected readonly showsResults: Signal<boolean> = computed(
     () => this.audience() === 'creator' || (this.voterState() === 'closed' && !this.myResponseError())
@@ -330,6 +353,24 @@ export class VoteDetailComponent {
       draggable: false,
       data: { vote },
     });
+  }
+
+  /** Opens the chrome-less presenter in a new tab; votePresenterGuard (vote#writer) is the real gate. */
+  protected onPresent(): void {
+    const uid = this.vote()?.uid;
+    if (uid) this.document.defaultView?.open(votePresenterPath(uid), '_blank', 'noopener,noreferrer');
+  }
+
+  /** Exports the static vote slide (#4145): PNG to the clipboard where the browser allows, else a download. */
+  protected async onCopySlide(): Promise<void> {
+    const element = this.slideRef()?.nativeElement;
+    const name = this.vote()?.name;
+    if (!element || !name || this.slideBusy()) return;
+    this.slideBusy.set(true);
+    // The QR is generated asynchronously; capturing before it renders would copy a slide with a blank code.
+    const result = (await this.slideComponent()?.whenQrReady()) ? await exportVoteSlide(element, voteSlideFileName(name)) : 'failed';
+    this.slideBusy.set(false);
+    this.messageService.add(voteSlideToast(result));
   }
 
   protected onViewResults(): void {

@@ -4,7 +4,7 @@
 import type { z } from 'zod';
 import type { envelopeSchema, tabsSchema, memberRankingRowSchema } from '../server/member-360-schema.utils';
 import type { formInputSchema, trackerSchema, priorRunSchema } from '../server/member-360.utils';
-import type { MktgRunActivity, MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunSessionResponse } from './mktg-run.interface';
 import type { CATEGORY_KEYS, MEMBER_360_FINALIZE_RECEIPT_ID } from '../constants/member-360.constants';
 export type Member360Envelope = z.infer<typeof envelopeSchema>;
 export type Member360Tabs = z.infer<typeof tabsSchema>;
@@ -24,6 +24,7 @@ export interface Member360FinalizeReceipt {
 }
 export interface Member360GenerateRequest {
   project: string;
+  discard?: string;
   window?: '12' | '6' | 'year';
   compare?: boolean;
   trackers?: Member360Tracker[];
@@ -41,12 +42,6 @@ export interface Member360TrackerUpload {
 export interface Member360Session extends MktgRunSessionResponse {
   documentId: string;
 }
-export interface Member360PendingRun {
-  user: string;
-  project: string;
-  session: Member360Session;
-  startedAt: number;
-}
 export type Member360FailureReason = 'no_edit_access' | 'agent_stopped';
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input' | 'failed';
@@ -58,6 +53,8 @@ export interface Member360Result {
   activity?: MktgRunActivity[];
   documentId?: string;
   stored?: boolean;
+  /** Exact receipt lets the shared started-run reader confirm durable completion. */
+  persistence?: MktgRunPersistReceipt;
 }
 export interface Member360WorkbookDownload {
   bytes: Uint8Array;

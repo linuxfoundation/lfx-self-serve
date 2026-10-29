@@ -8,6 +8,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { VOTE_DETAIL_TABS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
+import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { VoteDetailHeaderComponent } from './vote-detail-header.component';
@@ -33,15 +35,33 @@ describe('VoteDetailHeaderComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [VoteDetailHeaderComponent],
-      providers: [{ provide: PLATFORM_ID, useValue: 'server' }],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'server' },
+        // The real Send ballots button renders for managers; it only touches these once clicked.
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: { add: () => undefined } },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
   });
 
-  function render(inputs: { vote?: Vote; audience?: 'voter' | 'creator'; canCastVote?: boolean; limited?: boolean } = {}): void {
+  function render(
+    inputs: {
+      vote?: Vote;
+      audience?: 'voter' | 'creator';
+      canCastVote?: boolean;
+      canPresent?: boolean;
+      canSendBallots?: boolean;
+      slideBusy?: boolean;
+      limited?: boolean;
+    } = {}
+  ): void {
     fixture.componentRef.setInput('vote', inputs.vote ?? makeVote());
     fixture.componentRef.setInput('audience', inputs.audience ?? 'voter');
     fixture.componentRef.setInput('canCastVote', inputs.canCastVote ?? false);
+    fixture.componentRef.setInput('canPresent', inputs.canPresent ?? false);
+    fixture.componentRef.setInput('canSendBallots', inputs.canSendBallots ?? false);
+    fixture.componentRef.setInput('slideBusy', inputs.slideBusy ?? false);
     fixture.componentRef.setInput('limited', inputs.limited ?? false);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
@@ -162,6 +182,46 @@ describe('VoteDetailHeaderComponent', () => {
       fixture.nativeElement.querySelector('[data-testid="vote-detail-header-back"]').click();
 
       expect(emitted).toEqual(['reminder', 'cast', 'back']);
+    });
+
+    it.each([
+      [true, true, true],
+      [true, false, false],
+      [false, false, false],
+    ])('canPresent=%s, canSendBallots=%s → Present and Copy slide %s, Send ballots %s', (canPresent, canSendBallots) => {
+      render({ audience: 'creator', canPresent, canSendBallots });
+
+      expect(exists('vote-detail-header-present')).toBe(canPresent);
+      expect(exists('vote-detail-header-copy-slide')).toBe(canPresent);
+      expect(exists('vote-detail-header-send-ballots')).toBe(canSendBallots);
+    });
+
+    it('hides Present, Copy slide and Send ballots while limited', () => {
+      render({ audience: 'creator', canPresent: true, canSendBallots: true, limited: true });
+
+      for (const id of ['present', 'copy-slide', 'send-ballots']) {
+        expect(exists(`vote-detail-header-${id}`)).toBe(false);
+      }
+    });
+
+    it('emits Present and Copy slide', () => {
+      render({ audience: 'creator', canPresent: true });
+      const emitted: string[] = [];
+      fixture.componentInstance.present.subscribe(() => emitted.push('present'));
+      fixture.componentInstance.copySlide.subscribe(() => emitted.push('copy-slide'));
+
+      for (const id of ['present', 'copy-slide']) {
+        fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-${id}"] button`).click();
+      }
+
+      expect(emitted).toEqual(['present', 'copy-slide']);
+    });
+
+    it.each([true, false])('shows Copy slide as loading=%s while the export runs', (slideBusy) => {
+      render({ audience: 'creator', canPresent: true, slideBusy });
+      const copy = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-copy-slide"]')).componentInstance as ButtonComponent;
+
+      expect(copy.loading()).toBe(slideBusy);
     });
 
     it('emits each voter action', () => {

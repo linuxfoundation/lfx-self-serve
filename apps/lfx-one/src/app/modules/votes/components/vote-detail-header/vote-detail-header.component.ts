@@ -13,13 +13,15 @@ import { formatVoteDeadline, getUserTimezone, getVoteEndedEarlyDetailTooltip, is
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 
+import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots.component';
+
 /**
  * Header card of the vote detail page (#3913): back link, title, status and privacy tags, group, method, close date,
  * invited voters, the page actions and the pill tab strip. Presentational — the page owns access, state and navigation.
  */
 @Component({
   selector: 'lfx-vote-detail-header',
-  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
+  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, VoteSendBallotsComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
   templateUrl: './vote-detail-header.component.html',
 })
 export class VoteDetailHeaderComponent {
@@ -33,6 +35,12 @@ export class VoteDetailHeaderComponent {
   public readonly tabs = input.required<readonly VoteDetailTabOption[]>();
   /** Active vote awaiting the viewer's ballot — shows Cast vote. */
   public readonly canCastVote = input<boolean>(false);
+  /** Manager on an active or ended vote — shows Present and Copy slide. The presenter route re-checks `vote#writer`. */
+  public readonly canPresent = input<boolean>(false);
+  /** Manager on an active vote — shows Send ballots now (#4363). The BFF re-checks `vote#writer`. */
+  public readonly canSendBallots = input<boolean>(false);
+  /** Copy slide is exporting its image, so the button shows a spinner and ignores clicks. */
+  public readonly slideBusy = input<boolean>(false);
   /**
    * Shows only the title, status and back navigation (#4330) until manager access or a successful,
    * non-removed invitation lookup for this vote is verified, including loading and failed-lookup states.
@@ -43,6 +51,8 @@ export class VoteDetailHeaderComponent {
   public readonly tabChange = output<VoteDetailTab>();
   public readonly sendReminder = output<void>();
   public readonly castVote = output<void>();
+  public readonly present = output<void>();
+  public readonly copySlide = output<void>();
   public readonly viewResults = output<void>();
   public readonly back = output<void>();
 

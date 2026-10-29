@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { CampaignPlatform, GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
 import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
 import { lfxColors } from './colors.constants';
 import {
@@ -68,13 +68,41 @@ import {
   googleAdsEchoed,
   googleAdsBoundExtensionText,
   googleAdsToLower,
+  googleAdsDecodedText,
   googleAdsTrimSpace,
+  googleAdsWellFormed,
   googleAdsUrlGoParseFlaw,
   isGoogleAdsServableUrl,
   isGoSpaceCode,
   PAUSE_ONLY_CAMPAIGN_PLATFORMS,
   campaignResumeWithheldForPlatform,
+  campaignPlatformMonitorable,
 } from './campaign.constants';
+
+/**
+ * The Monitoring tab's offer is decoupled from the CREATE flow's `disabled` flag, as the toggle is.
+ * X's adopted campaigns are live and spending, so its monitor shows while its create stays off.
+ */
+describe('campaignPlatformMonitorable', () => {
+  it('offers X to the Monitoring tab while X create stays disabled', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(campaignPlatformMonitorable('twitter-ads')).toBe(true);
+  });
+
+  it('offers every create-enabled platform', () => {
+    for (const platform of CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)) {
+      expect(campaignPlatformMonitorable(platform.id)).toBe(true);
+    }
+  });
+
+  it('keeps X out of the create-enabled platforms the Implement tab and the picker offer', () => {
+    expect(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id)).not.toContain('twitter-ads');
+  });
+
+  it('answers false for a platform the list does not know', () => {
+    expect(campaignPlatformMonitorable('unknown-ads' as CampaignPlatform)).toBe(false);
+  });
+});
 
 /**
  * The toggle is decoupled from the CREATE flow's `disabled` flag. A campaign reaches this app by
@@ -1023,6 +1051,26 @@ describe('Google Ads string rules', () => {
     }
 
     expect(mismatches).toEqual([]);
+  });
+
+  it.each([
+    ['a lone high surrogate', 'a\ud800b', 'a\ufffdb'],
+    ['a lone low surrogate', 'a\udc00b', 'a\ufffdb'],
+    ['a high surrogate at the end', 'ab\ud801', 'ab\ufffd'],
+    ['two lone surrogates in a row', '\udc00\ud800', '\ufffd\ufffd'],
+    ['a reversed pair', '\ude00\ud83d', '\ufffd\ufffd'],
+  ])("replaces %s with U+FFFD as Go's JSON decoder does", (_label, input, expected) => {
+    expect(googleAdsWellFormed(input)).toBe(expected);
+  });
+
+  it('keeps well-formed text, astral characters included, as the same string', () => {
+    const text = 'Labs \u{1F600} \u00e9';
+    expect(googleAdsWellFormed(text)).toBe(text);
+  });
+
+  it('reads two different lone surrogates as the same text, as upstream does', () => {
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe(googleAdsDecodedText('Talks\ud801'));
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe('Talks\ufffd');
   });
 
   it('trims a long interior whitespace run in linear time', () => {

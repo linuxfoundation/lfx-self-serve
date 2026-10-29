@@ -35,6 +35,28 @@
             (onClick)="sendReminder.emit()"
             data-testid="vote-detail-header-send-reminder" />
         }
+        @if (canPresent() && !limited()) {
+          <lfx-button
+            label="Present"
+            icon="fa-light fa-presentation-screen"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="present.emit()"
+            data-testid="vote-detail-header-present" />
+          <lfx-button
+            label="Copy slide"
+            icon="fa-light fa-image"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            [loading]="slideBusy()"
+            (onClick)="copySlide.emit()"
+            data-testid="vote-detail-header-copy-slide" />
+        }
+        @if (canSendBallots() && !limited()) {
+          <lfx-vote-send-ballots [voteUid]="vote().uid" data-testid="vote-detail-header-send-ballots" />
+        }
         @if (canCastVote() && !limited()) {
           <lfx-button
             label="Cast vote"

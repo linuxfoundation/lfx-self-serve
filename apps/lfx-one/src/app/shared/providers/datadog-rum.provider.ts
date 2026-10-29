@@ -14,14 +14,25 @@ import { getRuntimeConfig } from './runtime-config.provider';
 
 /**
  * Redacts every credential a URL can carry into Datadog: an invite `?token=`, a meeting passcode,
- * and a Storage signed-URL `token` or `access_token` on the Gatewaze proxies. Returns the URL
+ * a Storage signed-URL `token` or `access_token` on the Gatewaze proxies, and any URL fragment. Returns the URL
  * unchanged when it carries none.
  *
  * @param url Absolute or relative URL.
  * @param origin Origin a relative URL is resolved against.
  */
 export function redactRumUrl(url: string, origin: string): string {
-  return redactGatewazeProxyCredentials(redactMeetingPassword(redactInviteToken(url, origin), origin), origin);
+  return stripUrlFragment(redactGatewazeProxyCredentials(redactMeetingPassword(redactInviteToken(url, origin), origin), origin));
+}
+
+/**
+ * Drops the URL fragment. A login-free vote link carries its credential there (`#vote_token=...`, #4363); the
+ * browser never sends a fragment to a server, but RUM records `window.location.href` verbatim, so no fragment may
+ * reach Datadog on any route. Because `shouldRecordReplay` compares a URL with its redacted form, a URL that carries
+ * a fragment also keeps Session Replay off.
+ */
+export function stripUrlFragment(url: string): string {
+  const hashIndex = url.indexOf('#');
+  return hashIndex === -1 ? url : url.slice(0, hashIndex);
 }
 
 /**

@@ -9,6 +9,10 @@ vi.mock('./logger.service', () => ({
 }));
 
 import type { Request } from 'express';
+import {
+  MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS,
+  MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+} from '../../../../../packages/shared/src/constants/mktg-one-off-terminal.fixture';
 
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -49,6 +53,40 @@ describe('GuildService.getRawEventPayloads', () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('interrupts a discarded Guild session via the documented POST path', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204 });
+    await service.interruptSession(req, 'synthetic/session');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://guild.test/api/sessions/synthetic%2Fsession/interrupt',
+      expect.objectContaining({ method: 'POST', body: '{}' })
+    );
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 404, 503])('keeps discard successful when interrupt returns %s', async (status) => {
+    fetchMock.mockResolvedValue({ ok: false, status });
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      status,
+    });
+  });
+
+  it('keeps discard successful on interrupt transport failure without logging upstream text', async () => {
+    fetchMock.mockRejectedValue(new Error('private upstream body'));
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      err: expect.objectContaining({ code: 'guild_unreachable', operation: 'guild_interrupt_session', service: 'guild' }),
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private upstream body');
+  });
+
+  it('normalizes the raw recorded wrapper fixture to a content-free marker plus 11 public events', async () => {
+    fetchMock.mockResolvedValue(mockEventsResponse(MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS.map((payload) => JSON.parse(payload))));
+    expect(await service.getRawEventPayloads(req, 'synthetic-recorded-session')).toEqual(MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS);
   });
 
   describe('envelope-injection defense (user-event exclusion filter)', () => {

@@ -43,6 +43,9 @@ import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
+import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
+import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -239,6 +242,23 @@ function orgLensPageRoutes(): Routes {
 }
 
 export const routes: Routes = [
+  // Login-free vote link (`/votes/:id#vote_token=...`, #4363): a chrome-less top-level route mounted before the
+  // authenticated shell so the token holder is never sent through login. The guard matches only in the browser and
+  // only when the fragment carries a token; every other `/votes/*` URL falls through to the shell unchanged.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteTokenMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of `/votes/:id` renders the same chrome-less page (its loading state) rather than the authenticated
+  // shell, which the server-side `authGuard` would otherwise wave through for a logged-out visitor.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteAnonymousSsrMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
   {
     path: '',
     canActivate: [authGuard],
@@ -882,6 +902,15 @@ export const routes: Routes = [
     title: 'LFX Documentation',
     loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
     loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
+  },
+  // Chrome-less presenter (#4140): top-level sibling of the MainLayout root so it renders full-viewport with no navbar/sidebar.
+  // A child of votes.routes.ts would inherit the shell. Gated on vote#writer; must precede the in-shell `**` catch-all.
+  {
+    path: 'votes/:id/present',
+    title: 'Present Vote',
+    canActivate: [authGuard, votePresenterGuard],
+    data: { preload: false },
+    loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
   {
     path: 'meetings/not-found',

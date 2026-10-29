@@ -28,6 +28,8 @@ import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
+import { voteSlideToast } from '@shared/utils/vote-slide.util';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -99,6 +101,7 @@ describe('VoteDetailComponent', () => {
   let projectService: { getProjectStrict: ReturnType<typeof vi.fn> };
   let committeeService: { fetchCommittee: ReturnType<typeof vi.fn> };
   let dialogService: { open: ReturnType<typeof vi.fn> };
+  let messageService: { add: ReturnType<typeof vi.fn> };
   let router: { navigate: ReturnType<typeof vi.fn> };
   let paramMap: BehaviorSubject<ParamMap>;
   let queryParamMap: BehaviorSubject<ParamMap>;
@@ -114,6 +117,7 @@ describe('VoteDetailComponent', () => {
         { provide: ProjectService, useValue: projectService },
         { provide: CommitteeService, useValue: committeeService },
         { provide: Router, useValue: router },
+        { provide: MessageService, useValue: messageService },
         { provide: ActivatedRoute, useValue: { paramMap, queryParamMap } },
         // The page never reads the lens — a Me lens must not demote a writer to the voter view.
         { provide: LensService, useValue: { activeLens: signal('me') } },
@@ -159,6 +163,7 @@ describe('VoteDetailComponent', () => {
     projectService = { getProjectStrict: vi.fn().mockReturnValue(of({ writer: false } as Project)) };
     committeeService = { fetchCommittee: vi.fn().mockReturnValue(of({ writer: false })) };
     dialogService = { open: vi.fn() };
+    messageService = { add: vi.fn() };
     router = { navigate: vi.fn() };
     paramMap = new BehaviorSubject(convertToParamMap({ id: 'vote-1' }));
     queryParamMap = new BehaviorSubject(convertToParamMap({}));
@@ -631,6 +636,60 @@ describe('VoteDetailComponent', () => {
       expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
       expect(voteService.fetchVote).toHaveBeenLastCalledWith('vote-1', { skipCache: true });
       expect(read<VoteDetailState>(fixture, 'state').vote).not.toBeNull();
+    });
+  });
+
+  describe('manager actions: Present, Copy slide and Send ballots (#4441, #4363)', () => {
+    it.each([
+      [PollStatus.ACTIVE, true, true, true],
+      [PollStatus.ENDED, true, true, false],
+      [PollStatus.DISABLED, true, false, false],
+      [PollStatus.ACTIVE, false, false, false],
+    ])('for a %s vote, manager=%s: canPresent=%s, canSendBallots=%s', async (status, manager, canPresent, canSendBallots) => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status })));
+      const fixture = await setup();
+
+      expect(read(fixture, 'canPresent')).toBe(canPresent);
+      expect(read(fixture, 'canSendBallots')).toBe(canSendBallots);
+      const header = fixture.debugElement.query(By.css('lfx-vote-detail-header'));
+      expect(header.properties['canPresent']).toBe(canPresent);
+      expect(header.properties['canSendBallots']).toBe(canSendBallots);
+    });
+
+    it('renders the off-screen slide artboard only for a manager who can present', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const manager = await setup();
+      expect(manager.nativeElement.querySelector('lfx-vote-slide')).not.toBeNull();
+      TestBed.resetTestingModule();
+
+      projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
+      const voter = await setup();
+      expect(voter.nativeElement.querySelector('lfx-vote-slide')).toBeNull();
+    });
+
+    it('opens the presenter for this vote in a new tab, without an opener', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const open = vi.spyOn(window, 'open').mockReturnValue(null);
+      try {
+        const fixture = await setup();
+        call(fixture, 'onPresent');
+
+        expect(open).toHaveBeenCalledWith('/votes/vote-1/present', '_blank', 'noopener,noreferrer');
+      } finally {
+        open.mockRestore();
+      }
+    });
+
+    it('reports a failed slide export as a toast and frees the button', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const fixture = await setup();
+
+      // The off-screen artboard is stubbed here (no real lfx-vote-slide), so the QR never reports ready.
+      await (fixture.componentInstance as unknown as { onCopySlide: () => Promise<void> }).onCopySlide();
+
+      expect(messageService.add).toHaveBeenCalledWith(voteSlideToast('failed'));
+      expect(read(fixture, 'slideBusy')).toBe(false);
     });
   });
 
