@@ -116,8 +116,10 @@ export class UiInputComponent implements ControlValueAccessor {
   }
 
   protected onCompositionEnd(event: Event): void {
+    const buffered = this.composing;
     this.composing = false;
-    this.emit((event.target as HTMLInputElement).value);
+    // Only a buffered composition has anything left to emit; otherwise every input event already did.
+    if (buffered) this.emit((event.target as HTMLInputElement).value);
   }
 
   protected onBlur(): void {

@@ -251,14 +251,18 @@ describe('UiInputComponent composition buffering', () => {
 
   it('does not buffer on Android, where ordinary typing is composition', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/126.0 Mobile');
-    const { seen, fixture } = await create();
+    const { seen, fixture, field } = await create();
+    field.dispatchEvent(new CompositionEvent('compositionend'));
+    await fixture.whenStable();
 
     expect(seen).toEqual(['kube']);
     expect(fixture.componentInstance.value()).toBe('kube');
   });
 
   it('follows COMPOSITION_BUFFER_MODE: false', async () => {
-    const { seen } = await create(false);
+    const { seen, fixture, field } = await create(false);
+    field.dispatchEvent(new CompositionEvent('compositionend'));
+    await fixture.whenStable();
 
     expect(seen).toEqual(['kube']);
   });
