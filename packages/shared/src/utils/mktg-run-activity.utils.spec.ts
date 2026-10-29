@@ -597,6 +597,12 @@ describe('mktgRunActivityPhases', () => {
       { id: 'step-5', kind: 'reading', label: 'Reading aaif.io/events', status: 'running', startedAt: '2026-10-29T08:00:13Z' },
     ]);
     expect(later.map((phase) => phase.state)).toEqual(['done', 'active', 'pending', 'pending', 'pending']);
+    // A failed step with nothing running closes the phase: the feed a failed run leaves behind is not "under way".
+    const failed = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      { id: 'step-6', kind: 'writing', label: 'Writing the framework', status: 'failed', startedAt: '2026-10-29T08:01:00Z', endedAt: '2026-10-29T08:01:30Z' },
+    ]);
+    expect(failed.map((phase) => phase.state)).toEqual(['done', 'skipped', 'skipped', 'done', 'pending']);
   });
 });
 

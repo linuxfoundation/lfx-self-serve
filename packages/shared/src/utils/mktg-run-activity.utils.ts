@@ -465,19 +465,20 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
  * and a phase that went done between waves and active again on the next one
  * flickered through the whole read (Joan's hand test, 29 Oct 2026). Earlier
  * phases are done, or passed over when nothing of theirs happened; later
- * ones pending. The feed is shown only while the run is live, so the last
- * phase never needs to read done here.
+ * ones pending. A failed step with nothing running closes its phase, so the
+ * feed a failed run leaves on screen does not say "under way".
  */
 export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
   const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
   const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
   return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
-    const reached = activity.some((step) => phase.kinds.includes(step.kind));
+    const steps = activity.filter((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
     if (position === lastReached) {
-      state = 'active';
+      // A failed step with nothing running after it ended the run there: the feed a failed redraft leaves on screen says so.
+      state = steps.some((step) => step.status === 'failed') && !steps.some((step) => step.status === 'running') ? 'done' : 'active';
     } else if (position < lastReached) {
-      state = reached ? 'done' : 'skipped';
+      state = steps.length > 0 ? 'done' : 'skipped';
     } else {
       state = 'pending';
     }
