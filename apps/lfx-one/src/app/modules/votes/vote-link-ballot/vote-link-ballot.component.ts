@@ -12,7 +12,7 @@ import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOK
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
 import { buildVoteAnswerSummary, normalizePollStatus } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
-import { catchError, fromEvent, of, Subject, takeUntil } from 'rxjs';
+import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
 import { VoteLinkHeaderComponent } from '../components/vote-link-header/vote-link-header.component';
 import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vote-link-thank-you.component';
@@ -162,17 +162,13 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       });
   }
 
-  /** Branding is best effort: no project key, a hidden or unknown project, or any failure leaves the page unbranded. */
+  /** Branding is best effort: no project key, a hidden or unknown project, or any failure (the service maps them to null) leaves the page unbranded. */
   private loadProject(ballot: VoteLinkBallot): void {
     const identifier = ballot.project_uid || ballot.project_slug;
     if (!identifier) return;
     this.voteService
       .getPublicProjectSummary(identifier)
-      .pipe(
-        catchError(() => of(null)),
-        takeUntil(this.cancel$),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
       .subscribe((project) => this.project.set(project));
   }
 

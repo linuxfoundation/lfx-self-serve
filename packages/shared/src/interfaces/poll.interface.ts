@@ -1233,7 +1233,6 @@ export interface VoteMailingListReminderListOption {
   label: string;
 }
 
-/** Page states of the login-free vote link ballot page (#4363). */
 /** One line of the thank-you screen's recap: a question prompt and what the voter chose for it. */
 export interface VoteAnswerSummaryLine {
   question_id: string;
@@ -1241,4 +1240,5 @@ export interface VoteAnswerSummaryLine {
   answer: string;
 }
 
+/** Page states of the login-free vote link ballot page (#4363). */
 export type VoteLinkState = 'loading' | 'ready' | 'not-open' | 'submitted' | 'updated' | 'invalid' | 'ended' | 'removed' | 'error';

@@ -241,16 +241,16 @@ describe('VoteBallotFormComponent (#4363)', () => {
 
     it('renders every choice as a full-row card of at least 44px and marks the selected one', async () => {
       await render(baseBallot());
-      const row = byId('vote-link-choice-c-a')!;
-      expect(row.className).toContain('min-h-[44px]');
-      expect(row.getAttribute('data-selected')).toBe('false');
+      const card = (id: string) => byId(id)!.querySelector('[data-selected]') as HTMLElement;
+      expect(card('vote-link-choice-c-a').className).toContain('min-h-[44px]');
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('false');
 
       (el().querySelector('#vote-link-choice-c-a') as HTMLInputElement).click();
       fixture.detectChanges();
 
-      expect(byId('vote-link-choice-c-a')?.getAttribute('data-selected')).toBe('true');
-      expect(byId('vote-link-choice-c-a')?.className).toContain('border-blue-600');
-      expect(byId('vote-link-choice-c-b')?.getAttribute('data-selected')).toBe('false');
+      expect(card('vote-link-choice-c-a').getAttribute('data-selected')).toBe('true');
+      expect(card('vote-link-choice-c-a').className).toContain('border-blue-600');
+      expect(card('vote-link-choice-c-b').getAttribute('data-selected')).toBe('false');
     });
 
     it('shows "Select one answer" and disables Submit until a choice is made', async () => {
@@ -263,6 +263,21 @@ describe('VoteBallotFormComponent (#4363)', () => {
 
       expect(byId('vote-link-submit-helper')).toBeNull();
       expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(false);
+    });
+
+    it('words the helper for the question shape: multiple choice, then several questions', async () => {
+      const multi = baseBallot({ poll_questions: [{ question_id: 'q1', prompt: 'Which?', type: 'multiple_choice', choices: CHOICES }] });
+      await render(multi);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Select at least one answer');
+
+      const two = baseBallot({
+        poll_questions: [
+          { question_id: 'q1', prompt: 'First?', type: 'single_choice', choices: CHOICES },
+          { question_id: 'q2', prompt: 'Second?', type: 'single_choice', choices: CHOICES },
+        ],
+      });
+      await render(two);
+      expect(byId('vote-link-submit-helper')?.textContent).toContain('Answer every question to submit');
     });
 
     it('needs no selection to abstain', async () => {

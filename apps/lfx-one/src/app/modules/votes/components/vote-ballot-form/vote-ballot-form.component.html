@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Touch targets use an exact [44px]: the 14px html root makes Tailwind's rem scale (min-h-11) render ~38px. -->
+<!-- Touch targets use an exact [44px] and question prompts an exact [18px]: the 14px html root makes Tailwind's rem scale (min-h-11, text-lg) render ~38px and ~16px. -->
 <div class="flex flex-1 flex-col gap-6" data-testid="vote-link-ballot-form">
   <form [formGroup]="form" class="flex flex-col gap-6">
     @for (question of questions(); track question.question_id) {
@@ -68,8 +68,10 @@
             @for (choice of question.choices; track choice.choice_id) {
               <div
                 class="relative flex items-center gap-3 min-h-[44px] rounded-lg border px-3 py-1"
-                [class]="isSelected(question.question_id, choice.choice_id) ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'"
-                [attr.data-selected]="isSelected(question.question_id, choice.choice_id)"
+                [class]="
+                  (selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false) ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'
+                "
+                [attr.data-selected]="selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false"
                 [attr.data-testid]="'vote-link-choice-' + choice.choice_id">
                 <p-checkbox
                   [formControlName]="question.question_id"
@@ -85,23 +87,17 @@
             }
           } @else {
             @for (choice of question.choices; track choice.choice_id) {
-              <div
-                class="relative flex items-center gap-3 min-h-[44px] rounded-lg border px-3 py-1"
-                [class]="isSelected(question.question_id, choice.choice_id) ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-white'"
-                [attr.data-selected]="isSelected(question.question_id, choice.choice_id)"
-                [attr.data-testid]="'vote-link-choice-' + choice.choice_id">
-                <!-- [name] is required: PrimeNG groups radios by (root FormGroup, name). -->
-                <p-radioButton
-                  [formControlName]="question.question_id"
-                  [name]="question.question_id"
-                  [value]="choice.choice_id"
-                  [inputId]="'vote-link-choice-' + choice.choice_id" />
-                <label
-                  [for]="'vote-link-choice-' + choice.choice_id"
-                  class="flex flex-1 items-center min-w-0 min-h-[44px] after:absolute after:inset-0 text-base font-medium text-slate-800 cursor-pointer break-words">
-                  {{ choice.choice_text }}
-                </label>
-              </div>
+              <lfx-radio-button
+                [form]="form"
+                [control]="question.question_id"
+                [name]="question.question_id"
+                [value]="choice.choice_id"
+                [inputId]="'vote-link-choice-' + choice.choice_id"
+                [label]="choice.choice_text"
+                [touchTarget]="true"
+                [card]="true"
+                [selected]="selectedByQuestion().get(question.question_id)?.has(choice.choice_id) ?? false"
+                [attr.data-testid]="'vote-link-choice-' + choice.choice_id"></lfx-radio-button>
             }
           }
         </div>
@@ -169,8 +165,8 @@
   <div
     class="sticky bottom-0 mt-auto -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     data-testid="vote-link-footer">
-    @if (needsSelection()) {
-      <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">Select one answer</p>
+    @if (selectionHelper(); as helper) {
+      <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">{{ helper }}</p>
     }
     <lfx-button
       [label]="submitLabel()"

@@ -62,7 +62,7 @@ describe('VoteLinkBallotComponent (#4363)', () => {
   beforeEach(() => {
     getLinkBallot = vi.fn();
     submitLinkResponse = vi.fn(() => of(undefined));
-    getPublicProjectSummary = vi.fn(() => throwError(() => httpError(404, 'not found')));
+    getPublicProjectSummary = vi.fn(() => of(null));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
       providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary } }],
@@ -352,7 +352,7 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
   });
 
   it('renders unbranded with the LFX mark when the summary 404s, never an error state', async () => {
-    getPublicProjectSummary.mockReturnValue(throwError(() => httpError(404, 'not found')));
+    getPublicProjectSummary.mockReturnValue(of(null));
     await openWith({ ...BALLOT, project_uid: 'p-hidden' });
 
     expect(testId('vote-link-project-name')).toBeNull();

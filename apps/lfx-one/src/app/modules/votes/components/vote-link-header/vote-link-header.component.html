@@ -20,7 +20,7 @@
     @if (statusLabel() || endTime()) {
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
         @if (statusLabel()) {
-          <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800" data-testid="vote-link-status">{{ statusLabel() }}</span>
+          <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800" data-testid="vote-link-status">{{ statusLabel() }}</span>
         }
         @if (endTime(); as end) {
           <span data-testid="vote-link-deadline">Closes {{ end | date: 'MMM d, y, h:mm a (z)' }}</span>

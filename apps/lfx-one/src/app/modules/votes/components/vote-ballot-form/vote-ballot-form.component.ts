@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, output, signal, Signal 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import {
@@ -22,7 +23,6 @@ import {
 import { buildCommentResponses, getCommentPromptsData, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { CheckboxModule } from 'primeng/checkbox';
-import { RadioButtonModule } from 'primeng/radiobutton';
 
 /**
  * Presentational ballot form for the login-free vote link page (#4363): questions (single choice, multiple choice,
@@ -31,7 +31,7 @@ import { RadioButtonModule } from 'primeng/radiobutton';
  */
 @Component({
   selector: 'lfx-vote-ballot-form',
-  imports: [ReactiveFormsModule, DragDropModule, CheckboxModule, RadioButtonModule, ButtonComponent, TextareaComponent, CodePointLengthPipe],
+  imports: [ReactiveFormsModule, DragDropModule, CheckboxModule, ButtonComponent, RadioButtonComponent, TextareaComponent, CodePointLengthPipe],
   templateUrl: './vote-ballot-form.component.html',
 })
 export class VoteBallotFormComponent {
@@ -85,10 +85,13 @@ export class VoteBallotFormComponent {
     }
     return result;
   });
-  /** Submit stays disabled until a choice is made; the helper line says why. Abstaining needs no choice. */
-  protected readonly needsSelection: Signal<boolean> = computed(() => {
+  /** Why Submit is disabled, or '' when it is not waiting on a choice. Abstaining needs no choice. */
+  protected readonly selectionHelper: Signal<string> = computed(() => {
     this.formVersion();
-    return !this.abstain() && this.form.invalid;
+    if (this.abstain() || this.form.valid) return '';
+    const questions = this.questions();
+    if (questions.length !== 1) return 'Answer every question to submit';
+    return questions[0].type === 'multiple_choice' ? 'Select at least one answer' : 'Select one answer';
   });
   protected readonly rankedOrderByQuestion: Signal<Map<string, UserChoice[]>> = computed(() => {
     this.formVersion();
@@ -123,10 +126,6 @@ export class VoteBallotFormComponent {
       else this.form.enable({ emitEvent: false });
       this.bump();
     });
-  }
-
-  protected isSelected(questionId: string, choiceId: string): boolean {
-    return this.selectedByQuestion().get(questionId)?.has(choiceId) ?? false;
   }
 
   protected openComment(promptId: string): void {

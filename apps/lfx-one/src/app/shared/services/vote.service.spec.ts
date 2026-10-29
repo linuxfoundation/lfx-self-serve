@@ -1018,4 +1018,39 @@ describe('VoteService', () => {
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
     });
   });
+
+  describe('getPublicProjectSummary (#4692)', () => {
+    const summary = { name: 'Synthetic Project', slug: 'synthetic', logo_url: null, is_foundation: false };
+
+    it('requests the encoded identifier from the public summary route', () => {
+      http.get.mockReturnValue(of(summary));
+      let result: unknown;
+      service.getPublicProjectSummary('a/b').subscribe((value) => (result = value));
+
+      expect(http.get).toHaveBeenCalledWith('/public/api/projects/a%2Fb/summary');
+      expect(result).toEqual(summary);
+    });
+
+    it('maps a 404 (hidden or unknown project) to null without a warning', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('maps any other failure to null and logs only the status', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 503);
+      warn.mockRestore();
+    });
+  });
 });
