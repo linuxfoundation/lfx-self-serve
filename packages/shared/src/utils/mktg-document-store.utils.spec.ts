@@ -24,6 +24,7 @@ import {
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
+  mktgRunClaimAnswers,
   isMktgRunPendingQuestions,
   mktgRunResultIdentity,
   findMktgRunIntake,
@@ -89,23 +90,39 @@ describe('mktg-document-store utils', () => {
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
   });
-  it.each(['discarded', 'superseded'] as const)('projects %s only for selected details, without private or active-run fields', (state) => {
-    const closedAt = '2026-10-19T12:00:00Z';
-    const run = startedRun({ state, closedAt, creatorSubject: 'synthetic-owner', failureText: 'Private synthetic reply', persistRetries: 100 });
-    const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: run.startedAt }];
-    expect(mktgRunProgress(run)).toBeNull();
-    expect(mktgRunProgress(run, undefined, activity, undefined, false, true)).toEqual({
-      runId: run.runId,
-      project: run.project,
-      agentKey: run.agentKey,
-      documentId: run.documentId,
-      startedAt: run.startedAt,
-      state,
-      closedAt,
+  describe('selected completed revision', () => {
+    const revisionId = buildMktgRevisionId(2, SHA);
+    const result = { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId };
+    it('projects only the exact produced revision for a selected completed run, never in listings', () => {
+      const run = startedRun({
+        state: 'completed',
+        result,
+        creatorSubject: 'private-synthetic-creator',
+        answeredBy: 'private-synthetic-answerer',
+        closedBySubject: 'private-synthetic-closer',
+        failureText: 'Private synthetic reply',
+      });
+      const activity = [{ id: 'private-step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: run.startedAt }];
+      expect(mktgRunProgress(run)).toBeNull();
+      expect(mktgRunProgress(run, undefined, activity, undefined, false, true)).toEqual({
+        runId: run.runId,
+        project: run.project,
+        agentKey: run.agentKey,
+        documentId: run.documentId,
+        startedAt: run.startedAt,
+        state: 'completed',
+        producedRevisionId: revisionId,
+      });
     });
-    expect(mktgRunProgress({ ...run, closedAt: undefined }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
-    expect(mktgRunProgress({ ...run, closedAt: 'invalid' }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
-    expect(mktgRunProgress({ ...run, state: 'completed' }, undefined, undefined, undefined, false, true)).toBeNull();
+    it.each(['writing', 'questions', 'storing', 'failed', 'discarded', 'superseded'] as const)('does not project a stale receipt while %s', (state) => {
+      expect(mktgRunProgress(startedRun({ state, result }), undefined, undefined, undefined, false, true)).not.toHaveProperty('producedRevisionId');
+    });
+    it.each([null, { ...result, revisionId: 'invalid' }, { ...result, agentKey: 'faq' as const }, { ...result, documentId: 'another-document' }])(
+      'omits a completed run without a valid matching stored receipt (%j)',
+      (receipt) => {
+        expect(mktgRunProgress(startedRun({ state: 'completed', result: receipt }), undefined, undefined, undefined, false, true)).toBeNull();
+      }
+    );
   });
 
   describe('writer-only pending questions', () => {
@@ -125,6 +142,39 @@ describe('mktg-document-store utils', () => {
         },
       ],
     };
+    it('builds a private exact-turn claim without mutating its source and projects writing immediately', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn });
+      const at = '2026-10-19T00:02:00.000Z';
+      const claim = mktgRunClaimAnswers(run, SHA, 'synthetic-claim-subject', at);
+      expect(claim).toMatchObject({
+        state: 'writing',
+        answeredQuestionsId: SHA,
+        answeredBy: 'synthetic-claim-subject',
+        answeredAt: at,
+        retryAt: at,
+        persistRetries: 0,
+      });
+      expect(run).toMatchObject({ state: 'questions', pendingQuestions: turn });
+      expect(run).not.toHaveProperty('answeredBy');
+      expect(claim?.pendingQuestions).toBeUndefined();
+      if (!claim) throw new Error('Missing synthetic claim');
+      const progress = mktgRunProgress(claim, undefined, undefined, 'synthetic-other-writer', true);
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(JSON.stringify(progress)).not.toContain('synthetic-claim-subject');
+      expect(progress).not.toHaveProperty('answeredAt');
+    });
+    it.each(['writing', 'storing', 'failed', 'completed', 'superseded', 'discarded'] as const)('cannot claim a %s record even with a cached turn', (state) => {
+      expect(mktgRunClaimAnswers(startedRun({ state, pendingQuestions: turn }), SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+    });
+    it('cannot claim changed, missing, malformed or unattributed turns', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn });
+      expect(mktgRunClaimAnswers(run, 'f'.repeat(64), 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers({ ...run, pendingQuestions: undefined }, SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers({ ...run, answeredQuestionsId: SHA }, SHA, 'synthetic-writer', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers(run, SHA, ' ', turn.askedAt)).toBeNull();
+      expect(mktgRunClaimAnswers(run, SHA, 'synthetic-writer', 'invalid')).toBeNull();
+    });
     it('projects the complete existing question payload to another project writer without private extras', () => {
       const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
       const progress = mktgRunProgress(run, undefined, undefined, 'synthetic-other-writer', true);
@@ -145,10 +195,18 @@ describe('mktg-document-store utils', () => {
       expect(JSON.stringify(progress)).not.toContain('PRIVATE');
       expect(progress).not.toHaveProperty('creatorSubject');
     });
+    it('projects an already-answered cached turn as writing without projecting its questions', () => {
+      const run = startedRun({ state: 'questions', pendingQuestions: turn, answeredQuestionsId: SHA });
+      const progress = mktgRunProgress(run, undefined, undefined, 'synthetic-writer', true);
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(mktgRunProgress(startedRun({ state: 'questions' }))?.state).toBe('questions');
+    });
     it('defaults to denying questions even to the creator without a verified writer grant', () => {
       const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator', pendingQuestions: turn });
       expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator')).not.toHaveProperty('pendingQuestions');
       expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator', false)).not.toHaveProperty('pendingQuestions');
+      expect(mktgRunProgress(run, undefined, undefined, 'synthetic-creator', false, true)).not.toHaveProperty('pendingQuestions');
     });
     it.each(MKTG_DOCUMENT_TYPES.filter((type) => type.kind === 'run'))('never exposes one-off questions for $agentKey even to a writer', (type) => {
       expect(
@@ -175,6 +233,25 @@ describe('mktg-document-store utils', () => {
       }
     });
   });
+  it.each(['discarded', 'superseded'] as const)('projects %s only for selected details, without private or active-run fields', (state) => {
+    const closedAt = '2026-10-19T12:00:00Z';
+    const run = startedRun({ state, closedAt, creatorSubject: 'synthetic-owner', failureText: 'Private synthetic reply', persistRetries: 100 });
+    const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: run.startedAt }];
+    expect(mktgRunProgress(run)).toBeNull();
+    expect(mktgRunProgress(run, undefined, activity, undefined, false, true)).toEqual({
+      runId: run.runId,
+      project: run.project,
+      agentKey: run.agentKey,
+      documentId: run.documentId,
+      startedAt: run.startedAt,
+      state,
+      closedAt,
+    });
+    expect(mktgRunProgress({ ...run, closedAt: undefined }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
+    expect(mktgRunProgress({ ...run, closedAt: 'invalid' }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
+    expect(mktgRunProgress({ ...run, state: 'completed' }, undefined, undefined, undefined, false, true)).toBeNull();
+  });
+
   it('projects LinkedIn failure prose only to its known creator, while Member redacted text stays public', () => {
     const run = startedRun({
       agentKey: 'linkedin-post',

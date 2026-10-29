@@ -127,7 +127,7 @@
       }
       <div class="flex flex-col gap-[14pt]">
         <span class="h-[3pt] w-[36pt] bg-[color:var(--mfp-accent)]"></span>
-        <h1 class="text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="family-export-print-title">{{ familyName() }} kit</h1>
+        <h1 class="text-balance text-[40pt] font-medium leading-[1.05] tracking-[-0.02em]" data-testid="family-export-print-title">{{ familyName() }}</h1>
         <p class="text-[11pt]">Approved current · {{ document.printedAt | date: 'd MMM y' }}</p>
       </div>
       <div class="h-px bg-[color:var(--mfp-ink)] opacity-20" aria-hidden="true"></div>
@@ -146,7 +146,7 @@
       <lfx-mktg-framework-print [view]="framework" [number]="frameworkNumber" />
     }
     @if (document.kit; as kit) {
-      <lfx-brand-kit-view [view]="kit" />
+      <lfx-mktg-brand-kit-print [view]="kit" [brand]="document.brand" [projectName]="document.projectName" [number]="kitNumber" />
     }
     @if (document.boilerplates; as boilerplates) {
       <lfx-mktg-boilerplates-print [view]="boilerplates" [number]="boilerplatesNumber" [projectName]="document.projectName" />

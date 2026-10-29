@@ -553,20 +553,23 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     const attempts = TestBed.inject(MktgRunAttemptService);
     attempts.save({ request, state: 'failed', requiresReattachment: true, updatedAt: new Date().toISOString() });
     const token = attempts.prepare(request, true);
-    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
-    await settle();
-    http
-      .expectOne((candidate) => candidate.url.endsWith(`/documents/${type.agentKey}/living`))
-      .flush({ code: 'MKTG_DOCUMENT_NOT_FOUND' }, { status: 404, statusText: 'Not found' });
-    await settle();
-    expect(query('mktg-document-view-restored-intake')?.textContent).toContain('Reattach');
-    expect(query('mktg-document-view-run')).toBeNull();
-    http.expectNone(intake.endpoints.generate);
-    http.expectNone(intake.endpoints.result);
-    const returned = navigation();
-    query('mktg-document-view-run-again')?.click();
+    const intakePath = `/${lens}/mktg-os-agents/${intake.agentId}`;
+    const returned = firstValueFrom(
+      router.events.pipe(
+        filter((event) => event instanceof NavigationEnd && event.urlAfterRedirects.split('?')[0] === intakePath),
+        take(1)
+      )
+    );
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living?generation=${token}`);
     await returned;
     await settle();
+    // Restored input is not a document: no intermediate placeholder/action click or document 404 is needed.
+    http.match((candidate) => candidate.url.endsWith(`/documents/${type.agentKey}/living`)).forEach((read) => expect(read.cancelled).toBe(true));
+    expect(router.url.split('?')[0]).toBe(intakePath);
+    expect(new URL(router.url, 'https://synthetic.example').searchParams.has('generation')).toBe(false);
+    expect(query('mktg-document-view-page')).toBeNull();
+    http.expectNone(intake.endpoints.generate);
+    http.expectNone(intake.endpoints.result);
     http
       .expectOne((candidate) => candidate.url.endsWith(`/intakes/${type.agentKey}/last`))
       .flush({
@@ -576,6 +579,8 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     expect(query('mktg-run-sources')).not.toBeNull();
     expect(query('mktg-run-sources')?.textContent).toContain('From last time');
     expect(attempts.load(project.uid, intake.agentId)?.request.answers).toEqual(request.answers);
+    const form = harness.routeDebugElement?.componentInstance as MktgAgentRunComponent;
+    for (const field of intake.fields) expect(form['intakeForm'].controls[field.key].value).toBe(request.answers[field.key] ?? '');
     http.expectNone(intake.endpoints.generate);
     http.expectNone(intake.endpoints.result);
   });

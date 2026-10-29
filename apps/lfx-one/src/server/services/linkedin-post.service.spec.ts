@@ -460,6 +460,31 @@ describe('LinkedIn generation', () => {
     expect(result.envelope?.inputs).toHaveProperty('research');
     expect(mocks.persist).toHaveBeenCalledOnce();
   });
+  it('prepares exact-turn answers read-only and delivers without a second events lookup', async () => {
+    const service = new LinkedinPostService();
+    const event = JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: LINKEDIN_RECORDED_QUESTIONS } });
+    mocks.events.mockResolvedValue([event]);
+    const questions = await service.result(req, 'subject-1', 'session-1', 'project-1');
+    if (!questions.questionsId || !questions.questions) throw new Error('Missing synthetic question fixture');
+    const answers = questions.questions.map((question) => ({ key: question.key, text: question.suggestedAnswer, origin: 'accepted' as const }));
+    for (const invalid of [[], answers.slice(1), [...answers, { ...answers[0], key: 'extra' }], answers.map(() => answers[0])]) {
+      await expect(service.prepareAnswers(req, 'session-1', questions.questionsId, invalid)).rejects.toMatchObject({ statusCode: 400 });
+      expect(mocks.followUp).not.toHaveBeenCalled();
+    }
+    const failure = new Error('Synthetic events read unavailable');
+    mocks.events.mockRejectedValueOnce(failure);
+    await expect(service.prepareAnswers(req, 'session-1', questions.questionsId, answers)).rejects.toBe(failure);
+    expect(mocks.followUp).not.toHaveBeenCalled();
+    const prepared = await service.prepareAnswers(req, 'session-1', questions.questionsId, answers);
+    expect(prepared).toBe(LINKEDIN_RECORDED_ANSWERS);
+    expect(mocks.followUp).not.toHaveBeenCalled();
+    if (prepared === null) throw new Error('Missing prepared answers');
+    mocks.events.mockClear();
+    await service.deliverAnswers(req, 'session-1', prepared, 'linkedin-post', answers.length);
+    expect(mocks.events).not.toHaveBeenCalled();
+    expect(mocks.followUp).toHaveBeenCalledWith(req, 'session-1', { message: LINKEDIN_RECORDED_ANSWERS, handle: 'linkedin-post' });
+  });
+
   it('returns the recorded questions, sends their answers on the SAME session, and never leaks reasoning in any status', async () => {
     const publicProgress = JSON.stringify({
       type: 'agent_notification_progress',

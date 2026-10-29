@@ -22,6 +22,7 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_DRIVE_SHARING_HINT,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
@@ -195,6 +196,7 @@ export class MktgAgentRunComponent {
   private readonly assetType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id);
   protected readonly assetName = mktgKitAssetLabel(this.assetType?.agentKey ?? '') ?? this.assetType?.itemLabel ?? this.intake?.documentName ?? 'Document';
   protected readonly sourcesHint = this.intakeSourcesHint();
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
   protected readonly dedicatedAudit = !!this.intake?.oneOffDocument && this.intake.agentId === AEO_GEO_INTAKE.agentId;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
@@ -1051,6 +1053,18 @@ export class MktgAgentRunComponent {
       this.addLinkRow(key, '');
     }
     this.syncLinkField(key);
+  }
+
+  /** Link controls are described by their format; single URLs use the text control. */
+  protected isLinkField(field: MktgIntakeField): boolean {
+    return field.kind === 'url-list' || field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url';
+  }
+
+  protected fieldDescribedBy(field: MktgIntakeField): string {
+    const ids: string[] = [];
+    if (this.isLinkField(field)) ids.push('mktg-intake-' + field.key + '-hint');
+    if (this.fieldFormatErrors()[field.key]) ids.push('mktg-intake-' + field.key + '-error');
+    return ids.join(' ');
   }
 
   /**

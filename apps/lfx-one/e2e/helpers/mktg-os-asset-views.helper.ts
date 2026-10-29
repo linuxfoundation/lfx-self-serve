@@ -327,7 +327,11 @@ export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   await expect(page.getByTestId('mktg-agent-run-submit-button')).toBeVisible();
   await page.locator('[data-test="mktg-intake-project_name"]').fill(ASSET_PROJECT.name);
   await page.locator(`[data-test="mktg-intake-${FOUNDATION_MESSAGE_WEBSITE_KEY}"]`).fill('https://project.example');
+  const firstResult = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === FOUNDATION_MESSAGE_INTAKE.endpoints.result
+  );
   await page.getByTestId('mktg-agent-run-submit-button').getByRole('button').click();
+  await firstResult;
   await expect(page.getByTestId('mktg-agent-run-status')).toContainText('You can leave', { timeout: PAGE_LOAD_TIMEOUT });
   await expect(page).not.toHaveURL(/\/documents\//);
   return {
@@ -381,6 +385,14 @@ export async function openAssetDocument(
   await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => route.fulfill({ json: { last: null, latestRevision: null } }));
   let response =
     responseOverride ?? (key === 'faq' || key === 'boilerplates' ? nativeAssetRevisionResponse(key, unreadable) : columnAssetRevisionResponse(key));
+  await page.route('**/api/mktg-agents/documents/*/living/comments?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { revisionId: new URL(route.request().url()).searchParams.get('revision') ?? response.revision.id, threads: [] } });
+  });
+  await page.route('**/api/mktg-agents/documents?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
+  });
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };

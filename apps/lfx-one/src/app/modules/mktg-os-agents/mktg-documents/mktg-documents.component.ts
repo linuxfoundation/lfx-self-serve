@@ -80,6 +80,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
     MktgKitTabsComponent,
     MktgKitHeaderComponent,
     ButtonComponent,
+    MktgSkeletonComponent,
   ],
   templateUrl: './mktg-documents.component.html',
 })
@@ -99,6 +100,8 @@ export class MktgDocumentsComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
+  // Once occupied, this slot stays mounted for this scope's page visit.
+  protected readonly startedRunsVisible = signal(false);
   protected readonly errorText = signal('');
   protected readonly refreshWarning = signal('');
   // The documents list could not be read: nothing is known about what the
@@ -108,6 +111,8 @@ export class MktgDocumentsComponent {
   protected readonly documents = signal<MktgDocumentsResponse | null>(null);
   protected readonly detail = signal<MktgDocumentDetailResponse | null>(null);
   protected readonly detailLoading = signal(false);
+  protected readonly listPending = signal(true);
+  private readonly detailCache = new Map<string, MktgDocumentDetailResponse>();
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
   private readonly reloads = signal(0);
@@ -232,6 +237,8 @@ export class MktgDocumentsComponent {
         .pipe(takeUntilDestroyed())
         .subscribe((documents) => {
           this.documents.set(documents);
+          this.listPending.set(false);
+          if (documents?.runs?.length) this.startedRunsVisible.set(true);
           this.loading.set(false);
           this.scrollToSelection();
         });
@@ -243,7 +250,7 @@ export class MktgDocumentsComponent {
             const scope = JSON.stringify([request.project, request.userSub, request.agentKey, request.documentId]);
             if (scope !== this.detailedScope) {
               this.detailedScope = scope;
-              this.detail.set(null);
+              this.detail.set(this.detailCache.get(scope) ?? null);
               if (!this.listFailed()) this.errorText.set('');
             }
           }),
@@ -268,6 +275,8 @@ export class MktgDocumentsComponent {
           takeUntilDestroyed()
         )
         .subscribe((detail) => {
+          if (detail) this.detailCache.set(this.detailedScope, detail);
+          else this.detailCache.delete(this.detailedScope);
           this.detail.set(detail);
           this.detailLoading.set(false);
           this.scrollToSelection();
@@ -319,14 +328,17 @@ export class MktgDocumentsComponent {
     ).pipe(
       tap((request) => {
         const scope = JSON.stringify([request.project, request.userSub]);
-        this.pendingSelectionScroll = scope === this.listedScope && request.type !== this.listedType;
         const typeChanged = request.type !== this.listedType;
+        this.pendingSelectionScroll = scope === this.listedScope && typeChanged;
         this.listedType = request.type;
         if (typeChanged && !this.documents()) this.loading.set(true);
+        this.listPending.set(true);
         if (scope !== this.listedScope) {
+          this.detailCache.clear();
           this.listedScope = scope;
           this.loading.set(true);
           this.documents.set(null);
+          this.startedRunsVisible.set(false);
           this.errorText.set('');
           this.refreshWarning.set('');
           this.listFailed.set(false);

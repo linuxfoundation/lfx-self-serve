@@ -136,7 +136,9 @@ navigation state, never a URL write command. See [the API and sequencing contrac
 `family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
 PDF composes all four approved-current assets — framework, brand kit, boilerplates
 and FAQ — in exporter order, with one family cover and contents. All share one
-portrait layout; the kit's landscape artwork scales to fit portrait pages.
+portrait layout. Family and standalone kit PDFs share `lfx-mktg-brand-kit-print`:
+five native text chapters (logo, colour, type, visual/usage, voice), not scaled
+landscape plates. The on-screen kit view stays unchanged.
 Slides exports the supported approved family assets and branding, offers Update or
 Create for an existing deck, shows progress and a dated revision-linked last export,
 and marks changed approved member sets stale. Families without an export target render only

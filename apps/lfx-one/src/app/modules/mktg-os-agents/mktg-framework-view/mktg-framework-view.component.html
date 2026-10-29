@@ -80,6 +80,7 @@
     #slidesExport
     [target]="exportTarget()"
     [lookupTarget]="exportLookupTarget()"
+    (lookupAnswered)="exportLookupAnswered.emit($event)"
     [viewingDraft]="viewingDraft()"
     data-testid="mktg-framework-view-slides-export" />
 

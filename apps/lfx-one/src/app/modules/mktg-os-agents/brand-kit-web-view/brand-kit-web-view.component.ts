@@ -11,6 +11,7 @@ import {
   inject,
   Injector,
   input,
+  output,
   PLATFORM_ID,
   Signal,
   TemplateRef,
@@ -26,6 +27,7 @@ import {
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
   BRAND_KIT_WEB_VIEW_TABS,
+  FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
@@ -38,11 +40,12 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { ProjectContextService } from '@services/project-context.service';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
-import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
+import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 
@@ -53,9 +56,8 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
 // the six chapters in brief), then Logo, Color, Type, Visual, Usage and Voice
 // from the kit's own chapters, then the run's sources and gaps. The brand's
 // colours, typeface and logo grounds are used inside the samples only; the
-// chrome stays LFX One's. The 16-page book (lfx-brand-kit-view) is the kit's
-// print rendering: it sits here in a print-only wrapper, never shown on
-// screen, and Download PDF prints it. Export to Google Slides builds the kit
+// chrome stays LFX One's. The native portrait kit print is mounted in a
+// print-only wrapper, never shown on screen, and Download PDF prints it. Export to Google Slides builds the kit
 // as a deck from the stored revision the page names, in the kit's colours,
 // typeface and logo (lfx-mktg-slides-export, the panel under the header).
 // Purely presentational: the run page and the Documents area feed it the kit
@@ -69,7 +71,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgAssetMetaComponent,
     MessageComponent,
     ButtonComponent,
-    BrandKitViewComponent,
+    MktgBrandKitPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
   ],
@@ -81,6 +83,7 @@ export class BrandKitWebViewComponent {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly printService = inject(MktgPrintService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -92,13 +95,14 @@ export class BrandKitWebViewComponent {
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
   public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
-  /** Only the selected stored document hosts comments; run previews and the printed book remain read-only. */
+  /** Only the selected stored document hosts comments; run previews and printed chapters remain read-only. */
   public readonly commentsEnabled = input(false);
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
   public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly exportLookupAnswered = output<string>();
   public readonly viewingDraft = input(false);
   public readonly approvedKit = input<BrandKitRevision | null>(null);
   public readonly approvedVersion = input<number | null>(null);
@@ -113,7 +117,7 @@ export class BrandKitWebViewComponent {
   protected readonly selectedTab = this.tabState.selected;
 
   // === Computed ===
-  /** Every value the samples bind — built once here and handed to the printed book, which lays out the same view model. */
+  /** Existing screen sample model, also used as data by the native portrait print. */
   protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.versionNumber()));
   protected readonly chapters: Signal<BrandKitChapterSummary[]> = computed(() => brandKitChapterSummaries(this.kit()));
   protected readonly title = computed(() => `${this.kit().projectName} Brand Kit`);
@@ -125,6 +129,8 @@ export class BrandKitWebViewComponent {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
+  protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
@@ -156,7 +162,7 @@ export class BrandKitWebViewComponent {
     const view = this.printView();
     return view?.fontUrl ? { family: view.type.family.trim(), weights: view.weights.map((entry) => entry.weight) } : null;
   });
-  protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
+  protected readonly printOnlyClass = `${BRAND_KIT_PRINT_ONLY_CLASS} ${FOUNDATION_MESSAGE_PRINT_ONLY_CLASS}`;
 
   // Literal class names so Tailwind's content scan generates them (the framework view's tab classes).
   private readonly tabClasses: Record<'selected' | 'idle', string> = {
@@ -228,9 +234,8 @@ export class BrandKitWebViewComponent {
   }
 
   /**
-   * Prints the book: 16 letter pages, landscape, through the browser's print
-   * dialog ("Save as PDF") inside the click, with fonts prepared ahead.
-   * The print service guards SSR.
+   * Prints the native portrait chapters inside the click, with the approved
+   * kit's typeface prepared ahead. The service guards SSR.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) return;

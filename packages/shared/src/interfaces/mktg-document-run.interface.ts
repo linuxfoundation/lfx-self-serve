@@ -123,18 +123,7 @@ export interface MktgPublicRunAnswersResponse {
   state: 'writing';
 }
 
-/** Optional navigation-only retired-row hint; never a private run record or capability. */
-export interface MktgRetiredRunHint {
-  runId: string;
-  state: 'discarded' | 'superseded';
-  replacedBy: string | null;
-  /** Safe display name only; no email, subject or member data. */
-  closedBy: string | null;
-  closedAt: string | null;
-}
-
 /** Stored states include completion; closed markers appear only on selected details. */
-/** Stored states include completion; closed runs are not reconciled or listed. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
@@ -209,12 +198,15 @@ export interface MktgStartedRunRecord {
   state: MktgStoredDocumentRunState;
   /** Timestamp recorded when discarded or superseded; absent on legacy records. */
   closedAt?: string;
-  /** Private opaque actor stored with discard metadata; never a public display-name field. */
+  /** Private opaque actor stored with closure metadata; only a safe display name may reach selected details. */
   closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
+  /** Private effective subject and time of the successful conditional answer claim. */
+  answeredBy?: string;
+  answeredAt?: string;
   /** Private stored turn; public projection separately requires a living-document writer grant. */
   pendingQuestions?: MktgRunPendingQuestions;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
@@ -234,10 +226,13 @@ export interface MktgGenerationAttribution {
   creatorSubject: string | null;
 }
 
-/** Private fetched record and original bytes; only a changed question turn requires a body refresh. */
+/** Private record snapshot; state transitions replace its body and metadata with the same conditional token. */
 export interface MktgStoredStartedRun {
   key: string;
   body: string;
+  /** Version and metadata captured by the same GET, never a separate HEAD. */
+  etag?: string;
+  metadata: Record<string, string>;
   record: MktgStartedRunRecord;
 }
 
