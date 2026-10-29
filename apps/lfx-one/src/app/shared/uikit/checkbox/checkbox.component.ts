@@ -6,7 +6,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 
 /**
  * 16px checkbox for independent options applied on save. A native checkbox sits under the visual, so Space,
- * focus and form behaviour are the browser's. Use `[(checked)]` or a reactive-forms control (`formControlName`, `[formControl]`, `ngModel`).
+ * focus and form behaviour are the browser's. Use `[(checked)]` or a reactive-forms control (`formControlName`, `[formControl]`).
  * Clicking an indeterminate checkbox clears `indeterminate` and toggles `checked`.
  */
 @Component({
@@ -80,13 +80,19 @@ export class UiCheckboxComponent implements ControlValueAccessor {
   private initBoxClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: 14px root. 16px box with a 5px radius (library radius-xs minus the 1px ring).
+      // ring-0 on focus matches the library: its focus style replaces the ring with the focus shadow.
+      // forced-colors: ring and fill vanish, so a real CanvasText border and a Highlight fill keep the box and its state visible.
       const base =
-        'peer m-0 h-[16px] w-[16px] shrink-0 appearance-none rounded-[5px] ring-1 transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus';
+        'm-0 h-[16px] w-[16px] shrink-0 appearance-none rounded-[5px] ring-1 transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus forced-colors:border';
       if (this.isDisabled()) {
-        const state = this.isOn() ? 'bg-ui-neutral-400 ring-ui-neutral-400' : 'bg-ui-neutral-50 ring-ui-neutral-alpha-300';
+        const state = this.isOn()
+          ? 'bg-ui-neutral-400 ring-ui-neutral-400 forced-colors:border-[color:GrayText] forced-colors:bg-[color:GrayText]'
+          : 'bg-ui-neutral-50 ring-ui-neutral-alpha-300 forced-colors:border-[color:GrayText]';
         return `${base} ${state} cursor-not-allowed`;
       }
-      const state = this.isOn() ? 'bg-ui-accent-500 ring-ui-accent-500' : 'bg-ui-background-100 ring-ui-neutral-alpha-500 hover:bg-ui-neutral-alpha-50';
+      const state = this.isOn()
+        ? 'bg-ui-accent-500 ring-ui-accent-500 forced-colors:border-[color:CanvasText] forced-colors:bg-[color:Highlight]'
+        : 'bg-ui-background-100 ring-ui-neutral-alpha-500 hover:bg-ui-neutral-alpha-50 forced-colors:border-[color:CanvasText] forced-colors:bg-[color:Canvas]';
       return `${base} ${state} cursor-pointer`;
     });
   }
