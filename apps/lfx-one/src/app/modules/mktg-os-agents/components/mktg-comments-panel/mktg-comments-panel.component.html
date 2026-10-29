@@ -1,9 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 <section class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" aria-label="Comments" data-testid="mktg-comments-panel">
-  <h2 class="text-base font-semibold text-gray-900">Comments</h2>
-  @if (comments.loading()) {
-    <p role="status" class="text-sm text-gray-500" data-testid="mktg-comments-loading">Loading comments…</p>
+  @if (comments.loading() || (!comments.loaded() && !comments.loadError())) {
+    <lfx-mktg-skeleton variant="card" [rows]="2" data-testid="mktg-comments-loading" />
+  } @else {
+    <h2 class="text-base font-semibold text-gray-900">Comments</h2>
   }
   @if (comments.loadError()) {
     <p role="alert" class="text-sm text-red-700">{{ comments.loadError() }}</p>

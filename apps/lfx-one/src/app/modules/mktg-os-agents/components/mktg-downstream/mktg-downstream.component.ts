@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, signal } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { mktgKitRootPath } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_KIT_POSITIONING_FAMILY_ID, MKTG_REBUILD_NAVIGATION_STATE_KEY } from '@lfx-one/shared/constants';
 import { MktgDocumentsResponse } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -16,7 +17,7 @@ import { catchError, of, switchMap } from 'rxjs';
 /** The framework Asset board reads the SAME server projection as Kit and Family. */
 @Component({
   selector: 'lfx-mktg-downstream',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, MktgSkeletonComponent],
   templateUrl: './mktg-downstream.component.html',
 })
 export class MktgDownstreamComponent {
@@ -28,10 +29,12 @@ export class MktgDownstreamComponent {
   public readonly projectSlug = input<string | null>(null);
   public readonly refreshKey = input('');
   public readonly writer = input(false);
+  public readonly settled = output<string>();
+  private readKey = '';
   protected readonly familyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly listing = signal<MktgDocumentsResponse | null>(null);
   protected readonly failed = signal(false);
-  protected readonly loading = signal(false);
+  protected readonly loading = signal(true);
   private readonly reload = signal(0);
   protected readonly stale = computed(
     () =>
@@ -53,7 +56,8 @@ export class MktgDownstreamComponent {
     if (isPlatformBrowser(this.platform)) {
       toObservable(computed(() => ({ project: this.project(), refresh: this.refreshKey(), reload: this.reload() })))
         .pipe(
-          switchMap(({ project }) => {
+          switchMap(({ project, refresh }) => {
+            this.readKey = JSON.stringify([project, refresh]);
             this.listing.set(null);
             this.failed.set(false);
             this.loading.set(!!project);
@@ -70,6 +74,7 @@ export class MktgDownstreamComponent {
         .subscribe((listing) => {
           this.listing.set(listing);
           this.loading.set(false);
+          this.settled.emit(this.readKey);
         });
     }
   }

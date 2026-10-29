@@ -62,7 +62,7 @@ describe('Framework Downstream card', () => {
     fixture.componentRef.setInput('writer', true);
     await fixture.whenStable();
   });
-  it('renders the board copy from the shared server projection and hides when nothing is stale', async () => {
+  it('renders the board copy from the shared server projection and keeps its box when nothing is stale', async () => {
     reads[0].next(listing());
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
@@ -89,7 +89,9 @@ describe('Framework Downstream card', () => {
     await fixture.whenStable();
     reads[2].next(listing(false));
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBeNull();
+    const card = root.querySelector('[data-testid="mktg-downstream-card"]');
+    expect(card?.classList.contains('min-h-56')).toBe(true);
+    expect(root.querySelector('[data-testid="mktg-downstream-empty"]')?.textContent).toBe('No downstream assets need rebuilding.');
   });
   it('formats three stale names as an English conjunction list', async () => {
     const data = listing(true, ['boilerplates', 'faq', 'brand-kit']);
@@ -100,8 +102,9 @@ describe('Framework Downstream card', () => {
   });
   it('distinguishes loading/error from an empty stale set and retries', async () => {
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="mktg-downstream-loading"]')).not.toBeNull();
-    expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-loading"]')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
+    const card = root.querySelector('[data-testid="mktg-downstream-card"]');
+    expect(card?.classList.contains('min-h-56')).toBe(true);
     reads[0].error(new Error('unavailable'));
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="mktg-downstream-error"]')).not.toBeNull();
@@ -111,6 +114,8 @@ describe('Framework Downstream card', () => {
     reads[1].next(listing());
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBe(card);
+    expect(card?.classList.contains('min-h-56')).toBe(true);
   });
   it('disables the action without write access and during impersonation', async () => {
     reads[0].next(listing());

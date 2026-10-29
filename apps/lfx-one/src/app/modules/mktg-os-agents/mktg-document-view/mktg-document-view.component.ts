@@ -79,6 +79,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
@@ -188,6 +189,7 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
@@ -238,6 +240,7 @@ export class MktgDocumentViewComponent {
   protected readonly unconfirmed = signal(false);
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
+  protected readonly downstreamSettledKey = signal('');
   protected readonly retrying = signal(false);
   protected readonly submittingGeneration = signal(false);
   private readonly reloads = signal(0);
@@ -294,6 +297,7 @@ export class MktgDocumentViewComponent {
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
+  protected readonly railReady = this.initRailReady();
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -530,6 +534,7 @@ export class MktgDocumentViewComponent {
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.downstreamSettledKey.set('');
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -1206,6 +1211,24 @@ export class MktgDocumentViewComponent {
       ),
       { initialValue: { loading: false, revision: null, error: '' } }
     );
+  }
+
+  private initRailReady(): Signal<boolean> {
+    return computed(() => {
+      const view = this.view();
+      const scope = this.commentScope();
+      const selected = this.documentComments.selectedScope();
+      const commentsReady =
+        !scope ||
+        (selected?.projectUid === scope.projectUid &&
+          selected.agentKey === scope.agentKey &&
+          selected.documentId === scope.documentId &&
+          selected.revisionId === scope.revisionId &&
+          !!(this.documentComments.loaded() || this.documentComments.loadError()));
+      const downstreamReady =
+        view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
+      return commentsReady && downstreamReady;
+    });
   }
 
   private initCommentScope(): Signal<MktgDocumentCommentScope | null> {

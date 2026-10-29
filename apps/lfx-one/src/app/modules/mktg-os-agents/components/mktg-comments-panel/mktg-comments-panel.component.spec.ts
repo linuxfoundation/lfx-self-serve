@@ -227,7 +227,9 @@ describe('MktgCommentsPanelComponent', () => {
     fixture.componentRef.setInput('content', { mf: { goals: [{ t: 'Adoption' }, { t: 'Community' }] } });
     await fixture.whenStable();
     const element = fixture.nativeElement as HTMLElement;
-    expect(element.querySelector('[role="status"]')?.textContent).toContain('Loading');
+    const card = element.querySelector('[data-testid="mktg-comments-panel"]');
+    expect(card?.className).not.toContain('h-96');
+    expect(element.querySelector('[data-testid="mktg-comments-loading"]')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
     expect(element.querySelector('[data-testid="mktg-comments-empty"]')).toBeNull();
     loading.set(false);
     loadError.set('Writer access required.');
@@ -246,6 +248,9 @@ describe('MktgCommentsPanelComponent', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('Shorten the sound bite.');
     expect(element.textContent).toContain('Sound bite · Goal column 2 · Community');
+    expect(element.querySelector('[data-testid="mktg-comments-panel"]')).toBe(card);
+    expect(card?.className).not.toContain('h-96');
+    expect(card?.classList.contains('overflow-y-auto')).toBe(false);
     saveError.set('Comment could not be saved.');
     fixture.detectChanges();
     expect(element.querySelector('[role="alert"]')).toBeNull();

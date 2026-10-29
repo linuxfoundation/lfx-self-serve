@@ -47,7 +47,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
-import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
+import { mktgCommentFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { mktgSentenceCaseLabel } from '@lfx-one/shared/utils/mktg-navigation.utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -2708,34 +2708,109 @@ describe('MktgDocumentViewComponent', () => {
     expect(select).toHaveBeenLastCalledWith(null);
   });
 
-  it('reserves two-line revision rows and rail slots from first content through settled answers', async () => {
+  it('keeps the lower rail neutral until both reads answer, then reveals errors together in board order', async () => {
     useFrameworkRevision();
     const loading = signal(true);
+    const commentsError = signal('');
     vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'loading').mockImplementation(loading);
+    vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'loadError').mockImplementation(commentsError);
+    vi.spyOn(TestBed.inject(MktgDocumentCommentsService), 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
     const listing = new Subject<MktgDocumentsResponse>();
     store.listDocuments.mockReturnValue(listing);
     await render('/documents/foundation-message/living');
-    const comments = query('mktg-comments-panel')?.parentElement;
-    const downstream = harness.routeNativeElement?.querySelector('lfx-mktg-downstream');
+    const comments = query('mktg-comments-panel');
+    const downstream = query('mktg-downstream-card');
     const revision = query('mktg-document-view-revision-2');
     const about = query('mktg-document-view-about');
     expect(revision?.classList.contains('min-h-16')).toBe(true);
     expect(revision?.querySelector('[data-testid="mktg-document-view-current-2"]')?.textContent).toBe('Current');
     expect(query('mktg-comments-loading')).not.toBeNull();
     expect(query('mktg-downstream-loading')).not.toBeNull();
-    expect(comments?.classList.contains('min-h-40')).toBe(true);
-    expect(downstream?.classList.contains('min-h-48')).toBe(true);
+    expect(about?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-comments-skeleton')).not.toBeNull();
+    expect(query('mktg-document-view-downstream-skeleton')).not.toBeNull();
+    expect(query('mktg-document-view-about-skeleton')).not.toBeNull();
+    expect(revision && comments && revision.compareDocumentPosition(comments) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(comments && downstream && comments.compareDocumentPosition(downstream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(downstream && about && downstream.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     loading.set(false);
+    commentsError.set('Synthetic comments could not be loaded.');
+    await settle();
+    expect(about?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-comments-skeleton')).not.toBeNull();
     listing.error(new HttpErrorResponse({ status: 503 }));
     await settle();
     expect(query('mktg-comments-loading')).toBeNull();
     expect(query('mktg-downstream-error')).not.toBeNull();
-    expect(query('mktg-comments-panel')?.parentElement).toBe(comments);
+    expect(query('mktg-comments-panel')).toBe(comments);
+    expect(query('mktg-downstream-card')).toBe(downstream);
     expect(query('mktg-document-view-revision-2')).toBe(revision);
     expect(revision?.classList.contains('min-h-16')).toBe(true);
     expect(query('mktg-document-view-about')).toBe(about);
-    expect(comments?.classList.contains('min-h-40')).toBe(true);
-    expect(downstream?.classList.contains('min-h-48')).toBe(true);
+    expect(about?.classList.contains('hidden')).toBe(false);
+    expect(query('mktg-document-view-comments-skeleton')).toBeNull();
+    expect(query('mktg-document-view-downstream-skeleton')).toBeNull();
+    expect(query('mktg-document-view-about-skeleton')).toBeNull();
+  });
+
+  it('settles the rail once at the real two-comment height without inner scroll and retains the empty downstream box', async () => {
+    useFrameworkRevision();
+    const loading = signal(true);
+    const commentsService = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(commentsService, 'loading').mockImplementation(loading);
+    vi.spyOn(commentsService, 'loaded').mockImplementation(() => !loading());
+    vi.spyOn(commentsService, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
+    vi.spyOn(commentsService, 'threads').mockReturnValue([
+      mktgCommentFixture({ id: 'synthetic-first-comment', revisionId: LATEST.id, text: 'Shorten the synthetic positioning.' }),
+      mktgCommentFixture({ id: 'synthetic-second-comment', revisionId: LATEST.id, text: 'Clarify the synthetic proof.' }),
+    ]);
+    const listing = new Subject<MktgDocumentsResponse>();
+    store.listDocuments.mockReturnValue(listing);
+    await render('/documents/foundation-message/living');
+    const comments = query('mktg-comments-panel');
+    const downstream = query('mktg-downstream-card');
+    const about = query('mktg-document-view-about');
+    const railOrder = () =>
+      Array.from(about?.parentElement?.children ?? [])
+        .filter((card) => card.tagName !== 'LFX-MKTG-SKELETON')
+        .map((card) => card.getAttribute('data-testid') ?? card.tagName);
+    const order = ['mktg-document-view-revisions', 'LFX-MKTG-COMMENTS-PANEL', 'LFX-MKTG-DOWNSTREAM', 'mktg-document-view-about'];
+    expect(railOrder()).toEqual(order);
+    expect(about?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-comments-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
+    expect(query('mktg-document-view-downstream-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
+    listing.next({ project: PROJECT.uid, groups: [] });
+    await settle();
+    expect(about?.classList.contains('hidden')).toBe(true);
+    expect(query('mktg-document-view-downstream-skeleton')).not.toBeNull();
+    loading.set(false);
+    await settle();
+    expect(comments?.querySelectorAll('[data-testid="mktg-comment-thread"]')).toHaveLength(2);
+    expect(query('mktg-comments-send')).not.toBeNull();
+    expect(railOrder()).toEqual(order);
+    expect(query('mktg-comments-panel')).toBe(comments);
+    expect(query('mktg-downstream-card')).toBe(downstream);
+    expect(query('mktg-document-view-about')).toBe(about);
+    expect(about?.classList.contains('hidden')).toBe(false);
+    expect(comments?.className).not.toContain('h-96');
+    expect(comments?.classList.contains('overflow-y-auto')).toBe(false);
+    expect(downstream?.classList.contains('min-h-56')).toBe(true);
+    expect(query('mktg-document-view-comments-skeleton')).toBeNull();
+    expect(query('mktg-document-view-downstream-skeleton')).toBeNull();
+    expect(query('mktg-document-view-about-skeleton')).toBeNull();
+    expect(query('mktg-downstream-empty')?.textContent).toBe('No downstream assets need rebuilding.');
+    expect(query('mktg-comments-loading')).toBeNull();
+    expect(query('mktg-downstream-loading')).toBeNull();
   });
 
   it('renders the framework with its report and revision-scoped Comments sidebar', async () => {

@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, input, output, Signal, signal 
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_DOCUMENT_COMMENT_LIMITS } from '@lfx-one/shared/constants';
 import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
@@ -17,7 +18,7 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
 
 @Component({
   selector: 'lfx-mktg-comments-panel',
-  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent],
+  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent, MktgSkeletonComponent],
   templateUrl: './mktg-comments-panel.component.html',
 })
 export class MktgCommentsPanelComponent {

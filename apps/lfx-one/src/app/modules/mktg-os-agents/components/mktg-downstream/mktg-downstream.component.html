@@ -1,21 +1,22 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (loading()) {
-  <p role="status" class="text-sm text-gray-500" data-testid="mktg-downstream-loading">Checking downstream assets…</p>
-} @else if (stale().length || failed()) {
-  <section
-    class="flex flex-col gap-3 rounded-xl border p-4"
-    [class.border-amber-200]="stale().length > 0"
-    [class.bg-amber-50]="stale().length > 0"
-    [class.border-gray-200]="failed()"
-    data-testid="mktg-downstream-card"
-    aria-label="Downstream">
+<section
+  class="flex min-h-56 flex-col gap-3 rounded-xl border p-4"
+  [class.bg-white]="!stale().length"
+  [class.border-amber-200]="stale().length > 0"
+  [class.bg-amber-50]="stale().length > 0"
+  [class.border-gray-200]="!stale().length"
+  data-testid="mktg-downstream-card"
+  aria-label="Downstream">
+  @if (loading()) {
+    <lfx-mktg-skeleton variant="card" [rows]="2" data-testid="mktg-downstream-loading" />
+  } @else {
     <h2 class="text-base font-bold text-gray-900">Downstream</h2>
     @if (failed()) {
       <p role="alert" class="text-sm" data-testid="mktg-downstream-error">Downstream assets could not be checked.</p>
       <lfx-button label="Try again" [outlined]="true" (onClick)="retry()" data-testid="mktg-downstream-retry" />
-    } @else {
+    } @else if (stale().length) {
       <p class="text-sm leading-relaxed" data-testid="mktg-downstream-copy">{{ copy() }}</p>
       <lfx-button
         [label]="buttonLabel()"
@@ -24,6 +25,8 @@
         (onClick)="rebuild()"
         [disabled]="!writer() || user.impersonating()"
         data-testid="mktg-downstream-rebuild" />
+    } @else {
+      <p class="text-sm text-gray-500" data-testid="mktg-downstream-empty">No downstream assets need rebuilding.</p>
     }
-  </section>
-}
+  }
+</section>
