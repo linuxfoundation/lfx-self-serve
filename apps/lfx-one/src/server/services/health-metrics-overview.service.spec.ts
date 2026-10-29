@@ -524,6 +524,9 @@ describe('HealthMetricsOverviewService.getNewsletters', () => {
       HIGH_ENGAGEMENT_SUBSCRIBERS_COUNT: 175,
       MEDIUM_ENGAGEMENT_SUBSCRIBERS_COUNT: 496,
       LOW_ENGAGEMENT_SUBSCRIBERS_COUNT: 787,
+      HIGH_ENGAGEMENT_SUBSCRIBERS_PCT: 0.12,
+      MEDIUM_ENGAGEMENT_SUBSCRIBERS_PCT: '0.34',
+      LOW_ENGAGEMENT_SUBSCRIBERS_PCT: 0.54,
       ENGAGEMENT_NEWSLETTERS_CONSIDERED_COUNT: 10,
       MOST_ENGAGING_NEWSLETTER_NAME: '  Monthly: Protocol ships ',
       MOST_ENGAGING_NEWSLETTER_CLICK_TO_OPEN_RATE: 0.12,
@@ -538,19 +541,17 @@ describe('HealthMetricsOverviewService.getNewsletters', () => {
           NEWSLETTER_KEY: 'n2',
           NEWSLETTER_NAME: 'Monthly: Protocol ships',
           SENT_DATE: '2026-09-21',
-          HAS_ENGAGEMENT_DATA: true,
           OPEN_RATE: '0.5',
-          CLICK_TO_OPEN_RATE: 0.12,
+          CLICK_RATE: 0.06,
         },
         {
           NEWSLETTER_KEY: 'n1',
           NEWSLETTER_NAME: null,
           SENT_DATE: new Date('2026-08-24T00:00:00Z'),
-          HAS_ENGAGEMENT_DATA: false,
-          OPEN_RATE: null,
-          CLICK_TO_OPEN_RATE: null,
+          OPEN_RATE: 0.37,
+          CLICK_RATE: null,
         },
-        { NEWSLETTER_KEY: ' ', NEWSLETTER_NAME: 'Test send', SENT_DATE: '2026-08-01', HAS_ENGAGEMENT_DATA: true, OPEN_RATE: 0.9, CLICK_TO_OPEN_RATE: 0.9 },
+        { NEWSLETTER_KEY: ' ', NEWSLETTER_NAME: 'Test send', SENT_DATE: '2026-08-01', OPEN_RATE: 0.9, CLICK_RATE: 0.9 },
       ],
     });
 
@@ -559,6 +560,7 @@ describe('HealthMetricsOverviewService.getNewsletters', () => {
     expect(sql(0)).toContain('subscribers_growth_baseline_date_3rd_last_completed_year AS subscribers_growth_baseline_date_COMPLETED_YEAR_3');
     expect(sql(0)).toContain('NEWSLETTER_ENGAGEMENT_SUMMARY');
     expect(sql(1)).toContain('NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER');
+    expect(sql(1)).toContain('has_engagement_data = TRUE');
     expect(sql(1)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1}`);
     expectBinds(0, ['acme']);
     expectBinds(1, ['acme']);
@@ -573,14 +575,17 @@ describe('HealthMetricsOverviewService.getNewsletters', () => {
       highEngagement: 175,
       mediumEngagement: 496,
       lowEngagement: 787,
+      highEngagementShare: 0.12,
+      mediumEngagementShare: 0.34,
+      lowEngagementShare: 0.54,
       newslettersConsidered: 10,
       mostEngagingName: 'Monthly: Protocol ships',
       mostEngagingClickToOpenRate: 0.12,
     });
     expect(newsletters.periods.COMPLETED_YEAR).toMatchObject({ newslettersSent: 0, mostEngagingName: null });
     expect(newsletters.newsletters).toEqual([
-      { key: 'n2', name: 'Monthly: Protocol ships', sentDate: '2026-09-21', hasEngagementData: true, openRate: 0.5, clickToOpenRate: 0.12 },
-      { key: 'n1', name: 'Untitled newsletter', sentDate: '2026-08-24', hasEngagementData: false, openRate: null, clickToOpenRate: null },
+      { key: 'n2', name: 'Monthly: Protocol ships', sentDate: '2026-09-21', openRate: 0.5, clickRate: 0.06 },
+      { key: 'n1', name: 'Untitled newsletter', sentDate: '2026-08-24', openRate: 0.37, clickRate: null },
     ]);
   });
 
@@ -597,7 +602,6 @@ describe('HealthMetricsOverviewService.getNewsletters', () => {
   it('warns and trims when the newsletters hit the read cap', async () => {
     const rows = Array.from({ length: HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1 }, (_, index) => ({
       NEWSLETTER_KEY: `n${index}`,
-      HAS_ENGAGEMENT_DATA: false,
     }));
     execute.mockResolvedValueOnce({ rows: [summary] }).mockResolvedValueOnce({ rows });
 

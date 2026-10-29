@@ -741,27 +741,29 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     highEngagement: 175,
     mediumEngagement: 496,
     lowEngagement: 787,
+    highEngagementShare: 0.12,
+    mediumEngagementShare: 0.34,
+    lowEngagementShare: 0.54,
     newslettersConsidered: 10,
     mostEngagingName: 'Monthly: Protocol ships',
     mostEngagingClickToOpenRate: 0.12,
   };
-  const send = (key: string, sentDate: string, openRate: number | null, clickToOpenRate: number | null, hasEngagementData = true) => ({
+  const send = (key: string, sentDate: string, openRate: number | null, clickRate: number | null) => ({
     key,
     name: `Newsletter ${key}`,
     sentDate,
-    hasEngagementData,
     openRate,
-    clickToOpenRate,
+    clickRate,
   });
   const newsletters: HealthMetricsOverviewNewsletters = {
     measured: true,
     periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(period),
-    // Latest first, as the view ranks them.
+    // Latest first, as the read returns them.
     newsletters: [
-      send('n4', `${year}-09-21`, 0.5, 0.12),
+      send('n4', `${year}-09-21`, 0.5, 0.06),
       send('n3', `${year}-08-24`, 0.4, null),
-      send('n2', `${year}-08-03`, 0.3, 0.1),
-      send('test', `${year}-07-30`, null, null, false),
+      send('n2', `${year}-08-03`, 0.3, 0.03),
+      send('unrated', `${year}-07-30`, null, null),
       send('old', `${year - 1}-12-01`, 0.6, 0.2),
     ],
   };
@@ -781,7 +783,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(view.mostEngaging).toEqual({ name: 'Monthly: Protocol ships', rateLabel: '12% click-to-open' });
   });
 
-  it('charts the period’s newsletters with engagement data, oldest first, click rate as open rate × click-to-open', () => {
+  it('charts the period’s newsletters oldest first, evenly spaced, with the view’s open and click rates', () => {
     const chart = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').chart;
 
     expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
@@ -796,25 +798,25 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       { label: 'Aug', xPct: '0.00' },
       { label: 'Sep', xPct: '100.00' },
     ]);
-    // The click line skips the newsletter without a click-to-open rate rather than drawing it at zero.
+    // The click line skips the newsletter without a click rate rather than drawing it at zero.
     expect(chart?.clickPath.split('L')).toHaveLength(2);
     expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
   });
 
   it('tops the scale out at an exact tenth rather than the next one', () => {
-    const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.1), send('n2', `${year}-04-02`, 0.35, 0.1)] };
+    const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.07), send('n2', `${year}-04-02`, 0.35, 0.03)] };
     expect(buildHealthMetricsOverviewNewsletterView(exact, 'YTD').chart?.points.map((point) => point.openYPct)).toEqual(['0.00', '50.00']);
   });
 
-  it('centres a lone newsletter and has no chart when none in the period carries engagement data', () => {
-    const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.2)] };
+  it('centres a lone newsletter and has no chart when none in the period has an open rate', () => {
+    const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.05)] };
     expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
 
-    const untracked = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null, false)] };
-    expect(buildHealthMetricsOverviewNewsletterView(untracked, 'YTD').chart).toBeNull();
+    const unrated = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null)] };
+    expect(buildHealthMetricsOverviewNewsletterView(unrated, 'YTD').chart).toBeNull();
   });
 
-  it('splits subscribers by engagement, keeping a sliver for a level too small to see', () => {
+  it('splits subscribers by engagement with the view’s shares, keeping a sliver for a level too small to see', () => {
     const engagement = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').engagement;
 
     expect(engagement.map((row) => [row.label, row.description, row.countLabel, row.pctLabel])).toEqual([
@@ -823,8 +825,12 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       ['Low', 'Opened 2 newsletters or fewer', '787', '54%'],
     ]);
 
-    const tiny = { ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, lowEngagement: 10000 }) };
+    const tiny = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, highEngagementShare: 0.0001 }),
+    };
     expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.widthPct).toBe(1.5);
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('<1%');
   });
 
   it('is empty when nothing was sent in the period or the foundation is unmeasured', () => {

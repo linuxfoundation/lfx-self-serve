@@ -380,10 +380,7 @@ export function buildHealthMetricsOverviewCodeView(code: HealthMetricsOverviewCo
   };
 }
 
-/**
- * The newsletter card: the period's summary, the open and click rate of every newsletter sent in it, and the subscriber
- * engagement split. Click rate is open rate × click-to-open rate, as both are shares of the same recipients.
- */
+/** The newsletter card: the period's summary, the open and click rate of each newsletter sent in it, and the subscriber engagement split. */
 export function buildHealthMetricsOverviewNewsletterView(
   newsletters: HealthMetricsOverviewNewsletters,
   range: HealthMetricsRange
@@ -617,12 +614,12 @@ function formatIsoMonth(iso: string): string {
 }
 
 /**
- * One point per newsletter sent in the period's year with engagement data, oldest first and evenly spaced, as the design
- * spaces them. The scale tops out at the highest open rate rounded up to the next 10%.
+ * One point per newsletter sent in the period's year, oldest first and evenly spaced, as the design spaces them. The
+ * read only carries newsletters with engagement data. The scale tops out at the highest open rate rounded up to the next 10%.
  */
 function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
   const sends = newsletters.newsletters
-    .filter((send) => send.hasEngagementData && send.openRate !== null && send.sentDate?.startsWith(`${year}-`))
+    .filter((send) => send.openRate !== null && send.sentDate?.startsWith(`${year}-`))
     .sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
   if (!sends.length) return null;
 
@@ -633,7 +630,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
   const points = sends.map((send, index) => {
     const open = send.openRate as number;
-    const click = send.clickToOpenRate === null ? null : open * send.clickToOpenRate;
+    const click = send.clickRate;
     return { send, x: x(index), openY: y(open), clickY: click === null ? null : y(click), open, click };
   });
   const path = (coords: [number, number][]): string => coords.map(([px, py], index) => `${index ? 'L' : 'M'}${px.toFixed(1)} ${py.toFixed(1)}`).join(' ');
@@ -668,14 +665,18 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   };
 }
 
-/** High / Medium / Low with each level's share of the three; a level too small to see keeps a sliver of the bar. */
+/** High / Medium / Low with the view's share of each; a level too small to see keeps a sliver of the bar. */
 function buildNewsletterEngagement(period: HealthMetricsOverviewNewsletterPeriod | null): HealthMetricsOverviewNewsletterEngagementRowView[] {
   const levels = [
-    { key: 'high', count: period?.highEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
-    { key: 'medium', count: period?.mediumEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium },
-    { key: 'low', count: period?.lowEngagement ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
+    { key: 'high', count: period?.highEngagement ?? null, share: period?.highEngagementShare ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high },
+    {
+      key: 'medium',
+      count: period?.mediumEngagement ?? null,
+      share: period?.mediumEngagementShare ?? null,
+      dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium,
+    },
+    { key: 'low', count: period?.lowEngagement ?? null, share: period?.lowEngagementShare ?? null, dotClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low },
   ] as const;
-  const total = levels.reduce((sum, level) => sum + (level.count ?? 0), 0);
 
   return levels.map((level) => ({
     key: level.key,
@@ -683,8 +684,8 @@ function buildNewsletterEngagement(period: HealthMetricsOverviewNewsletterPeriod
     description: HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT[level.key].description,
     dotClass: level.dotClass,
     countLabel: formatCount(level.count),
-    pctLabel: total > 0 && level.count !== null ? formatShare(level.count / total) : NOT_AVAILABLE,
-    widthPct: total > 0 && level.count ? Math.max((level.count / total) * 100, 1.5) : 0,
+    pctLabel: formatShare(level.share),
+    widthPct: level.share !== null && level.share > 0 && level.count ? Math.max(level.share * 100, 1.5) : 0,
   }));
 }
 

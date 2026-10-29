@@ -195,24 +195,27 @@ export interface HealthMetricsOverviewNewsletterPeriod {
   highEngagement: number | null;
   mediumEngagement: number | null;
   lowEngagement: number | null;
+  /** Each level's 0–1 share of the three, as the view computes it. */
+  highEngagementShare: number | null;
+  mediumEngagementShare: number | null;
+  lowEngagementShare: number | null;
   /** How many newsletters the High / Medium / Low split is based on. */
   newslettersConsidered: number | null;
   mostEngagingName: string | null;
   mostEngagingClickToOpenRate: number | null;
 }
 
-/** One sent newsletter; its rates are `null` when the send carries no engagement data. */
+/** One sent newsletter with engagement data; both rates are 0–1 shares of its recipients. */
 export interface HealthMetricsOverviewNewsletterSend {
   key: string;
   name: string;
   /** ISO date. */
   sentDate: string | null;
-  hasEngagementData: boolean;
   openRate: number | null;
-  clickToOpenRate: number | null;
+  clickRate: number | null;
 }
 
-/** `GET /api/analytics/overview-newsletters` — the summary per period and every newsletter sent, latest first. */
+/** `GET /api/analytics/overview-newsletters` — the summary per period and every newsletter with engagement data. */
 export interface HealthMetricsOverviewNewsletters {
   measured: boolean;
   periods: Record<HealthMetricsL2Range, HealthMetricsOverviewNewsletterPeriod | null>;

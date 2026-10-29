@@ -374,7 +374,7 @@ export class HealthMetricsOverviewService {
     };
   }
 
-  /** The newsletter summary for each period, and every newsletter sent, latest first. */
+  /** The newsletter summary for each period, and every newsletter with engagement data, latest first. */
   public async getNewsletters(req: Request, query: HealthMetricsOverviewQuery): Promise<HealthMetricsOverviewNewsletters> {
     const columns = HEALTH_METRICS_L2_RANGES.flatMap((range) =>
       [
@@ -387,6 +387,9 @@ export class HealthMetricsOverviewService {
         'high_engagement_subscribers_count',
         'medium_engagement_subscribers_count',
         'low_engagement_subscribers_count',
+        'high_engagement_subscribers_pct',
+        'medium_engagement_subscribers_pct',
+        'low_engagement_subscribers_pct',
         'engagement_newsletters_considered_count',
         'most_engaging_newsletter_name',
         'most_engaging_newsletter_click_to_open_rate',
@@ -406,12 +409,13 @@ export class HealthMetricsOverviewService {
         newsletter_key,
         newsletter_name,
         sent_date,
-        has_engagement_data,
         open_rate,
-        click_to_open_rate
+        click_rate
       FROM ${NEWSLETTER_BY_NEWSLETTER_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY sort_rank ASC, newsletter_key ASC
+        AND has_engagement_data = TRUE
+      -- Latest first, so a capped read keeps the newest; the card puts them back in date order.
+      ORDER BY sent_date DESC NULLS LAST, newsletter_key ASC
       LIMIT ${HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1}
     `;
 
@@ -675,6 +679,9 @@ function mapNewsletterPeriod(row: WideRow, range: HealthMetricsL2Range): HealthM
     highEngagement: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
     mediumEngagement: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
     lowEngagement: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_COUNT', range),
+    highEngagementShare: periodNumber(row, 'HIGH_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    mediumEngagementShare: periodNumber(row, 'MEDIUM_ENGAGEMENT_SUBSCRIBERS_PCT', range),
+    lowEngagementShare: periodNumber(row, 'LOW_ENGAGEMENT_SUBSCRIBERS_PCT', range),
     newslettersConsidered: periodNumber(row, 'ENGAGEMENT_NEWSLETTERS_CONSIDERED_COUNT', range),
     mostEngagingName: periodText(row, 'MOST_ENGAGING_NEWSLETTER_NAME', range),
     mostEngagingClickToOpenRate: periodNumber(row, 'MOST_ENGAGING_NEWSLETTER_CLICK_TO_OPEN_RATE', range),
@@ -691,9 +698,8 @@ function mapNewsletterSend(row: WideRow): HealthMetricsOverviewNewsletterSend | 
     key,
     name: name || 'Untitled newsletter',
     sentDate: toIsoDate(row['SENT_DATE'] as Date | string | null),
-    hasEngagementData: row['HAS_ENGAGEMENT_DATA'] === true,
     openRate: toNullableNumber(row['OPEN_RATE']),
-    clickToOpenRate: toNullableNumber(row['CLICK_TO_OPEN_RATE']),
+    clickRate: toNullableNumber(row['CLICK_RATE']),
   };
 }
 

@@ -27,6 +27,9 @@ const PERIOD: HealthMetricsOverviewNewsletterPeriod = {
   highEngagement: 175,
   mediumEngagement: 496,
   lowEngagement: 787,
+  highEngagementShare: 0.12,
+  mediumEngagementShare: 0.34,
+  lowEngagementShare: 0.54,
   newslettersConsidered: 10,
   mostEngagingName: 'Monthly: Protocol ships',
   mostEngagingClickToOpenRate: 0.12,
@@ -35,8 +38,8 @@ const NEWSLETTERS: HealthMetricsOverviewNewsletters = {
   measured: true,
   periods: { YTD: PERIOD, COMPLETED_YEAR: PERIOD, COMPLETED_YEAR_2: null, COMPLETED_YEAR_3: null },
   newsletters: [
-    { key: 'n2', name: 'Monthly: Protocol ships', sentDate: `${YEAR}-09-21`, hasEngagementData: true, openRate: 0.5, clickToOpenRate: 0.12 },
-    { key: 'n1', name: 'Monthly: Hello', sentDate: `${YEAR}-08-24`, hasEngagementData: true, openRate: 0.37, clickToOpenRate: 0.05 },
+    { key: 'n2', name: 'Monthly: Protocol ships', sentDate: `${YEAR}-09-21`, openRate: 0.5, clickRate: 0.06 },
+    { key: 'n1', name: 'Monthly: Hello', sentDate: `${YEAR}-08-24`, openRate: 0.37, clickRate: 0.0185 },
   ],
 };
 
@@ -82,7 +85,7 @@ describe('OverviewNewsletterCardComponent', () => {
   });
 
   it('says so in place of the chart when no newsletter in the period carries engagement data', async () => {
-    await render({ ...NEWSLETTERS, newsletters: NEWSLETTERS.newsletters.map((send) => ({ ...send, hasEngagementData: false, openRate: null })) });
+    await render({ ...NEWSLETTERS, newsletters: [] });
 
     expect(query('overview-newsletter-chart')).toBeNull();
     expect(query('overview-newsletter-chart-empty')).not.toBeNull();
