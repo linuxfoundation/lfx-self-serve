@@ -215,6 +215,8 @@ export interface OrgPersonCodeView extends OrgCommitFilters {
 export interface OrgPersonCodeCount {
   /** Total / column label: "Commits" or "Code contributions". */
   label: string;
+  /** Accessible name of the counting-rule info button ("How commits are counted"). */
+  ariaLabel: string;
   /** Tooltip naming the counting rule. */
   definition: string;
   /** Unit of the per-project counts. */

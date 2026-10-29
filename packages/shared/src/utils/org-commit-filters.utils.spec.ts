@@ -150,14 +150,14 @@ describe('Org Lens person drawer code view', () => {
   });
 
   it('labels the counts after the code count of the view, and as trailing-year commits without one', () => {
-    expect(orgPersonCodeCount(undefined)).toEqual({
+    expect(orgPersonCodeCount(undefined)).toMatchObject({
       label: ORG_CODE_METRIC_LABEL.commits,
       definition: ORG_COMMITS_DEFINITION,
       unit: ORG_CODE_METRIC_UNIT.commits,
       viewLabel: null,
     });
     const view = { range: '90d', projectScope: 'lf', commitScope: 'merged', metric: 'commits' } as const;
-    expect(orgPersonCodeCount(view)).toEqual({
+    expect(orgPersonCodeCount(view)).toMatchObject({
       label: ORG_CODE_METRIC_LABEL.commits,
       definition: ORG_CODE_MEASURE_DEFINITION.merged,
       unit: ORG_CODE_METRIC_UNIT.commits,
@@ -168,5 +168,12 @@ describe('Org Lens person drawer code view', () => {
       definition: ORG_CODE_MEASURE_DEFINITION.code,
       unit: ORG_CODE_METRIC_UNIT.code,
     });
+  });
+
+  it('names the counting-rule button after the code count it explains', () => {
+    for (const view of [undefined, { range: '90d', projectScope: 'lf', commitScope: 'all', metric: 'code' } as const]) {
+      const count = orgPersonCodeCount(view);
+      expect(count.ariaLabel.toLowerCase()).toContain(count.label.toLowerCase());
+    }
   });
 });

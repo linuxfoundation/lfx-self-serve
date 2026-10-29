@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgAllEmployeeCodeContribution } from './org-people.interface';
 
 /** Role badge — Maintainer when the person holds a maintainer role overlapping the range (lfx-self-serve#4482); on the parent row any project, on the expansion that project. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
@@ -171,3 +172,12 @@ export type OrgPersonCodeProjectRow = Pick<
   ContributorPersonProjectRow,
   'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME' | 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES' | 'LAST_ACTIVE_DATE'
 >;
+
+/** A person's Code project (drawer, All Employees expanded row) before its Maintainer pill is set. */
+export type OrgPersonCodeProjectCount = Omit<OrgAllEmployeeCodeContribution, 'isMaintainer'>;
+
+/** A person's Code projects and the total they are shown with. */
+export interface OrgPersonCodeContributions {
+  projects: OrgPersonCodeProjectCount[];
+  total: number;
+}

@@ -16,7 +16,6 @@ import type {
   OrgFormerEmployeeCheck,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
-  OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
@@ -28,6 +27,8 @@ import type {
   OrgAllEmployeesResponse,
   OrgLensTimeRange,
   OrgPeopleDirectoryView,
+  OrgPersonCodeContributions,
+  OrgPersonCodeProjectCount,
   OrgPersonCodeProjectRow,
   OrgPersonCodeView,
   OrgPersonCompanyEmailRow,
@@ -103,15 +104,6 @@ interface EmployeeActivityRaw {
   committeeRows: CommitteeMembershipRow[];
   eventRows: EventRow[];
   trainingRows: TrainingRow[];
-}
-
-/** A Code tab project before its Maintainer pill is set. */
-type CodeProjectCount = Omit<OrgAllEmployeeCodeContribution, 'isMaintainer'>;
-
-/** The Code tab's projects and the total they are shown with. */
-interface CodeContributions {
-  projects: CodeProjectCount[];
-  total: number;
 }
 
 /** No unique identity is available — distinct from a resolved empty lookup. */
@@ -673,7 +665,7 @@ export class OrgLensPeopleService {
   }
 
   /** The Code tab without opener filters: every commit of the trailing 12 months (ORG_PEOPLE_CODE_CONTRIBUTIONS). */
-  private async readTrailingYearCodeContributions(accountId: string, personKey: string): Promise<CodeContributions> {
+  private async readTrailingYearCodeContributions(accountId: string, personKey: string): Promise<OrgPersonCodeContributions> {
     const rows = await this.withPersonCache(
       accountId,
       personKey,
@@ -695,7 +687,7 @@ export class OrgLensPeopleService {
    * the Contributors and All Employees (ORG_PEOPLE_ALL_RANGES sums the same columns) row. One cache entry per range and
    * scope carries every count, so it serves every code-count option.
    */
-  private async readCodeViewContributions(accountId: string, personKey: string, view: OrgPersonCodeView): Promise<CodeContributions> {
+  private async readCodeViewContributions(accountId: string, personKey: string, view: OrgPersonCodeView): Promise<OrgPersonCodeContributions> {
     const rows = await this.withPersonCache(
       accountId,
       personKey,
@@ -1127,7 +1119,7 @@ function toCodeProjectCount(
   row: Pick<CodeContributionRow, 'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME'>,
   count: number | null,
   lastActivityDate: Date | string | null
-): CodeProjectCount {
+): OrgPersonCodeProjectCount {
   return {
     projectId: row.PROJECT_ID,
     projectName: row.PROJECT_NAME ?? row.PROJECT_ID,

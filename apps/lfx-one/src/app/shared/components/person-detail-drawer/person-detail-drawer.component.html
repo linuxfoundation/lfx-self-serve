@@ -284,7 +284,7 @@
                         <button
                           type="button"
                           class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                          [attr.aria-label]="'How ' + codeCount().label.toLowerCase() + ' are counted'"
+                          [attr.aria-label]="codeCount().ariaLabel"
                           [pTooltip]="codeCount().definition"
                           tooltipPosition="top"
                           tooltipEvent="both"

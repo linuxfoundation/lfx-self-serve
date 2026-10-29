@@ -127,11 +127,14 @@ export function describeOrgPersonCodeView(view: OrgPersonCodeView): string {
  * (lfx-self-serve#4404), else as every commit of the trailing 12 months.
  */
 export function orgPersonCodeCount(view: OrgPersonCodeView | undefined): OrgPersonCodeCount {
+  const label = ORG_CODE_METRIC_LABEL[view?.metric ?? 'commits'];
+  const ariaLabel = `How ${label.toLowerCase()} are counted`;
   if (!view) {
-    return { label: ORG_CODE_METRIC_LABEL.commits, definition: ORG_COMMITS_DEFINITION, unit: ORG_CODE_METRIC_UNIT.commits, viewLabel: null };
+    return { label, ariaLabel, definition: ORG_COMMITS_DEFINITION, unit: ORG_CODE_METRIC_UNIT.commits, viewLabel: null };
   }
   return {
-    label: ORG_CODE_METRIC_LABEL[view.metric],
+    label,
+    ariaLabel,
     definition: ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(view).metric],
     unit: ORG_CODE_METRIC_UNIT[view.metric],
     viewLabel: describeOrgPersonCodeView(view),
