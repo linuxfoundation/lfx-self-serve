@@ -349,6 +349,8 @@ describe('MktgAgentRunComponent', () => {
 
   it('keeps one page h1 when the intake form is shown and titles the form as a section', async () => {
     await configure('browser', 'foundation-setup');
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
     const page = query('mktg-agent-run-page');
     expect(page?.querySelectorAll('h1')).toHaveLength(1);
     expect(query('mktg-agent-run-name')?.tagName).toBe('H1');

@@ -413,7 +413,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-title-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
     expect(query('mktg-document-view-action-loading')?.querySelector('[data-variant="header"]')).not.toBeNull();
     expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-loading"]')).toHaveLength(1);
-    expect(query('mktg-document-view-loading')?.querySelector('[role="status"]')?.textContent?.trim()).toBe('Loading the document…');
+    expect(query('mktg-document-view-loading')?.getAttribute('role')).toBe('status');
+    expect(query('mktg-document-view-loading')?.textContent?.trim()).toBe('Loading the document…');
     expect(query('mktg-document-view-title')).toBeNull();
     expect(query('mktg-document-view-run-again')).toBeNull();
     read.next({ ...revisionResponse(LATEST), sidecar: kitSidecar() });
@@ -1906,7 +1907,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-run')).toBeNull();
     expect(progressReader().headless()).toBe(true);
     expect(progressReader().runState()).toBe('writing');
-    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('TestOrbit Brand kit');
+    expect(query('mktg-document-view-title-loading')).not.toBeNull();
+    expect(query('mktg-document-view-title')).toBeNull();
     const progress = harness.routeDebugElement?.query(By.directive(MktgRunProgressComponent))?.componentInstance as MktgRunProgressComponent;
     expect(progress['generatingLabel']()).toBe('Working on Brand kit');
     store.getDocument.mockReturnValue(of(detail));
@@ -2170,7 +2172,8 @@ describe('MktgDocumentViewComponent', () => {
       queryParams: expect.objectContaining({ project: PROJECT.slug, generation: null, mode: 'new' }),
       replaceUrl: true,
     });
-    expect(query('mktg-document-view-run-again')).toBeNull();
+    expect(query('mktg-document-view-run-again')?.textContent?.trim()).toBe('Open intake');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toContain(`/${BRAND_KIT_INTAKE.agentId}?project=${PROJECT.slug}&mode=new`);
   });
 
   it('does not synchronously replace a living generation token even with an accepted run id', async () => {
@@ -2347,8 +2350,9 @@ describe('MktgDocumentViewComponent', () => {
       await render('/documents/brand-kit/living?type=drop&profile=drop');
       expect(!!query('mktg-document-view-run')).toBe(state === 'failed');
       expect(query('mktg-document-view-revision-chip')).toBeNull();
-      // No stored view means no header Run again; the recorded run owns recovery below.
-      expect(query('mktg-document-view-run-again')).toBeNull();
+      // Main #4068 keeps Run again available after the server read; the active-run guard owns the click.
+      expect(query('mktg-document-view-run-again')?.textContent?.trim()).toBe('Run again');
+      expect(query('mktg-document-view-run-again')?.getAttribute('href')).toContain(`/${BRAND_KIT_INTAKE.agentId}?project=${PROJECT.slug}&mode=new`);
       if (state !== 'failed') expect(progressReader().headless()).toBe(true);
       expect(query('brand-kit-web-view-header')).toBeNull();
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed');

@@ -185,6 +185,11 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded', { timeout: progressReadTimeout });
     await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
     await expect(page.getByTestId('mktg-documents-started-runs')).toContainText('No runs in progress', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-started-slot')).not.toHaveClass(/min-h-40/);
+    const card = await page.getByTestId('mktg-documents-started-runs').boundingBox();
+    const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
+    if (!card || !navigation) throw new Error('Missing settled Documents geometry');
+    expect(navigation.y - card.y - card.height).toBeLessThanOrEqual(24); // No pending-height band below the retained empty card.
     await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
     await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
   });

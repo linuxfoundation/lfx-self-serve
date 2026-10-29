@@ -2260,6 +2260,11 @@ export class MktgAgentRunComponent {
 
     this.runFailed.set(false);
     this.errorText.set('');
+    // Consent/start supersedes the old UI snapshot, not the retained accepted capability.
+    // An explicit retry still performs the live-record check through confirmDiscard.
+    this.waitingRun.set(null);
+    this.existingRun.set(null);
+    this.waitingQuestions.set(false);
     this.clearQuestions();
     this.activity.set([]);
     this.recheckingAttempt.set(false);

@@ -448,7 +448,7 @@ describe('MktgDocumentsComponent', () => {
     store.listDocuments.mockReturnValue(read);
     await render();
     expect(query('mktg-documents-started-loading')).not.toBeNull();
-    expect(query('mktg-documents-started-loading')?.querySelector('[data-variant="card"]')).not.toBeNull();
+    expect(query('mktg-documents-started-loading')?.querySelector('[data-variant="rows"]')).not.toBeNull();
     expect(query('mktg-documents-started-runs')).toBeNull();
     read.next({ ...documentsResponse(), runs: [startedRun('questions')] });
     await fixture.whenStable();
@@ -456,11 +456,13 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-loading')).toBeNull();
     const card = query('mktg-documents-started-runs');
     expect(card).not.toBeNull();
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
     read.next({ ...documentsResponse(), runs: [] });
     await fixture.whenStable();
     fixture.detectChanges();
     expect(query('mktg-documents-started-runs')).toBe(card);
     expect(card?.textContent).toContain('No runs in progress');
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
   });
 
   it('collapses an initially empty run slot once and keeps documents visible during type refetch', async () => {
@@ -640,10 +642,14 @@ describe('MktgDocumentsComponent', () => {
     const observed = store.listDocuments.mock.calls.length;
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(store.listDocuments).toHaveBeenCalledTimes(observed + 1);
+    const card = query('mktg-documents-started-runs');
     store.listDocuments.mockReturnValue(of(documentsResponse()));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
-    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-started-runs')).toBe(card);
+    expect(card?.textContent).toContain('No runs in progress');
+    expect(fixture.componentInstance['runs']()).toHaveLength(0);
+    expect(query('mktg-documents-started-slot')?.classList.contains('min-h-40')).toBe(false);
   });
 
   it.each([401, 403, 500])('shows recovered list content after initial %s and successful same-scope refresh', async (status) => {

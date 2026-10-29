@@ -40,7 +40,7 @@
     </div>
   </ng-template>
   <ng-template #loadedDocuments>
-    <div class="min-h-40" data-testid="mktg-documents-started-slot">
+    <div [class.min-h-40]="listPending()" data-testid="mktg-documents-started-slot">
       @if (!listFailed() && startedRunsVisible()) {
         <section
           class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-white px-5 py-4"
