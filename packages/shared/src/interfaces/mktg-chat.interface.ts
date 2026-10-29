@@ -39,6 +39,8 @@ export interface MktgSessionInfo {
  * Omit/null `sessionId` to create a new session; provide it to post a follow-up.
  */
 export interface MktgChatRequest {
+  /** Explicitly replace this active run when starting a new session. */
+  discard?: string;
   /** Durable run scope when this chat turn belongs to a registered intake. */
   project?: string;
   /** Catalog agent id; resolved server-side to a Guild routing handle. */

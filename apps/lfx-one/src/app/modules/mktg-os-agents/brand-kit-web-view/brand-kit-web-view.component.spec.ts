@@ -15,7 +15,7 @@ import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-k
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { BrandKitWebViewComponent } from './brand-kit-web-view.component';
 
@@ -34,7 +34,7 @@ describe('BrandKitWebViewComponent', () => {
   const activeContext = signal({ slug: 'synthetic', name: 'Synthetic project' });
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);

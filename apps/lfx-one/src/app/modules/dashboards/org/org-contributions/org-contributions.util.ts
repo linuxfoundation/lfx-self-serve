@@ -9,6 +9,7 @@ import type {
   OrgContributionCommitRowVm,
   OrgContributionRepoRow,
   OrgContributionRepoRowVm,
+  OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
 } from '@lfx-one/shared/interfaces';
@@ -112,12 +113,20 @@ export function describeContributionsCaption(filters: OrgCommitFilters, companyN
   return `Commits authored by contributors affiliated with ${companyName}, ${branch}${scope}, counted once each, ${window}. Bots excluded.`;
 }
 
-/** Who the People -> Contributors tab counts, worded like {@link describeContributionsCaption}. */
-export function describeContributorsTooltip(projectScope: OrgProjectScope, companyName: string, window: string): string {
+/**
+ * Who the People -> Contributors tab counts, worded like {@link describeContributionsCaption}. The Employment filter
+ * (lfx-self-serve#4627) narrows it to the people who still work at the company or to those who have left.
+ */
+export function describeContributorsTooltip(projectScope: OrgProjectScope, companyName: string, window: string, employment: OrgEmploymentFilter): string {
+  const employmentRule: Record<OrgEmploymentFilter, string> = {
+    all: 'so people who have since left are included.',
+    current: `and only people who still work at ${companyName} are counted.`,
+    former: `and only people who have since left ${companyName} are counted.`,
+  };
   return (
     `People with at least one code contribution (commit, pull request, review or comment) credited to ${companyName}` +
     `${CONTRIBUTIONS_PROJECT_SCOPE_PHRASE[projectScope]}, ${window}. ` +
-    'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
-    'Declared project maintainers count as Maintainers; everyone else counts as Contributors. Bots excluded.'
+    `Each contribution is credited to the employer the person had at the time, ${employmentRule[employment]} ` +
+    'Maintainers with code are counted here too. Bots excluded.'
   );
 }

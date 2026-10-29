@@ -36,9 +36,11 @@ describe('MktgRunProgressComponent', () => {
   let fixture: ComponentFixture<MktgRunProgressComponent>;
   const user = signal<User | null>({ sub: 'synthetic-creator' } as User);
   const read = vi.fn();
+  const revisionRead = vi.fn();
   const setup = async (platform = 'browser') => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     read.mockReset().mockReturnValue(of(detail()));
+    revisionRead.mockReset();
     user.set({ sub: 'synthetic-creator' } as User);
     await TestBed.configureTestingModule({
       imports: [MktgRunProgressComponent],
@@ -46,7 +48,7 @@ describe('MktgRunProgressComponent', () => {
         provideNoopAnimations(),
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: { user } },
-        { provide: MktgDocumentStoreService, useValue: { getDocument: read } },
+        { provide: MktgDocumentStoreService, useValue: { getDocument: read, getRevision: revisionRead } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(MktgRunProgressComponent);
@@ -94,8 +96,48 @@ describe('MktgRunProgressComponent', () => {
     finished.revisions = [{ id: 'synthetic-stored', number: 1 } as MktgDocumentDetailResponse['revisions'][number]];
     read.mockReturnValue(of(finished));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true);
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true, undefined, false, runId);
     expect(landed).toHaveBeenCalledExactlyOnceWith(undefined);
+  });
+
+  it.each(['discarded', 'superseded'] as const)('reads and renders the selected %s run instead of landing on an older document', async (state) => {
+    await setup();
+    const landed = vi.fn();
+    fixture.componentInstance.landed.subscribe(landed);
+    await fixture.whenStable();
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, undefined, false, runId);
+    read.mockReturnValue(of({ ...detail([{ ...run, state }]), revisions: [{ id: 'synthetic-older', number: 1 }] }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, true, undefined, false, runId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-closed"]')).not.toBeNull();
+    expect(text()).toContain(state === 'discarded' ? 'This run was discarded.' : 'A newer run replaced this one.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-live"]')).toBeNull();
+    expect(landed).not.toHaveBeenCalled();
+    const reads = read.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(read).toHaveBeenCalledTimes(reads);
+  });
+
+  it.each(['discarded', 'superseded'] as const)('publishes known %s metadata without a failing revision read restoring active progress', async (state) => {
+    await setup();
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('loadRevision', true);
+    const revision = { id: 'synthetic-revision', number: 1 };
+    read.mockReturnValue(of({ ...detail(), revisions: [revision] }));
+    revisionRead.mockReturnValue(of({ ...detail(), revision, markdown: '# Synthetic asset', sidecar: null }));
+    const observed = vi.fn();
+    fixture.componentInstance.observed.subscribe(observed);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedRun()?.state).toBe('writing');
+    expect(revisionRead).toHaveBeenCalledOnce();
+    read.mockReturnValue(of({ ...detail([{ ...run, state }]), revisions: [revision] }));
+    revisionRead.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedRun()?.state).toBe(state);
+    expect(observed.mock.calls.at(-1)?.[0].detail.runs[0].state).toBe(state);
+    expect(revisionRead).toHaveBeenCalledOnce();
   });
 
   it('does not land when progress is unavailable or no stored document exists', async () => {
@@ -108,17 +150,24 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('Could not fully refresh');
   });
 
-  it('emits terminal questions/failure once and refreshes a failed record only once', async () => {
+  it.each([true, false])('emits terminal questions/failure once and refreshes a failed record only once (selected: %s)', async (selected) => {
     await setup();
     read.mockReturnValue(of(detail([{ ...run, state: 'failed', persistenceFailed: true }])));
     const failed = vi.fn();
     fixture.componentInstance.failed.subscribe(failed);
     fixture.componentRef.setInput('runAgentId', type.catalogAgentId);
     fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('runId', selected ? runId : '');
     await fixture.whenStable();
     expect(failed).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId);
+    if (selected) {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false, undefined, false, runId);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
+    } else {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId);
+    }
     expect(text()).toContain('retries saving the existing result');
     const retry = vi.fn();
     fixture.componentInstance.retry.subscribe(retry);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OpenProfileBannerComponent } from './open-profile-banner.component';
 
@@ -10,7 +10,7 @@ import { OpenProfileBannerComponent } from './open-profile-banner.component';
 // fails here, not in a manual click-through (the bot-with-message behavior itself is support-side).
 describe('OpenProfileBannerComponent', () => {
   let fixture: ComponentFixture<OpenProfileBannerComponent>;
-  let linkClick: ReturnType<typeof vi.fn>;
+  let linkClick: Mock;
 
   const link = (): HTMLButtonElement => {
     const el = fixture.nativeElement.querySelector('[data-testid="open-profile-banner-link"]');

@@ -14,7 +14,7 @@ import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-o
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MeetingManageComponent } from './meeting-manage.component';
 
@@ -29,12 +29,12 @@ describe('MeetingManageComponent', () => {
   const PROJECT_UID = 'project-uid-1';
   const PROJECT_SLUG = 'test-project';
 
-  let getMeetingDetail: ReturnType<typeof vi.fn>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let messageAdd: ReturnType<typeof vi.fn>;
-  let navigate: ReturnType<typeof vi.fn>;
+  let getMeetingDetail: Mock;
+  let getProject: Mock;
+  let messageAdd: Mock;
+  let navigate: Mock;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
-  let setProject: ReturnType<typeof vi.fn>;
+  let setProject: Mock;
 
   // Unenriched detail payload: project_uid only, no project_slug — the trigger condition for
   // initMeetingContextFallback. Note `id` (not just `uid`): meetingEntityContext keys off

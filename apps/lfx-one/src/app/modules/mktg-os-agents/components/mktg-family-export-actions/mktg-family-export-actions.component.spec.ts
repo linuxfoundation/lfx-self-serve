@@ -309,6 +309,10 @@ describe('Family export slot', () => {
     expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
     expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
     if (!document) throw new Error('Missing synthetic family print composition');
+    expect(Array.from(document.querySelectorAll('lfx-mktg-framework-print h2 > span')).map((span) => span.textContent?.trim())).toEqual(['01.1', '01.2']);
+    expect(document.querySelector('[data-testid="mktg-framework-print-goals"]')).not.toBeNull();
+    expect(document.querySelector('[data-testid="mktg-framework-print-icps"]')).toBeNull();
+    expect(document.querySelector('[data-testid="mktg-framework-print-message-house"]')).toBeNull();
     const body = root.ownerDocument.body;
     const wasPrinting = body.classList.contains(MKTG_FAMILY_PRINT_BODY_CLASS);
     body.classList.add(MKTG_FAMILY_PRINT_BODY_CLASS);
@@ -348,7 +352,7 @@ describe('Family export slot', () => {
     const numbers = Array.from(cover?.querySelectorAll('dt') ?? []).map((entry) => entry.textContent?.trim());
     expect(numbers).toEqual(['01', '02', '03', '04']);
     const sectionNumbers = Array.from(document?.querySelectorAll('lfx-mktg-framework-print h2 > span') ?? []).map((span) => span.textContent?.trim());
-    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`, `${numbers[0]}.3`, `${numbers[0]}.4`]);
+    expect(sectionNumbers).toEqual([`${numbers[0]}.1`, `${numbers[0]}.2`]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print h2 > span')?.textContent?.trim()).toBe(numbers[2]);
     expect(document?.querySelector('lfx-mktg-faq-print h2 > span')?.textContent?.trim()).toBe(numbers[3]);
     expect(document?.querySelector('lfx-mktg-boilerplates-print [data-testid="mktg-print-running-head"]')?.textContent).toContain('Synthetic project');

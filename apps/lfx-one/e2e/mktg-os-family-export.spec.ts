@@ -173,7 +173,10 @@ test('Download PDF prints all four approved assets with one family cover and con
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
   await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
-  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2', '01.3', '01.4']);
+  await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
+  await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
+  await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
+  await expect(printDocument.locator('[data-testid^="mktg-framework-print-icp-"]')).toHaveCount(0);
   await expect(printDocument.locator('lfx-mktg-boilerplates-print h2 > span')).toHaveText('03');
   await expect(printDocument.locator('lfx-mktg-faq-print h2 > span')).toHaveText('04');
   for (const selector of ['lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
