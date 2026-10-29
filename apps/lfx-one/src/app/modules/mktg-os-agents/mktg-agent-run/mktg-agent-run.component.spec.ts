@@ -55,7 +55,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { BehaviorSubject, concat, from, NEVER, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -134,19 +134,19 @@ describe('MktgAgentRunComponent', () => {
   let dependencyDocs: Record<string, MktgDependencyDocument>;
   /** Remembered answers per projectUid, returned by the mocked answer memory. */
   let rememberedAnswers: Record<string, MktgAnswerMemory>;
-  let loadRun: ReturnType<typeof vi.fn>;
-  let lastIntake: ReturnType<typeof vi.fn>;
-  let listDocuments: ReturnType<typeof vi.fn>;
+  let loadRun: Mock;
+  let lastIntake: Mock;
+  let listDocuments: Mock;
   let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let generate: ReturnType<typeof vi.fn>;
-  let answerQuestions: ReturnType<typeof vi.fn>;
-  let resolveDependencies: ReturnType<typeof vi.fn>;
-  let resolveBrandKit: ReturnType<typeof vi.fn>;
-  let rememberAnswers: ReturnType<typeof vi.fn>;
-  let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
-  let readFile: ReturnType<typeof vi.fn>;
+  let getProject: Mock;
+  let generate: Mock;
+  let answerQuestions: Mock;
+  let resolveDependencies: Mock;
+  let resolveBrandKit: Mock;
+  let rememberAnswers: Mock;
+  let notifyDocumentsChanged: Mock;
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
+  let readFile: Mock;
   let confirmationService: ConfirmationService;
   const discardPrompt = () => vi.mocked(confirmationService.confirm).mock.calls.at(-1)?.[0];
 

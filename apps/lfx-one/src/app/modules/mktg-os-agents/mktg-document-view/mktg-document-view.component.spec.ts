@@ -58,7 +58,7 @@ import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -124,18 +124,18 @@ describe('MktgDocumentViewComponent', () => {
   const pending = { load: vi.fn(), waitForStorage: vi.fn(), clear: vi.fn() };
   const print = { print: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
 
-  let resolveBrandKit: ReturnType<typeof vi.fn>;
+  let resolveBrandKit: Mock;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
   let store: {
-    listDocuments: ReturnType<typeof vi.fn>;
-    getDocument: ReturnType<typeof vi.fn>;
-    getRevision: ReturnType<typeof vi.fn>;
-    getApprovedRevision: ReturnType<typeof vi.fn>;
-    restoreRevision: ReturnType<typeof vi.fn>;
-    approveRevision: ReturnType<typeof vi.fn>;
-    saveLinkedinShareLink: ReturnType<typeof vi.fn>;
-    retryRun: ReturnType<typeof vi.fn>;
+    listDocuments: Mock;
+    getDocument: Mock;
+    getRevision: Mock;
+    getApprovedRevision: Mock;
+    restoreRevision: Mock;
+    approveRevision: Mock;
+    saveLinkedinShareLink: Mock;
+    retryRun: Mock;
   };
 
   function query(testId: string): HTMLElement | null {

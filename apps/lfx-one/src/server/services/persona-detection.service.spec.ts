@@ -15,12 +15,14 @@ const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger 
 // The strict variants answer from the same stubs (a stub that rejects stands in for an upstream
 // failure), so tests read the same either way; only the service's handling of a rejection differs.
 vi.mock('./access-check.service', () => ({
-  AccessCheckService: vi.fn().mockImplementation(() => ({
-    checkSingleAccess,
-    checkAccess,
-    checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
-    checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
-  })),
+  AccessCheckService: vi.fn().mockImplementation(function () {
+    return {
+      checkSingleAccess,
+      checkAccess,
+      checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
+      checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
+    };
+  }),
 }));
 
 // Answers a batched check from the per-relation stub each test sets on checkSingleAccess, without
@@ -34,22 +36,26 @@ function answerBatchesFromSingleAccessStub(): void {
 }
 
 vi.mock('./project.service', () => ({
-  ProjectService: vi.fn().mockImplementation(() => ({
-    getProjectIdBySlug,
-  })),
+  ProjectService: vi.fn().mockImplementation(function () {
+    return {
+      getProjectIdBySlug,
+    };
+  }),
 }));
 
 // NatsService is only exercised here through resolveRootUid (ROOT slug -> uid). A trivial passthrough
 // codec keeps encode/decode out of scope for these tests, which are about the access-check fan-out, not
 // wire encoding.
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn().mockImplementation(() => ({
-    getCodec: () => ({
-      encode: (v: string) => v,
-      decode: (v: unknown) => v as string,
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn().mockImplementation(function () {
+    return {
+      getCodec: () => ({
+        encode: (v: string) => v,
+        decode: (v: unknown) => v as string,
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 
 vi.mock('./logger.service', () => ({ logger }));

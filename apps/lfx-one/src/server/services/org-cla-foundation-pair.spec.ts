@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import { sanitizeFoundationSfid } from './org-cla-foundation-pair';
 
@@ -30,7 +30,7 @@ function group(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
   };
 }
 
-function orgClaService(response: OrgClaGroupList | Error): { listClaGroups: ReturnType<typeof vi.fn> } {
+function orgClaService(response: OrgClaGroupList | Error): { listClaGroups: Mock } {
   const listClaGroups = vi.fn();
   if (response instanceof Error) {
     listClaGroups.mockRejectedValue(response);
@@ -42,7 +42,7 @@ function orgClaService(response: OrgClaGroupList | Error): { listClaGroups: Retu
 
 // The sanitizer calls `logger.warning(req, ...)` on upstream failure, which routes through
 // `req.log.warn`; a bare `{}` stub throws before the fail-closed path can return undefined.
-function reqWithLogger(): { request: Request; warn: ReturnType<typeof vi.fn> } {
+function reqWithLogger(): { request: Request; warn: Mock } {
   const warn = vi.fn();
   return { request: { log: { warn } } as unknown as Request, warn };
 }
