@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
 /**
  * A plain error message in red with an icon, for under a form field, after a failed action or in an empty panel.
@@ -20,10 +20,10 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
 export class UiErrorComponent {
   /** Text size: `small` 13px, `default` 14px, `large` 16px. */
   public readonly size = input<'small' | 'default' | 'large'>('default');
-  /** Bold label before the message, such as "Error:" or "Email error:". Leave empty for none. */
+  /** Medium-weight label before the message, such as "Error:" or "Email error:". Leave empty for none. */
   public readonly label = input<string>('');
   /** Sets `role="alert"` so the message is announced when it appears after an action. Turn it off for an error already on the page at load. */
-  public readonly announce = input<boolean>(true);
+  public readonly announce = input<boolean, unknown>(true, { transform: booleanAttribute });
 
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly iconClasses: Signal<string> = this.initIconClasses();

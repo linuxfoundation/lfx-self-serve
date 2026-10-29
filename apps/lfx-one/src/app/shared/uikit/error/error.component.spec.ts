@@ -51,7 +51,7 @@ describe('UiErrorComponent', () => {
     expect(icon().className).toContain(iconPad);
   });
 
-  it('shows a bold label before the message', async () => {
+  it('shows a medium-weight label before the message', async () => {
     fixture.componentRef.setInput('label', 'Email error:');
     await fixture.whenStable();
 
