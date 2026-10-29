@@ -8,13 +8,13 @@
     <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
       <div class="flex min-w-0 flex-col gap-1">
-        @if (loading() || !title()) {
+        @if (loading() || (!title() && !errorText())) {
           <div class="h-6 w-56 overflow-hidden" data-testid="mktg-document-view-title-loading">
             <lfx-mktg-skeleton variant="header" />
           </div>
         } @else {
           <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
-            {{ isAeoDocument() ? aeoHeaderTitle() : title() }}
+            {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
           </h1>
         }
         @if (header(); as meta) {
@@ -440,7 +440,7 @@
         <!-- Readers stay mounted while the whole exportable document area waits for its first answers. -->
         <section
           aria-label="Document content"
-          class="flex min-w-0 flex-col gap-3"
+          class="flex min-w-0 flex-col gap-3 print:block"
           [class.hidden]="exportLookupTarget() && !contentReady()"
           data-testid="mktg-document-view-content">
           @if (isAeoDocument() && current.aeoGeoReport?.report) {

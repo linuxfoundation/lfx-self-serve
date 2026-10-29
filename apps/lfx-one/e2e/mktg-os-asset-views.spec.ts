@@ -179,8 +179,7 @@ test.describe('Native FAQ document approval and header', () => {
     await expect(page.getByTestId('mktg-document-view-title-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
-    await expect(page.getByTestId('mktg-document-view-loading')).toHaveAttribute('role', 'status');
-    await expect(page.getByTestId('mktg-document-view-loading')).toHaveText('Loading the document…');
+    await expect(page.getByTestId('mktg-document-view-loading').getByRole('status')).toHaveText('Loading the document…');
     await expect(page.getByTestId('mktg-faq-view')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('loading.png'), fullPage: true });
   });

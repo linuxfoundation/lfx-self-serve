@@ -20,6 +20,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgFamilyComponent } from './mktg-family.component';
+import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.component';
 
 describe('Marketing family page', () => {
   const originalAgents = [...MKTG_AGENTS];
@@ -686,6 +687,49 @@ describe('Marketing family page', () => {
     expect(lastExport).toHaveBeenCalledWith({ project: 'synthetic', familyId: 'positioning-brand' }, true);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).not.toBeNull();
   });
+  it.each([false, true])('keeps the rebuild writer grant after a refresh failure unless access is denied (%s)', async (denied) => {
+    documents.set({ project: 'synthetic', groups: [], approvedFramework: framework });
+    families.update((items) =>
+      items.map((family) => ({ ...family, rows: family.rows.map((row) => (row.asset.id === 'faq' ? { ...row, state: 'needs-rebuild' as const } : row)) }))
+    );
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const panel = harness.routeDebugElement?.query(By.directive(MktgRebuildComponent))?.componentInstance as MktgRebuildComponent;
+    expect(panel.writer()).toBe(true);
+    loading.set(true);
+    await harness.fixture.whenStable();
+    loading.set(false);
+    error.set(denied ? 'You need write access.' : 'The Marketing kit could not be loaded.');
+    accessDenied.set(denied);
+    await harness.fixture.whenStable();
+    expect(documents()).not.toBeNull();
+    expect(panel.writer()).toBe(!denied);
+    expect(panel.canStart()).toBe(!denied);
+    if (!denied) {
+      const update = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-rebuild"] button');
+      expect(update?.disabled).toBe(false);
+      update?.click();
+      await harness.fixture.whenStable();
+      expect(run).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('announces the initial family read in the single mounted status node', async () => {
+    documents.set(null);
+    families.set([]);
+    loading.set(true);
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand', MktgFamilyComponent);
+    const status = harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent?.trim()).toBe('Loading family assets…');
+    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-family-loading"]')).toHaveLength(1);
+    loading.set(false);
+    await harness.fixture.whenStable();
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-loading"]')).toBe(status);
+    expect(status?.textContent?.trim()).toBe('');
+  });
+
   it('keeps the loading status node mounted while changing its announcement', async () => {
     loading.set(true);
     const harness = await RouterTestingHarness.create();

@@ -328,7 +328,8 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-revision-1')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('Current');
     await expect(page.getByTestId('mktg-document-view-revision-3')).toHaveCount(0);
-    const disclosure = list.getByRole('button', { name: 'Show all 9 ▾', exact: true });
+    const disclosure = list.getByTestId('mktg-document-view-show-all-revisions');
+    await expect(disclosure).toHaveText('Show all 9 ▾');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     const top = await list.evaluate((card) => card.getBoundingClientRect().top + window.scrollY);
     await disclosure.click();

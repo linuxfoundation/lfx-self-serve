@@ -410,6 +410,19 @@ describe('MktgDocumentViewComponent', () => {
     expectTitleCardRunAgain();
   });
 
+  it.each([403, 404])('replaces the title skeleton with a neutral heading after a failed first read (%s)', async (status) => {
+    const read = new Subject<MktgDocumentDetailResponse>();
+    store.getDocument.mockReturnValue(read);
+    await render('/documents/icp/living');
+    expect(query('mktg-document-view-title-loading')).not.toBeNull();
+    read.error(new HttpErrorResponse({ status }));
+    await settle();
+    expect(query('mktg-document-view-error')).not.toBeNull();
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.tagName).toBe('H1');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('Document');
+  });
+
   it('does not render a provisional Member 360 title before its period resolves', async () => {
     const read = new Subject<MktgRevisionResponse>();
     store.getRevision.mockReturnValue(read);
@@ -3635,6 +3648,9 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
     await render('/documents/brand-kit/living?revision=legacy-' + 'f'.repeat(64));
 
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(query('mktg-document-view-title')?.tagName).toBe('H1');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('Document');
     expect(query('mktg-document-view-error')?.textContent).toContain('This document has no such revision.');
     expect(query('mktg-document-view-document')).toBeNull();
   });
@@ -3849,6 +3865,26 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
   });
 
+  it('keeps the approved PDF printable while secondary reads hide the screen content', async () => {
+    useFrameworkRevision();
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(false);
+    slidesExport.last.mockReturnValue(NEVER);
+    store.listDocuments.mockReturnValue(NEVER);
+    await render('/documents/foundation-message/living');
+    const content = query('mktg-document-view-content');
+    expect(content?.classList.contains('hidden')).toBe(true);
+    expect(content?.classList.contains('print:block')).toBe(true);
+    expect(query('mktg-framework-view-print')?.closest('[data-testid="mktg-document-view-content"]')).toBe(content);
+    expect(query('mktg-framework-print')?.textContent).toContain('Version 2');
+    const download = query('mktg-framework-view-download-pdf')?.querySelector('button');
+    expect(download?.disabled).toBe(false);
+    download?.click();
+    await settle();
+    expect(print.print).toHaveBeenCalled();
+    expect(content?.classList.contains('hidden')).toBe(true);
+  });
+
   it.each([
     ['history', false],
     ['empty', false],
@@ -3948,6 +3984,9 @@ describe('MktgDocumentViewComponent', () => {
       if (!afterCap) expect(query('mktg-slides-export-panel')).toBe(panel);
       expect(query('mktg-slides-export-last-link')?.textContent).toContain('Open the last export');
       expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe('https://docs.google.com/presentation/d/SyntheticDeck/edit');
+    } else if (answer === 'error' && afterCap) {
+      expect(exporter?.classList.contains('hidden')).toBe(false);
+      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
     } else {
       expect(exporter?.classList.contains('hidden')).toBe(true);
       expect(query('mktg-slides-export-panel')).toBeNull();
@@ -3956,7 +3995,13 @@ describe('MktgDocumentViewComponent', () => {
     const settledPanel = query('mktg-slides-export-panel');
     await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS);
     await settle();
-    expect(query('mktg-slides-export-panel')).toBe(settledPanel);
+    if (answer === 'error') {
+      expect(exporter?.classList.contains('hidden')).toBe(false);
+      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    } else {
+      expect(query('mktg-slides-export-panel')).toBe(settledPanel);
+    }
     expect(query('mktg-framework-view-tabs')).toBe(tabs);
     expect(content?.classList.contains('hidden')).toBe(false);
     expect(query('mktg-document-view-content-skeleton')).toBeNull();

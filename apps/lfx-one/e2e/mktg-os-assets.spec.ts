@@ -172,7 +172,7 @@ test.describe('Marketing OS runs land on assets', () => {
     await expect(page.getByTestId('mktg-document-view-action-loading')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-title-loading').getByRole('status')).toHaveAttribute('aria-busy', 'true');
     await expect(page.getByTestId('mktg-document-view-loading')).toHaveText('Loading the document…');
-    await expect(page.getByTestId('mktg-document-view-loading')).toHaveAttribute('role', 'status');
+    await expect(page.getByTestId('mktg-document-view-loading').getByRole('status')).toBeVisible();
     fixture.finish();
     await expect(page.getByTestId('mktg-document-view-framework')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await page.screenshot({ path: test.info().outputPath('loading-settled.png'), fullPage: true });

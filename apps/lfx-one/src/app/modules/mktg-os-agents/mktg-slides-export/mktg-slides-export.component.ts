@@ -40,8 +40,8 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
 // different approved-current content), asks Update or Create when a deck exists,
 // shows progress while the exporter works, then the deck (opens in a new
 // tab), its slide count and what was branded — or a plain message with a
-// retry. An unreadable history offers Check again only in an existing deck's
-// panel (or a standalone exporter); a first document lookup never adds an error bar.
+// retry. An unreadable history offers Check again in an existing deck's
+// panel (or a standalone exporter); a first document lookup offers it after the paint cap.
 // A panel that comes back to a document whose
 // export is still under way in this tab shows that export instead of
 // offering a second deck. Slides are only an export: the asset itself stays
@@ -50,7 +50,7 @@ import { catchError, distinctUntilChanged, filter, merge, Observable, of, startW
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent, MktgSkeletonComponent],
   templateUrl: './mktg-slides-export.component.html',
-  // Document history is secondary: never show an unknown/failed first lookup after the paint cap.
+  // Document history is secondary: unknown history hides after the paint cap; failures offer retry.
   host: { '[class.hidden]': '!visible()' },
 })
 export class MktgSlidesExportComponent {
@@ -119,7 +119,7 @@ export class MktgSlidesExportComponent {
     if (!this.target()) return MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
     if (this.busy()) return 'An export is already running';
     if (this.lookupFailed()) {
-      if (this.lookupTarget() && !this.last()) return 'Could not check the last export.';
+      if (this.lookupTarget() && !this.last() && !this.historyWaitExpired()) return 'Could not check the last export.';
       return 'Could not check the last export. Use Check again below.';
     }
     return 'Checking the last export…';
@@ -143,12 +143,15 @@ export class MktgSlidesExportComponent {
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
-  /** A failed refresh retains an existing deck's retry; a first document failure has no panel. */
+  /** A failed refresh retains an existing deck's retry; a first document failure offers retry after the paint cap. */
   protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
   protected readonly lookupPending = computed(() => Boolean(this.lastTarget()) && !this.lookupSettled() && !this.lookupFailed() && this.phase() === 'idle');
   public readonly visible = computed(
     () =>
-      (this.lookupPending() && !this.historyWaitExpired()) || this.phase() !== 'idle' || this.last() !== null || (this.lookupFailed() && !this.lookupTarget())
+      (this.lookupPending() && !this.historyWaitExpired()) ||
+      this.phase() !== 'idle' ||
+      this.last() !== null ||
+      (this.lookupFailed() && (!this.lookupTarget() || this.historyWaitExpired()))
   );
 
   private historyWaitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -181,12 +184,14 @@ export class MktgSlidesExportComponent {
           takeUntilDestroyed()
         )
         .subscribe((response) => {
-          this.clearHistoryWait();
           if (!response) {
+            // Keep the cap timer running so a first failure gains a reachable retry
+            // without inserting an error bar before the document's initial paint.
             this.lookupFailed.set(true);
             this.lookupAnswered.emit(JSON.stringify(this.lastTarget()));
             return;
           }
+          this.clearHistoryWait();
           this.lookupFailed.set(false);
           // Keep a local completion ahead of an older in-flight read, but accept
           // a later export made in another tab or by another writer.

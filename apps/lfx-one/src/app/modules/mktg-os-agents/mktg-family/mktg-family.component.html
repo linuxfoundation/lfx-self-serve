@@ -56,12 +56,20 @@
         [projectSlug]="kit.projectQueryParams().project ?? null"
         [projectName]="kit.projectName()"
         [framework]="kit.documents()?.approvedFramework ?? null"
-        [writer]="!!kit.documents() && !kit.error()"
+        [writer]="!!kit.documents() && !kit.accessDenied()"
         [autoStartRevisionId]="hasStale() ? autoRebuild() : ''"
         (started)="rebuildStarted()"
         (changed)="kit.retry()" />
     }
-    <p role="status" class="sr-only" data-testid="mktg-family-loading" [textContent]="kit.loading() && kit.documents() ? 'Refreshing…' : ''"></p>
+    <p role="status" class="sr-only" data-testid="mktg-family-loading">
+      @if (kit.loading()) {
+        @if (kit.documents()) {
+          Refreshing…
+        } @else {
+          Loading family assets…
+        }
+      }
+    </p>
     @if (kit.loading() && !kit.documents()) {
       <div class="h-64 overflow-hidden rounded-lg border border-gray-200 bg-white p-3" data-testid="mktg-family-content-loading">
         <lfx-mktg-skeleton variant="rows" [rows]="4" />
