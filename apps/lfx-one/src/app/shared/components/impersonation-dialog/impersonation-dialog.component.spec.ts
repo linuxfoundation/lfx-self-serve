@@ -6,7 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
 import { SearchService } from '@services/search.service';
@@ -164,19 +164,32 @@ describe('ImpersonationDialogComponent', () => {
       expect(fixture.nativeElement.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe, jdoe, or jdoe@example.com');
     });
 
-    it('does not submit typed text that was not picked', () => {
-      dialog().targetUserForm.controls.targetUser.setValue('jdoe@example.com');
+    it('submits typed text as entered when nothing was picked', () => {
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().targetUserForm.controls.targetUser.setValue('  Jane.Doe@Example.com ');
+
       dialog().submit();
+
+      expect(startImpersonation).toHaveBeenCalledWith('Jane.Doe@Example.com', false);
+    });
+
+    it('does not let Enter start typed text that was not picked', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('jdoe@example.com');
+
       dialog().onEnter();
 
       expect(startImpersonation).not.toHaveBeenCalled();
     });
 
-    it('keeps Start disabled until a person is picked, and enables it once one is', async () => {
+    it('enables Start as soon as there is text or a pick, and disables it when the field is blank', async () => {
       const start = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="impersonation-submit-button"] button');
       expect(start().disabled).toBe(true);
 
       dialog().targetUserForm.controls.targetUser.setValue('jane');
+      await fixture.whenStable();
+      expect(start().disabled).toBe(false);
+
+      dialog().targetUserForm.controls.targetUser.setValue('   ');
       await fixture.whenStable();
       expect(start().disabled).toBe(true);
 
@@ -187,6 +200,45 @@ describe('ImpersonationDialogComponent', () => {
       dialog().targetUserForm.controls.targetUser.setValue('');
       await fixture.whenStable();
       expect(start().disabled).toBe(true);
+    });
+
+    it('refuses typed text that is the signed-in admin’s own username or email', async () => {
+      currentUser = { email: 'admin@example.com', 'https://sso.linuxfoundation.org/claims/username': 'admin' };
+      await createDialog();
+
+      dialog().targetUserForm.controls.targetUser.setValue('ADMIN');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
+      expect(dialog().error()).toBe(IMPERSONATION_SELF_MESSAGE);
+
+      dialog().targetUserForm.controls.targetUser.setValue('Admin@Example.com');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    describe('while switching', () => {
+      beforeEach(async () => {
+        currentUser = { email: 'alex.smith@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+        currentImpersonator = { email: 'Admin@example.com' };
+        await createDialog({ switching: true });
+        startImpersonation.mockReturnValue(NEVER);
+      });
+
+      it('refuses the real admin’s email as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('ADMIN@example.com');
+
+        dialog().submit();
+
+        expect(startImpersonation).not.toHaveBeenCalled();
+        expect(dialog().error()).toBe(IMPERSONATION_SELF_MESSAGE);
+      });
+
+      it('sends the current target on for the server to refuse, not as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('asmith');
+        dialog().submit();
+        expect(startImpersonation).toHaveBeenCalledWith('asmith', true);
+        expect(dialog().error()).not.toBe(IMPERSONATION_SELF_MESSAGE);
+      });
     });
 
     it('does not request impersonation with an empty field', () => {
@@ -266,15 +318,16 @@ describe('ImpersonationDialogComponent', () => {
       expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
     });
 
-    it('drops the pick and its details, and stops submitting, once the name is edited', async () => {
+    it('drops the pick and its details, and submits what was typed instead, once the name is edited', async () => {
       pick(jane);
+      startImpersonation.mockReturnValueOnce(NEVER);
       dialog().targetUserForm.controls.targetUser.setValue('someone.else');
       await fixture.whenStable();
 
       dialog().submit();
 
       expect(details()).toBeUndefined();
-      expect(startImpersonation).not.toHaveBeenCalled();
+      expect(startImpersonation).toHaveBeenCalledWith('someone.else', false);
     });
 
     it('drops the pick when the field is cleared', async () => {

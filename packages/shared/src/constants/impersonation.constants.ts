@@ -19,6 +19,8 @@ export const IMPERSONATION_ALREADY_TARGET_CODE = 'ALREADY_IMPERSONATING_TARGET';
 
 export const IMPERSONATION_ALREADY_TARGET_MESSAGE = 'You are already impersonating this user. Choose a different user to switch to.';
 
+export const IMPERSONATION_SELF_MESSAGE = 'You cannot impersonate yourself. Enter a different username or email address.';
+
 /** Copy shown by the page-level overlay while an impersonation change is in flight, keyed by transition. */
 export const IMPERSONATION_TRANSITION_MESSAGES: Record<ImpersonationTransition, string> = {
   starting: 'Starting impersonation...',
