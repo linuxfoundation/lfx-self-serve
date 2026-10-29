@@ -43,6 +43,38 @@ describe('MktgPrintService', () => {
     expect(document.body.classList.contains(CLASS)).toBe(false);
   });
 
+  it('printNow opens the dialog synchronously and cancels an older asynchronous print', async () => {
+    const service = configure();
+    const pending = service.print('old-print');
+    service.printNow(CLASS);
+    expect(print).toHaveBeenCalledOnce();
+    expect(document.body.classList.contains(CLASS)).toBe(true);
+    await pending;
+    expect(print).toHaveBeenCalledOnce();
+    expect(document.body.classList.contains('old-print')).toBe(false);
+    window.dispatchEvent(new Event('afterprint'));
+    expect(document.body.classList.contains(CLASS)).toBe(false);
+  });
+
+  it('deduplicates font preparation by family and weight set without printing', async () => {
+    const service = configure();
+    const doc = TestBed.inject(DOCUMENT);
+    const load = vi.fn(() => Promise.resolve([]));
+    Object.defineProperty(doc, 'fonts', { value: { load }, configurable: true });
+    try {
+      const first = service.prepare('Synthetic Font', [600, 400]);
+      expect(service.prepare('Synthetic Font', [400, 600, 600])).toBe(first);
+      await first;
+      expect(service.prepare('Synthetic Font', [400, 600])).toBe(first);
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(print).not.toHaveBeenCalled();
+      await service.prepare('Synthetic Font', [700]);
+      expect(load).toHaveBeenCalledTimes(3);
+    } finally {
+      delete (doc as unknown as Record<string, unknown>)['fonts'];
+    }
+  });
+
   it('loads the brand’s typeface before the dialog opens', async () => {
     const service = configure();
     const doc = TestBed.inject(DOCUMENT);
@@ -111,7 +143,10 @@ describe('MktgPrintService', () => {
   });
 
   it('does nothing on the server', async () => {
-    await configure('server').print(CLASS);
+    const service = configure('server');
+    await service.prepare('Synthetic Font');
+    service.printNow(CLASS);
+    await service.print(CLASS);
 
     expect(print).not.toHaveBeenCalled();
     expect(document.body.classList.contains(CLASS)).toBe(false);
