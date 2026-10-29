@@ -119,17 +119,24 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('Could not fully refresh');
   });
 
-  it('emits terminal questions/failure once and refreshes a failed record only once', async () => {
+  it.each([true, false])('emits terminal questions/failure once and refreshes a failed record only once (selected: %s)', async (selected) => {
     await setup();
     read.mockReturnValue(of(detail([{ ...run, state: 'failed', persistenceFailed: true }])));
     const failed = vi.fn();
     fixture.componentInstance.failed.subscribe(failed);
     fixture.componentRef.setInput('runAgentId', type.catalogAgentId);
     fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('runId', selected ? runId : '');
     await fixture.whenStable();
     expect(failed).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
+    if (selected) {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false, undefined, false, runId);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
+    } else {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId);
+    }
     expect(text()).toContain('retries saving the existing result');
     const retry = vi.fn();
     fixture.componentInstance.retry.subscribe(retry);
