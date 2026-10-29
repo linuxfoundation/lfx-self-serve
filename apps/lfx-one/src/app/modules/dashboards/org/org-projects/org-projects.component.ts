@@ -992,8 +992,9 @@ export class OrgProjectsComponent {
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
-    const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
-    const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
+    // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
+    // predicate and match nothing, so a selection never widens the list or the CSV export.
+    const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));

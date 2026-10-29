@@ -16,7 +16,7 @@ import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
 import { NEVER, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectsComponent } from './org-projects.component';
 
@@ -306,5 +306,46 @@ describe('OrgProjectsComponent — health label', () => {
     } finally {
       responseExtra = {};
     }
+  });
+
+  describe('Employees filter', () => {
+    beforeEach(() => {
+      PROJECTS[0].contributors = [{ id: 'p-known', name: 'Known Person', avatarUrl: '' }];
+      PROJECTS[1].participants = [{ id: 'p-other', name: 'Other Person', avatarUrl: '' }];
+    });
+
+    afterEach(() => {
+      PROJECTS[0].contributors = [];
+      PROJECTS[1].participants = [];
+    });
+
+    const select = async (employees: string[]): Promise<void> => {
+      component['filterForm'].controls.employees.setValue(employees);
+      component['reload'].update((n: number) => n + 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('shows every project with no employees selected', async () => {
+      await select([]);
+
+      expect(component['sortedProjects']().map((p) => p.name)).toEqual(expect.arrayContaining(PROJECTS.map((p) => p.name)));
+      expect(component['totalRecords']()).toBe(PROJECTS.length);
+    });
+
+    it('shows no projects and disables the CSV export when only unknown employees are selected', async () => {
+      await select(['p-unknown']);
+
+      expect(component['sortedProjects']()).toEqual([]);
+      expect(component['totalRecords']()).toBe(0);
+      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-projects-export-csv"] button')?.hasAttribute('disabled')).toBe(true);
+    });
+
+    it('matches only the known employees in a mixed selection', async () => {
+      await select(['p-known', 'p-unknown']);
+
+      expect(component['sortedProjects']().map((p) => p.name)).toEqual(['Alpha']);
+    });
   });
 });
