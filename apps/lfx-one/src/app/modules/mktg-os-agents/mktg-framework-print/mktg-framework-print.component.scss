@@ -37,7 +37,7 @@
   break-after: avoid;
 
   > span {
-    color: var(--mfp-accent);
+    color: var(--mfp-chapter-accent);
     font-size: 11pt;
     font-weight: 600;
   }
@@ -47,7 +47,7 @@
     flex: 1;
     min-width: 18pt;
     height: 1pt;
-    background-color: var(--mfp-accent);
+    background-color: var(--mfp-chapter-accent);
   }
 }
 

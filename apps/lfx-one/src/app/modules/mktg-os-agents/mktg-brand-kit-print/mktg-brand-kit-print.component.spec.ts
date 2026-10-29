@@ -39,6 +39,9 @@ it('prints five native portrait chapters with branded heads, real SVG logo asset
   expect(root.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V3.0');
   expect(root.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
   expect(root.querySelectorAll('lfx-mktg-print-chapter-header')).toHaveLength(5);
+  root.querySelectorAll<HTMLElement>('lfx-mktg-print-chapter-header').forEach((header) => {
+    expect(header.style.getPropertyValue('--mfp-chapter-accent')).toBe(view.accent);
+  });
   expect(root.querySelector('[data-testid="kit-print-lockups"] img')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
   expect(root.querySelectorAll('.lfx-brand-kit-book, .lfx-brand-kit-page, canvas, iframe')).toHaveLength(0);
   expect(print.ensureFontStylesheet).toHaveBeenCalledWith(view.fontUrl);
@@ -132,6 +135,25 @@ it('keeps captioned pairs indivisible with explicit frame heights and the intro 
       }
       expect(styles.aspectRatio).not.toContain('/');
     });
+  });
+});
+
+it('contains logos and brand lines inside padded frame boxes without clipping at the edge', async () => {
+  const { root } = await setup();
+  root.querySelectorAll<HTMLElement>('.kit-usage-frame').forEach((frame) => {
+    const inner = frame.querySelector<HTMLElement>('.kit-usage-inner');
+    if (!inner) throw new Error('Missing synthetic padded usage box');
+    expect(inner.querySelector('img')).not.toBeNull();
+    expect(inner.querySelector('p')).not.toBeNull();
+    const styles = getComputedStyle(inner);
+    const mm = frame.getAttribute('data-layout') === 'report' ? 3 : 2.5;
+    const padding = styles.paddingTop;
+    const px = padding.endsWith('mm') ? (Number.parseFloat(padding) * 96) / 25.4 : Number.parseFloat(padding);
+    expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
+    const logo = inner.querySelector('img');
+    if (!logo) throw new Error('Missing synthetic usage logo');
+    expect(getComputedStyle(logo).objectFit).toBe('contain');
+    expect(getComputedStyle(logo).maxWidth).toBe('100%');
   });
 });
 

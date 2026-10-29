@@ -69,7 +69,7 @@
   <!-- 01 · FRAMEWORK: the statements, the goal columns, say and avoid, the anchor questions -->
   <section [class]="section" aria-label="Framework" data-testid="mktg-framework-print-framework">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" />
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.1' : v.sections[0].number" [title]="v.sections[0].title" [accent]="v.brand.accent" />
     <div class="grid grid-cols-2 gap-[10pt]">
       <div [class]="card">
         <span [class]="eyebrow">Vision</span>
@@ -183,7 +183,7 @@
   <!-- 02 · ICPs: one card per segment -->
   <section [class]="section" aria-label="ICPs" data-testid="mktg-framework-print-icps">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" />
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.2' : v.sections[1].number" [title]="v.sections[1].title" [accent]="v.brand.accent" />
     @for (icp of v.icps; track icp.id) {
       <article [class]="card" [attr.data-testid]="'mktg-framework-print-icp-' + icp.id">
         <div class="flex flex-wrap items-baseline gap-[8pt]">
@@ -242,7 +242,7 @@
   <!-- 03 · MESSAGE HOUSE: the roof (umbrella and line), three pillars, the foundation, the audiences -->
   <section [class]="section" aria-label="Message house" data-testid="mktg-framework-print-message-house">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.3' : v.sections[2].number" [title]="v.sections[2].title" />
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.3' : v.sections[2].number" [title]="v.sections[2].title" [accent]="v.brand.accent" />
     <div class="flex flex-col gap-[8pt] break-inside-avoid">
       <div class="flex flex-col items-center gap-[4pt] rounded-[6pt] bg-[color:var(--mfp-dark)] p-[14pt] text-center text-[color:var(--mfp-on-dark)]">
         <span class="text-[7pt] font-semibold uppercase tracking-[0.16em] opacity-70">Umbrella</span>
@@ -286,7 +286,7 @@
   <!-- 04 · KEY NUMBERS -->
   <section [class]="section" aria-label="Key numbers" data-testid="mktg-framework-print-numbers">
     <ng-container *ngTemplateOutlet="runningHead" />
-    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.4' : v.sections[3].number" [title]="v.sections[3].title" />
+    <lfx-mktg-print-chapter-header [number]="number() ? number() + '.4' : v.sections[3].number" [title]="v.sections[3].title" [accent]="v.brand.accent" />
     <div class="grid grid-cols-3 gap-[10pt]">
       @for (row of v.numbers; track $index) {
         <div class="items-center text-center" [class]="tinted">

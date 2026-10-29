@@ -16,7 +16,7 @@
     <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-boilerplates-print-length">
       @if (first) {
         <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' Boilerplates'" />
-        <lfx-mktg-print-chapter-header [number]="number()" title="Boilerplates" />
+        <lfx-mktg-print-chapter-header [number]="number()" title="Boilerplates" [accent]="v.brand.accent" />
       }
       <h3 class="border-b border-black/10 pb-[6pt] text-[11pt] font-semibold break-after-avoid">{{ length.label }}</h3>
       <p class="whitespace-pre-line rounded-[6pt] bg-[color:var(--mfp-tint)] p-[10pt]">{{ length.text }}</p>
