@@ -20,29 +20,7 @@
       title="Non-member participation unavailable"
       subtitle="We could not load non-member participation for this foundation. Refresh the page to try again."
       data-testid="engagement-non-member-participation-error" />
-  } @else if (!loading() && scopeEmpty()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No non-member organizations recorded for this foundation"
-      subtitle="The analytics model has no non-member participation records for this foundation."
-      data-testid="engagement-non-member-participation-empty" />
-  } @else if (!loading() && totalRecords() === 0 && !periodCounts()) {
-    <!-- Unmeasured attendance is not a measured zero, so it must not read as "none attended". -->
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="Non-member attendance is not available for this period"
-      subtitle="The analytics model has not measured non-member attendance for this period."
-      data-testid="engagement-non-member-participation-period-unmeasured" />
-  } @else if (!loading() && totalRecords() === 0) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No non-member organizations attended a meeting in this period"
-      subtitle="Choose another period to see non-member organizations that attended earlier."
-      data-testid="engagement-non-member-participation-period-empty" />
-  } @else {
+  } @else if (!empty()) {
     <lfx-table
       styleClass="hm-table"
       [rowHover]="false"

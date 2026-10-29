@@ -297,6 +297,8 @@ export class OrgContributionsComponent {
       profileUrl: commit.profileUrl,
       sourceIconClass: commit.sourceIconClass,
       defaultTab: 'code',
+      // The Code tab's Maintainer pills follow the page's range.
+      range: this.filterForm.controls.dateRange.value,
     });
   }
 

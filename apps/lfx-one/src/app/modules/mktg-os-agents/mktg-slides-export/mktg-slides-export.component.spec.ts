@@ -17,7 +17,7 @@ import {
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgSlidesExportComponent } from './mktg-slides-export.component';
 
@@ -69,9 +69,9 @@ describe('MktgSlidesExportComponent', () => {
   let started: MktgSlidesExportStartResponse;
   let pollResult: Observable<MktgSlidesExportResultResponse>;
   let service: {
-    last: ReturnType<typeof vi.fn>;
-    start: ReturnType<typeof vi.fn>;
-    poll: ReturnType<typeof vi.fn>;
+    last: Mock;
+    start: Mock;
+    poll: Mock;
   };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;

@@ -70,6 +70,16 @@
         ariaLabel="Count all commits, only main branch commits or all code contributions"
         dataTest="org-people-contributors-metric-filter" />
     </div>
+    <div class="w-full md:w-48">
+      <lfx-select
+        [form]="filterForm"
+        control="employment"
+        size="small"
+        [options]="employmentOptions"
+        styleClass="w-full"
+        [ariaLabel]="employmentLabel"
+        dataTest="org-people-contributors-employment-filter" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"
@@ -103,8 +113,20 @@
         }
       } @else {
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-maintainers">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.maintainers | number }}</div>
-          <div class="mt-1 text-xs text-gray-500">Maintainers</div>
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ (response().stats.maintainerRoles | number) ?? '—' }}</div>
+          <div class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+            {{ maintainerRolesLabel }}
+            <button
+              type="button"
+              class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="How maintainer roles are counted"
+              [pTooltip]="maintainerRolesTooltip"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              data-testid="org-people-contributors-stat-maintainers-info">
+              <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-contributors">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.contributors | number }}</div>
@@ -259,7 +281,19 @@
                   </button>
                 </td>
                 <td class="px-4 py-3 align-middle">
-                  @if (row.role === 'Maintainer') {
+                  @if (maintainerRolesUnavailable()) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded bg-transparent p-0 text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                      [pTooltip]="maintainerRolesUnavailableHint"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-role-unavailable'"
+                      (click)="$event.stopPropagation()">
+                      &mdash;
+                    </button>
+                  } @else if (row.role === 'Maintainer') {
                     <span
                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                       Maintainer
@@ -315,7 +349,18 @@
                                   }
                                 </td>
                                 <td class="px-3 py-2.5">
-                                  @if (sub.role === 'Maintainer') {
+                                  @if (maintainerRolesUnavailable()) {
+                                    <button
+                                      type="button"
+                                      class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                                      [pTooltip]="maintainerRolesUnavailableHint"
+                                      tooltipPosition="top"
+                                      tooltipEvent="both"
+                                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-' + sub.projectId + '-role-unavailable'">
+                                      &mdash;
+                                    </button>
+                                  } @else if (sub.role === 'Maintainer') {
                                     <span
                                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                       Maintainer
@@ -369,7 +414,7 @@
     </div>
 
     <p class="text-xs text-gray-400" data-testid="org-people-contributors-sources">
-      Source: CDP (Crowd.dev) code-contribution activity, with declared maintainer flags from silver_dim_maintainers; retired projects excluded
+      Source: CDP (Crowd.dev) code-contribution activity, with maintainer roles from project governance files; retired projects excluded
     </p>
   }
 </div>

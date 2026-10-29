@@ -27,6 +27,7 @@ import {
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
   sortHealthMetricsOverviewBoardRows,
+  toHealthMetricsOverviewKpiStripLayout,
   toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
 } from './health-metrics-overview.utils';
@@ -955,6 +956,23 @@ describe('buildHealthMetricsOverviewPastTrendView', () => {
 
   it('leaves last year out without a curve', () => {
     expect(buildHealthMetricsOverviewPastTrendView(row, null, null).kpis[1].value).toBe('—');
+  });
+});
+
+describe('toHealthMetricsOverviewKpiStripLayout', () => {
+  it('keeps a row while every item has 170px, and before the strip is measured', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(null, 4)).toBe('row');
+    expect(toHealthMetricsOverviewKpiStripLayout(340, 2)).toBe('row');
+  });
+
+  it('stacks a narrower strip in one column', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('stack');
+  });
+
+  it('makes four items a 2 × 2 grid while two columns still have 170px each, and stacks them below that', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 4)).toBe('stack');
   });
 });
 

@@ -9,6 +9,7 @@ import {
   AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
   AUDIENCE_REGISTRANTS_EVENT_MESSAGE,
   AUDIENCE_SPEAKER_SCOPES,
+  CAMPAIGN_EMAIL_STAGES,
 } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
@@ -791,6 +792,16 @@ export class AudienceBuilderController {
 
     try {
       const eventName = typeof body.eventName === 'string' ? body.eventName.trim() : '';
+      // The send's email stage, forwarded so campaign-service can set the current-registrants
+      // check aside for a Post-Event send (lfx-v2-campaign-service#244). The UI's stages are
+      // spelled exactly as campaign-service's enum. Refused rather than dropped when present
+      // but unknown: a dropped stage would silently audit a thank-you send as a registration push.
+      const rawStage: unknown = body.stage;
+      const stage = CAMPAIGN_EMAIL_STAGES.find((known) => known === rawStage);
+      if (rawStage !== undefined && rawStage !== null && rawStage !== '' && stage === undefined) {
+        next(invalid(req, 'audience_qa_run', 'stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`));
+        return;
+      }
       const sendSuppression = body.sendSuppressionListIds === undefined ? [] : stringArray(body.sendSuppressionListIds);
       if (!sendSuppression) {
         next(invalid(req, 'audience_qa_run', 'sendSuppressionListIds', `sendSuppressionListIds must be an array of at most ${MAX_LIST_IDS} list ids`));
@@ -801,6 +812,7 @@ export class AudienceBuilderController {
         targetsEu: body.targetsEu === true,
         targetsCa: body.targetsCa === true,
         ...(eventName ? { eventName } : {}),
+        ...(stage ? { stage } : {}),
         ...(sendSuppression.length ? { sendSuppressionListIds: sendSuppression } : {}),
       });
 

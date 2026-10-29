@@ -12,14 +12,7 @@
       data-testid="members-bridge-error" />
   } @else if (loading()) {
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="members-bridge-loading" aria-hidden="true" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-waterfall"
-      title="No membership movement recorded yet"
-      subtitle="Once this foundation has members, how the base changed each year appears here."
-      data-testid="members-bridge-empty" />
-  } @else {
+  } @else if (!empty()) {
     <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500" data-testid="members-bridge-heading">{{ view().heading }}</h4>
 
     @if (view().yearMeasured) {

@@ -28,14 +28,7 @@
       data-testid="engagement-meeting-participation-error" />
   } @else if (loading()) {
     <p-skeleton height="8rem" borderRadius="0.5rem" data-testid="engagement-meeting-participation-loading" aria-hidden="true" />
-  } @else if (!totalPeriod()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-calendar-days"
-      title="Meeting participation data is not available yet"
-      subtitle="This foundation has no meeting participation data in the analytics model yet."
-      data-testid="engagement-meeting-participation-empty" />
-  } @else {
+  } @else if (!empty()) {
     <!-- The design's hero: value with its delta inline, caption below, then label-over-value side stats. -->
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
       <div class="flex flex-col gap-2" data-testid="engagement-meeting-participation-hero">

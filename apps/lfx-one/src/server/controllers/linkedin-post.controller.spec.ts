@@ -17,6 +17,8 @@ vi.mock('@lfx-one/shared/constants', async (original) => {
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
+  active: vi.fn(),
+  open: vi.fn(),
   history: vi.fn(),
   ownedResult: vi.fn(),
   attribution: vi.fn(),
@@ -36,6 +38,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
+    public assertSingleActiveOneOffRun = mocks.active;
+    public assertRunOpen = mocks.open;
     public ownedOneOffResult = mocks.ownedResult;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
@@ -102,6 +106,37 @@ describe('LinkedIn endpoint boundaries', () => {
     mocks.history.mockReset().mockResolvedValue(undefined);
     mocks.start.mockResolvedValue({ sessionId: 'session-one', documentId: 'run-0123456789abcdef01234567', source: { words: 12 } });
     mocks.result.mockResolvedValue({ status: 'pending' });
+    mocks.open.mockReset().mockResolvedValue(undefined);
+  });
+  it('names the complete Generate allow-list when an unexpected input is submitted', async () => {
+    const next = vi.fn();
+    await new LinkedinPostController().generate(request({ project: 'project-one', answers: {}, feedback: 'unexpected' }), response(), next);
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({
+        validationErrors: [expect.objectContaining({ field: 'body', message: 'Only answers, setup, project and discard inputs are accepted.' })],
+      })
+    );
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it('refuses another active run before creating a session and passes the discard id to preflight only', async () => {
+    const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
+    const req = request({ project: 'project-one', answers: { content_source: 'text', content_text: 'Synthetic source' }, discard: 'a'.repeat(64) });
+    const next = vi.fn();
+    mocks.active.mockRejectedValueOnce(conflict);
+    await new LinkedinPostController().generate(req, response(), next);
+    expect(next).toHaveBeenCalledWith(conflict);
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.active).toHaveBeenCalledWith(req, 'project-one', 'linkedin-post', 'a'.repeat(64));
+    await new LinkedinPostController().generate(req, response(), vi.fn());
+    expect(mocks.start).toHaveBeenCalledWith(
+      req,
+      'subject-one',
+      req.body.answers,
+      undefined,
+      expect.any(String),
+      expect.objectContaining({ uid: 'project-one' })
+    );
   });
   it('delegates owned completion only after HMAC and writer checks, without applying policy in the controller', async () => {
     const body = { sessionId: 'session-one', ownerToken: createSessionOwnerToken('subject-one', 'session-one'), project: 'project-one' };
@@ -134,6 +169,7 @@ describe('LinkedIn endpoint boundaries', () => {
     await controller.answer(request(body), res, next);
     expect(next).not.toHaveBeenCalled();
     expect(mocks.answer).toHaveBeenCalledWith(expect.anything(), 'session-one', body.questionsId, body.answers, 'linkedin-post');
+    expect(mocks.open.mock.invocationCallOrder[0]).toBeLessThan(mocks.answer.mock.invocationCallOrder[0]);
     expect(res.json).toHaveBeenCalledWith({ success: true });
     expect(mocks.resume).toHaveBeenCalledWith(expect.anything(), 'project-one', 'session-one', body.questionsId);
     mocks.answer.mockClear();
@@ -146,6 +182,24 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 403 }));
     expect(mocks.answer).not.toHaveBeenCalled();
     expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it.each(['discarded', 'superseded'])('refuses LinkedIn answers on a %s session before Guild', async (state) => {
+    const failure = Object.assign(new Error(`This run was ${state}.`), { statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+    mocks.open.mockRejectedValueOnce(failure);
+    const body = {
+      sessionId: 'session-one',
+      ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+      project: 'project-one',
+      questionsId: 'a'.repeat(64),
+      answers: [{ key: 'tendency', text: 'Synthetic answer', origin: 'accepted' }],
+    };
+    const next = vi.fn();
+    await new LinkedinPostController().answer(request(body), response(), next);
+    expect(mocks.open).toHaveBeenCalledWith(expect.anything(), 'project-one', 'linkedin-post', 'session-one');
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.answer).not.toHaveBeenCalled();
+    expect(mocks.resume).not.toHaveBeenCalled();
   });
 
   it('preflights storage before Guild and captures private metadata before acknowledging Generate', async () => {

@@ -26,22 +26,26 @@ describe('NavbarCollapseService', () => {
   beforeEach(() => {
     localStorage.clear();
     queries = { narrow: { matches: false, listeners: [] }, touch: { matches: false, listeners: [] } };
-    vi.spyOn(window, 'matchMedia').mockImplementation((media: string) => {
-      const entry = media.includes('pointer: coarse') ? queries['touch'] : queries['narrow'];
-      return {
-        get matches() {
-          return entry.matches;
-        },
-        media,
-        addEventListener: (_type: string, listener: () => void) => entry.listeners.push(listener),
-        removeEventListener: vi.fn(),
-      } as unknown as MediaQueryList;
-    });
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((media: string) => {
+        const entry = media.includes('pointer: coarse') ? queries['touch'] : queries['narrow'];
+        return {
+          get matches() {
+            return entry.matches;
+          },
+          media,
+          addEventListener: (_type: string, listener: () => void) => entry.listeners.push(listener),
+          removeEventListener: vi.fn(),
+        } as unknown as MediaQueryList;
+      })
+    );
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('starts docked open until init, so SSR and the first client render agree', () => {
