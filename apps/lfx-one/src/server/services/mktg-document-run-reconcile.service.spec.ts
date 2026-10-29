@@ -346,6 +346,20 @@ describe('MktgDocumentRunService', () => {
     expect((await service.reconcile(visitor, project))[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
     expect((await service.refreshFailure(creator, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(reply);
     expect((await service.refreshFailure(visitor, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    vi.advanceTimersByTime(3000);
+    await service.reconcile(visitor, project); // Prime a stable, viewer-neutral terminal entry.
+    flows.result.mockClear();
+    flows.head.mockClear();
+    flows.get.mockClear();
+    for (const reader of [creator, visitor, creator, visitor]) {
+      const progress = (await service.reconcile(reader, project))[0];
+      if (reader === creator) expect(progress.failureText).toContain('Synthetic creator-only reply.');
+      else expect(progress.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+      expect(JSON.stringify(progress)).not.toContain('synthetic-creator');
+    }
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.head).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
   });
 
   it.each(types)('passes $agentKey creator attribution separately from the visiting writer', async (type) => {

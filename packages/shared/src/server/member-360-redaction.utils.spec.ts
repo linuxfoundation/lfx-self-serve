@@ -3,8 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 import { createMember360Redactor, member360CandidateContacts } from './member-360-redaction.utils';
+import { MKTG_HISTORY_SUBJECT_PATTERN } from '../constants/mktg-os-agents.constants';
 
 describe('Member 360 exact contact redaction', () => {
+  it('unions known contacts containing a subject and overlapping provider spans before replacement', () => {
+    const contact = 'Synthetic Contact (oidc|contact-1)';
+    expect(createMember360Redactor([contact], MKTG_HISTORY_SUBJECT_PATTERN)(`Ask ${contact}.`)).toBe('Ask [contact redacted].');
+    expect(createMember360Redactor(['oidc'], MKTG_HISTORY_SUBJECT_PATTERN)('oidc|contact-1')).toBe('[contact redacted]');
+  });
   it('collects only contact strings structurally, even from incomplete candidates', () => {
     const candidate = {
       tabs: { member_ranking: [null, 'not a row', { key_contact: 42 }, { key_contact: 'opaque-contact-1' }, { key_contact: 'owner@example.test' }] },

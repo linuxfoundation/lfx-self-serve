@@ -338,6 +338,17 @@ describe('MktgAgentsController', () => {
     expect(JSON.stringify(json.mock.calls)).not.toContain('other-subject');
   });
 
+  it('redacts a whole known contact containing a provider subject before rewriting identities', async () => {
+    const contact = 'Synthetic Contact (oidc|contact-1)';
+    guildMocks.getHistory.mockResolvedValue([{ id: 'event-1', sender: 'agent', text: `Ask ${contact}.`, timestamp: '10:00' }]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: contact }] } }),
+    ]);
+    const json = vi.fn();
+    await controller.history({ body: { sessionId: 'session-1', ownerToken: 'synthetic-token' } } as Request, { json } as unknown as Response, vi.fn());
+    expect(json).toHaveBeenCalledWith({ messages: [{ id: 'event-1', sender: 'agent', text: 'Ask [contact redacted].', timestamp: '10:00' }] });
+  });
+
   describe('last intake GET', () => {
     it.each([null, { answers: { website_url: 'https://project.example' }, documentCount: 2, logoCount: 0 }])(
       'returns writer-only history without caching (%s)',

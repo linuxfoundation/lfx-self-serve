@@ -308,12 +308,12 @@ export class MktgAgentsController {
       const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
       // Contact masks and the caller's raw subject are server-only inputs.
       // Project only the chat DTO: no upstream identity/contact records or extras.
-      const redact = createMember360Redactor([...contacts, userId]);
+      const redact = createMember360Redactor([...contacts, userId], MKTG_HISTORY_SUBJECT_PATTERN);
       const response: MktgHistoryResponse = {
         messages: messages.map(({ id, sender, text, timestamp }) => ({
           id,
           sender,
-          text: redact(text.replace(MKTG_HISTORY_SUBJECT_PATTERN, '[contact redacted]')),
+          text: redact(text),
           timestamp,
         })),
       };
