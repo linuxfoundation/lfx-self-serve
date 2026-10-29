@@ -123,9 +123,10 @@ export class MktgDocumentsController {
       const progress = await this.documentRuns.readProgress(req, project, undefined, undefined, req.query['poll'] === '1');
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
-      const selected = req.query['ownRuns'] === '1' ? await this.documentRuns.ownProgress(req, project, progress) : progress;
+      const ownRuns = req.query['ownRuns'] === '1';
+      const selected = ownRuns ? await this.documentRuns.ownProgress(req, project, progress) : progress;
       res.setHeader('Cache-Control', 'private, no-store');
-      res.json({ ...documents, ...selected });
+      res.json({ ...documents, ...selected, ...(ownRuns && { creatorScoped: true }) });
     } catch (error) {
       next(error);
     }

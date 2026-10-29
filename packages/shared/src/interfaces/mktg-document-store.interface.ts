@@ -249,6 +249,8 @@ export interface MktgDocumentGroup {
 
 /** Response of `GET /api/mktg-agents/documents?project=<uid>`. */
 export interface MktgDocumentsResponse extends Partial<MktgDocumentRunSnapshot> {
+  /** Present only after the BFF applied the effective viewer's private creator filter. No identity data. */
+  creatorScoped?: boolean;
   project: string;
   groups: MktgDocumentGroup[];
   /** Approved-current framework identity for the Downstream card and rebuild precondition. */

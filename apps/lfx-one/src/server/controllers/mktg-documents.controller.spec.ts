@@ -270,7 +270,7 @@ describe('MktgDocumentsController', () => {
     expect(loggerMocks.error).not.toHaveBeenCalled();
   });
 
-  it('filters only an opted-in owned roster after canonical writer access without adding DTO fields', async () => {
+  it('attests the applied opted-in creator filter without returning identity fields', async () => {
     const row = runProgress({ agentKey: 'member-360', documentId: 'run-0123456789abcdef01234567' });
     const snapshot = { runs: [row] };
     storeMocks.listDocuments.mockResolvedValue({ project: PROJECT, groups: [] });
@@ -280,7 +280,7 @@ describe('MktgDocumentsController', () => {
     const res = buildRes();
     await controller.listDocuments(req, res, next);
     expect(runMocks.ownProgress).toHaveBeenCalledWith(req, PROJECT, snapshot);
-    expect(res.json).toHaveBeenCalledWith({ project: PROJECT, groups: [], runs: [] });
+    expect(res.json).toHaveBeenCalledWith({ project: PROJECT, groups: [], runs: [], creatorScoped: true });
     expect(next).not.toHaveBeenCalled();
   });
   it('lists the documents of the SERVER-resolved project for a writer', async () => {
