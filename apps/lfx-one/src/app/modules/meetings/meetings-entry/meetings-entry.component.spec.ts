@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { PLATFORM_ID, signal, Component } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { MEETINGS_REDESIGN_FLAG, MEETINGS_REDESIGN_READY_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -176,13 +176,25 @@ describe('MeetingsEntryComponent', () => {
     expect(getFlagOverride).not.toHaveBeenCalled();
   });
 
+  it('falls back to the existing dashboard when the redesign chunk fails to load', async () => {
+    flagValue.set(true);
+    TestBed.configureTestingModule({ deferBlockBehavior: DeferBlockBehavior.Manual });
+
+    const fixture = await create();
+    const [deferBlock] = await fixture.getDeferBlocks();
+    await deferBlock.render(DeferBlockState.Error);
+
+    expect(has(fixture, 'stub-v1')).toBe(true);
+    expect(has(fixture, 'meetings-entry-loading')).toBe(false);
+  });
+
   it('shows the loader, then the existing dashboard, when the provider never becomes ready', async () => {
     providerReady.set(false);
     flagValue.set(true);
 
     const fixture = await create();
     expect(has(fixture, 'meetings-entry-loading')).toBe(true);
-    expect(waitForReady).toHaveBeenCalledWith(expect.objectContaining({ flag: MEETINGS_REDESIGN_FLAG }), MEETINGS_REDESIGN_READY_TIMEOUT_MS);
+    expect(waitForReady).toHaveBeenCalledWith(expect.objectContaining({ flag: MEETINGS_REDESIGN_FLAG }));
 
     resolveReady(false);
     await fixture.whenStable();

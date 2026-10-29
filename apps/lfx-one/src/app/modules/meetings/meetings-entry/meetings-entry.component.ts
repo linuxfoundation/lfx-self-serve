@@ -4,7 +4,7 @@
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal, untracked, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
-import { MEETINGS_REDESIGN_FLAG, MEETINGS_REDESIGN_READY_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 
@@ -57,10 +57,7 @@ export class MeetingsEntryComponent {
     }
 
     if (!this.featureFlagService.providerReady()) {
-      const ready = await this.featureFlagService.waitForReady(
-        { guard: 'MeetingsEntryComponent', flag: MEETINGS_REDESIGN_FLAG },
-        MEETINGS_REDESIGN_READY_TIMEOUT_MS
-      );
+      const ready = await this.featureFlagService.waitForReady({ guard: 'MeetingsEntryComponent', flag: MEETINGS_REDESIGN_FLAG });
       if (!ready) {
         this.resolve(false);
         return;

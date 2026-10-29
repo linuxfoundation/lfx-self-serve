@@ -7,6 +7,8 @@
       <lfx-meetings-redesign />
     } @placeholder {
       <ng-container [ngTemplateOutlet]="loading" />
+    } @error {
+      <lfx-meetings-dashboard />
     }
   }
   @case ('v1') {
