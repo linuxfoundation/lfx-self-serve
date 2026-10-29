@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
-last_updated: 2026-10-27
+last_updated: 2026-10-29
 intercom_collection: Account
 ---
 
@@ -14,7 +14,7 @@ intercom_collection: Account
 
 ## How do I change my email address?
 
-Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**. A 6-digit verification code is sent to the new address to confirm it. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
+Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. If the address can be added to your account, a 6-digit verification code is sent to it; enter it to confirm the address. If no code arrives, check the address and your spam folder, then use **contact support** in the code step. After one resend, **Resend** is replaced by **Contact support**. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
 
 ## How do I change my password?
 

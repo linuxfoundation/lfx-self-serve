@@ -245,7 +245,7 @@ export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
  */
 export const EMAIL_CODE_NOT_RECEIVED_HINT = "Didn't get a code? Check the address and your spam folder. If it still doesn't arrive,";
 
-/** Shown in place of Resend once the resend threshold is reached; rendered before an inline "contact support" link. */
+/** Escalation guidance shown after the resend threshold, alongside the screen's Contact support action. */
 export const EMAIL_RESEND_SUPPORT_MESSAGE = 'A code can take a few minutes to arrive. Still nothing?';
 
 /** Generic error code for every non-service-unavailable OTP verification failure. */
