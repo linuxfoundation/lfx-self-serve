@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
@@ -87,8 +89,8 @@ export class LinkedinPostController {
     try {
       const user = this.requireUser(req);
       const body = this.body(req);
-      if (Object.keys(body).some((key) => !['answers', 'setup', 'project'].includes(key)))
-        throw ServiceValidationError.forField('body', 'Only source, setup and project inputs are accepted.');
+      if (Object.keys(body).some((key) => !['answers', 'setup', 'project', 'discard'].includes(key)))
+        throw ServiceValidationError.forField('body', 'Only answers, setup, project and discard inputs are accepted.');
       if (!body['answers'] || typeof body['answers'] !== 'object' || Array.isArray(body['answers']))
         throw ServiceValidationError.forField('answers', 'Content source is required.');
       const answers = body['answers'] as Record<string, unknown>;
@@ -102,6 +104,7 @@ export class LinkedinPostController {
       if (setup !== undefined && !isLinkedinSetup(setup)) throw ServiceValidationError.forField('setup', 'Complete the required profile fields.');
       const project = await this.writableProject(req, body['project']);
       await this.runs.resolveProject(req, project.uid);
+      await this.runs.assertSingleActiveOneOffRun(req, project.uid, LINKEDIN_POST_INTAKE.agentId, body['discard']);
       const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
       const runId = await this.runs.startForOneOff(req, LINKEDIN_POST_INTAKE.agentId, project.uid, result.sessionId, {
         answers: result.answers,
@@ -158,8 +161,9 @@ export class LinkedinPostController {
       const questionsId = body['questionsId'];
       const answers = body['answers'];
       if (typeof questionsId !== 'string' || !/^[a-f0-9]{64}$/.test(questionsId) || !validLinkedinAnswers(answers))
-        throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
+        throw ServiceValidationError.forField('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
       const project = await this.writableProject(req, body['project']);
+      await this.runs.assertRunOpen(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
       await this.posts.sendAnswers(req, sessionId, questionsId, answers, this.routingHandle());
       await this.runs.resumeAfterQuestions(req, project.uid, sessionId, questionsId);
       logger.success(req, operation, start, { answers: answers.length });

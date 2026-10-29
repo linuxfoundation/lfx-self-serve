@@ -31,7 +31,7 @@ vi.mock('../services/logger.service', () => ({
 
 const { apiErrorHandler } = await import('./error-handler.middleware');
 const { logger } = await import('../services/logger.service');
-const { MicroserviceError } = await import('../errors');
+const { MicroserviceError, ConflictError, ServiceValidationError } = await import('../errors');
 const { withoutUpstreamBody, withProducerRefusalMessage } = await import('../services/cla.service');
 const { customErrorSerializer } = await import('../helpers/error-serializer');
 
@@ -100,6 +100,54 @@ function emittedLogText(): string {
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+describe('apiErrorHandler active-run conflict details', () => {
+  it('returns 409 with top-level safe conflict facts and a readable message', () => {
+    const details = { activeRunId: 'a'.repeat(64), state: 'questions', agentKey: 'brand-kit', documentId: 'living' };
+    const { res } = handle(new ConflictError('A Brand Kit run is already in progress.', 'MKTG_RUN_ACTIVE', { details }));
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual({
+      ...details,
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'A Brand Kit run is already in progress.',
+      error: 'A Brand Kit run is already in progress.',
+      path: buildReq().path,
+    });
+    expect(JSON.stringify(res.body)).not.toContain('sessionId');
+  });
+
+  it('shows the resolved starter only to the client, never through error log serialization', () => {
+    const startedBy = 'Synthetic writer';
+    const clientMessage = `${startedBy}'s FAQ run is in progress.`;
+    const error = new ConflictError('An FAQ run is already in progress.', 'MKTG_RUN_ACTIVE', { clientMessage, details: { startedBy } });
+    const { res } = handle(error);
+    expect(res.body).toMatchObject({ message: clientMessage, error: clientMessage, startedBy });
+    expect(emittedLogText()).not.toContain(startedBy);
+    expect(JSON.stringify(error)).not.toContain(startedBy);
+  });
+
+  it.each([
+    [new ConflictError('Existing conflict.', 'EXISTING_CONFLICT'), { error: 'Existing conflict.', code: 'EXISTING_CONFLICT', path: buildReq().path }],
+    [
+      new MicroserviceError('Existing outage.', 503, 'EXISTING_OUTAGE', { service: 'example' }),
+      { error: 'Existing outage.', code: 'EXISTING_OUTAGE', service: 'example', path: buildReq().path },
+    ],
+  ])('keeps the serialized response byte-identical when no details are set (%s)', (error, expected) => {
+    expect(JSON.stringify(handle(error).res.body)).toBe(JSON.stringify(expected));
+  });
+
+  it('keeps the existing validation response shape unchanged', () => {
+    const error = ServiceValidationError.forField('discard', 'Select a valid run.');
+    const expected = {
+      error: 'Validation failed for discard',
+      code: 'VALIDATION_ERROR',
+      errors: error.validationErrors,
+      path: buildReq().path,
+    };
+    expect(handle(error).res.body).toEqual(expected);
+    expect(JSON.stringify(handle(error).res.body)).toBe(JSON.stringify(expected));
+  });
+});
 
 describe('apiErrorHandler — a relayed upstream refusal', () => {
   it('shows the signatory the refusal in the CLA service’s own words', () => {

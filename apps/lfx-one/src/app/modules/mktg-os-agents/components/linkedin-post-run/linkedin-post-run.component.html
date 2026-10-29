@@ -1,5 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
+<p-confirmdialog [key]="conflictKey" defaultFocus="reject" data-testid="mktg-linkedin-active-run-confirm" />
 
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
@@ -76,7 +77,7 @@
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
             [busy]="answering()"
-            [allowNonAnswers]="true"
+            [allowNoneFor]="noneAllowedQuestionIds"
             (answered)="onAnswers($event)" />
         </div>
       } @else if (writer() && editing()) {

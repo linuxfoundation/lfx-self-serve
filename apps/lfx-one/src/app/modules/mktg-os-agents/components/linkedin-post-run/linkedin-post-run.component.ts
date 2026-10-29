@@ -27,10 +27,12 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_VOICE_FIELDS,
   MKTG_RUN_NEW_MODE,
+  MKTG_RUN_ACTIVE_DIALOG_KEYS,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
   LinkedinContentSource,
+  LinkedinGeneration,
   LinkedinSetup,
   LinkedinStoredProfile,
   MktgAgentIntake,
@@ -39,24 +41,36 @@ import {
   MktgRunAnswer,
   MktgRunQuestion,
 } from '@lfx-one/shared/interfaces';
-import { isLinkedinSetup, normalizeLinkedinShareLink, mktgKitRootPath, parseLinkedinContentSource, mktgLinkWarnings } from '@lfx-one/shared/utils';
+import {
+  isLinkedinSetup,
+  normalizeLinkedinShareLink,
+  mktgKitRootPath,
+  parseLinkedinContentSource,
+  readMktgActiveRunConflict,
+  mktgLinkWarnings,
+} from '@lfx-one/shared/utils';
 import { LinkedinPostService } from '@services/linkedin-post.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { FileSelectEvent } from 'primeng/fileupload';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, distinctUntilChanged, map, of, Subscription, switchMap, take } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
+import { MKTG_NONE_ALLOWED_QUESTION_IDS } from '@lfx-one/shared/constants/mktg-run.constants';
 
 /** Profile/source intake only. Accepted runs and their results belong to the shared document receiver. */
 @Component({
   selector: 'lfx-linkedin-post-run',
   imports: [
+    ConfirmDialogModule,
     ReactiveFormsModule,
     ButtonComponent,
     FileUploadComponent,
@@ -80,6 +94,9 @@ export class LinkedinPostRunComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
+  protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.linkedin;
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly profileForm = new FormGroup(
@@ -95,6 +112,7 @@ export class LinkedinPostRunComponent {
     url: new FormControl('', { nonNullable: true }),
     share_link: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(LINKEDIN_SHARE_LINK_MAX_CHARS)] }),
   });
+  protected readonly noneAllowedQuestionIds = MKTG_NONE_ALLOWED_QUESTION_IDS;
   protected readonly intakeLabel = LINKEDIN_INTAKE_LABEL;
   protected readonly aboutFields = LINKEDIN_ABOUT_FIELDS;
   protected readonly voiceFields = LINKEDIN_VOICE_FIELDS;
@@ -177,6 +195,7 @@ export class LinkedinPostRunComponent {
         distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub && a.reload === b.reload),
         switchMap(({ context, sub }) => {
           this.scopeVersion++;
+          this.confirmation.close();
           this.sourceReentry = '';
           this.generation?.unsubscribe();
           this.questionsPending = null;
@@ -376,17 +395,57 @@ export class LinkedinPostRunComponent {
       if (version !== this.scopeVersion || this.destroyRef.destroyed || owner !== this.user.user()?.sub || project !== this.context.activeContextUid()) return;
       if ((this.source() === 'text' && !answers['content_text']) || (this.source() === 'url' && !/^https:\/\/\S+$/i.test(answers['content_url'])))
         throw new Error('Supply pasted text or one public HTTPS link.');
-      this.generation = this.api
-        .startForDocument(this.intake(), project, answers, this.setup() ?? undefined)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (session) => {
-            const request = { agentId: this.intake().agentId, intake: this.intake(), projectUid: project, documentId: session.documentId, answers };
-            this.acceptedRequest.set(request);
-            void this.returnToDocument(request, this.attempts.prepareAccepted(request, session));
+      const savedSetup = this.setup();
+      const setup = savedSetup ? { ...savedSetup } : undefined;
+      const current = () =>
+        version === this.scopeVersion && !this.destroyRef.destroyed && owner === this.user.user()?.sub && project === this.context.activeContextUid();
+      const onSession = (session: LinkedinGeneration) => {
+        if (!current()) return;
+        const request = { agentId: this.intake().agentId, intake: this.intake(), projectUid: project, documentId: session.documentId, answers };
+        this.acceptedRequest.set(request);
+        void this.returnToDocument(request, this.attempts.prepareAccepted(request, session));
+      };
+      const start = (discard?: string) => {
+        if (!current()) return;
+        this.busy.set(true);
+        const call = discard
+          ? this.api.startForDocument(this.intake(), project, answers, setup, discard)
+          : this.api.startForDocument(this.intake(), project, answers, setup);
+        // An accepted POST outlives this view; only its bounded ACK is observed here.
+        call.pipe(take(1)).subscribe({
+          next: onSession,
+          error: (error: unknown) => {
+            if (!current()) return;
+            const conflict = error instanceof HttpErrorResponse && error.status === 409 ? readMktgActiveRunConflict(error.error, this.intake().agentId) : null;
+            if (!conflict) {
+              this.failedRun(error);
+              return;
+            }
+            this.busy.set(false);
+            this.activeRunGuard.open(
+              this.confirmation,
+              {
+                conflict,
+                current,
+                recheck: () => this.api.startForDocument(this.intake(), project, answers, setup),
+                classify: (failure) =>
+                  failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, this.intake().agentId) : null,
+                onValue: onSession,
+                onDiscard: (fresh) => start(fresh.activeRunId),
+                onOpen: (fresh) => {
+                  void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+                    queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: fresh.activeRunId },
+                  });
+                },
+                onError: (failure) => this.failedRun(failure),
+              },
+              this.destroyRef,
+              this.conflictKey
+            );
           },
-          error: (error: unknown) => this.failedRun(error),
         });
+      };
+      start();
     } catch (error) {
       if (version === this.scopeVersion) {
         this.busy.set(false);

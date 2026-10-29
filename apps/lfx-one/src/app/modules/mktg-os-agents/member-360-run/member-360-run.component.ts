@@ -14,6 +14,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import {
   MEMBER_360_INTRO,
+  MKTG_RUN_ACTIVE_DIALOG_KEYS,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
   MEMBER_360_MAX_BYTES,
   MEMBER_360_MAX_TRACKERS,
   MEMBER_360_WINDOW_OPTIONS,
@@ -23,17 +25,31 @@ import {
   MEMBER_360_TRACKER_FILENAME_ERROR,
   MEMBER_360_TRACKER_EXTENSION_REGEX,
 } from '@lfx-one/shared/constants';
-import { Member360Envelope, Member360GenerateRequest, Member360TrackerUpload, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
+import { readMktgActiveRunConflict, mktgKitRootPath } from '@lfx-one/shared/utils';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { Member360Envelope, Member360GenerateRequest, Member360Session, Member360TrackerUpload, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
-import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, firstValueFrom, map, of, switchMap, tap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-member-360-run',
-  imports: [DatePipe, ReactiveFormsModule, RouterLink, ButtonComponent, SelectComponent, FileUploadComponent, MessageComponent, MktgBreadcrumbComponent],
+  imports: [
+    ConfirmDialogModule,
+    DatePipe,
+    ReactiveFormsModule,
+    RouterLink,
+    ButtonComponent,
+    SelectComponent,
+    FileUploadComponent,
+    MessageComponent,
+    MktgBreadcrumbComponent,
+  ],
   templateUrl: './member-360-run.component.html',
   styleUrl: './member-360-run.component.scss',
 })
@@ -46,6 +62,9 @@ export class Member360RunComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly users = inject(UserService);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
+  protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.member360;
   protected readonly context = inject(ProjectContextService);
   protected readonly intro = MEMBER_360_INTRO;
   protected readonly trackerMaxBytes = MEMBER_360_MAX_BYTES;
@@ -71,6 +90,7 @@ export class Member360RunComponent {
   protected readonly compareOptions = this.initCompareOptions();
   protected readonly projectParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   private lastScope = '';
+  private scopeVersion = 0;
   private uploadSequence = 0;
   private nextTrackerId = 0;
   private readonly scope$ = toObservable(
@@ -86,6 +106,8 @@ export class Member360RunComponent {
           tap(({ project, user }) => {
             const scope = JSON.stringify([project, user]);
             if (scope !== this.lastScope) {
+              this.scopeVersion++;
+              this.confirmation.close();
               this.form.controls.trackers.setValue([]);
               this.chooser()?.clear();
               this.error.set('');
@@ -159,31 +181,69 @@ export class Member360RunComponent {
     }
     this.submitting.set(true);
     this.error.set('');
-    this.api
-      .generate({
-        project,
-        window: this.form.controls.window.value,
-        compare: this.form.controls.compare.value,
-        trackers: this.trackers().map((upload) => upload.tracker),
-      })
-      .subscribe({
-        next: (session) => {
-          if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
-          this.router.navigate(['../documents/member-360', session.documentId], {
-            relativeTo: this.route,
-            queryParams: { revision: null, generation: null, run: session.runId ?? null },
-            queryParamsHandling: 'merge',
-          });
-        },
-        error: (error: HttpErrorResponse) => {
-          if (this.destroyRef.destroyed || project !== this.context.activeContextUid() || user !== this.users.user()?.sub) return;
-          this.submitting.set(false);
-          let message = 'The run could not be started. Your trackers are still here; try again.';
-          if (error.status === 403) message = 'You need write access to this project to run Member 360.';
-          if (error.error?.code === MEMBER_360_COMPARISON_UNAVAILABLE) message = 'The previous run could not be read. Turn off comparison or retry.';
-          this.error.set(message);
-        },
+    const body: Member360GenerateRequest = {
+      project,
+      window: this.form.controls.window.value,
+      compare: this.form.controls.compare.value,
+      trackers: this.trackers().map((upload) => upload.tracker),
+    };
+    const version = this.scopeVersion;
+    const current = () =>
+      version === this.scopeVersion && !this.destroyRef.destroyed && project === this.context.activeContextUid() && user === this.users.user()?.sub;
+    const onSession = (session: Member360Session) => {
+      if (!current()) return;
+      this.router.navigate(['../documents/member-360', session.documentId], {
+        relativeTo: this.route,
+        queryParams: { revision: null, generation: null, run: session.runId ?? null },
+        queryParamsHandling: 'merge',
       });
+    };
+    const start = (discard?: string) => {
+      if (!current()) return;
+      this.submitting.set(true);
+      this.api
+        .generate(discard ? { ...body, discard } : body)
+        .pipe(take(1))
+        .subscribe({
+          next: onSession,
+          error: (error: HttpErrorResponse) => {
+            if (!current()) return;
+            this.submitting.set(false);
+            const conflict = error.status === 409 ? readMktgActiveRunConflict(error.error, 'member-360') : null;
+            if (conflict) {
+              this.activeRunGuard.open(
+                this.confirmation,
+                {
+                  conflict,
+                  current,
+                  recheck: () => this.api.generate(body),
+                  classify: (failure) =>
+                    failure instanceof HttpErrorResponse && failure.status === 409 ? readMktgActiveRunConflict(failure.error, 'member-360') : null,
+                  onValue: onSession,
+                  onDiscard: (fresh) => start(fresh.activeRunId),
+                  onOpen: (fresh) => {
+                    void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+                      queryParams: { project: this.context.activeContext()?.slug, ...MKTG_RUN_RESUME_QUERY_CLEAR, run: fresh.activeRunId },
+                    });
+                  },
+                  onError: () => {
+                    this.submitting.set(false);
+                    this.error.set('The start could not be confirmed. Check Documents before trying again.');
+                  },
+                },
+                this.destroyRef,
+                this.conflictKey
+              );
+              return;
+            }
+            let message = 'The run could not be started. Your trackers are still here; try again.';
+            if (error.status === 403) message = 'You need write access to this project to run Member 360.';
+            if (error.error?.code === MEMBER_360_COMPARISON_UNAVAILABLE) message = 'The previous run could not be read. Turn off comparison or retry.';
+            this.error.set(message);
+          },
+        });
+    };
+    start();
   }
 
   protected rejectUnsupportedTrackers(selected: ArrayLike<File>): boolean {

@@ -22,8 +22,10 @@ import { RouterLink } from '@angular/router';
 import { OrgLensMembershipsService } from '@app/shared/services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@app/shared/services/org-lens-navigation.service';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { ORG_LF_MAINTAINER_ROLES_LABEL, ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION } from '@lfx-one/shared/constants';
 import type { OrgMembershipProject } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
+import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 
 /** A project row plus its precomputed router link (see initFilteredProjects). */
@@ -36,7 +38,7 @@ type OrgMembershipProjectVm = OrgMembershipProject & { link: string[] };
  */
 @Component({
   selector: 'lfx-membership-projects-drawer',
-  imports: [ReactiveFormsModule, RouterLink, DrawerModule, InputTextComponent, DecimalPipe],
+  imports: [ReactiveFormsModule, RouterLink, DrawerModule, InputTextComponent, DecimalPipe, TooltipModule],
   templateUrl: './membership-projects-drawer.component.html',
 })
 export class MembershipProjectsDrawerComponent {
@@ -50,6 +52,9 @@ export class MembershipProjectsDrawerComponent {
   public readonly foundationId = input<string>('');
   public readonly foundationName = input<string>('');
   public readonly count = input<number>(0);
+
+  protected readonly maintainerRolesLabel = ORG_LF_MAINTAINER_ROLES_LABEL;
+  protected readonly maintainerRolesDefinition = ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION;
 
   // The shared lfx-input-text wrapper is FormGroup-backed (ngModel is not supported), per
   // docs/reviews/frontend-checklist.md §14.1; searchTerm mirrors the control so the filtering below

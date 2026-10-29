@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants';
+import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-post.constants';
+import { LINKEDIN_POST_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
+import { MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR } from '../../../packages/shared/src/constants/mktg-run.constants';
 import {
   createLinkedinRuns,
   json,
@@ -16,6 +19,46 @@ import {
 } from './helpers/mktg-linkedin.helper';
 
 test.describe('Marketing OS LinkedIn posts', () => {
+  for (const choice of ['Open it', 'Discard and start over'])
+    test(`LinkedIn active-run conflict: ${choice}`, async ({ page }, info) => {
+      const runs = createLinkedinRuns();
+      const documentId = 'run-' + 'a'.repeat(24);
+      runs.set('synthetic-session-1', { documentId, shareLink: '', answered: false, polls: 0, reads: 0, completed: false, failed: false });
+      await setupLinkedin(page, { runs, saved: true }); // Includes suppressCookieBanner and synthetic writer/flag overrides.
+      const bodies: Record<string, unknown>[] = [];
+      const activeRunId = 'b'.repeat(64);
+      await page.route(`**${LINKEDIN_API}/generate`, (route) => {
+        bodies.push(route.request().postDataJSON());
+        if (!bodies.at(-1)?.['discard'])
+          return json(
+            route,
+            {
+              code: 'MKTG_RUN_ACTIVE',
+              message: 'Your LinkedIn post run is in progress.',
+              activeRunId,
+              state: 'writing',
+              agentKey: 'linkedin-post',
+              documentId,
+              startedBy: 'Synthetic writer',
+              startedByViewer: true,
+              startedAt: '2026-10-19T12:00:00.000Z',
+            },
+            409
+          );
+        return route.fallback();
+      });
+      await openLinkedin(page);
+      await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
+      await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toContainText('Your LinkedIn post run is in progress');
+      await dialog.getByRole('button', { name: choice, exact: true }).click();
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+      expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+      expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
+      if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
+      await page.screenshot({ path: info.outputPath('linkedin-active-run-choice.png'), fullPage: true });
+    });
   test('Back from a first generating draft prefills setup and offers the existing document', async ({ page }, info) => {
     await setupLinkedin(page, { profileSaved: false }); // suppressCookieBanner is applied by the helper.
     await page.route(`**${LINKEDIN_API}/result`, (route) => json(route, { status: 'pending' }));
@@ -410,11 +453,27 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
     await page.screenshot({ path: info.outputPath('recorded2-questions.png'), fullPage: true });
+    const answerBox = page.getByTestId('mktg-run-questions').locator('textarea');
+    const suggestion = await answerBox.inputValue();
+    await answerBox.fill('skip');
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 3');
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-questions-error-tendency')).toHaveText(MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR);
+    expect(generates).toBe(1);
+    await answerBox.fill(suggestion);
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 2 of 3 · Admired style');
+    await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toHaveText('Question 3 of 3 · Avoid');
+    await answerBox.fill('None'); // Only the stable avoid question accepts literal none.
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session-1', questionsId: 'a'.repeat(64) });
+    expect((await send).postDataJSON()).toMatchObject({
+      sessionId: 'synthetic-session-1',
+      questionsId: 'a'.repeat(64),
+      answers: expect.arrayContaining([{ key: 'avoid', text: 'None', origin: expect.any(String) }]),
+    });
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
     expect(generates).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-questions')).toHaveCount(0);

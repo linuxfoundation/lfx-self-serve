@@ -1288,4 +1288,33 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
     });
   });
+
+  describe('expanded row Maintainer pills (lfx-self-serve#4482)', () => {
+    interface DetailHarness {
+      toggleRow(row: { personKey: string }): void;
+      onRangeChange(range: string): void;
+      expansion(): Record<string, boolean>;
+      detailMap(): Record<string, unknown>;
+    }
+
+    it('reads an expanded row for the page range and drops every loaded row when the range changes', async () => {
+      await mount('browser');
+      const service = TestBed.inject(AllEmployeesService) as unknown as { getEmployeeDetail: Mock };
+      service.getEmployeeDetail.mockReturnValue(of({ personKey: 'person-one' }));
+      const component = fixture.componentInstance as unknown as DetailHarness;
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenCalledWith(ORG, 'person-one', '365d');
+      expect(component.expansion()).toEqual({ 'person-one': true });
+      expect(Object.keys(component.detailMap())).toHaveLength(1);
+
+      component.onRangeChange('90d');
+      await settle();
+      expect(component.expansion()).toEqual({});
+      expect(component.detailMap()).toEqual({});
+
+      component.toggleRow({ personKey: 'person-one' });
+      expect(service.getEmployeeDetail).toHaveBeenLastCalledWith(ORG, 'person-one', '90d');
+    });
+  });
 });
