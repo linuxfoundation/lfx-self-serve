@@ -406,7 +406,7 @@ not the result or a feedback form. Direct no-answers runs, questions runs and
 restored accepted attempts stay there through checking and receipt-less readiness.
 Only the private attempt's exact stored-revision receipt lands with `revision=`;
 recorded terminal failures open the document page's failed run card. Navigation
-recovery retries only its saved destination, never Generate or answers.
+recovery retries only its saved destination, never Generate or answers. An active-conflict handoff restores its scoped request before opening the guard, so a successful recheck can follow that request's exact receipt. A recheck timeout or non-transient read error clears running/navigation flags and returns to the editable intake without another automatic start.
 A partial Guild stream cannot distinguish writing from another research/questions
 round; model starts or completions alone never authorize a landing. The producer
 can label no-questions writing retroactively once an unambiguous finalize confirms
@@ -429,7 +429,7 @@ instead of a blank page. No browser cache or actor identifier substitutes for se
 `MktgRunProgressComponent` owns living-document public detail/body reads and their
 single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
 failed card renders there, and an active `?run=` replaces to the run page. The
-run page owns one asset heading, one status line and the progress steps.
+run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver matching private stream; late results cannot replace that closed view.
 One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
 document without selecting or claiming an exact revision: completed runs leave
 `runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the

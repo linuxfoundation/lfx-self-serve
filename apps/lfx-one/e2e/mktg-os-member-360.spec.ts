@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
-import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '@lfx-one/shared/constants';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
 
 import {
   json,
@@ -31,7 +31,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     const activeRunId = 'b'.repeat(64);
     await page.route('**/api/mktg-agents/member-360/generate', (route) => {
       bodies.push(route.request().postDataJSON());
-      if (bodies.length === 1)
+      if (!bodies.at(-1)?.['discard'])
         return route.fulfill({
           status: 409,
           json: {
@@ -42,6 +42,7 @@ for (const choice of ['Open it', 'Discard and start over'])
             agentKey: 'member-360',
             documentId: MEMBER_360_DOCUMENT_ID,
             startedBy: 'Synthetic writer',
+            startedByViewer: true,
             startedAt: '2026-10-19T12:00:00.000Z',
           },
         });
@@ -50,12 +51,13 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-    expect(bodies).toHaveLength(choice === 'Open it' ? 1 : 2);
-    if (choice !== 'Open it') expect(bodies[1]).toEqual({ ...bodies[0], discard: activeRunId });
+    expect(bodies.length).toBeGreaterThanOrEqual(choice === 'Open it' ? 2 : 3);
+    expect(bodies.filter((body) => body['discard'])).toHaveLength(choice === 'Open it' ? 0 : 1);
+    if (choice !== 'Open it') expect(bodies.at(-1)).toEqual({ ...bodies[0], discard: activeRunId });
     await page.screenshot({ path: info.outputPath('member-active-run-choice.png'), fullPage: true });
   });
 

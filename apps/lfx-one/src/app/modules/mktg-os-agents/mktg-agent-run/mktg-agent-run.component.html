@@ -17,14 +17,17 @@
 }
 @if (agent && intake && !intake.oneOffDocument) {
   @if (publicReceiver()) {
-    <div [ngClass]="pageClass" [class.hidden]="phase() === 'questions'" data-testid="mktg-run-public-progress">
-      @if (checkingRun()) {
+    <div [ngClass]="pageClass" [class.hidden]="phase() === 'questions' && !publicIdentityPending()" data-testid="mktg-run-public-progress">
+      @if (publicIdentityPending()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-public-identity-loading" />
+      } @else if (checkingRun()) {
         <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-run-progress-loading" />
       } @else {
         <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />
         <h1 class="mb-4 text-base font-semibold text-gray-900">{{ assetName }}</h1>
       }
       <lfx-mktg-run-progress
+        [style.display]="publicIdentityPending() ? 'none' : null"
         [project]="publicProject()"
         [projectName]="projectName()"
         [agentKey]="publicAgentKey()"
@@ -32,14 +35,14 @@
         [runId]="publicRunId()"
         [refreshKey]="publicRefreshKey()"
         [runPage]="true"
-        [headless]="checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
+        [headless]="publicIdentityPending() || checkingRun() || phase() === 'questions' || (!!errorText() && !navigation())"
         [watchQuestions]="phase() === 'questions'"
         [errorText]="errorText()"
         (observed)="onPublicObserved($event)"
         (readError)="onPublicReadError($event)"
         (landed)="onPublicLanding()"
         (failed)="onPublicLanding(true)" />
-      @if (errorText()) {
+      @if (!publicIdentityPending() && errorText()) {
         <lfx-message severity="error" [text]="errorText()" data-testid="mktg-run-public-error" />
         @if (navigation()) {
           <lfx-button label="Open asset" (onClick)="onRetryPublicLanding()" data-testid="mktg-agent-run-open-asset" />
@@ -52,14 +55,14 @@
       }
     </div>
   }
-  <div [ngClass]="pageClass" [style.display]="publicReceiver() && phase() !== 'questions' ? 'none' : null" data-testid="mktg-agent-run-page">
-    @if (!publicReceiver() && checkingRun() && errorText()) {
-      <div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700" data-testid="mktg-agent-run-error">{{ errorText() }}</div>
-    }
+  <div
+    [ngClass]="pageClass"
+    [style.display]="publicIdentityPending() || (publicReceiver() && phase() !== 'questions') ? 'none' : null"
+    data-testid="mktg-agent-run-page">
     @if (!publicReceiver() && checkingRun()) {
       <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-agent-run-checking" />
     }
-    <ng-container [ngTemplateOutlet]="(!publicReceiver() || phase() === 'questions') && !checkingRun() ? privateRunPage : null" />
+    <ng-container [ngTemplateOutlet]="(!publicReceiver() || phase() === 'questions') && !checkingRun() && !publicIdentityPending() ? privateRunPage : null" />
   </div>
   <ng-template #privateRunPage>
     <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: agent.id, label: assetName }" class="mb-4 block" />

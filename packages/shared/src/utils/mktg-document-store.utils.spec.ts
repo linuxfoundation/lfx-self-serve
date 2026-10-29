@@ -89,6 +89,25 @@ describe('mktg-document-store utils', () => {
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
   });
+  it.each(['discarded', 'superseded'] as const)('projects %s only for selected details, without private or active-run fields', (state) => {
+    const closedAt = '2026-10-19T12:00:00Z';
+    const run = startedRun({ state, closedAt, creatorSubject: 'synthetic-owner', failureText: 'Private synthetic reply', persistRetries: 100 });
+    const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: run.startedAt }];
+    expect(mktgRunProgress(run)).toBeNull();
+    expect(mktgRunProgress(run, undefined, activity, undefined, false, true)).toEqual({
+      runId: run.runId,
+      project: run.project,
+      agentKey: run.agentKey,
+      documentId: run.documentId,
+      startedAt: run.startedAt,
+      state,
+      closedAt,
+    });
+    expect(mktgRunProgress({ ...run, closedAt: undefined }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
+    expect(mktgRunProgress({ ...run, closedAt: 'invalid' }, undefined, undefined, undefined, false, true)).not.toHaveProperty('closedAt');
+    expect(mktgRunProgress({ ...run, state: 'completed' }, undefined, undefined, undefined, false, true)).toBeNull();
+  });
+
   describe('writer-only pending questions', () => {
     const turn = {
       questionsId: SHA,

@@ -17,6 +17,7 @@ const runMocks = vi.hoisted(() => ({
   resolveProject: vi.fn(),
   resolveCatalogProject: vi.fn(),
   assertSingleActiveCatalogRun: vi.fn(),
+  assertRunOpen: vi.fn(),
   startForCatalogAgent: vi.fn(),
   recordResultBestEffort: vi.fn(),
   resumeAfterQuestions: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public resolveProject = runMocks.resolveProject;
     public resolveCatalogProject = runMocks.resolveCatalogProject;
     public assertSingleActiveCatalogRun = runMocks.assertSingleActiveCatalogRun;
+    public assertRunOpen = runMocks.assertRunOpen;
     public startForCatalogAgent = runMocks.startForCatalogAgent;
     public recordResultBestEffort = runMocks.recordResultBestEffort;
     public resumeAfterQuestions = runMocks.resumeAfterQuestions;
@@ -200,7 +202,7 @@ import {
 import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../../../../../packages/shared/src/constants/mktg-intake.constants';
 import { validateIcpIntakeAnswers as validateRealIcpIntakeAnswers } from '../../../../../packages/shared/src/utils/icp.utils';
 
-import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -289,6 +291,7 @@ describe('MktgAgentsController', () => {
     lastIntakeMocks.recordStartBestEffort.mockReset().mockImplementation(() => new Promise<void>(() => undefined));
     runMocks.resolveProject.mockReset().mockResolvedValue('proj-uid-1');
     runMocks.resolveCatalogProject.mockImplementation((req: unknown, _agentId: string, raw: unknown) => runMocks.resolveProject(req, raw));
+    runMocks.assertRunOpen.mockReset().mockResolvedValue(undefined);
     runMocks.startForCatalogAgent.mockResolvedValue(publicRunId);
     runMocks.recordResultBestEffort.mockResolvedValue(undefined);
     runMocks.resumeAfterQuestions.mockResolvedValue(undefined);
@@ -466,10 +469,23 @@ describe('MktgAgentsController', () => {
     expect(runMocks.assertSingleActiveCatalogRun).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', 'a'.repeat(64));
   });
 
-  it('does not treat an existing chat follow-up as a second start', async () => {
-    await controller.chat(chatRequest(true), buildRes(), next);
+  it('checks the live session before sending a chat follow-up without treating it as a second start', async () => {
+    const req = chatRequest(true);
+    await controller.chat(req, buildRes(), next);
+    expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', req.body.sessionId);
+    expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(guildMocks.sendFollowUp.mock.invocationCallOrder[0]);
     expect(runMocks.assertSingleActiveCatalogRun).not.toHaveBeenCalled();
     expect(guildMocks.sendFollowUp).toHaveBeenCalled();
+  });
+
+  it('refuses a discarded chat session before sending or recording a follow-up', async () => {
+    const closed = new ConflictError('This run was closed.', 'MKTG_RUN_CLOSED');
+    runMocks.assertRunOpen.mockRejectedValueOnce(closed);
+    await controller.chat(chatRequest(true), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(closed);
+    expect(closed.statusCode).toBe(409);
+    expect(guildMocks.sendFollowUp).not.toHaveBeenCalled();
+    expect(runMocks.startForCatalogAgent).not.toHaveBeenCalled();
   });
 
   it('does not start an ICP session when the project/store preflight fails', async () => {
@@ -496,6 +512,24 @@ describe('MktgAgentsController', () => {
       expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
       expect(tokenMocks.verifySessionOwnerToken.mock.invocationCallOrder[0]).toBeLessThan(redraftContext.mock.invocationCallOrder[0]);
     });
+    it.each(['discarded', 'superseded'])(`${method}: refuses answers on a %s session before Guild`, async (state) => {
+      const failure = new ConflictError(`This run was ${state}.`, 'MKTG_RUN_CLOSED');
+      runMocks.assertRunOpen.mockRejectedValueOnce(failure);
+      await controller[method](answersRequest(), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+      expect(runMocks.resumeAfterQuestions).not.toHaveBeenCalled();
+    });
+    it(`${method}: omitted project cannot bypass the scoped check`, async () => {
+      const req = answersRequest();
+      delete req.body.project;
+      const failure = ServiceValidationError.forField('project', 'Project is required.');
+      runMocks.resolveProject.mockRejectedValueOnce(failure);
+      await controller[method](req, buildRes(), next);
+      expect(runMocks.resolveProject).toHaveBeenCalledWith(req, undefined);
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(adapter.sendAnswers).not.toHaveBeenCalled();
+    });
     it(`${method}: resolves canonical scope before answers and resumes only after accepted send`, async () => {
       runMocks.resolveProject.mockResolvedValueOnce('resolved-project');
       const req = answersRequest();
@@ -504,7 +538,9 @@ describe('MktgAgentsController', () => {
       expect(next).not.toHaveBeenCalled();
       expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'requested-project');
       expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'resolved-project', 'synthetic-session', 'a1234567');
-      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
+      expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(runMocks.assertRunOpen.mock.invocationCallOrder[0]);
+      expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'resolved-project', expect.any(String), 'synthetic-session');
+      expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(adapter.sendAnswers.mock.invocationCallOrder[0]);
       expect(adapter.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
     });
     it(`${method}: malformed questions and failed preflight never reach Guild`, async () => {

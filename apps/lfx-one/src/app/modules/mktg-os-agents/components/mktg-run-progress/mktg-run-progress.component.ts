@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -26,7 +26,6 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   findMktgRunIntake,
-  mktgDiscardedRunMessage,
   mktgKitAssetLabel,
   mktgKitRootPath,
   mktgRunRouteFor,
@@ -43,6 +42,7 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { catchError, defer, distinctUntilChanged, EMPTY, exhaustMap, expand, finalize, map, of, Subject, switchMap, tap, throwError, timer } from 'rxjs';
 import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-questions.component';
 import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
+import { MktgClosedRunMessageComponent } from '../mktg-closed-run-message/mktg-closed-run-message.component';
 
 /**
  * One public progress reader/presentation for the run and document pages.
@@ -55,7 +55,16 @@ import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activ
  */
 @Component({
   selector: 'lfx-mktg-run-progress',
-  imports: [DatePipe, RouterLink, ButtonComponent, MessageComponent, MktgSkeletonComponent, MktgRunActivityComponent, MktgRunQuestionsComponent],
+  imports: [
+    DatePipe,
+    RouterLink,
+    ButtonComponent,
+    MessageComponent,
+    MktgSkeletonComponent,
+    MktgRunActivityComponent,
+    MktgRunQuestionsComponent,
+    MktgClosedRunMessageComponent,
+  ],
   templateUrl: './mktg-run-progress.component.html',
 })
 export class MktgRunProgressComponent {
@@ -95,6 +104,7 @@ export class MktgRunProgressComponent {
   /** Stored-document readers stay live for revisions and approvals even while no run is active. */
   public readonly continuous = input(false);
   public readonly suppressCard = input(false);
+  public readonly announceState = input(true);
   /** Keep the single public observer alive without rendering a living document's live presentation. */
   public readonly headless = input(false);
 
@@ -132,6 +142,12 @@ export class MktgRunProgressComponent {
     return detail;
   });
   public readonly selectedRun = this.initSelectedRun();
+  protected readonly closedRun = computed(() => {
+    const run = this.selectedRun();
+    const hint = readMktgRetiredRunHint(run);
+    if (!run || !hint) return null;
+    return { ...run, closedBy: hint.closedBy, closedAt: hint.closedAt ?? undefined, replacedBy: hint.replacedBy ?? undefined };
+  });
   public readonly runState = this.initRunState();
   protected readonly retiredHint = computed(() => {
     if (!this.runPage()) return null;
@@ -157,8 +173,7 @@ export class MktgRunProgressComponent {
   });
   protected readonly currentRunId = computed(() => this.retiredHint()?.replacedBy ?? this.replacementRun()?.runId ?? '');
   protected readonly missingRunMessage = computed(() => {
-    const hint = this.retiredHint();
-    if (hint || this.replacementRun()) return mktgDiscardedRunMessage(hint, hint?.closedAt ? formatDate(hint.closedAt, 'shortTime', 'en-US') : '');
+    if (this.replacementRun()) return 'A newer run replaced this one.';
     return this.detail()?.revisions.length ? 'This run is no longer active.' : 'This run is no longer listed.';
   });
   protected readonly currentStateLink = computed(() => {
@@ -173,7 +188,8 @@ export class MktgRunProgressComponent {
     return [root, 'documents'];
   });
   protected readonly currentStateLabel = computed(() => {
-    if (this.currentRunId() || this.retiredHint()) return 'Open the newer run';
+    if (this.currentRunId()) return 'Open the newer run';
+    if (this.retiredHint()) return 'View started runs';
     return this.detail()?.revisions.length ? 'Open the document' : 'Open Documents';
   });
   protected readonly visibleRunActivity = this.initVisibleActivity();
@@ -191,7 +207,7 @@ export class MktgRunProgressComponent {
   );
   protected readonly runFailure = computed(() => this.selectedRun()?.failureText || this.failureText());
   protected readonly runRecorded = computed(() => !this.submittingGeneration() && (!!this.runId() || !!this.selectedRun()));
-  protected readonly liveState = this.initLiveState();
+  public readonly liveState = this.initLiveState();
 
   public constructor() {
     let readerScope = '';
@@ -353,6 +369,10 @@ export class MktgRunProgressComponent {
                     .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                 : metadata$.pipe(
                     switchMap((detail) => {
+                      const selected = detail.runs?.find((run) => run.runId === this.runId());
+                      if (selected?.state === 'discarded' || selected?.state === 'superseded') {
+                        return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
+                      }
                       const revisionId =
                         request.revisionId || detail.current?.revisionId || detail.revisions.find((revision) => revision.latest)?.id || detail.revisions[0]?.id;
                       if (!request.loadRevision || !revisionId) return of<MktgDocumentReadCycle>({ detail, view: null });
@@ -480,6 +500,13 @@ export class MktgRunProgressComponent {
     this.onRefreshProgress();
   }
 
+  /** Reuse the last scoped SERVER observation on the first identity fill, never private storage. */
+  public reobserve(project: string): void {
+    if (project !== this.project()) return;
+    const detail = this.detail();
+    if (detail) this.observed.emit({ detail, view: this.viewSnapshot() });
+  }
+
   public recheck(): void {
     this.onRefreshProgress();
   }
@@ -520,8 +547,7 @@ export class MktgRunProgressComponent {
     return computed(() => {
       const runs = this.detail()?.runs ?? [];
       const selector = this.runId();
-      if (selector)
-        return MKTG_STARTED_RUN_ID_REGEX.test(selector) ? (runs.find((run) => !readMktgRetiredRunHint(run) && run.runId === selector) ?? null) : null;
+      if (selector) return MKTG_STARTED_RUN_ID_REGEX.test(selector) ? (runs.find((run) => run.runId === selector) ?? null) : null;
       return this.submittingGeneration() ? null : (runs.find((run) => !readMktgRetiredRunHint(run)) ?? null);
     });
   }

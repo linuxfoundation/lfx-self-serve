@@ -39,6 +39,7 @@ describe('MktgRunProgressComponent', () => {
   let fixture: ComponentFixture<MktgRunProgressComponent>;
   const user = signal<User | null>({ sub: 'synthetic-creator' } as User);
   const read = vi.fn();
+  const revisionRead = vi.fn();
   const answer = vi.fn();
   const loadAttempt = vi.fn();
   const waiting = {
@@ -53,6 +54,7 @@ describe('MktgRunProgressComponent', () => {
   const setup = async (platform = 'browser') => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     read.mockReset().mockReturnValue(of(detail()));
+    revisionRead.mockReset();
     answer.mockReset().mockReturnValue(of({ runId, state: 'writing' }));
     loadAttempt.mockReset().mockReturnValue(null);
     user.set({ sub: 'synthetic-creator' } as User);
@@ -63,7 +65,7 @@ describe('MktgRunProgressComponent', () => {
         provideRouter([]),
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: { user } },
-        { provide: MktgDocumentStoreService, useValue: { getDocument: read } },
+        { provide: MktgDocumentStoreService, useValue: { getDocument: read, getRevision: revisionRead } },
         { provide: MktgRunAnswersService, useValue: { answer } },
         { provide: MktgRunAttemptService, useValue: { load: loadAttempt } },
       ],
@@ -398,7 +400,7 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(changed));
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
-    expect(text()).toContain('This run was discarded; a newer run was started.');
+    expect(text()).toContain('A newer run replaced this one.');
     const link = fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]');
     expect(link.textContent).toContain('Open the newer run');
     expect(link.getAttribute('href')).toContain(`run=${replacementId}`);
@@ -415,7 +417,7 @@ describe('MktgRunProgressComponent', () => {
     );
     await fixture.whenStable();
     expect(text()).toMatch(/This run was discarded by Synthetic writer at .+; a newer run was started[.]/);
-    expect(fixture.componentInstance.selectedRun()).toBeNull();
+    expect(fixture.componentInstance.selectedRun()?.state).toBe('discarded');
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]').getAttribute('href')).toContain(`run=${'e'.repeat(64)}`);
   });
 
@@ -424,7 +426,7 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of({ ...detail([]), runs: [{ runId, state: 'superseded', closedAt: run.startedAt }] }));
     await fixture.whenStable();
     expect(text()).toContain('A newer run replaced this one.');
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]')?.textContent).toContain('Open the newer run');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-current-link"]')?.textContent).toContain('View started runs');
     expect(fixture.nativeElement.querySelector('lfx-mktg-run-activity')).toBeNull();
     expect(fixture.nativeElement.querySelector('lfx-mktg-run-questions')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-progress-retry"]')).toBeNull();
@@ -463,17 +465,24 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).toContain('Could not fully refresh');
   });
 
-  it('emits terminal questions/failure once and refreshes a failed record only once', async () => {
+  it.each([true, false])('emits terminal questions/failure once and refreshes a failed record only once (selected: %s)', async (selected) => {
     await setup();
     read.mockReturnValue(of(detail([{ ...run, state: 'failed', persistenceFailed: true }])));
     const failed = vi.fn();
     fixture.componentInstance.failed.subscribe(failed);
     fixture.componentRef.setInput('runAgentId', type.catalogAgentId);
     fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('runId', selected ? runId : '');
     await fixture.whenStable();
     expect(failed).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
-    expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
+    if (selected) {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false, undefined, false, runId);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId, false, runId);
+    } else {
+      expect(read).toHaveBeenNthCalledWith(1, run.project, run.agentKey, run.documentId, false);
+      expect(read).toHaveBeenLastCalledWith(run.project, run.agentKey, run.documentId, false, runId);
+    }
     expect(text()).toContain('retries saving the existing result');
     const retry = vi.fn();
     fixture.componentInstance.retry.subscribe(retry);

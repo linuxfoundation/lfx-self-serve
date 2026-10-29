@@ -67,7 +67,6 @@ import {
   mktgJsonAttachmentUsable,
   mktgSentenceCaseLabel,
   mktgKitAssetLabel,
-  mktgActiveRunConflictHeading,
   mktgRunAnsweredBy,
   readMktgRetiredRunHint,
   mktgLinkWarnings,
@@ -78,6 +77,7 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, tap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
@@ -145,6 +145,7 @@ export class MktgAgentRunComponent {
   private readonly userService = inject(UserService);
   private readonly confirmation = inject(ConfirmationService);
   private readonly messages = inject(MessageService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
@@ -239,6 +240,10 @@ export class MktgAgentRunComponent {
   protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
   protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
   protected readonly publicDocumentLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID]);
+  protected readonly publicIdentityPending = computed(
+    () => this.publicReceiver() && (!this.userService.user()?.sub || (this.navigation() !== null && !this.navigation()?.subject))
+  );
+  private pendingPublicRunId = '';
   protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
   protected readonly waitingQuestions = signal(false);
   protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
@@ -624,8 +629,28 @@ export class MktgAgentRunComponent {
               this.consumedFreshSubject = null;
               return EMPTY;
             }
+            const destination = this.navigation();
+            if (
+              this.publicReceiver() &&
+              user?.sub &&
+              runId &&
+              runId === this.pendingPublicRunId &&
+              destination &&
+              destination.projectUid === context?.uid &&
+              destination.agentKey === this.publicAgentKey() &&
+              !destination.subject
+            ) {
+              this.pendingPublicRunId = '';
+              this.navigation.set({ ...destination, subject: user.sub });
+              this.onRetryHandoff();
+              return EMPTY;
+            }
             this.resetForContext(context, fresh);
-            if (!context || !user?.sub || this.publicReceiver()) return EMPTY;
+            if (!context || !user?.sub) return EMPTY;
+            if (this.publicReceiver()) {
+              this.publicProgressView()?.reobserve(context.uid);
+              return EMPTY;
+            }
             const history =
               fresh && user?.sub
                 ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
@@ -697,8 +722,10 @@ export class MktgAgentRunComponent {
     if (!this.publicReceiver() || !projectUid || !agentKey) return;
     this.checkingRun.set(false);
     // Public completion has no exact-revision receipt: open the current document, without revision=.
-    this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey, ...(failed && { runId: this.publicRunId() }) });
-    this.onRetryHandoff();
+    const subject = this.userService.user()?.sub ?? '';
+    this.navigation.set({ projectUid, subject, agentKey, ...(failed && { runId: this.publicRunId() }) });
+    this.pendingPublicRunId = subject ? '' : this.publicRunId();
+    if (subject) this.onRetryHandoff();
   }
 
   protected onRetryPublicLanding(): void {
@@ -708,7 +735,7 @@ export class MktgAgentRunComponent {
   }
 
   protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
-    if (cycle.detail.project !== this.publicProject()) return;
+    if (cycle.detail.project !== this.publicProject() || this.publicIdentityPending()) return;
     if (cycle.detail.progressUnavailable) {
       if (this.checkingRun()) this.onPublicReadError();
       return;
@@ -795,6 +822,7 @@ export class MktgAgentRunComponent {
   protected onRetryHandoff(): void {
     const destination = this.navigation();
     if (!destination) return;
+    if (this.publicIdentityPending() && !destination.subject) return;
     if (destination.projectUid !== this.projectContext.activeContextUid() || !destination.subject || destination.subject !== this.userService.user()?.sub) {
       // The public receiver can retry this public destination after signing in;
       // it has no private generation capability to restore or submit.
@@ -1109,13 +1137,10 @@ export class MktgAgentRunComponent {
     if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
   }
 
-  private activeConflictHeading(conflict: MktgActiveRunConflict): string {
-    return mktgActiveRunConflictHeading(conflict);
-  }
-
   private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
     if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
     if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
+    this.activeRequest = request;
     this.phase.set('form');
     this.runFailed.set(false);
     this.errorText.set('');
@@ -1139,19 +1164,49 @@ export class MktgAgentRunComponent {
       discard();
       return;
     }
-    this.confirmation.confirm({
-      header: this.activeConflictHeading(conflict),
-      message: 'Its questions and progress will be lost.',
-      acceptLabel: 'Discard and start over',
-      rejectLabel: 'Open it',
-      rejectButtonProps: { text: true },
-      ...this.confirmActions(discard, (reason) => {
-        if (reason !== ConfirmEventType.REJECT) return;
-        void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', conflict.agentKey, conflict.documentId], {
-          queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: conflict.activeRunId },
-        });
-      }),
-    });
+    const epoch = this.discardEpoch;
+    const subject = this.userService.user()?.sub;
+    this.activeRunGuard.open(
+      this.confirmation,
+      {
+        conflict,
+        current: () =>
+          !this.destroyRef.destroyed &&
+          epoch === this.discardEpoch &&
+          subject === this.userService.user()?.sub &&
+          request.projectUid === this.projectContext.activeContextUid(),
+        recheck: () => this.runService.recheckActiveConflict(request),
+        classify: (error) => this.runService.activeRunConflict(error, request),
+        onValue: (progress) => {
+          this.phase.set('running');
+          this.onProgress(progress, request.projectUid);
+        },
+        onDiscard: (fresh) => {
+          conflict = fresh;
+          discard();
+        },
+        onOpen: (fresh) => {
+          void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', fresh.agentKey, fresh.documentId], {
+            queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: fresh.activeRunId },
+          });
+        },
+        onError: () => {
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.recheckingAttempt.set(false);
+          this.writingStretch.set(false);
+          this.clearQuestions();
+          this.waitingRun.set(null);
+          this.existingRun.set(null);
+          this.hasAcknowledgement.set(false);
+          this.runFailed.set(false);
+          this.phase.set('form');
+          this.restoreInputs(request, 'returned');
+          this.errorText.set('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.');
+        },
+      },
+      this.destroyRef
+    );
   }
 
   /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
@@ -1744,6 +1799,7 @@ export class MktgAgentRunComponent {
     this.publicRefreshKey.set('');
     this.publicReadFailed = false;
     this.publicReceiver.set(!!publicId);
+    this.pendingPublicRunId = '';
     if (!context) return;
     const recorded = this.runAttempts.load(context.uid, this.agent.id);
     const recordedId =
