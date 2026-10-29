@@ -8,19 +8,13 @@
     }
   }
   @case ('v1') {
-    @defer (on immediate) {
-      <lfx-meetings-dashboard />
-    }
+    <lfx-meetings-dashboard />
   }
   @default {
-    <!-- Prefetches the existing dashboard's chunk while the flag resolves; `when false` keeps the block from ever rendering. -->
-    @defer (when false; prefetch on immediate) {
-      <lfx-meetings-dashboard />
-    }
     <div class="flex min-h-[320px] items-center justify-center" role="status" data-testid="meetings-entry-loading">
-      <!-- CSS spinner: first paint must not wait on the deferred Font Awesome kit. -->
+      <!-- CSS spinner (FA kit is deferred); 36px exact at the 14px root. -->
       <div
-        class="h-9 w-9 shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500"
+        class="h-[36px] w-[36px] shrink-0 animate-spin rounded-full border-2 border-blue-200 border-t-blue-500"
         aria-hidden="true"
         data-testid="meetings-entry-spinner"></div>
       <span class="sr-only">Loading meetings</span>

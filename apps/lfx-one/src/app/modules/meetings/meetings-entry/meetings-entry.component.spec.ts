@@ -165,6 +165,17 @@ describe('MeetingsEntryComponent', () => {
     expect(has(fixture, 'stub-v1')).toBe(false);
   });
 
+  it('renders the existing dashboard on the server for a prefixed URL, with no loader', async () => {
+    flagValue.set(true);
+    TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: { pathFromRoot: [{ url: [{ path: 'project' }] }, { url: [{ path: 'meetings' }] }] } } });
+
+    const fixture = await create('server');
+
+    expect(has(fixture, 'stub-v1')).toBe(true);
+    expect(has(fixture, 'meetings-entry-loading')).toBe(false);
+    expect(getFlagOverride).not.toHaveBeenCalled();
+  });
+
   it('shows the loader, then the existing dashboard, when the provider never becomes ready', async () => {
     providerReady.set(false);
     flagValue.set(true);

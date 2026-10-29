@@ -61,7 +61,7 @@ Each feature module defines its own routes with preloading configuration:
 export const MEETING_ROUTES: Routes = [
   {
     path: '',
-    // Thin wrapper that @defer-loads MeetingsDashboardComponent or, behind the meetings-redesign flag, MeetingsRedesignComponent
+    // Entry renders the dashboard or, behind the meetings-redesign flag, the @defer-loaded redesign
     loadComponent: () => import('./meetings-entry/meetings-entry.component').then((m) => m.MeetingsEntryComponent),
     data: { preload: true, preloadDelay: 500 },
   },
@@ -155,7 +155,7 @@ data: { preload: true, preloadDelay: 1500 }
 
 ### Bundle Size Optimization
 
-Lazy-loading feature modules and using the custom preloading strategy keeps the initial bundle small, defers non-critical work, and makes subsequent navigation near-instant because most preloaded chunks are already in cache. Meetings is the exception: its route preloads only the thin `MeetingsEntryComponent` wrapper, and the existing dashboard's chunk is prefetched by a `@defer (prefetch on immediate)` block while the wrapper's loader shows. Verify the shipping footprint for your build locally:
+Lazy-loading feature modules and using the custom preloading strategy keeps the initial bundle small, defers non-critical work, and makes subsequent navigation near-instant because most preloaded chunks are already in cache. The meetings route preloads the entry chunk, which includes the existing dashboard; only the redesign is a separate `@defer` chunk, downloaded when chosen. Verify the shipping footprint for your build locally:
 
 ```bash
 yarn build                                   # production bundle + stats

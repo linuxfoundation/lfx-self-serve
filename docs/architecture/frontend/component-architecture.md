@@ -61,7 +61,7 @@ apps/lfx-one/src/app/modules/
 >
 > **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard; `meeting-composer/` is the v2 drawer. The `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`) decides which one a user gets at every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks, the create-artifact dialog, and the `/meetings/create` and `/meetings/:id/edit` deep links. Each deep link is a pair of routes on the same path — a composer entry (`MeetingComposerRouteComponent`) behind the `meetingsV2Guard` CanMatch, then the wizard — so turning the flag off sends the same URL back to the wizard with no deploy. With no answer from LaunchDarkly the browser uses `MEETING_V2_ENABLED_DEFAULT` (`false`). Retiring the wizard means dropping each pair's wizard entry, the guard and the flag.
 >
-> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then `@defer`-loads either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, which always render the dashboard. This is unrelated to the `meeting-v2-enabled` composer flag above.
+> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait. This is unrelated to the `meeting-v2-enabled` composer flag above.
 
 ### Key Principles
 
@@ -502,7 +502,7 @@ AppComponent
     └── MainLayoutComponent (authGuard protected, provides header + sidebar + content area)
         ├── /                    → DashboardComponent (role-based dashboard)
         ├── /projects            → HomeComponent (project listing)
-        ├── /meetings            → MeetingsEntryComponent (lazy loaded; defers MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
+        ├── /meetings            → MeetingsEntryComponent (lazy loaded; renders MeetingsDashboardComponent or, behind `meetings-redesign` in the Me lens, MeetingsRedesignComponent)
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)

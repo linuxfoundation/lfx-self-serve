@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Arbitrary [Npx] values below are the design's exact pixels: Tailwind's rem scale undershoots them at the 14px root. -->
+<!-- Exact [Npx] design values: rem undershoots at the 14px root; host rem margins cancel main-layout padding. -->
 <!-- shortcut: no Create meeting in Me lens. revisit: when a project picker for create lands -->
 <div class="flex bg-white min-[1025px]:min-h-[480px] min-[1025px]:overflow-hidden" [style.height.px]="columnHeight()" data-testid="meetings-redesign">
   <!-- Centre column -->
@@ -25,7 +25,7 @@
           [class.opacity-0]="!scrolled() || tabsStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-header-fade"></span>
-        <div class="flex min-w-0 flex-col gap-1">
+        <div class="flex min-w-0 flex-col gap-[4px]">
           <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
           <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
             Meetings you're invited to or organizing, across all your projects.
@@ -41,7 +41,7 @@
       <!-- Sticky tabs bar; the fade moves here from the header once it is stuck -->
       <div
         #tabsBar
-        class="sticky z-[5] -mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-3 bg-white pb-3 pt-1"
+        class="sticky z-[5] -mt-[4px] flex flex-wrap items-end justify-between gap-x-[16px] gap-y-[12px] bg-white pb-[12px] pt-[4px]"
         [style.top.px]="stickyTop() + headerHeight()"
         data-testid="meetings-redesign-tabs-bar">
         <span
@@ -67,7 +67,7 @@
       <!-- List area -->
       <div
         role="tabpanel"
-        class="min-h-[240px] rounded-xl border border-dashed border-gray-200"
+        class="min-h-[240px] rounded-[12px] border border-dashed border-gray-200"
         [attr.id]="idPrefix + '-panel-' + activeTab()"
         [attr.aria-labelledby]="idPrefix + '-tab-' + activeTab()"
         data-testid="meetings-redesign-list"></div>
@@ -86,9 +86,9 @@
 
 <ng-template #railTemplate let-scope>
   @for (block of railBlocks; track block.key) {
-    <section class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block.key">
+    <section class="flex min-w-0 flex-col gap-[8px]" [attr.data-testid]="'meetings-redesign-' + scope + '-' + block.key">
       <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">{{ block.label }}</h2>
-      <div class="h-28 rounded-xl border border-gray-200 bg-gray-50"></div>
+      <div class="h-[112px] rounded-[12px] border border-gray-200 bg-gray-50"></div>
     </section>
   }
 </ng-template>

@@ -80,18 +80,28 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${HEADER_HEIGHT}px`);
   });
 
-  it("subtracts the layout wrapper's bottom padding from the desktop column height", async () => {
+  it("counts the layout wrapper's bottom padding, not main's own, in the desktop column height", async () => {
     vi.stubGlobal('innerHeight', 900);
-    const fixture = render();
-    await fixture.whenStable();
-    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('900px');
+    // The real shape: main (own padding) > content wrapper (21px) > route-entry host stand-in > the page.
+    const main = document.createElement('main');
+    main.style.paddingBottom = '40px';
+    const wrapper = document.createElement('div');
+    wrapper.style.paddingBottom = '21px';
+    const entryHost = document.createElement('div');
+    main.append(wrapper);
+    wrapper.append(entryHost);
+    document.body.append(main);
 
-    // The wrapper sits above the route-entry host, not directly over the page.
-    fixture.nativeElement.parentElement.style.paddingBottom = '21px';
-    window.dispatchEvent(new Event('resize'));
-    fixture.detectChanges();
+    try {
+      const fixture = TestBed.createComponent(MeetingsRedesignComponent);
+      entryHost.append(fixture.nativeElement);
+      fixture.detectChanges();
+      await fixture.whenStable();
 
-    expect(query(fixture, 'meetings-redesign')?.style.height).toBe('879px');
+      expect(query(fixture, 'meetings-redesign')?.style.height).toBe('879px');
+    } finally {
+      main.remove();
+    }
   });
 
   it('clears the impersonation banner when the window scrolls', async () => {
