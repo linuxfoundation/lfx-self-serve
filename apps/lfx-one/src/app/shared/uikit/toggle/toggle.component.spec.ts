@@ -50,6 +50,7 @@ describe('UiToggleComponent', () => {
     await fixture.whenStable();
 
     expect(host.querySelector('[data-testid="ui-toggle-text"]')?.textContent?.trim()).toBe('Email notifications');
+    expect(inputOf().nextElementSibling?.getAttribute('data-testid')).toBe('ui-toggle-text');
     expect(inputOf().hasAttribute('aria-label')).toBe(false);
   });
 

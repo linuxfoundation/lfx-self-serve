@@ -23,7 +23,7 @@ import { UiToggleSize, UiToggleTone } from '@lfx-one/shared/interfaces';
 export class UiToggleComponent implements ControlValueAccessor {
   /** Visible label, shown after the control. Leave empty for a bare switch and set `ariaLabel`. */
   public readonly label = input<string>('');
-  /** Accessible name when there is no visible `label`. Ignored when `label` is set. */
+  /** Accessible name. Required when `label` is empty, or the switch is announced without a name. Ignored when `label` is set. */
   public readonly ariaLabel = input<string>('');
   /** Native `name`, used when the toggle is inside a plain HTML form. */
   public readonly name = input<string>('');
@@ -31,7 +31,7 @@ export class UiToggleComponent implements ControlValueAccessor {
   public readonly size = input<UiToggleSize>('default');
   /** Track colour when on. `warning` and `danger` are for settings with consequences, such as maintenance mode. */
   public readonly tone = input<UiToggleTone>('accent');
-  /** Disables the toggle. A form control's disabled state is applied as well. */
+  /** Disables the toggle. With reactive forms, disable the control instead (Angular warns when `[disabled]` sits next to `formControl`). */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Whether the toggle is on. Supports two-way binding with `[(checked)]`. */
   public readonly checked = model<boolean>(false);
