@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Touch targets use an exact [44px]: the 14px html root makes Tailwind's rem scale (min-h-11) render ~38px. -->
-<div class="flex flex-col gap-6" data-testid="vote-link-ballot-form">
+<div class="flex flex-1 flex-col gap-6" data-testid="vote-link-ballot-form">
   <form [formGroup]="form" class="flex flex-col gap-6">
     @for (question of questions(); track question.question_id) {
       <div
@@ -11,12 +11,12 @@
         [attr.aria-labelledby]="'vote-link-question-prompt-' + question.question_id"
         [attr.data-testid]="'vote-link-question-' + question.question_id">
         <div class="flex flex-col gap-1">
-          <h3
+          <h2
             class="text-[18px] leading-snug font-semibold text-slate-900 break-words"
             data-testid="vote-link-question-prompt"
             [id]="'vote-link-question-prompt-' + question.question_id">
             {{ question.prompt }}
-          </h3>
+          </h2>
           @if (isRankedPoll()) {
             <p class="text-xs text-slate-500">Drag to reorder, or use the arrow buttons. Top of the list is your first choice.</p>
           } @else if (question.type === 'multiple_choice') {
@@ -167,7 +167,7 @@
 
   <!-- Pinned to the bottom of the page's scroll area, above the safe area. -->
   <div
-    class="sticky bottom-0 -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+    class="sticky bottom-0 mt-auto -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     data-testid="vote-link-footer">
     @if (needsSelection()) {
       <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">Select one answer</p>

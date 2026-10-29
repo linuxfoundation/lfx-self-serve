@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Token-mode page: no navbar, no user menu, nothing about the recipient. LFX branding only. -->
-<main class="bg-gray-50 min-h-dvh" data-testid="vote-link-page">
-  <div class="mx-auto w-full max-w-[720px] px-4 py-6 flex flex-col gap-6">
+<main class="bg-gray-50 min-h-dvh flex flex-col" data-testid="vote-link-page">
+  <div class="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 flex flex-col gap-6">
     @if (showStandaloneMark()) {
       <div class="flex items-center justify-center">
         <img src="/images/logo_lfx.svg" alt="LFX" class="w-auto h-10" data-testid="vote-link-lfx-mark" />
@@ -12,26 +12,35 @@
 
     @switch (state()) {
       @case ('loading') {
-        <div class="flex flex-col items-center gap-3 py-12" role="status" aria-live="polite" data-testid="vote-link-loading">
+        <div class="flex flex-col items-center gap-3 py-12 my-auto" role="status" aria-live="polite" data-testid="vote-link-loading">
           <!-- Pure CSS: the Font Awesome kit is deferred, so a first-paint spinner must not depend on it. -->
           <span class="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" aria-hidden="true"></span>
           <p class="text-sm text-slate-600">Loading your ballot…</p>
         </div>
       }
       @case ('invalid') {
-        <div class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col gap-2" role="alert" data-testid="vote-link-invalid">
+        <div
+          class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col items-center gap-2 my-auto"
+          role="alert"
+          data-testid="vote-link-invalid">
           <i class="fa-light fa-link-slash text-3xl text-slate-400" aria-hidden="true"></i>
           <h1 class="text-lg font-semibold text-slate-900">This link is invalid or has expired.</h1>
         </div>
       }
       @case ('ended') {
-        <div class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col gap-2" role="alert" data-testid="vote-link-ended">
+        <div
+          class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col items-center gap-2 my-auto"
+          role="alert"
+          data-testid="vote-link-ended">
           <i class="fa-light fa-calendar-xmark text-3xl text-slate-400" aria-hidden="true"></i>
           <h1 class="text-lg font-semibold text-slate-900">This vote has ended.</h1>
         </div>
       }
       @case ('removed') {
-        <div class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col gap-2" role="alert" data-testid="vote-link-removed">
+        <div
+          class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col items-center gap-2 my-auto"
+          role="alert"
+          data-testid="vote-link-removed">
           <i class="fa-light fa-user-slash text-3xl text-slate-400" aria-hidden="true"></i>
           <h1 class="text-lg font-semibold text-slate-900">You're no longer a voter on this vote.</h1>
         </div>
@@ -45,7 +54,10 @@
         }
       }
       @case ('error') {
-        <div class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col gap-2" role="alert" data-testid="vote-link-error">
+        <div
+          class="rounded-lg border border-slate-200 bg-white p-6 text-center flex flex-col items-center gap-2 my-auto"
+          role="alert"
+          data-testid="vote-link-error">
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-500" aria-hidden="true"></i>
           <h1 class="text-lg font-semibold text-slate-900">{{ errorMessage() ?? "We couldn't load your ballot. Please reopen your link in a moment." }}</h1>
         </div>
@@ -77,7 +89,7 @@
       }
       @case ('ready') {
         @if (ballot(); as b) {
-          <div class="flex flex-col gap-4">
+          <div class="flex flex-1 flex-col gap-4">
             <lfx-vote-link-header [project]="project()" [title]="b.name" [endTime]="b.end_time" [statusLabel]="statusLabel()" />
             @if (b.description) {
               <!-- Poll-creator-authored rich HTML; Angular's [innerHTML] sanitizer applies. Capped on phones so the ballot starts in view. -->
@@ -107,6 +119,7 @@
               </div>
             } @else {
               <lfx-vote-ballot-form
+                class="flex flex-1 flex-col"
                 [ballot]="b"
                 [prefill]="b.ballot"
                 [submitting]="submitting()"
