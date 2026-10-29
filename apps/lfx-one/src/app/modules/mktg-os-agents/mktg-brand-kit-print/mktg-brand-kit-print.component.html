@@ -113,27 +113,25 @@
       <p>{{ v.logo.symbol }}</p>
     </td>
   </tr>
-  <!-- Keep the last two short rules together: never a Watch-outs-only continuation. -->
-  <tr class="kit-block" data-testid="kit-print-ending-rules">
+  <!-- Compact, individually whole blocks may flow independently on Letter. -->
+  <tr class="kit-block kit-logo-tail" data-testid="kit-print-partnership">
     <td>
-      <div class="kit-rule-grid">
-        <div>
-          <h3>Partnership lockups</h3>
-          <ul>
-            @for (rule of v.logo.partnership; track $index) {
-              <li>{{ rule }}</li>
-            }
-          </ul>
-        </div>
-        <div>
-          <h3>Watch-outs</h3>
-          <ul>
-            @for (rule of v.logo.watchouts; track $index) {
-              <li>{{ rule }}</li>
-            }
-          </ul>
-        </div>
-      </div>
+      <h3>Partnership lockups</h3>
+      <ul>
+        @for (rule of v.logo.partnership; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
+    </td>
+  </tr>
+  <tr class="kit-block kit-logo-tail" data-testid="kit-print-watchouts">
+    <td>
+      <h3>Watch-outs</h3>
+      <ul>
+        @for (rule of v.logo.watchouts; track $index) {
+          <li>{{ rule }}</li>
+        }
+      </ul>
     </td>
   </tr>
 </ng-template>

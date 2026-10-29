@@ -60,11 +60,8 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   }
   expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody tr')).toHaveLength(kit.chapters.logo.colorways.length);
   expect(root.querySelectorAll('[data-testid="kit-print-colorways"] tbody img')).toHaveLength(kit.chapters.logo.colorways.length);
-  const ending = root.querySelector('[data-testid="kit-print-ending-rules"]');
-  expect(ending?.tagName).toBe('TR');
-  expect(ending?.classList.contains('kit-block')).toBe(true);
-  expect(ending?.textContent).toContain('Partnership lockups');
-  expect(ending?.textContent).toContain('Watch-outs');
+  expect(root.querySelector('[data-testid="kit-print-partnership"]')?.textContent).toContain('Partnership lockups');
+  expect(root.querySelector('[data-testid="kit-print-watchouts"]')?.textContent).toContain('Watch-outs');
   kit.chapters.color.palette.forEach((entry) => expect(root.querySelector('[data-testid="kit-print-palette"]')?.textContent).toContain(entry.hex));
   expect(root.querySelector('[data-testid="kit-print-contrast"]')?.textContent).toContain('8.3:1');
   const specimens = root.querySelectorAll<HTMLElement>('.kit-specimen');
@@ -76,6 +73,23 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   expect(root.querySelectorAll('[data-testid="kit-print-usage"]')).toHaveLength(kit.chapters.usage.examples.length);
   expect(root.querySelector('[data-testid="kit-print-voice"]')?.textContent).toContain(kit.chapters.voice.umbrella);
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
+});
+
+it('keeps compact Letter tail blocks whole but allows a break between partnership and watch-outs', async () => {
+  const { root } = await setup();
+  const partnership = root.querySelector<HTMLElement>('[data-testid="kit-print-partnership"]');
+  const watchouts = root.querySelector<HTMLElement>('[data-testid="kit-print-watchouts"]');
+  if (!partnership || !watchouts) throw new Error('Missing synthetic logo tail blocks');
+  expect(partnership.tagName).toBe('TR');
+  expect(watchouts.tagName).toBe('TR');
+  expect(partnership.nextElementSibling).toBe(watchouts);
+  for (const block of [partnership, watchouts]) {
+    expect(getComputedStyle(block).breakInside).toBe('avoid');
+    const list = block.querySelector('ul');
+    if (!list) throw new Error('Missing synthetic tail list');
+    expect(getComputedStyle(list).columnCount).toBe('2');
+  }
+  expect(root.querySelector('.kit-rule-grid')).toBeNull();
 });
 
 it('lets eleven contrast rows fill Colour and split only between rows with a repeating header', async () => {
@@ -216,13 +230,21 @@ it('contains logos and brand lines inside padded frame boxes without clipping at
     expect(inner.querySelector('p')).not.toBeNull();
     const styles = getComputedStyle(inner);
     const mm = frame.getAttribute('data-layout') === 'report' ? 3 : 2.5;
-    const padding = styles.paddingTop;
-    const px = padding.endsWith('mm') ? (Number.parseFloat(padding) * 96) / 25.4 : Number.parseFloat(padding);
+    expect(getComputedStyle(frame).position).toBe('relative');
+    expect(getComputedStyle(frame).overflow).toBe('hidden');
+    expect(getComputedStyle(frame).breakInside).toBe('avoid');
+    expect(styles.position).toBe('absolute');
+    const inset = styles.inset;
+    const px = inset.endsWith('mm') ? (Number.parseFloat(inset) * 96) / 25.4 : Number.parseFloat(inset);
     expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
     const logo = inner.querySelector('img');
     if (!logo) throw new Error('Missing synthetic usage logo');
     expect(getComputedStyle(logo).objectFit).toBe('contain');
     expect(getComputedStyle(logo).maxWidth).toBe('100%');
+    inner.querySelectorAll('img, p').forEach((child) => {
+      expect(getComputedStyle(child).position).toBe('absolute');
+      expect(child.closest('.kit-usage-frame')).toBe(frame);
+    });
   });
 });
 

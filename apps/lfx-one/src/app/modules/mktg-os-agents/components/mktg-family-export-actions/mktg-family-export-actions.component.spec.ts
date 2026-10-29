@@ -308,7 +308,32 @@ describe('Family export slot', () => {
     expect(cover?.querySelector('.flex-1')).toBeNull();
     expect(cover?.querySelector('[data-testid="family-export-print-logo"]')?.getAttribute('src')).toBe(brand.logoOnLight?.src);
     expect(cover?.style.getPropertyValue('--mfp-ink')).toBe(brand.ink);
-    expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+    if (!document) throw new Error('Missing synthetic family print composition');
+    const body = root.ownerDocument.body;
+    const wasPrinting = body.classList.contains(MKTG_FAMILY_PRINT_BODY_CLASS);
+    body.classList.add(MKTG_FAMILY_PRINT_BODY_CLASS);
+    try {
+      expect(document.classList.contains(MKTG_FAMILY_PRINT_ONLY_CLASS)).toBe(true);
+      const frames = document.querySelectorAll<HTMLElement>('lfx-mktg-brand-kit-print .kit-usage-frame');
+      expect(frames).toHaveLength(4);
+      frames.forEach((frame) => {
+        expect(frame.closest(`.${MKTG_FAMILY_PRINT_ONLY_CLASS}`)).toBe(document);
+        expect(frame.closest(`body.${MKTG_FAMILY_PRINT_BODY_CLASS}`)).toBe(body);
+        expect(getComputedStyle(frame).position).toBe('relative');
+        expect(getComputedStyle(frame).overflow).toBe('hidden');
+        expect(getComputedStyle(frame).breakInside).toBe('avoid');
+        const inner = frame.querySelector('.kit-usage-inner');
+        if (!inner) throw new Error('Missing synthetic family-frame content box');
+        expect(getComputedStyle(inner).position).toBe('absolute');
+        inner.querySelectorAll('img, p').forEach((child) => {
+          expect(child.closest('.kit-usage-frame')).toBe(frame);
+          expect(getComputedStyle(child).position).toBe('absolute');
+        });
+      });
+    } finally {
+      if (!wasPrinting) body.classList.remove(MKTG_FAMILY_PRINT_BODY_CLASS);
+    }
+    expect(document.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
     expect(document?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveLength(5);
     expect(document?.querySelectorAll('lfx-mktg-brand-kit-print lfx-mktg-print-chapter-header')).toHaveLength(5);
     expect(document?.querySelector('lfx-brand-kit-view')).toBeNull();

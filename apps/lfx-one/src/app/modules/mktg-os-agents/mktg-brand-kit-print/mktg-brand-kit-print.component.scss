@@ -172,7 +172,21 @@ figcaption {
   vertical-align: middle;
 }
 
-.kit-rule-grid,
+.kit-logo-tail {
+  > td {
+    padding-bottom: 6pt;
+  }
+  ul {
+    column-count: 2;
+    column-gap: 12pt;
+    font-size: 8.5pt;
+    line-height: 1.35;
+  }
+  li {
+    break-inside: avoid;
+  }
+}
+
 .kit-usage-grid {
   display: grid;
   align-items: start;
@@ -192,18 +206,18 @@ figcaption {
 }
 
 .kit-usage-inner {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  padding: 2.5mm;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
+  /* An inset containing box, not percentage-height flex content that can
+     fragment away from its frame in the in-flow family print tables. */
+  position: absolute;
+  inset: 2.5mm;
 }
 
 .kit-usage-frame {
   display: block;
+  position: relative;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
   /* Explicit dimensions survive fragmented table/grid layout. Aspect-ratio
      alone lets Chromium stretch the coloured box to the page foot. */
   box-sizing: border-box;
@@ -219,9 +233,15 @@ figcaption {
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 
+  img,
+  strong {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
   img {
     display: block;
-    flex: none;
     width: 100%;
     max-width: 100%;
     height: 9mm;
@@ -230,6 +250,10 @@ figcaption {
     object-position: left top;
   }
   p {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
     margin: 0;
     font-size: inherit;
     line-height: 1.2;
@@ -240,7 +264,7 @@ figcaption {
     min-height: 44mm;
     max-height: 44mm;
     .kit-usage-inner {
-      padding: 3mm;
+      inset: 3mm;
     }
   }
 }

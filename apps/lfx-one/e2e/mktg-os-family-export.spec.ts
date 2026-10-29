@@ -192,6 +192,26 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(kitPrint.getByTestId('kit-print-type')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-eyebrow')).toHaveText(['Umbrella message', 'Brand line']);
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-voice-source')).toHaveText('From the messaging framework');
+  for (const tail of ['kit-print-partnership', 'kit-print-watchouts']) {
+    await expect(kitPrint.getByTestId(tail)).toHaveCSS('break-inside', 'avoid');
+  }
+  for (const frame of await kitPrint.locator('.kit-usage-frame').all()) {
+    await expect(frame).toHaveCSS('position', 'relative');
+    await expect(frame).toHaveCSS('overflow', 'hidden');
+    await expect(frame).toHaveCSS('break-inside', 'avoid');
+    await expect(frame.locator('.kit-usage-inner')).toHaveCSS('position', 'absolute');
+    for (const child of await frame.locator('.kit-usage-inner > img, .kit-usage-inner > p').all()) {
+      await expect(child).toHaveCSS('position', 'absolute');
+    }
+    const contained = await frame.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return Array.from(element.querySelectorAll('img, p')).every((child) => {
+        const content = child.getBoundingClientRect();
+        return content.left >= box.left - 0.5 && content.top >= box.top - 0.5 && content.right <= box.right + 0.5 && content.bottom <= box.bottom + 0.5;
+      });
+    });
+    expect(contained, 'Family print logo/line must remain inside its own bounded frame').toBe(true);
+  }
   const firstUsageFrame = printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame').first();
   await expect(firstUsageFrame).toHaveCSS('aspect-ratio', 'auto');
   const usageBox = await firstUsageFrame.boundingBox();
