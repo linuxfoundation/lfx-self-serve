@@ -2794,6 +2794,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(about?.classList.contains('hidden')).toBe(true);
     expect(query('mktg-document-view-comments-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
     expect(query('mktg-document-view-downstream-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
+    expect(query('mktg-document-view-about-skeleton')?.querySelectorAll('[data-testid="mktg-skeleton-row"]')).toHaveLength(2);
     listing.next({ project: PROJECT.uid, groups: [] });
     await settle();
     expect(about?.classList.contains('hidden')).toBe(true);
@@ -2808,8 +2809,11 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-about')).toBe(about);
     expect(about?.classList.contains('hidden')).toBe(false);
     expect(comments?.className).not.toContain('h-96');
+    expect(comments?.className).not.toContain('max-h-');
     expect(comments?.classList.contains('overflow-y-auto')).toBe(false);
     expect(downstream?.classList.contains('min-h-56')).toBe(true);
+    expect(downstream?.className).not.toContain('max-h-');
+    expect(downstream?.classList.contains('overflow-y-auto')).toBe(false);
     expect(query('mktg-document-view-comments-skeleton')).toBeNull();
     expect(query('mktg-document-view-downstream-skeleton')).toBeNull();
     expect(query('mktg-document-view-about-skeleton')).toBeNull();
