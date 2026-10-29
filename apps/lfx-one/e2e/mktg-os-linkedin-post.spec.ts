@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { LINKEDIN_API } from '../../../packages/shared/src/constants/linkedin-post.constants';
 import { LINKEDIN_POST_INTAKE } from '../../../packages/shared/src/constants/mktg-run.constants';
 import { MKTG_DOCUMENTS_API_PATH } from '../../../packages/shared/src/constants/mktg-document-store.constants';
@@ -49,7 +50,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
       await openLinkedin(page);
       await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic retained source');
       await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
-      const dialog = page.getByRole('alertdialog');
+      const dialog = activeRunConfirmDialog(page, 'mktg-linkedin-active-run-confirm');
       await expect(dialog).toContainText('Your LinkedIn post run is in progress');
       await dialog.getByRole('button', { name: choice, exact: true }).click();
       await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();

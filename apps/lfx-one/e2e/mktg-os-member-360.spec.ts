@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { createHash } from 'node:crypto';
 import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
 
@@ -52,7 +53,7 @@ for (const choice of ['Open it', 'Discard and start over'])
     await openMember360(page);
     await selectMember360Option(page, 'member-360-compare', 'No comparison');
     await page.getByTestId('member-360-run').getByRole('button').click();
-    const dialog = page.getByRole('alertdialog');
+    const dialog = activeRunConfirmDialog(page, 'member-360-active-run-confirm');
     await expect(dialog).toContainText('Your Member 360 run is in progress');
     await dialog.getByRole('button', { name: choice, exact: true }).click();
     if (choice === 'Open it') await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
