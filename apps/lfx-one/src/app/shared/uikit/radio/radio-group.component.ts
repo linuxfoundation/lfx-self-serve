@@ -7,7 +7,7 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 /**
  * Group of `lfx-ui-radio` options where exactly one can be chosen. Renders a `<fieldset role="radiogroup">` with a `<legend>`.
  * The options are native radios sharing one `name`, so Tab enters the group once and the arrow keys move and select the choice, as in the
- * WAI-ARIA radio group pattern. Use `[(value)]` or a reactive-forms control (`formControlName`, `[formControl]`, `ngModel`).
+ * WAI-ARIA radio group pattern. Use `[(value)]` or a reactive-forms control (`formControlName`, `[formControl]`).
  */
 @Component({
   selector: 'lfx-ui-radio-group',
@@ -33,12 +33,12 @@ export class UiRadioGroupComponent implements ControlValueAccessor {
   /** The chosen option's `value`, or `null` when nothing is chosen. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string | null>(null);
 
+  protected readonly formDisabled = signal(false);
+
   /** Name the options put on their native input. Read by `lfx-ui-radio`. */
   public readonly groupName: Signal<string> = this.initGroupName();
   /** True when the group is disabled by input or by its form control. Read by `lfx-ui-radio`. */
   public readonly isDisabled: Signal<boolean> = this.initIsDisabled();
-
-  protected readonly formDisabled = signal(false);
 
   private readonly generatedName = `lfx-ui-radio-group-${UiRadioGroupComponent.nextId++}`;
   private onChangeFn?: (value: string | null) => void;

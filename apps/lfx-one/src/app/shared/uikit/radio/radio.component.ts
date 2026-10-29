@@ -48,14 +48,15 @@ export class UiRadioComponent {
   private initCircleClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: 14px root. 16px circle with a 1px ring.
+      // forced-colors: the ring vanishes, so a real border keeps the circle visible (Highlight when chosen).
       const base =
-        'peer m-0 h-[16px] w-[16px] shrink-0 appearance-none rounded-ui-full ring-1 transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus';
+        'm-0 h-[16px] w-[16px] shrink-0 appearance-none rounded-ui-full ring-1 transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-focus forced-colors:border';
       if (this.isDisabled()) {
-        return `${base} bg-ui-neutral-50 ring-ui-neutral-alpha-300 cursor-not-allowed`;
+        return `${base} bg-ui-neutral-50 ring-ui-neutral-alpha-300 cursor-not-allowed forced-colors:border-[color:GrayText]`;
       }
       const state = this.isChecked()
-        ? 'bg-ui-background-100 ring-ui-accent-500'
-        : 'bg-ui-background-100 ring-ui-neutral-alpha-500 hover:bg-ui-neutral-alpha-50';
+        ? 'bg-ui-background-100 ring-ui-accent-500 forced-colors:border-[color:Highlight]'
+        : 'bg-ui-background-100 ring-ui-neutral-alpha-500 hover:bg-ui-neutral-alpha-50 forced-colors:border-[color:CanvasText]';
       return `${base} ${state} cursor-pointer`;
     });
   }
@@ -64,7 +65,7 @@ export class UiRadioComponent {
     // 7px dot centred in the circle.
     return computed(
       () =>
-        `pointer-events-none absolute left-[4.5px] top-[4.5px] h-[7px] w-[7px] rounded-ui-full ${this.isDisabled() ? 'bg-ui-neutral-400' : 'bg-ui-accent-500'}`
+        `pointer-events-none absolute left-[4.5px] top-[4.5px] h-[7px] w-[7px] rounded-ui-full ${this.isDisabled() ? 'bg-ui-neutral-400 forced-colors:bg-[color:GrayText]' : 'bg-ui-accent-500 forced-colors:bg-[color:Highlight]'}`
     );
   }
 
