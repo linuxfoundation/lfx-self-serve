@@ -12,3 +12,6 @@ export interface UiTabItem {
   /** Greys the tab out and removes it from keyboard navigation. */
   disabled?: boolean;
 }
+
+/** Colour role of a uikit badge and its status dot. `neutral` is the default. */
+export type UiBadgeTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';

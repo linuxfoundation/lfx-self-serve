@@ -49,12 +49,17 @@ test.describe('Marketing OS Documents structure', () => {
       await open.focus();
       await expect(open).toBeFocused();
       await open.press('Enter');
-      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveAttribute('aria-live', 'polite');
-      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Waiting for your answers.');
-      const intake = page.getByTestId('mktg-document-view-intake-link').getByRole('button');
-      await intake.focus();
-      await expect(intake).toBeFocused();
-      await expect(page.getByTestId('mktg-document-view-page').locator('h1')).toHaveCount(1);
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      const live = page.getByTestId('mktg-run-progress-status');
+      // WAI-ARIA status has implicit aria-live=polite on this run-page surface.
+      await expect(live).toHaveAttribute('role', 'status');
+      await expect(live).toMatchAriaSnapshot('- status: /Waiting for your answers/');
+      await expect(live).toContainText('Waiting for your answers');
+      await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
+      const refresh = page.getByTestId('mktg-document-view-refresh-progress').getByRole('button');
+      await refresh.focus();
+      await expect(refresh).toBeFocused();
+      await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });

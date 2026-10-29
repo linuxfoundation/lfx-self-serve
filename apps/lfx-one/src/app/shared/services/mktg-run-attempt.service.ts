@@ -91,7 +91,8 @@ export class MktgRunAttemptService {
     return this.prepare(scoped, true);
   }
 
-  public consume(token: string, projectUid: string, agentId: string, documentId?: string): MktgPreparedGeneration | null {
+  /** Read the same scope/TTL-validated handoff without consuming its single-use token (first-paint shape only). */
+  public peek(token: string, projectUid: string, agentId: string, documentId?: string): MktgPreparedGeneration | null {
     const prepared = this.prepared.get(token);
     if (
       !prepared ||
@@ -109,7 +110,12 @@ export class MktgRunAttemptService {
     ) {
       return null;
     }
-    this.prepared.delete(token);
+    return prepared;
+  }
+
+  public consume(token: string, projectUid: string, agentId: string, documentId?: string): MktgPreparedGeneration | null {
+    const prepared = this.peek(token, projectUid, agentId, documentId);
+    if (prepared) this.prepared.delete(token);
     return prepared;
   }
 

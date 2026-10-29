@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
@@ -73,6 +73,7 @@ import {
 } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 import { UserService } from './user.service';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
@@ -115,6 +116,7 @@ import { ProjectContextService } from './project-context.service';
 export class MktgAgentRunService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly userService = inject(UserService);
   private readonly attempts = inject(MktgRunAttemptService);
   private readonly projectContext = inject(ProjectContextService);
@@ -124,11 +126,10 @@ export class MktgAgentRunService {
   public readonly acknowledgementVersion = signal(0);
 
   /**
-   * In-memory runs, keyed exactly like localStorage. The authoritative record
-   * for THIS page session: `loadRun` prefers it, so when `setItem` fails
-   * (quota, disabled storage) the next follow-up still derives its version
-   * directive and poll gate from the run the user is looking at — persistence
-   * loss only ever costs cross-visit restore, never in-session correctness.
+   * Recovery bookkeeping, keyed exactly like localStorage; never authority for
+   * current server run/questions state. Memory preserves source/version hints
+   * and the private continuation capability when storage is disabled. Shared
+   * surfaces measure the server before using those hints or rendering state.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
@@ -621,6 +622,7 @@ export class MktgAgentRunService {
     projectUid: string,
     answeredQuestionsId?: string
   ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
+    if (!isPlatformBrowser(this.platformId)) return EMPTY;
     const body = this.resultBody(session, projectUid);
     // A ready result carries the document's Markdown, or — for an agent that
     // writes a structured asset — the asset; either ends the poll.
@@ -636,9 +638,9 @@ export class MktgAgentRunService {
     const isTerminal = (result: MktgRunResultResponse): boolean =>
       isDocument(result) || isNewQuestions(result) || isRefused(result) || result.status === 'failed';
     return defer(() => {
-      // One wall-clock deadline for the whole wait: with a live feed the poll
-      // emits along the way, so a per-emission timeout would never fire.
-      const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+      // Each visible observation window is bounded; focus re-observes the same
+      // accepted session, never Generate/answers. Server run deadlines remain authoritative.
+      let firstWindow = true;
       let lastActivity = '';
       // Only a feed that changed is worth an emission; intakes without a feed emit their terminal result alone.
       const isNewActivity = (result: MktgRunResultResponse): boolean => {
@@ -652,25 +654,39 @@ export class MktgAgentRunService {
         lastActivity = key;
         return true;
       };
-      return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-        tap(() => {
-          if (Date.now() > deadline) {
-            throw new TimeoutError();
-          }
-        }),
-        exhaustMap(() =>
-          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
-            catchError((error: unknown) => {
-              if (isTransientHttpError(error)) {
-                return of<MktgRunResultResponse>({ status: 'pending' });
-              }
-              return throwError(() => error);
-            })
-          )
-        ),
-        takeWhile((result) => !isTerminal(result), true),
-        filter((result) => isTerminal(result) || isNewActivity(result)),
-        map((result) => ({ result, terminal: isTerminal(result) }))
+      const observe = () => {
+        const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+        const delay = firstWindow ? MKTG_RUN_POLL.initialDelayMs : 0;
+        firstWindow = false;
+        return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+          tap(() => {
+            if (Date.now() > deadline) {
+              throw new TimeoutError();
+            }
+          }),
+          exhaustMap(() =>
+            this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+              catchError((error: unknown) => {
+                if (isTransientHttpError(error)) {
+                  return of<MktgRunResultResponse>({ status: 'pending' });
+                }
+                return throwError(() => error);
+              })
+            )
+          ),
+          takeWhile((result) => !isTerminal(result), true),
+          filter((result) => isTerminal(result) || isNewActivity(result)),
+          map((result) => ({ result, terminal: isTerminal(result) }))
+        );
+      };
+      return createVisibilityPoll(this.document, observe, {
+        intervalMs: MKTG_RUN_POLL.intervalMs,
+        backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+        backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+        shouldContinue: () => false,
+      }).pipe(
+        takeWhile((event) => event.kind === 'ok' && !event.value.terminal, true),
+        switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error)))
       );
     });
   }
@@ -730,19 +746,28 @@ export class MktgAgentRunService {
     session: MktgSessionInfo,
     result: MktgRunResultResponse
   ): Observable<MktgRunResultResponse> {
-    if (!intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
+    if (!isPlatformBrowser(this.platformId) || !intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
     const body = this.resultBody(session, projectUid);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
-    return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http
-          .post<MktgRunResultResponse>(intake.endpoints.result, body)
-          // A failed retry poll spends one attempt like any other; the next
-          // interval tries again within the budget.
-          .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
-      ),
+    let firstWindow = true;
+    const observe = () => {
+      const delay = firstWindow ? MKTG_RUN_POLL.intervalMs : 0;
+      firstWindow = false;
+      return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+        exhaustMap(() =>
+          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+        )
+      );
+    };
+    return createVisibilityPoll(this.document, observe, {
+      intervalMs: MKTG_RUN_POLL.intervalMs,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+      shouldContinue: () => false,
+    }).pipe(
+      switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))),
       take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
       // Announce the moment the SERVER copy exists, then stop. Consumers
       // resolve dependencies from the server copy in preference to any

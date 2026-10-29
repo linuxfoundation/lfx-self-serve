@@ -20,7 +20,8 @@ import {
 
 const context: MktgFamilyActionContext = { loaded: true, canWrite: true, approvedFramework: false };
 function family(id = 'positioning-brand'): MktgKitFamilyView {
-  const view = resolveMktgKit({ project: 'synthetic', groups: [] }, new Date('2026-10-23T12:00:00Z')).find((item) => item.family.id === id);
+  // These defensive action-policy cases also exercise hidden/unavailable catalog entries.
+  const view = resolveMktgKit({ project: 'synthetic', groups: [] }, new Date('2026-10-23T12:00:00Z'), true).find((item) => item.family.id === id);
   if (!view) throw new Error('Missing synthetic family');
   return view;
 }

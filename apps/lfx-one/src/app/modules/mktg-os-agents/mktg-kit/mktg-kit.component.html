@@ -3,7 +3,7 @@
 
 <div class="@container mx-auto flex max-w-screen-2xl flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="mktg-kit-page">
   <lfx-mktg-kit-header [projectName]="kit.projectName()" [withDescription]="true">
-    <dl class="grid min-w-0 grid-cols-2 gap-3 @[980px]:grid-cols-4" data-testid="mktg-kit-summary">
+    <dl class="grid min-w-0 grid-cols-2 gap-3" [class]="showComingSoon ? '@[980px]:grid-cols-4' : '@[980px]:grid-cols-3'" data-testid="mktg-kit-summary">
       <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
         <dt class="text-xs text-gray-500">Kit level</dt>
         <dd class="text-xl font-bold" data-testid="mktg-kit-level">{{ kit.summary().level ?? '—' }}</dd>
@@ -15,7 +15,7 @@
         <dt class="text-xs text-gray-500">Core floor</dt>
         <dd class="text-xl font-bold" data-testid="mktg-kit-core-floor">
           @if (kit.documents()) {
-            {{ kit.summary().coreFloor }} of {{ familyCount }}
+            {{ kit.summary().coreFloor }} of {{ familyCount() }}
           } @else {
             —
           }
@@ -31,12 +31,14 @@
           }
         </dd>
       </div>
-      <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
-        <dt class="text-xs text-gray-500">Open requests</dt>
-        <dd class="flex flex-wrap items-center gap-2">
-          <span class="text-xl font-bold">—</span><span class="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">Coming soon</span>
-        </dd>
-      </div>
+      @if (showComingSoon) {
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <dt class="text-xs text-gray-500">Open requests</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <span class="text-xl font-bold">—</span><span class="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">Coming soon</span>
+          </dd>
+        </div>
+      }
     </dl>
   </lfx-mktg-kit-header>
   <div class="flex flex-wrap items-end justify-between gap-3">
