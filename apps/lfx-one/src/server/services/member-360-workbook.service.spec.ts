@@ -10,10 +10,12 @@ import { SYNTHETIC_ORG_NAME, SYNTHETIC_SECOND_ORG_LEGAL_NAME } from '../../../e2
 import * as workbookUtils from '../utils/member-360-workbook.util';
 import { Member360WorkbookService } from './member-360-workbook.service';
 
-const mocks = vi.hoisted(() => ({ getProjectById: vi.fn(), getDocument: vi.fn(), getRevision: vi.fn(), save: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getProjectById: vi.fn(), getDocument: vi.fn(), getRevision: vi.fn(), save: vi.fn(), remove: vi.fn(), sweep: vi.fn() }));
 vi.mock('./member-360-tracker-store.service', () => ({
   Member360TrackerStoreService: class {
     save = mocks.save;
+    remove = mocks.remove;
+    sweepExpired = mocks.sweep;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -59,6 +61,15 @@ describe('Member 360 stored workbook boundary', () => {
     );
     expect(mocks.getDocument).not.toHaveBeenCalled();
   });
+  it('requires fresh writer scope before forwarding creator-bound tracker erasure', async () => {
+    const service = new Member360WorkbookService();
+    await service.deleteTracker(req, 'sample-project', 'a'.repeat(64));
+    expect(mocks.remove).toHaveBeenCalledWith(req, 'sample-project', 'a'.repeat(64));
+    mocks.remove.mockClear();
+    mocks.getProjectById.mockResolvedValue({ uid: 'sample-project', writer: false });
+    await expect(service.deleteTracker(req, 'sample-project', 'a'.repeat(64))).rejects.toMatchObject({ statusCode: 403 });
+    expect(mocks.remove).not.toHaveBeenCalled();
+  });
   it('rejects path-shaped project or document identifiers before upstream access', async () => {
     await expect(new Member360WorkbookService().download(req, '../other', doc)).rejects.toThrow();
     await expect(new Member360WorkbookService().download(req, 'sample-project', '../other')).rejects.toThrow();
@@ -93,6 +104,8 @@ describe('Member 360 stored workbook boundary', () => {
         Buffer.from(`company,session\n${SYNTHETIC_ORG_NAME},Sample session`)
       )
     ).toEqual(receipt);
+    expect(mocks.sweep).toHaveBeenCalledWith(req, 'sample-project');
+    expect(mocks.sweep.mock.invocationCallOrder[0]).toBeLessThan(mocks.save.mock.invocationCallOrder[0]);
     expect(mocks.save).toHaveBeenCalledWith(req, 'sample-project', {
       filename: 'speaking.csv',
       rows: [{ company: SYNTHETIC_ORG_NAME, session: 'Sample session' }],

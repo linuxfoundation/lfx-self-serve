@@ -1,21 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEMBER_360_MAX_BYTES, MEMBER_360_TRACKER_ID_REGEX, MEMBER_360_TRACKER_TTL_MS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import {
+  MEMBER_360_MAX_BYTES,
+  MEMBER_360_TRACKER_ID_REGEX,
+  MEMBER_360_TRACKER_TTL_MS,
+  MEMBER_360_TRACKER_SWEEP_LIMIT,
+  MKTG_ARTIFACT_PARTITION_REGEX,
+} from '@lfx-one/shared/constants';
 import { Member360StoredTracker, Member360Tracker, Member360TrackerReceipt } from '@lfx-one/shared/interfaces';
 import { trackerSchema } from '@lfx-one/shared/server/member-360.utils';
 import { Request } from 'express';
 import { createHash, randomBytes } from 'node:crypto';
 
-import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthenticationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { ObjectStoreService } from './object-store.service';
 import { logger } from './logger.service';
 
-/** Private tracker rows share the durable run store, never a browser round trip.
- * Callers must resolve the project's writer entitlement before invoking this service.
- * Consumed and expired records are deleted best-effort. Bucket lifecycle remains
- * the fallback for abandoned uploads and failed deletes.
+/** Private parsed rows, never a response. Callers resolve fresh project writer scope.
+ * Delete on durable consumption, explicit removal, expired reads and bounded
+ * upload/generate sweeps; client abandonment cleanup is best-effort. Sweeps are
+ * activity-driven, not a timer: crashes, idle projects and failed deletes still
+ * require the infrastructure lifecycle safety net (not configured here).
  */
 export class Member360TrackerStoreService {
   private readonly store = new ObjectStoreService();
@@ -71,12 +78,56 @@ export class Member360TrackerStoreService {
     return trackers;
   }
 
-  /** Only called after these rows were included in a successfully started run. */
+  /** Explicit removal must confirm deletion; an absent receipt is already removed. */
+  public async remove(req: Request, project: string, id: string): Promise<void> {
+    const creator = this.creator(req);
+    const key = this.key(project, id);
+    const object = await this.store.getPrivateObject(req, 'marketing-os-artifacts', key);
+    if (!object) return;
+    let owned = false;
+    try {
+      const record = JSON.parse(object.body) as Partial<Member360StoredTracker>;
+      owned = record.project === project && record.creatorHash === creator;
+    } catch {
+      /* Never quote malformed private bytes. */
+    }
+    if (!owned) throw new ResourceNotFoundError('Member 360 tracker');
+    await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
+  }
+
+  /** Metadata-only oldest-first pass; at most N deletion attempts, no row reads. */
+  public async sweepExpired(req: Request, project: string): Promise<void> {
+    this.creator(req);
+    const prefix = this.prefix(project);
+    try {
+      const cutoff = Date.now() - MEMBER_360_TRACKER_TTL_MS;
+      const entries = await this.store.listObjects(req, 'marketing-os-artifacts', prefix);
+      const expired = entries
+        .filter((entry) => {
+          const id = entry.key.slice(prefix.length, -5);
+          return (
+            entry.key.startsWith(prefix) &&
+            entry.key === `${prefix}${id}.json` &&
+            MEMBER_360_TRACKER_ID_REGEX.test(id) &&
+            entry.lastModified !== undefined &&
+            Number.isFinite(entry.lastModified.getTime()) &&
+            entry.lastModified.getTime() <= cutoff
+          );
+        })
+        .sort((a, b) => (a.lastModified?.getTime() ?? 0) - (b.lastModified?.getTime() ?? 0))
+        .slice(0, MEMBER_360_TRACKER_SWEEP_LIMIT);
+      for (const entry of expired) await this.erase(req, entry.key, 'sweep');
+    } catch {
+      logger.warning(req, 'member_360_tracker_sweep', 'Private tracker sweep unavailable; lifecycle cleanup remains required', { project });
+    }
+  }
+
+  /** Only called AFTER the consumed run has been durably registered. */
   public async deleteConsumed(req: Request, project: string, ids: string[]): Promise<void> {
     for (const id of new Set(ids)) await this.erase(req, this.key(project, id), 'consumed');
   }
 
-  private async erase(req: Request, key: string, reason: 'consumed' | 'expired'): Promise<void> {
+  private async erase(req: Request, key: string, reason: 'consumed' | 'expired' | 'sweep'): Promise<void> {
     try {
       await this.store.deletePrivateObject(req, 'marketing-os-artifacts', key);
     } catch {
@@ -86,10 +137,14 @@ export class Member360TrackerStoreService {
     }
   }
 
+  private prefix(project: string): string {
+    if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project)) throw ServiceValidationError.forField('project', 'Use a single-segment project uid.');
+    return `member-360-trackers/${project}/`;
+  }
+
   private key(project: string, id: string): string {
-    if (!MKTG_ARTIFACT_PARTITION_REGEX.test(project) || !MEMBER_360_TRACKER_ID_REGEX.test(id))
-      throw ServiceValidationError.forField('trackerIds', 'Use the tracker ids returned by an upload.');
-    return `member-360-trackers/${project}/${id}.json`;
+    if (!MEMBER_360_TRACKER_ID_REGEX.test(id)) throw ServiceValidationError.forField('trackerIds', 'Use the tracker ids returned by an upload.');
+    return `${this.prefix(project)}${id}.json`;
   }
 
   private creator(req: Request): string {

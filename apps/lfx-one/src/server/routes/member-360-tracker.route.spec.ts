@@ -3,13 +3,22 @@
 
 import express from 'express';
 import type { Server } from 'node:http';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const objects = vi.hoisted(() => new Map<string, string>());
 const parseTracker = vi.hoisted(() =>
   vi.fn((_req: express.Request, res: express.Response) => {
     objects.set('private-tracker', 'synthetic parsed rows');
     res.json({ parsed: true });
+  })
+);
+const deleteTracker = vi.hoisted(() =>
+  vi.fn((req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const id = String(req.params['id']);
+    const creator = objects.get(id);
+    if (creator && creator !== req.headers['x-test-creator']) return next(new ResourceNotFoundError('Member 360 tracker'));
+    objects.delete(id);
+    res.status(204).end();
   })
 );
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -24,12 +33,13 @@ vi.mock('../controllers/member-360.controller', () => ({ Member360Controller: cl
 vi.mock('../controllers/member-360-workbook.controller', () => ({
   Member360WorkbookController: class {
     public parseTracker = parseTracker;
+    public deleteTracker = deleteTracker;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn() } }));
 
 import { MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
-import { AuthorizationError, MicroserviceError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
 import router from './mktg-agents.route';
 
 let server: Server;
@@ -56,6 +66,37 @@ afterAll(async () => {
 });
 
 describe('Member 360 tracker raw parser', () => {
+  beforeEach(() => {
+    objects.clear();
+    vi.clearAllMocks();
+  });
+  it('blocks impersonated DELETE before the creator-bound erasure handler', async () => {
+    const id = 'a'.repeat(64);
+    objects.set(id, 'synthetic-owner');
+    const response = await fetch(`${url}/${id}?project=sample-project`, { method: 'DELETE', headers: { 'x-test-impersonation': '1' } });
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe('');
+    expect(deleteTracker).not.toHaveBeenCalled();
+    expect(objects.has(id)).toBe(true);
+  });
+  it('returns an empty 404 without deleting another creator receipt', async () => {
+    const id = 'a'.repeat(64);
+    objects.set(id, 'synthetic-owner');
+    const response = await fetch(`${url}/${id}?project=sample-project`, { method: 'DELETE', headers: { 'x-test-creator': 'synthetic-other' } });
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('');
+    expect(objects.has(id)).toBe(true);
+  });
+  it('returns empty 204 for the creator and repeated deletion of an already-gone id', async () => {
+    const id = 'a'.repeat(64);
+    objects.set(id, 'synthetic-owner');
+    for (let n = 0; n < 2; n++) {
+      const response = await fetch(`${url}/${id}?project=sample-project`, { method: 'DELETE', headers: { 'x-test-creator': 'synthetic-owner' } });
+      expect(response.status).toBe(204);
+      expect(await response.text()).toBe('');
+    }
+    expect(objects.has(id)).toBe(false);
+  });
   it('rejects an impersonated private upload before parsing or writing an object', async () => {
     const response = await fetch(url, {
       method: 'POST',

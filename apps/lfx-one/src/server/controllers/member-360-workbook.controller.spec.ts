@@ -8,11 +8,12 @@ import { SYNTHETIC_ORG_NAME } from '../../../e2e/fixtures/mock-data/synthetic-or
 import { ServiceValidationError } from '../errors';
 import { Member360WorkbookController } from './member-360-workbook.controller';
 
-const mocks = vi.hoisted(() => ({ download: vi.fn(), parseTracker: vi.fn() }));
+const mocks = vi.hoisted(() => ({ download: vi.fn(), parseTracker: vi.fn(), deleteTracker: vi.fn() }));
 vi.mock('../services/member-360-workbook.service', () => ({
   Member360WorkbookService: class {
     public download = mocks.download;
     public parseTracker = mocks.parseTracker;
+    public deleteTracker = mocks.deleteTracker;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: () => 0, success: vi.fn() } }));
@@ -31,6 +32,18 @@ describe('Member 360 workbook HTTP response', () => {
     expect(res.attachment).toHaveBeenCalledWith('Member360_sample_2026-Q3.xlsx');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
     expect(res.send).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    expect(next).not.toHaveBeenCalled();
+  });
+  it('returns an empty private 204 for an erased or already-gone tracker', async () => {
+    const req = { query: { project: 'sample-project' }, params: { id: 'a'.repeat(64) } } as unknown as Request;
+    const res = { setHeader: vi.fn(), status: vi.fn(), end: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    await new Member360WorkbookController().deleteTracker(req, res as unknown as Response, next);
+    expect(mocks.deleteTracker).toHaveBeenCalledWith(req, 'sample-project', 'a'.repeat(64));
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.json).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
   it('rejects repeated/non-string project query values before service access', async () => {

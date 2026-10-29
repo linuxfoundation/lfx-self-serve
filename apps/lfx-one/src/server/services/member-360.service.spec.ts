@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   recordGeneration: vi.fn(),
   loadTrackers: vi.fn(),
   deleteTrackers: vi.fn(),
+  sweepTrackers: vi.fn(),
   available: true,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -55,6 +56,7 @@ vi.mock('./member-360-tracker-store.service', () => ({
   Member360TrackerStoreService: class {
     load = mocks.loadTrackers;
     deleteConsumed = mocks.deleteTrackers;
+    sweepExpired = mocks.sweepTrackers;
   },
 }));
 vi.mock('./guild.service', () => ({
@@ -181,8 +183,8 @@ describe('Member 360 entitlement and generation', () => {
     expect(mocks.loadTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
     expect(mocks.getProjectById.mock.invocationCallOrder[0]).toBeLessThan(mocks.loadTrackers.mock.invocationCallOrder[0]);
     expect(mocks.createSession.mock.calls[0][1].message).toContain('synthetic@example.test');
-    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
-    expect(mocks.createSession.mock.invocationCallOrder[0]).toBeLessThan(mocks.deleteTrackers.mock.invocationCallOrder[0]);
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
     mocks.createSession.mockClear();
     mocks.loadTrackers.mockRejectedValue(new Error('Expired tracker'));
     await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
@@ -196,7 +198,16 @@ describe('Member 360 entitlement and generation', () => {
     await service.start(req, body, prepared);
     expect(mocks.loadTrackers).toHaveBeenCalledOnce();
     expect(mocks.createSession).toHaveBeenCalledOnce();
-    expect(mocks.deleteTrackers).toHaveBeenCalledOnce();
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledOnce();
+  });
+  it('only deletes consumed rows when the durable-registration caller requests cleanup', async () => {
+    await new Member360Service().deleteConsumedTrackers(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+  });
+  it('sweeps the project on Generate even when no tracker ids were submitted', async () => {
+    await new Member360Service().start(req, { project: 'sample-project' });
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
   });
   it('does not consume tracker rows if the Guild start fails', async () => {
     mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);

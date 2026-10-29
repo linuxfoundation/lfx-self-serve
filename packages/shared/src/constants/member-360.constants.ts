@@ -108,6 +108,8 @@ export const MEMBER_360_RUN_CEILING_MS = 7_200_000;
 export const MEMBER_360_NEEDS_INPUT_POLL_INTERVAL_MS = 30_000;
 /** Allow an interrupted intake to resume within six hours; rows remain private. */
 export const MEMBER_360_TRACKER_TTL_MS = 21_600_000;
+/** Cap deletion attempts per activity-driven cleanup pass. */
+export const MEMBER_360_TRACKER_SWEEP_LIMIT = 25;
 export const MEMBER_360_TRACKER_ID_REGEX = /^[0-9a-f]{64}$/;
 /** Fixed activity copy: never derive these labels from tool arguments. */
 export const MEMBER_360_ACTIVITY_LABELS = {

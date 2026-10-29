@@ -25,6 +25,16 @@ export class Member360Service {
     );
   }
 
+  /** Fetch backend keepalive lets best-effort erasure survive route/page departure. */
+  public deleteTracker(project: string, id: string): Observable<void> {
+    return this.http
+      .delete<void>(`${MEMBER_360_API}/tracker/${encodeURIComponent(id)}`, {
+        params: { project },
+        keepalive: true,
+      })
+      .pipe(take(1));
+  }
+
   public parseTracker(project: string, file: File): Observable<Member360TrackerReceipt> {
     return this.http
       .post<Member360TrackerReceipt>(`${MEMBER_360_API}/tracker`, file, {

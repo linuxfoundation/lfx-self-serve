@@ -52,6 +52,15 @@ describe('Member360Service dedicated transports', () => {
     request.flush({});
   });
 
+  it('deletes only an opaque receipt with keepalive and accepts a bodyless204', () => {
+    api.deleteTracker('sample-project', 'a'.repeat(64)).subscribe();
+    const request = http.expectOne(`/api/mktg-agents/member-360/tracker/${'a'.repeat(64)}?project=sample-project`);
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.body).toBeNull();
+    expect(request.request.keepalive).toBe(true);
+    request.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
   it('downloads a stored document through the BFF without sending client tabs', () => {
     const blob = new Blob(['synthetic workbook']);
     let received: Blob | undefined;

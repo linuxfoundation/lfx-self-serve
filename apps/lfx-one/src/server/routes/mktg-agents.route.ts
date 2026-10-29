@@ -12,7 +12,8 @@ import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
-import { MicroserviceError } from '../errors';
+import { BaseApiError, MicroserviceError } from '../errors';
+import { logger } from '../services/logger.service';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 /**
@@ -85,6 +86,19 @@ router.post(
     next(err);
   },
   (req: Request, res: Response, next: NextFunction) => member360Workbook.parseTracker(req, res, next)
+);
+
+router.delete(
+  '/member-360/tracker/:id',
+  blockDuringImpersonation,
+  (req: Request, res: Response, next: NextFunction) => member360Workbook.deleteTracker(req, res, next),
+  (error: unknown, req: Request, res: Response, _next: NextFunction) => {
+    // This private erasure endpoint returns status only, including errors.
+    const status = error instanceof BaseApiError ? error.statusCode : 500;
+    logger.warning(req, 'member_360_tracker_delete', 'Private tracker deletion rejected', { status });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(status).end();
+  }
 );
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));

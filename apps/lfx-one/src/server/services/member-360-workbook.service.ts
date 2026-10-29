@@ -56,6 +56,7 @@ export class Member360WorkbookService {
 
   public async parseTracker(req: Request, projectUid: string, filename: unknown, bytes: Buffer): Promise<Member360TrackerReceipt> {
     const project = await this.resolveWriter(req, projectUid);
+    await this.trackers.sweepExpired(req, project);
     // `Array.isArray` is redundant against `Buffer.isBuffer` at runtime; it is kept because CodeQL's
     // js/type-confusion only clears the express body once the array shape is excluded explicitly.
     if (
@@ -83,6 +84,11 @@ export class Member360WorkbookService {
     }
     // Store failures keep their classification, not a misleading parser error.
     return this.trackers.save(req, project, tracker);
+  }
+
+  public async deleteTracker(req: Request, projectUid: string, id: string): Promise<void> {
+    const project = await this.resolveWriter(req, projectUid);
+    await this.trackers.remove(req, project, id);
   }
 
   private async resolveWriter(req: Request, uid: string): Promise<string> {

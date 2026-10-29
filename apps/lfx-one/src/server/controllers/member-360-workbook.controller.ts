@@ -50,6 +50,19 @@ export class Member360WorkbookController {
     }
   }
 
+  public async deleteTracker(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'member_360_tracker_delete';
+    const start = logger.startOperation(req, operation, {});
+    try {
+      await this.service.deleteTracker(req, this.query(req, 'project'), String(req.params['id'] ?? ''));
+      res.setHeader('Cache-Control', 'private, no-store');
+      logger.success(req, operation, start, {});
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
   private query(req: Request, key: string): string {
     const value = req.query[key];
     if (typeof value !== 'string' || !value.trim())

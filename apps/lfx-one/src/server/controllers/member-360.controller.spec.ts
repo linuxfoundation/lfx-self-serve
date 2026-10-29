@@ -8,7 +8,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { Member360Controller } from './member-360.controller';
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), result: vi.fn(), preflight: vi.fn(), track: vi.fn(), record: vi.fn(), active: vi.fn(), prepare: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  result: vi.fn(),
+  preflight: vi.fn(),
+  track: vi.fn(),
+  record: vi.fn(),
+  active: vi.fn(),
+  prepare: vi.fn(),
+  cleanup: vi.fn(),
+}));
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
@@ -24,6 +33,7 @@ vi.mock('../services/member-360.service', async (original) => {
       public static toRunResult = actual.Member360Service.toRunResult;
       public start = mocks.start;
       public prepareTrackers = mocks.prepare;
+      public deleteConsumedTrackers = mocks.cleanup;
       public result = mocks.result;
     },
   };
@@ -75,6 +85,26 @@ describe('Member 360 HTTP boundary', () => {
     expect(mocks.prepare.mock.invocationCallOrder[0]).toBeLessThan(mocks.active.mock.invocationCallOrder[0]);
     expect(mocks.active.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
     expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] }, rows);
+    expect(mocks.cleanup).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
+  });
+  it('retains prepared private rows when durable registration fails so receipts remain usable', async () => {
+    const rows = [{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }];
+    let retained = true;
+    mocks.prepare.mockImplementation(async () => (retained ? rows : []));
+    mocks.cleanup.mockImplementation(async () => {
+      retained = false;
+    });
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    const failure = new Error('Synthetic registration unavailable');
+    mocks.track.mockRejectedValueOnce(failure);
+    const next = vi.fn();
+    const input = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    await new Member360Controller().generate({ body: input } as Request, { json: vi.fn() } as unknown as Response, next);
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(mocks.cleanup).not.toHaveBeenCalled();
+    expect(retained).toBe(true);
+    expect(await mocks.prepare({} as Request, input)).toEqual(rows);
   });
   it.each(['project_name', 'project_uid', 'prior_run', 'request', 'handle'])('rejects client-controlled %s', async (key) => {
     const next = vi.fn();

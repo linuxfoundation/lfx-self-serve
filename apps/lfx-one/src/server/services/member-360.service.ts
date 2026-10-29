@@ -78,7 +78,11 @@ export class Member360Service {
   /** Validate private receipts under fresh writer scope before any discard. */
   public async prepareTrackers(req: Request, body: Member360GenerateRequest): Promise<Member360Tracker[]> {
     const project = await this.resolveProject(req, body.project);
-    return body.trackerIds?.length ? this.trackerStore.load(req, project.uid, body.trackerIds) : [];
+    return this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []);
+  }
+
+  public async deleteConsumedTrackers(req: Request, project: string, ids: string[]): Promise<void> {
+    await this.trackerStore.deleteConsumed(req, project, ids);
   }
 
   public async start(req: Request, body: Member360GenerateRequest, preparedTrackers?: Member360Tracker[]): Promise<Member360GenerationStart> {
@@ -86,7 +90,8 @@ export class Member360Service {
     if (agent?.status !== 'active')
       throw new InvalidRequestError('Member 360 is not available.', 'MEMBER_360_UNAVAILABLE', { operation: 'member_360_generate', service: 'member_360' });
     const project = await this.resolveProject(req, body.project);
-    const trackers = body.trackerIds?.length ? (preparedTrackers ?? (await this.trackerStore.load(req, project.uid, body.trackerIds))) : undefined;
+    const loadedTrackers = preparedTrackers ?? (await this.loadPrivateTrackers(req, project.uid, body.trackerIds ?? []));
+    const trackers = loadedTrackers.length ? loadedTrackers : undefined;
     const prior = body.compare === false ? undefined : await this.previousRun(req, project.uid);
     const payload = formInputSchema.parse({
       type: 'member_360_intake_form',
@@ -104,7 +109,6 @@ export class Member360Service {
       message: renderMember360FormMessage(payload),
       mentionOnOwnLine: true,
     });
-    if (body.trackerIds?.length) await this.trackerStore.deleteConsumed(req, project.uid, body.trackerIds);
     return { sessionId, documentId: buildMktgRunDocumentId(sessionId) };
   }
 
@@ -281,6 +285,11 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  private async loadPrivateTrackers(req: Request, project: string, ids: string[]): Promise<Member360Tracker[]> {
+    await this.trackerStore.sweepExpired(req, project);
+    return ids.length ? this.trackerStore.load(req, project, ids) : [];
   }
 
   private finalCarrierTexts(payload: string): string[] {
