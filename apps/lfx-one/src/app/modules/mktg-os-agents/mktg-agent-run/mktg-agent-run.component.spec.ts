@@ -17,6 +17,7 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_LINK_ADVICE,
+  MKTG_DRIVE_SHARING_HINT,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_ACTIVE,
 } from '@lfx-one/shared/constants';
@@ -254,6 +255,34 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  it('appends the shared Drive guidance to every URL-list row description without changing existing hint text', async () => {
+    SHELL_INTAKE.fields.push({
+      key: 'synthetic_links',
+      question: 'Synthetic links',
+      kind: 'url-list',
+      format: 'source-url-list',
+      optional: true,
+      hint: 'Existing source guidance.',
+    });
+    try {
+      await configure();
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const hint = host().querySelector('#mktg-intake-synthetic_links-hint');
+      expect(hint?.textContent?.replace(/\s+/g, ' ').trim()).toBe(`Existing source guidance. ${MKTG_DRIVE_SHARING_HINT}`);
+      component['onAddLinkRow']('synthetic_links');
+      await fixture.whenStable();
+      const rows = component['linkRows']()['synthetic_links'];
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(host().querySelector(`[data-test="mktg-intake-${row}"]`)?.getAttribute('aria-describedby')).toBe(hint?.id);
+      }
+      expect(host().querySelector('#mktg-intake-project_name-hint')).toBeNull();
+    } finally {
+      SHELL_INTAKE.fields.pop();
+    }
+  });
+
   it('does not route another one-off intake into the dedicated audit form', async () => {
     SHELL_INTAKE.oneOffDocument = true;
     try {
@@ -276,6 +305,16 @@ describe('MktgAgentRunComponent', () => {
     expect(breadcrumb?.textContent).toContain('Positioning & brand');
     expect(breadcrumb?.querySelectorAll('a')).toHaveLength(2);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
+  });
+
+  it('keeps one page h1 when the intake form is shown and titles the form as a section', async () => {
+    await configure('browser', 'foundation-setup');
+    const page = query('mktg-agent-run-page');
+    expect(page?.querySelectorAll('h1')).toHaveLength(1);
+    expect(query('mktg-agent-run-name')?.tagName).toBe('H1');
+    expect(query('mktg-agent-run-form-title')?.tagName).toBe('H2');
+    expect(query('mktg-agent-run-form')?.classList.contains('hidden')).toBe(false);
+    expect(generate).not.toHaveBeenCalled();
   });
 
   it('uses the catalog asset title and keeps the first-create action enabled with its explanation', async () => {
@@ -3274,7 +3313,7 @@ describe('MktgAgentRunComponent', () => {
       const url = 'https://drive.google.com/drive/folders/synthetic';
       component['intakeForm'].patchValue({ project_name: 'Synthetic project', website_url: url, deck_url: url + '/?usp=sharing' });
       await fixture.whenStable();
-      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+      expect(query('mktg-agent-run-link-warning-website_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
       expect(query('mktg-agent-run-link-warning-deck_url')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
       expect(component['submitDisabled']()).toBe(false);
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-submit-button"] button')?.disabled).toBe(false);
@@ -3304,7 +3343,13 @@ describe('MktgAgentRunComponent', () => {
         'Brand page',
       ]);
       for (const key of ['website_url', 'github_url', 'press_release_url', 'members_page_url', 'projects_page_url', 'deck_url', 'plan_url', 'brand_page_url']) {
-        expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
+        const input = sources?.querySelector(`[data-test="mktg-intake-${key}"]`);
+        expect(input).not.toBeNull();
+        const hint = host().querySelector('#mktg-intake-' + key + '-hint');
+        expect(hint?.textContent).toContain(MKTG_DRIVE_SHARING_HINT);
+        expect(input?.getAttribute('aria-describedby')).toBe(hint?.id);
+        const existing = component['intake']?.fields.find((field) => field.key === key)?.hint;
+        if (existing) expect(hint?.textContent).toContain(existing);
       }
       // Each source says what it is for and shows an example value.
       expect(sources?.textContent).toContain('searches the LF press archive itself');

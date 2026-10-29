@@ -93,16 +93,33 @@ export class LinkedinPostService {
     };
   }
 
-  /** Same generic run answers protocol and Guild follow-up transport, on the existing session. */
-  public async sendAnswers(req: Request, sessionId: string, questionsId: string, answers: MktgRunAnswer[], handle: string): Promise<void> {
+  /** Read-only validation and rendering happen before the durable answer claim. */
+  public async prepareAnswers(req: Request, sessionId: string, questionsId: string, answers: MktgRunAnswer[]): Promise<string | null> {
     const payloads = publicLinkedinPayloads(await this.guild.getRawEventPayloads(req, sessionId));
     const turn = linkedinQuestionsFromPayloads(payloads);
-    if (!turn || this.questionsId(turn) !== questionsId || answers.some((answer) => !turn.questions.some((question) => question.id === answer.key)))
+    if (
+      !turn ||
+      this.questionsId(turn) !== questionsId ||
+      answers.length !== turn.questions.length ||
+      new Set(answers.map((answer) => answer.key)).size !== turn.questions.length ||
+      answers.some((answer) => !turn.questions.some((question) => question.id === answer.key))
+    )
       throw ServiceValidationError.forField('answers', 'These questions are no longer available. Reload the run.');
     // A retry after completion must poll the existing output, not invoke the agent again.
-    if (this.authoritativeEnvelope(payloads)) return;
-    logger.info(req, 'linkedin_answers', 'Sending the profile gap answers', { answers: answers.length });
-    await this.guild.sendFollowUp(req, sessionId, { message: renderLinkedinAnswers(answers), handle });
+    if (this.authoritativeEnvelope(payloads)) return null;
+    return renderLinkedinAnswers(answers);
+  }
+
+  /** Only delivery follows the claim; uncertain delivery never rolls it back. */
+  public async deliverAnswers(req: Request, sessionId: string, message: string, handle: string, answerCount: number): Promise<void> {
+    logger.info(req, 'linkedin_answers', 'Sending the profile gap answers', { answers: answerCount });
+    await this.guild.sendFollowUp(req, sessionId, { message, handle });
+  }
+
+  /** Compatibility callers use the same preparation and single delivery path. */
+  public async sendAnswers(req: Request, sessionId: string, questionsId: string, answers: MktgRunAnswer[], handle: string): Promise<void> {
+    const message = await this.prepareAnswers(req, sessionId, questionsId, answers);
+    if (message !== null) await this.deliverAnswers(req, sessionId, message, handle, answers.length);
   }
 
   public async result(

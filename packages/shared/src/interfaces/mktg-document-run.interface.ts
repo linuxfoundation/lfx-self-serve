@@ -3,7 +3,7 @@
 
 import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
-import type { MktgRunActivity } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunAnswer, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
 import type { MKTG_RUN_ACTIVE } from '../constants/mktg-run.constants';
 
@@ -96,7 +96,27 @@ export interface MktgSessionOutcome {
 /** Observable phases of a server-recorded run; a completed run is represented by its stored revision. */
 export type MktgDocumentRunState = 'writing' | 'questions' | 'storing' | 'failed';
 
-/** Stored states include completion; closed runs are not reconciled or listed. */
+/** Writer-visible questions; no session capability or creator identity is exposed. */
+export interface MktgRunPendingQuestions {
+  questionsId: string;
+  questions: MktgRunQuestion[];
+  askedAt: string;
+}
+
+/** Answers scoped to the opaque public run id in the route. */
+export interface MktgRunAnswersRequest {
+  project: string;
+  questionsId: string;
+  answers: MktgRunAnswer[];
+}
+
+/** Public continuation acknowledgement, distinct from the private agent answers response. */
+export interface MktgPublicRunAnswersResponse {
+  runId: string;
+  state: 'writing';
+}
+
+/** Stored states include completion; closed markers appear only on selected details. */
 export type MktgStoredDocumentRunState = MktgDocumentRunState | 'completed' | 'superseded' | 'discarded';
 
 /**
@@ -113,7 +133,9 @@ export interface MktgDocumentRunProgress {
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
   /** Closed states appear only on a selected-run detail, never in listings. */
-  state: Exclude<MktgStoredDocumentRunState, 'completed'>;
+  state: MktgStoredDocumentRunState;
+  /** Exact stored revision produced by a completed selected run; never inferred from current selection. */
+  producedRevisionId?: string;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
   /** Forward-compatible display name only; this BFF does not populate it yet (linuxfoundation/lfx-self-serve#4592). */
@@ -122,6 +144,8 @@ export interface MktgDocumentRunProgress {
   replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
+  /** Present only for project writers while this run is waiting for answers. */
+  pendingQuestions?: MktgRunPendingQuestions;
   /** Agent's final reply or server-authored reason (deadline / storage exhausted); plain text only. */
   failureText?: string;
   /** Server-classified failure code, independent of private agent text. */
@@ -167,12 +191,17 @@ export interface MktgStartedRunRecord {
   state: MktgStoredDocumentRunState;
   /** Timestamp recorded when discarded or superseded; absent on legacy records. */
   closedAt?: string;
-  /** Private opaque actor stored with discard metadata; never a public display-name field. */
+  /** Private opaque actor stored with closure metadata; only a safe display name may reach selected details. */
   closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
+  /** Private effective subject and time of the successful conditional answer claim. */
+  answeredBy?: string;
+  answeredAt?: string;
+  /** Private stored turn; public projection separately requires a living-document writer grant. */
+  pendingQuestions?: MktgRunPendingQuestions;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
   failureReason?: MktgRunFailureReason;
@@ -190,10 +219,13 @@ export interface MktgGenerationAttribution {
   creatorSubject: string | null;
 }
 
-/** Private fetched started-run record and the exact bytes used for metadata-only refreshes. */
+/** Private record snapshot; state transitions replace its body and metadata with the same conditional token. */
 export interface MktgStoredStartedRun {
   key: string;
   body: string;
+  /** Version and metadata captured by the same GET, never a separate HEAD. */
+  etag?: string;
+  metadata: Record<string, string>;
   record: MktgStartedRunRecord;
 }
 

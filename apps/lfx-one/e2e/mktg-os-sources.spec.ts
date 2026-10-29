@@ -240,7 +240,7 @@ test.describe('Marketing OS new run Sources', () => {
     await page.getByTestId('mktg-run-sources-edit').getByRole('button').click();
     const url = 'https://drive.google.com/drive/folders/synthetic';
     await page.locator('[data-test="mktg-intake-website_url"]').fill(url);
-    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    await expect(page.getByTestId('mktg-agent-run-link-warning-website_url')).toContainText(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     const start = page.getByTestId('mktg-run-start').getByRole('button');
     await expect(start).toBeEnabled();
     await page.locator('[data-test="mktg-intake-brand_page_url"]').fill(url + '/?usp=sharing');

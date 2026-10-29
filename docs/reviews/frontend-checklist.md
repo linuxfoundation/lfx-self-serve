@@ -456,7 +456,7 @@ In changed `.html` templates of a main lens page (a page reached from the Me, Fo
 - The header is not restyled: no font, size or colour classes on its title, and no top margin above it (`mt-*` on the header or on the page's first element, or a `p-6`/`py-6` page wrapper). Space below the header is `mb-6` (or a parent `gap-6`). A sticky header that cancels the layout's `py-6` with `-mt-6` and restores it with `pt-6` (social listening) is fine.
 - Right-side buttons or filters go in `[pageHeaderActions]`, inline tags in `[pageHeaderTitleSuffix]`, and description copy with markup in `[pageHeaderDescription]`. Content in those slots does not belong in a sibling wrapper beside the header.
 
-Pages opened from a list or an action (detail, create and manage pages), placeholder pages, and pages whose title sits inside a card (org profile) or a breadcrumb (campaigns) keep their own heading. Health Metrics is the one sidebar page that builds its own sticky header, to its design's title type. See [component-architecture § Page header](../architecture/frontend/component-architecture.md#page-header-lfx-page-header).
+Pages opened from a list or an action (detail, create and manage pages), placeholder pages, and pages whose title sits inside a card (org profile) or a breadcrumb (campaigns) keep their own heading. Health Metrics and the flag-gated Meetings redesign (`meetings-redesign`) build their own sticky headers, to their designs' title type. See [component-architecture § Page header](../architecture/frontend/component-architecture.md#page-header-lfx-page-header).
 
 ---
 

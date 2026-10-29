@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { FOUNDATION_MESSAGE_INTAKE, MKTG_INTAKE_LINK_ADVICE } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, MKTG_DRIVE_SHARING_HINT, MKTG_INTAKE_LINK_ADVICE } from '@lfx-one/shared/constants';
 import { MktgDocumentExtractResponse, MktgIntakeDocumentsConfig } from '@lfx-one/shared/interfaces';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -36,6 +36,13 @@ describe('MktgIntakeDocumentsComponent', () => {
     await fixture.whenStable();
   });
 
+  it('describes the link input with the shared LF-wide Drive sharing guidance before typing', () => {
+    const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-documents-link-input"]');
+    const hint = host().querySelector('#mktg-intake-documents-link-hint');
+    expect(hint?.textContent?.trim()).toBe(MKTG_DRIVE_SHARING_HINT);
+    expect(input?.getAttribute('aria-describedby')).toBe(hint?.id);
+  });
+
   it('lists an added link as given, never reading it — the agent fetches it', async () => {
     component['linkForm'].controls.url.setValue('https://docs.google.com/document/d/x/edit');
 
@@ -62,7 +69,7 @@ describe('MktgIntakeDocumentsComponent', () => {
     component['linkForm'].controls.url.setValue(url + '/?usp=sharing');
     await fixture.whenStable();
     expect(host().querySelector('[data-testid="mktg-intake-documents-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
-    expect(host().textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(host().textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-intake-documents-add-link"] button')?.disabled).toBe(false);
     component['onAddLink']();
     fixture.componentRef.setInput('earlierUrls', []);

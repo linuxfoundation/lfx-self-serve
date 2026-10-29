@@ -205,6 +205,7 @@
                 [form]="contentForm"
                 control="url"
                 inputId="linkedin-content-url"
+                describedBy="mktg-linkedin-source-hint"
                 type="url"
                 [maxlength]="2048"
                 [readonly]="busy()"
@@ -215,7 +216,9 @@
               @if (linkWarning(); as warning) {
                 <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-linkedin-link-warning">{{ warning }}</span>
               }
-              <p class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">{{ sourceLinkHint }}</p>
+              <p id="mktg-linkedin-source-hint" class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">
+                {{ sourceLinkHint }} {{ driveSharingHint }}
+              </p>
             } @else {
               @if (file(); as selected) {
                 <div class="flex items-center gap-3" data-testid="mktg-linkedin-selected-file">
