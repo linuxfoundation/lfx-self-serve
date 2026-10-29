@@ -99,8 +99,8 @@ it('lets eleven contrast rows fill Colour and split only between rows with a rep
   expect(getComputedStyle(intro).breakAfter).toBe('avoid');
   expect(getComputedStyle(header).display).toBe('table-header-group');
   expect(getComputedStyle(header).breakAfter).toBe('avoid');
-  expect(table.querySelectorAll('tbody tr')).toHaveLength(11);
-  table.querySelectorAll('tbody tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
+  expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(11);
+  table.querySelectorAll(':scope > tbody > tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
 });
 
 it('prints the typography description once while preserving a distinct font note', async () => {
