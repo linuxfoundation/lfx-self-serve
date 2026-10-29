@@ -821,13 +821,16 @@ export class MktgDocumentRunService {
     failureReason = stored.record.failureReason
   ): Promise<MktgStartedRunRecord> {
     const run = stored.record;
+    const closedAt = state === 'discarded' || state === 'superseded' ? new Date().toISOString() : undefined;
+    const discardedBySubject = state === 'discarded' ? getEffectiveSub(req) : null;
     const written = await this.put(
       req,
       stored.key,
       stored.body,
       {
         state,
-        ...((state === 'discarded' || state === 'superseded') && { 'closed-at': new Date().toISOString() }),
+        ...(closedAt && { 'closed-at': closedAt }),
+        ...(discardedBySubject && { 'closed-by': discardedBySubject }),
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',
@@ -856,6 +859,18 @@ export class MktgDocumentRunService {
     );
     if (written && isMktgRunTerminal(state)) {
       logger.info(req, 'mktg_run_mark', 'Recorded terminal run state', { project: run.project, run: run.runId, state });
+      if (state === 'discarded') {
+        logger.info(req, 'mktg_run_discard', 'Active run discarded before a new start', {
+          project: run.project,
+          runId: run.runId,
+          documentId: run.documentId,
+          agentKey: run.agentKey,
+          discardedBySubject,
+          creatorSubject: run.creatorSubject ?? null,
+          self: !!discardedBySubject && discardedBySubject === run.creatorSubject,
+          at: closedAt,
+        });
+      }
     }
     const current = await this.read(req, run.project, stored.key);
     if (!current) {
@@ -1015,6 +1030,7 @@ export class MktgDocumentRunService {
           creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
           state: state as MktgStoredDocumentRunState,
           closedAt: m['closed-at'],
+          closedBySubject: m['closed-by'] || undefined,
           startedAt,
           priorVersion,
           attemptId,

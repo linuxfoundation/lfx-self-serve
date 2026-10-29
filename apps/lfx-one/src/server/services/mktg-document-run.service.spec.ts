@@ -263,6 +263,44 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('discarded');
   });
 
+  it.each([true, false])('audits a successful discard with subjects only and persists its private actor (self=%s)', async (self) => {
+    const creatorSubject = 'synthetic-creator';
+    const discardedBySubject = self ? creatorSubject : 'synthetic-discarder';
+    const creator = Object.assign({} as Request, { oidc: { user: { sub: creatorSubject, name: 'Synthetic creator display', email: 'creator@example.test' } } });
+    const viewer = Object.assign({} as Request, {
+      oidc: { user: { sub: discardedBySubject, name: 'Synthetic viewer display', email: 'viewer@example.test' } },
+    });
+    await service.start(creator, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    const audits = vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual([
+      viewer,
+      'mktg_run_discard',
+      'Active run discarded before a new start',
+      {
+        project,
+        runId: hash(session),
+        documentId: 'living',
+        agentKey: types[0].agentKey,
+        discardedBySubject,
+        creatorSubject,
+        self,
+        at: '2026-10-19T12:00:00.000Z',
+      },
+    ]);
+    expect(stored().metadata['closed-by']).toBe(discardedBySubject);
+    expect(stored().metadata['closed-at']).toBe('2026-10-19T12:00:00.000Z');
+    const publicRun = await service.readClosedProgress(viewer, project, types[0].agentKey, 'living', hash(session));
+    expect(publicRun).not.toHaveProperty('closedBySubject');
+    expect(publicRun).not.toHaveProperty('creatorSubject');
+    expect(publicRun).not.toHaveProperty('closedBy');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('@');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('display');
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    expect(vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard')).toHaveLength(1);
+  });
+
   it.each(['discarded', 'superseded'] as const)(
     'refuses follow-ups and fresh turn tracking on a %s session without retiring its replacement',
     async (state) => {

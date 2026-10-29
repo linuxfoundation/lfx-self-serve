@@ -1129,7 +1129,7 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    it.each(['timeout', 'denied'] as const)('returns accepted recheck %s failures to the editable form without another start', async (failure) => {
+    it.each(['timeout', 'denied', 'network'] as const)('returns accepted recheck %s failures to the editable form without another start', async (failure) => {
       await configure('browser', agentId, { mode: 'new' });
       const conflict = activeConflict();
       lastIntake.mockReturnValue(of(history));
@@ -1144,7 +1144,10 @@ describe('MktgAgentRunComponent', () => {
       window.dispatchEvent(new Event('focus'));
       events.next({ type: 'submitted' });
       expect(component['phase']()).toBe('running');
-      events.error(failure === 'denied' ? new HttpErrorResponse({ status: 403 }) : new TimeoutError());
+      let error: Error = new TimeoutError();
+      if (failure === 'denied') error = new HttpErrorResponse({ status: 403 });
+      if (failure === 'network') error = new HttpErrorResponse({ status: 0 });
+      events.error(error);
       await fixture.whenStable();
       expect(component['phase']()).toBe('form');
       expect(component['navigating']()).toBe(false);
@@ -1354,9 +1357,19 @@ describe('MktgAgentRunComponent', () => {
       priorVersion: 0,
       session: { agentId: intake.agentId, sessionId: 'synthetic-recheck', ownerToken: 'synthetic-proof' },
     };
-    vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict).mockReturnValue(of(mktgRunProgressFixture('document', run, 1, attempt)));
+    const events = new Subject<MktgGenerateProgress>();
+    const recheck = vi.mocked(TestBed.inject(MktgAgentRunService).recheckActiveConflict);
+    recheck.mockReturnValue(events);
     queryParams.next(convertToParamMap({ questions: token }));
     activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    expect(component['activeRequest']).toEqual(request);
+    events.next({ type: 'submitted' });
+    expect(component['activeRequest']).toEqual(request);
+    expect(component['phase']()).toBe('running');
+    window.dispatchEvent(new Event('focus'));
+    expect(recheck).toHaveBeenCalledOnce();
+    events.next(mktgRunProgressFixture('document', run, 1, attempt));
     await fixture.whenStable();
     expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
       ['..', 'documents', type.agentKey, 'living'],
@@ -1364,6 +1377,7 @@ describe('MktgAgentRunComponent', () => {
     );
     expect(component['errorText']()).not.toContain('The completed run could not be opened');
     expect(generate).not.toHaveBeenCalled();
+    events.complete();
   });
 
   it('leaves the running phase on terminal failure, keeps typed inputs and offers Retry', async () => {

@@ -116,9 +116,9 @@ export interface MktgDocumentRunProgress {
   state: Exclude<MktgStoredDocumentRunState, 'completed'>;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
-  /** Resolved display name only; absent or null when the closure actor is unknown. */
+  /** Forward-compatible display name only; this BFF does not populate it yet (linuxfoundation/lfx-self-serve#4592). */
   closedBy?: string | null;
-  /** Opaque replacement run id for this document; absent on legacy closed records. */
+  /** Forward-compatible opaque replacement run id; not populated here yet (linuxfoundation/lfx-self-serve#4592). */
   replacedBy?: string;
   /** Creator-only, server-filtered steps; Member contact/email redaction also applies. Never raw events or reasoning. */
   activity?: MktgRunActivity[];
@@ -167,6 +167,8 @@ export interface MktgStartedRunRecord {
   state: MktgStoredDocumentRunState;
   /** Timestamp recorded when discarded or superseded; absent on legacy records. */
   closedAt?: string;
+  /** Private opaque actor stored with discard metadata; never a public display-name field. */
+  closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
