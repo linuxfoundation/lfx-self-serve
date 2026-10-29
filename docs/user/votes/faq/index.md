@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,9 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 ## Can I change my vote after submitting?
 
-No. After you select **Submit Vote**, the **Review** button shows only a confirmation that your vote was recorded. There is no way to edit or resubmit.
+Not in LFX. After you select **Submit Vote**, the **Review** button shows only a confirmation that your vote was recorded. There is no way to edit or resubmit there.
+
+If you got a personal ballot link by email, you can reopen that link to update your ballot while the vote is open. See [Vote from an emailed ballot link](../manage-votes/#vote-from-an-emailed-ballot-link).
 
 ## What does Abstain do?
 

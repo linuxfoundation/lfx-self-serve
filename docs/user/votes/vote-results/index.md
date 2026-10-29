@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, a
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -28,6 +28,7 @@ The drawer shows the vote's status and deadline, how the vote counts ballots, an
 - **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained and what share of the ballots that is. Abstentions are counted as ballots cast but not in any option's tally.
 - **Comments**, when the vote has comment questions, lists each comment question with the responses, each with the commenter's name and the date. Voters see the same comments once the vote closes. A response from someone who abstained is marked. Long lists are paged, and if only the most recent responses are shown, the drawer says how many it is showing out of the total.
 - **Present** and **Copy slide** buttons for active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
+- A **Send ballots now** button for active votes, which emails a personal ballot link to everyone who hasn't voted. See [Send ballots now](../manage-votes/#send-ballots-now).
 
 On the Project and Foundation dashboards, if you are also invited to an active vote and haven't voted yet, the drawer shows **You haven't cast your vote yet** with a **Cast Vote** button. A group's **Votes** tab doesn't show this button. Open **Votes** in the **Me** lens to cast your ballot.
 
