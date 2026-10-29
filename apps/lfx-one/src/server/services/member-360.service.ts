@@ -136,32 +136,6 @@ export class Member360Service {
     });
   }
 
-  /** Only positive non-delivery evidence may reopen a claimed questions turn. */
-  private static definitelyNotDelivered(error: unknown): boolean {
-    if (!(error instanceof MicroserviceError) || error.service !== 'guild' || error.operation !== 'guild_send_follow_up') return false;
-    if (error.code === 'guild_unreachable') return this.preconnectFailure(error.originalError);
-    return (
-      !error.originalError &&
-      MEMBER_360_DEFINITE_SEND_HTTP_STATUSES.includes(error.statusCode) &&
-      error.originalMessage?.startsWith(`HTTP ${error.statusCode}:`) === true
-    );
-  }
-
-  private static preconnectFailure(error: unknown, depth = 0): boolean {
-    if (!error || typeof error !== 'object' || depth > 3) return false;
-    if (error instanceof AggregateError && error.errors.length > 0) return error.errors.every((cause: unknown) => this.preconnectFailure(cause, depth + 1));
-    const code = 'code' in error ? error.code : undefined;
-    if (typeof code === 'string' && MEMBER_360_DEFINITE_CONNECT_CODES.includes(code)) return true;
-    if (code === 'ECONNRESET' || code === 'UND_ERR_SOCKET') {
-      if ('syscall' in error && error.syscall === 'connect') return true;
-      const socket = 'socket' in error ? error.socket : undefined;
-      if (socket && typeof socket === 'object' && 'bytesWritten' in socket && socket.bytesWritten === 0) return true;
-      return false;
-    }
-    if (code !== undefined) return false;
-    return 'cause' in error && this.preconnectFailure(error.cause, depth + 1);
-  }
-
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
     const redactIdentity = createMember360Redactor([]);
@@ -349,6 +323,32 @@ export class Member360Service {
       });
       return { status: 'ready', stored: false };
     }
+  }
+
+  /** Only positive non-delivery evidence may reopen a claimed questions turn. */
+  private static definitelyNotDelivered(error: unknown): boolean {
+    if (!(error instanceof MicroserviceError) || error.service !== 'guild' || error.operation !== 'guild_send_follow_up') return false;
+    if (error.code === 'guild_unreachable') return this.preconnectFailure(error.originalError);
+    return (
+      !error.originalError &&
+      MEMBER_360_DEFINITE_SEND_HTTP_STATUSES.includes(error.statusCode) &&
+      error.originalMessage?.startsWith(`HTTP ${error.statusCode}:`) === true
+    );
+  }
+
+  private static preconnectFailure(error: unknown, depth = 0): boolean {
+    if (!error || typeof error !== 'object' || depth > 3) return false;
+    if (error instanceof AggregateError && error.errors.length > 0) return error.errors.every((cause: unknown) => this.preconnectFailure(cause, depth + 1));
+    const code = 'code' in error ? error.code : undefined;
+    if (typeof code === 'string' && MEMBER_360_DEFINITE_CONNECT_CODES.includes(code)) return true;
+    if (code === 'ECONNRESET' || code === 'UND_ERR_SOCKET') {
+      if ('syscall' in error && error.syscall === 'connect') return true;
+      const socket = 'socket' in error ? error.socket : undefined;
+      if (socket && typeof socket === 'object' && 'bytesWritten' in socket && socket.bytesWritten === 0) return true;
+      return false;
+    }
+    if (code !== undefined) return false;
+    return 'cause' in error && this.preconnectFailure(error.cause, depth + 1);
   }
 
   private finalCarrierTexts(payload: string): string[] {

@@ -426,7 +426,7 @@ export class Member360RunComponent {
     this.scope$
       .pipe(
         distinctUntilChanged((a, b) => a.key === b.key && a.retry === b.retry),
-        tap(({ key, project, user }) => {
+        tap(({ key, user }) => {
           if (key !== this.lastScope) {
             this.scopeVersion++;
             this.confirmation.close();

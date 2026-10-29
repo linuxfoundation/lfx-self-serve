@@ -79,7 +79,8 @@ describe('Member 360 HTTP boundary', () => {
     expect(JSON.stringify(json.mock.calls)).not.toMatch(/sessionId|ownerToken|creatorSubject/);
   });
   it('claims and answers an owned selector through the unchanged answer validator and CAS', async () => {
-    const { sessionId: _session, ownerToken: _token, ...body } = answersBody();
+    const source = answersBody();
+    const body = { project: source.project, questionsId: source.questionsId, answers: source.answers };
     const req = { body: { ...body, runId: 'b'.repeat(64) } } as Request;
     const next = vi.fn();
     const res = { set: vi.fn().mockReturnThis(), json: vi.fn() };
