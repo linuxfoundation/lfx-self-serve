@@ -286,6 +286,15 @@ describe('SnowflakeService circuit breaker', () => {
       expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_invalid_identifier', identifier);
     });
 
+    it('keeps the circuit closed when Snowflake names the listed identifier through a table alias', async () => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier('R.IS_CDP_TEAM_MEMBER')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_invalid_identifier', 'IS_CDP_TEAM_MEMBER');
+    });
+
     it('still opens the circuit when an unlisted identifier is the invalid one', async () => {
       const { service } = serviceWithPool(vi.fn(invalidIdentifier('SOME_OTHER_COLUMN')));
 
