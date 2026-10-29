@@ -3508,10 +3508,19 @@ describe('MktgDocumentViewComponent', () => {
   it('picks up an idle approval and new revision without replacing the open content, tab or rail', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     useFrameworkRevision(true);
+    const comments = TestBed.inject(MktgDocumentCommentsService);
+    vi.spyOn(comments, 'loaded').mockReturnValue(true);
+    vi.spyOn(comments, 'selectedScope').mockReturnValue({
+      projectUid: PROJECT.uid,
+      agentKey: 'foundation-message',
+      documentId: 'living',
+      revisionId: LATEST.id,
+    });
     await render('/documents/foundation-message/living?tab=numbers');
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     const loaded = component['view']();
     if (!loaded) throw new Error('Missing synthetic framework');
+    expect(component['railReady']()).toBe(true);
     const ids = ['mktg-document-view-title', 'mktg-framework-view-tab-numbers', 'mktg-document-view-content', 'mktg-document-view-revisions'];
     const nodes = ids.map(query);
     expect(nodes.every(Boolean)).toBe(true);
