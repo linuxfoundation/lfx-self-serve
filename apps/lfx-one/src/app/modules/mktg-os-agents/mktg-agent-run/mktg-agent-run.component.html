@@ -53,6 +53,9 @@
     </div>
   }
   <div [ngClass]="pageClass" [style.display]="publicReceiver() && phase() !== 'questions' ? 'none' : null" data-testid="mktg-agent-run-page">
+    @if (!publicReceiver() && checkingRun() && errorText()) {
+      <div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700" data-testid="mktg-agent-run-error">{{ errorText() }}</div>
+    }
     @if (!publicReceiver() && checkingRun()) {
       <lfx-mktg-skeleton variant="run-page" data-testid="mktg-agent-run-checking" />
     }

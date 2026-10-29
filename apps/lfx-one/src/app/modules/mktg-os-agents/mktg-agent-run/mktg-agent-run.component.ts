@@ -746,6 +746,7 @@ export class MktgAgentRunComponent {
           const token = this.route.snapshot.queryParamMap.get('questions');
           if (token && !this.freshMode()) this.runAttempts.consume(token, this.publicProject(), this.agent?.id ?? '');
           this.activeRequest = owned.request;
+          this.restoreInputs(owned.request, 'returned');
           this.hasAcknowledgement.set(true);
           this.showQuestions(privateQuestions, true);
         }
@@ -759,6 +760,12 @@ export class MktgAgentRunComponent {
         this.generationSub = null;
       }
       this.clearQuestions();
+      this.phase.set('running');
+    }
+    if ((run?.state === 'writing' || run?.state === 'storing') && owned?.attempt && !this.answersSending()) {
+      if (!this.generationSub || this.generationSub.closed) {
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, this.publicProject());
+      }
       this.phase.set('running');
     }
   }

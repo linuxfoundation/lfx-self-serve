@@ -64,23 +64,21 @@ describe('LinkedIn profile and post surface', () => {
     vi.clearAllMocks();
     localStorage.clear();
     api.startForDocument.mockReset();
-    documents.getDocument
-      .mockReset()
-      .mockReturnValue(
-        of({
-          ...emptyDetail,
-          runs: [
-            {
-              project: emptyDetail.project,
-              agentKey: documentType.agentKey,
-              documentId: emptyDetail.documentId,
-              runId: 'b'.repeat(64),
-              state: 'questions',
-              startedAt: '2026-10-28T10:00:00Z',
-            },
-          ],
-        })
-      );
+    documents.getDocument.mockReset().mockReturnValue(
+      of({
+        ...emptyDetail,
+        runs: [
+          {
+            project: emptyDetail.project,
+            agentKey: documentType.agentKey,
+            documentId: emptyDetail.documentId,
+            runId: 'b'.repeat(64),
+            state: 'questions',
+            startedAt: '2026-10-28T10:00:00Z',
+          },
+        ],
+      })
+    );
     api.setupForDocument.mockReturnValue(null);
     identity.set({ sub: 'subject-one', name: 'Example author' });
     projects.getProject.mockReset().mockReturnValue(of({ writer: true }));

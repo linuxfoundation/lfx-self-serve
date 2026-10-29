@@ -29,6 +29,7 @@ import {
   MktgDependencyDocument,
   MktgDocumentExtractResponse,
   MktgDocumentDetailResponse,
+  MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgPendingGeneration,
@@ -254,22 +255,37 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
-  function useRecordedQuestionsFixture(pending: MktgRunQuestionsPending, startedAt = new Date().toISOString()): void {
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === pending.attempt.session.agentId);
-    if (!type) throw new Error('Missing recorded questions fixture type');
-    pending.attempt.runId ??= 'b'.repeat(64);
-    const run = {
+  function useRecordedStateFixture(
+    agentId: string,
+    runId: string,
+    state: 'writing' | 'questions',
+    pendingQuestions?: MktgDocumentRunProgress['pendingQuestions'],
+    startedAt = new Date().toISOString()
+  ): void {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId);
+    if (!type) throw new Error('Missing recorded fixture type');
+    const run: MktgDocumentRunProgress = {
       project: PROJECT_1.uid,
       agentKey: type.agentKey,
       documentId: 'living',
-      runId: pending.attempt.runId,
-      state: 'questions' as const,
+      runId,
+      state,
       startedAt,
-      pendingQuestions: { questionsId: pending.questionsId, questions: pending.questions, askedAt: startedAt },
+      ...(pendingQuestions && { pendingQuestions }),
     };
     listDocuments.mockReturnValue(of({ project: PROJECT_1.uid, groups: [], runs: [run] }));
     vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(
       of({ project: PROJECT_1.uid, type, documentId: 'living', approvedCurrent: null, revisions: [], runs: [run] })
+    );
+  }
+  function useRecordedQuestionsFixture(pending: MktgRunQuestionsPending, startedAt = new Date().toISOString()): void {
+    pending.attempt.runId ??= 'b'.repeat(64);
+    useRecordedStateFixture(
+      pending.attempt.session.agentId,
+      pending.attempt.runId,
+      'questions',
+      { questionsId: pending.questionsId, questions: pending.questions, askedAt: startedAt },
+      startedAt
     );
   }
 
@@ -455,9 +471,10 @@ describe('MktgAgentRunComponent', () => {
         request,
         state: 'writing',
         requiresReattachment: true,
-        attempt: { session: { agentId, sessionId: 'synthetic-writing', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        attempt: { session: { agentId, sessionId: 'synthetic-writing', ownerToken: 'synthetic-proof' }, runId: 'b'.repeat(64), priorVersion: 0 },
         updatedAt: new Date().toISOString(),
       });
+      useRecordedStateFixture(agentId, 'b'.repeat(64), 'writing');
       progress.next({ type: 'submitted' });
       queryParams.next(convertToParamMap({}));
       await fixture.whenStable();
@@ -1860,7 +1877,11 @@ describe('MktgAgentRunComponent', () => {
         request,
         state: 'writing',
         updatedAt: new Date().toISOString(),
-        attempt: { session: { agentId: intake.agentId, sessionId: 'synthetic-error-session', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+        attempt: {
+          session: { agentId: intake.agentId, sessionId: 'synthetic-error-session', ownerToken: 'synthetic-proof' },
+          runId: 'b'.repeat(64),
+          priorVersion: 0,
+        },
       };
       const attempts = TestBed.inject(MktgRunAttemptService);
       attempts.save(pending);
@@ -1874,6 +1895,7 @@ describe('MktgAgentRunComponent', () => {
         discardPrompt()?.accept?.();
         expect(generate).toHaveBeenCalledTimes(1);
       } else {
+        useRecordedStateFixture(intake.agentId, 'b'.repeat(64), 'writing');
         vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume').mockReturnValue(progress);
         const token = attempts.prepare(request, true);
         Object.defineProperty(TestBed.inject(ActivatedRoute).snapshot, 'queryParamMap', { value: convertToParamMap({ questions: token }), configurable: true });

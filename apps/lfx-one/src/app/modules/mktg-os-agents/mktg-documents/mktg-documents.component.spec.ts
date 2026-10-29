@@ -437,7 +437,9 @@ describe('MktgDocumentsComponent', () => {
     }
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
-      expect(store.listDocuments).toHaveBeenCalledTimes(1);
+      // Failed/idle rows remain server-observed so other writers' changes arrive in place.
+      expect(store.listDocuments).toHaveBeenCalledTimes(3);
+      expect(query('mktg-documents-revision-1')).toBeNull();
     }
   });
 

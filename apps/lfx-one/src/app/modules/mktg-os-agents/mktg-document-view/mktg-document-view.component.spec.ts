@@ -1794,7 +1794,16 @@ describe('MktgDocumentViewComponent', () => {
     vi.mocked(attempts.consume).mockReturnValue({ subject: subject(), pending });
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigate');
-    store.getDocument.mockReturnValue(of({ project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null, runs: [] }));
+    store.getDocument.mockReturnValue(
+      of({
+        project: PROJECT.uid,
+        type,
+        documentId,
+        revisions: [],
+        approvedCurrent: null,
+        runs: [{ ...started('writing'), agentKey: type.agentKey, documentId }],
+      })
+    );
     await render(`/documents/linkedin-post/${documentId}?generation=synthetic-accepted`);
     expect(attempts.consume).toHaveBeenCalledWith('synthetic-accepted', PROJECT.uid, intake.agentId, documentId);
     expect(router.url).toContain(`run=${'b'.repeat(64)}`);
@@ -1883,6 +1892,19 @@ describe('MktgDocumentViewComponent', () => {
     cache.clear(PROJECT.uid, intake.agentId, cache.subject(), response.documentId);
   });
 
+  it('keeps a prepared hint neutral until the first server observation, without claiming writing or absence', async () => {
+    const pending = preparedPending();
+    const metadata = new Subject<MktgDocumentDetailResponse>();
+    vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(NEVER);
+    store.getDocument.mockReturnValue(metadata);
+    await render('/documents/brand-kit/living?generation=synthetic-prepared');
+    expect(progressReader().runState()).toBeNull();
+    expect(query('mktg-document-view-loading')).not.toBeNull();
+    expect(query('mktg-document-view-run')).toBeNull();
+    expect(query('mktg-document-view-revision-chip')).toBeNull();
+  });
+
   it('keeps a prepared run writing after its first metadata read fails, then resumes polling', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const pending = preparedPending();
@@ -1893,6 +1915,7 @@ describe('MktgDocumentViewComponent', () => {
       .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
       .mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
     await render('/documents/brand-kit/living?generation=synthetic-prepared');
+    events.next({ type: 'submitted' }); // The real SDK always emits the server ACK before activity.
     events.next(writingActivity());
     await settle();
     expect(progressReader().runState()).toBe('writing');
@@ -1910,7 +1933,7 @@ describe('MktgDocumentViewComponent', () => {
     const events = new Subject<MktgGenerateProgress>();
     vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: 'synthetic-owner', pending });
     vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(events);
-    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [] }));
+    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('writing')] }));
     await render('/documents/brand-kit/living?generation=synthetic-prepared');
     events.next({ type: 'submitted' });
     events.next(writingActivity());
@@ -1926,11 +1949,13 @@ describe('MktgDocumentViewComponent', () => {
       versions: [{ version: 1, document: '# Synthetic output', createdAt: '2026-10-19T08:00:00Z' }],
       savedAt: '2026-10-19T08:00:00Z',
     };
+    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started('storing')] }));
     events.next(mktgRunProgressFixture('document', run, 1));
     events.next(writingActivity());
     await settle();
     expect(progressReader().runState()).toBe('storing');
     expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
+    store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [{ ...started('failed'), failureText: 'The agent could not complete this run' }] }));
     events.next({ type: 'failed', failureText: '' });
     await settle();
     expect(query('mktg-document-view-failure-reply')?.textContent).toContain('The agent could not complete this run');
@@ -1981,7 +2006,8 @@ describe('MktgDocumentViewComponent', () => {
     async (state) => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       store.getDocument.mockReturnValue(of({ ...detail, revisions: [], runs: [started(state)] }));
-      await render('/documents/brand-kit/living?run=' + 'b'.repeat(64) + '&type=drop&profile=drop');
+      // Plain document intent retains its header; selected active-run navigation is covered separately.
+      await render('/documents/brand-kit/living?type=drop&profile=drop');
       expect(!!query('mktg-document-view-run')).toBe(state === 'failed');
       expect(query('mktg-document-view-revision-chip')).toBeNull();
       const action = query('mktg-document-view-run-again');
@@ -1995,7 +2021,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
       if (state === 'questions') {
         vi.advanceTimersByTime(3 * MKTG_RUN_POLL.intervalMs);
-        expect(store.getDocument).toHaveBeenCalledTimes(1);
+        expect(store.getDocument).toHaveBeenCalledTimes(4);
         expect(progressReader().runState()).toBe('questions');
         expect(query('mktg-document-view-live-state')).toBeNull();
       }
@@ -2642,7 +2668,7 @@ describe('MktgDocumentViewComponent', () => {
     const run = started(state);
     store.getDocument.mockReturnValue(of({ ...detail, runs: [run] }));
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), runs: [run], sidecar: kitSidecar() }));
-    await render('/documents/brand-kit/living?run=' + run.runId);
+    await render('/documents/brand-kit/living');
     expect(!!query('mktg-document-view-run')).toBe(state === 'failed');
     const action = expectTitleCardRunAgain();
     const explanation = query('brand-kit-web-view-approval-required');

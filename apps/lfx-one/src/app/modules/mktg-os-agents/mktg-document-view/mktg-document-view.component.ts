@@ -590,11 +590,10 @@ export class MktgDocumentViewComponent {
               this.restoreNotice.set('');
             }
             if (prepared) {
-              this.localProgress.set('writing');
+              this.localProgress.set(null);
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
               if (prepared.pending.attempt?.runId) this.preparedRunIds.add(prepared.pending.attempt.runId);
               if (type?.kind === 'run' && prepared.pending.attempt?.runId) this.onProgress({ type: 'submitted' }, prepared.pending);
-              this.loading.set(false);
             }
             // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
             // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
@@ -653,7 +652,15 @@ export class MktgDocumentViewComponent {
             let known: MktgDocumentReadCycle | null = existingView ? { detail: existingView, view: existingView } : null;
             if (!known && prepared && type) {
               known = {
-                detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] },
+                detail: {
+                  project: request.project,
+                  type,
+                  documentId: request.documentId,
+                  revisions: [],
+                  approvedCurrent: null,
+                  runs: [],
+                  progressUnavailable: true,
+                },
                 view: null,
               };
             }
@@ -844,7 +851,7 @@ export class MktgDocumentViewComponent {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
-    if (this.publicProgressPolling() && this.runParam() && cycle.detail.progressUnavailable && !this.view()) {
+    if (this.publicProgressPolling() && cycle.detail.progressUnavailable && !this.view()) {
       this.loading.set(true);
       return;
     }
@@ -861,6 +868,8 @@ export class MktgDocumentViewComponent {
     if (this.redirectedRun === run.runId) return;
     // Resolve the run destination before publishing any stored document body: no old-document flash.
     this.redirectedRun = run.runId;
+    // Let the accepted observer consume server proof without publishing an older stored body.
+    this.publicReads.next({ ...cycle, view: null });
     this.loading.set(true);
     this.view.set(null);
     const failedNavigation = () => {
@@ -1470,6 +1479,7 @@ export class MktgDocumentViewComponent {
         });
       } else {
         this.localProgress.set('storing');
+        if (this.publicProgressPolling()) this.progressView()?.recheck();
       }
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
@@ -1478,6 +1488,7 @@ export class MktgDocumentViewComponent {
       this.failureText.set(
         progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
       );
+      if (this.publicProgressPolling()) this.progressView()?.recheck();
     }
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);

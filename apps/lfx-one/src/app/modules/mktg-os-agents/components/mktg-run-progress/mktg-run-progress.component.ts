@@ -264,8 +264,7 @@ export class MktgRunProgressComponent {
     toObservable(scope)
       .pipe(
         distinctUntilChanged((a, b) => {
-          if (this.runPage()) return JSON.stringify(a) === JSON.stringify(b);
-          // Preserve MAIN's initial read-only document request while the viewer resolves.
+          // Preserve the initial request while identity resolves; each actual read stamps its reader.
           identityResolved ||= !!a.subject;
           const firstResolution = !identityResolved && !!b.subject;
           identityResolved ||= !!b.subject;
@@ -289,15 +288,7 @@ export class MktgRunProgressComponent {
           readerScope = key;
           this.warning.set('');
           this.readFailure.set('');
-          if (
-            !isPlatformBrowser(this.platformId) ||
-            (this.runPage() && !request.subject) ||
-            !request.polling ||
-            !request.project ||
-            !request.agentKey ||
-            !request.documentId
-          )
-            return EMPTY;
+          if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
             this.readFailure.set('This run could not be found. Open Documents to choose a started run.');
             return EMPTY;
@@ -505,7 +496,7 @@ export class MktgRunProgressComponent {
 
   protected onRefreshProgress(): void {
     if (this.submittingGeneration()) return;
-    if (this.polling() && this.runPage()) this.reload.update((count) => count + 1);
+    if (this.polling()) this.reload.update((count) => count + 1);
     else this.refresh.emit();
   }
 
@@ -532,7 +523,7 @@ export class MktgRunProgressComponent {
       const selector = this.runId();
       if (selector)
         return MKTG_STARTED_RUN_ID_REGEX.test(selector) ? (runs.find((run) => !readMktgRetiredRunHint(run) && run.runId === selector) ?? null) : null;
-      return this.localProgress() ? null : (runs.find((run) => !readMktgRetiredRunHint(run)) ?? null);
+      return this.submittingGeneration() ? null : (runs.find((run) => !readMktgRetiredRunHint(run)) ?? null);
     });
   }
 

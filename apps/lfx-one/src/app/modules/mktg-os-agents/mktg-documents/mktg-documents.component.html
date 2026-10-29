@@ -27,7 +27,13 @@
     <ng-container [ngTemplateOutlet]="loading() ? loadingDocuments : loadedDocuments" />
   </div>
   <ng-template #loadingDocuments>
-    <lfx-mktg-skeleton variant="card" data-testid="mktg-documents-loading" />
+    <div class="min-h-40"><lfx-mktg-skeleton variant="rows" [rows]="2" /></div>
+    <div class="grid min-w-0 grid-cols-1 items-start gap-6 @[800px]:grid-cols-[18rem_minmax(0,1fr)]">
+      <nav aria-label="Documents by agent" class="flex min-w-0 flex-col gap-1.5" data-testid="mktg-documents-nav">
+        <lfx-mktg-skeleton variant="rows" />
+      </nav>
+      <lfx-mktg-skeleton variant="card" data-testid="mktg-documents-loading" />
+    </div>
   </ng-template>
   <ng-template #loadedDocuments>
     <div class="min-h-40" data-testid="mktg-documents-started-slot">
