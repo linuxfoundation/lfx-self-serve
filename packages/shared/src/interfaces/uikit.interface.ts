@@ -53,3 +53,5 @@ export type UiToggleSize = 'default' | 'medium' | 'large';
 
 /** Colour of a uikit toggle when on. `warning` and `danger` flag settings with consequences. */
 export type UiToggleTone = 'accent' | 'warning' | 'danger';
+/** Size of the uikit loading dots: 4, 5 or 7px dots. */
+export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
