@@ -899,6 +899,16 @@ export interface CampaignBriefPersistenceState {
    * reads it exactly that way — see `canSubmit`, which checks the brief id before the flag.
    */
   approved: boolean;
+
+  /**
+   * Why the save was refused, on an `error` that came from a conflict rather than a failure.
+   *
+   * Read for one case: `unowned-brief-exists` is the refusal the Implementation tab offers
+   * "Replace saved brief" for (#4731). Retry cannot clear it — the same save is refused for as long
+   * as the page holds no id for the stored row — and Restore discards the brief on screen, so
+   * without this the generated brief and its extensions have no way to be saved at all.
+   */
+  conflict?: CampaignBriefPersistResult['conflict'];
 }
 
 /**

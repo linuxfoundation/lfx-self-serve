@@ -17,6 +17,7 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -1568,6 +1569,121 @@ describe('CampaignsComponent brief persistence', () => {
      * Recording before the check is safe because the KEY is `(project, event)`: a late response
      * files its id under the event it actually saved, and cannot reach another event's brief.
      */
+    /**
+     * #4731. A regenerated brief for an event that already has a saved one is refused as
+     * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
+     * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
+     * and ETag and re-saves the brief on screen as its owner, with the ETag as `If-Match`.
+     */
+    describe('Replace saved brief', () => {
+      let loadBrief: Mock;
+
+      function replace(): void {
+        (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
+      }
+
+      function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
+        return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
+      }
+
+      beforeEach(async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+        TestBed.tick();
+        await fixture.whenStable();
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('unowned-brief-exists');
+      });
+
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        // A validator was read, so no overwrite licence is granted: the save is a real If-Match.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+        expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+        expect(state().conflict).toBeUndefined();
+      });
+
+      it('replaces with fallback permission when the read returned no ETag', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', null)));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+
+      it('replaces a stored brief this build cannot open', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('creates when the stored brief has gone since the refusal', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
+      });
+
+      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('stale-brief');
+        expect(state().message).toContain('Someone else changed this brief');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+        loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'error', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('was not replaced');
+      });
+
+      it('drops the read when the brief is discarded while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        switchProgram();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+    });
+
     it('reports a stale-brief conflict distinctly from an unowned one', async () => {
       // The two conflicts are different situations. `unowned-brief-exists` means this session may
       // not replace that brief at all; `stale-brief` means it may — another writer just got there

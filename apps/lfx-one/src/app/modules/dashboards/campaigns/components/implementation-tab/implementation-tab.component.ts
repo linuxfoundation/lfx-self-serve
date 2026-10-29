@@ -633,6 +633,23 @@ export class ImplementationTabComponent implements OnInit {
   public readonly retryCreateCapabilities = output<void>();
 
   /**
+   * Asks the parent to save the brief on screen over the stored one, after an `unowned-brief-exists`
+   * refusal (#4731). Offered only on that refusal — see `canReplaceSavedBrief`.
+   */
+  public readonly replaceSavedBriefRequested = output<void>();
+
+  /**
+   * Whether the save banner offers "Replace saved brief".
+   *
+   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
+   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
+   * a second replace behind the first.
+   */
+  protected readonly canReplaceSavedBrief = computed(
+    () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
+  );
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *

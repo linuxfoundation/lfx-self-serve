@@ -4165,6 +4165,76 @@ export class CampaignsComponent {
   }
 
   /**
+   * Save the brief on screen OVER the stored one, after an `unowned-brief-exists` refusal (#4731).
+   *
+   * That refusal is the LFXV2-3200 guard, and it is right: a generated brief must not silently
+   * replace a row nobody here opened. But its only escape was Restore, which discards the brief on
+   * screen — so a regenerated brief, and the callouts and sitelinks generated with it, could never be
+   * saved, and the extension capability check (which needs a saved id) never ran.
+   *
+   * This is the explicit, warned version of the overwrite the guard withholds. It does not widen the
+   * guard: anyone shown this refusal can already Restore the stored brief and then save over it.
+   *
+   * The id comes from a fresh READ, because the refusal withholds it by design (see
+   * `CampaignBriefPersistResult.conflict`). The read's ETag is recorded as the last-seen validator, so
+   * the save is a real `If-Match`: a writer who moves the row between this read and the save gets
+   * the existing `stale-brief` warning, not a silent overwrite. With no ETag the record takes
+   * `absence: 'overwrite'`, as a restore does — the user chose this replace, which is the decision
+   * that marker records.
+   *
+   * The ownership EPOCH is bumped like a restore's, so a save already queued for this event cannot
+   * pick up an id it was not sent with. `persistBrief` then snapshots the new epoch and sends it.
+   */
+  protected onReplaceSavedBrief(): void {
+    const brief = this.briefOutput();
+    if (brief === null) return;
+    const projectSlug = this.activeFoundationSlug();
+    const key = this.ownershipKey(projectSlug, brief);
+    if (projectSlug === '' || key === null) return;
+
+    // A discard or a newer save while the read is out makes its answer stale: the brief it would
+    // re-save is no longer the one on screen, or a newer outcome already owns the banner.
+    const generation = this.briefPersistenceGeneration;
+    const ownershipAtSend = this.ownershipGeneration;
+    this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
+
+    this.campaignService
+      .loadBrief(brief.eventDetails.slug, projectSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '')
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
+          if (result.status === 'off') {
+            this.briefPersistence.set(this.idlePersistence);
+            return;
+          }
+          // `unreadable` is replaceable too: the row exists and was observed, it just cannot be
+          // mapped back — and it can never be restored, so replacing it is the only way forward.
+          // `none` means the row went away since the refusal; the save below then simply creates.
+          if (result.briefId !== null) {
+            this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+            this.rememberBriefId(key, {
+              id: result.briefId,
+              etag: result.etag,
+              ...(result.etag === null ? { absence: 'overwrite' as const } : {}),
+            });
+          }
+          this.persistBrief(brief);
+        },
+        error: () => {
+          if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
+          this.briefPersistence.set({
+            status: 'error',
+            briefId: null,
+            message: 'The saved brief could not be read, so it was not replaced. Try Replace saved brief again.',
+            approved: false,
+            conflict: 'unowned-brief-exists',
+          });
+        },
+      });
+  }
+
+  /**
    * Read the email channel's metrics for the current brief.
    *
    * Re-read on every entry rather than cached, matching `loadBriefCampaigns` on the paid side and
@@ -6095,6 +6165,7 @@ export class CampaignsComponent {
               briefId: result.briefId,
               message: this.conflictMessageFor(result.conflict),
               approved: false,
+              conflict: result.conflict,
             });
             return;
           }
