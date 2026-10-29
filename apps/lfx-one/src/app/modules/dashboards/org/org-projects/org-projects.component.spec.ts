@@ -4,7 +4,7 @@
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID, DEFAULT_ORG_PROJECTS_WORKSPACE_NAME } from '@lfx-one/shared/constants';
 import type { OrgLensEmptyStateName, OrgLensProject } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -16,7 +16,7 @@ import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
 import { NEVER, of } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectsComponent } from './org-projects.component';
 
@@ -307,45 +307,168 @@ describe('OrgProjectsComponent — health label', () => {
       responseExtra = {};
     }
   });
+});
 
-  describe('Employees filter', () => {
-    beforeEach(() => {
-      PROJECTS[0].contributors = [{ id: 'p-known', name: 'Known Person', avatarUrl: '' }];
-      PROJECTS[1].participants = [{ id: 'p-other', name: 'Other Person', avatarUrl: '' }];
-    });
+describe('OrgProjectsComponent — Employees filter', () => {
+  const ORG_A = { uid: 'org-a', accountName: 'Org A' };
+  const ORG_B = { uid: 'org-b', accountName: 'Org B' };
+  const PROJECTS_BY_ORG: Record<string, OrgLensProject[]> = {
+    [ORG_A.uid]: [
+      makeProject('Alpha', { contributors: [{ id: 'p-known', name: 'Known Person', avatarUrl: '' }] }),
+      makeProject('Bravo', { participants: [{ id: 'p-other', name: 'Other Person', avatarUrl: '' }] }),
+      makeProject('Charlie', { foundation: { slug: 'other-foundation', name: 'Other Foundation', logoUrl: '' } }),
+    ],
+    [ORG_B.uid]: [makeProject('Delta', { contributors: [{ id: 'p-org-b', name: 'Org B Person', avatarUrl: '' }] }), makeProject('Echo')],
+  };
+  const selectedAccount = signal<{ uid: string; accountName: string }>(ORG_A);
 
-    afterEach(() => {
-      PROJECTS[0].contributors = [];
-      PROJECTS[1].participants = [];
-    });
+  let fixture: ComponentFixture<OrgProjectsComponent>;
+  let component: OrgProjectsComponent;
+  let router: Router;
 
-    const select = async (employees: string[]): Promise<void> => {
-      component['filterForm'].controls.employees.setValue(employees);
-      component['reload'].update((n: number) => n + 1);
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-    };
+  /** Loads the page from `url`, the way a shared deep link opens it. */
+  const open = async (url: string): Promise<void> => {
+    router = TestBed.inject(Router);
+    await router.navigateByUrl(url);
+    fixture = TestBed.createComponent(OrgProjectsComponent);
+    component = fixture.componentInstance;
+    await settle();
+  };
 
-    it('shows every project with no employees selected', async () => {
-      await select([]);
+  const settle = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
 
-      expect(component['sortedProjects']().map((p) => p.name)).toEqual(expect.arrayContaining(PROJECTS.map((p) => p.name)));
-      expect(component['totalRecords']()).toBe(PROJECTS.length);
-    });
+  const rowNames = (): string[] => component['sortedProjects']().map((p) => p.name);
+  const queryParams = (): Record<string, string> => router.parseUrl(router.url).queryParams;
 
-    it('shows no projects and disables the CSV export when only unknown employees are selected', async () => {
-      await select(['p-unknown']);
+  // Runs exportCsv() through the real downloadCsv() and returns the exported project names.
+  const exportedProjectNames = async (): Promise<string[]> => {
+    let csvBlob: Blob | undefined;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = ((blob: Blob) => {
+      csvBlob = blob;
+      return 'blob:mock-url';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      component['exportCsv']();
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+    if (!csvBlob) {
+      throw new Error('exportCsv() did not trigger a download');
+    }
+    const [, ...lines] = (await csvBlob.text()).split('\r\n');
+    return lines.map((line) => line.split(',')[0]);
+  };
 
-      expect(component['sortedProjects']()).toEqual([]);
-      expect(component['totalRecords']()).toBe(0);
-      expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-projects-export-csv"] button')?.hasAttribute('disabled')).toBe(true);
-    });
+  beforeEach(async () => {
+    selectedAccount.set(ORG_A);
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectsComponent],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        MessageService,
+        { provide: AccountContextService, useValue: { selectedAccount } },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
+        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn(() => []) } },
+        {
+          provide: OrgLensProjectsService,
+          useValue: {
+            getWorkspaces: (accountUid: string) =>
+              of({
+                workspaces: [
+                  {
+                    id: DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
+                    name: DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
+                    projectSlugs: PROJECTS_BY_ORG[accountUid].map((project) => project.slug),
+                  },
+                ],
+              }),
+            getProjects: (accountUid: string, accountName: string) =>
+              of({ orgSlug: accountUid, orgName: accountName, dataUpdatedAt: '2026-09-30T00:00:00Z', projects: PROJECTS_BY_ORG[accountUid] }),
+          },
+        },
+        {
+          provide: OrgLensEmptyStateService,
+          useValue: {
+            pageState: signal(null),
+            hasPageState: computed(() => false),
+            pageReady: signal(true),
+            settled: signal(true),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
 
-    it('matches only the known employees in a mixed selection', async () => {
-      await select(['p-known', 'p-unknown']);
+  it('shows every project with no employees selected', async () => {
+    await open('/');
 
-      expect(component['sortedProjects']().map((p) => p.name)).toEqual(['Alpha']);
-    });
+    expect(rowNames()).toEqual(expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']));
+    expect(component['totalRecords']()).toBe(3);
+  });
+
+  it('opens a link with only an unknown employee on the explained empty state, with Export disabled', async () => {
+    await open('/?employees=p-unknown');
+
+    expect(rowNames()).toEqual([]);
+    const page = fixture.nativeElement as HTMLElement;
+    expect(page.textContent).toContain('No results for filters');
+    expect(page.querySelector('[data-testid="org-projects-export-csv"] button')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('opens a link with a known and an unknown employee on the known person’s projects only, in the table and the CSV', async () => {
+    await open('/?employees=p-known,p-unknown');
+
+    expect(rowNames()).toEqual(['Alpha']);
+    expect(await exportedProjectNames()).toEqual(['Alpha']);
+  });
+
+  it('offers an unknown selected employee under their id so the picker can show and remove them', async () => {
+    await open('/?employees=p-known,p-unknown');
+
+    expect(component['employeeOptions']()).toEqual(expect.arrayContaining([{ value: 'p-unknown', label: 'p-unknown' }]));
+
+    component['filterForm'].controls.employees.setValue(['p-known']);
+    await settle();
+
+    expect(component['employeeOptions']()).not.toContainEqual(expect.objectContaining({ value: 'p-unknown' }));
+    expect(queryParams()['employees']).toBe('p-known');
+  });
+
+  it('clears the Employees selection, in the form and the URL, when the organization changes', async () => {
+    await open('/?employees=p-known');
+    expect(rowNames()).toEqual(['Alpha']);
+
+    selectedAccount.set(ORG_B);
+    await settle();
+
+    expect(component['filterForm'].controls.employees.value).toEqual([]);
+    expect(queryParams()['employees']).toBeUndefined();
+    expect(rowNames()).toEqual(expect.arrayContaining(['Delta', 'Echo']));
+  });
+
+  it('Reset filters clears the employees, foundation, workspace and page params from the URL in one go', async () => {
+    await open('/?employees=p-unknown&foundation=cncf&workspace=ws-gone&page=2');
+
+    component['resetFilters']();
+    await settle();
+
+    expect(queryParams()).toEqual({});
+    expect(component['filterForm'].getRawValue().employees).toEqual([]);
+    expect(rowNames()).toEqual(expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']));
   });
 });

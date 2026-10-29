@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationCancel, NavigationEnd, NavigationError, Params, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -53,7 +53,7 @@ import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, take, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -179,6 +179,10 @@ export class OrgProjectsComponent {
   private readonly workspaceReload = signal(0);
   private addableProjectsSearchRequestId = 0;
   private addableProjectsSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last name each employee id was listed under, so a selected id the current projects don't list keeps its label. */
+  private readonly employeeLabels = new Map<string, string>();
+  /** Set while `resetFilters` resets the form, so its single navigation is the only URL write. */
+  private resettingFilters = false;
   /** Action menu items rebuilt per row when the kebab is opened. */
   protected rowMenuItems: MenuItem[] = [];
 
@@ -283,15 +287,11 @@ export class OrgProjectsComponent {
   public constructor() {
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      void this.router.navigate([], {
-        relativeTo: this.route,
-        queryParams: {
-          foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
-          employees: value.employees && value.employees.length ? value.employees.join(',') : null,
-          page: null,
-        },
-        queryParamsHandling: 'merge',
-        replaceUrl: true,
+      if (this.resettingFilters) return;
+      this.writeQueryParams({
+        foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
+        employees: value.employees && value.employees.length ? value.employees.join(',') : null,
+        page: null,
       });
     });
 
@@ -303,6 +303,8 @@ export class OrgProjectsComponent {
       this.workspaceDialogOpen.set(false);
       this.addProjectsDialogOpen.set(false);
       this.editingWorkspace.set(null);
+      // Person ids belong to one organization, so the previous org's Employees selection would match nothing here.
+      this.filterForm.controls.employees.setValue([]);
     });
 
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -353,9 +355,12 @@ export class OrgProjectsComponent {
     });
   }
 
+  /** One navigation clears every filter and the workspace, so neither write can restore the other's pre-reset params. */
   protected resetFilters(): void {
+    this.resettingFilters = true;
     this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
-    this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
+    this.resettingFilters = false;
+    this.writeQueryParams({ foundation: null, employees: null, workspace: null, page: null });
   }
 
   protected openAddProjects(): void {
@@ -758,6 +763,13 @@ export class OrgProjectsComponent {
           return concat(
             of(null),
             this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+              tap((response) => {
+                for (const project of response.projects) {
+                  for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+                    this.employeeLabels.set(person.id, person.name);
+                  }
+                }
+              }),
               catchError((err) => {
                 console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
@@ -986,7 +998,12 @@ export class OrgProjectsComponent {
         byId.set(person.id, person.name);
       }
     }
-    return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    const options = [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    // A selected id no project here lists (stale link, other workspace) stays offered so the picker can show and remove it.
+    for (const id of this.formValue().employees ?? []) {
+      if (!byId.has(id)) options.push({ value: id, label: this.employeeLabels.get(id) ?? id });
+    }
+    return options;
   }
 
   private buildFilteredProjects(): OrgLensProject[] {
@@ -1185,5 +1202,23 @@ export class OrgProjectsComponent {
   private readEmployeesFromUrl(): string[] {
     const raw = this.route.snapshot.queryParamMap.get('employees');
     return raw ? raw.split(',').filter(Boolean) : [];
+  }
+
+  /**
+   * Merges `queryParams` into the URL. While another navigation is in flight (an org switch swapping the path),
+   * the write waits for it to settle, so it merges into the new address instead of cancelling it.
+   */
+  private writeQueryParams(queryParams: Params): void {
+    if (this.router.getCurrentNavigation()) {
+      this.router.events
+        .pipe(
+          filter((e) => e instanceof NavigationEnd || e instanceof NavigationCancel || e instanceof NavigationError),
+          take(1)
+        )
+        // currentNavigation clears only after the end event's subscribers run, so retry on a microtask.
+        .subscribe(() => queueMicrotask(() => this.writeQueryParams(queryParams)));
+      return;
+    }
+    void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
   }
 }
