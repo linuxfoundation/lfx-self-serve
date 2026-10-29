@@ -19,9 +19,10 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
-  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NEWSLETTER_VIEWS,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementAttendanceMonth,
@@ -72,8 +73,6 @@ const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETIN
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
-const NEWSLETTER_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY';
-const NEWSLETTER_BY_NEWSLETTER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER';
 
 /** The summary's per-period columns this section reads, each suffixed by period. */
 const NEWSLETTER_SUMMARY_COLUMNS = [
@@ -609,7 +608,7 @@ export class HealthMetricsEngagementService {
     const summarySql = `
       SELECT
         ${summaryColumns.join(',\n        ')}
-      FROM ${NEWSLETTER_SUMMARY_VIEW}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.summary}
       WHERE foundation_slug = ?
       -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
       LIMIT 1
@@ -629,7 +628,7 @@ export class HealthMetricsEngagementService {
         open_rate,
         click_rate,
         click_to_open_rate
-      FROM ${NEWSLETTER_BY_NEWSLETTER_VIEW}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter}
       WHERE foundation_slug = ?
       -- sort_rank 1 is the latest send, so a capped read keeps the newest.
       ORDER BY sort_rank ASC NULLS LAST, newsletter_key ASC
@@ -640,11 +639,11 @@ export class HealthMetricsEngagementService {
     const [summary, newsletters] = await Promise.all([
       executeSnowflakeViewRead<Record<string, unknown>>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
         ...read,
-        view: NEWSLETTER_SUMMARY_VIEW,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.summary,
       }),
       executeSnowflakeViewRead<NewsletterRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
         ...read,
-        view: NEWSLETTER_BY_NEWSLETTER_VIEW,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter,
       }),
     ]);
 

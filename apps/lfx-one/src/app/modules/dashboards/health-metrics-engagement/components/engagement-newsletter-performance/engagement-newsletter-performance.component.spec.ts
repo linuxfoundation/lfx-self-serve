@@ -144,6 +144,14 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { nlMode: 'audience' }, queryParamsHandling: 'merge' }));
   });
 
+  it('says so in place of the rates chart when no newsletter carries engagement data, while the table still lists them', async () => {
+    await render({ ...PERFORMANCE, newsletters: PERFORMANCE.newsletters.map((newsletter) => ({ ...newsletter, hasEngagementData: false })) });
+
+    expect(query('engagement-newsletter-performance-chart')).toBeNull();
+    expect(query('engagement-newsletter-performance-chart-empty')).not.toBeNull();
+    expect(query('engagement-newsletter-performance-row-n2')).not.toBeNull();
+  });
+
   it('settles empty and badges zero for a period with no newsletter sent', async () => {
     await render();
 

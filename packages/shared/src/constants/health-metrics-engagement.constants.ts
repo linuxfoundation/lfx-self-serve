@@ -435,3 +435,9 @@ export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED: HealthMetricsEngag
   periods: { YTD: null, COMPLETED_YEAR: null, COMPLETED_YEAR_2: null, COMPLETED_YEAR_3: null },
   newsletters: [],
 };
+
+/** The two newsletter views the Overview card and Newsletter performance both read. */
+export const HEALTH_METRICS_NEWSLETTER_VIEWS = {
+  summary: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY',
+  byNewsletter: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER',
+} as const;

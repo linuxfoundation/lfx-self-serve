@@ -19,6 +19,7 @@ import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -439,7 +440,10 @@ export function buildHealthMetricsEngagementNewsletterView(
     newslettersSent: performance.measured && period ? (period.newslettersSent ?? 0) : null,
     headline: {
       ...newsletterKpi('subscribers', 'Subscribers', formatHealthMetricsEngagementCount(period?.subscribers ?? null)),
-      delta: growthPct === 0 ? null : `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%${newsletterGrowthSince(period?.growthBaselineDate ?? null, year)}`,
+      delta:
+        growthPct === 0
+          ? null
+          : `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%${formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year)}`,
       deltaDirection: newsletterDirection(growthPct),
     },
     side: [
@@ -491,14 +495,6 @@ function newsletterKpi(key: string, label: string, value: string): HealthMetrics
 function newsletterDirection(value: number): HealthMetricsEngagementNewsletterKpiView['deltaDirection'] {
   if (value === 0) return 'neutral';
   return value > 0 ? 'up' : 'down';
-}
-
-/** " since Aug" from the growth baseline, with its year when that is not the period's; none without a baseline. */
-function newsletterGrowthSince(baselineDate: string | null, periodYear: number): string {
-  const month = Number(baselineDate?.slice(5, 7));
-  if (!baselineDate || !(month >= 1 && month <= 12)) return '';
-  const baselineYear = baselineDate.slice(0, 4);
-  return ` since ${MONTH_NAMES[month - 1].slice(0, 3)}${baselineYear === String(periodYear) ? '' : ` ${baselineYear}`}`;
 }
 
 /** A 0–1 rate as a percentage, whole unless `digits` asks for more. */

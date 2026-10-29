@@ -395,7 +395,11 @@ export function buildHealthMetricsOverviewNewsletterView(
     kpis: [
       {
         ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
-        delta: buildPctDelta(period?.subscribersGrowth ?? null, true, growthSince(period?.growthBaselineDate ?? null, getYearForRange(range))),
+        delta: buildPctDelta(
+          period?.subscribersGrowth ?? null,
+          true,
+          formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, getYearForRange(range))
+        ),
       },
       kpi('sent', 'Newsletters sent', formatCount(period?.newslettersSent)),
       kpi('open', 'Avg. open rate', formatShare(period?.avgOpenRate ?? null, false)),
@@ -603,7 +607,7 @@ function buildTrendChart(
 }
 
 /** " since Jun" from the growth baseline, with its year when that is not the period's; none without a baseline. */
-function growthSince(baselineDate: string | null, periodYear: number): string {
+export function formatHealthMetricsNewsletterGrowthSince(baselineDate: string | null, periodYear: number): string {
   const month = baselineDate ? formatIsoMonth(baselineDate) : '';
   if (!baselineDate || !month) return '';
   const baselineYear = baselineDate.slice(0, 4);
