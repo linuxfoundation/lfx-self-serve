@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, Location, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
@@ -218,6 +218,7 @@ export class MktgDocumentViewComponent {
   private readonly userService = inject(UserService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly runService = inject(MktgAgentRunService);
   private readonly attempts = inject(MktgRunAttemptService);
 
@@ -594,6 +595,17 @@ export class MktgDocumentViewComponent {
   public constructor() {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
+      // Back intent precedes Router's deferred popstate navigation. Drop the historical pin immediately;
+      // the new route selector then drives one current-body read, never a background-poll body swap.
+      const historySelection = this.location.subscribe((event) => {
+        if (event.type !== 'popstate' || !this.revisionParam()) return;
+        const revision = this.router.parseUrl(event.url ?? '').queryParams['revision'];
+        if (revision) return;
+        this.remoteRevisionId.set('');
+        this.pinnedRouteRevision = '';
+        this.selectionReadPending.set(true);
+      });
+      this.destroyRef.onDestroy(() => historySelection.unsubscribe());
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
       toObservable(computed(() => this.view()?.aeoGeoReport))
         .pipe(takeUntilDestroyed())
