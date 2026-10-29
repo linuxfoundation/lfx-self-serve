@@ -657,16 +657,17 @@ describe('MktgDocumentsComponent', () => {
     if (state === 'writing') expect(nav?.textContent).toContain('Writing');
   });
 
-  it('keeps a LinkedIn questions row on its document filter and Open action', async () => {
+  it('links LinkedIn questions row and navigation to its plain server-owned run entry (#137)', async () => {
     const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'linkedin-post', documentId: 'run-' + 'c'.repeat(24) };
     store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
     await render('/?type=linkedin-post');
     const nav = query('mktg-documents-nav-linkedin-post');
-    expect(nav?.getAttribute('href')).toContain('type=linkedin-post');
-    expect(nav?.textContent).not.toContain('Needs answers');
+    expect(nav?.textContent).toContain('Needs answers');
     const action = query('mktg-documents-open-started-' + run.runId);
-    expect(action?.textContent?.trim()).toBe('Open');
-    expect(action?.getAttribute('href')).toContain('run=' + run.runId);
+    expect(action?.textContent?.trim()).toBe('Answer the questions');
+    // Rule 1/#137/#4591: creator-scoped entry discovers its own active record; never a caller-selected private run.
+    expect(action?.getAttribute('href')).toBe(`/mktg-os-agents/linkedin-post?project=${PROJECT.slug}`);
+    expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
   });
 
   it('links a Member 360 questions row and navigation to its server-first run entry without a selector', async () => {
