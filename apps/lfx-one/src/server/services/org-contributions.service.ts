@@ -55,8 +55,8 @@ export class OrgContributionsService {
     }
 
     // `v5`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559), and filter arrays
-    // delimited by JSON in the signature. A payload read while the team-member flag or the non-team First Commit column
-    // is missing (Exclude asked, team members served, lfx-self-serve#4685) is never stored.
+    // delimited by JSON in the signature. A payload read while the team-member flag (team members served) or the non-team
+    // First Commit column (that date inclusive) is missing is never stored (lfx-self-serve#4685).
     const raw = await withOrgCache(
       accountId,
       `contributions:v5:${contributionsSignature(query)}`,
@@ -68,7 +68,7 @@ export class OrgContributionsService {
         return read.teamMembersUnavailable ? { ...read.value, teamMembersUnavailable: true as const } : read.value;
       },
       isContributionsRaw,
-      (value) => !value.teamMembersUnavailable
+      (value) => !value.teamMembersUnavailable && !value.firstCommitUnavailable
     );
 
     const kpis = mapKpis(raw.kpiRows[0]);
@@ -121,7 +121,7 @@ export class OrgContributionsService {
       foundationOptionRows: foundationResult.rows,
       projectOptionRows: projectResult.rows,
       employeeOptionRows: employeeResult.rows,
-      ...('firstCommitUnavailable' in repoResult && repoResult.firstCommitUnavailable ? { teamMembersUnavailable: true as const } : {}),
+      ...('firstCommitUnavailable' in repoResult && repoResult.firstCommitUnavailable ? { firstCommitUnavailable: true as const } : {}),
     };
   }
 

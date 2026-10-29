@@ -382,7 +382,7 @@ describe('OrgContributionsService — team members', () => {
     expect(repoCall().sql).not.toContain('FIRST_NON_TEAM');
   });
 
-  it('reads the inclusive first commit, says so and never stores the payload while the non-team column is not built yet', async () => {
+  it('reads the inclusive first commit without the counts note, and never stores the payload, while the non-team column is not built yet', async () => {
     const missingFirstCommit = Object.assign(
       new Error("SQL compilation error: error line 11 at position 14\ninvalid identifier 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'"),
       {
@@ -396,13 +396,15 @@ describe('OrgContributionsService — team members', () => {
 
     const response = await service.getContributions(ACCOUNT, query({ metric: 'commits' }));
 
-    expect(response.teamMembersUnavailable).toBe(true);
+    // Only the First Commit falls back: team members stay out of the counts, so the counts note stays off.
+    expect(response.teamMembersUnavailable).toBeUndefined();
     const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
     expect(repoReads.at(-1)?.[0]).toContain('MIN(org_repo_first_commit_ts) AS first_commit_ts');
-    // Only the First Commit falls back: team members stay out of the counts.
     expect(repoReads.at(-1)?.[0]).toContain('NOT COALESCE(is_cdp_team_member, FALSE)');
     const storable = withOrgCache.mock.calls[0][5] as (value: unknown) => boolean;
+    expect(storable({ firstCommitUnavailable: true })).toBe(false);
     expect(storable({ teamMembersUnavailable: true })).toBe(false);
+    expect(storable({})).toBe(true);
   });
 
   describe('while the warehouse has no team-member flag yet', () => {
