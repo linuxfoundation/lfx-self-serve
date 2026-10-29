@@ -28,6 +28,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-description`    | `UiDescriptionComponent`   | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon              |
 | `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; three sizes; `role="alert"` unless `announce` is off   |
 | `lfx-ui-keyboard-input` | `UiKeyboardInputComponent` | Key or shortcut as one `<kbd>` per key, 24 or 20px; `[keys]`                                                               |
+| `lfx-ui-gauge`          | `UiGaugeComponent`         | Circular percentage, 20 to 128px; level colours at 67 and 34 or accent; indeterminate; `role="progressbar"`                |
 
 ## Design tokens
 
