@@ -52,6 +52,8 @@ import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
 /** A discarded or superseded session cannot accept another turn. */
 export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** The questions turn was already claimed; never send another answers message. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 

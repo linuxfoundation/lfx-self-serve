@@ -107,7 +107,14 @@ vi.mock('./object-store.service', () => ({
       flows.max = Math.max(flows.max, flows.active);
       await Promise.resolve();
       flows.active--;
-      return objects.get(key) ?? null;
+      const object = objects.get(key);
+      return object ? { ...object, metadata: { ...object.metadata }, etag: hash(object.body) } : null;
+    }
+    public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      const object = objects.get(key);
+      if (!object || input.ifMatch !== hash(object.body)) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date() });
+      return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
       return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -135,7 +142,7 @@ vi.mock('./object-store.service', () => ({
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { logger } from './logger.service';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
-import type { MktgDocumentRunCoverage, MktgGenerationAttribution, ObjectStoreListEntry } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentRunCoverage, MktgGenerationAttribution, ObjectStoreListEntry, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
 const project = 'synthetic-project';
@@ -228,7 +235,12 @@ describe('MktgDocumentRunService', () => {
       'started-at': '2026-10-19T12:00:00.000Z',
       'retry-at': '2026-10-19T12:02:00.000Z',
     });
-    expect(stored().body).toBe(body);
+    expect(hash(stored().body)).not.toBe(hash(body));
+    expect(JSON.parse(stored().body)).toMatchObject({
+      startedAt: JSON.parse(body).startedAt,
+      creatorSubject: JSON.parse(body).creatorSubject,
+      attemptId: 'turn-new',
+    });
     flows.result.mockResolvedValue(ready(type.agentKey));
     expect((await service.reconcile(req, project))[0].state).toBe('writing'); // Prior receipt cannot finish the renewed turn.
     flows.result.mockResolvedValue({
