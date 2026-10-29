@@ -3505,6 +3505,118 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-loading')).not.toBeNull();
   });
 
+  it('picks up an idle approval and new revision without replacing the open content, tab or rail', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living?tab=numbers');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic framework');
+    const ids = ['mktg-document-view-title', 'mktg-framework-view-tab-numbers', 'mktg-document-view-content', 'mktg-document-view-revisions'];
+    const nodes = ids.map(query);
+    expect(nodes.every(Boolean)).toBe(true);
+    const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const approved = revision(3, { latest: true, approval });
+    const next = {
+      ...loaded,
+      revisions: [approved, { ...loaded.revision, latest: false }],
+      current: { revisionId: approved.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: approved.id, number: approved.number },
+      runs: [],
+    };
+    store.getDocument.mockReturnValue(of(next));
+    const bodyReads = store.getRevision.mock.calls.length;
+    const reads = store.getDocument.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+    expect(store.getRevision).toHaveBeenCalledTimes(bodyReads);
+    expect(component['view']()?.revision.id).toBe(loaded.revision.id);
+    expect(component['view']()?.markdown).toBe(loaded.markdown);
+    ids.forEach((id, index) => expect(query(id)).toBe(nodes[index]));
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('aria-selected')).toBe('true');
+    expect(query('mktg-document-view-revision-label-3')?.textContent).toContain('Approved');
+    expect(query('mktg-document-view-current-3')).not.toBeNull();
+    expect(query('mktg-document-view-current-2')).toBeNull();
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(component['railReady']()).toBe(true);
+    const line = query('mktg-document-view-new-approval');
+    expect(line?.textContent).toContain('v3 was approved by Synthetic reviewer');
+    expect(line?.querySelector('a')?.getAttribute('href')).toContain(`revision=${approved.id}`);
+    expect(line?.querySelector('a')?.getAttribute('href')).toContain('tab=numbers');
+    line?.querySelector('a')?.click();
+    await settle();
+    expect(TestBed.inject(Router).url).toContain(`revision=${approved.id}`);
+  });
+
+  it('leaves the DOM completely untouched when an idle metadata poll has no changes', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const snapshot = component['runDetail']();
+    store.getDocument.mockImplementation(() => of(structuredClone(snapshot)));
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((batch) => records.push(...batch));
+    const root = harness.routeNativeElement;
+    if (!root) throw new Error('Missing document root');
+    observer.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+    try {
+      const reads = store.getDocument.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 2);
+      await settle();
+      records.push(...observer.takeRecords());
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 2);
+      expect(records).toEqual([]);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('re-reads once on focus and on return from a hidden tab, with no reads while hidden', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living');
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    try {
+      const reads = store.getDocument.mock.calls.length;
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 2);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 1);
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(reads + 2);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it('refreshes the viewed revision approval state in place when that revision becomes current', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    useFrameworkRevision(true);
+    await render('/documents/foundation-message/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const loaded = component['view']();
+    if (!loaded) throw new Error('Missing synthetic draft');
+    const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    store.getDocument.mockReturnValue(
+      of({ ...loaded, revisions: [{ ...loaded.revision, approval }], approvedCurrent: { revisionId: loaded.revision.id, number: loaded.revision.number } })
+    );
+    const content = query('mktg-document-view-content');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-content')).toBe(content);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-document-view-approve')).toBeNull();
+    expect(query('mktg-document-view-new-approval')).toBeNull();
+  });
+
   it('keeps content and an accepted approval alive through progressive refresh', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const response = faqResponse();

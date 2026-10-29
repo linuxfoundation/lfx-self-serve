@@ -13,7 +13,7 @@ import {
   MktgRevisionResponse,
   MktgRetryDocumentRunRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, take, throwError } from 'rxjs';
+import { catchError, map, Observable, of, switchMap, take, throwError } from 'rxjs';
 
 /**
  * Client for the Marketing OS Documents area: every stored agent output of a
@@ -72,23 +72,39 @@ export class MktgDocumentStoreService {
 
   /** Resolve approved bytes separately from the viewed draft; refuse a stale pointer response. */
   public getApprovedRevision(detail: MktgDocumentDetailResponse, viewed?: MktgRevisionResponse): Observable<MktgRevisionResponse | null> {
+    return this.readApprovedRevision(detail, viewed, true);
+  }
+
+  private readApprovedRevision(
+    detail: MktgDocumentDetailResponse,
+    viewed: MktgRevisionResponse | undefined,
+    retry: boolean
+  ): Observable<MktgRevisionResponse | null> {
     const current = detail.approvedCurrent;
     if (detail.type.kind !== 'living' || !current) return of(null);
     const revision$ =
       viewed?.revision.id === current.revisionId ? of(viewed) : this.getRevision(detail.project, detail.type.agentKey, detail.documentId, current.revisionId);
     return revision$.pipe(
       map((revision) => {
-        if (
-          revision.project !== detail.project ||
-          revision.type.agentKey !== detail.type.agentKey ||
-          revision.documentId !== detail.documentId ||
-          revision.revision.id !== current.revisionId ||
-          !revision.revision.approval ||
-          revision.approvedCurrent?.revisionId !== current.revisionId
-        ) {
+        if (revision.project !== detail.project || revision.type.agentKey !== detail.type.agentKey || revision.documentId !== detail.documentId) {
           throw new Error('The approved current changed. Reload and try again.');
         }
+        if (revision.revision.id !== current.revisionId || !revision.revision.approval || revision.approvedCurrent?.revisionId !== current.revisionId) {
+          throw new HttpErrorResponse({
+            status: 409,
+            error: {
+              code: 'MKTG_APPROVED_CURRENT_CHANGED',
+              message: 'The approved current changed. Reload and try again.',
+            },
+          });
+        }
         return revision;
+      }),
+      catchError((error: unknown) => {
+        if (!retry || !(error instanceof HttpErrorResponse) || error.error?.code !== 'MKTG_APPROVED_CURRENT_CHANGED') return throwError(() => error);
+        return this.getDocument(detail.project, detail.type.agentKey, detail.documentId).pipe(
+          switchMap((fresh) => this.readApprovedRevision(fresh, undefined, false))
+        );
       })
     );
   }

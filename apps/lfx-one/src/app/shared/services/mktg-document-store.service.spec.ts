@@ -161,7 +161,71 @@ describe('MktgDocumentStoreService', () => {
     const error = vi.fn();
     service.getApprovedRevision(detail).subscribe({ error });
     http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}`)).flush(invalid);
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'The approved current changed. Reload and try again.' }));
+    if (['revision', 'selection', 'approval'].includes(fault)) {
+      expect(error).not.toHaveBeenCalled();
+      http.expectOne((candidate) => candidate.url.endsWith('/foundation-message/living')).flush(detail);
+      http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}`)).flush(invalid);
+      expect(error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 409,
+          error: expect.objectContaining({
+            code: 'MKTG_APPROVED_CURRENT_CHANGED',
+            message: 'The approved current changed. Reload and try again.',
+          }),
+        })
+      );
+    } else {
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'The approved current changed. Reload and try again.' }));
+    }
+  });
+
+  it.each(['response', 'conflict'])('automatically re-reads detail once and retries a changed approved pointer (%s)', (kind) => {
+    const stale = approvedRevision();
+    const id = `000003-${'b'.repeat(64)}`;
+    const current = { ...stale, revision: { ...stale.revision, id, number: 3 }, approvedCurrent: { revisionId: id, number: 3 } };
+    const next = vi.fn();
+    const error = vi.fn();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      service.getApprovedRevision(stale).subscribe({ next, error });
+      const first = http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}`));
+      if (kind === 'response') first.flush({ ...stale, approvedCurrent: current.approvedCurrent });
+      else
+        first.flush(
+          { code: 'MKTG_APPROVED_CURRENT_CHANGED', error: 'The approved current changed. Reload and try again.' },
+          { status: 409, statusText: 'Conflict' }
+        );
+      expect(error).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+      http.expectOne((candidate) => candidate.url.endsWith('/foundation-message/living')).flush(current);
+      http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${id}`)).flush(current);
+      expect(next).toHaveBeenCalledExactlyOnceWith(current);
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('returns no approved payload when the recovery detail has no approved current', () => {
+    const stale = approvedRevision();
+    const next = vi.fn();
+    service.getApprovedRevision(stale).subscribe(next);
+    http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}`)).flush({ ...stale, approvedCurrent: null });
+    http.expectOne((candidate) => candidate.url.endsWith('/foundation-message/living')).flush({ ...stale, approvedCurrent: null });
+    expect(next).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('does not re-read detail on an unrelated revision failure', () => {
+    const error = vi.fn();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      service.getApprovedRevision(approvedRevision()).subscribe({ error });
+      http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${REVISION_ID}`)).flush({}, { status: 503, statusText: 'Unavailable' });
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 503 }));
+      http.expectNone((candidate) => candidate.url.endsWith('/foundation-message/living'));
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('POSTs approval with the project query and encoded revision path', () => {

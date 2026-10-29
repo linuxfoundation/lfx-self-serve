@@ -623,6 +623,12 @@
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
+            @if (newlyApprovedRevision(); as approved) {
+              <p class="text-xs text-gray-500" data-testid="mktg-document-view-new-approval" role="status">
+                v{{ approved.number }} was approved by {{ approved.authorLabel }} ·
+                <a [routerLink]="[]" [queryParams]="{ revision: approved.id }" queryParamsHandling="merge" class="text-blue-600 hover:text-blue-800">Open it</a>
+              </p>
+            }
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
               @for (revision of visibleRevisionRows(); track revision.id) {
                 <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
@@ -100,6 +100,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
@@ -208,6 +209,7 @@ export class MktgDocumentViewComponent {
   private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
@@ -292,6 +294,7 @@ export class MktgDocumentViewComponent {
   protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
+  protected readonly newlyApprovedRevision = this.initNewlyApprovedRevision();
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
@@ -535,6 +538,7 @@ export class MktgDocumentViewComponent {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
+      this.observeIdleDocument();
       toObservable(computed(() => this.view()?.aeoGeoReport))
         .pipe(takeUntilDestroyed())
         .subscribe((report) => {
@@ -1291,6 +1295,83 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
+  private initNewlyApprovedRevision() {
+    return computed(() => {
+      const view = this.view();
+      const approved = view?.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
+      if (!view || !approved || approved.number <= view.revision.number) return null;
+      return { ...approved, authorLabel: describeMktgRevisionAuthor(approved.approval?.approvedBy) };
+    });
+  }
+
+  /** Idle reads update metadata only: never replace the revision/body under a reader. */
+  private observeIdleDocument(): void {
+    const scope = computed(() => {
+      const view = this.view();
+      const active = this.runDetail()?.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
+      const local = this.localProgress();
+      return {
+        project: this.projectUid(),
+        ...this.params(),
+        revision: this.revisionParam(),
+        subject: this.userService.user()?.sub ?? '',
+        idle:
+          !!view &&
+          view.project === this.projectUid() &&
+          view.type.agentKey === this.params().agentKey &&
+          view.documentId === this.params().documentId &&
+          !active &&
+          local !== 'writing' &&
+          local !== 'storing' &&
+          !this.writePending(),
+      };
+    });
+    toObservable(scope)
+      .pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        switchMap((request) => {
+          if (!request.idle) return EMPTY;
+          // The initial detail has just answered. Only the next timer/focus/return needs a read.
+          let initial = this.document.visibilityState === 'visible';
+          return createVisibilityPoll<MktgDocumentDetailResponse | null>(
+            this.document,
+            (poll) => {
+              if (initial) {
+                initial = false;
+                return of(null);
+              }
+              return this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll);
+            },
+            {
+              intervalMs: MKTG_RUN_POLL.intervalMs,
+              backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+              backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
+            }
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((event) => {
+        if (event.kind !== 'ok' || !event.value) return;
+        const detail = event.value;
+        const view = this.view();
+        if (!view || detail.project !== view.project || detail.type.agentKey !== view.type.agentKey || detail.documentId !== view.documentId) return;
+        const row = detail.revisions.find((entry) => entry.id === view.revision.id);
+        const metadata = { revisions: detail.revisions, current: detail.current, approvedCurrent: detail.approvedCurrent };
+        const previous = { revisions: view.revisions, current: view.current, approvedCurrent: view.approvedCurrent };
+        if (JSON.stringify(metadata) !== JSON.stringify(previous)) {
+          this.view.set({
+            ...view,
+            ...metadata,
+            approval: row ? row.approval : view.approval,
+            revision: row ? { ...view.revision, latest: row.latest, approval: row.approval } : view.revision,
+          });
+        }
+        if (JSON.stringify(this.runDetail()) !== JSON.stringify(detail)) this.runDetail.set(detail);
+        if (detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing')) this.progressRefreshKey.update((key) => `${key}+`);
+      });
+  }
+
   private initApprovedView(): Signal<MktgApprovedRevisionState> {
     return toSignal(
       toObservable(this.view).pipe(
