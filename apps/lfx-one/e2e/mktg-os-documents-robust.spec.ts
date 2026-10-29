@@ -89,6 +89,7 @@ test.describe('Marketing OS Documents structure', () => {
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
     await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-agent-run-form-title')).toHaveJSProperty('tagName', 'H2');
     await expect(page.getByTestId('mktg-agent-run-version-chips')).toHaveCount(0);
   });
 
