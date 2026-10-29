@@ -8,7 +8,8 @@ import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -40,6 +41,8 @@ describe('VotePresenterComponent', () => {
   let fetchVote: ReturnType<typeof vi.fn>;
   let getVoteResults: ReturnType<typeof vi.fn>;
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let endVote: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<VotePresenterComponent>;
 
   const text = (testId: string): string => (fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -49,6 +52,16 @@ describe('VotePresenterComponent', () => {
     fixture.detectChanges();
   };
 
+  const closeButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="vote-presenter-close"] button');
+  /** Replaces the dialog with a spy so a test can read its copy and accept or reject it; nothing is sent until accept runs. */
+  const captureConfirm = () => {
+    const captured: { options?: { message?: string; header?: string; acceptLabel?: string; rejectLabel?: string; accept?: () => void } } = {};
+    vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm').mockImplementation((options) => {
+      captured.options = options as typeof captured.options;
+      return fixture.debugElement.injector.get(ConfirmationService);
+    });
+    return captured;
+  };
   const mount = async (): Promise<void> => {
     fixture = TestBed.createComponent(VotePresenterComponent);
     fixture.detectChanges();
@@ -60,25 +73,27 @@ describe('VotePresenterComponent', () => {
     fetchVote = vi.fn(() => of(baseVote()));
     getVoteResults = vi.fn(() => of(results()));
     navigateByUrl = vi.fn();
+    endVote = vi.fn(() => of(baseVote({ status: PollStatus.ENDED })));
+    messageAdd = vi.fn();
     TestBed.configureTestingModule({
       providers: [
-        { provide: VoteService, useValue: { fetchVote, getVoteResults } },
+        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: 'v1' })) } },
         { provide: Router, useValue: { navigateByUrl } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
   });
 
   afterEach(() => vi.useRealTimers());
 
-  it('renders the count, link-first share panel and a disabled Close with the #4370 tooltip while open', async () => {
+  it('renders the count, link-first share panel and an enabled Close while open', async () => {
     await mount();
     expect(text('vote-presenter-count')).toBe('3 of 10 voters have cast');
     expect(text('vote-presenter-link')).toContain('/votes/v1');
     expect(has('vote-presenter-copy-link')).toBe(true);
     expect(has('vote-qr')).toBe(true);
-    expect(fixture.nativeElement.querySelector('[data-testid="vote-presenter-close"] button')?.disabled).toBe(true);
+    expect(closeButton()?.disabled).toBe(false);
     expect(getVoteResults).not.toHaveBeenCalled();
   });
 
@@ -118,7 +133,7 @@ describe('VotePresenterComponent', () => {
     expect(getVoteResults).toHaveBeenCalledTimes(1);
     expect(getVoteResults).toHaveBeenCalledWith('v1');
     expect(has('vote-presenter-result')).toBe(true);
-    expect(text('vote-presenter-closed-at')).toContain('Closed automatically at');
+    expect(text('vote-presenter-closed-at')).toContain('Closed at');
     expect(fetchVote.mock.calls.length).toBeGreaterThan(2);
   });
 
@@ -144,6 +159,7 @@ describe('VotePresenterComponent', () => {
         { provide: VoteService, useValue: { fetchVote: vi.fn(() => of(baseVote({ status: PollStatus.ENDED, allow_abstain: false }))), getVoteResults } },
         { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ id: 'v1' })) } },
         { provide: Router, useValue: { navigateByUrl } },
+        { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
     await mount();
@@ -311,10 +327,10 @@ describe('VotePresenterComponent', () => {
     fetchVote = vi.fn((id: string) => (id === 'v1' ? of(baseVote()) : NEVER));
     TestBed.configureTestingModule({
       providers: [
-        { provide: VoteService, useValue: { fetchVote, getVoteResults } },
+        { provide: VoteService, useValue: { fetchVote, getVoteResults, endVote } },
         { provide: ActivatedRoute, useValue: { paramMap } },
         { provide: Router, useValue: { navigateByUrl } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
     await mount();
@@ -330,5 +346,143 @@ describe('VotePresenterComponent', () => {
     await mount();
     (fixture.componentInstance as unknown as { exit(): void }).exit();
     expect(navigateByUrl).toHaveBeenCalledWith('/votes/v1');
+  });
+
+  describe('Close vote (#4143)', () => {
+    it('does not render Close when the vote is not active', async () => {
+      fetchVote.mockReturnValue(of(baseVote({ status: PollStatus.DISABLED })));
+      await mount();
+
+      expect(closeButton()).toBeNull();
+    });
+
+    it('asks first, with the closing copy, and ends nothing until the dialog is accepted', async () => {
+      await mount();
+      const confirm = captureConfirm();
+
+      closeButton()!.click();
+      await tick(0);
+
+      expect(confirm.options?.message).toBe('Close the vote now? Members can no longer cast or change ballots.');
+      expect(confirm.options?.acceptLabel).toBe('Close vote');
+      expect(confirm.options?.rejectLabel).toBe('Cancel');
+      expect(endVote).not.toHaveBeenCalled();
+    });
+
+    it('does not end the vote when the dialog is dismissed without accepting', async () => {
+      await mount();
+      captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      // Cancel and Esc both hide the dialog without running `accept`.
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+
+      expect(endVote).not.toHaveBeenCalled();
+      expect(closeButton()?.disabled).toBe(false);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(navigateByUrl).toHaveBeenCalledOnce();
+    });
+
+    it('ends the vote once on accept and keeps Close disabled while the request is in flight', async () => {
+      const pending = new Subject<Vote>();
+      endVote.mockReturnValue(pending);
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+      await tick(0);
+
+      expect(endVote).toHaveBeenCalledExactlyOnceWith('v1');
+      expect(closeButton()?.disabled).toBe(true);
+      closeButton()!.click();
+      await tick(0);
+      expect(endVote).toHaveBeenCalledTimes(1);
+    });
+
+    it('forces one immediate poll on success and moves to the result state only when that GET says ended, then reads results once', async () => {
+      let ended = false;
+      fetchVote.mockImplementation(() => of(baseVote(ended ? { status: PollStatus.ENDED, early_end_time: '2026-11-01T10:00:00Z' } : {})));
+      endVote.mockImplementation(() => {
+        ended = true;
+        return of(baseVote({ status: PollStatus.ENDED }));
+      });
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+      const pollsBefore = fetchVote.mock.calls.length;
+      expect(getVoteResults).not.toHaveBeenCalled();
+
+      confirm.options?.accept?.();
+      await tick(0);
+
+      // No waiting out the 5s interval: the poll was restarted by the end action itself.
+      expect(fetchVote.mock.calls.length).toBeGreaterThan(pollsBefore);
+      expect(has('vote-presenter-result')).toBe(true);
+      expect(getVoteResults).toHaveBeenCalledExactlyOnceWith('v1');
+      await tick(30_000);
+      expect(getVoteResults).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays on the open state, and never reads results, until a poll returns ended', async () => {
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+      await tick(0);
+
+      // The end request succeeded, but the forced poll still reports an active vote.
+      expect(has('vote-presenter-result')).toBe(false);
+      expect(getVoteResults).not.toHaveBeenCalled();
+    });
+
+    it('shows the upstream message in a toast on failure and re-enables Close', async () => {
+      endVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'poll has not started', code: 'CONFLICT' } })));
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+      await tick(0);
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'poll has not started' }));
+      expect(closeButton()?.disabled).toBe(false);
+      expect(getVoteResults).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a plain message when the failure carries no upstream text', async () => {
+      endVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
+      await mount();
+      const confirm = captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      confirm.options?.accept?.();
+      await tick(0);
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining("couldn't confirm") }));
+    });
+
+    it('keeps Esc from leaving the presenter while the Close dialog is open, and restores it afterwards', async () => {
+      await mount();
+      captureConfirm();
+      closeButton()!.click();
+      await tick(0);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(navigateByUrl).not.toHaveBeenCalled();
+
+      (fixture.componentInstance as unknown as { onConfirmHidden: () => void }).onConfirmHidden();
+      await tick(1);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(navigateByUrl).toHaveBeenCalledOnce();
+    });
   });
 });

@@ -308,6 +308,29 @@ export class VoteController {
   }
 
   /**
+   * POST /votes/:uid/end — ends an active vote now (vote#writer only). Logs the vote uid only; the gateway records the
+   * principal upstream, and the OIDC subject is a username here, so it is never logged.
+   */
+  public async endVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'end_vote', { vote_uid: uid });
+
+    try {
+      if (!validateUidParameter(uid, req, next, { operation: 'end_vote', service: 'vote_controller' })) {
+        return;
+      }
+
+      const vote = await this.voteService.endVote(req, uid);
+
+      logger.success(req, 'end_vote', startTime, { vote_uid: uid });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /votes/:uid
    */
   public async deleteVote(req: Request, res: Response, next: NextFunction): Promise<void> {

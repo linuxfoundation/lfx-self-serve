@@ -7,6 +7,8 @@
  * Coverage:
  *   - a vote#writer opens the presenter, the count updates from polling, and when the vote ends the results
  *     render with `/results` requested only after the transition
+ *   - Close vote (#4143): the confirm dialog gates POST /api/votes/:uid/end, the next poll flips the presenter to the
+ *     result state with `/results` requested once, and an upstream rejection shows a toast and leaves the vote open
  *   - a non-writer is redirected away and never sees the presenter
  *   - network loss shows "Reconnecting" with the last count kept, then recovers without a reload
  *   - the link-first share panel fits at 1920x1080, 1024x768 and a 390x844 phone with no horizontal scroll
@@ -43,6 +45,9 @@ interface StubState {
   writer: boolean;
   offline: boolean;
   resultsRequests: number;
+  /** POST /end calls seen, and the upstream status to answer with (200 ends the stubbed vote; anything else rejects it). */
+  endRequests?: number;
+  endStatus?: number;
 }
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
@@ -76,6 +81,18 @@ async function stubVote(page: Page, state: StubState): Promise<void> {
       return fulfillJson(route, wantsWriter ? { ...state.vote, writer: state.writer } : state.vote);
     }
   );
+  await page.route(`**/api/votes/${VOTE_UID}/end`, (route) => {
+    state.endRequests = (state.endRequests ?? 0) + 1;
+    if ((state.endStatus ?? 200) !== 200) {
+      return route.fulfill({
+        status: state.endStatus,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'poll has not started', code: 'CONFLICT' }),
+      });
+    }
+    state.vote = { ...state.vote, status: 'ended', early_end_time: '2099-05-02T10:00:00Z' };
+    return fulfillJson(route, state.vote);
+  });
   await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => {
     state.resultsRequests += 1;
     return fulfillJson(route, { num_recipients: 10, num_votes_cast: 9, num_abstained: 0, generic_choice_votes: [] });
@@ -115,6 +132,38 @@ test.describe('Vote presenter (#4140)', () => {
     await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: POLL_TIMEOUT });
     await expect(page.getByTestId('vote-presenter-banner')).toContainText('Vote ended');
     expect(state.resultsRequests).toBe(1);
+  });
+
+  test('writer: Close vote asks first, then ends the vote and shows the result state', async ({ page }) => {
+    const state: StubState = { vote: buildVote(), writer: true, offline: false, resultsRequests: 0 };
+    await stubVote(page, state);
+    await openPresenter(page);
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
+
+    await page.getByTestId('vote-presenter-close').getByRole('button').click();
+    await expect(page.getByText('Close the vote now? Members can no longer cast or change ballots.')).toBeVisible();
+    expect(state.endRequests ?? 0).toBe(0);
+    expect(state.resultsRequests).toBe(0);
+
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
+
+    await expect(page.getByTestId('vote-presenter-result')).toBeVisible({ timeout: POLL_TIMEOUT });
+    expect(state.endRequests).toBe(1);
+    expect(state.resultsRequests).toBe(1);
+  });
+
+  test('writer: a rejected Close shows the upstream message and leaves the vote open', async ({ page }) => {
+    const state: StubState = { vote: buildVote(), writer: true, offline: false, resultsRequests: 0, endStatus: 409 };
+    await stubVote(page, state);
+    await openPresenter(page);
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible({ timeout: RENDER_TIMEOUT });
+
+    await page.getByTestId('vote-presenter-close').getByRole('button').click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Close vote' }).click();
+
+    await expect(page.getByText('poll has not started')).toBeVisible({ timeout: RENDER_TIMEOUT });
+    await expect(page.getByTestId('vote-presenter-open')).toBeVisible();
+    expect(state.resultsRequests).toBe(0);
   });
 
   test('axe: no violations on the open and ended states', async ({ page }) => {

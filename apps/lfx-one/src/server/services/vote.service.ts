@@ -441,6 +441,19 @@ export class VoteService {
   }
 
   /**
+   * Ends an active vote now via the dedicated end_vote upstream endpoint (voting-service v0.3.16): `end_time` is kept and
+   * `early_end_time` is stamped; ending an already ended vote is a 2xx no-op, a vote that has not started is a 409, and a vote
+   * past its scheduled end is a 400. Never faked with extend. The caller must hold `vote#writer`, re-checked here before the
+   * proxy call (the gateway enforces it again upstream).
+   */
+  public async endVote(req: Request, voteUid: string): Promise<Vote> {
+    await assertVoteWrite(req, voteUid, 'end_vote');
+    logger.debug(req, 'end_vote', 'Ending vote now', { vote_uid: voteUid });
+
+    return this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/end`, 'POST');
+  }
+
+  /**
    * Deletes a vote directly via microservice proxy
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {

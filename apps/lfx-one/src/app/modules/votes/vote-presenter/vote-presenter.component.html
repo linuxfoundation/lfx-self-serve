@@ -64,7 +64,7 @@
                     }
                   </p>
                   @if (closedAt(); as closed) {
-                    <p class="m-0 text-[22px] text-gray-300" data-testid="vote-presenter-closed-at">Closed automatically at {{ closed | date: 'medium' }}</p>
+                    <p class="m-0 text-[22px] text-gray-300" data-testid="vote-presenter-closed-at">Closed at {{ closed | date: 'medium' }}</p>
                   }
                 </div>
               </div>
@@ -183,18 +183,15 @@
             </p>
             <div class="flex items-center gap-3">
               <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit()" data-testid="vote-presenter-exit" />
-              <!-- Close is a placeholder until the voting service can end a vote early. TODO(#4370): enable and wire to POST /api/votes/:uid/end once that ships. -->
-              <span
-                class="inline-flex"
-                role="group"
-                tabindex="0"
-                [attr.aria-label]="'Close vote unavailable. ' + closeTooltip()"
-                [pTooltip]="closeTooltip()"
-                tooltipPosition="top"
-                tooltipEvent="both"
-                data-testid="vote-presenter-close-wrapper">
-                <lfx-button label="Close vote" severity="danger" size="large" styleClass="min-h-[44px]" [disabled]="true" data-testid="vote-presenter-close" />
-              </span>
+              <lfx-button
+                label="Close vote"
+                severity="danger"
+                size="large"
+                styleClass="min-h-[44px]"
+                [loading]="closing()"
+                [disabled]="!canClose()"
+                (onClick)="onCloseClick()"
+                data-testid="vote-presenter-close" />
             </div>
           </footer>
 
@@ -309,3 +306,4 @@
     </header>
   </ng-template>
 </main>
+<p-confirmDialog (onHide)="onConfirmHidden()" data-testid="vote-presenter-close-confirm-dialog" />
