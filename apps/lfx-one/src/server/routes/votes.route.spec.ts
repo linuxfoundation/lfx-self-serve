@@ -6,13 +6,14 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, voteWriteRateLimiter } = vi.hoisted(() => ({
+const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, endVote, voteWriteRateLimiter } = vi.hoisted(() => ({
   summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
   statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
   byId: vi.fn(),
   reminderRecipients: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'r-1' }])),
   voters: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'b-1', status: 'voted' }])),
   sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
+  endVote: vi.fn((_req: unknown, res: Response) => res.json({ uid: 'vote-1', status: 'ended' })),
   voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
 }));
 vi.mock('../controllers/vote.controller', () => ({
@@ -23,6 +24,7 @@ vi.mock('../controllers/vote.controller', () => ({
     public getVoteReminderRecipients = reminderRecipients;
     public getVoteVoters = voters;
     public sendVoteReminders = sendReminders;
+    public endVote = endVote;
   },
 }));
 vi.mock('../middleware/rate-limit.middleware', () => ({ voteWriteRateLimiter }));
@@ -79,6 +81,18 @@ describe('vote reminder route dispatch (#3769)', () => {
     expect(await response.json()).toEqual({ recipient_count: 1 });
     expect(voteWriteRateLimiter).toHaveBeenCalledOnce();
     expect(sendReminders).toHaveBeenCalledOnce();
+  });
+});
+
+describe('vote end route dispatch (#4143)', () => {
+  it('dispatches POST /:uid/end through the vote write rate limiter, not the vote UID handler', async () => {
+    voteWriteRateLimiter.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/end`, { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ uid: 'vote-1', status: 'ended' });
+    expect(voteWriteRateLimiter).toHaveBeenCalledOnce();
+    expect(endVote).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
   });
 });
 

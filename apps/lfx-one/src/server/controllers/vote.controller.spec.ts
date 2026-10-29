@@ -13,6 +13,7 @@ const {
   getVoteReminderRecipients,
   getVoteVoters,
   sendVoteReminders,
+  endVoteSvc,
   assertVoteWrite,
   success,
 } = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const {
   getVoteReminderRecipients: vi.fn(),
   getVoteVoters: vi.fn(),
   sendVoteReminders: vi.fn(),
+  endVoteSvc: vi.fn(),
   assertVoteWrite: vi.fn(),
   success: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock('../services/vote.service', () => ({
     public getVoteReminderRecipients = getVoteReminderRecipients;
     public getVoteVoters = getVoteVoters;
     public sendVoteReminders = sendVoteReminders;
+    public endVote = endVoteSvc;
   },
 }));
 vi.mock('../helpers/vote-write-access.helper', () => ({ assertVoteWrite }));
@@ -358,5 +361,57 @@ describe('VoteController getVoteById writer decoration (#4140)', () => {
     await controller.getVoteById(request({}), res, next);
     expect(getVoteById).toHaveBeenCalledWith(expect.anything(), 'vote-1', { includeProject: true, includeWriter: false });
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ uid: 'vote-1' }));
+  });
+});
+
+describe('VoteController endVote (#4143)', () => {
+  const json = vi.fn();
+  const res = { json } as unknown as Response;
+  const next = vi.fn();
+  const controller = new VoteController();
+  const req = (uid: string): Request =>
+    ({ params: { uid }, oidc: { user: { sub: 'auth0|synthetic', email: 'avery@acme-motors.example' } } }) as unknown as Request;
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it('ends the vote and returns the upstream vote', async () => {
+    endVoteSvc.mockResolvedValue({ uid: 'vote-1', status: 'ended' });
+    const request = req('vote-1');
+
+    await controller.endVote(request, res, next);
+
+    expect(endVoteSvc).toHaveBeenCalledWith(request, 'vote-1');
+    expect(json).toHaveBeenCalledWith({ uid: 'vote-1', status: 'ended' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('logs the vote uid and the opaque actor only, never a name or email', async () => {
+    endVoteSvc.mockResolvedValue({ uid: 'vote-1', status: 'ended' });
+
+    await controller.endVote(req('vote-1'), res, next);
+
+    expect(success).toHaveBeenCalledWith(expect.anything(), 'end_vote', undefined, { vote_uid: 'vote-1', actor: 'auth0|synthetic' });
+    // The first argument is the request itself (which the real logger whitelists); only the logged metadata matters here.
+    expect(JSON.stringify(success.mock.calls.map(([, , , metadata]) => metadata))).not.toContain('acme-motors');
+  });
+
+  it('rejects a missing uid without calling the service', async () => {
+    await controller.endVote(req(''), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(endVoteSvc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['writer gate', new MicroserviceError('You do not have access to manage this vote.', 403, 'FORBIDDEN', {})],
+    ['vote not started', new MicroserviceError('poll has not started', 409, 'CONFLICT', {})],
+    ['past its end time', new MicroserviceError('poll is already past its scheduled end time', 400, 'BAD_REQUEST', {})],
+  ])('passes the %s failure through via next(error)', async (_label, upstream) => {
+    endVoteSvc.mockRejectedValue(upstream);
+
+    await controller.endVote(req('vote-1'), res, next);
+
+    expect(next).toHaveBeenCalledWith(upstream);
+    expect(json).not.toHaveBeenCalled();
   });
 });
