@@ -1278,13 +1278,14 @@ export class MktgDocumentRunService {
   }
 
   private closedMarker(record: MktgStartedRunRecord): MktgDocumentRunProgress | null {
-    if (record.state !== 'discarded' && record.state !== 'superseded') return null;
+    if (!isMktgRunClosed(record.state)) return null;
     return mktgRunProgress(record, undefined, undefined, undefined, false, true);
   }
 
   private async closedProgress(req: Request, record: MktgStartedRunRecord): Promise<MktgDocumentRunProgress | null> {
     const progress = this.closedMarker(record);
-    return progress ? { ...progress, closedBy: await this.displayName(req, record.closedBySubject) } : null;
+    if (!progress || record.state === 'completed') return progress;
+    return { ...progress, closedBy: await this.displayName(req, record.closedBySubject) };
   }
 
   private assertNotRetired(state?: MktgStoredDocumentRunState): void {

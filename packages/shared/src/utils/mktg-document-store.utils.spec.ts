@@ -90,6 +90,41 @@ describe('mktg-document-store utils', () => {
     expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
   });
+  describe('selected completed revision', () => {
+    const revisionId = buildMktgRevisionId(2, SHA);
+    const result = { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId };
+    it('projects only the exact produced revision for a selected completed run, never in listings', () => {
+      const run = startedRun({
+        state: 'completed',
+        result,
+        creatorSubject: 'private-synthetic-creator',
+        answeredBy: 'private-synthetic-answerer',
+        closedBySubject: 'private-synthetic-closer',
+        failureText: 'Private synthetic reply',
+      });
+      const activity = [{ id: 'private-step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: run.startedAt }];
+      expect(mktgRunProgress(run)).toBeNull();
+      expect(mktgRunProgress(run, undefined, activity, undefined, false, true)).toEqual({
+        runId: run.runId,
+        project: run.project,
+        agentKey: run.agentKey,
+        documentId: run.documentId,
+        startedAt: run.startedAt,
+        state: 'completed',
+        producedRevisionId: revisionId,
+      });
+    });
+    it.each(['writing', 'questions', 'storing', 'failed', 'discarded', 'superseded'] as const)('does not project a stale receipt while %s', (state) => {
+      expect(mktgRunProgress(startedRun({ state, result }), undefined, undefined, undefined, false, true)).not.toHaveProperty('producedRevisionId');
+    });
+    it.each([null, { ...result, revisionId: 'invalid' }, { ...result, agentKey: 'faq' as const }, { ...result, documentId: 'another-document' }])(
+      'omits a completed run without a valid matching stored receipt (%j)',
+      (receipt) => {
+        expect(mktgRunProgress(startedRun({ state: 'completed', result: receipt }), undefined, undefined, undefined, false, true)).toBeNull();
+      }
+    );
+  });
+
   describe('writer-only pending questions', () => {
     const turn = {
       questionsId: SHA,

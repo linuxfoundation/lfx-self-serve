@@ -133,7 +133,9 @@ export interface MktgDocumentRunProgress {
   /** Original server-recorded start, preserved across devices and retries. */
   startedAt: string;
   /** Closed states appear only on a selected-run detail, never in listings. */
-  state: Exclude<MktgStoredDocumentRunState, 'completed'>;
+  state: MktgStoredDocumentRunState;
+  /** Exact stored revision produced by a completed selected run; never inferred from current selection. */
+  producedRevisionId?: string;
   /** Recorded closure time; absent on legacy closed records. */
   closedAt?: string;
   /** Forward-compatible display name only; this BFF does not populate it yet (linuxfoundation/lfx-self-serve#4592). */

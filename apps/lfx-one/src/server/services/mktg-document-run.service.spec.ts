@@ -596,6 +596,35 @@ describe('MktgDocumentRunService core', () => {
     expect(await service.readClosedProgress(req, project, types[0].agentKey, 'living', hash(session))).not.toHaveProperty('closedAt');
   });
 
+  it('returns a selected completion destination from stored metadata, without Guild reads or identity enrichment', async () => {
+    await service.start(writerRequest('synthetic-original-creator'), project, types[0].agentKey, session);
+    const revisionId = `000002-${'b'.repeat(64)}`;
+    // The durable metadata is authoritative even when the legacy JSON body still says writing/result:null.
+    Object.assign(stored().metadata, { state: 'completed', 'revision-id': revisionId });
+    const viewer = writerRequest('synthetic-public-follower');
+    flows.result.mockClear();
+    flows.author.mockClear();
+    flows.events.mockClear();
+    const marker = await service.readClosedProgress(viewer, project, types[0].agentKey, 'living', hash(session));
+    expect(marker).toEqual({
+      runId: hash(session),
+      project,
+      agentKey: types[0].agentKey,
+      documentId: 'living',
+      startedAt: '2026-10-19T12:00:00.000Z',
+      state: 'completed',
+      producedRevisionId: revisionId,
+    });
+    const detail = await service.detailWithProgress(viewer, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs).toEqual([marker]);
+    expect(await service.readProgress(viewer, project)).toEqual({ runs: [] });
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+    expect(JSON.stringify(marker)).not.toContain('synthetic-original-creator');
+    expect(JSON.stringify(marker)).not.toContain(session);
+  });
+
   it.each([
     { name: 'Synthetic Closer', expected: 'Synthetic Closer' },
     { name: null, expected: null },

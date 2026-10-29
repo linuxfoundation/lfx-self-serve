@@ -26,6 +26,7 @@ import {
   MKTG_LEGACY_REVISION_ID_PREFIX,
   MKTG_STARTED_RUN_ATTEMPT_ID_REGEX,
   MKTG_REVISION_GENERATED_LABEL,
+  MKTG_REVISION_ID_REGEX,
   MKTG_REVISION_KEY_SUFFIX,
   MKTG_REVISION_NAME_UNAVAILABLE_LABEL,
   MKTG_REVISION_SEQUENCE_DIGITS,
@@ -229,7 +230,12 @@ export function mktgRunProgress(
   includeClosed = false
 ): MktgDocumentRunProgress | null {
   const closed = run.state === 'superseded' || run.state === 'discarded';
-  if (run.state === 'completed' || (closed && !includeClosed)) {
+  const completed = run.state === 'completed';
+  const producedRevisionId =
+    completed && run.result?.agentKey === run.agentKey && run.result.documentId === run.documentId && MKTG_REVISION_ID_REGEX.test(run.result.revisionId)
+      ? run.result.revisionId
+      : undefined;
+  if ((completed && (!includeClosed || !producedRevisionId)) || (closed && !includeClosed)) {
     return null;
   }
   // LinkedIn prose can paraphrase the creator's private profile/source; unknown creators fail closed.
@@ -244,7 +250,8 @@ export function mktgRunProgress(
     startedAt: run.startedAt,
     state,
     ...(closed && run.closedAt && Number.isFinite(Date.parse(run.closedAt)) && { closedAt: run.closedAt }),
-    ...(!closed && activity && { activity }),
+    ...(producedRevisionId && { producedRevisionId }),
+    ...(!closed && !completed && activity && { activity }),
     ...(readerIsWriter &&
       state === 'questions' &&
       isMktgRunPendingQuestions(run.pendingQuestions) &&
