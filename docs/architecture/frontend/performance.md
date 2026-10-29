@@ -11,7 +11,12 @@ The application uses Angular Universal with AngularNodeAppEngine for optimal per
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 
 // allowedHosts + trustProxyHeaders are required — see backend/ssr-server.md
-const angularApp = new AngularNodeAppEngine({ allowedHosts: [pccHostname], trustProxyHeaders: [/* ingress x-forwarded-* headers */] });
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [pccHostname],
+  trustProxyHeaders: [
+    /* ingress x-forwarded-* headers */
+  ],
+});
 
 export function app(): express.Express {
   const server = express();
