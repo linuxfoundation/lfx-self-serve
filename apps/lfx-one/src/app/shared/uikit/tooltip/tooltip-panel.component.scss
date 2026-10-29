@@ -1,0 +1,16 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Enter only, as in the library.
+@media (prefers-reduced-motion: no-preference) {
+  :host {
+    animation: tooltip-pop var(--ui-duration-fast) var(--ui-ease-standard);
+  }
+}
+
+@keyframes tooltip-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

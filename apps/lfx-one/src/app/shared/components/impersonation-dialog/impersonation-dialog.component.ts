@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
+import { IMPERSONATION_SELF_MESSAGE, IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import {
   composeFullName,
@@ -66,12 +66,19 @@ export class ImpersonationDialogComponent {
   // also start the impersonation before the admin has seen the username and email under the field.
   private pickedByEnter = false;
 
+  // What the field holds right now. A picked person wins, but anything typed can also be started: the directory only
+  // lists committee members, so an admin who knows an exact username or email must be able to try it unpicked, and
+  // an unknown user is refused by the start request.
+  private readonly typedText = signal('');
+  protected readonly canStart = computed(() => !!this.picked() || !!this.typedText().trim());
+
   public constructor() {
     // Closing mid-request would drop the loading UI while the change still goes through and reloads the page.
     lockDynamicDialogWhile(this.loading);
 
     // Typing over or clearing the shown name abandons the pick: the box then holds what the admin typed.
     this.targetUserForm.controls.targetUser.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.typedText.set(typeof value === 'string' ? value : '');
       if (this.picked() && value !== this.pickedLabel) {
         this.picked.set(null);
         this.pickedByEnter = false;
@@ -80,9 +87,15 @@ export class ImpersonationDialogComponent {
   }
 
   public submit(): void {
-    // Only a picked person can be impersonated: what is typed in the field is a search, never a target.
-    const target = this.picked()?.targetUser;
+    // A pick sends its username; otherwise the typed text is sent as entered, for the exchange to resolve as an
+    // exact email or username.
+    const target = this.picked()?.targetUser ?? this.typedText().trim();
     if (!target) return;
+
+    if (!this.picked() && this.isOwnIdentity(target)) {
+      this.error.set(IMPERSONATION_SELF_MESSAGE);
+      return;
+    }
 
     this.loading.set(true);
     this.error.set('');
@@ -116,7 +129,8 @@ export class ImpersonationDialogComponent {
     this.dialogRef.close(false);
   }
 
-  // Enter starts the impersonation only once someone is picked; before that it belongs to the suggestion list.
+  // Enter starts the impersonation only once someone is picked; before that it belongs to the suggestion list, so a
+  // half-typed name is not sent. Typed text is started with the Start button.
   protected onEnter(): void {
     if (this.pickedByEnter) {
       this.pickedByEnter = false;
@@ -194,6 +208,23 @@ export class ImpersonationDialogComponent {
   }
 
   private withoutOwnIdentities(recents: RecentImpersonation[]): RecentImpersonation[] {
+    return excludeUserSearchIdentities(recents, this.ownIdentities());
+  }
+
+  // True when the entered text is the real admin's own username or email. Not the current target: while switching,
+  // typing the target is left for the server to refuse with its already-impersonating 409.
+  private isOwnIdentity(text: string): boolean {
+    const entered = text.trim().toLowerCase();
+    const user = this.userService.user();
+    // The impersonator carries no username, so while switching only the admin's email can be matched.
+    const admin = this.switching
+      ? { username: undefined, email: this.userService.impersonator()?.email }
+      : { username: user?.['https://sso.linuxfoundation.org/claims/username'], email: user?.email };
+
+    return [admin.username, admin.email].some((value) => !!value && value.trim().toLowerCase() === entered);
+  }
+
+  private ownIdentities(): { username?: string | null; email?: string | null }[] {
     // Not impersonating, the signed-in user is the admin. While switching it is the current target, and the admin
     // is the impersonator.
     const user = this.userService.user();
@@ -202,6 +233,6 @@ export class ImpersonationDialogComponent {
       identities.push({ username: undefined, email: this.userService.impersonator()?.email });
     }
 
-    return excludeUserSearchIdentities(recents, identities);
+    return identities;
   }
 }
