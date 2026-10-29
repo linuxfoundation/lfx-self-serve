@@ -33,6 +33,8 @@ export class UiModalService {
       autoFocus: config.autoFocus ?? 'first-tabbable',
       // The title inside lfx-ui-modal takes this id.
       ariaLabelledBy: `${id}-title`,
+      // A confirmation that needs an answer is described by its subtitle, the sentence that states the consequence.
+      ariaDescribedBy: config.role === 'alertdialog' ? `${id}-subtitle` : null,
       restoreFocus: true,
       // The CDK closes on both Escape and backdrop click, or on neither. Split them here.
       disableClose: true,

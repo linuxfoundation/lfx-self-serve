@@ -47,6 +47,8 @@ export class UiModalComponent {
 
   /** Id of the title; `UiModalService` points `aria-labelledby` at it. Inside a service-opened modal it derives from the dialog id. */
   protected readonly titleId: string = this.dialogRef ? `${this.dialogRef.id}-title` : inject(_IdGenerator).getId('lfx-ui-modal-title-');
+  /** Id of the subtitle; an `alertdialog` is described by it. */
+  protected readonly subtitleId: string = this.dialogRef ? `${this.dialogRef.id}-subtitle` : inject(_IdGenerator).getId('lfx-ui-modal-subtitle-');
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly bodyClasses: Signal<string> = this.initBodyClasses();
   protected readonly actionsClasses: Signal<string> = this.initActionsClasses();
@@ -69,7 +71,8 @@ export class UiModalComponent {
   private initActionsClasses(): Signal<string> {
     return computed(() => {
       const base = 'flex items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden';
-      return this.singleAction() ? `${base} [&>*]:flex-1` : base;
+      // The button component's inner button is content-width unless told otherwise, so stretch it too.
+      return this.singleAction() ? `${base} [&>*]:flex-1 [&_a]:w-full [&_button]:w-full` : base;
     });
   }
 }

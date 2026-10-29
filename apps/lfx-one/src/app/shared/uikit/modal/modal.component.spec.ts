@@ -78,6 +78,7 @@ describe('UiModalComponent and UiModalService', () => {
   });
 
   afterEach(() => {
+    delete (document.documentElement as unknown as Record<string, unknown>)['scrollHeight'];
     fixture.destroy();
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
@@ -113,9 +114,16 @@ describe('UiModalComponent and UiModalService', () => {
     expect(modal()?.className).toContain('w-[420px]');
   });
 
-  it('can use the alertdialog role', async () => {
+  it('can use the alertdialog role, described by its subtitle', async () => {
     await open((host) => (host.config = { role: 'alertdialog' }));
     expect(dialog()?.getAttribute('role')).toBe('alertdialog');
+    const subtitle = container.querySelector('[data-testid="ui-modal-subtitle"]') as HTMLElement;
+    expect(dialog()?.getAttribute('aria-describedby')).toBe(subtitle.id);
+  });
+
+  it('does not describe a plain dialog', async () => {
+    await open();
+    expect(dialog()?.getAttribute('aria-describedby')).toBeNull();
   });
 
   it('puts the focus trap around the modal and moves focus to the autoFocus target', async () => {
@@ -190,7 +198,7 @@ describe('UiModalComponent and UiModalService', () => {
   });
 
   it('locks page scroll while open and releases it on close', async () => {
-    // The CDK only blocks scrolling when the page can scroll, and jsdom has no layout, so fake a tall page.
+    // The CDK only blocks scrolling when the page can scroll, and jsdom has no layout, so fake a tall page (removed in afterEach).
     Object.defineProperty(document.documentElement, 'scrollHeight', { value: 5000, configurable: true });
     await open();
     expect(document.documentElement.classList).toContain('cdk-global-scrollblock');
@@ -198,7 +206,6 @@ describe('UiModalComponent and UiModalService', () => {
     pressEscape();
     await settle();
     expect(document.documentElement.classList).not.toContain('cdk-global-scrollblock');
-    delete (document.documentElement as unknown as Record<string, unknown>)['scrollHeight'];
   });
 
   it('hides the inset band and the footer when nothing is projected into them', async () => {
@@ -225,7 +232,9 @@ describe('UiModalComponent and UiModalService', () => {
 
   it('singleAction stretches the footer button', async () => {
     await open((host) => (host.single = true));
-    expect(container.querySelector('[data-testid="ui-modal-actions"]')?.className).toContain('[&>*]:flex-1');
+    const actions = container.querySelector('[data-testid="ui-modal-actions"]');
+    expect(actions?.className).toContain('[&>*]:flex-1');
+    expect(actions?.className).toContain('[&_button]:w-full');
   });
 
   it('opens a component with data and returns the close result', async () => {
