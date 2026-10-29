@@ -52,9 +52,10 @@ export async function readWithOrgTeamMembersFallback<T>(
 /**
  * Person keys of the account's CDP team members, which `exclude` leaves out of a People tab's code-based numbers
  * (lfx-self-serve#4685); `include` reads nothing. IS_CDP_TEAM_MEMBER is person-level (the same on every row of a
- * person in every Org Lens model), so the union of the People models covers anyone either tab lists, maintainer roles
- * included. Cached once per account: the list does not depend on the range or scope. While the column is missing the
- * answer is `unavailable` (team members included) and is never cached.
+ * person in every Org Lens model), so the union covers every row either tab lists. Maintainer roles filter on
+ * `ORG_MAINTAINER_ROLES.IS_CDP_TEAM_MEMBER` instead, since a role-only holder is in none of these models. Cached once
+ * per account: the list does not depend on the range or scope. While the column is missing the answer is
+ * `unavailable` (team members included) and is never cached.
  */
 export async function readOrgTeamMemberPersonKeys(
   snowflakeService: SnowflakeService,
