@@ -1190,10 +1190,11 @@
     align-self: flex-start;
   }
 
+  // Width only: these sit in vertical flex columns, so a flex-shrink here would act on height — it kept the menu at its
+  // full content height, clipped by the panel instead of scrolling inside its own `overflow-y: auto`.
   .lfxn__top > :not(.lfxn__head, .sr-only),
   .lfxn__foot {
     width: 280px;
-    flex-shrink: 0;
     align-self: flex-start;
   }
 

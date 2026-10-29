@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants/mktg-kit.constants';
+import { MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants/mktg-last-intake.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   DOCUMENT_PROJECT,
@@ -82,7 +85,8 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
     fixture.finish();
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
@@ -120,8 +124,9 @@ test.describe('Marketing OS fixed-parent navigation', () => {
       await page.screenshot({ path: info.outputPath('direct-boilerplates-questions.png'), fullPage: true });
       await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
       await expect(page).toHaveURL(new RegExp('/' + fixture.intake.agentId + '\\?'));
-      await expect(page.getByTestId('mktg-agent-run-live')).toBeVisible();
-      await expect(page.getByTestId('mktg-run-activity')).toContainText('Writing your Boilerplates');
+      // Rule 1/#4594: after answers, recorded writing uses the shared observer, not the former private activity card.
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Writing… You can leave this page');
       await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('direct-boilerplates-run-progress.png'), fullPage: true });
       fixture.finish();
@@ -139,19 +144,13 @@ test.describe('Marketing OS fixed-parent navigation', () => {
   test('an automatic questions round-trip leaves Back pointing before the questions', async ({ page }, info) => {
     test.setTimeout(60_000);
     const fixture = await setupNoQuestionsHandoff(page);
-    let ask = false;
-    await page.route('**' + BRAND_KIT_INTAKE.endpoints.result, (route) =>
-      ask
-        ? fulfillDocumentJson(route, {
-            status: 'questions',
-            questionsId: 'navigation-q',
-            questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
-          })
-        : route.fallback()
-    );
+    const pendingQuestions = {
+      questionsId: 'f'.repeat(64),
+      askedAt: '2026-10-23T14:34:01Z',
+      questions: [{ key: 'voice', label: 'Voice', question: 'Which voice?', why: '', suggestedAnswer: 'Technical', basis: [] }],
+    };
     if (!BRAND_KIT_INTAKE.endpoints.answers) throw new Error('Missing answers fixture endpoint');
     await page.route('**' + BRAND_KIT_INTAKE.endpoints.answers, (route) => {
-      ask = false;
       fixture.finish();
       return fulfillDocumentJson(route, { success: true });
     });
@@ -161,11 +160,15 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
-    await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
-    ask = true;
-    await expect(page.getByTestId('mktg-run-questions')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-activity-title')).toContainText('Writing');
+    await expect(page).not.toHaveURL(/\/documents\//);
+    fixture.askQuestions(pendingQuestions);
+    await expect(page.getByTestId('mktg-run-questions')).toContainText('Which voice?');
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
+    // 144-A replaces the earlier142 current-document expectation for a matching creator capability:
+    // public metadata must not preempt the private result's exact document_location receipt.
     await expect(page).toHaveURL(new RegExp('revision=' + fixture.revision.id));
+    await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
     expect(fixture.posts).toEqual([BRAND_KIT_INTAKE.endpoints.generate, BRAND_KIT_INTAKE.endpoints.answers]);
     await expect(page.getByTestId('mktg-document-view-brand-kit')).toBeVisible();
     await page.screenshot({ path: info.outputPath('questions-landed-asset.png'), fullPage: true });
@@ -264,15 +267,15 @@ test.describe('Marketing OS fixed-parent navigation', () => {
   test('framework tabs push shareable URLs and Back restores each previous panel', async ({ page }) => {
     await openUnapprovedAssetDocument(page, 'foundation-message');
     await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
-    await page.getByTestId('mktg-framework-view-tab-icps').click();
-    await expect(page).toHaveURL(/tab=icps/);
-    await expect(page.getByTestId('mktg-framework-view-panel-icps')).toBeFocused();
+    await page.getByTestId('mktg-framework-view-tab-numbers').click();
+    await expect(page).toHaveURL(/tab=numbers/);
+    await expect(page.getByTestId('mktg-framework-view-panel-numbers')).toBeFocused();
     await page.getByTestId('mktg-framework-view-tab-sources').click();
     await expect(page).toHaveURL(/tab=sources/);
     await expect(page).toHaveURL(new RegExp(`project=${ASSET_PROJECT.slug}`));
     await page.goBack();
-    await expect(page).toHaveURL(/tab=icps/);
-    await expect(page.getByTestId('mktg-framework-view-tab-icps')).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/tab=numbers/);
+    await expect(page.getByTestId('mktg-framework-view-tab-numbers')).toHaveAttribute('aria-selected', 'true');
     await page.goBack();
     await expect(page).not.toHaveURL(/[?&]tab=/);
     await expect(page.getByTestId('mktg-framework-view-tab-framework')).toHaveAttribute('aria-selected', 'true');

@@ -40,6 +40,26 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
+  it('distinguishes scheduled polling from discovery on open and visible/focus return', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    vi.advanceTimersByTime(5000);
+    expect(fetch).toHaveBeenLastCalledWith(true);
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    setVisibility('hidden');
+    vi.advanceTimersByTime(10000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    setVisibility('visible');
+    expect(fetch).toHaveBeenLastCalledWith(false);
+    vi.advanceTimersByTime(5000);
+    expect(fetch).toHaveBeenLastCalledWith(true);
+    sub.unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('never overlaps a slow in-flight request', () => {
     const inFlight = new Subject<number>();
     const fetch = vi.fn(() => inFlight);
@@ -61,6 +81,19 @@ describe('createVisibilityPoll', () => {
     sub.unsubscribe();
   });
 
+  it('rechecks immediately on window focus only while visible', () => {
+    Object.defineProperty(doc, 'defaultView', { configurable: true, value: window });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('stops when shouldContinue is false and restarts on the next visible event', () => {
     const fetch = vi.fn(() => of(1));
     const sub = createVisibilityPoll(doc, fetch, { ...options, shouldContinue: () => false }).subscribe();
@@ -68,6 +101,31 @@ describe('createVisibilityPoll', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     setVisibility('hidden');
     setVisibility('visible');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+  });
+
+  it('re-reads immediately on window focus, including after a terminal read', () => {
+    Object.defineProperty(doc, 'defaultView', { value: window, configurable: true });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, { ...options, shouldContinue: () => false }).subscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    sub.unsubscribe();
+    window.dispatchEvent(new Event('focus'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('never fetches on focus while the document is hidden', () => {
+    Object.defineProperty(doc, 'defaultView', { value: window, configurable: true });
+    const fetch = vi.fn(() => of(1));
+    const sub = createVisibilityPoll(doc, fetch, options).subscribe();
+    setVisibility('hidden');
+    window.dispatchEvent(new Event('focus'));
+    vi.advanceTimersByTime(60000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    state = 'visible';
+    window.dispatchEvent(new Event('focus'));
     expect(fetch).toHaveBeenCalledTimes(2);
     sub.unsubscribe();
   });

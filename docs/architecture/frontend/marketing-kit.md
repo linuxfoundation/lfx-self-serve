@@ -134,8 +134,11 @@ navigation state, never a URL write command. See [the API and sequencing contrac
 
 `lfx-mktg-family-export-actions` uses the required `familyId` and stable
 `family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
-PDF composes the approved framework print and kit book; boilerplates/FAQ are
-provisionally omitted with an explicit note because they have no print rendering.
+PDF composes all four approved-current assets — framework, brand kit, boilerplates
+and FAQ — in exporter order, with one family cover and contents. All share one
+portrait layout. Family and standalone kit PDFs share `lfx-mktg-brand-kit-print`:
+five native text chapters (logo, colour, type, visual/usage, voice), not scaled
+landscape plates. The on-screen kit view stays unchanged.
 Slides exports the supported approved family assets and branding, offers Update or
 Create for an existing deck, shows progress and a dated revision-linked last export,
 and marks changed approved member sets stale. Families without an export target render only
@@ -191,6 +194,29 @@ skipping it. Member 360 ranking filters use `tier=`, `owner=`, `search=` and its
 filters locally as typed but pushes only once per settled term, after a 300 ms debounce and a current-URL
 equality check; Back restores the previous settled term, not individual keystrokes. URL echoes do not
 rewrite the search input while typing.
+
+### LinkedIn entry observation
+
+Before choosing intake or an existing run, the LinkedIn entry reads the creator-scoped
+`GET /api/mktg-agents/documents?project=<uid>&poll=1&ownRuns=1` projection (the #4591 contract),
+then the personal profile. The BFF filters by its authenticated effective subject and
+advertises `creatorScoped: true` when that filter was applied (#4591 push 2); the safe DTO
+gains no identity, private session or capability fields. Auto-landing requires that marker
+or a matching local scoped private attempt for the exact run/document pair. An older,
+unadvertised server cannot redirect the viewer to another writer's run: inputs remain
+available with an inline unavailable note. The client never infers ownership from activity
+or a display name. Private questions remain creator-only.
+
+The header and body share the first-observation loading boundary. Fixed identity and note
+slots keep profile resolution and input-provenance messages from shifting layout. A seeded
+visibility-aware observer rechecks idle entry on timers and focus without repeating profile
+reads or resetting unsent inputs; the document observer owns an already selected run.
+Transport failures expose retry actions rather than claiming no run exists. An initially
+unavailable progress response settles to available inputs with an inline notice and keeps
+checking; it never claims that no run exists. Background failures retain the last observed
+state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO discovery needs backend run
+recording before this mechanism applies to it.
+
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
 Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
 Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`

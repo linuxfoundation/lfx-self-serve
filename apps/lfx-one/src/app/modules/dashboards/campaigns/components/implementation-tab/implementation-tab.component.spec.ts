@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { EnvironmentProviders, Provider } from '@angular/core';
+import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -64,7 +64,29 @@ import { AutoComplete } from 'primeng/autocomplete';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CreativeLibraryUploadComponent } from '../creative-library-upload/creative-library-upload.component';
 import { ImplementationTabComponent } from './implementation-tab.component';
+
+/**
+ * The library upload reads the service's queue and the library quota as soon as a brief is saved.
+ * Every suite below mocks `CampaignService` for the tab's own calls only, so the child is stubbed
+ * for the whole file; its own behaviour is covered by its spec.
+ */
+@Component({ selector: 'lfx-creative-library-upload', template: '' })
+class CreativeLibraryUploadStubComponent {
+  public readonly projectSlug = input('');
+  public readonly briefId = input('');
+  public readonly available = input<boolean | null>(null);
+  public readonly reloadToken = input(0);
+  public readonly libraryChanged = output<number>();
+}
+
+beforeEach(() => {
+  TestBed.overrideComponent(ImplementationTabComponent, {
+    remove: { imports: [CreativeLibraryUploadComponent] },
+    add: { imports: [CreativeLibraryUploadStubComponent] },
+  });
+});
 
 /**
  * The submit gate, which is the only place the brief-save race is observable.
@@ -3299,7 +3321,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
           provide: CampaignService,
           useValue: {
             createCampaign,
-            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+            // Two accounts, so a picked account is one a re-seed could not land on by default.
+            getLinkedInAccounts: () =>
+              of([
+                { accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' },
+                { accountId: 'urn:li:sponsoredAccount:2', name: 'LF Events Account', status: 'ACTIVE' },
+              ]),
           },
         },
       ],
@@ -3668,6 +3695,249 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(mounted.latest()?.redditConversionPixelId).toBe('');
     expect(redditPixelInput(f)?.value ?? '').toBe('');
     expect('conversionPixelId' in submitReddit(f)).toBe(false);
+  });
+
+  /**
+   * The rest of the Reddit fields the brief does not derive, on the same live brief switch (#4589).
+   * Every typed value is one neither the component default nor the brief carries, so a field that
+   * survived the switch could not pass by coinciding with a re-seed.
+   */
+  it('drops every typed reddit field when a different brief is handed over', async () => {
+    const mounted = await mount(null, true);
+    const f = mounted.fixture;
+    typeRedditBudget(f, 750);
+    pickRedditObjective(f, 'video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_15S');
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    typeRedditImageUrl(f, 'https://cdn.example.org/promo.png');
+    pickRedditCallToAction(f, 'Shop Now');
+    expect(mounted.latest()).toMatchObject({
+      redditBudgetUsd: 750,
+      redditObjective: 'video_views',
+      redditVideoGoal: 'VIDEO_VIEW_15S',
+      redditPostUrl: 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/',
+      redditImageUrl: 'https://cdn.example.org/promo.png',
+      redditCallToAction: 'Shop Now',
+    });
+
+    const next = brief();
+    f.componentRef.setInput('draft', null);
+    f.componentRef.setInput('briefData', { ...next, eventDetails: { ...next.eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } });
+    f.detectChanges();
+    await f.whenStable();
+
+    expect(mounted.latest()).toMatchObject({
+      eventSlug: 'oss-na-2026',
+      redditBudgetUsd: 500,
+      redditObjective: 'conversions',
+      redditVideoGoal: '',
+      redditPostUrl: '',
+      redditImageUrl: '',
+      redditCallToAction: '',
+    });
+    const el = (testId: string): HTMLInputElement | HTMLSelectElement =>
+      f.nativeElement.querySelector(`[data-testid="implementation-reddit-${testId}"]`) as HTMLInputElement | HTMLSelectElement;
+    expect(el('budget').value).toBe('500');
+    expect(el('objective').value).toBe('conversions');
+    expect(redditVideoGoalSelect(f)).toBeNull();
+    expect(el('post-url').value).toBe('');
+    expect(el('image-url').value).toBe('');
+    expect(el('call-to-action').value).toBe('');
+
+    const config = submitReddit(f);
+    expect(config['budgetUsd']).toBe(500);
+    expect(config['objective']).toBe('conversions');
+    for (const key of ['videoGoal', 'postUrl', 'imageUrl', 'imageAssetId', 'callToAction']) {
+      expect(key in config).toBe(false);
+    }
+  });
+
+  // === The other platforms on the same live brief switch (#4624) ===
+
+  /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */
+  function otherBrief(strip: (keyof CampaignBriefOutput)[] = []): CampaignBriefOutput {
+    const next = brief() as unknown as Record<string, unknown>;
+    for (const key of strip) delete next[key];
+    return {
+      ...next,
+      eventDetails: { ...(next['eventDetails'] as object), name: 'Open Source Summit', slug: 'oss-na-2026' },
+    } as unknown as CampaignBriefOutput;
+  }
+
+  /** Hand `next` to the SAME fixture as the parent does on a brief switch: the draft cleared first. */
+  async function switchBrief(f: ComponentFixture<ImplementationTabComponent>, next: CampaignBriefOutput): Promise<void> {
+    f.componentRef.setInput('draft', null);
+    f.componentRef.setInput('briefData', next);
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+  }
+
+  /** A first mount of `next`, the baseline a switched component must match: nothing but defaults and the brief. */
+  async function freshMount(
+    next: CampaignBriefOutput
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    f.componentRef.setInput('briefData', next);
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+    return { fixture: f, latest: () => captured };
+  }
+
+  /** Submit one platform and return the config the service was called with on THIS submit. */
+  function submitOne(f: ComponentFixture<ImplementationTabComponent>, platform: string, key: string): Record<string, unknown> {
+    at(f).selectedPlatforms.set([platform]);
+    makeSubmittable(f);
+    f.detectChanges();
+    expect(at(f).canSubmit()).toBe(true);
+    at(f).submit();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0][key] as Record<string, unknown>;
+  }
+
+  /** Typed values are neither default; the 7300/lifetime pair the first brief seeds is the conditional reset, as the next carries none. */
+  it('drops every typed linkedin field when a different brief is handed over', async () => {
+    const mounted = await mount(null);
+    const f = mounted.fixture;
+    at(f).selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+    const q = (testId: string): HTMLElement => f.nativeElement.querySelector(`[data-testid="implementation-linkedin-${testId}"]`) as HTMLElement;
+    const account = q('account') as HTMLSelectElement;
+    account.value = 'urn:li:sponsoredAccount:2';
+    account.dispatchEvent(new Event('change'));
+    typeLinkedInBudget(f, 900);
+    q('profile-mcp').click();
+    f.detectChanges();
+    expect(mounted.latest()).toMatchObject({
+      linkedInAccountId: 'urn:li:sponsoredAccount:2',
+      linkedInBudgetUsd: 900,
+      linkedInLifetimeBudget: true,
+      linkedInTargetingProfile: 'mcp',
+    });
+
+    const next = otherBrief();
+    const nextCopy = (next as unknown as { linkedInCopy: Record<string, unknown> }).linkedInCopy;
+    delete nextCopy['strategy'];
+    await switchBrief(f, next);
+
+    expect(mounted.latest()).toMatchObject({
+      eventSlug: 'oss-na-2026',
+      linkedInAccountId: 'urn:li:sponsoredAccount:1',
+      linkedInBudgetUsd: 500,
+      linkedInLifetimeBudget: false,
+      linkedInTargetingProfile: 'cloud-native',
+      linkedInGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+    });
+    expect((q('account') as HTMLSelectElement).value).toBe('urn:li:sponsoredAccount:1');
+    expect((q('budget') as HTMLInputElement).value).toBe('500');
+    expect((q('budget').closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(false);
+    expect(q('profile-cloud-native').getAttribute('aria-pressed')).toBe('true');
+    expect(q('profile-mcp').getAttribute('aria-pressed')).toBe('false');
+
+    const fresh = await freshMount(next);
+    expect(mounted.latest()).toEqual(fresh.latest());
+
+    const config = submitOne(f, 'linkedin-ads', 'linkedInConfig');
+    expect(config).toMatchObject({ budgetUsd: 500, lifetimeBudget: false, targetingProfile: 'cloud-native', adAccountId: 'urn:li:sponsoredAccount:1' });
+    expect(config).toEqual(submitOne(fresh.fixture, 'linkedin-ads', 'linkedInConfig'));
+  });
+
+  /** The geos, profile and variants are seeded only from LinkedIn copy, so a brief without any opens on none. */
+  it('clears the linkedin copy fields when the next brief carries no linkedin copy', async () => {
+    const mounted = await mount(null);
+    const f = mounted.fixture;
+    at(f).selectedPlatforms.set(['linkedin-ads']);
+    f.detectChanges();
+    (f.nativeElement.querySelector('[data-testid="implementation-linkedin-profile-mcp"]') as HTMLElement).click();
+    f.detectChanges();
+    expect(at(f).linkedInVariants()).toHaveLength(1);
+
+    await switchBrief(f, otherBrief(['linkedInCopy']));
+
+    expect(mounted.latest()).toMatchObject({
+      linkedInGeoTargets: [],
+      linkedInTargetingProfile: 'cloud-native',
+      linkedInBudgetUsd: 500,
+      linkedInLifetimeBudget: false,
+    });
+    expect(at(f).linkedInVariants()).toEqual([]);
+  });
+
+  /** The variants and the four targeting lists are seeded only from Reddit copy, so a brief without any opens on none (#4648). */
+  it('clears the reddit copy lists when the next brief carries no reddit copy', async () => {
+    const mounted = await mount(null, true);
+    const f = mounted.fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    const section = (fixture: ComponentFixture<ImplementationTabComponent>): string =>
+      (fixture.nativeElement.querySelector('[data-testid="implementation-reddit-section"]')?.textContent as string) ?? '';
+    for (const seeded of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).toContain(seeded);
+    expect(at(f).redditGeoTargets()).toEqual(['US']);
+
+    const next = otherBrief(['redditCopy']);
+    await switchBrief(f, next);
+
+    expect(mounted.latest()?.eventSlug).toBe('oss-na-2026');
+    for (const list of [at(f).redditVariants(), at(f).redditSubreddits(), at(f).redditInterests(), at(f).redditKeywords(), at(f).redditGeoTargets()]) {
+      expect(list).toEqual([]);
+    }
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    for (const stale of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).not.toContain(stale);
+
+    const fresh = await freshMount(next);
+    expect(mounted.latest()).toEqual(fresh.latest());
+    fresh.fixture.componentRef.setInput('redditCreativeEnabled', true);
+    at(fresh.fixture).selectedPlatforms.set(['reddit-ads']);
+    fresh.fixture.detectChanges();
+    expect(section(f)).toEqual(section(fresh.fixture));
+
+    // No variants on either side, so the ad comes from a post: typed alike on both.
+    for (const side of [f, fresh.fixture]) typeRedditPostUrl(side, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    const config = submitOne(f, 'reddit-ads', 'redditConfig');
+    expect(config).toMatchObject({ subreddits: [], interests: [], keywords: [], variants: [], geoTargets: ['US'] });
+    expect(config).toEqual(submitOne(fresh.fixture, 'reddit-ads', 'redditConfig'));
+  });
+
+  /** Budget, legacy CPC bid and geos; the bidding capability is left unanswered, so the legacy bid box is the one shown. */
+  it('drops every typed microsoft field when a different brief is handed over', async () => {
+    const mounted = await mount(null);
+    const f = mounted.fixture;
+    at(f).selectedPlatforms.set(['microsoft-ads']);
+    f.detectChanges();
+    const q = (testId: string): HTMLInputElement => f.nativeElement.querySelector(`[data-testid="implementation-microsoft-${testId}"]`) as HTMLInputElement;
+    for (const [testId, value, event] of [
+      ['budget', '650', 'input'],
+      ['cpc-bid', '2.5', 'input'],
+      ['geo-add', 'JP', 'change'],
+    ] as const) {
+      q(testId).value = value;
+      q(testId).dispatchEvent(new Event(event));
+      f.detectChanges();
+    }
+    expect(mounted.latest()).toMatchObject({ microsoftBudgetUsd: 650, microsoftCpcBid: '2.5', microsoftGeoTargets: ['JP'] });
+
+    const next = otherBrief();
+    await switchBrief(f, next);
+
+    expect(mounted.latest()).toMatchObject({ eventSlug: 'oss-na-2026', microsoftBudgetUsd: 500, microsoftCpcBid: '', microsoftGeoTargets: [] });
+    // The brief does not name Microsoft, so its section is picked again to read the inputs.
+    at(f).selectedPlatforms.set(['microsoft-ads']);
+    f.detectChanges();
+    expect(q('budget').value).toBe('500');
+    expect(q('cpc-bid').value).toBe('');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-microsoft-section"]')?.textContent).not.toContain('JP');
+
+    // The brief carries no keywords, and Microsoft refuses a create without one: added to both sides alike.
+    (f.componentInstance as unknown as Record<string, (k: string) => void>)['addMicrosoftKeyword']('service mesh');
+    const config = submitOne(f, 'microsoft-ads', 'microsoftConfig');
+    expect(config['budgetUsd']).toBe(500);
+    expect('cpcBid' in config).toBe(false);
+    const fresh = await freshMount(next);
+    (fresh.fixture.componentInstance as unknown as Record<string, (k: string) => void>)['addMicrosoftKeyword']('service mesh');
+    expect(config).toEqual(submitOne(fresh.fixture, 'microsoft-ads', 'microsoftConfig'));
   });
 
   it('renders the pixel through the shared lfx-input-text wrapper, tied to its hint', async () => {
@@ -7793,21 +8063,128 @@ describe('ImplementationTabComponent google extension seeding', () => {
     expect(c['googleSitelinks']()).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
   });
 
-  // The defect the presence gate exists to prevent: the operator types an entry, something
-  // re-mounts the brief, and what they just added is gone with no message.
-  //
-  // BOTH editors are exercised, not just callouts. Each `if` in `populateFromBrief` is its own
-  // guard, and a test that only adds a callout passes with the sitelink gate deleted — which is
-  // how this test was first written, and what the mutation run caught.
-  it('leaves hand-typed entries alone for a brief that carries no lists', () => {
+  // A re-emit of the SAME brief must not lose typed entries. The live draft is fed back as the parent
+  // does (`draftChange` -> `implementationDraft`), and `applyDraft` restores both lists over the reset (#4624).
+  it('keeps hand-typed entries across a re-emit of the same brief that carries no lists', () => {
     const c = seedChannel(fixture, { includeSearch: true });
+    const held: { draft: CampaignImplementationDraft | null } = { draft: null };
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (held.draft = d));
     c['addGoogleCallout']('Hands-On Labs');
     c['addGoogleSitelink']({ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' });
+    fixture.componentRef.setInput('draft', held.draft);
 
     remountBrief({});
 
     expect(c['googleCallouts']()).toEqual(['Hands-On Labs']);
     expect(c['googleSitelinks']()).toEqual([{ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' }]);
+  });
+
+  /**
+   * A live brief switch (#4624): every Google field typed through its control or its add method, then
+   * another event's brief, which carries no callouts or sitelinks (the conditional case). The draft,
+   * the screen and the create must then match a first mount of that brief.
+   */
+  it('drops every typed google field when a different brief is handed over', async () => {
+    const URL = 'https://events.example.com/register';
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ result: { campaigns: [], errors: [] } }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    const held: { draft: CampaignImplementationDraft | null } = { draft: null };
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (held.draft = d));
+    c['campaignForm'].patchValue({
+      includeDemandGen: true,
+      searchBudgetPct: 55,
+      googleBiddingStrategy: 'maximize-clicks',
+      googleTargetCpa: '12',
+      googleTargetRoas: '4',
+      googleCpcBid: '3',
+      googleConversionActions: '12345',
+    });
+    for (const channel of ['demand-gen', 'performance-max', 'display'] as const) {
+      c['campaignForm'].controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].controls[GOOGLE_CREATIVE_FIELD_SPECS[channel][0].control].setValue('Stale creative');
+    }
+    c['addGoogleGeoTarget']('DE');
+    expect(c['addGooglePostalGeoTarget']('9031945')).toBe(true);
+    c['googlePostalGeoLabels'].set({ '9031945': 'Stale label' });
+    expect(c['addGoogleProximityTarget']({ latitude: '-33.8688', longitude: '151.2093', radius: '25', radiusUnit: 'KILOMETERS' })).toBe(true);
+    c['addGoogleLanguage'](c['googleLanguageOptions'][0].code);
+    expect(c['addGoogleAudienceSegment']('customers/1234567890/userLists/111')).toBe(true);
+    expect(c['addGoogleCallout']('Hands-On Labs')).toBe(true);
+    expect(c['addGoogleSitelink']({ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' })).toBe(true);
+    expect(c['addGoogleStructuredSnippet']('Brands', ['Alpha', 'Beta', 'Gamma'])).toBe(true);
+    expect(c['addGoogleCallExtension']({ countryCode: 'US', phoneNumber: '+1 415 555 0100' })).toBe(true);
+    expect(c['addGooglePromotion']({ ...c['emptyGooglePromotionDraft'](), promotionTarget: 'Conference passes', discount: '25', finalUrl: URL })).toBe(true);
+    const row = (header: string) => ({ header, description: 'Two days', amount: '499', unit: '', finalUrl: URL });
+    expect(
+      c['addGooglePrice']({
+        type: 'EVENTS',
+        priceQualifier: '',
+        languageCode: 'en',
+        currencyCode: 'usd',
+        offerings: [row('Standard'), row('Student'), row('Virtual')],
+      })
+    ).toBe(true);
+    fixture.detectChanges();
+    const listKeys =
+      'googleGeoTargets googlePostalGeoTargets googleProximityTargets googleLanguages googleAudienceSegments googleCallouts googleSitelinks googleStructuredSnippets googleCallExtensions googlePromotions googlePrices'.split(
+        ' '
+      ) as (keyof CampaignImplementationDraft)[];
+    for (const key of listKeys) expect(held.draft?.[key]).toHaveLength(1);
+    expect(held.draft).toMatchObject({ includeDemandGen: true, searchBudgetPct: 55, googleBiddingStrategy: 'maximize-clicks', googleCpcBid: '3' });
+
+    const next = {
+      eventDetails: { name: 'Open Source Summit', slug: 'oss-na-2026', registrationUrl: 'https://example.com/oss', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend OSS'], descriptions: ['Join us in Denver'] } },
+    } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('draft', null);
+    fixture.componentRef.setInput('briefData', next);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(held.draft).toMatchObject({
+      eventSlug: 'oss-na-2026',
+      searchBudgetPct: 70,
+      includeSearch: true,
+      includeDemandGen: false,
+      includePerformanceMax: false,
+      includeDisplay: false,
+      googleBiddingStrategy: '',
+      googleTargetCpa: '',
+      googleTargetRoas: '',
+      googleCpcBid: '',
+      googleConversionActions: '',
+      googlePostalGeoLabels: {},
+    });
+    for (const key of listKeys) expect(held.draft?.[key]).toEqual([]);
+    for (const group of Object.values(held.draft?.googleCreatives ?? {})) for (const value of Object.values(group)) expect(value).toBe('');
+    const text = fixture.nativeElement.textContent as string;
+    for (const stale of ['Hands-On Labs', 'Venue & Travel', 'Conference passes', '415 555 0100', 'Alpha', 'userLists/111', '9031945', 'Stale label']) {
+      expect(text).not.toContain(stale);
+    }
+
+    // A first mount of the new brief, with the same capabilities, is the baseline for the draft and the create.
+    const fresh = TestBed.createComponent(ImplementationTabComponent);
+    const freshHeld: { draft: CampaignImplementationDraft | null } = { draft: null };
+    fresh.componentInstance.draftChange.subscribe((d: CampaignImplementationDraft) => (freshHeld.draft = d));
+    for (const capability of ['demandGenEnabled', 'googleChannelsEnabled', 'googleCreativeEnabled'] as const) fresh.componentRef.setInput(capability, true);
+    fresh.componentRef.setInput('briefData', next);
+    fresh.detectChanges();
+    await fresh.whenStable();
+    // Google's own keys only: the other platforms' fields are each held by their own test.
+    const google = (draft: CampaignImplementationDraft | null) =>
+      Object.fromEntries(Object.entries(draft ?? {}).filter(([key]) => /^(google|include|searchBudgetPct|headlines|descriptions)/.test(key)));
+    expect(google(held.draft)).toEqual(google(freshHeld.draft));
+
+    const requestOf = (f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> => {
+      const component = f.componentInstance as unknown as Record<string, any>;
+      expect(component['canSubmit']()).toBe(true);
+      component['submit']();
+      return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0] as unknown as Record<string, unknown>;
+    };
+    const request = requestOf(fixture);
+    expect(request).toMatchObject({ campaignTypes: ['search'], searchBudgetPct: 70 });
+    expect(request).toEqual(requestOf(fresh));
   });
 
   // A brief that DID carry a list is copied, not shared: editing the chips must not reach back
@@ -10121,6 +10498,36 @@ describe('ImplementationTabComponent bidding control', () => {
       expect(request['googleAdsConfig']).toBeUndefined();
     });
 
+    /** A live brief switch (#4624): a manual bid typed for one event must not become the next's, on any lane. */
+    it('drops every per-platform bidding choice when a different brief is handed over', async () => {
+      const held: { draft: CampaignImplementationDraft | null } = { draft: null };
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (held.draft = d));
+      const platforms = ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'];
+      for (const platform of platforms) {
+        await pickStrategy(platform, 'manual');
+        await typeBid(platform, '1.5');
+      }
+      for (const platform of platforms) expect((held.draft?.bidding as Record<string, { strategy: string }> | undefined)?.[platform]?.strategy).toBe('manual');
+
+      fixture.componentRef.setInput('draft', null);
+      fixture.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(held.draft?.eventSlug).toBe('oss-na-2026');
+      expect(held.draft?.bidding).toEqual({});
+      const c = component();
+      c['selectedPlatforms'].set(platforms);
+      c['addMicrosoftKeyword']('service mesh');
+      fixture.detectChanges();
+      for (const platform of platforms) {
+        expect(c['biddingViews']()[platform].value).toEqual({ strategy: 'automatic', bidAmount: null });
+        expect(query(`implementation-bidding-${platform}-amount`)).toBeNull();
+      }
+      const request = await submitted();
+      for (const key of LANE_CONFIGS) expect(request[key]['bidding']).toEqual({ strategy: 'automatic' });
+    });
+
     it('sends a manual bid exactly as typed', async () => {
       await pickStrategy('linkedin-ads', 'manual');
       await typeBid('linkedin-ads', '2.5');
@@ -10409,6 +10816,54 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
   // The slot plan is derived from the stored library, so an upload makes the grid's last answer
   // stale. The revision this bumps is what the grid reads as its reload token.
+  // The library upload sits on top of the slot grid it feeds; each image it stores makes the
+  // grid's answer, and the Google slots' library, stale.
+  it('mounts the library upload for the saved brief and re-reads the library each time it stores an image', async () => {
+    const f = (await mount(true)).fixture;
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload.briefId()).toBe(BRIEF_ID);
+    expect(upload.available()).toBe(true);
+    const before = at(f).creativeLibraryRevision();
+
+    upload.libraryChanged.emit(1);
+    f.detectChanges();
+
+    expect(at(f).creativeLibraryRevision()).toBe(before + 1);
+    // Handed back, so a picker's upload re-reads the library upload's quota too.
+    expect(upload.reloadToken()).toBe(before + 1);
+  });
+
+  // Unknown is not no: a capability read still pending must not tell the operator uploads are off.
+  it('reads the library upload as unknown until every capability says no', async () => {
+    const f = (await mount(false)).fixture;
+    const upload = (): CreativeLibraryUploadStubComponent =>
+      f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload().available()).toBeNull();
+
+    for (const flag of ['metaAssetUploadEnabled', 'linkedInAssetUploadEnabled', 'googleAssetUploadEnabled', 'microsoftAssetUploadEnabled']) {
+      f.componentRef.setInput(flag, false);
+    }
+    f.detectChanges();
+    // X's capability is still unanswered, so this is unknown rather than a no.
+    expect(upload().available()).toBeNull();
+
+    f.componentRef.setInput('twitterCreateEnabled', false);
+    f.detectChanges();
+    expect(upload().available()).toBe(false);
+  });
+
+  // The BFF route admits a library upload on `canCreateTwitter()` alone (the tweet image).
+  it('offers the library upload when X creation is the only capability that says yes', async () => {
+    const f = (await mount(false)).fixture;
+    for (const flag of ['metaAssetUploadEnabled', 'linkedInAssetUploadEnabled', 'googleAssetUploadEnabled', 'microsoftAssetUploadEnabled']) {
+      f.componentRef.setInput(flag, false);
+    }
+    f.componentRef.setInput('twitterCreateEnabled', true);
+    f.detectChanges();
+    const upload = f.debugElement.query(By.directive(CreativeLibraryUploadStubComponent)).componentInstance as CreativeLibraryUploadStubComponent;
+    expect(upload.available()).toBe(true);
+  });
+
   it('bumps the creative library revision once the upload lands, so the slot grid re-reads', async () => {
     const f = (await mount(true)).fixture;
     const before = at(f).creativeLibraryRevision();
@@ -11476,6 +11931,137 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
     }).compileComponents();
   });
 
+  // === A live brief switch (#4624) ===
+
+  /** The next brief: another event. `withMetaCopy: false` drops the copy the geos and variants are seeded from. */
+  const otherBrief = (withMetaCopy = true): CampaignBriefOutput => {
+    const next = { ...brief(), eventDetails: { ...brief().eventDetails, name: 'Open Source Summit', slug: 'oss-na-2026' } } as unknown as Record<
+      string,
+      unknown
+    >;
+    if (!withMetaCopy) delete next['metaCopy'];
+    return next as unknown as CampaignBriefOutput;
+  };
+
+  /** Mount `briefData` with both Meta capabilities on, and capture every draft it emits. */
+  async function mountLive(
+    briefData: CampaignBriefOutput
+  ): Promise<{ f: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    f.componentRef.setInput('metaInstagramDsaEnabled', true);
+    f.componentRef.setInput('metaCreativeEnabled', true);
+    f.componentRef.setInput('briefData', briefData);
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+    return { f, latest: () => captured };
+  }
+
+  /** Hand `next` to the SAME fixture as the parent does on a brief switch: the draft cleared first. */
+  async function switchBrief(f: ComponentFixture<ImplementationTabComponent>, next: CampaignBriefOutput): Promise<void> {
+    f.componentRef.setInput('draft', null);
+    f.componentRef.setInput('briefData', next);
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+  }
+
+  /** The DSA disclosures and the pixel matter most: another brief's must never reach a live create. */
+  it('drops every typed meta field, the dsa disclosures and pixel included, when a different brief is handed over', async () => {
+    const { f, latest } = await mountLive(brief());
+    const el = <T extends HTMLElement>(testId: string): T => query(`implementation-meta-${testId}`, f) as T;
+    const fire = async (target: HTMLInputElement | HTMLSelectElement, value: string, event: 'input' | 'change'): Promise<void> => {
+      target.value = value;
+      target.dispatchEvent(new Event(event));
+      f.detectChanges();
+      await f.whenStable();
+    };
+    await fire(el<HTMLInputElement>('budget'), '800', 'input');
+    const lifetime = el('budget').closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    lifetime.checked = true;
+    lifetime.dispatchEvent(new Event('change'));
+    await fire(el<HTMLSelectElement>('objective'), 'conversions', 'change');
+    await fire(el<HTMLInputElement>('pixel-id'), '123456789', 'input');
+    const reels = el<HTMLInputElement>('placement-reels');
+    reels.checked = true;
+    reels.dispatchEvent(new Event('change'));
+    await fire(el<HTMLInputElement>('geo-add'), 'DE', 'change');
+    await fire(el<HTMLInputElement>('image-url'), 'https://cdn.example.org/meta.png', 'input');
+    await type({ instagramUserId: '17841400000000001', dsaBeneficiary: 'Stale Beneficiary', dsaPayor: 'Stale Payor' }, f);
+    expect(latest()).toMatchObject({
+      metaBudgetUsd: 800,
+      metaLifetimeBudget: true,
+      metaObjective: 'conversions',
+      metaPixelId: '123456789',
+      metaPlacements: { reels: true },
+      metaGeoTargets: ['US', 'DE'],
+      metaImageUrl: 'https://cdn.example.org/meta.png',
+      metaInstagramUserId: '17841400000000001',
+      metaDsaBeneficiary: 'Stale Beneficiary',
+      metaDsaPayor: 'Stale Payor',
+    });
+
+    await switchBrief(f, otherBrief());
+
+    expect(latest()).toMatchObject({
+      eventSlug: 'oss-na-2026',
+      metaBudgetUsd: 500,
+      metaLifetimeBudget: false,
+      metaObjective: 'traffic',
+      metaPixelId: '',
+      metaPlacements: { facebookFeed: true, instagramFeed: true, stories: false, reels: false, audienceNetwork: false, messengerInbox: false },
+      metaGeoTargets: ['US'],
+      metaImageUrl: '',
+      metaInstagramUserId: '',
+      metaDsaBeneficiary: '',
+      metaDsaPayor: '',
+    });
+    expect(el<HTMLInputElement>('budget').value).toBe('500');
+    expect((el('budget').closest('.grid')?.querySelector('input[type="checkbox"]') as HTMLInputElement).checked).toBe(false);
+    expect(el<HTMLSelectElement>('objective').value).toBe('traffic');
+    expect(el('pixel-id')).toBeNull();
+    expect(el<HTMLInputElement>('placement-reels').checked).toBe(false);
+    expect(el<HTMLInputElement>('image-url').value).toBe('');
+    for (const id of ['meta-instagram-user-id', 'meta-dsa-beneficiary', 'meta-dsa-payor']) {
+      expect((f.nativeElement.querySelector(`#${id}`) as HTMLInputElement).value).toBe('');
+    }
+
+    // The fresh mount's draft is the baseline: nothing but defaults and what the brief seeds.
+    const fresh = await mountLive(otherBrief());
+    expect(latest()).toEqual(fresh.latest());
+
+    // Instagram Feed is a default placement, so Create needs an account id: typed alike on both sides.
+    await type({ instagramUserId: '17841400000000002' }, f);
+    const config = (await submitted(f))['metaConfig'];
+    expect(config).toMatchObject({
+      budgetUsd: 500,
+      lifetimeBudget: false,
+      objective: 'traffic',
+      placements: {},
+      geoTargets: ['US'],
+      instagramUserId: '17841400000000002',
+    });
+    for (const key of ['pixelId', 'dsaBeneficiary', 'dsaPayor']) expect(key in config).toBe(false);
+    for (const variant of config['variants'] as Record<string, unknown>[]) expect('imageUrl' in variant).toBe(false);
+    await type({ instagramUserId: '17841400000000002' }, fresh.f);
+    expect(config).toEqual((await submitted(fresh.f))['metaConfig']);
+  });
+
+  /** The geos and variants are seeded only from Meta copy, so a brief without any opens on none. */
+  it('clears the meta geos and variants when the next brief carries no meta copy', async () => {
+    const { f, latest } = await mountLive(brief());
+    component(f)['addMetaGeoTarget']('DE');
+    expect(latest()?.metaGeoTargets).toEqual(['US', 'DE']);
+    expect(component(f)['metaVariants']()).toHaveLength(1);
+
+    await switchBrief(f, otherBrief(false));
+
+    expect(latest()?.metaGeoTargets).toEqual([]);
+    expect(component(f)['metaVariants']()).toEqual([]);
+  });
+
   describe.each([
     ['unanswered', undefined],
     ['null', null],
@@ -12508,6 +13094,35 @@ describe('ImplementationTabComponent x create', () => {
 
     expect(request['platforms']).toEqual(['twitter-ads']);
     expect(request['twitterConfig']).toEqual({ budgetAmount: 75, startDate: '2099-09-01', endDate: '2099-09-30', tweetText: 'Join us at KubeCon' });
+  });
+
+  /** A live brief switch (#4624): the budget and tweet typed for one event must not ride into the next. */
+  it('drops the typed x budget and tweet text when a different brief is handed over', async () => {
+    const { fixture, latest } = await mount(true);
+    fill(fixture, { twitterBudget: '75', twitterTweetText: 'See you at KubeCon' });
+    expect(latest()).toMatchObject({ twitterBudget: '75', twitterTweetText: 'See you at KubeCon' });
+
+    fixture.componentRef.setInput('draft', null);
+    fixture.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'Open Source Summit', slug: 'oss-na-2099' } });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(latest()).toMatchObject({ eventSlug: 'oss-na-2099', twitterBudget: '', twitterTweetText: '' });
+    const box = (testId: string): HTMLInputElement | HTMLTextAreaElement => {
+      const el = q(fixture, testId) as HTMLElement;
+      return (el.matches('input, textarea') ? el : el.querySelector('input, textarea')) as HTMLInputElement | HTMLTextAreaElement;
+    };
+    expect(box('implementation-twitter-budget').value).toBe('');
+    expect(box('implementation-twitter-tweet-text').value).toBe('');
+    // Blank is refused, so the stale values cannot be created by accident; the config Create would build carries neither.
+    expect(c(fixture)['canSubmit']()).toBe(false);
+    expect(c(fixture)['twitterConfigForCreate']('2099-09-01', '2099-09-30')).toEqual({
+      budgetAmount: 0,
+      startDate: '2099-09-01',
+      endDate: '2099-09-30',
+      tweetText: '',
+    });
   });
 
   it('renders the X fields, the no-location note and a preview with the registration link', async () => {

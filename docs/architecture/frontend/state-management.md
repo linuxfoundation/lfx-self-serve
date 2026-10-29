@@ -401,19 +401,55 @@ source counts require reattachment or an explicit choice to continue without the
 never a false kept-file claim. No uploaded content is added to browser persistence.
 The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
 
-The run route owns intake, the research/writing feed and questions, not the
-result or a feedback form. Direct no-answers intakes open the document route
-before their first POST. Questions runs transfer their owned attempt after the
-accepted answers ACK. Without questions, the first finalize/checking step (or
-an earlier receipt-less ready result) transfers the same attempt. A partial
-Guild stream cannot distinguish writing from another research/questions round;
-model starts or completions alone never authorize a handoff. The producer can
-label no-questions writing retroactively once an unambiguous finalize confirms
-it. An agent-emitted writing marker would allow an earlier writing-start
-handoff; it is a follow-up in marketing-os-agents' [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md), not a contract change here.
-There is no unused no-feed submitted-ACK fallback.
-The asset page resumes the same attempt without a second POST and owns writing
-until the exact stored revision lands. Catalog/intakes own membership/routing.
+The run route owns living-asset intake, the research/writing feed and questions,
+not the result or a feedback form. Direct no-answers runs, questions runs and
+restored accepted attempts stay there through checking and receipt-less readiness.
+Only the private attempt's exact stored-revision receipt lands with `revision=`;
+recorded terminal failures open the document page's failed run card. Navigation
+recovery retries only its saved destination, never Generate or answers. An active-conflict handoff restores its scoped request before opening the guard, so a successful recheck can follow that request's exact receipt. A recheck timeout or non-transient read error clears running/navigation flags and returns to the editable intake without another automatic start.
+A partial Guild stream cannot distinguish writing from another research/questions
+round; model starts or completions alone never authorize a landing. The producer
+can label no-questions writing retroactively once an unambiguous finalize confirms
+it. Agent writing markers remain a contract follow-up in marketing-os-agents'
+[self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md).
+
+**The server is the only run-state authority on every shared surface.** Browser attempts
+are recovery hints, never evidence that a run is writing, waiting or complete. First
+observation gates the page behind one neutral, layout-shaped skeleton; no intake,
+old document or local questions appear first. Recorded state wins on open, focus and
+visibility return. A private questions block can continue only for the matching server
+run/questions turn; missing or contradictory recorded state retires that private
+block immediately. Capability-only agents without a document-run contract are not
+promoted into public run-state evidence. Documents labels use only the recorded state. The shared
+visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
+fresh while idle as well as running. Selected closed-run detail requests carry the
+opaque `run` query so a discarded/superseded marker can render safe navigation copy
+instead of a blank page. No browser cache or actor identifier substitutes for server facts.
+
+`MktgRunProgressComponent` owns living-document public detail/body reads and their
+single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
+failed card renders there, and an active `?run=` replaces to the run page. The
+run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver matching private stream; late results cannot replace that closed view.
+One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
+document without selecting or claiming an exact revision: completed runs leave
+`runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the
+shared questions UI. The route shows a neutral `lfx-mktg-skeleton` until the first server read,
+never an intake-form flash. Recorded state wins over private recovery on load,
+focus and visibility return; questions are reconciled every ten seconds without
+resetting unsent edits. A private block uses its owner-token continuation only
+while the server still reports that questions turn, never also
+posting publicly. LinkedIn pending recovery uses the same headless observer
+before restoring its creator-only questions; writing or a stored revision opens
+its document instead. Other writers submit
+`project`, `questionsId` and answers to `/api/mktg-agents/runs/:runId/answers`
+without any session capability. An accepted answer resumes public progress;
+403 retains a reason-bearing waiting notice without retries. A scoped 409
+`MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
+safe display name (or Another writer), and resumes writing progress without
+resending. Identifier-like names are not echoed. A genuinely new server questions
+block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
+browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
+Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
 own changes; the existing asset-store current pointer remains authoritative.
@@ -493,13 +529,16 @@ Stored Brand Kits opt into string passage pins in their screen chapters (never S
 bytes, generated sample text or the printed book). The BFF captures passage text
 from the immutable stored key for `brand_kit_revise_form`; the browser sends only
 that key and comment. Boilerplates pin each original `bp[index].t` length and send
-the selected asset's comments through the same redraft flow. Framework, Kit and
-Boilerplates keep Comments, Revisions and About together in the right-hand column
+the selected asset's comments through the same redraft flow. FAQ pins each answer
+at `faq[g][1][q][1]`, including null answers, both in its group and on the Needs an
+answer tab. An answer supplied in a comment is published by the agent as Notes;
+the next revision's content determines which questions still need an answer.
+Framework, Kit, Boilerplates and FAQ keep Comments, Revisions and About together in the right-hand column
 at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
 800px host-container threshold and each asset's inner container grids remain intact.
 The side panel uses one empty-comments instruction (Send and its reason appear only with open comments after a successful read), revision labels limited to version/state/date plus the Current pill, hover/focus Make current help rather than a footnote, and About rows for Agent and Stored only.
-Run previews, legacy/unreadable assets and FAQ do not opt in. Shared labels name palette entries, voice attributes
-and boilerplate lengths identically in pins and the panel.
+Run previews and legacy/unreadable assets do not opt in. Shared labels name palette entries, voice attributes,
+boilerplate lengths and FAQ group/question positions identically in pins and the panel.
 The controls appear on hover/focus, and stay visible on hover-less devices; threads
 and a wrapper-based composer pin beneath their field. Disabled hosts have no
 layout box; the extra hover groups use display:contents until controls are shown.

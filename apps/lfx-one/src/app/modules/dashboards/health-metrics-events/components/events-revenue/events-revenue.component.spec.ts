@@ -78,6 +78,7 @@ describe('EventsRevenueComponent', () => {
   let getEventsRevenue: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEventsRevenue | Error = revenue()): Promise<void> {
     getEventsRevenue = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -96,7 +97,10 @@ describe('EventsRevenueComponent', () => {
 
     fixture = TestBed.createComponent(EventsRevenueComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -123,6 +127,7 @@ describe('EventsRevenueComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation once and settles once the revenue lands', async () => {
@@ -131,6 +136,7 @@ describe('EventsRevenueComponent', () => {
     expect(getEventsRevenue).toHaveBeenCalledTimes(1);
     expect(getEventsRevenue).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('events-revenue-loading')).toBeNull();
   });
 
@@ -226,6 +232,8 @@ describe('EventsRevenueComponent', () => {
     expect(text('events-revenue-headline-value')).toBe('$0');
     expect(query('events-revenue-empty')).not.toBeNull();
     expect(query('events-revenue-table')).toBeNull();
+    // A measured $0 is something to show, so the shell does not take the section over.
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('says per-event figures are missing, not that no event ran, when only the totals were read', async () => {
@@ -236,21 +244,19 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-empty')).toBeNull();
   });
 
-  it('shows the unavailable state for a period the response does not carry', async () => {
+  it('settles empty, with no body, for a period the response does not carry', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_3');
 
-    expect(query('events-revenue-unmeasured')).not.toBeNull();
-    expect(query('events-revenue-foundation-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-revenue-hero')).toBeNull();
   });
 
-  it('says the foundation has no revenue recorded, not to pick another period, when no period was read', async () => {
+  it('settles empty, with no body, when no period was read for the foundation', async () => {
     await render(revenue({ periods: [], events: [], eventsMeasured: false }));
 
-    expect(text('events-revenue-foundation-unmeasured')).toContain('No event revenue has been recorded for this foundation yet.');
-    expect(query('events-revenue-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([true]);
     expect(query('events-revenue-hero')).toBeNull();
   });
 
@@ -259,6 +265,7 @@ describe('EventsRevenueComponent', () => {
 
     expect(query('events-revenue-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
 
     await pickRange('COMPLETED_YEAR');
 

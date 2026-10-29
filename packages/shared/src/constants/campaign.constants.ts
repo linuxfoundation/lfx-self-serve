@@ -38,11 +38,14 @@ import type {
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
+  CreativeAssetQueueItemStatus,
+  CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
+  LinkedInTargetingProfile,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
@@ -148,6 +151,24 @@ export const CAMPAIGN_GOALS: readonly CampaignGoalOption[] = [
  * unguarded over-cap budget becomes a dead job rather than a refused request.
  */
 export const REDDIT_MAX_BUDGET_USD = 1_000_000_000;
+
+/**
+ * The Reddit budget the Implementation tab starts from. Not derived from the brief, so a brief switch
+ * on a live mount resets the field to this rather than keeping the previous brief's figure (#4589).
+ */
+export const DEFAULT_REDDIT_BUDGET_USD = 500;
+
+/**
+ * The Meta, LinkedIn and Microsoft budgets the Implementation tab starts from, on the Reddit budget's
+ * terms: a brief switch on a live mount resets each to this (#4624). Only the LinkedIn budget is then
+ * overwritten from the brief, when it carries a lifetime budget.
+ */
+export const DEFAULT_META_BUDGET_USD = 500;
+export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
+export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
+
+/** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
+export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
@@ -656,6 +677,12 @@ export const META_OBJECTIVE_PARAMS: Readonly<Record<MetaObjective, MetaObjective
   leads: { campaignObjective: 'OUTCOME_TRAFFIC', optimizationGoal: 'LINK_CLICKS', promotedObjectType: 'none' },
   conversions: { campaignObjective: 'OUTCOME_SALES', optimizationGoal: 'OFFSITE_CONVERSIONS', promotedObjectType: 'pixel_id' },
 } as const;
+
+/**
+ * The Meta objective the Implementation tab starts from: `traffic`, what campaign-service assumes when
+ * the field is absent. A brief switch on a live mount resets the picker to it (#4624).
+ */
+export const DEFAULT_META_OBJECTIVE: MetaObjective = 'traffic';
 
 /** Default Meta ad placement toggles — Facebook and Instagram feeds enabled, all others off. */
 export const META_DEFAULT_PLACEMENTS: Readonly<MetaPlacement> = {
@@ -3062,6 +3089,68 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
+
+/** A library upload's refusal when campaign-service answers 409: the brief's count or byte quota is spent. */
+export const CREATIVE_ASSET_QUOTA_MESSAGE = "This brief's image library is full. Delete an image it no longer needs, then try again.";
+
+/** A library upload's refusal for a file a folder pick found below the folder's top level. */
+export const CREATIVE_ASSET_SUBFOLDER_MESSAGE = 'In a subfolder. Only images at the top level of the folder are uploaded.';
+
+/** A library upload's answer for identical bytes the brief already holds — nothing new is stored. */
+export const CREATIVE_ASSET_PRESENT_MESSAGE = 'Already in the library. Nothing new was stored.';
+
+/** A library upload's answer for a file that added a new asset to the brief. */
+export const CREATIVE_ASSET_UPLOADED_MESSAGE = 'Uploaded.';
+
+/** A library upload's refusal for a zero-byte file, checked before sending. */
+export const CREATIVE_ASSET_EMPTY_MESSAGE = 'The file is empty.';
+
+/** A library upload's outcome for a file that was still waiting when the run was cancelled. */
+export const CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE = 'Cancelled before it was sent.';
+
+/** A library upload's outcome for the file whose request the cancel aborted. */
+export const CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE = 'Cancelled while it was uploading.';
+
+/** Shown for a 400 refusal that carries no readable message of its own. */
+export const CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE = 'campaign-service refused this image.';
+
+/** Shown for a failure that carries no readable message of its own. */
+export const CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE = 'The upload failed. Try again.';
+
+/**
+ * How many more times a library upload re-sends a file after a transient failure (a 503 from
+ * campaign-service's upload admission, a dropped connection) before reporting it as failed.
+ * Safe to re-send because an upload is idempotent: identical bytes return the stored asset.
+ */
+export const CREATIVE_ASSET_QUEUE_RETRIES = 3;
+
+/** The first re-send's delay; each later one doubles it (1 s, 2 s, 4 s). */
+export const CREATIVE_ASSET_QUEUE_RETRY_BASE_MS = 1000;
+
+/**
+ * Each library upload outcome as it reads, and its badge classes. One table, so the label and the
+ * colour cannot disagree.
+ */
+export const CREATIVE_ASSET_QUEUE_STATUS_VIEW: Readonly<Record<CreativeAssetQueueItemStatus, CreativeAssetQueueStatusView>> = {
+  waiting: { label: 'Waiting', badge: 'bg-gray-100 text-gray-700' },
+  uploading: { label: 'Uploading', badge: 'bg-blue-100 text-blue-800' },
+  uploaded: { label: 'Uploaded', badge: 'bg-emerald-100 text-emerald-800' },
+  present: { label: 'Already in library', badge: 'bg-emerald-50 text-emerald-700' },
+  refused: { label: 'Refused', badge: 'bg-red-100 text-red-700' },
+  failed: { label: 'Failed', badge: 'bg-amber-100 text-amber-800' },
+  cancelled: { label: 'Cancelled', badge: 'bg-gray-100 text-gray-700' },
+};
+
+/** The order a library upload's outcomes are counted in on its summary line. */
+export const CREATIVE_ASSET_QUEUE_SUMMARY_ORDER: readonly CreativeAssetQueueItemStatus[] = [
+  'uploaded',
+  'present',
+  'refused',
+  'failed',
+  'cancelled',
+  'uploading',
+  'waiting',
+];
 
 /**
  * The largest image LinkedIn takes as a dark post's article thumbnail, in bytes. campaign-service

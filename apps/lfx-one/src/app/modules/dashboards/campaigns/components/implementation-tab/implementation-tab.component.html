@@ -3641,7 +3641,7 @@
             <!--
               Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
               carries no account id, and campaign-service creates under the account bound on the
-              project's X connection. An unbound connection is a certain refusal, so it blocks Create.
+              project's X connection (or, on a deployment forcing it, the LF system one).
             -->
             <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
               <span class="font-medium text-gray-700">Ad account</span>
@@ -3878,10 +3878,17 @@
       <!--
         Which stored images cover each platform's image slots. Only rendered once the brief is
         saved: campaign-service plans against a stored brief, and an unsaved one has no library to
-        plan against. The revision token re-reads the plan after an upload in the section above.
+        plan against. The revision token re-reads the plan after an upload in the section above,
+        or in the library upload that sits on top of the grid it feeds.
       -->
       @if (briefPersistence().briefId) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+        <div class="flex flex-col gap-5 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-library-upload
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [available]="libraryUploadAvailable()"
+            [reloadToken]="creativeLibraryRevision()"
+            (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"

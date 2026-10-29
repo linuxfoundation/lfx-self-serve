@@ -12,14 +12,7 @@
       data-testid="training-enroll-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="training-enroll-loading" aria-hidden="true" />
-  } @else if (!response().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="No training enrollment recorded yet"
-      subtitle="Once LF Education records enrollments for this foundation, enrollments, certifications and revenue appear here."
-      data-testid="training-enroll-unmeasured" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="training-enroll-controls">
       <lfx-filter-pills
         variant="track"

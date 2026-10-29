@@ -848,6 +848,45 @@ describe('runQa event name', () => {
   });
 });
 
+// lfx-v2-campaign-service#244: the stage lets campaign-service set the current-registrants check
+// aside for a Post-Event send, whose intended audience IS this edition's attendees.
+describe('runQa stage', () => {
+  it.each(['Post-Event', 'Registration Push'] as const)('forwards stage %s', async (stage) => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: 'KubeCon Japan 2026', stage }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      listRef: '10',
+      targetsEu: false,
+      targetsCa: false,
+      eventName: 'KubeCon Japan 2026',
+      stage,
+    });
+  });
+
+  it.each([
+    ['absent', {}],
+    ['empty', { stage: '' }],
+  ])('omits the stage when it is %s', async (_label, extra) => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', ...extra }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', { listRef: '10', targetsEu: false, targetsCa: false });
+  });
+
+  it.each([
+    ['a misspelt stage', 'Post Event'],
+    ['a non-string stage', 7],
+  ])('refuses %s rather than auditing the send as a registration push', async (_label, stage) => {
+    await controller.runQa(buildReq({ listRef: '10', stage }), buildRes(), next);
+
+    expect(proxyMethods.runQa).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'stage' }]);
+  });
+});
+
 describe('custom audiences', () => {
   const criteria = { cities: [' Seoul '], countries: [], contactLocation: true, gateListId: '26716', propertyFilters: [] };
 

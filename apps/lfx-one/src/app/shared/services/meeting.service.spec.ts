@@ -613,6 +613,7 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   // `getMeetingDetail` calls `this.http.get(...)` once and pipes `retryPropagationLag()` directly

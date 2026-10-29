@@ -8,6 +8,7 @@ import {
   MEMBER_360_REDACTED_SUMMARY,
   MEMBER_360_INVALID_RESULT,
   MEMBER_360_MAX_BYTES,
+  MEMBER_360_ACTIVITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
 import type { Member360FinalizeReceipt } from '@lfx-one/shared/interfaces';
@@ -22,14 +23,20 @@ import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.moc
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { logger } from './logger.service';
+import { member360ActivityReplay } from '@lfx-one/shared/utils/__fixtures__/member-360-activity.fixture';
+import { MicroserviceError } from '../errors';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
+  sendFollowUp: vi.fn(),
   getRawEventPayloads: vi.fn(),
   getProjectById: vi.fn(),
   listDocuments: vi.fn(),
   getRevision: vi.fn(),
   recordGeneration: vi.fn(),
+  loadTrackers: vi.fn(),
+  deleteTrackers: vi.fn(),
+  sweepTrackers: vi.fn(),
   available: true,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -49,9 +56,17 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ),
   };
 });
+vi.mock('./member-360-tracker-store.service', () => ({
+  Member360TrackerStoreService: class {
+    load = mocks.loadTrackers;
+    deleteConsumed = mocks.deleteTrackers;
+    sweepExpired = mocks.sweepTrackers;
+  },
+}));
 vi.mock('./guild.service', () => ({
   GuildService: class {
     createSession = mocks.createSession;
+    sendFollowUp = mocks.sendFollowUp;
     getRawEventPayloads = mocks.getRawEventPayloads;
   },
 }));
@@ -125,6 +140,153 @@ describe('Member 360 entitlement and generation', () => {
     });
   });
   afterEach(() => vi.useRealTimers());
+  const questionsText =
+    'MEMBER 360 — QUESTIONS (member-360-questions/v1)\n```json\n' +
+    JSON.stringify({
+      contract: 'member-360-questions/v1',
+      project: 'Sample Foundation',
+      questions: [
+        {
+          id: 'tracker-window',
+          question: 'Which window should this tracker cover?',
+          why: 'The date is missing.',
+          suggested_answer: 'Use the current window.',
+          basis: 'private-evidence-marker',
+        },
+      ],
+    }) +
+    '\n```';
+  const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: questionsText });
+  const questionsId = createHash('sha256').update(questionsText).digest('hex');
+  const answersBody = () => ({
+    project: 'sample-project',
+    sessionId: 'session-1',
+    ownerToken: 'validated-by-controller',
+    questionsId,
+    answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }],
+  });
+  const preparedClaim = (commit: () => Promise<void> = async () => undefined) => Object.assign(vi.fn(commit), { release: vi.fn(async () => true) });
+  const networkFailure = (cause: unknown) =>
+    new MicroserviceError('Synthetic send failed', 502, 'guild_unreachable', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: Object.assign(new TypeError('fetch failed'), { cause }),
+    });
+  it.each([
+    { code: 'ENOTFOUND' },
+    { code: 'EAI_AGAIN' },
+    { code: 'ECONNREFUSED' },
+    { code: 'ECONNRESET', syscall: 'connect' },
+    { code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 0 } },
+    { code: 'UND_ERR_SOCKET', socket: { bytesWritten: 0 } },
+  ])('releases only proven pre-delivery transport failures %j and accepts a retry', async (cause) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(cause);
+    const claim = preparedClaim();
+    mocks.sendFollowUp.mockRejectedValueOnce(error).mockResolvedValueOnce(undefined);
+    const service = new Member360Service();
+    await expect(service.sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+    await service.sendAnswers(req, answersBody(), preparedClaim());
+    expect(mocks.sendFollowUp).toHaveBeenCalledTimes(2);
+  });
+  it('releases aggregate connection failures only when every attempted connection was undelivered', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ENOTFOUND' }], 'Synthetic connect attempts failed'));
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([400, 401, 403, 404, 405, 413, 415, 422, 429])('releases a confirmed pre-accept HTTP %i rejection', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([408, 409, 500, 502, 503, 504])('keeps an ambiguous HTTP %i send claimed', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic ambiguity', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
+  it.each([
+    networkFailure({ code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 12 } }),
+    networkFailure({ code: 'ECONNRESET', syscall: 'read' }),
+    networkFailure({ code: 'EPIPE' }),
+    networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ECONNRESET', syscall: 'read' }], 'mixed')),
+    new MicroserviceError('Timeout', 504, 'guild_timeout', { service: 'guild', operation: 'guild_send_follow_up' }),
+    new MicroserviceError('Unparseable acknowledgement', 502, 'guild_invalid_response', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: new SyntaxError('Synthetic invalid JSON'),
+    }),
+  ])('never releases an ambiguous send %s', async (error) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
+  it('projects parsed questions and their exact-text hash without exposing internal basis', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result).toMatchObject({
+      status: 'needs_input',
+      questionsId,
+      questions: [{ key: 'tracker-window', basis: [], suggestedAnswer: 'Use the current window.' }],
+    });
+    expect(Member360Service.toRunResult(result)).toMatchObject({ status: 'questions', questionsId, questions: result.questions });
+    expect(JSON.stringify(result)).not.toContain('private-evidence-marker');
+  });
+  it('sends byte-exact answers with the catalog mention on its own line', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const claim = preparedClaim();
+    await new Member360Service().sendAnswers(req, answersBody(), claim);
+    expect(claim).toHaveBeenCalledOnce();
+    expect(claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendFollowUp.mock.invocationCallOrder[0]);
+    expect(mocks.sendFollowUp).toHaveBeenCalledWith(req, 'session-1', {
+      handle: 'member-360',
+      message:
+        'MEMBER 360 — ANSWERS (member-360-answers/v1)\n--- A tracker-window (accepted) ---\nANSWER: follows\nUse the current window.\n--- END A tracker-window ---',
+    });
+    expect(logger.info).toHaveBeenCalledWith(req, 'member_360_answers', expect.any(String), { session_id: 'session-1', questions_id: questionsId, count: 1 });
+  });
+  it('never sends a second Guild turn when the atomic claim loses', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const conflict = Object.assign(new Error('Already answered'), { code: 'MKTG_RUN_ANSWERED', statusCode: 409 });
+    await expect(
+      new Member360Service().sendAnswers(
+        req,
+        answersBody(),
+        preparedClaim(async () => {
+          throw conflict;
+        })
+      )
+    ).rejects.toBe(conflict);
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
+  it('rejects stale hashes and mismatched question ids before sending', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) }, preparedClaim())).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    await expect(
+      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] }, preparedClaim())
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
+  it('rejects repeats once the next turn is queued, without replaying questions or old root completion', async () => {
+    const done = JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } });
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done, JSON.stringify({ type: 'mktg_session_turn_started' })]);
+    await expect(new Member360Service().sendAnswers(req, answersBody(), preparedClaim())).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+  });
   it.each(['schema', 'hash', 'project', 'raw', 'other-tool', 'unpaired', 'failed'])('never stores a rejected %s candidate', async (mode) => {
     const envelope = member360Fixture();
     if (mode === 'schema') Object.assign(envelope, { kind: 'invalid' });
@@ -166,6 +328,44 @@ describe('Member 360 entitlement and generation', () => {
     vi.setSystemTime(new Date(`${end}T12:00:00Z`));
     await new Member360Service().start(req, { project: 'sample-project', window });
     expect(mocks.createSession.mock.calls[0][1].message).toContain(`ANALYSIS WINDOW: ${start} to ${end} (inclusive)`);
+  });
+  it('loads private tracker ids after writer entitlement and renders server rows only', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member', email: 'synthetic@example.test' }] }]);
+    await new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] });
+    expect(mocks.loadTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.getProjectById.mock.invocationCallOrder[0]).toBeLessThan(mocks.loadTrackers.mock.invocationCallOrder[0]);
+    expect(mocks.createSession.mock.calls[0][1].message).toContain('synthetic@example.test');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+    mocks.createSession.mockClear();
+    mocks.loadTrackers.mockRejectedValue(new Error('Expired tracker'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+  it('reuses tracker rows prepared before the discard without loading them twice', async () => {
+    const service = new Member360Service();
+    const body = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    const prepared = await service.prepareTrackers(req, body);
+    await service.start(req, body, prepared);
+    expect(mocks.loadTrackers).toHaveBeenCalledOnce();
+    expect(mocks.createSession).toHaveBeenCalledOnce();
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledOnce();
+  });
+  it('only deletes consumed rows when the durable-registration caller requests cleanup', async () => {
+    await new Member360Service().deleteConsumedTrackers(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+  });
+  it('sweeps the project on Generate even when no tracker ids were submitted', async () => {
+    await new Member360Service().start(req, { project: 'sample-project' });
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+  });
+  it('does not consume tracker rows if the Guild start fails', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    mocks.createSession.mockRejectedValue(new Error('Synthetic start unavailable'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Synthetic start unavailable');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
   });
   it('loads the previous stored ranking for trends, not caller-supplied scores', async () => {
     mocks.listDocuments.mockResolvedValue({
@@ -483,23 +683,59 @@ describe('Member 360 entitlement and generation', () => {
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
+  it('whitelists structural activity fields and fixed labels, never URL labels/search details/tool inputs', async () => {
+    const search = JSON.stringify({
+      type: 'runtime_start',
+      created_at: '2026-10-29T10:00:06Z',
+      task: { id: 'private-query', entity_type: 'EntTaskTool', tool_name: 'web_search_web_search', status: 'DONE' },
+      content: { query: 'PRIVATE-QUERY-SENTINEL' },
+    });
+    const payloads = member360ActivityReplay().slice(0, -1);
+    payloads.splice(6, 0, search);
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    const fixed = new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS));
+    expect(result.activity?.map((step) => step.kind)).toEqual(expect.arrayContaining(['reading', 'lfx', 'search', 'writing', 'checking']));
+    for (const step of result.activity ?? []) {
+      expect(fixed.has(step.label)).toBe(true);
+      expect(Object.keys(step).every((key) => ['id', 'kind', 'status', 'startedAt', 'endedAt', 'label'].includes(key))).toBe(true);
+      expect(step).not.toHaveProperty('detail');
+    }
+    expect(JSON.stringify(result.activity)).not.toMatch(
+      /PRIVATE-QUERY|synthetic\.example|never-render|record_member_actions|score_member_360|finalize_member_360/
+    );
+  });
+  it('projects Member-specific Writing and Checking labels from its recorded tool sequence', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue(member360ActivityReplay().slice(0, -1));
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.activity?.filter((step) => step.kind === 'writing' || step.kind === 'checking').map((step) => [step.label, step.status])).toEqual([
+      [MEMBER_360_ACTIVITY_LABELS.writing, 'done'],
+      [MEMBER_360_ACTIVITY_LABELS.checking, 'running'],
+    ]);
+    expect(JSON.stringify(result.activity)).not.toMatch(/never-render|record_member_actions|score_member_360|finalize_member_360|Writing the framework/);
+    expect(Member360Service.toRunResult(result).activity).toEqual(result.activity);
+  });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
     mocks.getRawEventPayloads.mockResolvedValue(
-      ['web_search_web_search', 'lfx_mcp_search_members'].map((tool, index) =>
+      ['web_search_web_search', 'lfx_mcp_search_members', 'experimental_fetch_fetch'].map((tool, index) =>
         JSON.stringify({
           type: 'runtime_start',
           created_at: '2026-10-19T10:00:00.000Z',
           task: { id: `tool-${index}`, entity_type: 'EntTaskTool', tool_name: tool, status: 'RUNNING', created_at: '2026-10-19T10:00:00.000Z' },
-          content: { query: 'Sample Foundation speaking', result: 'private-tool-output' },
+          content: { query: 'Sample Foundation speaking', url: 'https://github.com/synthetic-private-user', result: 'private-tool-output' },
         })
       )
     );
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
     expect(result.status).toBe('pending');
     expect(result.activity).toEqual([
-      expect.objectContaining({ kind: 'search', label: 'Searching the web', detail: '“Sample Foundation speaking”', status: 'running' }),
+      expect.objectContaining({ kind: 'search', label: 'Searching the web', status: 'running' }),
       expect.objectContaining({ kind: 'lfx', label: 'Checking LFX', status: 'running' }),
+      expect.objectContaining({ kind: 'reading', label: 'Reading sources', status: 'running' }),
     ]);
+    expect(JSON.stringify(result)).not.toContain('Sample Foundation speaking');
+    expect(JSON.stringify(result)).not.toContain('synthetic-private-user');
+    expect(result.activity?.every((step) => !('detail' in step))).toBe(true);
     expect(JSON.stringify(result)).not.toContain('private-tool-output');
     expect(JSON.stringify(result)).not.toContain('lfx_mcp_search_members');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -519,15 +755,42 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue(payloads);
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
     expect(result.status).toBe(questions ? 'needs_input' : 'pending');
-    expect(JSON.stringify(result.activity)).toContain('[contact redacted]');
+    expect(result.activity?.every((step) => new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS)).has(step.label))).toBe(true);
+    expect(result.activity?.some((step) => Object.hasOwn(step, 'detail'))).toBe(false);
     expect(JSON.stringify(result.activity)).not.toContain('opaque-contact-3');
     expect(JSON.stringify(result.activity)).not.toContain('owner@example.test');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
 
-  it('maps needs-input to questions without a failure or private question text', () => {
+  it('redacts known contact identity and email from creator questions', async () => {
+    const privateText = 'opaque-private-contact owner@example.test';
+    const text = questionsText
+      .replace('Which window should this tracker cover?', privateText)
+      .replace('The date is missing.', privateText)
+      .replace('Use the current window.', privateText);
+    mocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-private-contact' }] } }),
+      JSON.stringify({ type: 'agent_notification_message', content: text }),
+    ]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.questions?.[0]).toMatchObject({
+      question: '[contact redacted] [contact redacted]',
+      why: '[contact redacted] [contact redacted]',
+      suggestedAnswer: '[contact redacted] [contact redacted]',
+    });
+    expect(JSON.stringify(result.questions)).not.toContain('opaque-private-contact');
+    expect(JSON.stringify(result.questions)).not.toContain('owner@example.test');
+  });
+
+  it('maps a needs-input result without questions without echoing its message', () => {
+    // This fixture has no structured questions; creator-gated question results
+    // may include questions/questionsId when the questions feature is present.
     const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
-    expect(mapped).toEqual({ status: 'questions', activity: [], persistence: undefined, failureText: undefined, failureReason: undefined });
+    expect(mapped).toMatchObject({ status: 'questions', activity: [] });
+    expect(mapped.questions).toBeUndefined();
+    expect(mapped.questionsId).toBeUndefined();
+    expect(mapped.failureText).toBeUndefined();
+    expect(mapped).not.toHaveProperty('message');
     expect(JSON.stringify(mapped)).not.toContain('Private question text');
   });
 
@@ -678,15 +941,24 @@ describe('Member 360 entitlement and generation', () => {
     mocks.recordGeneration.mockRejectedValue(new Error('temporary storage failure'));
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'ready', stored: false });
   });
-  it('strips additive 2.0 metadata and row keys but requires the 1.0 fields', async () => {
+  it('retains 2.1.1 research while stripping unknown metadata and requiring the original fields', async () => {
     const candidate = { ...member360Fixture(), future_metadata: true };
+    candidate.agent.agent_version = '2.1.1';
     Object.assign(candidate.inputs, {
       research: {
         fetches: [{ url: 'https://sample.example', ok: true, status: 200, final_url: 'https://sample.example' }],
         searches: ['synthetic query'],
         lfx_reads: ['project record'],
-        questions: [],
-        answers: [],
+        questions: [
+          {
+            id: 'window',
+            question: 'Which window should this tracker cover?',
+            why: 'Missing date.',
+            suggested_answer: 'Use the current window.',
+            basis: 'Synthetic tracker',
+          },
+        ],
+        answers: [{ id: 'window', origin: 'accepted', text: 'Use the current window.' }],
       },
     });
     for (const row of [
@@ -704,8 +976,41 @@ describe('Member 360 entitlement and generation', () => {
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
     const stored = mocks.recordGeneration.mock.calls[0][3].member360;
     expect(JSON.stringify(stored)).not.toContain('future_metadata');
-    expect(stored.inputs).not.toHaveProperty('research');
+    expect(stored.inputs.research).toEqual(candidate.inputs.research);
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
+  });
+  it('preserves research metadata while redacting contact and email text before storage', async () => {
+    const envelope = member360Fixture();
+    const privateText = 'opaque-research-contact owner@example.test';
+    envelope.agent.agent_version = '2.1.1';
+    envelope.tabs.member_ranking[0].key_contact = 'opaque-research-contact';
+    envelope.inputs.research = {
+      fetches: [
+        {
+          url: 'https://project.example/?owner=opaque-research-contact',
+          ok: true,
+          status: 200,
+          final_url: 'https://project.example/?owner=owner@example.test',
+        },
+        { url: 'https://project.example/unavailable', ok: false, status: null, final_url: null },
+      ],
+      searches: [privateText],
+      lfx_reads: [privateText],
+      questions: [{ id: 'window', question: privateText, why: privateText, suggested_answer: privateText, basis: privateText }],
+      answers: [{ id: 'window', origin: 'requester', text: privateText }],
+    };
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(stored.inputs.research.answers[0]).toEqual({ id: 'window', origin: 'requester', text: '[contact redacted] [contact redacted]' });
+    expect(stored.inputs.research.questions[0].basis).toBe('[contact redacted] [contact redacted]');
+    expect(stored.inputs.research.fetches[0]).toMatchObject({ ok: true, status: 200 });
+    expect(stored.inputs.research.fetches[1]).toMatchObject({ ok: false, status: null, final_url: null });
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('opaque-research-contact');
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('owner@example.test');
+    expect(envelope.inputs.research.answers[0].text).toBe(privateText);
   });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
     'keeps %s open through its own turn end, then fails after a later final reply',

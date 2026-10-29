@@ -2349,3 +2349,11 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** A placeholder block in the meetings redesign's right column. */
+export interface MeetingsRailBlock {
+  /** Stable key, also used in the block's test ids. */
+  key: string;
+  /** Uppercase kicker shown above the block. */
+  label: string;
+}

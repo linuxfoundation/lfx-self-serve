@@ -27,7 +27,7 @@
   @if (view(); as view) {
     <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-board-kpis" />
 
-    <div class="flex flex-col overflow-x-auto" role="table" aria-label="Board members' meeting attendance" data-testid="overview-board-table">
+    <div class="relative flex flex-col overflow-x-auto" role="table" aria-label="Board members' meeting attendance" data-testid="overview-board-table">
       <div
         class="grid min-w-[760px] grid-cols-[minmax(220px,2fr)_minmax(180px,1.5fr)_minmax(200px,1.4fr)_minmax(110px,0.9fr)] gap-[16px] border-b border-gray-200 pb-[8px] text-[12px] text-gray-500"
         role="row">

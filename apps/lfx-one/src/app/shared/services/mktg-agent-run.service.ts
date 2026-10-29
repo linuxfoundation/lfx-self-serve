@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
@@ -15,8 +15,10 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENT_INTAKES,
   MKTG_LAST_INTAKE_API,
+  MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
+  MktgActiveRunConflict,
   MktgAgentIntake,
   MktgLastIntake,
   MktgLastIntakeResponse,
@@ -41,7 +43,13 @@ import {
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
-import { renderMktgIntakeMessage, mktgDocumentLocationOfReceipt, mktgRunResultIdentity, mktgRunModeFor } from '@lfx-one/shared/utils';
+import {
+  renderMktgIntakeMessage,
+  mktgDocumentLocationOfReceipt,
+  mktgRunResultIdentity,
+  mktgRunModeFor,
+  readMktgActiveRunConflict,
+} from '@lfx-one/shared/utils';
 import {
   catchError,
   concat,
@@ -65,6 +73,7 @@ import {
 } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 import { UserService } from './user.service';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
@@ -107,6 +116,7 @@ import { ProjectContextService } from './project-context.service';
 export class MktgAgentRunService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly userService = inject(UserService);
   private readonly attempts = inject(MktgRunAttemptService);
   private readonly projectContext = inject(ProjectContextService);
@@ -116,11 +126,10 @@ export class MktgAgentRunService {
   public readonly acknowledgementVersion = signal(0);
 
   /**
-   * In-memory runs, keyed exactly like localStorage. The authoritative record
-   * for THIS page session: `loadRun` prefers it, so when `setItem` fails
-   * (quota, disabled storage) the next follow-up still derives its version
-   * directive and poll gate from the run the user is looking at — persistence
-   * loss only ever costs cross-visit restore, never in-session correctness.
+   * Recovery bookkeeping, keyed exactly like localStorage; never authority for
+   * current server run/questions state. Memory preserves source/version hints
+   * and the private continuation capability when storage is disabled. Shared
+   * surfaces measure the server before using those hints or rendering state.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
@@ -190,11 +199,20 @@ export class MktgAgentRunService {
    * (project switch, a new submission, leaving the page) cancels the retry
    * with it.
    */
-  public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+  public generate(request: MktgGenerateRequest, discard?: string, recheck = false): Observable<MktgGenerateProgress> {
+    if (request.discard && !MKTG_STARTED_RUN_ID_REGEX.test(request.discard)) return throwError(() => new Error('Invalid active run selection.'));
+    const retryBody = discard || recheck ? this.retainedBody(request) : null;
+    if ((discard && !MKTG_STARTED_RUN_ID_REGEX.test(discard)) || ((discard || recheck) && !retryBody))
+      return throwError(() => new Error('Review the retained intake and Create explicitly; the original start cannot be replayed safely.'));
     if (request.intake.oneOffDocument) return throwError(() => new Error('Submit this one-off through its dedicated intake first.'));
     const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+    if (!discard && !recheck) request.retainedStartBody = undefined;
     let attempt$: Observable<MktgRunAttempt>;
-    if (!stored || request.intake.freshRunPerSubmission) {
+    if ((discard || recheck) && retryBody) {
+      const body = { ...retryBody };
+      if (recheck) delete body.discard;
+      attempt$ = this.postStartBody(request, body, discard);
+    } else if (!stored || request.intake.freshRunPerSubmission) {
       // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
@@ -240,6 +258,22 @@ export class MktgAgentRunService {
         return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
       })
     );
+  }
+
+  /** Re-send the visit's exact start body without discard; never reconstruct it or send a session follow-up. */
+  public recheckActiveConflict(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+    return this.generate(request, undefined, true);
+  }
+
+  /** The existing attempt store, not a closure or mutable version history, owns this visit's submitted body. */
+  public canRetryActiveConflict(request: MktgGenerateRequest): boolean {
+    return !!this.retainedBody(request);
+  }
+
+  /** Validate and scope the future server conflict before any navigation or discard choice. */
+  public activeRunConflict(error: unknown, request: MktgGenerateRequest): MktgActiveRunConflict | null {
+    if (!(error instanceof HttpErrorResponse) || error.status !== 409 || !request.projectUid) return null;
+    return readMktgActiveRunConflict(error.error, request.agentId, request.documentId);
   }
 
   /**
@@ -352,6 +386,21 @@ export class MktgAgentRunService {
     }
   }
 
+  private retainedBody(request: MktgGenerateRequest): MktgRunGenerateBody | null {
+    const pending = this.attempts.load(request.projectUid, request.agentId, request.documentId);
+    const body = pending?.request.retainedStartBody;
+    if (
+      !request.projectUid ||
+      pending?.state !== 'failed' ||
+      pending.requiresReattachment ||
+      !body ||
+      body !== request.retainedStartBody ||
+      body.project !== request.projectUid
+    )
+      return null;
+    return body;
+  }
+
   /**
    * First run: one-shot form-mode generation through the agent's validated
    * generate endpoint. The BFF validates the answers against the agent's own
@@ -366,18 +415,9 @@ export class MktgAgentRunService {
       // Every intake sends its durable run scope; the BFF resolves writer access
       // and the canonical storage/lookup project before starting the agent.
       project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
     };
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
-      map((response) => ({
-        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
-        runId: response.runId,
-        priorVersion: 0,
-        // The BFF reports what its server-side README fetch produced for THIS
-        // submission; it travels with the attempt so the version it generates
-        // can say it was written without one.
-        readme: response.readme,
-      }))
-    );
+    return this.captureStartBody(request, body);
   }
 
   /**
@@ -396,17 +436,35 @@ export class MktgAgentRunService {
       // A stored run without versions has nothing to revise — plain first run.
       return this.startRun(request);
     }
-    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion, project: request.projectUid };
+    const body: MktgRunGenerateBody = {
+      answers: request.answers,
+      priorVersion,
+      project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
+    };
     if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+    return this.captureStartBody(request, body);
+  }
+
+  private captureStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody): Observable<MktgRunAttempt> {
+    const retained = {
+      ...body,
+      answers: { ...body.answers },
+      ...(body.documents && { documents: body.documents.map((document) => ({ ...document })) }),
+      ...(body.logoFiles && { logoFiles: body.logoFiles.map((file) => ({ ...file })) }),
+    };
+    request.retainedStartBody = retained;
+    return this.postStartBody(request, retained);
+  }
+
+  private postStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody, discard?: string): Observable<MktgRunAttempt> {
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, discard ? { ...body, discard } : body).pipe(
       map((response) => ({
         session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
         runId: response.runId,
-        priorVersion,
-        // Every resubmit re-fetches the README, so this version's outcome is
-        // the fresh one — a corrected URL must not inherit the old verdict.
+        priorVersion: body.priorVersion ?? 0,
         readme: response.readme,
       }))
     );
@@ -564,6 +622,7 @@ export class MktgAgentRunService {
     projectUid: string,
     answeredQuestionsId?: string
   ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
+    if (!isPlatformBrowser(this.platformId)) return EMPTY;
     const body = this.resultBody(session, projectUid);
     // A ready result carries the document's Markdown, or — for an agent that
     // writes a structured asset — the asset; either ends the poll.
@@ -579,9 +638,9 @@ export class MktgAgentRunService {
     const isTerminal = (result: MktgRunResultResponse): boolean =>
       isDocument(result) || isNewQuestions(result) || isRefused(result) || result.status === 'failed';
     return defer(() => {
-      // One wall-clock deadline for the whole wait: with a live feed the poll
-      // emits along the way, so a per-emission timeout would never fire.
-      const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+      // Each visible observation window is bounded; focus re-observes the same
+      // accepted session, never Generate/answers. Server run deadlines remain authoritative.
+      let firstWindow = true;
       let lastActivity = '';
       // Only a feed that changed is worth an emission; intakes without a feed emit their terminal result alone.
       const isNewActivity = (result: MktgRunResultResponse): boolean => {
@@ -595,25 +654,39 @@ export class MktgAgentRunService {
         lastActivity = key;
         return true;
       };
-      return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-        tap(() => {
-          if (Date.now() > deadline) {
-            throw new TimeoutError();
-          }
-        }),
-        exhaustMap(() =>
-          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
-            catchError((error: unknown) => {
-              if (isTransientHttpError(error)) {
-                return of<MktgRunResultResponse>({ status: 'pending' });
-              }
-              return throwError(() => error);
-            })
-          )
-        ),
-        takeWhile((result) => !isTerminal(result), true),
-        filter((result) => isTerminal(result) || isNewActivity(result)),
-        map((result) => ({ result, terminal: isTerminal(result) }))
+      const observe = () => {
+        const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+        const delay = firstWindow ? MKTG_RUN_POLL.initialDelayMs : 0;
+        firstWindow = false;
+        return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+          tap(() => {
+            if (Date.now() > deadline) {
+              throw new TimeoutError();
+            }
+          }),
+          exhaustMap(() =>
+            this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+              catchError((error: unknown) => {
+                if (isTransientHttpError(error)) {
+                  return of<MktgRunResultResponse>({ status: 'pending' });
+                }
+                return throwError(() => error);
+              })
+            )
+          ),
+          takeWhile((result) => !isTerminal(result), true),
+          filter((result) => isTerminal(result) || isNewActivity(result)),
+          map((result) => ({ result, terminal: isTerminal(result) }))
+        );
+      };
+      return createVisibilityPoll(this.document, observe, {
+        intervalMs: MKTG_RUN_POLL.intervalMs,
+        backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+        backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+        shouldContinue: () => false,
+      }).pipe(
+        takeWhile((event) => event.kind === 'ok' && !event.value.terminal, true),
+        switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error)))
       );
     });
   }
@@ -673,19 +746,28 @@ export class MktgAgentRunService {
     session: MktgSessionInfo,
     result: MktgRunResultResponse
   ): Observable<MktgRunResultResponse> {
-    if (!intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
+    if (!isPlatformBrowser(this.platformId) || !intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
     const body = this.resultBody(session, projectUid);
     const payloadDigest = mktgRunResultIdentity(result, false);
     const matches = (response: MktgRunResultResponse): boolean =>
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
-    return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http
-          .post<MktgRunResultResponse>(intake.endpoints.result, body)
-          // A failed retry poll spends one attempt like any other; the next
-          // interval tries again within the budget.
-          .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
-      ),
+    let firstWindow = true;
+    const observe = () => {
+      const delay = firstWindow ? MKTG_RUN_POLL.intervalMs : 0;
+      firstWindow = false;
+      return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+        exhaustMap(() =>
+          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+        )
+      );
+    };
+    return createVisibilityPoll(this.document, observe, {
+      intervalMs: MKTG_RUN_POLL.intervalMs,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+      shouldContinue: () => false,
+    }).pipe(
+      switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))),
       take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
       // Announce the moment the SERVER copy exists, then stop. Consumers
       // resolve dependencies from the server copy in preference to any

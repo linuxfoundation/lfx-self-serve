@@ -18,10 +18,12 @@ import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { resolveOrgLensEdit } from '../helpers/org-lens-edit-access.helper';
+import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
+import { SnowflakeService } from './snowflake.service';
 import { invalidatePerUserCache, withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -53,6 +55,11 @@ function isAccessSummary(value: unknown): boolean {
   return isObject(value) && typeof s.totalUsers === 'number' && typeof s.administrators === 'number' && typeof s.viewers === 'number';
 }
 
+/** A listed row also carries the Employment filter's `isFormer` flag; an entry cached before it existed is a miss. */
+function isListedAccessUser(value: unknown): boolean {
+  return isAccessUser(value) && isObject(value) && typeof value['isFormer'] === 'boolean';
+}
+
 /** Rejects a corrupt/legacy access-list entry (degrades to a miss) by validating every user element and the numeric summary fields against the wire contract. */
 function isAccessListResponse(value: unknown): boolean {
   const v = value as Partial<OrgAccessListResponse>;
@@ -60,7 +67,7 @@ function isAccessListResponse(value: unknown): boolean {
     isObject(value) &&
     typeof v.orgUid === 'string' &&
     Array.isArray(v.users) &&
-    v.users.every(isAccessUser) &&
+    v.users.every(isListedAccessUser) &&
     isAccessSummary(v.summary) &&
     typeof v.canManage === 'boolean'
   );
@@ -81,10 +88,12 @@ function isPrincipalArray(value: unknown): boolean {
 export class OrgLensAccessService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly keyContacts: OrgLensKeyContactsService;
+  private readonly snowflakeService: SnowflakeService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.keyContacts = new OrgLensKeyContactsService();
+    this.snowflakeService = SnowflakeService.getInstance();
   }
 
   // ── public API (controller boundary) ─────────────────────────────────────────
@@ -121,7 +130,8 @@ export class OrgLensAccessService {
         return this.computeAccessList(req, orgUid, canManage);
       },
       isAccessListResponse,
-      () => canManageVerified
+      // A list whose former employees could not be read flags nobody former; it is served, flagged, but never cached.
+      (list) => canManageVerified && list.employmentUnavailable !== true
     );
   }
 
@@ -208,9 +218,37 @@ export class OrgLensAccessService {
   }
 
   private async computeAccessList(req: Request, orgUid: string, canManage: boolean | Promise<boolean>): Promise<OrgAccessListResponse> {
-    const [settings, resolvedCanManage] = await Promise.all([this.fetchSettings(req, orgUid), canManage]);
-    const users = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
-    return { orgUid, users, summary: this.buildSummary(users), canManage: resolvedCanManage };
+    const [settings, resolvedCanManage, formerUsernames] = await Promise.all([
+      this.fetchSettings(req, orgUid),
+      canManage,
+      this.readFormerUsernames(req, orgUid),
+    ]);
+    const enriched = await this.enrichJobTitles(req, orgUid, this.mapPrincipals(settings));
+    // `mapPrincipals` stores the username trimmed and lowercased, the form `readOrgFormerUsernames` returns.
+    const users = enriched.map((user) => ({ ...user, isFormer: user.username !== null && formerUsernames?.has(user.username) === true }));
+    return {
+      orgUid,
+      users,
+      summary: this.buildSummary(users),
+      canManage: resolvedCanManage,
+      ...(formerUsernames === null ? { employmentUnavailable: true as const } : {}),
+    };
+  }
+
+  /**
+   * The account's former employees' usernames, for the Employment filter (lfx-self-serve#4627) — the set the people
+   * directory tags former access principals with; `null` when the warehouse read failed, so the list flags nobody.
+   */
+  private async readFormerUsernames(req: Request, orgUid: string): Promise<ReadonlySet<string> | null> {
+    try {
+      return new Set(await readOrgFormerUsernames(this.snowflakeService, orgUid));
+    } catch (error) {
+      logger.warning(req, 'read_org_access_former_usernames', 'Former employees read failed; serving the access list with nobody former, uncached', {
+        org_uid: orgUid,
+        err: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /** Authoritative settings read (member-service source of record). */
