@@ -4,6 +4,7 @@
 import { FlexibleConnectedPositionStrategy, Overlay, OverlayContainer, OverlayRef } from '@angular/cdk/overlay';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { UiTooltipDirective } from './tooltip.directive';
@@ -28,7 +29,7 @@ class TestHostComponent {
   public readonly text = signal('Copy link');
   public readonly heading = signal('');
   public readonly shortcut = signal<string[]>([]);
-  public readonly side = signal<'top' | 'right' | 'bottom' | 'left'>('top');
+  public readonly side = signal<UiTooltipSide>('top');
   public readonly disabled = signal(false);
   public readonly label = signal<string | null>(null);
   public readonly delay = 40;
@@ -168,6 +169,44 @@ describe('UiTooltipDirective', () => {
       await advance(200);
 
       expect(tooltip()).toBeNull();
+    });
+
+    it('a pointer pass over the host does not cancel the show that keyboard focus started', async () => {
+      await setup();
+      pressKey('Tab');
+      trigger.focus();
+      await advance(10);
+      pointer(trigger, 'pointerenter');
+      pointer(trigger, 'pointerleave');
+      await advance(300);
+
+      expect(tooltip()).not.toBeNull();
+    });
+
+    it('keyboard focus arriving during the hide grace period keeps the tooltip open', async () => {
+      await setup();
+      await hover();
+      pointer(trigger, 'pointerleave');
+      await advance(30);
+      pressKey('Tab');
+      trigger.focus();
+      await advance(300);
+
+      expect(tooltip()).not.toBeNull();
+    });
+
+    it('Escape on the open tooltip does not reach other Escape listeners, such as a dialog behind it', async () => {
+      await setup();
+      await hover();
+      const listener = vi.fn();
+      document.addEventListener('keydown', listener);
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+      document.removeEventListener('keydown', listener);
+
+      expect(tooltip()).toBeNull();
+      expect(event.defaultPrevented).toBe(true);
+      expect(listener).not.toHaveBeenCalled();
     });
 
     it('Escape ends keyboard-focus mode, so a later hover closes normally', async () => {

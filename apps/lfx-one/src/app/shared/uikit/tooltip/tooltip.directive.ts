@@ -7,6 +7,7 @@ import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, input, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { filter, take } from 'rxjs';
 
 import { UiTooltipPanelComponent } from './tooltip-panel.component';
@@ -36,7 +37,7 @@ export class UiTooltipDirective {
   /** Keys shown as key caps after the text, such as `['⌘', 'C']`. */
   public readonly shortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
   /** Preferred side. The tooltip sits 6px from the host and flips to the opposite side, then the other two, if it would leave the window. */
-  public readonly side = input<'top' | 'right' | 'bottom' | 'left'>('top', { alias: 'lfxUiTooltipSide' });
+  public readonly side = input<UiTooltipSide>('top', { alias: 'lfxUiTooltipSide' });
   /** Milliseconds between hover or keyboard focus and the tooltip appearing. Escape and blur close it at once; leaving with the pointer waits a short grace period. */
   public readonly delay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
   /** Turns the tooltip off without removing the directive. */
@@ -70,8 +71,10 @@ export class UiTooltipDirective {
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe((origin) => {
           this.keyboardFocused = origin === 'keyboard';
-          if (origin === 'keyboard') this.scheduleShow();
-          else if (origin === null) this.hide();
+          if (origin === 'keyboard') {
+            this.cancelHide();
+            this.scheduleShow();
+          } else if (origin === null) this.hide();
         });
     });
     toObservable(this.config)
@@ -115,13 +118,14 @@ export class UiTooltipDirective {
   }
 
   private scheduleHide(): void {
+    // Keyboard focus keeps it open, or keeps a pending show alive; blur closes it.
+    if (this.keyboardFocused) return;
     this.clearShowTimer();
-    // Keyboard focus keeps it open; blur closes it.
-    if (!this.overlayRef || this.keyboardFocused) return;
+    if (!this.overlayRef) return;
     this.cancelHide();
     this.hideTimer = setTimeout(() => {
       this.hideTimer = null;
-      this.hide();
+      if (!this.keyboardFocused) this.hide();
     }, this.graceMs);
   }
 
@@ -203,12 +207,17 @@ export class UiTooltipDirective {
         filter((event) => event.key === 'Escape'),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.dismiss());
+      .subscribe((event) => {
+        // Stop it here so an enclosing dialog does not also close on the same key press.
+        event.preventDefault();
+        event.stopPropagation();
+        this.dismiss();
+      });
   }
 
   private positions(): ConnectedPosition[] {
     const gap = this.gap;
-    const all: Record<'top' | 'right' | 'bottom' | 'left', ConnectedPosition> = {
+    const all: Record<UiTooltipSide, ConnectedPosition> = {
       top: { originX: 'center', originY: 'top', overlayX: 'center', overlayY: 'bottom', offsetY: -gap },
       bottom: { originX: 'center', originY: 'bottom', overlayX: 'center', overlayY: 'top', offsetY: gap },
       left: { originX: 'start', originY: 'center', overlayX: 'end', overlayY: 'center', offsetX: -gap },

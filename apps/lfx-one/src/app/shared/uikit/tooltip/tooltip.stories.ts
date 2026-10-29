@@ -16,24 +16,25 @@ const meta: Meta<UiTooltipDirective> = {
     props: { cfg: args },
     template: `
       <div class="flex justify-center p-[96px]">
-        <lfx-ui-button
-          variant="outline-neutral"
-          icon="fa-light fa-link"
-          [iconOnly]="true"
-          ariaLabel="Copy link"
+        <button
+          type="button"
+          class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none"
+          [attr.aria-label]="cfg.text"
           [lfxUiTooltip]="cfg.text"
           [lfxUiTooltipTitle]="cfg.title"
           [lfxUiTooltipShortcut]="cfg.shortcut"
           [lfxUiTooltipSide]="cfg.side"
           [lfxUiTooltipDelay]="cfg.delay"
-          [lfxUiTooltipDisabled]="cfg.disabled" />
+          [lfxUiTooltipDisabled]="cfg.disabled">
+          <i class="fa-light fa-link" aria-hidden="true"></i>
+        </button>
       </div>`,
   }),
 };
 export default meta;
 type Story = StoryObj<UiTooltipDirective>;
 
-/** One line of text above an icon-only button. Hover it or tab to it. */
+/** One line of text above an icon-only button. Hover it or tab to it. The directive sits on the native button, so the description reaches screen readers. */
 export const Default: Story = {};
 /** A key-cap shortcut after the text. */
 export const WithShortcut: Story = { args: { shortcut: ['⌘', 'C'] } };
@@ -44,17 +45,6 @@ export const Rich: Story = {
 export const Bottom: Story = { args: { side: 'bottom' } };
 export const Left: Story = { args: { side: 'left' } };
 export const Right: Story = { args: { side: 'right' } };
-/** On the focusable element itself, so the screen-reader description is read when it takes focus. */
-export const OnNativeButton: Story = {
-  render: () => ({
-    template: `
-      <div class="flex justify-center p-[96px]">
-        <button type="button" lfxUiTooltip="Copy link" class="edge inline-flex h-ui-medium w-ui-medium items-center justify-center rounded-ui-sm bg-ui-background-100 focus-visible:shadow-focus focus-visible:outline-none">
-          <i class="fa-light fa-link" aria-hidden="true"></i><span class="sr-only">Share</span>
-        </button>
-      </div>`,
-  }),
-};
 /** Tooltips can explain why a control is off. A disabled button gets no pointer events, so the directive sits on a wrapper. */
 export const OnDisabledControl: Story = {
   render: () => ({
@@ -71,7 +61,9 @@ export const FlipsAtTheEdge: Story = {
   render: () => ({
     template: `
       <div class="flex justify-center">
-        <lfx-ui-button variant="outline-neutral" icon="fa-light fa-link" [iconOnly]="true" ariaLabel="Copy link" lfxUiTooltip="Flipped below the button" />
+        <button type="button" lfxUiTooltip="Flipped below the button" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 focus-visible:shadow-focus focus-visible:outline-none">
+          <i class="fa-light fa-link" aria-hidden="true"></i><span class="sr-only">Share</span>
+        </button>
       </div>`,
   }),
 };
