@@ -8,7 +8,7 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, Router } from '@angular/router';
+import { NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   BRAND_KIT_CONTRACT_ID,
@@ -61,7 +61,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
+import { filter, firstValueFrom, NEVER, of, Subject, take, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -3900,12 +3900,22 @@ describe('MktgDocumentViewComponent', () => {
     const older = history.revisions.find((row) => row.number === 1);
     if (!current || !older) throw new Error('Missing synthetic Back revisions');
     await render('/documents/brand-kit/living?tab=sources');
+    const router = TestBed.inject(Router);
+    // The harness navigates imperatively instead of bootstrapping the app's browser listener.
+    router.initialNavigation();
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     await harness.navigateByUrl(`/documents/brand-kit/living?tab=sources&revision=${older.id}`, MktgDocumentViewComponent);
     await settle();
     expect(component['view']()?.revision.id).toBe(older.id);
     const reads = store.getRevision.mock.calls.length;
+    const backNavigation = firstValueFrom(
+      router.events.pipe(
+        filter((event) => event instanceof NavigationEnd),
+        take(1)
+      )
+    );
     TestBed.inject(Location).back();
+    await backNavigation;
     await settle();
     expect(TestBed.inject(Router).url).toBe('/documents/brand-kit/living?tab=sources');
     expect(component['view']()?.revision.id).toBe(current.id);
