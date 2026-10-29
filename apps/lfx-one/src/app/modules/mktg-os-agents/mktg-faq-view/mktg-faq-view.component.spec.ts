@@ -6,8 +6,8 @@ import { Component, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { MktgFaqAsset } from '@lfx-one/shared/interfaces';
-import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
+import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope } from '@lfx-one/shared/interfaces';
+import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFaqViewComponent } from './mktg-faq-view.component';
@@ -51,19 +51,24 @@ const ASSET: MktgFaqAsset = {
 describe('MktgFaqViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
+  let threads = signal<MktgDocumentComment[]>([]);
+  let scope = signal<MktgDocumentCommentScope>({ ...mktgCommentScopeFixture(), agentKey: 'faq' });
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
   const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
   beforeEach(async () => {
+    threads = signal<MktgDocumentComment[]>([]);
+    scope = signal<MktgDocumentCommentScope>({ ...mktgCommentScopeFixture(), agentKey: 'faq' });
     await TestBed.configureTestingModule({
       imports: [HostComponent],
       providers: [
         provideRouter([{ path: '**', children: [] }]),
         provideMktgCommentsStub({
+          threads,
           loaded: signal(true),
-          selectedScope: signal({ ...mktgCommentScopeFixture(), agentKey: 'faq' }),
+          selectedScope: scope,
           labelContent: signal(ASSET.content),
         }),
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
@@ -100,6 +105,47 @@ describe('MktgFaqViewComponent', () => {
     await fixture.whenStable();
     expect(pins()).toHaveLength(0);
     expect(JSON.stringify(ASSET)).toBe(before);
+  });
+
+  it('excludes only server-resolved answer fields from the callout, tab count and unanswered list', async () => {
+    host.commentsEnabled.set(true);
+    host.asset.set({
+      ...ASSET,
+      checks: {
+        ...ASSET.checks,
+        unanswered: [...ASSET.checks.unanswered, { path: 'faq[1][1][0]', group: 'Getting involved', question: 'How do I contribute?' }],
+      },
+    });
+    threads.set([
+      mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } }),
+      mktgCommentFixture({ status: 'sent', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
+      mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][0]' } }),
+    ]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
+    expect(text('mktg-faq-view-unanswered-callout')).toContain('1 question needs an answer');
+    query('mktg-faq-view-tab-unanswered')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-unanswered-list')).toContain('How do I contribute?');
+    expect(text('mktg-faq-view-unanswered-list')).not.toContain('How much does membership cost?');
+    threads.update((current) => [...current, mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
+    expect(query('mktg-faq-view-unanswered-empty')).not.toBeNull();
+    query('mktg-faq-view-tab-faq')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-unanswered-callout')).toBeNull();
+    expect(ASSET.checks.unanswered).toHaveLength(1);
+  });
+
+  it('does not apply resolved comments from another agent scope or to a non-comment view', async () => {
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
+    host.commentsEnabled.set(true);
+    scope.set({ ...mktgCommentScopeFixture(), agentKey: 'foundation-message' });
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
   });
 
   it('loads its URL tab and pushes one history entry per user switch', async () => {

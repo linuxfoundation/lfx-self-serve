@@ -6,6 +6,7 @@ import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, I
 import { FAQ_MODE_LABELS, FAQ_NEEDS_ANSWER_LABEL, FAQ_VIEW_TABS } from '@lfx-one/shared/constants';
 import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab, MktgAssetHeaderMetadata, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
@@ -22,6 +23,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
   templateUrl: './mktg-faq-view.component.html',
 })
 export class MktgFaqViewComponent {
+  private readonly comments = inject(MktgDocumentCommentsService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
@@ -61,8 +63,18 @@ export class MktgFaqViewComponent {
     const groups = this.groups().length;
     return `${questions} ${questions === 1 ? 'question' : 'questions'} in ${groups} ${groups === 1 ? 'group' : 'groups'}`;
   });
-  /** The questions the sources did not answer, as the agent flagged them for the reviewer. */
-  protected readonly unanswered = computed(() => this.asset().checks.unanswered);
+  /** Source gaps still needing a team answer; only server-resolved answer threads clear a gap. */
+  protected readonly unanswered = computed(() => {
+    const gaps = this.asset().checks.unanswered;
+    if (!this.commentsEnabled() || this.comments.selectedScope()?.agentKey !== 'faq') return gaps;
+    const resolved = new Set(
+      this.comments
+        .threads()
+        .filter((thread) => thread.status === 'resolved' && thread.anchor.kind === 'field')
+        .map((thread) => thread.anchor.key)
+    );
+    return gaps.filter((gap) => !resolved.has(`${gap.path}[1]`));
+  });
   protected readonly unansweredLabel = computed(() => {
     const count = this.unanswered().length;
     return count === 1 ? '1 question needs an answer from your team' : `${count} questions need an answer from your team`;
