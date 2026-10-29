@@ -1159,7 +1159,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
-      this.toUpstreamRegistrantBody(registrantData, 'create')
+      this.toUpstreamRegistrantBody(registrantData)
     );
 
     // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
@@ -1196,7 +1196,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
-      this.toUpstreamRegistrantBody(updateData, 'update')
+      this.toUpstreamRegistrantBody(updateData)
     );
 
     // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
@@ -2761,7 +2761,7 @@ export class MeetingService {
    * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
-  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest, verb: 'create' | 'update'): Record<string, unknown> {
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
     // Spread rather than cast: the declared parameter types are interfaces with no index
     // signature, and the runtime object is exactly what a client posted, extra keys included.
     const submitted: Record<string, unknown> = { ...body };
