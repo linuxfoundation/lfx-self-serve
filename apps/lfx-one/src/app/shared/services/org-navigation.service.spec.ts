@@ -55,6 +55,7 @@ describe('OrgNavigationService default selection', () => {
   let claM3Enabled: WritableSignal<boolean>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
+  let isRollUp: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
@@ -76,6 +77,7 @@ describe('OrgNavigationService default selection', () => {
     claM3Enabled = signal(false);
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
+    isRollUp = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [
@@ -111,6 +113,7 @@ describe('OrgNavigationService default selection', () => {
             clearAccount,
             refreshCanonicalRecord,
             getStoredUid: () => null,
+            isRollUp,
           },
         },
       ],
@@ -673,6 +676,52 @@ describe('OrgNavigationService default selection', () => {
       requests[1].flush(page([]));
 
       expect(clearAccount).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * lfx-self-serve#4125 / PR #4415 review 7. A roll-up restored from the cookie pins as an address
+   * selection even when the URL names no organization (`/org`, or a legacy `/org/{page}`), because
+   * nothing may re-default it. The pin alone left the combined view living only in the cookie: the
+   * address still read `/org/people`, so sharing or reloading that link dropped it.
+   */
+  describe('restored roll-up on an unaddressed URL', () => {
+    const rows = (): OrgItem[] => [item('0014100000MgaAAAAA', 'Alpha'), item('0014100000MgbBBBBB', 'Bravo')];
+
+    it('writes the default address while keeping the selection pinned', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(true);
+      isOnAddressedPage.mockReturnValue(false);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      // The pin is about the selection, not the address: nothing re-selects.
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    it('leaves an address that already names the roll-up alone', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(true);
+      isOnAddressedPage.mockReturnValue(true);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    });
+
+    // Unchanged for every other address-pinned selection: the resolver already wrote the address.
+    it('does not write an address for a concrete address-pinned organization', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(false);
+      isOnAddressedPage.mockReturnValue(false);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
     });
   });
 });

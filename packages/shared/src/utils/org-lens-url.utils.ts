@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN, ORG_EASYCLA_PATH, ORG_LENS_PAGE_SEGMENTS, ORG_SLUG_SEGMENT_PATTERN } from '../constants';
+import { ORG_ACCOUNT_ID_PATTERN, ORG_EASYCLA_PATH, ORG_LENS_PAGE_SEGMENTS, ORG_ROLLUP_SEGMENT, ORG_SLUG_SEGMENT_PATTERN } from '../constants';
 import type { Account } from '../interfaces';
 
 /**
@@ -23,6 +23,9 @@ import type { Account } from '../interfaces';
  */
 export function orgUrlSegment(org: Pick<Account, 'uid' | 'slug'> | null | undefined): string | null {
   if (!org) return null;
+  // The roll-up selection is addressed by its reserved segment, never by a slug or SFID: it names a
+  // set, not a row, so there is nothing for the resolver to canonicalize it to (#4125).
+  if (isOrgRollUpSegment(org.uid)) return ORG_ROLLUP_SEGMENT;
   const slug = org.slug?.trim().toLowerCase();
   if (slug && isOrgSlugSegment(slug)) return slug;
   const uid = org.uid?.trim();
@@ -35,6 +38,15 @@ export function isOrgAccountIdSegment(segment: string): boolean {
 }
 
 /**
+ * True when the value is the reserved All Organizations roll-up segment (`ORG_ROLLUP_SEGMENT`) — the
+ * one `/org/{segment}` value that selects a *set* of organizations rather than one. Takes `unknown`
+ * so cookie and address callers can hand it an unvalidated value directly.
+ */
+export function isOrgRollUpSegment(value: unknown): value is typeof ORG_ROLLUP_SEGMENT {
+  return value === ORG_ROLLUP_SEGMENT;
+}
+
+/**
  * True when the (already lowercased) segment is shaped like a slug, is not a reserved page name, and
  * is not shaped like an SFID — the resolver classifies SFID syntax first, so a published slug that
  * happens to look like one (`0014100000mgaaaaaa`) would resolve as an account id, not as this slug;
@@ -43,7 +55,7 @@ export function isOrgAccountIdSegment(segment: string): boolean {
  * `Object.prototype` keys (`'constructor' in {}` is true).
  */
 export function isOrgSlugSegment(segment: string): boolean {
-  return ORG_SLUG_SEGMENT_PATTERN.test(segment) && !isOrgAccountIdSegment(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
+  return ORG_SLUG_SEGMENT_PATTERN.test(segment) && !isOrgAccountIdSegment(segment) && !isOrgRollUpSegment(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
 }
 
 /**
@@ -62,7 +74,7 @@ export function orgLensPagePath(urlSegments: readonly string[], page: string): s
   const [root, second] = urlSegments;
   if (root === 'org' && second) {
     const normalized = normalizeOrgSegment(second);
-    if (isOrgSlugSegment(normalized) || isOrgAccountIdSegment(normalized)) {
+    if (isOrgSlugSegment(normalized) || isOrgAccountIdSegment(normalized) || isOrgRollUpSegment(normalized)) {
       return `/org/${second}/${page}`;
     }
   }

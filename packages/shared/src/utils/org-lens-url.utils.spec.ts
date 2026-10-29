@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ORG_EASYCLA_PATH } from '../constants';
+import { ORG_EASYCLA_PATH, ORG_ROLLUP_SEGMENT } from '../constants';
 import {
+  isOrgRollUpSegment,
   isOrgSlugSegment,
   legacyOrgEasyclaReturnPath,
   normalizeOrgSegment,
@@ -135,5 +136,48 @@ describe('legacyOrgEasyclaReturnPath', () => {
 
   it('encodes the CLA Group id so it cannot append a segment', () => {
     expect(legacyOrgEasyclaReturnPath('g/../x?y')).toBe('/org/easycla/g%2F..%2Fx%3Fy');
+  });
+});
+
+// lfx-self-serve#4125 — the All Organizations roll-up segment. It is an address for a *set*, so it
+// must travel like an organization segment through every builder while never being mistaken for a
+// slug the resolver could look up.
+describe('All Organizations roll-up segment', () => {
+  it('recognises only the reserved value', () => {
+    expect(isOrgRollUpSegment(ORG_ROLLUP_SEGMENT)).toBe(true);
+    expect(isOrgRollUpSegment('all')).toBe(true);
+    expect(isOrgRollUpSegment('All')).toBe(false);
+    expect(isOrgRollUpSegment('all-hands')).toBe(false);
+    expect(isOrgRollUpSegment(UID)).toBe(false);
+    expect(isOrgRollUpSegment(undefined)).toBe(false);
+    expect(isOrgRollUpSegment(null)).toBe(false);
+  });
+
+  // The resolver would answer "no such organization" for it, so it must never be offered one.
+  it('is not a slug segment', () => {
+    expect(isOrgSlugSegment(ORG_ROLLUP_SEGMENT)).toBe(false);
+  });
+
+  // An organization whose indexed slug really is `all` is addressed by its SFID — the same fallback
+  // a reserved page name already gets (DR-007 §5), so the sentinel can never be ambiguous.
+  it('is reserved against a real organization claiming it as a slug', () => {
+    expect(orgUrlSegment({ uid: UID, slug: ORG_ROLLUP_SEGMENT })).toBe(UID);
+  });
+
+  it('is the address of the roll-up selection itself, whatever slug it carries', () => {
+    expect(orgUrlSegment({ uid: ORG_ROLLUP_SEGMENT, slug: null })).toBe(ORG_ROLLUP_SEGMENT);
+    expect(orgUrlSegment({ uid: ORG_ROLLUP_SEGMENT, slug: 'ignored' })).toBe(ORG_ROLLUP_SEGMENT);
+  });
+
+  // A feature fallback redirecting inside `/org/all/…` must keep the roll-up rather than dropping
+  // the viewer back to the legacy `/org/{page}` form under their cookie selection.
+  it('survives a page-path rebuild', () => {
+    expect(orgLensPagePath(['org', ORG_ROLLUP_SEGMENT, 'people'], 'contributions')).toBe('/org/all/contributions');
+  });
+
+  // The sidebar tracks rows by destination; the roll-up is an organization, so it is stripped the
+  // same way a slug or SFID is. Deliberately NOT page-listed — that would break this.
+  it('is stripped from the destination key like any other organization segment', () => {
+    expect(orgLensDestinationKey('/org/all/people')).toBe('/org/people');
   });
 });
