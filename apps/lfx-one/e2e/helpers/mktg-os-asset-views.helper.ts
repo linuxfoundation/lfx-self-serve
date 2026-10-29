@@ -1,20 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  BRAND_KIT_CONTRACT_ID,
-  BRAND_KIT_INTAKE,
-  FOUNDATION_MESSAGE_INTAKE,
-  FOUNDATION_MESSAGE_WEBSITE_KEY,
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  LENS_COOKIE_KEY,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
-  MKTG_SLIDES_EXPORT_API_PATH,
-  PERSONA_COOKIE_KEY,
-  SELECTED_PROJECT_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
-import type { BoilerplatesEnvelope, FaqEnvelope, MktgFrameworkAsset, MktgRevisionResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_CONTRACT_ID } from '@lfx-one/shared/constants/brand-kit.constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants/mktg-run.constants';
+import { FOUNDATION_MESSAGE_WEBSITE_KEY } from '@lfx-one/shared/constants/foundation-message.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MKTG_OS_AGENTS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants/lens.constants';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
+import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants/persona.constants';
+import { SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants/project-context.constants';
+import type { BoilerplatesEnvelope } from '@lfx-one/shared/interfaces/boilerplates.interface';
+import type { FaqEnvelope } from '@lfx-one/shared/interfaces/faq.interface';
+import type { MktgFrameworkAsset, MktgRunResultResponse } from '@lfx-one/shared/interfaces/mktg-run.interface';
+import type { MktgRevisionResponse, MktgRevisionSummary } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { MktgDocumentRunProgress } from '@lfx-one/shared/interfaces/mktg-document-run.interface';
+import type { Project } from '@lfx-one/shared/interfaces/project.interface';
+import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
+import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, Page } from '@playwright/test';
@@ -240,44 +243,83 @@ export async function openUnapprovedAssetDocument(page: Page, key: 'foundation-m
   await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
-/** Real run route + synthetic POSTs; never reconstruct receipt identity from content. */
-export async function openDraftAssetRun(page: Page, receipt = true): Promise<string> {
-  await openAssetDocument(page, 'faq');
+/** The run owns research/writing until the server supplies its exact stored-revision receipt. */
+export async function openDraftAssetRun(page: Page, immediateReceipt = true) {
   const asset = draftFrameworkAsset();
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
   if (!type) throw new Error('Missing framework document type');
   const base = nativeAssetRevisionResponse('faq');
   const revisionId = base.revision.id;
+  const runId = 'b'.repeat(64);
+  const state = { started: false, finished: false, persisted: false, readyWithoutReceiptPolls: 0, posts: [] as string[] };
   const response: MktgRevisionResponse = {
     ...base,
     type,
+    current: { revisionId, changedAt: base.revision.createdAt, changedBy: null },
     markdown: JSON.stringify(asset.content),
     sidecar: { content: asset.content, report: asset.report, checks: asset.checks, mode: asset.mode },
+    runs: [],
   };
-  await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.generate}`, (route) =>
-    route.fulfill({ json: { sessionId: 'synthetic-run-session', ownerToken: 'synthetic-run-capability' } })
-  );
-  await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.result}`, (route) =>
-    route.fulfill({
-      json: {
-        status: 'ready',
-        version: 1,
-        documentMarkdown: '',
-        asset,
-        ...(receipt && {
-          persistence: {
-            s3_key: `documents/${ASSET_PROJECT.uid}/${type.agentKey}/living/${revisionId}.json`,
-            content_sha256: 'a'.repeat(64),
-            project: ASSET_PROJECT.uid,
-            version: 1,
-          },
-        }),
+  const runs = (): MktgDocumentRunProgress[] => {
+    if (!state.started || state.persisted) return [];
+    return [
+      {
+        project: ASSET_PROJECT.uid,
+        agentKey: type.agentKey,
+        documentId: 'living',
+        runId,
+        state: state.finished ? 'storing' : 'writing',
+        startedAt: base.revision.createdAt,
       },
-    })
-  );
+    ];
+  };
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/mktg-') && request.method() === 'POST') state.posts.push(path);
+  });
+  // Register before the precise routes: no unhandled marketing request reaches a live agent or store.
+  await page.route('**/api/mktg-*/**', (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== 'GET') return route.fulfill({ status: 503, json: { error: 'Unexpected synthetic write' } });
+    if (path.endsWith('/comments')) return route.fulfill({ json: { revisionId, threads: [] } });
+    if (path.endsWith('/documents')) return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [], runs: runs() } });
+    if (path.includes('/intakes/') && path.endsWith('/last')) return route.fulfill({ json: { intake: null } });
+    if (path.endsWith('/last')) return route.fulfill({ json: { last: null, latestRevision: null } });
+    return route.fulfill({ status: 503, json: { error: 'Unexpected synthetic read' } });
+  });
+  await openAssetDocument(page, 'faq');
+  await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.generate}`, (route) => {
+    state.started = true;
+    return route.fulfill({ json: { sessionId: 'synthetic-run-session', ownerToken: 'synthetic-run-capability', runId } });
+  });
+  await page.route(`**${FOUNDATION_MESSAGE_INTAKE.endpoints.result}`, (route) => {
+    const result: MktgRunResultResponse = { status: 'pending', activity: buildMktgRunActivity(noQuestionsActivityPayloads('checked', true)) };
+    if (state.finished) {
+      result.status = 'ready';
+      result.version = 1;
+      result.documentMarkdown = '';
+      result.asset = asset;
+      if (state.persisted) {
+        result.persistence = {
+          s3_key: `documents/${ASSET_PROJECT.uid}/${type.agentKey}/living/${revisionId}.json`,
+          content_sha256: base.revision.contentSha256,
+          project: ASSET_PROJECT.uid,
+          version: 1,
+          document_location: { agent_key: type.agentKey, document_id: 'living', revision_id: revisionId },
+        };
+      } else state.readyWithoutReceiptPolls++;
+    }
+    return route.fulfill({ json: result });
+  });
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
-  await page.route(`**/api/mktg-agents/documents/${type.agentKey}/living?*`, (route) => route.fulfill({ json: response }));
-  await page.route(`**/api/mktg-agents/documents/${type.agentKey}/living/revisions/**`, (route) => route.fulfill({ json: response }));
+  await page.route(`**/api/mktg-agents/documents/${type.agentKey}/living?*`, (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    const json = state.persisted ? response : { project: ASSET_PROJECT.uid, type, documentId: 'living', revisions: [], approvedCurrent: null, runs: runs() };
+    return route.fulfill({ json });
+  });
+  await page.route(`**/api/mktg-agents/documents/${type.agentKey}/living/revisions/**`, (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: response }) : route.fallback()
+  );
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -285,9 +327,27 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
   await expect(page.getByTestId('mktg-agent-run-submit-button')).toBeVisible();
   await page.locator('[data-test="mktg-intake-project_name"]').fill(ASSET_PROJECT.name);
   await page.locator(`[data-test="mktg-intake-${FOUNDATION_MESSAGE_WEBSITE_KEY}"]`).fill('https://project.example');
+  const firstResult = page.waitForResponse(
+    (response) => response.request().method() === 'POST' && new URL(response.url()).pathname === FOUNDATION_MESSAGE_INTAKE.endpoints.result
+  );
   await page.getByTestId('mktg-agent-run-submit-button').getByRole('button').click();
-  await expect(page.getByTestId('mktg-framework-view')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-  return revisionId;
+  await firstResult;
+  await expect(page.getByTestId('mktg-agent-run-status')).toContainText('You can leave', { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page).not.toHaveURL(/\/documents\//);
+  return {
+    revisionId,
+    state,
+    generatePath: FOUNDATION_MESSAGE_INTAKE.endpoints.generate,
+    resultPath: FOUNDATION_MESSAGE_INTAKE.endpoints.result,
+    finish: () => {
+      state.finished = true;
+      state.persisted = immediateReceipt;
+    },
+    persist: () => {
+      state.finished = true;
+      state.persisted = true;
+    },
+  };
 }
 
 /** Stub native asset reads; cookie suppression precedes every navigation. */
@@ -325,6 +385,14 @@ export async function openAssetDocument(
   await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => route.fulfill({ json: { last: null, latestRevision: null } }));
   let response =
     responseOverride ?? (key === 'faq' || key === 'boilerplates' ? nativeAssetRevisionResponse(key, unreadable) : columnAssetRevisionResponse(key));
+  await page.route('**/api/mktg-agents/documents/*/living/comments?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { revisionId: new URL(route.request().url()).searchParams.get('revision') ?? response.revision.id, threads: [] } });
+  });
+  await page.route('**/api/mktg-agents/documents?*', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ json: { project: ASSET_PROJECT.uid, groups: [] } });
+  });
   await page.route(`**${BRAND_KIT_INTAKE.endpoints.stored}**`, (route) => route.fulfill({ status: 404, json: { error: 'No approved branding' } }));
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };

@@ -1,0 +1,305 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The table, not a flex/height-constrained page, owns physical pagination. */
+.lfx-brand-kit-portrait {
+  font-family: var(--font-inter), sans-serif;
+}
+
+@media print {
+  .lfx-brand-kit-portrait {
+    page: mktg-framework;
+  }
+}
+
+.kit-chapter {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  border-spacing: 0;
+  break-before: page;
+  break-inside: auto;
+
+  > thead {
+    display: table-header-group;
+    break-inside: avoid;
+  }
+
+  > thead > tr > td,
+  > tbody > tr > td {
+    padding: 0 0 10pt;
+    vertical-align: top;
+  }
+}
+
+.kit-block,
+tr,
+figure {
+  break-inside: avoid;
+}
+
+.kit-title-row,
+h3,
+thead {
+  break-after: avoid;
+}
+
+figure {
+  margin: 0;
+  align-self: start;
+}
+
+/* A pair and its captions are one fragment, including the intro on pair 1.
+   No forced new page: the entire pair moves only when it will not fit. */
+.kit-usage-pair-row,
+.kit-usage-pair {
+  break-before: auto;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.kit-usage-pair {
+  display: block;
+}
+.kit-usage-intro {
+  margin-bottom: 8pt;
+  break-inside: avoid;
+}
+
+h3 {
+  font-size: 11pt;
+  font-weight: 600;
+}
+ul {
+  list-style: disc;
+  padding-left: 14pt;
+}
+figcaption {
+  margin-top: 4pt;
+  font-size: 8pt;
+}
+
+.kit-data-table {
+  /* Palette and short contrast tables stay whole; long contrast groups may flow. */
+  break-inside: avoid;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+
+  th,
+  td {
+    border-bottom: 0.5pt solid var(--mfp-tint);
+    padding: 4pt;
+    text-align: left;
+    vertical-align: middle;
+  }
+}
+
+/* Compact short tables fit Letter or move whole rather than leave a two-row tail.
+   Longer tables paginate only between indivisible groups of at least three rows. */
+.kit-contrast-block,
+.kit-contrast-table {
+  break-before: auto;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.kit-contrast-whole {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.kit-contrast-intro {
+  break-inside: avoid;
+  break-after: avoid;
+}
+.kit-contrast-table {
+  thead {
+    display: table-header-group;
+    break-inside: avoid;
+    break-after: avoid;
+  }
+  tbody,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  th,
+  td {
+    padding: 2pt 3pt;
+    font-size: 8pt;
+    line-height: 1.2;
+  }
+  th:nth-child(-n + 2) {
+    width: 35%;
+  }
+  th:nth-child(n + 3) {
+    width: 15%;
+  }
+  .kit-swatch {
+    width: 10pt;
+    height: 10pt;
+    margin-right: 3pt;
+  }
+}
+.kit-eyebrow {
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 3pt;
+}
+.kit-voice-source {
+  font-size: 8pt;
+}
+
+.kit-lockups {
+  display: grid;
+  align-items: start;
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(auto-fit, minmax(45mm, 1fr));
+  gap: 5pt;
+}
+
+/* Logo chapter only: save vertical space for the Letter watch-outs tail. */
+[data-testid='kit-print-logo'] {
+  > thead > tr > td,
+  > tbody > tr > td {
+    padding-bottom: 5pt;
+  }
+  .kit-data-table {
+    font-size: 8pt;
+    th,
+    td {
+      padding: 2pt;
+    }
+  }
+}
+
+.kit-logo {
+  display: block;
+  width: auto;
+  max-width: min(60mm, 100%);
+  max-height: 16mm;
+  object-fit: contain;
+}
+
+.kit-colourway {
+  padding: 2pt;
+  border: 0.5pt solid var(--mfp-ink);
+  img {
+    max-height: 6mm;
+    max-width: 100%;
+  }
+}
+
+.kit-swatch {
+  display: inline-block;
+  width: 14pt;
+  height: 14pt;
+  margin-right: 4pt;
+  border: 0.5pt solid var(--mfp-ink);
+  vertical-align: middle;
+}
+
+.kit-logo-tail {
+  > td {
+    padding-bottom: 4pt;
+  }
+  ul {
+    column-count: 2;
+    column-gap: 12pt;
+    font-size: 8.5pt;
+    line-height: 1.2;
+  }
+  li {
+    break-inside: avoid;
+  }
+}
+
+[data-testid='kit-print-watchouts'] ul {
+  column-count: 3;
+  column-gap: 10pt;
+  font-size: 8pt;
+}
+
+.kit-usage-grid {
+  display: grid;
+  align-items: start;
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12pt;
+}
+
+.kit-specimen,
+.kit-usage-frame {
+  font-family: var(--mfp-font);
+}
+.kit-specimen {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.kit-usage-inner {
+  /* An inset containing box, not percentage-height flex content that can
+     fragment away from its frame in the in-flow family print tables. */
+  position: absolute;
+  inset: 2.5mm;
+}
+
+.kit-usage-frame {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  /* Explicit dimensions survive fragmented table/grid layout. Aspect-ratio
+     alone lets Chromium stretch the coloured box to the page foot. */
+  box-sizing: border-box;
+  flex: none;
+  width: 64mm;
+  max-width: 100%;
+  height: 36mm;
+  min-height: 36mm;
+  max-height: 36mm;
+  border: 0.5pt solid var(--mfp-ink);
+  padding: 0;
+  font-size: 8.5pt;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+
+  img,
+  strong {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: 9mm;
+    max-height: 40%;
+    object-fit: contain;
+    object-position: left top;
+  }
+  p {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    margin: 0;
+    font-size: inherit;
+    line-height: 1.2;
+  }
+  &[data-layout='report'] {
+    width: 34mm;
+    height: 44mm;
+    min-height: 44mm;
+    max-height: 44mm;
+    .kit-usage-inner {
+      inset: 3mm;
+    }
+  }
+}

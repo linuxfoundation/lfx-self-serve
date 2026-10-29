@@ -5,6 +5,7 @@ import {
   FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
   LENS_COOKIE_KEY,
   MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_EXPORT_KINDS,
   MKTG_LAST_INTAKE_API,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   PERSONA_COOKIE_KEY,
@@ -21,12 +22,14 @@ import type {
   MktgDocumentType,
   MktgRevisionResponse,
   MktgRevisionSummary,
+  MktgFamilyExportMember,
 } from '@lfx-one/shared';
 import { expect, Page, Route, test as baseTest } from '@playwright/test';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
 import { waitForHydration } from './meeting-composer-guests.helper';
 import { skipWhenAuthMissing } from './auth.helper';
+import { columnAssetRevisionResponse } from './mktg-os-asset-views.helper';
 
 const unexpectedCalls = new WeakMap<Page, string[]>();
 
@@ -164,7 +167,21 @@ export function kitJson(route: Route, body: unknown, status = 200): Promise<void
   return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 }
 
-/** Only the listing, framework view/source reads and required project shell are stubbed. */
+/** Exact approved refs for the catalog-supported synthetic family print members. */
+export function kitPrintMembers(): MktgFamilyExportMember[] {
+  return MKTG_DOCUMENT_TYPES.flatMap((type) => {
+    if (!Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, type.agentKey)) return [];
+    const agentKey = type.agentKey as MktgFamilyExportMember['agentKey'];
+    const response = columnAssetRevisionResponse(agentKey);
+    const sha = createHash('sha256')
+      .update(JSON.stringify({ markdown: response.markdown, sidecar: response.sidecar }))
+      .digest('hex');
+    const number = response.revision.number;
+    return [{ agentKey, documentId: response.documentId, revisionId: `${String(number).padStart(6, '0')}-${sha}`, revisionNumber: number, contentSha256: sha }];
+  });
+}
+
+/** Only explicit fixture reads and the required project shell are stubbed; writes stay blocked. */
 export async function setupKit(
   page: Page,
   options: {
@@ -172,6 +189,7 @@ export async function setupKit(
     listing?: MktgDocumentsResponse;
     intakes?: Record<string, MktgLastIntake>;
     approvedFramework?: boolean;
+    approvedPrintMembers?: MktgFamilyExportMember[];
     writer?: boolean;
     status?: number;
     hold?: Promise<void>;
@@ -270,11 +288,12 @@ export async function setupKit(
         const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'foundation-message');
         if (!type) throw new Error('Missing synthetic framework type');
         const revision = kitRevision(type).revision;
+        const approved = options.approvedPrintMembers?.find((member) => member.agentKey === type.agentKey);
         listing.approvedFramework = {
           agentKey: type.agentKey,
-          revisionId: revision.id,
-          revisionNumber: revision.number,
-          contentSha256: revision.contentSha256,
+          revisionId: approved?.revisionId ?? revision.id,
+          revisionNumber: approved?.revisionNumber ?? revision.number,
+          contentSha256: approved?.contentSha256 ?? revision.contentSha256,
         };
       }
       return kitJson(route, status === 200 ? listing : { error: 'Synthetic read failure' }, status);
@@ -342,6 +361,33 @@ export async function setupKit(
       return kitJson(route, status === 200 ? framework : { error: 'Synthetic revision failure' }, status);
     }
   );
+  // Eager PDF preparation reads these immutable approved refs before a click.
+  // Register exact paths LAST so a current-asset mock cannot shadow approval metadata.
+  for (const member of options.approvedPrintMembers ?? []) {
+    const approved = options.listing?.groups
+      .find((group) => group.type.agentKey === member.agentKey)
+      ?.documents.find((document) => document.documentId === member.documentId)?.approvedCurrent;
+    if (approved?.revisionId !== member.revisionId || approved.number !== member.revisionNumber) {
+      throw new Error('Synthetic print ref must match the listing approval');
+    }
+    const response = columnAssetRevisionResponse(member.agentKey);
+    const revision = { ...response.revision, id: member.revisionId, number: member.revisionNumber, contentSha256: member.contentSha256 };
+    const path = `/api/mktg-agents/documents/${member.agentKey}/${member.documentId}/revisions/${member.revisionId}`;
+    await page.route(
+      (url) => url.pathname === path,
+      (route) => {
+        if (!writer || !isProjectRead(route)) return rejectUnexpected(route);
+        return kitJson(route, {
+          ...response,
+          project: KIT_PROJECT.uid,
+          documentId: member.documentId,
+          revision,
+          revisions: [revision],
+          approvedCurrent: { revisionId: revision.id, number: revision.number },
+        });
+      }
+    );
+  }
 }
 
 async function seedKitContext(page: Page): Promise<void> {

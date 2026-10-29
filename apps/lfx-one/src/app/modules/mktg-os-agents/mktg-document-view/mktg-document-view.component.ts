@@ -3,7 +3,20 @@
 
 import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  linkedSignal,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -11,6 +24,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
@@ -78,6 +92,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MktgPendingDocumentService, MktgRunRefusalError } from '@services/mktg-pending-document.service';
@@ -111,9 +126,11 @@ import {
   take,
   takeUntil,
   Subject,
+  ReplaySubject,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
+import { MktgClosedRunMessageComponent } from '../components/mktg-closed-run-message/mktg-closed-run-message.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
@@ -173,7 +190,9 @@ import { isTransientHttpError } from '@shared/utils/http-error.utils';
     InputTextComponent,
     Member360ResultComponent,
     MktgRunActivityComponent,
+    MktgSkeletonComponent,
     MktgRunProgressComponent,
+    MktgClosedRunMessageComponent,
   ],
   providers: [DialogService],
   templateUrl: './mktg-document-view.component.html',
@@ -186,6 +205,7 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly documentComments = inject(MktgDocumentCommentsService);
   private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
@@ -236,6 +256,8 @@ export class MktgDocumentViewComponent {
   protected readonly unconfirmed = signal(false);
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
+  protected readonly downstreamSettledKey = signal('');
+  protected readonly exportLookupAnsweredKey = signal('');
   protected readonly retrying = signal(false);
   protected readonly submittingGeneration = signal(false);
   private readonly reloads = signal(0);
@@ -271,6 +293,7 @@ export class MktgDocumentViewComponent {
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
+  protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
@@ -292,6 +315,16 @@ export class MktgDocumentViewComponent {
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
   protected readonly commentScope: Signal<MktgDocumentCommentScope | null> = this.initCommentScope();
+  /** Only scope navigation resets the first-paint barrier; refreshes update the visible cards in place. */
+  protected readonly railReady = linkedSignal({
+    source: this.initRailReady(),
+    computation: (ready, previous) => ready || Boolean(previous?.value),
+  });
+  /** Once painted, keep this document's content in place during later refreshes. */
+  protected readonly contentReady = linkedSignal({
+    source: () => ({ key: JSON.stringify(this.exportLookupTarget()), ready: this.railReady() }),
+    computation: (current, previous) => current.ready || Boolean(previous?.source.key === current.key && previous.value),
+  });
   /**
    * The revision as the Boilerplates, when it is one: a JSON revision of the
    * boilerplates document whose text parses as the four lengths, with the
@@ -412,8 +445,22 @@ export class MktgDocumentViewComponent {
   );
 
   protected readonly selectedRun: Signal<MktgDocumentRunProgress | null> = this.initSelectedRun();
+  protected readonly closedRun = computed(() => {
+    const run = this.selectedRun();
+    return run?.state === 'discarded' || run?.state === 'superseded' ? run : null;
+  });
+  protected readonly newerRunsLink = computed(() => {
+    const root = `${mktgKitRootPath(this.router.url)}/documents`;
+    const run = this.closedRun();
+    return run?.replacedBy ? `${root}/${run.agentKey}/${run.documentId}` : root;
+  });
+  protected readonly newerRunsParams = computed(() => ({
+    project: this.projectContext.activeContext()?.slug || this.routeProject(),
+    ...(this.closedRun()?.replacedBy && { run: this.closedRun()?.replacedBy }),
+  }));
   protected readonly progressView = viewChild(MktgRunProgressComponent);
-  protected readonly runState = computed(() => this.progressView()?.runState() ?? null);
+  protected readonly runState = computed(() => this.closedRun()?.state ?? this.progressView()?.runState() ?? null);
+  protected readonly liveState = this.initLiveState();
   protected readonly waitingForQuestions = computed(
     () => this.selectedRun()?.state === 'questions' && this.localProgress() === 'writing' && !!MKTG_AGENT_INTAKES[this.runAgentId()]?.oneOffDocument
   );
@@ -478,6 +525,11 @@ export class MktgDocumentViewComponent {
     bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       this.destroyRef.onDestroy(() => this.clearAeoPrint());
+      toObservable(computed(() => this.view()?.aeoGeoReport))
+        .pipe(takeUntilDestroyed())
+        .subscribe((report) => {
+          if (report) void this.printService.prepare('Inter');
+        });
       let observedSubject = this.userService.user()?.sub ?? '';
       // Action rights follow user context without cancelling document or last-export reads.
       const actionContext = computed(() => ({ subject: this.userService.user()?.sub, impersonating: this.userService.impersonating() }));
@@ -528,6 +580,9 @@ export class MktgDocumentViewComponent {
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
               this.loadedScope = scope;
+              this.downstreamSettledKey.set('');
+              const exportIdentity = JSON.stringify({ project: request.project, agentKey: request.agentKey, documentId: request.documentId });
+              if (this.exportLookupAnsweredKey() !== exportIdentity) this.exportLookupAnsweredKey.set('');
               this.approvalError.set('');
               this.approvalAnnouncement.set('');
               this.editingLink.set(false);
@@ -546,6 +601,7 @@ export class MktgDocumentViewComponent {
               this.refreshedFailures.clear();
               this.preparedRunIds.clear();
               this.showAllRevisions.set(false);
+              this.railReady.set(false);
               this.notice.set('');
               this.restoringId.set(null);
               this.restoreEpoch++;
@@ -601,11 +657,36 @@ export class MktgDocumentViewComponent {
               saved && (saved.state === 'writing' || needsQuestions) && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId)
                 ? saved
                 : null;
+            const closedAttempt$ = new ReplaySubject<void>(1);
             const resume = (pending: MktgPendingGeneration) =>
               this.runService.resume(pending).pipe(
+                takeUntil(closedAttempt$),
+                filter(() => !this.closedRun()),
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
                 catchError((error: unknown) => {
+                  const conflict =
+                    error instanceof HttpErrorResponse &&
+                    error.status === 409 &&
+                    pending.request.projectUid === this.projectContext.activeContextUid() &&
+                    request.subject === (this.userService.user()?.sub ?? '')
+                      ? this.runService.activeRunConflict(error, pending.request)
+                      : null;
+                  if (conflict) {
+                    const retained = this.attempts.load(pending.request.projectUid, pending.request.agentId, pending.request.documentId) ?? pending;
+                    this.attempts.save({ ...retained, state: 'failed', activeRunConflict: conflict });
+                    const token = this.attempts.prepare(pending.request, true);
+                    void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
+                      queryParams: {
+                        ...MKTG_RUN_RESUME_QUERY_CLEAR,
+                        project: this.projectContext.activeContext()?.slug ?? null,
+                        mode: null,
+                        type: null,
+                        questions: token,
+                      },
+                    });
+                    return EMPTY;
+                  }
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);
@@ -634,14 +715,19 @@ export class MktgDocumentViewComponent {
             };
             const read = (poll: boolean) => {
               const readerSubject = this.userService.user()?.sub ?? '';
-              const metadata$ = defer(() => this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)).pipe(
+              const selectedRunId = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
+              const metadata$ = defer(() =>
+                selectedRunId
+                  ? this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll, undefined, false, selectedRunId)
+                  : this.documentStore.getDocument(request.project, request.agentKey, request.documentId, poll)
+              ).pipe(
                 switchMap((detail) => {
                   const id = (MKTG_STARTED_RUN_ID_REGEX.test(request.runId) ? request.runId : '') || this.handoffRunId();
                   const selected = id ? detail.runs?.find((run) => run.runId === id) : detail.runs?.[0];
                   if (poll || this.localProgress() || selected?.state !== 'failed' || this.refreshedFailures.has(selected.runId)) return of(detail);
                   this.refreshedFailures.add(selected.runId);
                   return this.documentStore
-                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId)
+                    .getDocument(request.project, request.agentKey, request.documentId, false, selected.runId, false, selectedRunId || undefined)
                     .pipe(
                       catchError((error: unknown) => (isTransientHttpError(error) ? of({ ...detail, progressUnavailable: true }) : throwError(() => error)))
                     );
@@ -667,6 +753,10 @@ export class MktgDocumentViewComponent {
                       .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                   : metadata$.pipe(
                       switchMap((detail) => {
+                        const selected = detail.runs?.find((run) => run.runId === (request.runId || this.handoffRunId()));
+                        if (selected?.state === 'discarded' || selected?.state === 'superseded') {
+                          return of<MktgDocumentReadCycle>({ detail, view: known?.view ?? null });
+                        }
                         const revisionId =
                           request.revisionId ||
                           detail.current?.revisionId ||
@@ -690,6 +780,12 @@ export class MktgDocumentViewComponent {
                   this.runDetail.set(cycle.detail);
                   this.activityContext.set([readerSubject, this.selectedRun()?.activity]);
                   const failure = this.selectedRun();
+                  if (this.closedRun()) {
+                    closedAttempt$.next();
+                    this.localProgress.set(null);
+                    this.runFailed.set(false);
+                    this.errorText.set('');
+                  }
                   if (request.agentKey === 'member-360' && failure?.state === 'failed') {
                     this.runFailed.set(true);
                     this.errorText.set(MEMBER_360_FAILURE_MESSAGES[failure.failureReason ?? 'agent_stopped']);
@@ -718,6 +814,12 @@ export class MktgDocumentViewComponent {
                     ),
                     tap((cycle) => {
                       this.runDetail.set(cycle.detail);
+                      if (this.closedRun()) {
+                        closedAttempt$.next();
+                        this.localProgress.set(null);
+                        this.runFailed.set(false);
+                        this.errorText.set('');
+                      }
                       this.activityContext.set([request.subject, this.selectedRun()?.activity]);
                       const selected = cycle.detail.runs?.find((run) => run.runId === this.handoffRunId());
                       if (selected) observedRun = true;
@@ -732,7 +834,7 @@ export class MktgDocumentViewComponent {
                         return EMPTY;
                       }
                       const active = cycle.detail.runs?.some((run) => run.state === 'writing' || run.state === 'storing');
-                      if (this.selectedRun()?.state === 'questions' && unavailableSince === null) return EMPTY;
+                      if (this.closedRun() || (this.selectedRun()?.state === 'questions' && unavailableSince === null)) return EMPTY;
                       const local = this.localProgress();
                       if (!active && local !== 'writing' && local !== 'storing' && unavailableSince === null) return EMPTY;
                       let delay: number = MKTG_RUN_POLL.intervalMs;
@@ -803,7 +905,16 @@ export class MktgDocumentViewComponent {
     this.publicReads.next(cycle); // Keep the headless stored-revision/receipt observer.
     const run = cycle.detail.runs?.find((entry) => entry.runId === this.runParam());
     const commands = mktgRunRouteFor(cycle.detail.type.agentKey, mktgKitRootPath(this.router.url));
-    if (!this.publicProgressPolling() || cycle.detail.progressUnavailable || !run || run.state === 'failed' || !commands || this.redirectedRun === run.runId)
+    if (
+      !this.publicProgressPolling() ||
+      cycle.detail.progressUnavailable ||
+      !run ||
+      run.state === 'failed' ||
+      run.state === 'discarded' ||
+      run.state === 'superseded' ||
+      !commands ||
+      this.redirectedRun === run.runId
+    )
       return;
     this.redirectedRun = run.runId;
     const failedNavigation = () => {
@@ -974,7 +1085,7 @@ export class MktgDocumentViewComponent {
   protected onDownload(): void {
     if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    void this.printService.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Inter');
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   }
 
   protected onToggleAllRevisions(): void {
@@ -1206,12 +1317,45 @@ export class MktgDocumentViewComponent {
     );
   }
 
+  private initRailReady(): Signal<boolean> {
+    return computed(() => {
+      const view = this.view();
+      const scope = this.commentScope();
+      const selected = this.documentComments.selectedScope();
+      const commentsReady =
+        !scope ||
+        (selected?.projectUid === scope.projectUid &&
+          selected.agentKey === scope.agentKey &&
+          selected.documentId === scope.documentId &&
+          selected.revisionId === scope.revisionId &&
+          !!(this.documentComments.loaded() || this.documentComments.loadError()));
+      const downstreamReady =
+        view?.type.agentKey !== this.frameworkKey || this.downstreamSettledKey() === JSON.stringify([view.project, view.approvedCurrent?.revisionId ?? '']);
+      const exportLookup = this.exportLookupTarget();
+      const exportReady = !exportLookup || this.exportLookupAnsweredKey() === JSON.stringify(exportLookup);
+      return !!view && commentsReady && downstreamReady && exportReady;
+    });
+  }
+
   private initCommentScope(): Signal<MktgDocumentCommentScope | null> {
     return computed(() => {
       const view = this.view();
       if (!view || !this.commentContent() || !Object.hasOwn(MKTG_DOCUMENT_COMMENT_LIMITS, view.type.agentKey)) return null;
       if (this.revisionParam() && this.revisionParam() !== view.revision.id) return null;
       return { projectUid: view.project, agentKey: view.type.agentKey as MktgCommentAgentKey, documentId: view.documentId, revisionId: view.revision.id };
+    });
+  }
+
+  private initLiveState(): Signal<string> {
+    return computed(() => {
+      if (this.loading() || this.closedRun()) return '';
+      const state = this.runState();
+      if (state) {
+        // Living documents observe active runs headlessly; only failure belongs here.
+        if (this.publicProgressPolling() && state !== 'failed') return '';
+        return this.progressView()?.liveState() ?? '';
+      }
+      return this.view() ? this.readiness() : '';
     });
   }
 
@@ -1269,7 +1413,11 @@ export class MktgDocumentViewComponent {
       const rows = this.revisionRows();
       if (this.showAllRevisions()) return rows;
       const openId = this.view()?.revision.id;
-      return rows.filter((revision, index) => index < MKTG_DOCUMENT_REVISION_PREVIEW_COUNT || revision.latest || revision.id === openId);
+      // Current/open rows use slots within the cap, never extra rows beyond it.
+      const pinned = new Set(rows.filter((revision) => revision.latest || revision.id === openId).map((revision) => revision.id));
+      const newest = rows.filter((revision) => !pinned.has(revision.id)).slice(0, MKTG_DOCUMENT_REVISION_PREVIEW_COUNT - pinned.size);
+      const visible = new Set([...pinned, ...newest.map((revision) => revision.id)]);
+      return rows.filter((revision) => visible.has(revision.id));
     });
   }
 
@@ -1298,13 +1446,15 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       if (!view) {
-        const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === this.params().agentKey);
-        const label = type?.kind === 'living' ? (mktgKitAssetLabel(type.agentKey) ?? type.itemLabel) : type?.itemLabel;
-        return type ? `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim() : '';
+        const type = this.runDetail()?.type;
+        // A confirmed run with no revision can name its asset; never guess from route params.
+        if (!type || type.agentKey === 'member-360') return '';
+        const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
+        return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }
       if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
-        return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
+        return `${this.projectContext.activeContext()?.name ?? ''} ${mktgKitAssetLabel(view.type.agentKey) ?? view.type.itemLabel}`.trim();
       }
       const source = this.linkedinContent()?.source;
       return source ? `${view.type.itemLabel} · ${source.label}` : view.type.itemLabel;
@@ -1347,6 +1497,10 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'restored') {
       this.localProgress.set(null);
       this.restoreNotice.set(progress.message);
+      // A restored intake has no accepted run or stored view to wait for.
+      // Land on the form with its saved inputs; navigation grants no Generate authority.
+      const commands = this.runAgainLink();
+      if (commands) void this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true });
       return;
     }
     if (progress.type === 'submitted') {

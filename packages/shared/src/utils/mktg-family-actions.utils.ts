@@ -47,6 +47,7 @@ export function resolveMktgFamilyRun(
     typeof approved.revisionId === 'string' &&
     approved.revisionId.trim().length > 0;
   let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
+  if (type.kind !== 'living') caption = 'In progress…';
   if (run.state === 'questions') caption = 'Waiting for your answers';
   return {
     label: run.state === 'questions' ? 'Answer the questions' : 'Open',
@@ -232,10 +233,10 @@ export function resolveMktgFamilyNextStep(view: MktgKitFamilyView, ctx: MktgFami
     const count = rows.filter((row) => row.state === 'needs-rebuild').length;
     sentence = `${count} ${count === 1 ? 'asset is' : 'assets are'} stale; rebuild ${count === 1 ? 'it' : 'them'}.`;
   } else if (header.kind === 'export') {
-    sentence = 'The kit is complete; export it.';
+    sentence = `${view.family.name} is complete; export it.`;
   }
   let hint = `Opens ${view.family.name}, where the stale assets are rebuilt.`;
-  if (header.kind === 'export') hint = `Opens ${view.family.name}, where the kit can be exported.`;
+  if (header.kind === 'export') hint = `Opens ${view.family.name} for export.`;
   if (header.link)
     hint = `Opens the ${header.kind === 'blocked' && asset === 'messaging framework' ? 'framework' : (asset ?? 'required')} document in ${view.family.name}.`;
   else if (header.agentId) hint = `Opens the ${asset ?? 'asset'} run page in ${view.family.name}.`;

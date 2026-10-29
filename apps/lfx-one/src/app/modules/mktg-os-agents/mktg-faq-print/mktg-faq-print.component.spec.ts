@@ -26,6 +26,8 @@ it('prints grouped pairs with sources, keeps headings with the first pair and ma
     expect(pair.querySelector('h4')?.classList.contains('break-after-avoid')).toBe(true);
   });
   expect(root.querySelector('header h2')?.textContent).toContain('08');
+  expect(root.querySelector('header lfx-mktg-print-chapter-header h2')?.className).toBe('lfx-print-chapter-title');
+  expect(root.querySelector<HTMLElement>('header lfx-mktg-print-chapter-header')?.style.getPropertyValue('--mfp-chapter-accent')).toBe(brand.accent);
   expect(root.querySelector('header')?.classList.contains('break-after-avoid')).toBe(true);
   const head = root.querySelector('header [data-testid="mktg-print-running-head"]');
   expect(head?.textContent).toContain('Synthetic project FAQ');

@@ -165,6 +165,19 @@ export class GuildService {
     return data.id;
   }
 
+  /** Best-effort stop after an explicit discard; tracking stays closed even if Guild is unavailable. */
+  public async interruptSession(req: Request, sessionId: string): Promise<void> {
+    const operation = 'guild_interrupt_session';
+    try {
+      this.assertConfigured(operation);
+      // Mirrors `guild session interrupt <id>`: POST /sessions/{id}/interrupt with an empty body — @guildai/cli src/commands/session/interrupt.ts.
+      const response = await this.fetchGuild(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, { method: 'POST', body: '{}' }, operation);
+      if (!response.ok) logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, status: response.status });
+    } catch (err) {
+      logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, err });
+    }
+  }
+
   /**
    * Post a follow-up message to an existing Guild session.
    */

@@ -97,12 +97,12 @@ describe('AeoGeoRunComponent', () => {
     await render();
     const url = 'https://drive.google.com/drive/folders/synthetic';
     await fill('mktg-aeo-domain', url);
-    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(query('mktg-aeo-link-warning-domain').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
     await fill('mktg-aeo-page_1', url);
     await fill('mktg-aeo-page_2', url + '?usp=sharing');
     expect(query('mktg-aeo-link-warning-page_1').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
-    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(query('mktg-aeo-link-warning-page_1').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect(query('mktg-aeo-link-warning-page_2').textContent).toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
     expect(query('mktg-aeo-link-warning-domain').textContent).not.toContain(MKTG_INTAKE_LINK_ADVICE.duplicate);
     expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);

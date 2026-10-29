@@ -193,3 +193,5 @@ export const FAQ_MODE_LABELS = {
 
 /** What the view says in place of an answer the sources did not give. */
 export const FAQ_NEEDS_ANSWER_LABEL = 'Needs an answer from your team';
+/** A resolved answer exists in a later, server-listed revision, not this historical asset. */
+export const FAQ_ANSWERED_REVISION_LABEL = 'Answered in v{version} · Open it';

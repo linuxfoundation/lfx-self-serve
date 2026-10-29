@@ -4,6 +4,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { stubMeetingsRedesignFlag } from './helpers/meetings-v2-flag.helper';
 
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';
@@ -13,7 +14,10 @@ const FUTURE_START = '2099-03-04T15:00:00Z';
 const PAST_START = '2020-03-04T15:00:00Z';
 
 test.setTimeout(120_000);
-test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+test.beforeEach(async ({ page }) => {
+  await suppressCookieBanner(page);
+  await stubMeetingsRedesignFlag(page);
+});
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });

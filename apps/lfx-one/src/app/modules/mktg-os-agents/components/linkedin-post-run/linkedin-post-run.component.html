@@ -1,5 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
+<p-confirmdialog [key]="conflictKey" defaultFocus="reject" data-testid="mktg-linkedin-active-run-confirm" />
 
 <!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
 <div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
@@ -76,7 +77,7 @@
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
             [busy]="answering()"
-            [allowNonAnswers]="true"
+            [allowNoneFor]="noneAllowedQuestionIds"
             (answered)="onAnswers($event)" />
         </div>
       } @else if (writer() && editing()) {
@@ -204,6 +205,7 @@
                 [form]="contentForm"
                 control="url"
                 inputId="linkedin-content-url"
+                describedBy="mktg-linkedin-source-hint"
                 type="url"
                 [maxlength]="2048"
                 [readonly]="busy()"
@@ -214,7 +216,9 @@
               @if (linkWarning(); as warning) {
                 <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-linkedin-link-warning">{{ warning }}</span>
               }
-              <p class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">{{ sourceLinkHint }}</p>
+              <p id="mktg-linkedin-source-hint" class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">
+                {{ sourceLinkHint }} {{ driveSharingHint }}
+              </p>
             } @else {
               @if (file(); as selected) {
                 <div class="flex items-center gap-3" data-testid="mktg-linkedin-selected-file">

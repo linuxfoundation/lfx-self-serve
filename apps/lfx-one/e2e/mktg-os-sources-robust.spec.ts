@@ -14,6 +14,10 @@ test.describe('Marketing OS Sources structure', () => {
       await sources.open();
       await expect(page.getByTestId('mktg-run-source-website_url')).toContainText(sources.answers.website_url);
       await page.setViewportSize({ width, height: 900 });
+      if (width === 390) {
+        // #4443: wait for the non-touch shell's rail transition, not the pre-resize desktop gutter.
+        await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', '56px');
+      }
       const start = page.getByTestId('mktg-run-start').getByRole('button');
       await expect(start).toBeEnabled();
       await expect(page.getByTestId('mktg-run-sources')).toBeVisible();

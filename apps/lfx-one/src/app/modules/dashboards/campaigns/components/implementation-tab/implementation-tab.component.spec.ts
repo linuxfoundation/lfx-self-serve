@@ -3865,6 +3865,42 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(f).linkedInVariants()).toEqual([]);
   });
 
+  /** The variants and the four targeting lists are seeded only from Reddit copy, so a brief without any opens on none (#4648). */
+  it('clears the reddit copy lists when the next brief carries no reddit copy', async () => {
+    const mounted = await mount(null, true);
+    const f = mounted.fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    const section = (fixture: ComponentFixture<ImplementationTabComponent>): string =>
+      (fixture.nativeElement.querySelector('[data-testid="implementation-reddit-section"]')?.textContent as string) ?? '';
+    for (const seeded of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).toContain(seeded);
+    expect(at(f).redditGeoTargets()).toEqual(['US']);
+
+    const next = otherBrief(['redditCopy']);
+    await switchBrief(f, next);
+
+    expect(mounted.latest()?.eventSlug).toBe('oss-na-2026');
+    for (const list of [at(f).redditVariants(), at(f).redditSubreddits(), at(f).redditInterests(), at(f).redditKeywords(), at(f).redditGeoTargets()]) {
+      expect(list).toEqual([]);
+    }
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    for (const stale of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).not.toContain(stale);
+
+    const fresh = await freshMount(next);
+    expect(mounted.latest()).toEqual(fresh.latest());
+    fresh.fixture.componentRef.setInput('redditCreativeEnabled', true);
+    at(fresh.fixture).selectedPlatforms.set(['reddit-ads']);
+    fresh.fixture.detectChanges();
+    expect(section(f)).toEqual(section(fresh.fixture));
+
+    // No variants on either side, so the ad comes from a post: typed alike on both.
+    for (const side of [f, fresh.fixture]) typeRedditPostUrl(side, 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+    const config = submitOne(f, 'reddit-ads', 'redditConfig');
+    expect(config).toMatchObject({ subreddits: [], interests: [], keywords: [], variants: [], geoTargets: ['US'] });
+    expect(config).toEqual(submitOne(fresh.fixture, 'reddit-ads', 'redditConfig'));
+  });
+
   /** Budget, legacy CPC bid and geos; the bidding capability is left unanswered, so the legacy bid box is the one shown. */
   it('drops every typed microsoft field when a different brief is handed over', async () => {
     const mounted = await mount(null);

@@ -17,6 +17,7 @@ import {
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
   LINKEDIN_SOURCE_LINK_HINT,
   LINKEDIN_SOURCE_MAX_BYTES,
+  MKTG_DRIVE_SHARING_HINT,
   MKTG_INTAKE_LINK_ADVICE,
   MKTG_KIT_FAMILIES,
   MKTG_PENDING_RUN_STORAGE_KEY_PREFIX,
@@ -30,6 +31,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { firstValueFrom, of, Subject, throwError } from 'rxjs';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinPostRunComponent } from './linkedin-post-run.component';
 
@@ -43,10 +45,12 @@ describe('LinkedIn profile and post surface', () => {
     setupForDocument: vi.fn(),
   };
   const projects = { getProject: vi.fn() };
+  const confirmation = Object.assign(new ConfirmationService(), { confirm: vi.fn<ConfirmationService['confirm']>(), close: vi.fn() });
   const history = { lastIntake: vi.fn() };
   const identity = signal<{ sub: string; name: string } | null>({ sub: 'subject-one', name: 'Example author' });
   beforeEach(async () => {
     vi.clearAllMocks();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
     localStorage.clear();
     api.startForDocument.mockReset();
     api.setupForDocument.mockReturnValue(null);
@@ -62,6 +66,8 @@ describe('LinkedIn profile and post surface', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         provideNoopAnimations(),
+        { provide: ConfirmationService, useValue: confirmation },
+        MessageService,
         { provide: LinkedinPostService, useValue: api },
         { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: () => context()?.uid } },
         { provide: ProjectService, useValue: projects },
@@ -90,6 +96,95 @@ describe('LinkedIn profile and post surface', () => {
     api.profile.mockReturnValue(of({ profile: { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) } }));
     return render();
   }
+  it.each(['destroy', 'scope'] as const)(
+    'lets an accepted LinkedIn write finish after %s without retaining its capability or navigating',
+    async (departure) => {
+      const fixture = await fresh();
+      const pending = new Subject<{ documentId: string; runId: string; sessionId: string; ownerToken: string }>();
+      api.startForDocument.mockReturnValue(pending);
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const prepare = vi.spyOn(attempts, 'prepareAccepted');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic source for an accepted start.');
+      await fixture.componentInstance['onDraft']();
+      expect(pending.observed).toBe(true);
+      if (departure === 'destroy') fixture.destroy();
+      else {
+        context.set({ uid: 'project-two', slug: 'synthetic-two', name: 'Synthetic second project' });
+        await fixture.whenStable();
+      }
+      expect(pending.observed).toBe(true);
+      pending.next({ documentId: 'run-' + 'a'.repeat(24), runId: 'b'.repeat(64), sessionId: 'synthetic-start', ownerToken: 'synthetic-proof' });
+      expect(pending.observed).toBe(false);
+      expect(prepare).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      pending.complete();
+    }
+  );
+
+  it.each(['open', 'discard', 'finished'] as const)('handles a LinkedIn active-run conflict and the %s choice with the exact source', async (choice) => {
+    const fixture = await fresh();
+    const conflict = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your LinkedIn post run is in progress.',
+      activeRunId: 'b'.repeat(64),
+      state: 'questions',
+      agentKey: 'linkedin-post',
+      documentId: 'run-' + 'a'.repeat(24),
+      startedBy: 'Synthetic writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    };
+    api.startForDocument
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: conflict })))
+      .mockReturnValue(of({ documentId: 'run-' + 'c'.repeat(24), runId: 'd'.repeat(64), sessionId: 'synthetic-new', ownerToken: 'synthetic-proof' }));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance['contentForm'].controls.text.setValue('Synthetic original source');
+    await fixture.componentInstance['onDraft']();
+    const prompt = confirmation.confirm.mock.calls.at(-1)?.[0];
+    expect(prompt).toMatchObject({
+      key: 'mktg-active-linkedin',
+      header: 'Your LinkedIn post run is in progress',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Open it',
+    });
+    expect(fixture.debugElement.injector.get(ConfirmationService)).toBe(confirmation);
+    expect(fixture.nativeElement.querySelectorAll('p-confirmdialog')).toHaveLength(1);
+    const original = api.startForDocument.mock.calls[0];
+    const freshConflict = { ...conflict, activeRunId: 'c'.repeat(64), startedAt: '2026-10-19T13:00:00Z' };
+    if (choice !== 'finished') api.startForDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: freshConflict })));
+    const notice = vi.spyOn(TestBed.inject(MessageService), 'add');
+    window.dispatchEvent(new Event('focus'));
+    await fixture.whenStable();
+    expect(api.startForDocument).toHaveBeenNthCalledWith(3, ...original);
+    expect(confirmation.confirm.mock.calls.at(-1)?.[0]).toBe(prompt);
+    if (choice === 'finished') {
+      expect(confirmation.close).toHaveBeenCalled();
+      expect(notice).toHaveBeenCalledWith(expect.objectContaining({ detail: 'The earlier run has finished — yours started.' }));
+      expect(navigate).toHaveBeenCalled();
+      window.dispatchEvent(new Event('focus'));
+      expect(api.startForDocument).toHaveBeenCalledTimes(3);
+      return;
+    }
+    expect(prompt?.message).toContain('19 Oct 2026');
+    if (choice === 'discard') {
+      fixture.componentInstance['contentForm'].controls.text.setValue('Edited while confirming');
+      prompt?.accept?.();
+      prompt?.accept?.(); // One dialog cannot authorize two replacement starts.
+      expect(api.startForDocument).toHaveBeenCalledTimes(4);
+      expect(api.startForDocument).toHaveBeenNthCalledWith(2, ...original);
+      expect(api.startForDocument).toHaveBeenNthCalledWith(4, ...original, freshConflict.activeRunId);
+    } else {
+      prompt?.reject?.(ConfirmEventType.REJECT);
+      expect(api.startForDocument).toHaveBeenCalledTimes(3);
+      expect(navigate).toHaveBeenCalledWith(
+        expect.arrayContaining(['documents', 'linkedin-post', conflict.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: freshConflict.activeRunId }) })
+      );
+    }
+  });
+
   it.each([
     { source: 'text', text: 'Synthetic previous text', url: '', share: '' },
     { source: 'url', text: '', url: 'https://source.example/', share: 'https://share.example/' },
@@ -424,7 +519,10 @@ describe('LinkedIn profile and post surface', () => {
     expect(textareaEnter.defaultPrevented).toBe(false);
     fixture.componentInstance['onSource']('url');
     fixture.detectChanges();
-    expect(element.querySelector('[data-testid="mktg-linkedin-source-hint"]')?.textContent).toContain(LINKEDIN_SOURCE_LINK_HINT);
+    const hint = element.querySelector('[data-testid="mktg-linkedin-source-hint"]');
+    expect(hint?.textContent?.trim()).toBe(`${LINKEDIN_SOURCE_LINK_HINT} ${MKTG_DRIVE_SHARING_HINT}`);
+    expect(element.querySelector('#linkedin-content-url')?.getAttribute('aria-describedby')).toBe(hint?.id);
+    expect(element.querySelector('#linkedin-share-link')?.getAttribute('aria-describedby')).not.toBe(hint?.id);
     expect(element.textContent).not.toContain('cannot browse');
     expect(element.querySelector('main, aside')).toBeNull();
     expect(api.startForDocument).not.toHaveBeenCalled();
@@ -619,7 +717,7 @@ describe('LinkedIn profile and post surface', () => {
     component['source'].set('url');
     component['contentForm'].controls.url.setValue('https://drive.google.com/drive/folders/synthetic');
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.drivePrivate);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-link-warning"]')?.textContent).toContain(MKTG_INTAKE_LINK_ADVICE.driveFolder);
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-draft"] button')?.disabled).toBe(false);
     expect(component['contentForm'].valid).toBe(true);
     component['contentForm'].controls.url.setValue('https://project.example/article');
