@@ -57,6 +57,7 @@ export class MktgBrandKitPrintComponent {
   protected readonly specimens = this.initSpecimens();
   protected readonly colourways = this.initColourways();
   protected readonly usageRows = this.initUsageRows();
+  protected readonly contrastGroups = this.initContrastGroups();
 
   public constructor() {
     toObservable(computed(() => this.view().fontUrl))
@@ -66,6 +67,21 @@ export class MktgBrandKitPrintComponent {
         takeUntilDestroyed()
       )
       .subscribe((url) => this.print.ensureFontStylesheet(url));
+  }
+
+  private initContrastGroups() {
+    return computed(() => {
+      const rows = this.view().contrast;
+      if (rows.length <= 12) return [rows];
+      // Each fragment has at least three rows; absorb a one/two-row remainder.
+      const groups = [];
+      for (let index = 0; index < rows.length; ) {
+        const size = rows.length - index <= 5 ? rows.length - index : 3;
+        groups.push(rows.slice(index, index + size));
+        index += size;
+      }
+      return groups;
+    });
   }
 
   private initColourways() {

@@ -181,13 +181,13 @@
       </ul>
     </td>
   </tr>
-  <tr class="kit-contrast-block">
+  <tr class="kit-contrast-block" [class.kit-contrast-whole]="v.contrast.length <= 12">
     <td>
       <div class="kit-contrast-intro">
         <h3>Contrast</h3>
         <p>{{ v.color.contrast.rule }}</p>
       </div>
-      <table class="kit-data-table kit-contrast-table" data-testid="kit-print-contrast">
+      <table class="kit-data-table kit-contrast-table" [class.kit-contrast-whole]="v.contrast.length <= 12" data-testid="kit-print-contrast">
         <thead>
           <tr>
             <th>Foreground</th>
@@ -196,16 +196,18 @@
             <th>Grade</th>
           </tr>
         </thead>
-        <tbody>
-          @for (row of v.contrast; track $index) {
-            <tr>
-              <td><span class="kit-swatch" [style.background-color]="row.foregroundHex"></span>{{ row.foreground }} {{ row.foregroundHex }}</td>
-              <td><span class="kit-swatch" [style.background-color]="row.backgroundHex"></span>{{ row.background }} {{ row.backgroundHex }}</td>
-              <td>{{ row.ratio }}</td>
-              <td>{{ row.grade }}</td>
-            </tr>
-          }
-        </tbody>
+        @for (group of contrastGroups(); track $index) {
+          <tbody>
+            @for (row of group; track $index) {
+              <tr>
+                <td><span class="kit-swatch" [style.background-color]="row.foregroundHex"></span>{{ row.foreground }} {{ row.foregroundHex }}</td>
+                <td><span class="kit-swatch" [style.background-color]="row.backgroundHex"></span>{{ row.background }} {{ row.backgroundHex }}</td>
+                <td>{{ row.ratio }}</td>
+                <td>{{ row.grade }}</td>
+              </tr>
+            }
+          </tbody>
+        }
       </table>
     </td>
   </tr>

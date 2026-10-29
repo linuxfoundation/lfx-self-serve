@@ -185,13 +185,16 @@ test('Download PDF prints all four approved assets with one family cover and con
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
   const kitPrint = printDocument.locator('lfx-mktg-brand-kit-print');
-  await expect(kitPrint.locator('.kit-contrast-block')).toHaveCSS('break-inside', 'auto');
-  await expect(kitPrint.getByTestId('kit-print-contrast')).toHaveCSS('break-inside', 'auto');
+  // This fixture's short contrast table stays whole: no one/two-row Letter tail.
+  expect(await kitPrint.getByTestId('kit-print-contrast').locator('tbody > tr').count()).toBeLessThanOrEqual(12);
+  await expect(kitPrint.locator('.kit-contrast-block')).toHaveCSS('break-inside', 'avoid');
+  await expect(kitPrint.getByTestId('kit-print-contrast')).toHaveCSS('break-inside', 'avoid');
   await expect(kitPrint.getByTestId('kit-print-contrast').locator('thead')).toHaveCSS('display', 'table-header-group');
   await expect(kitPrint.getByTestId('kit-print-type')).toContainText('Source: one.example.org site CSS');
   await expect(kitPrint.getByTestId('kit-print-type')).not.toContainText('https://');
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-eyebrow')).toHaveText(['Umbrella message', 'Brand line']);
   await expect(kitPrint.getByTestId('kit-print-voice').locator('.kit-voice-source')).toHaveText('From the messaging framework');
+  await expect(kitPrint.getByTestId('kit-print-watchouts').locator('ul')).toHaveCSS('column-count', '3');
   for (const tail of ['kit-print-partnership', 'kit-print-watchouts']) {
     await expect(kitPrint.getByTestId(tail)).toHaveCSS('break-inside', 'avoid');
   }

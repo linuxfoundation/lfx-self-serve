@@ -75,7 +75,7 @@ it('renders all chapter data as text and keeps source type metrics beside portra
   kit.chapters.voice.attributes.forEach((attribute) => expect(root.textContent).toContain(attribute.line));
 });
 
-it('keeps compact Letter tail blocks whole but allows a break between partnership and watch-outs', async () => {
+it('compacts the logo chapter for Letter while keeping each tail block whole', async () => {
   const { root } = await setup();
   const partnership = root.querySelector<HTMLElement>('[data-testid="kit-print-partnership"]');
   const watchouts = root.querySelector<HTMLElement>('[data-testid="kit-print-watchouts"]');
@@ -87,12 +87,25 @@ it('keeps compact Letter tail blocks whole but allows a break between partnershi
     expect(getComputedStyle(block).breakInside).toBe('avoid');
     const list = block.querySelector('ul');
     if (!list) throw new Error('Missing synthetic tail list');
-    expect(getComputedStyle(list).columnCount).toBe('2');
+    expect(getComputedStyle(list).columnCount).toBe(block === watchouts ? '3' : '2');
   }
+  const lockup = root.querySelector<HTMLElement>('[data-testid="kit-print-lockups"] .kit-logo');
+  const colourway = root.querySelector<HTMLElement>('.kit-colourway img');
+  const cell = root.querySelector<HTMLElement>('[data-testid="kit-print-logo"] > tbody > tr > td');
+  if (!lockup || !colourway || !cell) throw new Error('Missing synthetic compact logo structure');
+  for (const [image, mm] of [
+    [lockup, 16],
+    [colourway, 6],
+  ] as const) {
+    const value = getComputedStyle(image).maxHeight;
+    const px = value.endsWith('mm') ? (Number.parseFloat(value) * 96) / 25.4 : Number.parseFloat(value);
+    expect(px).toBeCloseTo((mm * 96) / 25.4, 3);
+  }
+  expect(Number.parseFloat(getComputedStyle(cell).paddingBottom)).toBeLessThan(10);
   expect(root.querySelector('.kit-rule-grid')).toBeNull();
 });
 
-it('lets eleven contrast rows fill Colour and split only between rows with a repeating header', async () => {
+it('keeps up to twelve contrast rows whole and longer fragments in groups of at least three', async () => {
   const { root, view, fixture } = await setup();
   const row = view.contrast[0];
   if (!row) throw new Error('Missing synthetic contrast row');
@@ -107,14 +120,29 @@ it('lets eleven contrast rows fill Colour and split only between rows with a rep
   const header = table?.querySelector('thead');
   if (!table || !block || !intro || !header) throw new Error('Missing synthetic contrast pagination structure');
   expect(block.closest('[data-testid="kit-print-colour"]')).not.toBeNull();
-  expect(getComputedStyle(block).breakInside).toBe('auto');
-  expect(getComputedStyle(table).breakInside).toBe('auto');
+  expect(getComputedStyle(block).breakInside).toBe('avoid');
+  expect(getComputedStyle(table).breakInside).toBe('avoid');
   expect(getComputedStyle(block).breakBefore).toBe('auto');
   expect(getComputedStyle(intro).breakAfter).toBe('avoid');
   expect(getComputedStyle(header).display).toBe('table-header-group');
   expect(getComputedStyle(header).breakAfter).toBe('avoid');
   expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(11);
   table.querySelectorAll(':scope > tbody > tr').forEach((row) => expect(getComputedStyle(row).breakInside).toBe('avoid'));
+  for (const count of [10, 12, 13, 14, 15, 16, 17]) {
+    fixture.componentRef.setInput('view', {
+      ...view,
+      contrast: Array.from({ length: count }, (_, index) => ({ ...row, foreground: `Synthetic foreground ${index}` })),
+    });
+    await fixture.whenStable();
+    expect(getComputedStyle(block).breakInside).toBe(count <= 12 ? 'avoid' : 'auto');
+    expect(getComputedStyle(table).breakInside).toBe(count <= 12 ? 'avoid' : 'auto');
+    expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(count);
+    for (const group of table.querySelectorAll(':scope > tbody')) {
+      expect(getComputedStyle(group).breakInside).toBe('avoid');
+      expect(group.children.length).toBeGreaterThanOrEqual(3);
+      if (count > 12) expect(group.children.length).toBeLessThanOrEqual(5);
+    }
+  }
 });
 
 it('prints materially repeated typography descriptions once while preserving a distinct font note', async () => {
