@@ -2771,17 +2771,7 @@ export class ImplementationTabComponent implements OnInit {
    * announced; the region is mounted empty and only its text changes, as the template's other
    * announcements are. `''` when there is nothing to say.
    */
-  protected readonly googleTypedImageAnnouncement: Signal<string> = computed(() => {
-    const warnings = this.googleTypedImageWarnings();
-    const lines: string[] = [];
-    for (const section of this.googleCreativeSections()) {
-      for (const field of section.fields) {
-        const warning = warnings[`${section.groupName}.${field.control}`];
-        if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
-      }
-    }
-    return lines.join(' ');
-  });
+  protected readonly googleTypedImageAnnouncement: Signal<string> = this.initGoogleTypedImageAnnouncement();
   /**
    * Why Create is blocked for a stored Google image the request cannot carry, or that
    * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
@@ -7447,6 +7437,68 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The advisory line under each rendered Google image slot about its pasted URLs (see
+   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
+   * its warning with it. A URL still loading says nothing yet, and no line is not a promise: a browser
+   * follows redirects and loads formats (WebP, SVG) that campaign-service refuses.
+   */
+  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const probes = this.googleTypedImageProbes();
+      const warnings: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const misfits: string[] = [];
+          const unchecked: string[] = [];
+          for (const url of this.splitCreativeLines(raw[field.control])) {
+            const probe = probes[url];
+            if (probe?.state === 'failed') {
+              unchecked.push(url);
+            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
+              misfits.push(`${url} (${probe.width}x${probe.height})`);
+            }
+          }
+          const lines: string[] = [];
+          if (misfits.length > 0) {
+            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
+            // the raw pixels, so a rotated photo can measure differently there.
+            lines.push(
+              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
+            );
+          }
+          if (unchecked.length > 0) {
+            lines.push(
+              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
+            );
+          }
+          if (lines.length > 0) {
+            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
+          }
+        }
+      }
+      return warnings;
+    });
+  }
+
+  private initGoogleTypedImageAnnouncement(): Signal<string> {
+    return computed(() => {
+      const warnings = this.googleTypedImageWarnings();
+      const lines: string[] = [];
+      for (const section of this.googleCreativeSections()) {
+        for (const field of section.fields) {
+          const warning = warnings[`${section.groupName}.${field.control}`];
+          if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
+        }
+      }
+      return lines.join(' ');
+    });
+  }
+
+  /**
    * `initMetaImageAssetBlock`'s sibling, over every stored image held in a slot the request would
    * carry, plus two kinds of its own so campaign-service never has to refuse what this tab can see
    * first: an image no longer in the brief's library (`missing`), and one whose recorded size does
@@ -9196,53 +9248,5 @@ export class ImplementationTabComponent implements OnInit {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line !== '');
-  }
-
-  /**
-   * The advisory line under each rendered Google image slot about its pasted URLs (see
-   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
-   * its warning with it. A URL still loading says nothing yet, and no line is not a promise: a browser
-   * follows redirects and loads formats (WebP, SVG) that campaign-service refuses.
-   */
-  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
-    return computed(() => {
-      void this.campaignFormRevision();
-      const probes = this.googleTypedImageProbes();
-      const warnings: Record<string, string> = {};
-      for (const section of this.googleCreativeSections()) {
-        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
-        for (const field of section.fields) {
-          const shape = field.image;
-          if (!shape) continue;
-          const misfits: string[] = [];
-          const unchecked: string[] = [];
-          for (const url of this.splitCreativeLines(raw[field.control])) {
-            const probe = probes[url];
-            if (probe?.state === 'failed') {
-              unchecked.push(url);
-            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
-              misfits.push(`${url} (${probe.width}x${probe.height})`);
-            }
-          }
-          const lines: string[] = [];
-          if (misfits.length > 0) {
-            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
-            // the raw pixels, so a rotated photo can measure differently there.
-            lines.push(
-              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
-            );
-          }
-          if (unchecked.length > 0) {
-            lines.push(
-              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
-            );
-          }
-          if (lines.length > 0) {
-            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
-          }
-        }
-      }
-      return warnings;
-    });
   }
 }
