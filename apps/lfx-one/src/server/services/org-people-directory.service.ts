@@ -251,7 +251,9 @@ export class OrgPeopleDirectoryService {
    * A roster computed while the stored roster read or the former-employee read failed is served but not
    * cached: without the stored roster it lists the live sources only, and without the former employees its
    * access-only principals went unclassified, so they are served without address or title, and storing it would
-   * list the former ones as current for the whole TTL.
+   * list the former ones as current for the whole TTL. A ranged request whose organization scope cannot be resolved
+   * is served the live sources the same way, uncached and outside the coalesced entry: no stored code counts are read
+   * or cached under a guessed scope.
    */
   public async getLive(
     req: Request,
@@ -265,31 +267,19 @@ export class OrgPeopleDirectoryService {
     const username = getEffectiveUsername(req) ?? '';
     // The organization scope picks which code counts the stored rows carry and who is listed for code alone
     // (lfx-self-serve-ops#1219), so it is part of the entry; the unranged roster is not scoped.
-    const scope = range ? await this.peopleService.resolveOrgScope(accountId, orgScope) : 'all';
-    const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope, scope);
-    // Same effective principal (impersonation honoured) + org the cache key is built from, and
-    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
-    // bucket per blank principal would hand the first caller's permission-filtered roster to every
-    // other caller that arrived without a resolvable identity. The Team members filter removes team
-    // members' code after the cached merge, so one directory entry serves both picks; the unranged roster (the
-    // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
-    const [entry, teamMemberKeys] = await Promise.all([
-      coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
-        let complete = true;
-        return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
-          namespace,
-          username,
-          accountId,
-          VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-          async () => {
-            const live = await this.computeLive(req, accountId, range, filters.projectScope, scope);
-            complete = live.complete;
-            return toCompactDirectory(live.directory);
-          },
-          isCompactDirectoryEntry,
-          () => complete && isCurrent()
-        );
-      }),
+    const scope = range
+      ? await this.peopleService.resolveOrgScope(accountId, orgScope).catch((error: unknown): null => {
+          logger.warning(req, 'get_org_people_directory', 'Organization scope read failed; serving live sources only, uncached', {
+            org_uid: accountId,
+            err: error,
+          });
+          return null;
+        })
+      : 'all';
+    const [directory, teamMemberKeys] = await Promise.all([
+      scope === null
+        ? this.computeLive(req, accountId, range, filters.projectScope, null).then((live) => live.directory)
+        : this.getCachedLive(req, accountId, username, range, filters.projectScope, scope),
       // A failed team-member read never takes the live roster down with it (the merge itself degrades source by
       // source): it serves everyone, says so, and the client does not keep the answer.
       this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include').catch((error: unknown): OrgTeamMemberKeys => {
@@ -297,15 +287,50 @@ export class OrgPeopleDirectoryService {
         return { excluded: null, unavailable: true };
       }),
     ]);
-    return toWireResponse(fromCompactDirectory(entry), filters, teamMemberKeys);
+    return toWireResponse(directory, filters, teamMemberKeys);
   }
 
+  private async getCachedLive(
+    req: Request,
+    accountId: string,
+    username: string,
+    range: OrgLensTimeRange | null,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgAllEmployeesCountedResponse> {
+    const namespace = orgPeopleDirectoryNamespace(range, projectScope, orgScope);
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that arrived without a resolvable identity. The Team members filter removes team
+    // members' code after the cached merge, so one directory entry serves both picks; the unranged roster (the
+    // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
+    const entry = await coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
+      let complete = true;
+      return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+        namespace,
+        username,
+        accountId,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => {
+          const live = await this.computeLive(req, accountId, range, projectScope, orgScope);
+          complete = live.complete;
+          return toCompactDirectory(live.directory);
+        },
+        isCompactDirectoryEntry,
+        () => complete && isCurrent()
+      );
+    });
+    return fromCompactDirectory(entry);
+  }
+
+  /** `orgScope` `null`: the scope could not be resolved, so the stored roster is not read and the result is incomplete. */
   private async computeLive(
     req: Request,
     accountId: string,
     range: OrgLensTimeRange | null,
     projectScope: OrgProjectScope,
-    orgScope: OrgScopeFilter
+    orgScope: OrgScopeFilter | null
   ): Promise<{ directory: OrgAllEmployeesCountedResponse; complete: boolean }> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
@@ -320,14 +345,15 @@ export class OrgPeopleDirectoryService {
     // so someone who left without credited code and still holds Org Lens access stays listed as current (a known gap).
     // The unranged picker roster is classified the same way, so the assignment pickers do not offer them.
     const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
-      this.peopleService.getAllEmployeesInternal(accountId, range, projectScope, orgScope),
+      orgScope === null ? null : this.peopleService.getAllEmployeesInternal(accountId, range, projectScope, orgScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
       lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
     ]);
 
-    const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
+    const stored = snowflake.status === 'fulfilled' ? snowflake.value : null;
+    const base: OrgAllEmployeesInternalResponse = stored ?? { accountId, rows: [], foundations: [] };
     if (snowflake.status === 'rejected') {
       // Its code counts are read with the People → Contributors rows (lfx-self-serve#4735), so either read failing lands
       // here. Served from the live sources and kept out of the cache, so the next request reads the stored roster again.
@@ -349,7 +375,7 @@ export class OrgPeopleDirectoryService {
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    return { directory, complete: snowflake.status === 'fulfilled' && formerUsernames !== null };
+    return { directory, complete: stored !== null && formerUsernames !== null };
   }
 
   /**

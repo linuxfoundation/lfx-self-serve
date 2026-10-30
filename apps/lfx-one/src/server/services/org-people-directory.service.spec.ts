@@ -1454,4 +1454,32 @@ describe('OrgPeopleDirectoryService.getLive — organization scope', () => {
     expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all', 'all');
     expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
   });
+
+  it('serves the live sources without reading or caching stored code counts when the scope lookup fails, and resolves it again next time', async () => {
+    resolveOrgScope.mockImplementation(async (_account: string, scope: string) => scope);
+    resolveOrgScope.mockRejectedValueOnce(new Error('warehouse down'));
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow({ commitsCount: 40 })]));
+    fetchAllOrgSeats.mockResolvedValue([seat({ username: 'rvega', email: 'rvega@lfx-partner.example', first_name: 'Rowan', last_name: 'Vega' })]);
+    getKeyContactEmployees.mockResolvedValue([
+      { email: 'kay@lfx-partner.example', lfUsername: 'kay', firstName: 'Kay', lastName: 'Cee', fullName: 'Kay Cee', jobTitle: null, initials: 'KC' },
+    ]);
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'ann@lfx-partner.example', username: 'ann', name: 'Ann Lee' })]);
+    cache.serveHits = true;
+
+    const failed = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+    expect(getAllEmployeesInternal).not.toHaveBeenCalled();
+    expect(failed.rows.map((row) => row.name).sort()).toEqual(['Ann Lee', 'Kay Cee', 'Rowan Vega']);
+    expect(failed.rows.every((row) => row.commitsCount === 0)).toBe(true);
+    expect(cache.namespaces).toEqual([]);
+    expect(cache.entry).toBeNull();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_org_people_directory', expect.stringContaining('Organization scope read failed'), expect.anything());
+
+    const recovered = await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, '365d', 'all', 'insights');
+    expect(recovered.rows.find((row) => row.lfUsername === 'dclarke')).toMatchObject({ commitsCount: 40 });
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:365d:all:insights']);
+    expect(cache.entry).not.toBeNull();
+  });
 });
