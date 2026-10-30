@@ -48,7 +48,8 @@ export const WithActions: Story = {
     ],
   },
 };
-export const WithoutDismiss: Story = { args: { dismissible: false } };
+/** Hides the dismiss button. An action closes it; with no timeout and no action the button shows anyway. */
+export const WithoutDismiss: Story = { args: { dismissible: false, actions: [{ label: 'Undo', run: () => undefined }] } };
 
 /** The five library examples as the stack the service builds: 12px apart, newest on top. */
 export const Stack: Story = {
