@@ -729,6 +729,16 @@
           </div>
         </div>
       </div>
+    } @else if (unreadCampaignCount() > 0) {
+      <div
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-8"
+        data-testid="optimization-actions-incomplete">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-amber-600" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-amber-800">No action items, but the check is incomplete</p>
+        <p class="text-xs text-amber-700">
+          {{ unreadCampaignCount() }} of {{ campaigns().length }} campaigns could not be read, so they were not checked. Refresh to try again.
+        </p>
+      </div>
     } @else {
       <div
         class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 p-8"
@@ -781,9 +791,13 @@
                       {{ c.ctr | adsPct }}
                     </td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
-                      {{ c.conversions | number }}
-                    </td>
+                    @if (c.conversionsMeasured === false) {
+                      <td class="px-4 py-2.5 text-right text-gray-500">Not measured</td>
+                    } @else {
+                      <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
+                        {{ c.conversions | number }}
+                      </td>
+                    }
                     <td class="px-4 py-2.5">
                       <div class="flex items-center gap-2">
                         <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">

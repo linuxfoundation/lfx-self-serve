@@ -3442,6 +3442,12 @@ export interface CampaignMonitorResponse {
   accountTotals: CampaignAccountTotals;
   actionItems: CampaignActionItem[];
   message?: string;
+  /**
+   * Campaign-service path only: true when the amounts are the project's own connected account's,
+   * unconverted, in a currency nobody named — campaign-service sets no `currency` for Google. The
+   * legacy read is the LF's own USD account and leaves it unset.
+   */
+  amountsInAccountCurrency?: boolean;
 }
 
 // ---------------------------------------------------------------------------

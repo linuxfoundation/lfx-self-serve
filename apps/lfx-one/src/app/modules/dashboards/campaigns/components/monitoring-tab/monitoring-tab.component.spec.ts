@@ -331,6 +331,33 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
     });
 
+    it("prints the connected account's amounts without a dollar sign, and says so", () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, fetchFailed: false, pacingUnknown: false, conversionsMeasured: true }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        amountsInAccountCurrency: true,
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.trim() ?? '');
+
+      expect(cells.slice(2, 4)).toEqual(['3,000.00', '25.00']);
+      expect(cells[7]).toBe('0.63');
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')?.textContent?.trim()).toBe(
+        "Spend, budgets and CPC are in the ad account's own currency."
+      );
+    });
+
+    it('keeps the dollar sign and no currency note on the legacy read', () => {
+      renderRow({});
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')).toBeNull();
+    });
+
     it('renders unmeasured conversions as Not measured on the row and in the KPI strip', () => {
       const cells = renderRow({ conversionsMeasured: false, conversions: 0 }, { conversions: 0, conversionsMeasured: false });
       expect(cells[cells.length - 2]).toBe('Not measured');

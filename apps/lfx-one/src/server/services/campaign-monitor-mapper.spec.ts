@@ -352,6 +352,8 @@ describe('toGoogleMonitorResponse', () => {
       },
     ]);
     expect(result.accountTotals).toEqual({ budgetDay: 150, spend: 1890, impressions: 48_200, clicks: 3110, conversions: 12.5, conversionsMeasured: true });
+    // campaign-service names no currency for Google, so the amounts are the connected account's own.
+    expect(result.amountsInAccountCurrency).toBe(true);
   });
 
   it('falls back to the whole name for a name outside the convention, and to unknown for an unrecognised status', () => {

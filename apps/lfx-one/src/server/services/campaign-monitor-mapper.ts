@@ -180,6 +180,9 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  * (`parseCampaignName`): `shortName`, `eventName`, `adFormat` and `targeting`. Google reports no
  * flight dates, so `startDate`/`endDate` are the read window, as on the legacy path, ending on the
  * day of `pulledAt`. `avgCpc` is computed from spend and clicks as the legacy path computes it.
+ * The amounts are the connected account's, unconverted, and campaign-service names no currency for
+ * Google, so the response says so (`amountsInAccountCurrency`) and the Monitor tab prints them
+ * without a `$`, as it does a connection's Meta amounts.
  *
  * A row campaign-service could not read or pace keeps its `fetchFailed` / `pacingUnknown` flags, and
  * its `pacingPct` is 0 rather than a figure nobody measured. `pacingLabel` is required by the legacy
@@ -280,6 +283,7 @@ export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, 
       conversionsMeasured: typeof payload.totals.conversions === 'number',
     },
     actionItems,
+    amountsInAccountCurrency: true,
   };
 }
 

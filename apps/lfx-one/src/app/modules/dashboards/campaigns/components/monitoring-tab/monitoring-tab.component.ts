@@ -254,6 +254,16 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly accountTotals = computed(() => this.monitorData()?.accountTotals ?? null);
+  /**
+   * How a Google amount prints. On the campaign-service path the amounts are the connected account's,
+   * in a currency campaign-service does not name, so they print without a symbol, as a connection's
+   * Meta amounts do; the legacy read keeps its `$`.
+   */
+  private readonly googleAmount = computed(() =>
+    this.monitorData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
+  );
+  /** True when the Google amounts on screen are in the connected account's own, unnamed currency. */
+  protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
   /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
   protected readonly googleTotalsNote = computed(() => this.totalsCoverageNote(this.campaigns()));
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
@@ -987,7 +997,7 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(totals.impressions),
         clicks: this.formatNumber(totals.clicks),
         ctr: ctr === null ? '—' : this.formatPct(ctr),
-        spend: this.formatCurrency(totals.spend),
+        spend: this.googleAmount()(totals.spend),
         // Only the campaign-service path sets the flag; the legacy read always measured conversions.
         conversions: totals.conversionsMeasured === false ? 'Not measured' : this.formatNumber(totals.conversions),
       };
@@ -1001,8 +1011,9 @@ export class MonitoringTabComponent implements OnInit {
    * measured 0 or a red 0% bar. The legacy path sets none of the flags, so its rows are unchanged.
    */
   private initGoogleCampaignRows(): Signal<GoogleMonitorCampaignRowView[]> {
-    return computed(() =>
-      this.campaigns().map((campaign) => {
+    return computed(() => {
+      const amount = this.googleAmount();
+      return this.campaigns().map((campaign) => {
         const unread = campaign.fetchFailed === true;
         const pacingKnown = !unread && campaign.pacingUnknown !== true;
         let pacingText = 'Unknown';
@@ -1024,19 +1035,19 @@ export class MonitoringTabComponent implements OnInit {
           shortName: campaign.shortName,
           startDate: this.formatDate(campaign.startDate),
           endDate: this.formatDate(campaign.endDate),
-          totalBudget: unread ? '—' : this.formatCurrency(campaign.totalBudget),
-          spend: unread ? '—' : this.formatCurrency(campaign.spend),
+          totalBudget: unread ? '—' : amount(campaign.totalBudget),
+          spend: unread ? '—' : amount(campaign.spend),
           impressions: unread ? '—' : this.formatNumber(campaign.impressions),
           clicks: unread ? '—' : this.formatNumber(campaign.clicks),
           ctr: unread ? '—' : this.formatPct(campaign.ctr),
-          avgCpc: unread ? '—' : this.formatCurrency(campaign.avgCpc),
+          avgCpc: unread ? '—' : amount(campaign.avgCpc),
           conversions,
           pacingBarClass: pacingKnown ? this.pacingClass(campaign) : 'bg-gray-300',
           pacingBarWidth: pacingKnown ? Math.min(campaign.pacingPct, 100) : 0,
           pacingText,
         };
-      })
-    );
+      });
+    });
   }
 
   private initKeywordTotalsView(): Signal<KeywordTotalsView | null> {

@@ -620,6 +620,11 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly hasActionItems = computed(() => this.actionItems().length > 0);
+  /**
+   * Google campaigns campaign-service could not read (#4526). It raises no action items for them, so
+   * "no action items" is not an all-clear while any exists; the template says so instead.
+   */
+  protected readonly unreadCampaignCount = computed(() => this.campaigns().filter((c) => c.fetchFailed === true).length);
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
 

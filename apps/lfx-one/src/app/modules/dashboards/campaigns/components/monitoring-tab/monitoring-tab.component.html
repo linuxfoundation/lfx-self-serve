@@ -242,6 +242,10 @@
         @if (googleTotalsNote(); as note) {
           <p class="text-xs text-gray-500" data-testid="google-totals-note">{{ note }}</p>
         }
+        @if (googleCurrencyNote()) {
+          <!-- campaign-service reported the connected account's Google amounts unconverted and named no currency. -->
+          <p class="text-xs text-gray-500" data-testid="google-currency-note">Spend, budgets and CPC are in the ad account's own currency.</p>
+        }
       } @else {
         <div class="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center" data-testid="monitoring-kpis-unavailable">
           <p class="text-sm text-gray-500">Account totals are not available for this period.</p>

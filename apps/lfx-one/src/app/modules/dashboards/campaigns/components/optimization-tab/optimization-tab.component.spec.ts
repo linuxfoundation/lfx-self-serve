@@ -2275,6 +2275,63 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     ]);
   });
 
+  function renderGoogle(campaigns: Record<string, unknown>[]): void {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), campaigns, actionItems: [] });
+    fixture.detectChanges();
+  }
+
+  const googleRow = (campaignId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    name: campaignId,
+    shortName: campaignId,
+    eventName: 'KubeCon',
+    adFormat: 'Display',
+    targeting: 'Global',
+    status: 'enabled',
+    startDate: '2026-08-01',
+    endDate: '2026-08-30',
+    budgetDay: 100,
+    totalBudget: 3000,
+    spend: 25,
+    impressions: 1000,
+    clicks: 40,
+    ctr: 4,
+    avgCpc: 0.625,
+    conversions: 0,
+    pacingPct: 50,
+    pacingLabel: 'normal',
+    campaignId,
+    googleAdsUrl: '',
+    ...overrides,
+  });
+
+  /** campaign-service raises no item for an unread campaign, so "no items" is not an all-clear while one exists. */
+  it('replaces the all-clear with an incomplete-check notice when a campaign could not be read', () => {
+    renderGoogle([googleRow('read'), googleRow('unread', { fetchFailed: true })]);
+
+    expect(q('optimization-no-actions')).toBeNull();
+    expect(q('optimization-actions-incomplete')?.textContent).toContain('1 of 2 campaigns could not be read');
+  });
+
+  it('keeps the all-clear when every campaign was read', () => {
+    renderGoogle([googleRow('read')]);
+
+    expect(q('optimization-no-actions')).not.toBeNull();
+    expect(q('optimization-actions-incomplete')).toBeNull();
+  });
+
+  it('shows unmeasured conversions as Not measured, and a measured zero still in red', () => {
+    renderGoogle([googleRow('measured', { ctr: 1 }), googleRow('unmeasured', { ctr: 2, conversionsMeasured: false })]);
+    const cells = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('td')).map((cell) => cell as HTMLElement);
+    const notMeasured = cells.find((cell) => cell.textContent?.trim() === 'Not measured');
+    const redZero = cells.find((cell) => cell.textContent?.trim() === '0' && cell.className.includes('text-red-600'));
+
+    expect(notMeasured).toBeDefined();
+    expect(notMeasured?.className).not.toContain('text-red-600');
+    expect(redZero).toBeDefined();
+  });
+
   /** An item whose campaign campaign-service could not pace carries a 0 placeholder; it must not read as a red 0%. */
   it('shows an action item with unknown pacing as Unknown, and a measured one as its percentage', () => {
     renderKeywords(false);
