@@ -659,21 +659,6 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Badge for a tab, or nothing: Comments waits for loaded, un-held results; zero and unknown counts show no badge (#4768). */
-  private tabCount(key: VoteDetailTab): Pick<VoteDetailTabOption, 'count' | 'countLabel'> {
-    if (key === 'comments') {
-      const count = this.commentCount();
-      if (!this.hasLoadedResults() || this.resultsHeld() || count <= 0) return {};
-      return { count, countLabel: `${count} ${count === 1 ? 'comment' : 'comments'}` };
-    }
-    if (key === 'voters') {
-      const count = this.vote()?.total_voting_request_invitations ?? 0;
-      if (count <= 0) return {};
-      return { count, countLabel: `${count} invited ${count === 1 ? 'voter' : 'voters'}` };
-    }
-    return {};
-  }
-
   /** A `?tab=` the vote doesn't offer (no detail/result comment prompts, or Voters without access) falls back to the default tab. */
   private initActiveTab(): Signal<VoteDetailTab> {
     return computed(() => {
@@ -785,6 +770,21 @@ export class VoteDetailComponent {
   }
 
   // === Private Helpers ===
+  /** Badge for a tab, or nothing: Comments waits for loaded, un-held results; zero and unknown counts show no badge (#4768). */
+  private tabCount(key: VoteDetailTab): Pick<VoteDetailTabOption, 'count' | 'countLabel'> {
+    if (key === 'comments') {
+      const count = this.commentCount();
+      if (!this.hasLoadedResults() || this.resultsHeld() || count <= 0) return {};
+      return { count, countLabel: `${count} ${count === 1 ? 'comment' : 'comments'}` };
+    }
+    if (key === 'voters') {
+      const count = this.vote()?.total_voting_request_invitations ?? 0;
+      if (count <= 0) return {};
+      return { count, countLabel: `${count} invited ${count === 1 ? 'voter' : 'voters'}` };
+    }
+    return {};
+  }
+
   private navigateToTab(queryParams: Params): void {
     void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
   }
