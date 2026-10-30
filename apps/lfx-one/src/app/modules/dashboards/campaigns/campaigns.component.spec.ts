@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -237,6 +238,36 @@ describe('CampaignsComponent brief persistence', () => {
 
     expect(setScope.mock.calls.at(-1)).toEqual(['foundation-b', '']);
     page.destroy();
+  });
+
+  /**
+   * #4756. The paid planner keeps the event URL in `?event=` and prefills it on creation. A program
+   * switch recreates that planner precisely so one program's brief cannot carry into the other, so
+   * the switch must drop the parameter before the new planner reads it.
+   */
+  describe('the event URL in the page address on a program switch', () => {
+    const EVENT_URL = 'https://events.example.com/kubecon-eu-2026';
+
+    function eventParam(): string | null {
+      return new URL(TestBed.inject(Location).path(), 'https://app.example').searchParams.get('event');
+    }
+
+    beforeEach(() => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
+    });
+
+    it('drops ?event= when the user switches program, keeping the other parameters', () => {
+      switchProgram('education');
+
+      expect(eventParam()).toBeNull();
+      expect(TestBed.inject(Location).path()).toContain('project=foundation-a');
+    });
+
+    it("keeps ?event= when a restore adopts the brief's own program", () => {
+      restore({ ...brief, programType: 'education' } as CampaignBriefOutput, 'b-1', true, 'W/"1"');
+
+      expect(eventParam()).toBe(EVENT_URL);
+    });
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -891,7 +922,9 @@ describe('CampaignsComponent brief persistence', () => {
           await fixture.whenStable();
 
           expect(state().status).toBe('error');
-          expect(state().message).toBe('This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.');
+          expect(state().message).toBe(
+            'This saved brief could not be confirmed as approved. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).'
+          );
         }
       );
 
