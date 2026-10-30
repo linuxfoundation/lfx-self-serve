@@ -289,7 +289,7 @@
                     data-testid="vote-presenter-send-ballots" />
                 }
                 <p class="m-0 text-base text-gray-400">Didn't get the email? Scan to open your ballot</p>
-                <lfx-vote-qr [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
+                <lfx-qr-code [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
                 <p class="m-0 text-center text-base text-gray-400">Sign in with your LF account. Only eligible voters can cast.</p>
               </div>
             </lfx-card>

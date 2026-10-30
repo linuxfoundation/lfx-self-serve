@@ -34,12 +34,12 @@ export function voteSlideToast(result: VoteSlideExportResult): ToastMessageOptio
  * browser lacks `ClipboardItem` image support or denies the write. Browser-only; `html-to-image` is dynamic-imported
  * so it stays out of the initial and server bundles. Resolves 'failed' (and warns) if the capture itself fails.
  */
-export async function exportVoteSlide(element: HTMLElement, fileName: string, render: VoteSlideRenderer = renderSlideToBlob): Promise<VoteSlideExportResult> {
+export async function exportSlideImage(element: HTMLElement, fileName: string, render: VoteSlideRenderer = renderSlideToBlob): Promise<VoteSlideExportResult> {
   let blob: Blob | null;
   try {
     blob = await render(element);
   } catch (error) {
-    console.warn(`[exportVoteSlide] Failed to render "${fileName}":`, error);
+    console.warn(`[exportSlideImage] Failed to render "${fileName}":`, error);
     return 'failed';
   }
   if (!blob) return 'failed';
