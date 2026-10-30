@@ -122,7 +122,7 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      const response = await this.service.getFormerEmployees(req, orgUid, range, filters, teamMembers, orgScope);
+      const response = await this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

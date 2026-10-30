@@ -90,20 +90,11 @@ export class OrgPeopleContributorsService {
     }
 
     const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
-    // `people-contributors:v5:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
-    // rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric,
-    // employment and team members only pick after the read, so they share the entry; the organization scope picks the
-    // columns read. The roles filter team members in SQL, so their entry is per pick:
+    // The roles filter team members in SQL, so their entry is per pick:
     // `people-contributors-roles:v2:{timeRange}:{projectScope}:{teamMembers}` (`v1` held every role).
     let rolesTeamMembersUnavailable = false;
     const [rows, roles, employmentKeys, teamMemberKeys] = await Promise.all([
-      withOrgCompactCache(
-        accountId,
-        `people-contributors:v5:${timeRange}:${filters.projectScope}:${scope}`,
-        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope, scope),
-        { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
-      ),
+      this.readPersonProjectRows(accountId, timeRange, filters.projectScope, scope),
       withOrgCache(
         accountId,
         `people-contributors-roles:v2:${timeRange}:${filters.projectScope}:${teamMembers}`,
@@ -129,6 +120,30 @@ export class OrgPeopleContributorsService {
     );
     const response = buildResponse(accountId, timeRange, filters, keptRows, roles);
     return teamMemberKeys.unavailable || rolesTeamMembersUnavailable ? { ...response, teamMembersUnavailable: true } : response;
+  }
+
+  /**
+   * The (person, project) code rows of the window, project scope and resolved organization scope, every count column
+   * included and team members kept — the one live code read People → Contributors and All Employees share
+   * (lfx-self-serve#4735), so both count the same people at any time of day.
+   * `people-contributors:v5:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
+   * rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric,
+   * employment and team members only pick after the read, so they share the entry; the organization scope picks the
+   * columns read.
+   */
+  public readPersonProjectRows(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<ContributorPersonProjectRow[]> {
+    return withOrgCompactCache(
+      accountId,
+      `people-contributors:v5:${timeRange}:${projectScope}:${orgScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchPersonProjectRows(accountId, timeRange, projectScope, orgScope),
+      { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
+    );
   }
 
   /**

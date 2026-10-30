@@ -7,6 +7,7 @@
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.
 
+import type { ContributorPersonProjectRow } from './org-people-contributors.interface';
 import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgEmploymentFilter } from './org-people.interface';
 
 /**
@@ -52,18 +53,41 @@ export interface OrgPeopleAllRow {
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
-  /** Authored commits (any branch) in the range and project scope; the unranged roster's code count. */
-  COMMITS_COUNT: number;
-  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. */
-  MERGED_COMMITS_COUNT: number;
-  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. */
-  CODE_ACTIVITIES_COUNT: number;
+  /**
+   * Authored commits (any branch); the unranged roster's code count. Absent on a ranged read: All Employees counts a
+   * range's code live from the People → Contributors rows (lfx-self-serve#4735).
+   */
+  COMMITS_COUNT?: number;
+  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  MERGED_COMMITS_COUNT?: number;
+  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  CODE_ACTIVITIES_COUNT?: number;
   EVENTS_COUNT: number;
   COURSES_COUNT: number;
 }
 
 /** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
 export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
+
+/** Who an off-roster person is — a former employee's ORG_PEOPLE_ALL_RANGES row or an ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row; no counts. */
+export type OrgPeopleIdentityRow = Pick<OrgPeopleAllRow, 'PERSON_KEY' | 'LFID' | 'LF_USERNAME' | 'CDP_MEMBER_ID' | 'NAME' | 'PHOTO'>;
+
+/** One person's code in a range, project scope and organization scope, summed over their People → Contributors project rows (lfx-self-serve#4735). */
+export interface OrgPersonLiveCode {
+  /** Their first project row, whose identity columns stand in when no roster or unclassified row names them. */
+  identity: ContributorPersonProjectRow;
+  commitsCount: number;
+  mergedCommitsCount: number;
+  codeActivitiesCount: number;
+  /** Foundations of the projects they have code in, sorted. */
+  foundationIds: string[];
+}
+
+/** The live code of a range, project scope and organization scope, per person key, with the labels of its foundations. */
+export interface OrgPeopleLiveCode {
+  people: Map<string, OrgPersonLiveCode>;
+  foundationNames: Map<string, string>;
+}
 
 /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pair powering the All Foundations dropdown. */
 export interface OrgPeopleFoundationOptionRow {

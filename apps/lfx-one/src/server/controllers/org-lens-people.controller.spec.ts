@@ -110,7 +110,7 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, null, DEFAULT_FILTERS, 'exclude', 'insights');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, null, DEFAULT_FILTERS, 'exclude', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', 'insights');
   });
 
   it('passes a valid range through to the stored, live, former and contributors reads', async () => {
@@ -124,8 +124,8 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS, 'exclude', 'insights');
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', 'insights');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'all', DEFAULT_FILTERS, 'exclude', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '90d', DEFAULT_FILTERS, 'exclude', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '90d', DEFAULT_FILTERS, 'exclude', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', 'insights');
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all', 'exclude', 'insights');
   });
 
@@ -135,7 +135,7 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     await controller.getContributors(buildRosterReq({ timeRange: '12mo' }), buildRes(), vi.fn());
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'exclude', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '365d', DEFAULT_FILTERS, 'exclude', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'exclude', 'insights');
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '365d', DEFAULT_FILTERS, 'all', 'exclude', 'insights');
   });
 
@@ -175,7 +175,7 @@ describe('OrgLensPeopleController commit filters (lfx-self-serve#4164)', () => {
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', picked, 'exclude', 'insights');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', picked, 'exclude', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', picked, 'exclude', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '730d', picked, 'exclude', 'insights');
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '90d', picked, 'all', 'exclude', 'insights');
   });
 
@@ -252,7 +252,7 @@ describe('OrgLensPeopleController team members filter (lfx-self-serve#4685)', ()
 
     expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS, 'include', 'insights');
     expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', DEFAULT_FILTERS, 'include', 'insights');
-    expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'include', 'insights');
+    expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'include', 'insights');
     expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all', 'include', 'insights');
   });
 
@@ -591,7 +591,7 @@ describe('OrgLensPeopleController organization scope (lfx-self-serve-ops#1219)',
 
       expect(getAllEmployees).toHaveBeenCalledWith(ORG_UID, '30d', DEFAULT_FILTERS, 'exclude', orgScope);
       expect(getLive).toHaveBeenCalledWith(expect.anything(), ORG_UID, '30d', DEFAULT_FILTERS, 'exclude', orgScope);
-      expect(getFormerEmployees).toHaveBeenCalledWith(expect.anything(), ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', orgScope);
+      expect(getFormerEmployees).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'exclude', orgScope);
       expect(getContributors).toHaveBeenCalledWith(ORG_UID, '730d', DEFAULT_FILTERS, 'all', 'exclude', orgScope);
       expect(getEmployeeDetail).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'person-one', '730d', expect.any(Object), 'exclude', orgScope);
       expect(getEmployeeDetailByUsername).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'jdoe', '730d', expect.any(Object), 'exclude', orgScope);
