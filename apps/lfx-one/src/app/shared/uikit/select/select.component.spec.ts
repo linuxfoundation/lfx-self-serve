@@ -770,6 +770,34 @@ describe('UiSelectComponent', () => {
       expect(fixture.componentInstance.value()).toBeNull();
     });
 
+    it('does not report a change when Tab or Enter picks the row that is already chosen', async () => {
+      await set('value', 'openssf');
+      const changed = vi.fn();
+      fixture.componentInstance.select().registerOnChange(changed);
+      await open();
+      await press('Tab');
+      await open();
+      await press('Enter');
+
+      expect(changed).not.toHaveBeenCalled();
+      expect(listbox()).toBeNull();
+    });
+
+    it('scrolls the highlighted row into view when the fallback moves it', async () => {
+      const scroll = vi.mocked(Element.prototype.scrollIntoView);
+      await open();
+      await press('ArrowDown');
+      scroll.mockClear();
+      // The highlighted row (OpenSSF) loses its place, so the highlight falls back to the first enabled row.
+      await set(
+        'options',
+        OPTIONS.filter((option) => option.value !== 'openssf')
+      );
+
+      expect(activeLabel()).toBe('Cloud Native Computing Foundation');
+      expect(scroll).toHaveBeenCalled();
+    });
+
     it('marks the highlighted row with an outline in forced-colors mode', async () => {
       await open();
 

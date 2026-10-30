@@ -6,6 +6,7 @@ import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angul
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   booleanAttribute,
   ChangeDetectionStrategy,
   Component,
@@ -146,8 +147,9 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     if (this.ngControl) this.ngControl.valueAccessor = this;
     this.keyManager.change.pipe(takeUntilDestroyed()).subscribe((index) => {
       this.activeItem.set(this.options()[index] ?? null);
-      this.scrollActiveIntoView();
     });
+    // After the panel renders, keep the highlighted row visible, including when the fallback moves it.
+    afterRenderEffect(() => this.document.getElementById(this.activeOption()?.id ?? '')?.scrollIntoView({ block: 'nearest' }));
   }
 
   public writeValue(value: string | null): void {
@@ -274,8 +276,11 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
 
   protected select(option: UiOption | null): void {
     if (!option || option.disabled || this.isDisabled()) return;
-    this.value.set(option.value);
-    this.onChange?.(option.value);
+    // Picking the row that is already chosen is not a change: the control stays pristine.
+    if (option.value !== this.value()) {
+      this.value.set(option.value);
+      this.onChange?.(option.value);
+    }
     this.closePanel();
     // Focus may sit in the header, which is about to disappear.
     this.focusTrigger();
@@ -288,11 +293,6 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     this.keyManager.updateActiveItem(-1);
     this.typed = '';
     if (wasOpen) this.openChange.emit(false);
-  }
-
-  protected scrollActiveIntoView(): void {
-    // Wait for the panel to render when this runs as the list opens.
-    afterNextRender(() => this.document.getElementById(this.activeOption()?.id ?? '')?.scrollIntoView({ block: 'nearest' }), { injector: this.injector });
   }
 
   private initSelected(): Signal<UiOption | null> {
@@ -366,7 +366,6 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     this.open.set(true);
     this.activeItem.set(this.options()[this.selectedIndex()] ?? null);
     this.syncKeyManager();
-    this.scrollActiveIntoView();
     this.focusHeader(typed);
     this.openChange.emit(true);
   }
