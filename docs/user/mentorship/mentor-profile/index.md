@@ -20,8 +20,10 @@ The tab opens with the **From Your LFX Profile** card, which shows the account d
 ## Steps
 
 1. Open [app.lfx.dev/mentorship/mentor/profile](https://app.lfx.dev/mentorship/mentor/profile).
-2. Edit your introduction and your skills. Up to 100 skills, each up to 300 characters.
-3. Save.
+2. Select **Edit Mentor Profile**. A panel opens on the right.
+3. Under **Introduction**, edit what you wrote about yourself.
+4. Under **Skills**, update **Which of your skills should we feature?**. Up to 100 skills, each up to 300 characters.
+5. Select **Save**.
 
 ## Mentoring history
 

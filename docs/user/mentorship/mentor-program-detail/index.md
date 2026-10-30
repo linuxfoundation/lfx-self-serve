@@ -35,7 +35,7 @@ The page opens on **Tasks**. Each tab shows a count.
 3. Select **View Tasks** on the row to expand their prerequisite tasks and download anything they submitted.
 4. Select **Add note**, or the existing note on the row, to record context for the other reviewers. See [Leave a Reviewer Note](../reviewer-notes/).
 
-The applicant's row and name do not open a profile page, and there is no cover letter to read — what you review is their tasks and the notes on the row. The **Other Active Applications** column shows the other programs they have live applications on.
+Select an applicant's name to open their public mentee page in a new tab. The row itself does not open anything, and there is no cover letter to read — what you review is their tasks and the notes on the row. The **Other Active Applications** column shows the other programs they have live applications on.
 
 ## Create a task
 

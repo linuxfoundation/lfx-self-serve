@@ -40,6 +40,8 @@ A field your LFX profile leaves empty shows "Not provided".
 
 The card updates straight away. Your new name, email and picture are also copied onto your mentor and mentee profiles, if you have them. On a register page, the details on the card when you select **Submit** are the ones your new profile uses.
 
+The first time you save in a session, or after your authorization has expired, you may be asked to authorize the change first. When you do, you land on **Profile & Account** rather than back on the mentorship page. Anything you had typed into the mentorship form and not submitted is lost, and the new details are not copied onto your mentorship profiles. Go back to the mentorship page and save from **Edit LFX Profile** again to copy them. To avoid losing a half-filled form, edit your LFX profile before you start a register form.
+
 The panel is the same one used under **Profile & Account**. See [Edit Your Profile](../../profile/edit-profile/) for its fields and limits.
 
 ## Connect GitHub or LinkedIn
@@ -50,7 +52,10 @@ The panel is the same one used under **Profile & Account**. See [Edit Your Profi
 2. Select **Continue with GitHub** (or **Continue with LinkedIn**).
 3. Sign in to that account and approve the link.
 
-You leave the page to sign in, then come back to the same page with the account on the card and the message "Identity linked successfully." A connected GitHub account is also added to your mentorship profiles as a link.
+You leave the page to sign in. Where you come back to depends on the page you started from:
+
+- From **Become a Mentor**, you come back to the same page with the account on the card and the message "Identity linked successfully." A connected GitHub account is also added to your mentorship profiles as a link.
+- From any other page, you land on **Profile & Account → Identities**, which shows the new account. Your GitHub link is not added to your mentorship profiles yet. Go back to the mentorship page, select **Edit LFX Profile**, then **Save Changes** to add it. A register form you submit afterwards picks it up on its own.
 
 Anything you have typed into a form on the page and not yet submitted is lost when you leave to sign in. Connect your accounts before you fill in a register form.
 
