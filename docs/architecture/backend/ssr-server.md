@@ -44,6 +44,19 @@ or Angular SSR. This prevents a stale-tab or mixed-version rollout asset miss fr
 becoming an SSO redirect and a browser CORS failure. The matcher excludes nested API
 and page paths; it is not a general authentication exemption for file extensions.
 
+The boundary also runs before `pino-http`, so sampled misses use infrastructure
+`logger.info(undefined, 'browser_asset_miss', ...)`, never `req.log`. Logging
+is limited to generated `main`, `chunk`, `styles`, and `polyfills` hashed JS/CSS
+names, without narrowing the 404 matcher. One monotonic, constant-memory gate per
+middleware instance logs the first eligible miss and throttles subsequent samples
+across all filenames and callers. The app mounts one instance per process; there
+are no per-path/IP maps or timers. Samples include the decoded `asset_path`
+(length-capped), explicit `APP_VERSION || 'development'` as `version`,
+`method`, and `status_code: 404`, with no request context. Logger failures do not
+change the 404. This is a sampled availability signal, **not an exact miss count**;
+see [Logging & Monitoring](./logging-monitoring.md#browser-asset-miss-sampling)
+for the canonical sampling constants, event fields, and limitations.
+
 This boundary does not retain previous releases' assets or invalidate redirects
 already cached in browsers/CDNs. Deployment asset availability and CDN rules must
 be addressed separately; the CDN must respect `no-store` for these responses.
