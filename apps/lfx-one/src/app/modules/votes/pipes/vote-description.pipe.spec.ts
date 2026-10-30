@@ -45,6 +45,32 @@ describe('VoteDescriptionPipe', () => {
     }
   });
 
+  it.each([
+    '<p>One</p><!-- <strong>editor note</strong> -->',
+    '<p>One</p><!-- <username> &copy; -->',
+    '<p>One</p><!-- <strong>unclosed comment',
+    '<p>One</p><script>Use <username> &copy;</script>',
+    '<p>One</p><style>/* <username> */</style>',
+    '<p>One</p><template><strong><username>hidden</strong></template>',
+  ])('ignores hidden markup when detecting visible placeholders: %s', (value) => {
+    for (const linkify of [false, true]) {
+      const result = render(value, linkify);
+      expect(result.querySelector('p')?.textContent).toBe('One');
+      expect(result.textContent).toBe('One');
+      expect(result.querySelector('.whitespace-pre-wrap')).toBeNull();
+    }
+  });
+
+  it('does not expose hidden markup when a genuine visible placeholder needs the literal fallback', () => {
+    const visible = '<p>Use <username> &copy;</p>';
+    const value = `${visible}<!-- editor note --><script>hidden</script>`;
+    for (const linkify of [false, true]) {
+      const result = render(value, linkify);
+      expect(result.textContent).toBe(visible);
+      expect(result.querySelector('p, script, username')).toBeNull();
+    }
+  });
+
   it('still interprets entities in unambiguous supported legacy HTML', () => {
     for (const linkify of [false, true]) {
       const result = render('<p><strong>Important</strong> &copy; &amp; &lt;username&gt;</p>', linkify);
@@ -92,13 +118,15 @@ describe('VoteDescriptionPipe', () => {
   it.each([
     { html: 'First<br>\nSecond', text: 'FirstSecond', breaks: 1 },
     { html: 'First\n<br>Second', text: 'FirstSecond', breaks: 1 },
-    { html: 'First \r\n <br> \r\n  Second', text: 'FirstSecond', breaks: 1 },
+    { html: 'First \r\n <br> \r\n  Second', text: 'First  Second', breaks: 1 },
     { html: '<strong>First<br>\nSecond</strong>', text: 'FirstSecond', breaks: 1 },
     { html: 'First<strong>\n<br></strong>\nSecond', text: 'FirstSecond', breaks: 1 },
-    { html: 'First<br><strong>\n  Second</strong>', text: 'FirstSecond', breaks: 1 },
+    { html: 'First<br><strong>\n  Second</strong>', text: 'First  Second', breaks: 1 },
     { html: 'First<br>\n<br>\nSecond', text: 'FirstSecond', breaks: 2 },
     { html: 'Heading\n\n  First<br>\nSecond\n  Last', text: 'Heading\n\n  FirstSecond\n  Last', breaks: 1 },
     { html: 'First<br>  Second', text: 'First  Second', breaks: 1 },
+    { html: 'Agenda<br>\n    - First\n    - Second', text: 'Agenda    - First\n    - Second', breaks: 1 },
+    { html: 'Agenda<br>\n\t- First\n\t- Second', text: 'Agenda\t- First\n\t- Second', breaks: 1 },
   ])('does not duplicate explicit breaks with adjacent source line endings: $html', ({ html, text, breaks }) => {
     for (const linkify of [false, true]) {
       const result = render(html, linkify);

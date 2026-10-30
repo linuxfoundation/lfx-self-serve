@@ -5,6 +5,7 @@ import { DOCUMENT } from '@angular/common';
 import { inject, Pipe, PipeTransform, SecurityContext } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { isPrivateHost } from '@lfx-one/shared/utils';
+import { Parser } from 'htmlparser2';
 
 /** Keeps textarea text literal while retaining sanitized descriptions from the legacy HTML editor. */
 @Pipe({ name: 'voteDescription' })
@@ -21,7 +22,8 @@ export class VoteDescriptionPipe implements PipeTransform {
     // With no stored format discriminator, bare unsupported tags make the input ambiguous.
     // Prefer a fully literal fallback over losing placeholders/entities in otherwise supported HTML.
     const elementNames = new Set(Array.from(container.querySelectorAll('*'), (element) => element.tagName.toLowerCase()));
-    const hasUnsupportedPlaceholder = Array.from(value.matchAll(/<\/?([a-z][a-z0-9-]*)\s*\/?>/gi)).some(([, tag]) => {
+    const visibleMarkup = elementNames.size ? this.stripHiddenMarkup(value, elementNames) : value;
+    const hasUnsupportedPlaceholder = Array.from(visibleMarkup.matchAll(/<\/?([a-z][a-z0-9-]*)\s*\/?>/gi)).some(([, tag]) => {
       if (elementNames.has(tag.toLowerCase())) return false;
       // A discarded active-content subtree is not a placeholder. Ask the same sanitizer
       // whether this tag retains text, rather than duplicating its unsafe-element list.
@@ -30,7 +32,7 @@ export class VoteDescriptionPipe implements PipeTransform {
     if (!elementNames.size || hasUnsupportedPlaceholder) {
       const text = this.document.createElement('span');
       text.className = 'whitespace-pre-wrap';
-      text.textContent = value;
+      text.textContent = visibleMarkup;
       return text.outerHTML;
     }
 
@@ -53,6 +55,37 @@ export class VoteDescriptionPipe implements PipeTransform {
 
     // No trusted-HTML bypass: the template sanitizer still applies.
     return container.innerHTML;
+  }
+
+  private stripHiddenMarkup(value: string, supportedTags: ReadonlySet<string>): string {
+    // Keep original visible source slices so placeholders, entities, and unmatched closing
+    // tags stay literal. Token offsets exclude comments/active content without regex parsing HTML.
+    const parts: string[] = [];
+    let offset = 0;
+    let discardedStart = 0;
+    let discardedDepth = 0;
+    const discard = (start: number, end: number): void => {
+      parts.push(value.slice(offset, start));
+      offset = end;
+    };
+    const parser = new Parser({
+      onopentag: (tag) => {
+        if (discardedDepth) {
+          discardedDepth++;
+        } else if (!supportedTags.has(tag) && !this.sanitizer.sanitize(SecurityContext.HTML, `<${tag}>text</${tag}>`)) {
+          discardedStart = parser.startIndex;
+          discardedDepth = 1;
+        }
+      },
+      onclosetag: () => {
+        if (discardedDepth && --discardedDepth === 0) discard(discardedStart, parser.endIndex + 1);
+      },
+      oncomment: () => {
+        if (!discardedDepth) discard(parser.startIndex, parser.endIndex + 1);
+      },
+    });
+    parser.end(value);
+    return parts.join('') + value.slice(offset);
   }
 
   private preserveInlineWhitespace(container: HTMLElement): void {
@@ -101,7 +134,7 @@ export class VoteDescriptionPipe implements PipeTransform {
       const previous = leaves[index - 1];
       const next = leaves[index + 1];
       if (previous?.nodeType === 3) previous.textContent = (previous.textContent || '').replace(/[ \t]*\n[ \t]*$/, '');
-      if (next?.nodeType === 3) next.textContent = (next.textContent || '').replace(/^[ \t]*\n[ \t]*/, '');
+      if (next?.nodeType === 3) next.textContent = (next.textContent || '').replace(/^[ \t]*\n/, '');
     }
   }
 }
