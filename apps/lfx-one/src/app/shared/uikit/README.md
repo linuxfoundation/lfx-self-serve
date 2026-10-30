@@ -7,7 +7,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Selector prefix:** `lfx-ui-` (enforced by an ESLint override for this folder), e.g. `lfx-ui-button`.
 - **Class names:** `Ui*Component` (`UiButtonComponent`), so they never collide with the wrapper classes.
 - **Angular:** standalone, signal `input()` / `output()`, `model()` for two-way values, `ChangeDetectionStrategy.OnPush`. The app is zoneless.
-- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Search-input still uses `lfxColors` until it is realigned.
+- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...), but no uikit component still does.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
@@ -21,7 +21,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`; button or router link                                                                 |
 | `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`                                 |
-| `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                                                                         |
+| `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field on `lfx-ui-input`: search icon, clear button, 32px tall, 300px minimum width; `[(value)]`                                                            |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
 | `lfx-ui-status-dot`     | `UiStatusDotComponent`     | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                                                                    |
 | `lfx-ui-skeleton`       | `UiSkeletonComponent`      | Shimmering line, pill or circle placeholder with any width and height; `aria-hidden`                                                                                   |
@@ -45,7 +45,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-toggle`         | `UiToggleComponent`        | On/off switch (`role="switch"`): three sizes, accent, warning or danger; `[(checked)]` and reactive forms                                                              |
 | `lfx-ui-loading-dots`   | `UiLoadingDotsComponent`   | Three pulsing dots, 4, 5 or 7px, current colour; hidden beside visible text, `role="status"` when given a `label`                                                      |
 | `lfx-ui-show-more`      | `UiShowMoreComponent`      | Small button between two rules: "Show 12 More" then "Show Less"; `[(expanded)]`, `aria-expanded`, `aria-controls`; `noBorder`                                          |
-| `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                                                      |
+| `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, trailing `lfxUiInputAction` slot, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                    |
 | `lfx-ui-scroller`       | `UiScrollerComponent`      | Scroll rail or list with edge fades that appear as content clips; optional prev and next buttons; horizontal, vertical, both                                           |
 | `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
 | `lfx-ui-slider`         | `UiSliderComponent`        | Native range with label and live value; min, max, step, value text; `[(value)]` and forms                                                                              |

@@ -41,6 +41,7 @@
         }
       </span>
     }
+    <ng-content select="[lfxUiInputAction]" />
   </div>
   @if (error()) {
     <lfx-ui-error size="small" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>

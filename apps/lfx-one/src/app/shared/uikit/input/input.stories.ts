@@ -22,6 +22,18 @@ export const Rounded: Story = { args: { rounded: true } };
 export const IconPrefix: Story = { args: { prefixIcon: 'fa-light fa-link', placeholder: 'example.org' } };
 export const StyledAffixes: Story = { args: { prefixText: 'https://', suffixText: '.org', affixStyled: true, placeholder: 'linuxfoundation' } };
 export const UnstyledAffixes: Story = { args: { prefixText: '$', suffixText: 'USD', placeholder: '0.00' } };
+export const WithAction: Story = {
+  render: () => ({
+    template: `
+      <div class="w-[320px]">
+        <lfx-ui-input ariaLabel="Project name" placeholder="kubernetes" value="kubernetes">
+          <button type="button" lfxUiInputAction aria-label="Clear" class="mr-[8px] inline-flex h-[20px] w-[20px] shrink-0 items-center justify-center self-center rounded-ui-full text-[12px] text-ui-neutral-500 hover:bg-ui-neutral-alpha-100 hover:text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none">
+            <i class="fa-light fa-xmark" aria-hidden="true"></i>
+          </button>
+        </lfx-ui-input>
+      </div>`,
+  }),
+};
 export const NoVisibleLabel: Story = { args: { label: '', ariaLabel: 'Project name' } };
 export const AllSizes: Story = {
   render: () => ({
