@@ -58,13 +58,14 @@ describe('EmailService.sendEmail', () => {
     const error = await service.sendEmail(req, EMAIL).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error).toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED' });
+    expect((error as MicroserviceError).transportFailure).toBeUndefined();
   });
 
-  it('maps a NATS timeout or an unparseable reply to 502 EMAIL_SEND_FAILED', async () => {
+  it('maps a NATS timeout or an unparseable reply to 502 EMAIL_SEND_FAILED marked as a transport failure', async () => {
     request.mockRejectedValueOnce(new Error('TIMEOUT'));
-    await expect(service.sendEmail(req, EMAIL)).rejects.toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED' });
+    await expect(service.sendEmail(req, EMAIL)).rejects.toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED', transportFailure: true });
 
     request.mockResolvedValueOnce({ data: new TextEncoder().encode('not json') });
-    await expect(service.sendEmail(req, EMAIL)).rejects.toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED' });
+    await expect(service.sendEmail(req, EMAIL)).rejects.toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED', transportFailure: true });
   });
 });

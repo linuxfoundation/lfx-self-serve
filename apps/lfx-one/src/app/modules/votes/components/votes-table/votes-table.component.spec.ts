@@ -10,7 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED, VOTE_SUMMARY_PRECHECK_FAILED, VOTE_SUMMARY_SEND_FAILED } from '@lfx-one/shared/constants';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
@@ -1474,7 +1474,7 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
   }
 
   beforeEach(async () => {
-    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0, skipped_count: 0, uncertain_count: 0 }));
     messageAdd = vi.fn();
     capturedConfirmation = null;
     await TestBed.configureTestingModule({
@@ -1533,14 +1533,44 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
   });
 
-  it('shows a warn toast (not an error) when some sends fail', async () => {
-    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1 }));
+  /** Accepts the confirmation for the ended vote so the mocked sendVoteSummary result reaches the component. */
+  async function sendSummary(): Promise<void> {
     await settle();
     const item = await sendSummaryItem('ended');
     item!.command!({});
     capturedConfirmation?.accept?.();
+  }
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: 'Summary sent to 2 voter(s); 1 failed.' }));
+  it('shows a warn toast (not an error) when some sends fail', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1, skipped_count: 0, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('1 failed');
+  });
+
+  it('shows a partial warn toast naming the skipped voters when some have no email', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 0, skipped_count: 2, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary partially sent' }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('2 skipped');
+  });
+
+  it('shows "No summaries sent" rather than a success toast when nobody has an email', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 0, failed_count: 0, skipped_count: 3, uncertain_count: 0 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'No summaries sent' }));
+  });
+
+  it('warns about duplicates when some outcomes are unconfirmed', async () => {
+    sendVoteSummary.mockReturnValue(of({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 2 }));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 }));
+    expect(messageAdd.mock.calls[0][0].detail).toContain('retrying may send duplicate summaries');
   });
 
   it('maps a 409 VOTE_SUMMARY_NOT_ENDED error to a specific message', async () => {
@@ -1555,14 +1585,41 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     );
   });
 
-  it('falls back to a generic error message for any other failure', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
-    await settle();
-    const item = await sendSummaryItem('ended');
-    item!.command!({});
-    capturedConfirmation?.accept?.();
+  it('shows a retry-safe error for a pre-send failure', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
+    await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "We couldn't send the summary. Please try again." }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Nothing was sent. Please try again.' }));
+  });
+
+  it('shows a retry-safe error when every attempt was confirmed rejected (502 VOTE_SUMMARY_SEND_FAILED)', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED } })));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+  });
+
+  it('shows a retry-safe error for a clear rejection such as a 403', async () => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN' } })));
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+  });
+
+  it.each([
+    ['a BFF transport failure', new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED, transport: true } })],
+    ['a gateway 504', new HttpErrorResponse({ status: 504 })],
+    ['a plain 502 without a BFF code', new HttpErrorResponse({ status: 502 })],
+    ['a dropped connection (status 0)', new HttpErrorResponse({ status: 0 })],
+    ['a non-HTTP error', new Error('timeout')],
+  ])('treats %s as unconfirmed, with a duplicate warning and no "try again" wording', async (_label, failure) => {
+    sendVoteSummary.mockReturnValue(throwError(() => failure));
+    await sendSummary();
+
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast.detail).toContain('retrying may send duplicate summaries');
+    expect(toast.detail).not.toContain('try again');
   });
 });
 

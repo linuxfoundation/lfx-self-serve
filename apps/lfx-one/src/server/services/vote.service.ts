@@ -10,6 +10,7 @@ import {
   VOTE_REMINDER_SELECTION_STALE,
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
@@ -926,26 +927,57 @@ export class VoteService {
    * it (`assertVoteWrite`), and it can only be sent once the vote has ended, so the results it
    * carries are final. The email body is built once from the aggregate results and sent unchanged
    * to each recipient — it never varies per voter, so it cannot disclose how any specific person
-   * voted. A send failure for one recipient does not block the rest; failures are counted and
-   * logged, not thrown, so a partial send still reports what it delivered — only a total failure
-   * (every recipient rejected) throws, since there would otherwise be nothing to report as sent.
+   * voted.
+   *
+   * Every invited voter ends up in exactly one bucket (#4689): sent (the email service returned an
+   * `email_id`), skipped (no email address on file), failed (confirmed not sent: the service
+   * rejected it or accepted without sending), or uncertain (the NATS request itself failed or timed
+   * out, so the email may already be queued). One recipient's failure never blocks the rest, so a
+   * partial send reports the counts instead of throwing. Only when every attempt was confirmed
+   * failed (nothing sent, nothing uncertain) does it throw, since a retry is then safe. A failure
+   * before any email was attempted is rethrown as `VOTE_SUMMARY_PRECHECK_FAILED`, also safe to retry.
    */
   public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
-    await assertVoteWrite(req, voteUid, 'send_vote_summary');
+    let rendered: ReturnType<typeof renderVoteSummaryEmail>;
+    let recipients: VoteSummaryRecipient[];
 
-    const vote = await this.getVoteById(req, voteUid);
-    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
-      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
-        operation: 'send_vote_summary',
-        service: 'vote_service',
-      });
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_summary');
+
+      const vote = await this.getVoteById(req, voteUid);
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+        throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+        });
+      }
+
+      let results: VoteResultsResponse;
+      [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
+
+      rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (error instanceof BaseApiError && ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_SUMMARY_NOT_ENDED)) {
+        throw error;
+      }
+      // Nothing was sent yet, so a retry cannot duplicate this attempt.
+      throw new MicroserviceError(
+        'No summaries were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_SUMMARY_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
     }
 
-    const [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
-
-    const rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
-
     const emailRecipients = recipients.filter((recipient): recipient is VoteSummaryRecipient & { user_email: string } => !!recipient.user_email);
+    // Recipients are already deduped by response uid, so the difference is exactly the voters with no address.
+    // Voters collapsed by a shared email below are not skipped: they got the same email via the sibling row.
+    const skippedCount = recipients.length - emailRecipients.length;
     const seenEmails = new Set<string>();
     const uniqueRecipients = emailRecipients.filter((recipient) => {
       const email = recipient.user_email.toLowerCase();
@@ -956,6 +988,7 @@ export class VoteService {
 
     let sentCount = 0;
     let failedCount = 0;
+    let uncertainCount = 0;
     const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
       this.emailService.sendEmail(req, { to: recipient.user_email, ...rendered })
     );
@@ -967,16 +1000,24 @@ export class VoteService {
         sentCount += 1;
         return;
       }
-      failedCount += 1;
-      logger.warning(req, 'send_vote_summary', 'Failed to send the summary email to one recipient', {
+
+      // A lost or timed-out request may still have queued the email, so it is "unknown", not "failed".
+      const uncertain = outcome.status === 'rejected' && outcome.reason instanceof MicroserviceError && outcome.reason.transportFailure === true;
+      if (uncertain) {
+        uncertainCount += 1;
+      } else {
+        failedCount += 1;
+      }
+      logger.warning(req, 'send_vote_summary', 'Summary email was not confirmed sent to one recipient', {
         vote_uid: voteUid,
         recipient_uid: uniqueRecipients[index].uid,
+        outcome: uncertain ? 'uncertain' : 'failed',
         err: outcome.status === 'rejected' ? outcome.reason : 'Email service accepted the email without sending it',
       });
     });
 
-    if (sentCount === 0 && uniqueRecipients.length > 0) {
-      throw new MicroserviceError('The summary could not be sent to any recipients. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
+    if (sentCount === 0 && uncertainCount === 0 && failedCount > 0) {
+      throw new MicroserviceError('No summaries were sent. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
         operation: 'send_vote_summary',
         service: 'vote_service',
       });
@@ -986,9 +1027,11 @@ export class VoteService {
       vote_uid: voteUid,
       recipient_count: sentCount,
       failed_count: failedCount,
+      skipped_count: skippedCount,
+      uncertain_count: uncertainCount,
     });
 
-    return { recipient_count: sentCount, failed_count: failedCount };
+    return { recipient_count: sentCount, failed_count: failedCount, skipped_count: skippedCount, uncertain_count: uncertainCount };
   }
 
   // ============================================

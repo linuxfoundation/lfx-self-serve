@@ -20,6 +20,7 @@ import {
   VOTE_REMINDER_SELECTION_STALE,
   VOTE_SEND_BALLOTS_BATCH_SIZE,
   VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_PRECHECK_FAILED,
   VOTE_SUMMARY_SEND_FAILED,
   VOTE_VOTERS_DRAFT,
 } from '@lfx-one/shared/constants';
@@ -3205,7 +3206,7 @@ describe('VoteService', () => {
       expect(service.getVoteResults).toHaveBeenCalledWith(req, CANONICAL_UID, { canWrite: true });
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
     });
 
     it('sends the identical rendered email to every recipient — never personalized per voter', async () => {
@@ -3219,13 +3220,13 @@ describe('VoteService', () => {
       expect(firstCall[1].text).toBe(secondCall[1].text);
     });
 
-    it('filters out recipients with no email before sending', async () => {
+    it('does not send to recipients with no email and reports them as skipped', async () => {
       vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([...recipientsFixture, { uid: 'r-3', user_name: 'No Email' }]);
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
-      expect(result).toEqual({ recipient_count: 2, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 2, failed_count: 0, skipped_count: 1, uncertain_count: 0 });
     });
 
     it('deduplicates recipients sharing the same email before sending', async () => {
@@ -3238,6 +3239,8 @@ describe('VoteService', () => {
 
       expect(sendEmail).toHaveBeenCalledTimes(2);
       expect(result.recipient_count).toBe(2);
+      // Collapsed by a shared email is not skipped: that voter got the same email via the sibling row.
+      expect(result.skipped_count).toBe(0);
     });
 
     it('counts a partial send failure without throwing, and logs a warning for the failed recipient', async () => {
@@ -3245,12 +3248,12 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1 });
+      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
-        'Failed to send the summary email to one recipient',
-        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2' })
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2', outcome: 'failed' })
       );
     });
 
@@ -3262,21 +3265,111 @@ describe('VoteService', () => {
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
-      expect(result).toEqual({ recipient_count: 1, failed_count: 1 });
+      expect(result).toEqual({ recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 });
       expect(logger.warning).toHaveBeenCalledWith(
         req,
         'send_vote_summary',
-        'Failed to send the summary email to one recipient',
-        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2' })
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ vote_uid: CANONICAL_UID, recipient_uid: 'r-2', outcome: 'failed' })
       );
     });
 
-    it('throws when every send fails, reporting none sent', async () => {
+    it('throws a retry-safe 502 when every send is confirmed failed, reporting none sent', async () => {
       sendEmail.mockRejectedValue(new Error('smtp down'));
 
       await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({
         statusCode: 502,
         code: VOTE_SUMMARY_SEND_FAILED,
+        message: 'No summaries were sent. Please try again.',
+      });
+    });
+
+    it('treats a rejected email-service reply (not marked as a transport failure) as failed, not uncertain', async () => {
+      sendEmail.mockRejectedValue(new MicroserviceError('The email service rejected the email', 502, 'EMAIL_SEND_FAILED', {}));
+
+      await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 502, code: VOTE_SUMMARY_SEND_FAILED });
+    });
+
+    it('counts a transport-marked rejection as uncertain, not failed, and logs it', async () => {
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 1, failed_count: 0, skipped_count: 0, uncertain_count: 1 });
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'send_vote_summary',
+        'Summary email was not confirmed sent to one recipient',
+        expect.objectContaining({ recipient_uid: 'r-2', outcome: 'uncertain' })
+      );
+    });
+
+    it('reports sent, failed, uncertain and skipped together on a mixed send', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([
+        ...recipientsFixture,
+        { uid: 'r-3', user_name: 'Casey Example', user_email: 'casey@acme-motors.example' },
+        { uid: 'r-4', user_name: 'Drew Example', user_email: 'drew@acme-motors.example' },
+        { uid: 'r-5', user_name: 'No Email' },
+      ]);
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new Error('smtp down'))
+        .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }))
+        .mockResolvedValueOnce({});
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 1, failed_count: 2, skipped_count: 1, uncertain_count: 1 });
+    });
+
+    it('returns 200 with counts, not a 502, when every send is uncertain', async () => {
+      sendEmail.mockRejectedValue(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }));
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 2 });
+    });
+
+    it('returns skipped counts without sending when no invited voter has an email', async () => {
+      vi.mocked(service.getVoteSummaryRecipients).mockResolvedValue([
+        { uid: 'r-1', user_name: 'No Email One' },
+        { uid: 'r-2', user_name: 'No Email Two' },
+      ]);
+
+      const result = await service.sendVoteSummary(req, CANONICAL_UID);
+
+      expect(sendEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 2, uncertain_count: 0 });
+    });
+
+    describe('pre-send failures', () => {
+      it('marks an unexpected failure reading the results as VOTE_SUMMARY_PRECHECK_FAILED, with nothing sent', async () => {
+        vi.mocked(service.getVoteResults).mockRejectedValue(new Error('boom'));
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 500, code: VOTE_SUMMARY_PRECHECK_FAILED });
+        expect(sendEmail).not.toHaveBeenCalled();
+      });
+
+      it('keeps the upstream status when a pre-send read fails with a service error', async () => {
+        vi.mocked(service.getVoteSummaryRecipients).mockRejectedValue(new MicroserviceError('Bad gateway', 502, 'UPSTREAM', {}));
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 502, code: VOTE_SUMMARY_PRECHECK_FAILED });
+        expect(sendEmail).not.toHaveBeenCalled();
+      });
+
+      it('passes a 429 through unchanged', async () => {
+        const limited = new MicroserviceError('Too many requests', 429, 'RATE_LIMITED', {});
+        assertVoteWrite.mockRejectedValueOnce(limited);
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toBe(limited);
+      });
+
+      it('passes a not-ended conflict through unchanged', async () => {
+        proxyRequest.mockResolvedValue({ ...endedVote, status: 'active' });
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 409, code: VOTE_SUMMARY_NOT_ENDED });
       });
     });
 
@@ -3286,7 +3379,7 @@ describe('VoteService', () => {
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
       expect(sendEmail).not.toHaveBeenCalled();
-      expect(result).toEqual({ recipient_count: 0, failed_count: 0 });
+      expect(result).toEqual({ recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 });
     });
 
     it('renders first-choice vote counts and percentages for a ranked-choice question', async () => {

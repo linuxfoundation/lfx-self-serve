@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 intercom_collection: Votes
 ---
 
@@ -68,7 +68,14 @@ The row shows the new deadline right away. You can only extend a vote that is st
 1. Select **⋮ → Send summary** on an ended vote.
 2. Confirm. The message warns that sending can't be undone.
 
-LFX shows how many voters received the summary, and how many failed if any did. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+After you send, LFX reports what it knows about each invited voter:
+
+- **Sent:** the summary was delivered to the voter's email address.
+- **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
+- **Failed:** the email could not be sent to the voter.
+- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout or lost connection. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+
+If any voter was skipped, failed or unconfirmed, LFX shows a warning instead of a success message. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
 
 ## Clone a vote
 

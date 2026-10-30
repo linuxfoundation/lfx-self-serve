@@ -26,7 +26,9 @@ export class EmailService {
   /**
    * Sends one email. Resolves with the reply; an empty reply (no ids) means the service accepted the
    * request but did not send — sending disabled, or a non-prod recipient-domain filter — and is logged.
-   * Throws a 502 `EMAIL_SEND_FAILED` when the service rejects the request or cannot be reached.
+   * Throws a 502 `EMAIL_SEND_FAILED` when the service rejects the request or cannot be reached. Only the
+   * unreachable/timeout/unparseable-reply case is marked `transportFailure` (the email may have been
+   * queued); a rejected reply is a confirmed "not sent" and is left unmarked.
    */
   public async sendEmail(req: Request, request: EmailServiceSendRequest): Promise<EmailServiceSendResponse> {
     const codec = this.natsService.getCodec();
@@ -42,6 +44,10 @@ export class EmailService {
         operation: 'send_email',
         service: 'email_service',
         originalError: error instanceof Error ? error : undefined,
+        // The request or its reply was lost, so the email may already have been queued — unlike a
+        // rejected reply below, which is a confirmed "not sent". Callers use this to avoid
+        // presenting an ambiguous outcome as a clean failure.
+        transportFailure: true,
       });
     }
 
