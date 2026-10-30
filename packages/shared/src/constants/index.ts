@@ -111,6 +111,7 @@ export * from './mktg-document-comments.constants';
 export * from './mktg-document-redraft.constants';
 export * from './mktg-os-agents.constants';
 export * from './it-os-agents.constants';
+export * from './it-os-dns.constants';
 export * from './mktg-intake.constants';
 export * from './mktg-run.constants';
 export * from './mktg-run-activity.constants';

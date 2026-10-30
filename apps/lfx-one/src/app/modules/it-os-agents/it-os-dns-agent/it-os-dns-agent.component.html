@@ -1,0 +1,410 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="it-os-dns-agent">
+  <!-- Demo controls -->
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Domains and DNS views">
+      <button
+        type="button"
+        role="tab"
+        class="rounded-md px-3 py-1 text-sm"
+        [class]="tab() === 'agent' ? 'bg-white font-medium text-gray-900 shadow-sm' : 'text-gray-600'"
+        [attr.aria-selected]="tab() === 'agent'"
+        (click)="askAgent()"
+        data-testid="it-os-dns-tab-agent">
+        Agent
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="rounded-md px-3 py-1 text-sm"
+        [class]="tab() === 'details' ? 'bg-white font-medium text-gray-900 shadow-sm' : 'text-gray-600'"
+        [attr.aria-selected]="tab() === 'details'"
+        (click)="tab.set('details')"
+        data-testid="it-os-dns-tab-details">
+        Details
+      </button>
+    </div>
+    <div class="ml-auto flex flex-wrap items-center gap-3">
+      <span class="text-xs text-gray-500" id="it-os-dns-role-label">Viewing as</span>
+      <lfx-select-button [form]="viewForm" control="role" [options]="roleOptions" [unselectable]="false" data-testid="it-os-dns-role" />
+      <lfx-button
+        label="Reset demo"
+        icon="fa-light fa-rotate-left"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="reset()"
+        data-testid="it-os-dns-reset" />
+    </div>
+  </div>
+
+  @if (tab() === 'agent') {
+    <!-- Chat -->
+    <div class="flex flex-col rounded-lg border border-gray-200 bg-white" data-testid="it-os-dns-chat">
+      <div #conversation class="flex max-h-[60vh] min-h-[360px] flex-col gap-4 overflow-y-auto p-4" aria-live="polite">
+        @for (message of agent.messages(); track $index; let i = $index) {
+          @if (message.fromUser) {
+            <div class="max-w-[80%] self-end rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" data-testid="it-os-dns-user-message">{{ message.text }}</div>
+          } @else {
+            <div class="flex max-w-[92%] gap-3" data-testid="it-os-dns-bot-message">
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600" aria-hidden="true">
+                <i class="fa-light fa-globe"></i>
+              </span>
+              <div class="flex min-w-0 flex-1 flex-col gap-3 text-sm text-gray-800">
+                @if (message.typing) {
+                  <span class="text-gray-400" aria-label="Agent is working">…</span>
+                } @else {
+                  @if (message.html) {
+                    <div class="flex flex-col gap-2 [&_li]:ml-5 [&_li]:list-disc" [innerHTML]="message.html"></div>
+                  }
+
+                  <!-- Progress steps -->
+                  @if (message.steps; as steps) {
+                    <ol class="flex flex-col gap-1">
+                      @for (step of steps; track step; let s = $index) {
+                        @if (s < (message.shown ?? 0)) {
+                          <li class="flex items-center gap-2 text-gray-600">
+                            @if (s === (message.shown ?? 0) - 1 && (message.shown ?? 0) <= steps.length) {
+                              <i class="fa-light fa-spinner-third animate-spin text-blue-600" aria-hidden="true"></i>
+                            } @else {
+                              <i class="fa-solid fa-check text-emerald-600" aria-hidden="true"></i>
+                            }
+                            {{ step }}
+                          </li>
+                        }
+                      }
+                    </ol>
+                  }
+
+                  <!-- LF nameservers -->
+                  @if (message.nameservers) {
+                    <div class="flex flex-col gap-2">
+                      <pre class="rounded-md bg-gray-50 px-3 py-2 font-mono text-xs" data-testid="it-os-dns-nameservers">{{ nameservers.join('\n') }}</pre>
+                      <lfx-button
+                        [label]="copied() ? 'Copied' : 'Copy nameservers'"
+                        icon="fa-light fa-copy"
+                        size="small"
+                        severity="secondary"
+                        [outlined]="true"
+                        styleClass="w-fit"
+                        (onClick)="copyNameservers()" />
+                    </div>
+                  }
+
+                  <!-- Pick domains -->
+                  @if (message.picker; as picker) {
+                    <div class="flex flex-col gap-2" data-testid="it-os-dns-picker">
+                      @for (domain of picker.domains; track domain.name) {
+                        <label class="flex items-start gap-2 rounded-md border border-gray-200 px-3 py-2">
+                          <input
+                            type="checkbox"
+                            class="mt-1"
+                            [checked]="picker.picks[domain.name]"
+                            [disabled]="!isActive(i, message)"
+                            (change)="picker.picks[domain.name] = checked($event)" />
+                          <span class="flex flex-col">
+                            <code class="font-mono text-xs">{{ domain.name }}</code>
+                            <span class="text-xs text-gray-500">At {{ domain.registrar }}{{ domain.uses.length ? ' · ' + domain.uses.join(', ') : '' }}</span>
+                          </span>
+                        </label>
+                      }
+                    </div>
+                  }
+
+                  <!-- Zone file upload -->
+                  @if (message.zoneUpload && isActive(i, message)) {
+                    <label class="flex flex-col gap-1 text-xs text-gray-600">
+                      Zone files (.txt)
+                      <input type="file" multiple accept=".txt" class="text-xs" (change)="onZoneFiles(message, $event)" data-testid="it-os-dns-zone-upload" />
+                    </label>
+                  }
+
+                  <!-- Transfer codes and attestations -->
+                  @if (message.transferForm; as form) {
+                    <div class="flex flex-col gap-3 rounded-md border border-gray-200 p-3" data-testid="it-os-dns-transfer-form">
+                      @for (name of form.names; track name) {
+                        <label class="flex flex-col gap-1">
+                          <code class="font-mono text-xs">{{ name }}</code>
+                          <input
+                            class="rounded-md border border-gray-300 px-2 py-1 font-mono text-sm"
+                            placeholder="Transfer code"
+                            autocomplete="off"
+                            [disabled]="!isActive(i, message)"
+                            [value]="form.codes[name]"
+                            (input)="form.codes[name] = inputValue($event)" />
+                        </label>
+                      }
+                      <label class="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          class="mt-1"
+                          [checked]="form.attestUnlocked"
+                          [disabled]="!isActive(i, message)"
+                          (change)="form.attestUnlocked = checked($event)" />
+                        <span>{{ form.names.length > 1 ? 'These domains are' : 'My domain is' }} unlocked and DNSSEC is not enabled.</span>
+                      </label>
+                      @if (form.askDnsElsewhere) {
+                        <label class="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            class="mt-1"
+                            [checked]="form.attestDnsElsewhere"
+                            [disabled]="!isActive(i, message)"
+                            (change)="form.attestDnsElsewhere = checked($event)" />
+                          <span>My DNS service is not hosted by the domain registrar I am transferring from.</span>
+                        </label>
+                      }
+                    </div>
+                  }
+
+                  <!-- Proposed changes -->
+                  @if (message.plan; as plan) {
+                    @if (plan.state === 'open') {
+                      <div class="flex flex-col gap-2 rounded-md border border-gray-200 p-3" data-testid="it-os-dns-plan">
+                        @for (proposal of plan.proposals; track $index) {
+                          <label class="flex items-start gap-3">
+                            <input type="checkbox" class="mt-1" [checked]="proposal.on" (change)="toggle(proposal, $event)" />
+                            <span class="flex flex-1 flex-col gap-2">
+                              <span class="font-medium">{{ agent.describe(proposal) }}</span>
+                              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                                @for (row of agent.details(proposal.payload); track row.label) {
+                                  <dt class="text-gray-500">{{ row.label }}</dt>
+                                  <dd class="break-all font-mono">{{ row.value }}</dd>
+                                }
+                              </dl>
+                              <span
+                                class="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs"
+                                [class]="agent.needsApproval(proposal) ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'">
+                                <i [class]="agent.needsApproval(proposal) ? 'fa-light fa-shield-check' : 'fa-light fa-bolt'" aria-hidden="true"></i>
+                                <span>
+                                  <b>{{ agent.needsApproval(proposal) ? 'Needs LF IT approval' : 'Applies immediately' }}.</b>
+                                  {{ agent.reason(proposal) }}
+                                  @if (agent.cost(proposal); as cost) {
+                                    {{ cost }}
+                                  }
+                                </span>
+                              </span>
+                            </span>
+                          </label>
+                        }
+                        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+                          <span class="text-xs text-gray-500">
+                            {{ planCounts(plan).on - planCounts(plan).approval }} apply now · {{ planCounts(plan).approval }} go to LF IT
+                          </span>
+                          <div class="flex gap-2">
+                            <lfx-button label="Cancel" size="small" severity="secondary" [outlined]="true" (onClick)="agent.cancelPlan(message)" />
+                            <lfx-button
+                              [label]="planConfirmLabel(plan)"
+                              size="small"
+                              [disabled]="planCounts(plan).on === 0 || agent.busy()"
+                              (onClick)="agent.confirmPlan(message)"
+                              data-testid="it-os-dns-plan-confirm" />
+                          </div>
+                        </div>
+                      </div>
+                    } @else if (plan.state === 'done') {
+                      <ul class="flex flex-col gap-1">
+                        @for (result of plan.results ?? []; track $index) {
+                          <li class="flex items-center gap-2">
+                            <lfx-tag [value]="result.requestId ? 'Sent for approval' : 'Applied'" [severity]="result.requestId ? 'warn' : 'success'" />
+                            {{ result.title }}
+                          </li>
+                        }
+                      </ul>
+                    }
+                  }
+
+                  <!-- Next steps -->
+                  @if (message.actions?.length && isActive(i, message)) {
+                    <div class="flex flex-wrap gap-2">
+                      @for (chatAction of message.actions; track chatAction.label) {
+                        <lfx-button
+                          [label]="chatAction.label"
+                          size="small"
+                          [severity]="chatAction.primary ? undefined : 'secondary'"
+                          [outlined]="!chatAction.primary"
+                          [disabled]="agent.busy()"
+                          (onClick)="agent.runAction(message, chatAction)"
+                          data-testid="it-os-dns-action" />
+                      }
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Composer -->
+      <div class="flex flex-col gap-3 border-t border-gray-200 p-4">
+        <div class="flex flex-wrap gap-2">
+          @for (suggestion of suggestions; track suggestion) {
+            <button
+              type="button"
+              class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:border-blue-300 hover:text-blue-700"
+              [disabled]="agent.busy()"
+              (click)="agent.send(suggestion)"
+              data-testid="it-os-dns-suggestion">
+              {{ suggestion }}
+            </button>
+          }
+        </div>
+        <form class="flex gap-2" [formGroup]="chatForm" (ngSubmit)="send()">
+          <div class="flex-1">
+            <lfx-input-text
+              [form]="chatForm"
+              control="message"
+              placeholder="Tell the agent what you need, or ask a question"
+              autocomplete="off"
+              inputId="it-os-dns-message"
+              dataTest="it-os-dns-message" />
+          </div>
+          <lfx-button type="submit" icon="fa-light fa-paper-plane" ariaLabel="Send" [disabled]="agent.busy()" data-testid="it-os-dns-send" />
+        </form>
+      </div>
+    </div>
+  } @else if (selected(); as domain) {
+    <!-- One domain -->
+    <div class="flex flex-col gap-4" data-testid="it-os-dns-domain">
+      <button type="button" class="flex w-fit items-center gap-2 text-sm text-blue-600 hover:underline" (click)="selectedName.set(null)">
+        <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+        All domains
+      </button>
+      <div class="flex flex-col gap-1">
+        <h2 class="text-lg font-semibold text-gray-900">{{ domain.name }}</h2>
+        <p class="text-sm text-gray-500">{{ domain.uses.length ? 'Used for ' + domain.uses.join(', ').toLowerCase() : 'Not in use yet' }}</p>
+      </div>
+      <dl class="grid grid-cols-1 gap-4 rounded-lg border border-gray-200 bg-white p-4 text-sm sm:grid-cols-2">
+        <div class="flex flex-col gap-1">
+          <dt class="text-xs text-gray-500">Registrar</dt>
+          <dd>{{ domain.registrar }}</dd>
+        </div>
+        <div class="flex flex-col gap-1">
+          <dt class="text-xs text-gray-500">Status</dt>
+          <dd><lfx-tag [value]="stateLabels[domain.state]?.label ?? domain.state" [severity]="stateLabels[domain.state]?.severity ?? 'secondary'" /></dd>
+        </div>
+        @if (domain.registrar === 'DNSimple') {
+          <div class="flex flex-col gap-1">
+            <dt class="text-xs text-gray-500">Renews</dt>
+            <dd>{{ formatDate(domain.expires) }}</dd>
+          </div>
+          <div class="flex flex-col gap-1">
+            <dt class="text-xs text-gray-500">Auto-renew</dt>
+            <dd><lfx-tag [value]="domain.autoRenew ? 'On · LF standard' : 'Off'" [severity]="domain.autoRenew ? 'success' : 'warn'" /></dd>
+          </div>
+        }
+        <div class="flex flex-col gap-1 sm:col-span-2">
+          <dt class="text-xs text-gray-500">Nameservers</dt>
+          <dd class="font-mono text-xs">{{ domain.ns.join(', ') }}</dd>
+        </div>
+      </dl>
+      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-col">
+            <h3 class="font-semibold text-gray-900">DNS records</h3>
+            <p class="text-xs text-gray-500">
+              {{ domain.dns === 'DNSimple' && domain.records ? selectedRecords().length + ' records served by LF' : 'DNS for this domain is hosted elsewhere' }}
+            </p>
+          </div>
+          <lfx-button label="Ask the agent to change this" icon="fa-light fa-sparkles" size="small" (onClick)="askAgent()" />
+        </div>
+        @if (domain.dns === 'DNSimple' && domain.records) {
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs" data-testid="it-os-dns-records">
+              <thead class="text-gray-500">
+                <tr>
+                  <th class="px-2 py-1.5 font-medium">Type</th>
+                  <th class="px-2 py-1.5 font-medium">Name</th>
+                  <th class="px-2 py-1.5 font-medium">Value</th>
+                  <th class="px-2 py-1.5 text-right font-medium">TTL</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (record of selectedRecords(); track record.id) {
+                  <tr class="border-t border-gray-100">
+                    <td class="px-2 py-1.5 font-semibold">{{ record.type }}</td>
+                    <td class="px-2 py-1.5 font-mono">{{ record.name }}</td>
+                    <td class="break-all px-2 py-1.5 font-mono">{{ record.prio !== undefined ? record.prio + ' ' : '' }}{{ record.content }}</td>
+                    <td class="px-2 py-1.5 text-right text-gray-500">{{ record.ttl }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="4" class="px-2 py-3 text-center text-gray-500">No records yet.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <p class="text-sm text-gray-500">Records appear here once LF manages this domain's DNS.</p>
+        }
+      </div>
+    </div>
+  } @else {
+    <!-- All domains -->
+    <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="it-os-dns-details">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="min-w-[200px] flex-1">
+          <lfx-input-text
+            [form]="searchForm"
+            control="query"
+            type="search"
+            icon="fa-light fa-magnifying-glass"
+            [placeholder]="'Search ' + agent.domains().length + ' domains'"
+            inputId="it-os-dns-search"
+            dataTest="it-os-dns-search" />
+        </div>
+        <div class="flex flex-wrap gap-2">
+          @for (f of filters; track f.id) {
+            @if (filterCounts()[f.id] || f.id === 'all') {
+              <button
+                type="button"
+                class="rounded-full border px-3 py-1 text-xs"
+                [class]="filter() === f.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-700'"
+                (click)="filter.set(f.id)">
+                {{ f.label }} <span class="text-gray-500">{{ filterCounts()[f.id] }}</span>
+              </button>
+            }
+          }
+        </div>
+      </div>
+      <div class="max-h-[60vh] overflow-auto">
+        <table class="w-full text-left text-sm" data-testid="it-os-dns-domain-table">
+          <thead class="sticky top-0 bg-white text-xs text-gray-500">
+            <tr>
+              <th class="px-2 py-2 font-medium">Domain</th>
+              <th class="px-2 py-2 font-medium">Status</th>
+              <th class="px-2 py-2 font-medium">Renews</th>
+              <th class="px-2 py-2 font-medium">Used for</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (domain of filteredDomains(); track domain.name) {
+              <tr class="cursor-pointer border-t border-gray-100 hover:bg-gray-50" (click)="openDomain(domain.name)">
+                <td class="px-2 py-2">
+                  <button type="button" class="flex flex-col text-left" (click)="openDomain(domain.name)">
+                    <span class="font-mono text-xs font-semibold">{{ domain.name }}</span>
+                    <span class="text-xs text-gray-500">{{ domain.registrar }}</span>
+                  </button>
+                </td>
+                <td class="px-2 py-2">
+                  <lfx-tag [value]="stateLabels[domain.state]?.label ?? domain.state" [severity]="stateLabels[domain.state]?.severity ?? 'secondary'" />
+                </td>
+                <td class="whitespace-nowrap px-2 py-2 text-xs">{{ domain.registrar === 'DNSimple' ? formatDate(domain.expires) : '—' }}</td>
+                <td class="px-2 py-2 text-xs">{{ domain.uses.join(', ') || '—' }}</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="4" class="px-2 py-3 text-center text-gray-500">No domains match.</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-gray-500">Showing {{ filteredDomains().length }} of {{ agent.domains().length }}. Every domain with LF auto-renews.</p>
+    </div>
+  }
+</div>
