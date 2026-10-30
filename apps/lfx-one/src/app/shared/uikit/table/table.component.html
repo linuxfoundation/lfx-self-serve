@@ -39,7 +39,7 @@
         data-testid="ui-table-row">
         @for (view of columnViews(); track view.column.key) {
           <td [class]="view.bodyClasses" [class.border-b-0]="last" data-testid="ui-table-cell">
-            @if (cellTemplates().get(view.column.key); as template) {
+            @if (view.template; as template) {
               <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="{ $implicit: row, column: view.column }" />
             } @else {
               {{ row[view.column.key] ?? '' }}

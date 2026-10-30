@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { TemplateRef } from '@angular/core';
+
 /** A tab in the uikit underline tabs. */
 export interface UiTabItem {
   /** Stable value written to the tabs' selected value when this tab is chosen. */
@@ -71,9 +73,6 @@ export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
 
 /** Colour role of a uikit project banner: `default` for a mode that is on, `gray` for a routine notice. */
 export type UiProjectBannerVariant = 'default' | 'success' | 'warning' | 'error' | 'gray';
-
-import type { TemplateRef } from '@angular/core';
-
 
 /** Horizontal alignment of a uikit table column. `end` right-aligns numbers and uses tabular figures. */
 export type UiTableAlign = 'start' | 'end';

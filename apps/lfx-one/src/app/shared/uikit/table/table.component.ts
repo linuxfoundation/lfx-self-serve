@@ -95,6 +95,7 @@ export class UiTableComponent {
       const rule = 'border-b border-ui-neutral-alpha-200';
       const hover = this.interactive() ? 'group-hover:bg-ui-neutral-alpha-50' : '';
       const sort = this.sort();
+      const templates = this.cellTemplates();
       return this.columns().map((column) => {
         const align = column.align === 'end' ? 'text-right tabular-nums' : 'text-left';
         const sorted = sort?.key === column.key ? sort.direction : null;
@@ -106,6 +107,7 @@ export class UiTableComponent {
           bodyClasses: `h-ui-row ${pad} ${align} ${rule} align-middle ${column.muted ? 'text-ui-neutral-600' : 'text-ui-neutral-900'} ${hover}`,
           footClasses: `h-ui-row ${pad} ${align} align-middle bg-ui-background-200 font-medium text-ui-neutral-900`,
           ariaSort: sorted ? ariaSorts[sorted] : null,
+          template: templates.get(column.key) ?? null,
           sortIcon: sorted ? sortIcons[sorted] : 'fa-light fa-arrow-up-arrow-down text-ui-neutral-500',
         };
       });
