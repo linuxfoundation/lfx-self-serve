@@ -10,8 +10,12 @@ import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
 import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
 import { formatVoteDeadline, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, normalizePollStatus } from '@lfx-one/shared/utils';
+import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots.component';
 
@@ -21,7 +25,19 @@ import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots
  */
 @Component({
   selector: 'lfx-vote-detail-header',
-  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, VoteSendBallotsComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
+  imports: [
+    NgClass,
+    ButtonComponent,
+    CardComponent,
+    TagComponent,
+    TooltipModule,
+    VoteSendBallotsComponent,
+    DueDateLabelPipe,
+    DueDateLabelColorPipe,
+    LongTimezonePipe,
+    PollStatusLabelPipe,
+    PollStatusSeverityPipe,
+  ],
   templateUrl: './vote-detail-header.component.html',
 })
 export class VoteDetailHeaderComponent {
@@ -60,7 +76,7 @@ export class VoteDetailHeaderComponent {
   private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
-  private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Computed Signals ===
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
@@ -70,11 +86,21 @@ export class VoteDetailHeaderComponent {
     return VOTE_METHOD_LABELS[pollType] || pollType;
   });
   protected readonly privacyLabel: Signal<string> = this.initPrivacyLabel();
+  /** The instant shown in the close date: the early end for a vote that ended, otherwise the scheduled deadline. */
+  protected readonly closeTime: Signal<string | undefined> = computed(() => {
+    const vote = this.vote();
+    return normalizePollStatus(vote.status) === PollStatus.ENDED ? vote.early_end_time || vote.end_time : vote.end_time;
+  });
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
 
   // === Protected Methods ===
+  /** Re-check the exact deadline on each render; a calendar-day label can still say "today" after close. */
+  protected hasTimeRemaining(): boolean {
+    return this.isActive() && new Date(this.vote().end_time).getTime() > Date.now();
+  }
+
   /**
    * WAI-ARIA tabs keyboard model: arrows wrap, Home/End jump to the ends, and focus follows the selected tab. Arrows move
    * from the focused pill, since `activeTab` only updates once the parent's `?tab=` navigation settles.
@@ -109,7 +135,7 @@ export class VoteDetailHeaderComponent {
     return computed(() => {
       const vote = this.vote();
       const ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
-      const endTime = ended ? vote.early_end_time || vote.end_time : vote.end_time;
+      const endTime = this.closeTime();
       if (!endTime) return '';
       const deadline = formatVoteDeadline(endTime, this.viewerTimezone);
       return ended ? `Closed ${deadline}` : `Closes ${deadline}`;

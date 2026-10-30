@@ -11,7 +11,7 @@ import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { of } from 'rxjs';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteDetailHeaderComponent } from './vote-detail-header.component';
 
@@ -168,6 +168,45 @@ describe('VoteDetailHeaderComponent', () => {
 
     expect(text('vote-detail-header-close-date')).toBe('Closed Oct 20, 2026 12:00 PM UTC');
     expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
+  });
+
+  describe('time remaining (#4767)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('shows how long an active vote has left, beside the unchanged close date', () => {
+      render();
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
+      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 30, 2026 4:00 PM UTC');
+    });
+
+    it('shows no time remaining for an ended vote', () => {
+      render({ vote: makeVote({ status: PollStatus.ENDED }) });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it.each(['2026-10-20T16:00:00Z', '2026-10-26T15:00:00Z', '2026-10-26T16:00:00Z'])('shows no time remaining at or after the deadline (%s)', (endTime) => {
+      render({ vote: makeVote({ end_time: endTime }) });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it('still shows time remaining for a deadline later today', () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T17:00:00Z' }) });
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+    });
+
+    it('shows none while limited', () => {
+      render({ limited: true });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
   });
 
   describe('actions', () => {

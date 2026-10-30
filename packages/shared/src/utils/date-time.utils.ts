@@ -321,10 +321,15 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
   if (Number.isNaN(date.getTime())) return '';
 
   try {
-    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   } catch {
-    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   }
+}
+
+/** Zones at a zero offset with no abbreviation (e.g. Europe/Lisbon in winter) format as "GMT+0"; say "UTC" instead. */
+function readableZeroOffset(formatted: string): string {
+  return formatted.replace(/ GMT[+-]0$/, ' UTC');
 }
 
 /**
