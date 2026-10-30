@@ -19,7 +19,7 @@ import {
 } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 import { UiCalendarDay, UiCalendarWeek } from '@lfx-one/shared/interfaces';
-import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
+import { parseLocalDateString, toLocalDateOnlyString } from '@lfx-one/shared/utils';
 
 import { UiButtonComponent } from '../button/button.component';
 
@@ -50,14 +50,15 @@ export class UiCalendarComponent implements ControlValueAccessor {
   public readonly weekStartsOn = input<0 | 1>(0);
   /** Accessible name for the grid when the month title is not enough. Leave empty to use the month title. */
   public readonly ariaLabel = input<string>('');
+  /** The day treated as today, as a local `YYYY-MM-DD` string. Leave `null` to use the live current date; pin it so a server and a client in another timezone agree near midnight. Any other value that is not a `YYYY-MM-DD` string, including an empty one, throws; an impossible date rolls over as `Date` does. */
+  public readonly today = input<string | null>(null);
   /** The selected date, or `null`. Supports two-way binding with `[(value)]`. */
   public readonly value = model<Date | null>(null);
 
   protected readonly titleId = `${this.titleBaseId}title`;
   protected readonly formDisabled = signal(false);
   /** The date that holds the roving tab stop; its month is the month on show. Resets when the value changes. */
-  // shortcut: an empty calendar reads today from new Date() at render, so a UTC server can differ from the client near midnight. revisit: when it renders on the server without a value.
-  protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfDay(new Date()));
+  protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfToday());
   protected readonly focusedKey: Signal<string> = computed(() => toLocalDateOnlyString(this.focusedDate()));
   protected readonly title: Signal<string> = computed(() => new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(this.focusedDate()));
   protected readonly weekdays: Signal<{ short: string; long: string }[]> = this.initWeekdays();
@@ -148,7 +149,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
       const lead = (first.getDay() - this.weekStartsOn() + 7) % 7;
       const count = Math.ceil((lead + daysInMonth) / 7);
       const label = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-      const todayKey = toLocalDateOnlyString(new Date());
+      const todayKey = toLocalDateOnlyString(this.startOfToday());
       const gridOff = this.formDisabled();
       const selected = this.value();
       const selectedKey = selected ? toLocalDateOnlyString(selected) : null;
@@ -204,6 +205,11 @@ export class UiCalendarComponent implements ControlValueAccessor {
     const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';
     const interaction = gridOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-ui-neutral-alpha-100';
     return `${base} ${dot} ${tone} ${interaction} after:bg-ui-accent-500`;
+  }
+
+  private startOfToday(): Date {
+    const pinned = this.today();
+    return pinned === null ? this.startOfDay(new Date()) : parseLocalDateString(pinned);
   }
 
   private startOfDay(date: Date): Date {
