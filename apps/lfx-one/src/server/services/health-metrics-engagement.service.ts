@@ -80,9 +80,6 @@ const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
 
 /** The summary's per-period columns this section reads, each suffixed by period. */
-const NEWSLETTER_RECIPIENT_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_RECIPIENT_ENGAGEMENT';
-
-/** The summary's per-period columns this section reads, each suffixed by period. */
 const NEWSLETTER_SUMMARY_COLUMNS = [
   'subscribers_count',
   'subscribers_growth_pct',
@@ -715,7 +712,7 @@ export class HealthMetricsEngagementService {
         TO_VARCHAR(last_opened_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_opened_at,
         click_count,
         TO_VARCHAR(last_clicked_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_clicked_at
-      FROM ${NEWSLETTER_RECIPIENT_VIEW}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.recipients}
       WHERE foundation_slug = ?
         AND newsletter_sort_rank = 1
       ORDER BY engagement_rank ASC NULLS LAST
@@ -723,7 +720,7 @@ export class HealthMetricsEngagementService {
     `;
 
     const result = await executeSnowflakeViewRead<NewsletterRecipientRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      view: NEWSLETTER_RECIPIENT_VIEW,
+      view: HEALTH_METRICS_NEWSLETTER_VIEWS.recipients,
       operation: 'get_engagement_newsletter_recipients',
       clientMessage: 'Newsletter recipient engagement is unavailable right now.',
     });
@@ -743,6 +740,8 @@ export class HealthMetricsEngagementService {
     return {
       newsletter: { key, name: first.NEWSLETTER_NAME?.trim() || 'Untitled newsletter', sentDate: first.SENT_AT?.slice(0, 10) ?? null },
       recipients: rows.map(mapRecipient).filter((recipient): recipient is HealthMetricsEngagementRecipient => recipient !== null),
+      // Read one past the cap, so a longer list is told apart from one of exactly the cap.
+      truncated: result.rows.length > HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
     };
   }
 

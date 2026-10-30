@@ -41,11 +41,11 @@
           }
         </span>
         @if (item.count !== null) {
-          <!-- Locale pinned, so the server render and the hydrated one agree on separators. -->
+          <!-- The app's single en-US locale groups thousands the same on the server and in the browser. -->
           <span
             class="shrink-0 rounded-full border border-gray-200 px-[7px] text-[11px] font-medium tabular-nums text-gray-600"
             [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
-            >{{ item.count.toLocaleString('en-US') }}</span
+            >{{ item.count | number }}</span
           >
         }
       </button>

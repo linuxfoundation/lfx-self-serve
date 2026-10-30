@@ -492,7 +492,7 @@ export function countHealthMetricsEngagementRecipients(
 
 /** One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a stray open time. */
 export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
-  const failed = recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
+  const failed = isFailedRecipient(recipient);
   const opened = recipient.segment === 'opened';
   const tags = HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS;
 
@@ -610,7 +610,14 @@ function buildNewsletterPoint(newsletter: HealthMetricsEngagementNewsletter): He
 function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, filter: HealthMetricsEngagementRecipientFilter): boolean {
   if (filter === 'all') return true;
   if (filter === 'clicked') return recipient.clicked;
-  return recipient.segment === filter;
+  // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
+  if (filter === 'failed') return isFailedRecipient(recipient);
+  return recipient.segment === filter && !isFailedRecipient(recipient);
+}
+
+/** Failed by either the view's segment or its delivery status. */
+function isFailedRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
+  return recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
 }
 
 /** No tag for a failed delivery, which the row shows as "—". */

@@ -453,10 +453,11 @@ export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED: HealthMetricsEngag
   newsletters: [],
 };
 
-/** The two newsletter views the Overview card and Newsletter performance both read. */
+/** The newsletter views the Overview card and the Engagement newsletter sections read. */
 export const HEALTH_METRICS_NEWSLETTER_VIEWS = {
   summary: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY',
   byNewsletter: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER',
+  recipients: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_RECIPIENT_ENGAGEMENT',
 } as const;
 
 /** The design's recipient cuts; `clicked` cuts across segments, since a click can come without a recorded open. */
@@ -486,4 +487,5 @@ export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS = {
 export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED: HealthMetricsEngagementNewsletterRecipients = {
   newsletter: null,
   recipients: [],
+  truncated: false,
 };

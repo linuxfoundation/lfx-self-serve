@@ -1430,6 +1430,7 @@ describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
           lastClickedAt: '2026-10-26T16:35:58Z',
         },
       ],
+      truncated: false,
     });
   });
 
@@ -1456,6 +1457,7 @@ describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
     const response = await service.getNewsletterRecipients(req, { foundationSlug: 'acme' });
 
     expect(response.recipients).toHaveLength(HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP);
+    expect(response.truncated).toBe(true);
     expect(warning).toHaveBeenCalledWith(req, 'get_engagement_newsletter_recipients', 'Newsletter recipient rows hit the read cap', expect.anything());
   });
 });

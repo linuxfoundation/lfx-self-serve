@@ -616,6 +616,8 @@ export interface HealthMetricsEngagementNewsletterRecipients {
   /** `null` when the foundation has sent no newsletter. */
   newsletter: HealthMetricsEngagementRecipientNewsletter | null;
   recipients: HealthMetricsEngagementRecipient[];
+  /** The read hit its cap, so only the most engaged recipients came back and every count covers just those. */
+  truncated: boolean;
 }
 
 /** One recipient row, every cell labelled; a failed delivery reads "—" for engagement, opens and clicks. */

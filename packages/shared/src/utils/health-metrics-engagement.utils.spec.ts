@@ -963,6 +963,12 @@ describe('newsletter recipient rules', () => {
     expect(countHealthMetricsEngagementRecipients(recipients)).toEqual({ all: 4, opened: 1, clicked: 2, 'not-opened': 2, failed: 1 });
   });
 
+  it('counts a failed delivery only as Failed, even where the view still segments it as not opened', () => {
+    const bounced = recipient({ rank: 5, deliveryStatus: 'Failed', segment: 'not-opened', clicked: false });
+    expect(countHealthMetricsEngagementRecipients([bounced])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
+    expect(buildHealthMetricsEngagementRecipientRow(bounced, now).deliveryLabel).toBe('Failed');
+  });
+
   it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {
     expect(filterHealthMetricsEngagementRecipients(recipients, 'clicked', '').map((row) => row.rank)).toEqual([1, 2]);
     expect(filterHealthMetricsEngagementRecipients(recipients, 'all', '  vendor ').map((row) => row.rank)).toEqual([2]);

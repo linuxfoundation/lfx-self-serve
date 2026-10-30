@@ -43,6 +43,12 @@
       <span class="text-[13px] text-gray-500" data-testid="engagement-newsletter-recipients-count">{{ countLabel() }}</span>
     </div>
 
+    @if (response().truncated) {
+      <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="engagement-newsletter-recipients-truncated">
+        Showing the {{ loadedCount() }} most engaged recipients. The rest are not loaded, so the counts above cover only these.
+      </p>
+    }
+
     @if (totalRecords() === 0) {
       <lfx-empty-state
         variant="compact"

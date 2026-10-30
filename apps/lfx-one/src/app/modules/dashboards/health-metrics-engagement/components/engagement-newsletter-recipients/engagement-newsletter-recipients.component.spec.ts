@@ -6,11 +6,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
-
-import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import { EngagementNewsletterRecipientsComponent } from './engagement-newsletter-recipients.component';
 
@@ -39,6 +36,7 @@ const RECIPIENTS: HealthMetricsEngagementNewsletterRecipients = {
     recipient({ rank: 2, name: 'Daniel Reyes', organization: 'Vendor Corp', segment: 'not-opened', opens: 0 }),
     recipient({ rank: 3, name: 'Chen Yu', organization: null, deliveryStatus: 'Failed', segment: 'failed', clicked: false, opens: null, clicks: null }),
   ],
+  truncated: false,
 };
 
 describe('EngagementNewsletterRecipientsComponent', () => {
@@ -53,8 +51,6 @@ describe('EngagementNewsletterRecipientsComponent', () => {
       imports: [EngagementNewsletterRecipientsComponent],
       providers: [
         provideRouter([]),
-        HealthMetricsChromeService,
-        { provide: UserService, useValue: { impersonating: signal(false) } },
         {
           provide: AnalyticsService,
           useValue: { getEngagementNewsletterRecipients: vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload)) },
@@ -128,8 +124,25 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     expect(text('engagement-newsletter-recipients-table')).toContain('Showing 1 to 25 of 30');
   });
 
+  it('says so when the search matches no recipient, rather than showing an empty table', async () => {
+    await render();
+
+    fixture.componentInstance['searchForm'].controls.search.setValue('nobody-by-this-name');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    fixture.detectChanges();
+
+    expect(query('engagement-newsletter-recipients-table')).toBeNull();
+    expect(query('engagement-newsletter-recipients-no-match')).not.toBeNull();
+  });
+
+  it('warns that the counts cover only the loaded recipients when the read was capped', async () => {
+    await render({ ...RECIPIENTS, truncated: true });
+
+    expect(text('engagement-newsletter-recipients-truncated')).toContain('Showing the 3 most engaged recipients');
+  });
+
   it('settles empty with no badge for a foundation that has sent no newsletter', async () => {
-    await render({ newsletter: null, recipients: [] });
+    await render({ newsletter: null, recipients: [], truncated: false });
 
     expect(query('engagement-newsletter-recipients-table')).toBeNull();
     expect(counts.at(-1)).toBeNull();

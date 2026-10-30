@@ -121,10 +121,9 @@ export class EngagementNewsletterRecipientsComponent {
     if (!newsletter) return '';
     return newsletter.sentDate ? `${newsletter.name} · Sent ${formatIsoDateLabel(newsletter.sentDate)}` : newsletter.name;
   });
-  protected readonly countLabel = computed(() => {
-    const count = this.response().recipients.length;
-    return `${count.toLocaleString('en-US')} ${count === 1 ? 'recipient' : 'recipients'}`;
-  });
+  /** Locale pinned, so the server render and the hydrated one agree on separators. */
+  protected readonly loadedCount = computed(() => this.response().recipients.length.toLocaleString('en-US'));
+  protected readonly countLabel = computed(() => `${this.loadedCount()} ${this.response().recipients.length === 1 ? 'recipient' : 'recipients'}`);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
