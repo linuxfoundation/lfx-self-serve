@@ -21,7 +21,7 @@ import { isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange } from '@lfx-one/sh
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { parseOrgCommitFilters, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -41,7 +41,7 @@ export class OrgLensContributionsController {
     this.service = new OrgContributionsService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/contributions[?...&teamMembers=include|exclude] — KPI strip + repositories table + filter options, server-paginated. */
+  /** GET /api/orgs/:orgUid/lens/contributions[?...&teamMembers=include|exclude&orgScope=insights|all] — KPI strip + repositories table + filter options, server-paginated. */
   public async getContributions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_contributions';
@@ -60,6 +60,7 @@ export class OrgLensContributionsController {
         project_count: query.projects.length,
         employee_count: query.employees.length,
         team_members: query.teamMembers,
+        org_scope: query.orgScope,
         page: query.page,
         size: query.size,
       });
@@ -72,6 +73,30 @@ export class OrgLensContributionsController {
         repository_count: response.repositories.length,
         total_records: response.totalRecords,
       });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/org-scope — the account's organization scope (lfx-self-serve-ops#1219): its LFX Insights
+   * organization and how many organizations have code activity on it, for the Organization scope picker every page with
+   * contributor counts shows. `hasInsightsOrg: false` (also for an account with no row) offers only All related organizations.
+   */
+  public async getOrgScope(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_org_scope';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = await this.service.getOrgScope(orgUid);
+
+      logger.success(req, operation, startTime, { org_uid: orgUid, has_insights_org: response.hasInsightsOrg, related_org_count: response.relatedOrgCount });
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(response);
@@ -104,6 +129,7 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
     employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
     teamMembers: parseOrgTeamMembers(req, operation),
+    orgScope: parseOrgScope(req, operation),
     sort,
     dir,
     commitSort,

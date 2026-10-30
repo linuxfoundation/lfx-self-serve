@@ -1968,7 +1968,8 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/org-involvement-contributors-monthly
    * Get cross-foundation active contributors monthly for an organization
-   * Query params: accountId (required)
+   * Query params: accountId (required). Always the default organization scope, the Overview having no scope picker
+   * (lfx-self-serve-ops#1219).
    */
   public async orgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_involvement_contributors_monthly');

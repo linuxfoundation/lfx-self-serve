@@ -43,6 +43,30 @@ export interface OrgTeamMembersOption {
   value: OrgTeamMembersFilter;
 }
 
+/**
+ * Which crowd.dev organizations an Org Lens code count credits to the account (lfx-self-serve-ops#1219): `insights`, the
+ * organization behind the account's LFX Insights page and only repositories LFX Insights counts; `all`, every
+ * organization linked to the account in every repository.
+ */
+export type OrgScopeFilter = 'insights' | 'all';
+
+/** Dropdown option for the organization-scope filter. */
+export interface OrgScopeOption {
+  label: string;
+  value: OrgScopeFilter;
+}
+
+/** The account's organization scope (`GET /api/orgs/:orgUid/lens/org-scope`, from its `ORG_LENS_ACCOUNT_CONTEXT` row). */
+export interface OrgLensOrgScope {
+  accountId: string;
+  /** `false` when no Insights organization is mapped or it has no code activity in two years: only `all` is offered. */
+  hasInsightsOrg: boolean;
+  insightsOrgId: string | null;
+  insightsOrgName: string | null;
+  /** Distinct organizations with code activity on the account in two years. */
+  relatedOrgCount: number;
+}
+
 /** The account's CDP team members, as the server reads them for a Team members pick (lfx-self-serve#4685). */
 export interface OrgTeamMemberKeys {
   /** Person keys left out of code-based numbers; `null` under `include`, or when the flag cannot be read. */
@@ -136,6 +160,12 @@ export interface OrgAllEmployeeRow {
    * the former row can take their access badge. Absent on current rows.
    */
   isFormer?: boolean;
+  /**
+   * `true` on a former-employees read row for someone with code credited to this account but no employment row there
+   * (lfx-self-serve#4730): neither current nor former, so All Employees lists them only under "All employees". Absent
+   * on every other row.
+   */
+  isUnclassified?: boolean;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
@@ -169,6 +199,13 @@ export interface OrgAllEmployeesResponse {
   rows: OrgAllEmployeeRow[];
   stats: OrgAllEmployeeStats;
   foundations: OrgAllEmployeeFoundationOption[];
+  /**
+   * Off-roster read only (lfx-self-serve#4730): lowercased LF usernames of the people with code credited to this account
+   * but no employment row in the range and scope, including those the Team members pick removed from `rows` and those
+   * listed as a former employee instead, so the page never lists their live Org Lens access row as a current employee.
+   * Absent when there are none.
+   */
+  unclassifiedUsernames?: string[];
 }
 
 // Detail (chevron expand) ----------------------------------------------------

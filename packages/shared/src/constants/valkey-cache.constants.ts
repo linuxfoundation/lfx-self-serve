@@ -247,12 +247,18 @@ export const VALKEY_CACHE = {
     // (Past 2 years, all projects), measured 2026-10-29 against prod the same way: 2.00 MiB (1.86 MiB for the
     // largest company; the larger value is a placeholder account).
     'org-lens-sf:v1:people-all:v4': 6 * 1_048_576,
-    // `people-former:v3` is stored as named-key JSON rows (`withOrgCache`, not columnar). Measured 2026-10-27
+    // `v6` (lfx-self-serve#4735; the unranged roster keeps `v4:roster`) leaves the three code counts off ranged rows
+    // (counted live from `people-contributors`), each stored as an absent cell, and is one entry for both organization
+    // scopes. Measured 2026-10-30 on the lf-dbt#3166 dev build: largest value 4.57 MB (largest org, All time); the cap
+    // carries over.
+    'org-lens-sf:v1:people-all:v6': 6 * 1_048_576,
+    // `people-former` is stored as named-key JSON rows (`withOrgCache`, not columnar). `v3` measured 2026-10-27
     // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
     // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.
     // 1,444,402 × 1.25 = 1,805,503, rounded up to 2 MiB. The Past 2 years all-projects default (lfx-self-serve#4694)
-    // peaks at 0.30 MiB (prod, 2026-10-29).
-    'org-lens-sf:v1:people-former:v3': 2 * 1_048_576,
+    // peaks at 0.30 MiB (prod, 2026-10-29). `v4` (lfx-self-serve#4735) keeps six identity columns of the same rows, so the
+    // cap carries over.
+    'org-lens-sf:v1:people-former:v4': 2 * 1_048_576,
     // Measured 2026-10-27 on the dev build (lf-dbt#3118), same SQL size estimate and × 1.06
     // calibration as `people-all:v4`: person × project rows with the person's identity repeated on
     // each. Largest `all`-range value 6.85 MiB estimated (largest org measured), ≈ 7.3 MiB compact; 12

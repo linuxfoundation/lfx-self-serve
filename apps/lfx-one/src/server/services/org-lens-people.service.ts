@@ -7,16 +7,21 @@ import {
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgAllEmployeesRawCache,
+  ContributorPersonProjectRow,
   OrgAllEmployeesRaw,
   OrgCommitFilters,
   OrgFormerEmployeeCheck,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
+  OrgPeopleIdentityRow,
+  OrgPeopleLiveCode,
+  OrgPersonLiveCode,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
@@ -34,6 +39,7 @@ import type {
   OrgPersonCodeView,
   OrgPersonCompanyEmailRow,
   OrgProjectScope,
+  OrgScopeFilter,
   OrgPersonCompanyEmailsResponse,
   OrgPersonMaintainerRoleProjectRow,
   OrgPersonSource,
@@ -45,13 +51,21 @@ import { createHash } from 'crypto';
 
 import { Request } from 'express';
 
-import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
+import {
+  orgContributorCountColumn,
+  orgContributorsActivityPredicate,
+  orgContributorsCommitColumns,
+  orgContributorsScopePredicate,
+} from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
 import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
+import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { logger } from './logger.service';
+import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
@@ -116,94 +130,192 @@ const UNAVAILABLE_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmai
 /** The lookup ran and errored. The rest of the detail response still renders. */
 const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
+/**
+ * The two populations off the current roster that the former-employees read lists: former employees (lfx-self-serve#4311)
+ * and the people with code credited to the account but no employment row (lfx-self-serve#4730). Only who they are is
+ * read here; their code is counted live (lfx-self-serve#4735). The unclassified table ships from lf-dbt, so it may not
+ * exist yet.
+ */
+const OFF_ROSTER_SOURCES = {
+  former: {
+    table: 'ORG_PEOPLE_ALL_RANGES',
+    filter: 'AND IS_FORMER = TRUE',
+    queryOptions: undefined,
+  },
+  unclassified: {
+    table: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS',
+    filter: '',
+    queryOptions: { expectMissingObject: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' },
+  },
+} as const;
+
 /** Org Lens "People → All Employees" analytics — backed by the PLATINUM_LFX_ONE.ORG_PEOPLE_* tables. Empty rows produce an empty envelope, never a 404. */
 export class OrgLensPeopleService {
-  private snowflakeService: SnowflakeService;
+  private readonly snowflakeService: SnowflakeService;
+  private readonly contributorsService: OrgPeopleContributorsService;
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
   // so eagerly instantiating it here would recurse infinitely between the two constructors.
   private directoryService: OrgPeopleDirectoryService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
+    this.contributorsService = new OrgPeopleContributorsService();
   }
 
   /**
    * Bundled rows + stats + foundations payload for one time range and its commit filters (`null` range: the unranged
    * roster, which the filters do not scope); the wire projection of the internal roster. `exclude` removes CDP team
-   * members' code from a ranged roster (lfx-self-serve#4685, see `toWireResponse`); the unranged roster lists everyone,
-   * like the commit filters it is not scoped by.
+   * members' code from a ranged roster (lfx-self-serve#4685, see `toWireResponse`); `orgScope` picks whose code a ranged
+   * roster counts (lfx-self-serve-ops#1219); the unranged roster lists everyone, like the commit filters it is not
+   * scoped by.
    */
   public async getAllEmployees(
     accountId: string,
     range: OrgLensTimeRange | null,
     filters: OrgCommitFilters,
-    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
+    const scope = range ? await this.resolveOrgScope(accountId, orgScope) : 'all';
     const [roster, teamMemberKeys] = await Promise.all([
-      this.getAllEmployeesInternal(accountId, range, filters.projectScope),
+      this.getAllEmployeesInternal(accountId, range, filters.projectScope, scope),
       this.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include'),
     ]);
     return toWireResponse(roster, filters, teamMemberKeys);
   }
 
+  /** The scope a read serves for an `orgScope` pick: `insights` only for an account with an Insights organization (lfx-self-serve-ops#1219). */
+  public resolveOrgScope(accountId: string, orgScope: OrgScopeFilter): Promise<OrgScopeFilter> {
+    return resolveOrgScope(this.snowflakeService, accountId, orgScope);
+  }
+
   /**
    * Internal roster with merge-only fields retained — the live directory's stored seed. A time range
-   * reads that range's current employees in the project scope, each row carrying all three code counts
-   * (authored commits, merged commits, code activities) for the wire projection to pick from; `null`
-   * reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use. The cache holds raw warehouse rows
-   * and both accessors map after every read.
+   * reads that range's current employees in the project scope from ORG_PEOPLE_ALL_RANGES, and counts their code
+   * live (lfx-self-serve#4735): every code count (authored commits, merged commits, code activities, for the wire
+   * projection to pick from) is the person's People → Contributors row, read through the same cached read, so the
+   * tiles never drift from it after the dbt build's day. A current employee is listed with seats, events or courses in
+   * the range and scope, or with live code there — under `insights` ({@link resolveOrgScope}) the Insights
+   * organization's — and their engaged foundations are those of the seats, events and courses plus those of the live
+   * code. `null` reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use, with its stored code count and
+   * foundations; it is not scoped. The cache holds raw warehouse rows and both accessors map after every read.
    */
   public async getAllEmployeesInternal(
     accountId: string,
     range: OrgLensTimeRange | null,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v4:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164): a ranged read is
-    // scoped by project and carries every code count, so one entry serves every commit scope and metric.
-    const raw = await withOrgCompactCache(
-      accountId,
-      `people-all:v4:${range ? `${range}:${projectScope}` : 'roster'}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
-      {
-        encode: encodeAllEmployeesRaw,
-        decode: decodeAllEmployeesRaw,
-        accept: isCompactAllEmployeesRaw,
-      }
-    );
+    const [raw, liveCode] = await Promise.all([
+      this.readRosterRaw(accountId, range, projectScope),
+      range ? this.readLiveCode(accountId, range, projectScope, orgScope) : null,
+    ]);
 
+    const rows = raw.rowsRaw.map((row) => this.mapEmployeeRow(row));
     return {
       accountId,
-      rows: raw.rowsRaw.map((row) => this.mapEmployeeRow(row)),
+      rows: liveCode ? rows.flatMap((row) => withLiveCode(row, liveCode.people.get(row.personKey)) ?? []) : rows,
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
     };
   }
 
   /**
-   * Former employees at the account active in the time range and project scope (lfx-self-serve#4311), the
-   * `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES. Only this read opts in to them, so the shared people
-   * directory — and the reassign pickers that read it — never sees a former employee. Stats are
-   * computed over these rows for the request's commit filters, so the tiles match the rows the "Former
-   * employees" view shows. No address is sent for someone who left, and none stands in for a blank name. `exclude`
-   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`).
+   * The people off the current roster at the account in the time range and project scope: former employees
+   * (lfx-self-serve#4311), the `IS_FORMER` rows of ORG_PEOPLE_ALL_RANGES tagged `isFormer`, and the people with code
+   * credited to the account but no employment row (lfx-self-serve#4730) — no ORG_PEOPLE_ALL_RANGES row in the range
+   * and scope — tagged `isUnclassified`, which the page lists only under "All employees". Their code is counted live
+   * (lfx-self-serve#4735) from the People → Contributors read: each is listed with their row there, and someone with
+   * none is not listed, so under "All employees" the code tile is that tab's Contributors tile. An unclassified
+   * person's name and photo come from ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS, or from their contributor rows while that
+   * table has no row for them (or is not built). Only this read opts in to them, so the shared people directory — and
+   * the reassign pickers that read it — never sees either. Stats are computed over these rows for the request's commit
+   * filters. No address is sent for them, and none stands in for a blank name. `exclude` removes CDP team members' code
+   * (lfx-self-serve#4685, see `toWireResponse`). The reads are cached separately, so someone on both populations (person
+   * key, CDP member or LF username) is listed once, as the former employee, taking the LF username or CDP member only
+   * the unclassified row has. `unclassifiedUsernames` names every person with no employment record in the range, those
+   * `exclude` drops included, and whatever the organization scope, so their live access row is never taken for a
+   * current employee. `orgScope` (lfx-self-serve-ops#1219): under `insights` both populations count the Insights
+   * organization's code only, and someone with none of it is not listed.
    */
   public async getFormerEmployees(
-    req: Request,
     accountId: string,
     range: OrgLensTimeRange,
     filters: OrgCommitFilters,
-    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
-    const [raw, teamMemberKeys] = await Promise.all([
-      this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope),
+    const scope = await this.resolveOrgScope(accountId, orgScope);
+    const [former, unclassified, roster, liveCode, teamMemberKeys] = await Promise.all([
+      this.getFormerIdentities(accountId, range, filters.projectScope),
+      this.getUnclassifiedIdentities(accountId, range, filters.projectScope),
+      this.readRosterRaw(accountId, range, filters.projectScope),
+      this.readLiveCode(accountId, range, filters.projectScope, scope),
       this.getTeamMemberPersonKeys(accountId, teamMembers),
     ]);
-    const rows = raw.rowsRaw.map((row) => ({ ...this.mapEmployeeRow({ ...row, NAME: formerDisplayName(row), TITLE: null, EMAIL: null }), isFormer: true }));
-    return toWireResponse(
-      { accountId, rows, foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })) },
-      filters,
-      teamMemberKeys
-    );
+    const offRosterRow = (identity: OrgPeopleIdentityRow, code: OrgPersonLiveCode): OrgAllEmployeeRowInternal =>
+      this.mapEmployeeRow({
+        ...identity,
+        ACCOUNT_ID: accountId,
+        NAME: offRosterDisplayName(identity),
+        TITLE: null,
+        EMAIL: null,
+        SEATS_COUNT: 0,
+        BOARD_SEATS_COUNT: 0,
+        COMMITTEE_SEATS_COUNT: 0,
+        COMMITS_COUNT: code.commitsCount,
+        MERGED_COMMITS_COUNT: code.mergedCommitsCount,
+        CODE_ACTIVITIES_COUNT: code.codeActivitiesCount,
+        EVENTS_COUNT: 0,
+        COURSES_COUNT: 0,
+        ENGAGED_FOUNDATION_IDS: code.foundationIds,
+      });
+    const formerRows = former.flatMap((identity) => {
+      const code = liveCode.people.get(identity.PERSON_KEY);
+      return code ? [{ ...offRosterRow(identity, code), isFormer: true }] : [];
+    });
+    const identities = (row: OrgAllEmployeeRowInternal): string[] => [
+      `key:${row.personKey}`,
+      ...(row.cdpMemberId ? [`member:${row.cdpMemberId}`] : []),
+      ...(row.lfUsername ? [`username:${row.lfUsername}`] : []),
+    ];
+    const formerByIdentity = new Map(formerRows.flatMap((row) => identities(row).map((identity) => [identity, row] as const)));
+    // On the roster: the current rows the page lists, from the same cached read, and the former rows read here, so
+    // whoever has live code is counted exactly once however far apart the warehouse reads were cached.
+    const onRoster = new Set([...roster.rowsRaw.map((row) => row.PERSON_KEY), ...former.map((row) => row.PERSON_KEY)]);
+    const unclassifiedByKey = new Map((unclassified ?? []).map((row) => [row.PERSON_KEY, row]));
+    const unclassifiedPeople = [...liveCode.people]
+      .filter(([personKey]) => !onRoster.has(personKey))
+      .map(([personKey, code]) => ({ ...offRosterRow(unclassifiedByKey.get(personKey) ?? contributorIdentity(code.identity), code), isUnclassified: true }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.personKey.localeCompare(b.personKey));
+    const unclassifiedUsernames = [
+      ...new Set([
+        ...(unclassified ?? []).flatMap((row) => (row.LF_USERNAME ?? '').trim().toLowerCase() || []),
+        ...unclassifiedPeople.flatMap((row) => row.lfUsername ?? []),
+      ]),
+    ];
+    const unclassifiedRows: OrgAllEmployeeRowInternal[] = [];
+    for (const row of unclassifiedPeople) {
+      const kept = identities(row)
+        .map((identity) => formerByIdentity.get(identity))
+        .find((match) => match !== undefined);
+      if (!kept) {
+        unclassifiedRows.push(row);
+        continue;
+      }
+      // Listed once, as the former employee, which takes the identifiers only the newer row has: the page reconciles
+      // their live rows on the username.
+      kept.lfUsername ??= row.lfUsername;
+      kept.cdpMemberId ??= row.cdpMemberId;
+      for (const identity of identities(kept)) if (!formerByIdentity.has(identity)) formerByIdentity.set(identity, kept);
+    }
+    const rows = [...formerRows, ...unclassifiedRows];
+    const foundationIds = new Set(rows.flatMap((row) => row.engagedFoundationIds));
+    const foundations = [...liveCode.foundationNames]
+      .filter(([foundationId]) => foundationIds.has(foundationId))
+      .map(([foundationId, foundationName]) => ({ foundationId, foundationName }))
+      .sort((a, b) => a.foundationName.localeCompare(b.foundationName));
+    const response = toWireResponse({ accountId, rows, foundations }, filters, teamMemberKeys);
+    return unclassifiedUsernames.length ? { ...response, unclassifiedUsernames } : response;
   }
 
   /**
@@ -218,7 +330,8 @@ export class OrgLensPeopleService {
    * All Employees page for its expanded row): the Code projects and total are then that page's row for this person in
    * `maintainerRange`, and the detail echoes them as `codeView`. Without them the Code rows are every commit of the
    * trailing 12 months. `teamMembers` is that page's Team members pick (lfx-self-serve#4685): under `exclude` a CDP team
-   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code.
+   * member's code view is empty, as their row's code count is; an unavailable flag keeps their code. `orgScope` is that
+   * page's organization scope (lfx-self-serve-ops#1219): the code view counts the same organizations' code.
    */
   public async getEmployeeDetail(
     req: Request,
@@ -226,7 +339,8 @@ export class OrgLensPeopleService {
     personKey: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
     codeFilters: OrgCommitFilters | null = null,
-    teamMembers: OrgTeamMembersFilter = 'include'
+    teamMembers: OrgTeamMembersFilter = 'include',
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeeDetail> {
     const codeView: OrgPersonCodeView | null = codeFilters ? { range: maintainerRange, ...codeFilters } : null;
     const codeViewField = codeView ? { codeView } : {};
@@ -238,7 +352,7 @@ export class OrgLensPeopleService {
 
     const [{ committeeRows, eventRows, trainingRows }, viewCode, maintainerProjectIds, teamMemberKeys] = await Promise.all([
       this.fetchEmployeeActivityRaw(accountId, personKey),
-      codeView ? this.readCodeViewContributions(accountId, personKey, codeView) : this.readTrailingYearCodeContributions(accountId, personKey),
+      codeView ? this.readCodeViewContributions(accountId, personKey, codeView, orgScope) : this.readTrailingYearCodeContributions(accountId, personKey),
       this.fetchMaintainerProjectIds(accountId, personKey, maintainerRange),
       this.getTeamMemberPersonKeys(accountId, codeView ? teamMembers : 'include'),
     ]);
@@ -332,7 +446,7 @@ export class OrgLensPeopleService {
    * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
    * Resolves the username with a keyed read of the account's warehouse roster (ORG_PEOPLE_ALL, a table — not the
    * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
-   * carries the username. `maintainerRange` and `codeFilters` as for {@link getEmployeeDetail}.
+   * carries the username. `maintainerRange`, `codeFilters`, `teamMembers` and `orgScope` as for {@link getEmployeeDetail}.
    */
   public async getEmployeeDetailByUsername(
     req: Request,
@@ -340,14 +454,15 @@ export class OrgLensPeopleService {
     username: string,
     maintainerRange: OrgLensTimeRange = ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
     codeFilters: OrgCommitFilters | null = null,
-    teamMembers: OrgTeamMembersFilter = 'include'
+    teamMembers: OrgTeamMembersFilter = 'include',
+    orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
     const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers) : null;
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey, maintainerRange, codeFilters, teamMembers, orgScope) : null;
   }
 
   /**
@@ -458,87 +573,87 @@ export class OrgLensPeopleService {
     return this.directoryService;
   }
 
-  /** A read whose foundation labels failed is served but not stored, so the dropdown recovers on the next request. */
-  private getFormerEmployeesRaw(req: Request, accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
-    let labelsFailed = false;
-    // `people-former:v3:{range}:{projectScope}` (lfx-self-serve#4164): scoped by project and carrying every
-    // code count, so a `v2` entry must miss and one entry serves every commit scope and metric.
-    return withOrgCache(
+  /**
+   * The live code of a range, project scope and resolved organization scope (lfx-self-serve#4735): the People →
+   * Contributors (person, project) rows, through that tab's own cached read, summed per person.
+   */
+  private async readLiveCode(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope, orgScope: OrgScopeFilter): Promise<OrgPeopleLiveCode> {
+    return sumLiveCode(await this.contributorsService.readPersonProjectRows(accountId, range, projectScope, orgScope));
+  }
+
+  /**
+   * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
+   * `people-all:v6:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
+   * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
+   * the same entry the page lists.
+   */
+  private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
+    return withOrgCompactCache(
       accountId,
-      `people-former:v3:${range}:${projectScope}`,
+      range ? `people-all:v6:${range}:${projectScope}` : 'people-all:v4:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      async () => {
-        const result = await this.fetchFormerEmployeesRaw(req, accountId, range, projectScope);
-        labelsFailed = result.labelsFailed;
-        return result.raw;
-      },
-      isFormerEmployeesRaw,
-      () => !labelsFailed
+      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
+      {
+        encode: encodeAllEmployeesRaw,
+        decode: decodeAllEmployeesRaw,
+        accept: isCompactAllEmployeesRaw,
+      }
     );
   }
 
   /**
-   * Former employees' rows for the range and project scope (the EMAIL column is never selected) and the foundations
-   * of their code in that scope. The labels read the full-history daily code rows, the source of the rows'
-   * ENGAGED_FOUNDATION_IDS, so a foundation they only contributed to years ago still has one for `all`. A failed
-   * roster read fails the request; a failed label read only empties the dropdown (`labelsFailed`).
+   * Who the former employees of the range and project scope are, cached per (range, project scope)
+   * (`people-former:v4`; `v3` also held the build's code counts per organization scope).
    */
-  private async fetchFormerEmployeesRaw(
-    req: Request,
+  private getFormerIdentities(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgPeopleIdentityRow[]> {
+    return withOrgCache(
+      accountId,
+      `people-former:v4:${range}:${projectScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchOffRosterIdentities(accountId, range, projectScope, 'former'),
+      isIdentityRows
+    );
+  }
+
+  /**
+   * Who the people with code but no employment row are (lfx-self-serve#4730), cached per (range, project scope)
+   * (`people-unclassified:v2`; `v1` also held the build's code counts per organization scope), or `null` while lf-dbt
+   * has not built ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS — their contributor rows then name them. `null` is not stored.
+   */
+  private getUnclassifiedIdentities(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<OrgPeopleIdentityRow[] | null> {
+    return withOrgCache<OrgPeopleIdentityRow[] | null>(
+      accountId,
+      `people-unclassified:v2:${range}:${projectScope}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        try {
+          return await this.fetchOffRosterIdentities(accountId, range, projectScope, 'unclassified');
+        } catch (error) {
+          if (isMissingObjectError(error, OFF_ROSTER_SOURCES.unclassified.table)) return null;
+          throw error;
+        }
+      },
+      isIdentityRows,
+      (rows) => rows !== null
+    );
+  }
+
+  /** One off-roster population's identities for the range and project scope; the EMAIL and TITLE columns are never selected. */
+  private async fetchOffRosterIdentities(
     accountId: string,
     range: OrgLensTimeRange,
-    projectScope: OrgProjectScope
-  ): Promise<{ raw: OrgAllEmployeesRaw; labelsFailed: boolean }> {
-    const rowsQuery = `
-      SELECT
-        ACCOUNT_ID,
-        PERSON_KEY,
-        LFID,
-        LF_USERNAME,
-        CDP_MEMBER_ID,
-        NAME,
-        NULL AS TITLE,
-        NULL AS EMAIL,
-        PHOTO,
-        SEATS_COUNT,
-        BOARD_SEATS_COUNT,
-        COMMITTEE_SEATS_COUNT,
-        COMMITS_COUNT,
-        MERGED_COMMITS_COUNT,
-        CODE_ACTIVITIES_COUNT,
-        EVENTS_COUNT,
-        COURSES_COUNT,
-        ENGAGED_FOUNDATION_IDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES
-      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = TRUE
+    projectScope: OrgProjectScope,
+    population: keyof typeof OFF_ROSTER_SOURCES
+  ): Promise<OrgPeopleIdentityRow[]> {
+    const source = OFF_ROSTER_SOURCES[population];
+    const query = `
+      SELECT PERSON_KEY, LFID, LF_USERNAME, CDP_MEMBER_ID, NAME, PHOTO
+      FROM ANALYTICS.PLATINUM_LFX_ONE.${source.table}
+      WHERE ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? ${source.filter}
       ORDER BY NAME ASC NULLS LAST
     `;
-
-    const foundationQuery = `
-      SELECT DISTINCT c.FOUNDATION_ID, c.FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY c
-      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES f
-        ON f.ACCOUNT_ID = c.ACCOUNT_ID AND f.PERSON_KEY = c.PERSON_KEY
-      WHERE c.ACCOUNT_ID = ? AND f.TIME_RANGE = ? AND f.PROJECT_SCOPE = ? AND f.IS_FORMER = TRUE
-        AND c.FOUNDATION_ID IS NOT NULL AND c.FOUNDATION_NAME IS NOT NULL
-        ${orgProjectScopePredicate(projectScope, 'c.IS_LF_PROJECT')}
-      ORDER BY c.FOUNDATION_NAME ASC
-    `;
-
-    const [rowsResult, foundationResult] = await Promise.allSettled([
-      this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId, range, projectScope]),
-      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, range, projectScope]),
-    ]);
-    if (rowsResult.status === 'rejected') {
-      throw rowsResult.reason;
-    }
-    if (foundationResult.status === 'rejected') {
-      logger.warning(req, 'get_org_lens_people_former', 'former employee foundation labels failed; serving rows without labels', {
-        err: foundationResult.reason,
-      });
-      return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: [] }, labelsFailed: true };
-    }
-    return { raw: { rowsRaw: rowsResult.value.rows, foundationRaw: foundationResult.value.rows }, labelsFailed: false };
+    return (await this.snowflakeService.execute<OrgPeopleIdentityRow>(query, [accountId, range, projectScope], source.queryOptions)).rows;
   }
 
   /**
@@ -578,21 +693,23 @@ export class OrgLensPeopleService {
 
   /**
    * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
-   * mapping happens after the cache read. A range reads that range's current rows of
-   * ORG_PEOPLE_ALL_RANGES in the project scope, with all three code counts; `null` reads the unranged
-   * ORG_PEOPLE_ALL roster, whose one code count stands in for all three.
+   * mapping happens after the cache read. A range reads that range's current rows of ORG_PEOPLE_ALL_RANGES in the
+   * project scope without their code counts, which are counted live (lfx-self-serve#4735), with the foundations of
+   * their seats, events and courses, which no organization scope changes; who is listed is decided after the live
+   * code is known ({@link withLiveCode}). `null` reads the unranged ORG_PEOPLE_ALL roster, whose one code count stands
+   * in for all three.
    */
   private async fetchAllEmployeesRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     const source = range
       ? {
           from: 'ORG_PEOPLE_ALL_RANGES',
-          counts: 'COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT',
+          counts: 'NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS',
           where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE',
           binds: [accountId, range, projectScope],
         }
       : {
           from: 'ORG_PEOPLE_ALL',
-          counts: 'COMMITS_COUNT, COMMITS_COUNT AS MERGED_COMMITS_COUNT, COMMITS_COUNT AS CODE_ACTIVITIES_COUNT',
+          counts: 'COMMITS_COUNT, COMMITS_COUNT AS MERGED_COMMITS_COUNT, COMMITS_COUNT AS CODE_ACTIVITIES_COUNT, ENGAGED_FOUNDATION_IDS',
           where: 'ACCOUNT_ID = ?',
           binds: [accountId],
         };
@@ -610,10 +727,9 @@ export class OrgLensPeopleService {
         SEATS_COUNT,
         BOARD_SEATS_COUNT,
         COMMITTEE_SEATS_COUNT,
-        ${source.counts},
         EVENTS_COUNT,
         COURSES_COUNT,
-        ENGAGED_FOUNDATION_IDS
+        ${source.counts}
       FROM ANALYTICS.PLATINUM_LFX_ONE.${source.from}
       WHERE ${source.where}
       ORDER BY NAME ASC NULLS LAST
@@ -721,18 +837,24 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * The Code tab in the opener's view: this person's People → Contributors project rows for the range and project
-   * scope, each counting what the view's commit filters pick, sorted as that tab's expanded row is (count, then last
-   * activity, then name). Each row credits a commit to one project in the scope, so they sum to the person's row count —
-   * the Contributors and All Employees (ORG_PEOPLE_ALL_RANGES sums the same columns) row. One cache entry per range and
-   * scope carries every count, so it serves every code-count option.
+   * The Code tab in the opener's view: this person's People → Contributors project rows for the range, project scope and
+   * organization scope, each counting what the view's commit filters pick, sorted as that tab's expanded row is (count,
+   * then last activity, then name). Each row credits a commit to one project in the scope, so they sum to the person's
+   * row count — the Contributors and All Employees (ORG_PEOPLE_ALL_RANGES sums the same columns) row. One cache entry per
+   * range and scope carries every count, so it serves every code-count option.
    */
-  private async readCodeViewContributions(accountId: string, personKey: string, view: OrgPersonCodeView): Promise<OrgPersonCodeContributions> {
+  private async readCodeViewContributions(
+    accountId: string,
+    personKey: string,
+    view: OrgPersonCodeView,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgPersonCodeContributions> {
+    const scope = await this.resolveOrgScope(accountId, orgScope);
     const rows = await this.withPersonCache(
       accountId,
       personKey,
-      `people-detail-code-view:v1:${personKey}:${view.range}:${view.projectScope}`,
-      () => this.fetchCodeViewRows(accountId, personKey, view.range, view.projectScope),
+      `people-detail-code-view:v1:${personKey}:${view.range}:${view.projectScope}:${scope}`,
+      () => this.fetchCodeViewRows(accountId, personKey, view.range, view.projectScope, scope),
       isCodeContributionRows
     );
     const column = orgContributorCountColumn(view);
@@ -753,9 +875,10 @@ export class OrgLensPeopleService {
     accountId: string,
     personKey: string,
     range: OrgLensTimeRange,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
   ): Promise<OrgPersonCodeProjectRow[]> {
-    const columns = orgContributorsCommitColumns(projectScope);
+    const columns = orgContributorsCommitColumns(projectScope, orgScope);
     const query = `
       SELECT
         project_id AS PROJECT_ID,
@@ -764,12 +887,13 @@ export class OrgLensPeopleService {
         MAX(foundation_name) AS FOUNDATION_NAME,
         SUM(${columns.commits}) AS COMMITS,
         SUM(${columns.mergedCommits}) AS MERGED_COMMITS,
-        SUM(daily_code_activities) AS CODE_ACTIVITIES,
+        SUM(${columns.codeActivities}) AS CODE_ACTIVITIES,
         MAX(activity_date) AS LAST_ACTIVE_DATE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ? AND person_key = ?
         ${orgContributorsActivityPredicate(range)}
         ${orgProjectScopePredicate(projectScope)}
+        ${orgContributorsScopePredicate(orgScope)}
       GROUP BY project_id
     `;
     const result = await this.snowflakeService.execute<OrgPersonCodeProjectRow>(query, [accountId, personKey]);
@@ -1063,12 +1187,62 @@ export class OrgLensPeopleService {
   }
 }
 
-/** A former employee's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
-function formerDisplayName(row: OrgPeopleAllRowRaw): string | null {
+/** An off-roster person's NAME can be an email address; never surface it, falling back to their LF username or the generic label. */
+function offRosterDisplayName(row: OrgPeopleIdentityRow): string | null {
   if (!row.NAME?.includes('@')) {
     return row.NAME;
   }
   return (row.LF_USERNAME ?? '').trim() || ORG_PEOPLE_UNKNOWN_MEMBER_NAME;
+}
+
+/**
+ * Sums People → Contributors (person, project) rows per person (lfx-self-serve#4735): each row credits a commit to one
+ * project in the scope, so the sums are that tab's row; the foundations are those of the projects, as its Foundations
+ * filter reads them.
+ */
+function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiveCode {
+  const people = new Map<string, OrgPersonLiveCode>();
+  const foundationNames = new Map<string, string>();
+  for (const row of rows) {
+    let person = people.get(row.PERSON_KEY);
+    if (!person) {
+      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [] };
+      people.set(row.PERSON_KEY, person);
+    }
+    person.commitsCount += row.COMMITS ?? 0;
+    person.mergedCommitsCount += row.MERGED_COMMITS ?? 0;
+    person.codeActivitiesCount += row.CODE_ACTIVITIES ?? 0;
+    if (row.FOUNDATION_ID) {
+      if (!person.foundationIds.includes(row.FOUNDATION_ID)) person.foundationIds.push(row.FOUNDATION_ID);
+      if (row.FOUNDATION_NAME) foundationNames.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
+    }
+  }
+  for (const person of people.values()) person.foundationIds.sort();
+  return { people, foundationNames };
+}
+
+/**
+ * A current employee's ranged row with its code counted live (lfx-self-serve#4735), or `null` when they have neither
+ * live code in the window and scopes nor a seat, event or course there. CERTIFICATIONS_COUNT needs no test: each
+ * certificate's course is in COURSES_COUNT. The engaged foundations are those of the seats, events and courses (the
+ * row's NON_CODE_ENGAGED_FOUNDATION_IDS) and those of the live code.
+ */
+function withLiveCode(row: OrgAllEmployeeRowInternal, code: OrgPersonLiveCode | undefined): OrgAllEmployeeRowInternal | null {
+  if (!code && row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
+    return null;
+  }
+  return {
+    ...row,
+    commitsCount: code?.commitsCount ?? 0,
+    mergedCommitsCount: code?.mergedCommitsCount ?? 0,
+    codeActivitiesCount: code?.codeActivitiesCount ?? 0,
+    engagedFoundationIds: [...new Set([...row.engagedFoundationIds, ...(code?.foundationIds ?? [])])].sort(),
+  };
+}
+
+/** Who someone with code but no unclassified row is, from their contributor rows; the rows carry no photo. */
+function contributorIdentity(row: ContributorPersonProjectRow): OrgPeopleIdentityRow {
+  return { PERSON_KEY: row.PERSON_KEY, LFID: row.LFID, LF_USERNAME: row.LF_USERNAME, CDP_MEMBER_ID: row.CDP_MEMBER_ID, NAME: row.DISPLAY_NAME, PHOTO: null };
 }
 
 /** Upstream occasionally carries bracketed placeholder names (e.g. "[[Unknown]] [[unknown]]") or a blank name; surface the email instead so the row stays identifiable, with a generic label only when no email exists. */
@@ -1170,9 +1344,9 @@ function toCodeProjectCount(
   };
 }
 
-function isFormerEmployeesRaw(value: unknown): boolean {
-  const v = value as { rowsRaw?: unknown; foundationRaw?: unknown } | null;
-  return !!v && Array.isArray(v.rowsRaw) && Array.isArray(v.foundationRaw);
+/** A stored identity read: an array of rows, each keyed by a person key. */
+function isIdentityRows(value: unknown): boolean {
+  return Array.isArray(value) && value.every((row: unknown) => !!row && typeof row === 'object' && 'PERSON_KEY' in row && typeof row.PERSON_KEY === 'string');
 }
 
 function isFormerCheck(value: unknown): boolean {

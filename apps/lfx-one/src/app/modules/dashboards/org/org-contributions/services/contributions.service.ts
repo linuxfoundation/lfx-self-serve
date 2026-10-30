@@ -28,6 +28,7 @@ function buildQueryParams(query: OrgContributionsQuery): HttpParams {
     .set('commitScope', query.commitScope)
     .set('metric', query.metric)
     .set('teamMembers', query.teamMembers)
+    .set('orgScope', query.orgScope)
     .set('sort', query.sort)
     .set('dir', query.dir === 1 ? 'asc' : 'desc')
     .set('commitSort', query.commitSort)
