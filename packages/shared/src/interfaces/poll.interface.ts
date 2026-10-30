@@ -1428,6 +1428,10 @@ export interface VoteDetailTabOption {
   label: string;
   /** Font Awesome icon class, e.g. `fa-chart-simple` */
   icon: string;
+  /** Count badge shown after the label; omitted or zero shows no badge (#4768). */
+  count?: number;
+  /** Screen-reader text for the badge, e.g. `5 comments`; the visible badge is `aria-hidden`. */
+  countLabel?: string;
 }
 
 /** Single load-state emission for the vote detail page — loading, in-place 404, transient error, or the loaded vote. */
