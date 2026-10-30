@@ -221,14 +221,12 @@ describe('UiCalendarComponent', () => {
     });
 
     it('marks the control touched when focus leaves the calendar without a pick', async () => {
-      const root = formFixture.nativeElement as HTMLElement;
       formDay('2026-10-12').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: formDay('2026-10-13') }));
       expect(formFixture.componentInstance.control.touched).toBe(false);
 
       formDay('2026-10-12').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
       await formFixture.whenStable();
 
-      expect(root).toBeTruthy();
       expect(formFixture.componentInstance.control.touched).toBe(true);
     });
   });
