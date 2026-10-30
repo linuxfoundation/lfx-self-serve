@@ -230,6 +230,7 @@ export interface UiToastRef {
   id: string;
   /** Removes the toast now. Does nothing if it is already gone. */
   dismiss(): void;
+}
 
 /** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled`. */
 export interface UiOption {
