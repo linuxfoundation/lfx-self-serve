@@ -197,7 +197,7 @@ export class MktgFrameworkViewComponent {
 
   public constructor() {
     // The print mark never outlives the view (a print dialog still up when the page goes).
-    this.destroyRef.onDestroy(() => this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    this.destroyRef.onDestroy(() => this.printService.clear());
     toObservable(this.printView)
       .pipe(takeUntilDestroyed())
       .subscribe((view) => {

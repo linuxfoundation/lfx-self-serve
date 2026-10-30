@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
-import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-print.constants';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { expectMktgPrintFrame, finishMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.describe('AEO/GEO audit content', () => {

@@ -68,8 +68,7 @@ describe('MktgPrintService isolated frame', () => {
   });
 
   afterEach(() => {
-    service?.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    document.body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_BODY_CLASS);
+    service?.clear();
     document.head.querySelectorAll('[data-print-fixture], link[id^="brand-kit-font-"]').forEach((node) => node.remove());
     root.remove();
     delete (document as unknown as Record<string, unknown>)['fonts'];
@@ -110,8 +109,10 @@ describe('MktgPrintService isolated frame', () => {
     sheet.rel = 'stylesheet';
     sheet.href = '/synthetic-print.css';
     sheet.setAttribute('data-print-fixture', 'sheet');
+    sheet.setAttribute('onload', 'window.synthetic = true');
     const style = document.createElement('style');
     style.setAttribute('data-print-fixture', 'style');
+    style.setAttribute('onerror', 'window.synthetic = true');
     style.textContent = '@page synthetic { margin: 1cm; }';
     const script = document.createElement('script');
     script.type = 'text/plain';
@@ -126,6 +127,7 @@ describe('MktgPrintService isolated frame', () => {
     expect(doc?.querySelector('base')?.href).toBe(document.baseURI);
     expect(doc?.head.querySelector('[data-print-fixture="sheet"]')?.getAttribute('href')).toBe('/synthetic-print.css');
     expect(doc?.head.querySelector('[data-print-fixture="style"]')?.textContent).toContain('@page synthetic');
+    expect(doc?.head.querySelector('[onload], [onerror]')).toBeNull();
     expect(doc?.querySelector('script')).toBeNull();
     await releaseFrame();
     expect(framePrint).toHaveBeenCalledOnce();
@@ -168,12 +170,46 @@ describe('MktgPrintService isolated frame', () => {
     expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
   });
 
-  it('removes the frame on afterprint without ever marking the app body for print', async () => {
+  it('removes the frame on afterprint, never marks the app body for print, and returns focus to the opening control', async () => {
+    const button = document.createElement('button');
+    button.textContent = 'Download PDF';
+    document.body.appendChild(button);
+    button.focus();
+    const refocus = vi.spyOn(button, 'focus');
     configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     await releaseFrame();
+    expect(frameFocus).toHaveBeenCalledOnce();
+    expect(refocus).not.toHaveBeenCalled();
     currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
     expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
     expect(document.body.classList.contains(FOUNDATION_MESSAGE_PRINT_BODY_CLASS)).toBe(false);
+    expect(refocus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+    button.remove();
+  });
+
+  it('does not refocus a control that left the page while the dialog was open', async () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    const refocus = vi.spyOn(button, 'focus');
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    await releaseFrame();
+    button.remove();
+    currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
+    expect(refocus).not.toHaveBeenCalled();
+  });
+
+  it('warns, rather than swallowing, when a resource wait throws, and still resolves and prints', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    configure();
+    parentFont.mockImplementationOnce(() => {
+      throw new Error('Synthetic face failure');
+    });
+    await service.prepare('Synthetic Font', [400]);
+    expect(warn).toHaveBeenCalledWith('[mktg-print] print preparation failed', expect.any(Error));
+    service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    await releaseFrame();
+    expect(framePrint).toHaveBeenCalledOnce();
   });
 
   it('replaces an older frame and clear cancels a frame still waiting for resources', async () => {
@@ -182,22 +218,10 @@ describe('MktgPrintService isolated frame', () => {
     service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     expect(old.isConnected).toBe(false);
     expect(currentFrame()).not.toBe(old);
-    service.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    service.clear();
     await vi.advanceTimersByTimeAsync(MKTG_PRINT_FONT_WAIT_MS);
     expect(framePrint).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
-  });
-
-  it('printNow supersedes a compatibility print still awaiting preparation', async () => {
-    configure();
-    const old = service.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    const frame = currentFrame();
-    await old;
-    await releaseFrame();
-    expect(currentFrame()).toBe(frame);
-    expect(framePrint).toHaveBeenCalledOnce();
-    expect(parentPrint).not.toHaveBeenCalled();
   });
 
   it('prints at the frame cap even if a requested face never arrives', async () => {
@@ -244,16 +268,17 @@ describe('MktgPrintService isolated frame', () => {
     expect(document.head.querySelectorAll(`[id="${link.id}"]`)).toHaveLength(1);
   });
 
-  it('caps parent font preparation and clear cancels its compatibility print', async () => {
+  it('caps page font preparation at the wait budget', async () => {
     configure();
     parentFont.mockReturnValueOnce(new Promise(() => undefined));
-    const printed = service.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Synthetic Font', [400]);
-    await vi.advanceTimersByTimeAsync(0);
-    service.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    await vi.advanceTimersByTimeAsync(MKTG_PRINT_FONT_WAIT_MS);
-    await printed;
+    let settled = false;
+    const prepared = service.prepare('Synthetic Font', [400]).then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(MKTG_PRINT_FONT_WAIT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await prepared;
+    expect(settled).toBe(true);
     expect(framePrint).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
   });
 
   it('does nothing on the server', async () => {
@@ -261,8 +286,7 @@ describe('MktgPrintService isolated frame', () => {
     await service.ensureFontStylesheet('https://fonts.example/server.css');
     await service.prepare('Synthetic Font');
     service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    await service.print(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
-    service.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    service.clear();
     expect(parentPrint).not.toHaveBeenCalled();
     expect(framePrint).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();

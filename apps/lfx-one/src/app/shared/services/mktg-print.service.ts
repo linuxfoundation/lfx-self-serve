@@ -97,17 +97,22 @@ export class MktgPrintService {
     this.frame = frame;
     // Never switch the app to print media: its shell rules could hide the iframe itself.
     let fallback: ReturnType<typeof setTimeout> | undefined;
+    let focused: HTMLElement | null = null;
     const cleanup = () => {
       clearTimeout(fallback);
       view.removeEventListener('afterprint', cleanup);
       frame.remove();
-      this.document.body.classList.remove(bodyClass);
+      // Return focus to the control that opened the dialog, if it is still on the page.
+      if (focused?.isConnected) focused.focus({ preventScroll: true });
       if (this.frame === frame) {
         this.frame = null;
         this.cleanupFrame = null;
       }
     };
     this.cleanupFrame = cleanup;
+    // document.open() from this page gives the frame the page's URL (the HTML "document open steps"
+    // run the URL update with the entry document's URL), so a browser's default header or footer
+    // prints the page address, not about:blank, as when the app window printed.
     doc.open();
     doc.write('<!doctype html><html><head></head><body></body></html>');
     doc.close();
@@ -126,6 +131,7 @@ export class MktgPrintService {
     const sheets: Promise<void>[] = [];
     this.document.head.querySelectorAll('link[rel="stylesheet"], style').forEach((source) => {
       const clone = source.cloneNode(true) as HTMLStyleElement | HTMLLinkElement;
+      this.stripHandlers(clone);
       if (clone.tagName === 'LINK') sheets.push(this.waitForStylesheet(clone as HTMLLinkElement));
       doc.head.appendChild(clone);
     });
@@ -134,11 +140,7 @@ export class MktgPrintService {
     roots.forEach((root) => {
       const clone = root.cloneNode(true) as HTMLElement;
       clone.querySelectorAll('script, iframe, object, embed').forEach((node) => node.remove());
-      [clone, ...Array.from(clone.querySelectorAll('*'))].forEach((element) => {
-        Array.from(element.attributes)
-          .filter((attribute) => attribute.name.startsWith('on'))
-          .forEach((attribute) => element.removeAttribute(attribute.name));
-      });
+      [clone, ...Array.from(clone.querySelectorAll('*'))].forEach((element) => this.stripHandlers(element));
       clone.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
       doc.body.appendChild(clone);
     });
@@ -154,6 +156,8 @@ export class MktgPrintService {
       if (request !== this.request || this.frame !== frame) return;
       // Cancel any resource still loading at the cap: WebKit prints only a frame whose loader is idle.
       view.stop();
+      const active = this.document.activeElement;
+      focused = active instanceof HTMLElement ? active : null;
       view.focus();
       // iOS may omit afterprint: keep the frame through its asynchronous preview, then reclaim it;
       // clear() and the next print remove it at once without relying on that event.
@@ -162,20 +166,11 @@ export class MktgPrintService {
     });
   }
 
-  /** Compatibility entry point; all surfaces share the same isolated-frame path. */
-  public async print(bodyClass: string, fontFamily: string | null = null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
-    if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
-    const request = ++this.request;
-    await this.prepare(fontFamily, weights);
-    if (request === this.request) this.printNow(bodyClass);
-  }
-
-  /** Cancel any pending frame/resource wait as well as a compatibility font wait. */
-  public clear(bodyClass: string): void {
+  /** Cancel a pending print (its frame and resource wait); a surface calls it when it leaves. */
+  public clear(): void {
     this.request++;
     if (!isPlatformBrowser(this.platformId)) return;
     this.cleanupFrame?.();
-    this.document.body?.classList.remove(bodyClass);
   }
 
   /** A shared, bounded promise for each font sheet, including sheets already requested by another surface. */
@@ -206,6 +201,13 @@ export class MktgPrintService {
     return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
   }
 
+  /** Inline handlers would be the frame's only script; the clone carries none. */
+  private stripHandlers(element: Element): void {
+    Array.from(element.attributes)
+      .filter((attribute) => attribute.name.startsWith('on'))
+      .forEach((attribute) => element.removeAttribute(attribute.name));
+  }
+
   private waitForStylesheet(link: HTMLLinkElement): Promise<void> {
     if (link.sheet || link.disabled) return Promise.resolve();
     return new Promise((resolve) => {
@@ -232,7 +234,7 @@ export class MktgPrintService {
     const timeout = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, MKTG_PRINT_FONT_WAIT_MS);
     });
-    await Promise.race([work().catch(() => undefined), timeout]);
+    await Promise.race([work().catch((error: unknown) => console.warn('[mktg-print] print preparation failed', error)), timeout]);
     clearTimeout(timer);
   }
 }

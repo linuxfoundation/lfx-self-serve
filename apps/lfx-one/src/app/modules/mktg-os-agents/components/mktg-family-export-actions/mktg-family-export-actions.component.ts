@@ -125,7 +125,7 @@ export class MktgFamilyExportActionsComponent {
     this.destroyRef.onDestroy(() => {
       this.run?.unsubscribe();
       clearTimeout(this.highlightTimer);
-      this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
+      this.print.clear();
     });
   }
 
@@ -242,27 +242,6 @@ export class MktgFamilyExportActionsComponent {
       });
   }
 
-  /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */
-  private markPdfReady(): boolean {
-    const key = this.pdfPreparedScope();
-    if (
-      !isPlatformBrowser(this.platformId) ||
-      this.destroyRef.destroyed ||
-      !this.writer() ||
-      this.checking() ||
-      !key ||
-      !this.printView() ||
-      JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== key ||
-      !this.host.nativeElement.querySelector('[data-testid="family-export-print-document"] > *')
-    )
-      return false;
-    this.pdfScope = key;
-    this.pdfReady.set(true);
-    this.pdfPending.set(false);
-    this.printing.set(false);
-    return true;
-  }
-
   private initTarget(): Signal<MktgFamilyExportTarget | null> {
     return computed(() => {
       const project = this.context.activeContext()?.uid;
@@ -307,7 +286,7 @@ export class MktgFamilyExportActionsComponent {
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         switchMap(({ target, writer }) => {
           this.run?.unsubscribe();
-          this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
+          this.print.clear();
           this.printView.set(null);
           this.printing.set(false);
           this.lookup.set(null);
@@ -342,6 +321,27 @@ export class MktgFamilyExportActionsComponent {
         this.lookup.set(lookup);
         this.checking.set(false);
       });
+  }
+
+  /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */
+  private markPdfReady(): boolean {
+    const key = this.pdfPreparedScope();
+    if (
+      !isPlatformBrowser(this.platformId) ||
+      this.destroyRef.destroyed ||
+      !this.writer() ||
+      this.checking() ||
+      !key ||
+      !this.printView() ||
+      JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== key ||
+      !this.host.nativeElement.querySelector('[data-testid="family-export-print-document"] > *')
+    )
+      return false;
+    this.pdfScope = key;
+    this.pdfReady.set(true);
+    this.pdfPending.set(false);
+    this.printing.set(false);
+    return true;
   }
 
   private watch(run: ReturnType<MktgFamilyExportService['run']>): void {

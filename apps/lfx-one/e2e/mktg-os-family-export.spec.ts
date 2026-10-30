@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -162,35 +162,38 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
   await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
   await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
-  const printDocument = page.getByTestId('family-export-print-document');
+  // The page keeps its screen presentation: the source document stays hidden and the body unmarked.
+  await expect(page.getByTestId('family-export-print-document')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS));
+  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+  // The geometry proof measures the frame's document: the one the dialog prints.
+  const printFrame = await layoutMktgPrintFrame(page);
+  const printDocument = printFrame.getByTestId('family-export-print-document');
   for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-brand-kit-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
     await expect(printDocument.locator(selector)).toHaveCount(1);
   }
-  await expect(page.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
-  await expect(page.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
-  await expect(page.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
-  await expect(printDocument).toBeHidden();
-  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
-  // Preserve the existing source-document geometry proof separately from the isolated print call above.
-  await page.evaluate((bodyClass) => document.body.classList.add(bodyClass), MKTG_FAMILY_PRINT_BODY_CLASS);
-  await page.emulateMedia({ media: 'print' });
-  const cover = page.getByTestId('family-export-print-cover');
+  await expect(printFrame.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
+  await expect(printFrame.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
+  await expect(printFrame.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  // Only the wrapper travels: the card's controls are not in the frame.
+  await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
+  const cover = printFrame.getByTestId('family-export-print-cover');
   await expect(cover).toBeVisible();
-  await expect(page.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
-  await expect(page.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
-  await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
+  await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
+  await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
+  await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
   const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
   expect(coverColors.ground).toBe('rgb(255, 255, 255)');
   expect(coverColors.ink).not.toBe(coverColors.ground);
-  // The screen shell's canvas must not bleed through below a short print section.
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  // No screen canvas may bleed through below a short print section.
+  await expect(printFrame.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   const ancestorBackgrounds = await printDocument.evaluate((element) => {
     const backgrounds: string[] = [];
     for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) backgrounds.push(getComputedStyle(ancestor).backgroundColor);
     return backgrounds;
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
+  await expect(printFrame.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
   await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
@@ -201,7 +204,7 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
   }
-  await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
+  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);

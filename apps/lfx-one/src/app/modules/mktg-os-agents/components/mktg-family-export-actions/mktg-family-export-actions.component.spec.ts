@@ -301,7 +301,7 @@ describe('Family export slot', () => {
     expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
     expect(api.printView).toHaveBeenCalledOnce();
     fixture.destroy();
-    expect(print.clear).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.clear).toHaveBeenCalled();
   });
 
   it('marks readiness when preparation resolves after rendering and prints synchronously on the first enabled click', async () => {
