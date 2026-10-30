@@ -75,6 +75,25 @@ export interface BackendCrowdfundingResponse {
   meta: { total: number; limit: number; offset: number };
 }
 
+/** Raw snake_case row from GET /crowdfunding/organizations/{uid}/donations on the upstream crowdfunding service. */
+export interface BackendOrgDonation {
+  id: string;
+  type: 'one_time' | 'recurring';
+  initiative_id?: string;
+  initiative_name?: string;
+  donor_name: string;
+  donor_email: string;
+  amount_cents: number;
+  frequency?: string;
+  status: string;
+  created_on: string;
+}
+
+export interface BackendOrgDonationListResponse {
+  data: BackendOrgDonation[];
+  meta: { total: number; limit: number; offset: number };
+}
+
 export interface BackendTransaction {
   id: string;
   type: 'donations' | 'expenses';

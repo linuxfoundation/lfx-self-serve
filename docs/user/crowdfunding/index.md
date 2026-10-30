@@ -48,6 +48,7 @@ Under the **Project**, **Foundation**, and **Org** lenses, select **Crowdfunding
 ## Related sections
 
 - [Lens-scoped Initiatives](./lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Organization Donations](./lens-donations/) — donations made on behalf of an organization
 - [Crowdfunding FAQ](./faq/) — answers to common questions about initiatives and donations
 - [Transactions](../account/transactions/) — view purchase and billing history across all LFX products
 - [Profile](../profile/) — manage your account details associated with your donations

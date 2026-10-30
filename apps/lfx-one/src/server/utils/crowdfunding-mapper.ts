@@ -14,6 +14,7 @@ import {
   SponsorEntry,
   CrowdfundingInitiativeStatus,
   MyDonation,
+  OrgDonation,
   PaymentMethod,
   RecurringDonation,
   RecurringDonationStatus,
@@ -35,6 +36,7 @@ import {
   BackendGoal,
   BackendInitiative,
   BackendMyTransaction,
+  BackendOrgDonation,
   BackendSponsor,
   BackendSponsorshipTier,
   BackendSubscription,
@@ -182,6 +184,20 @@ export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonatio
     date: new Date(t.date).getTime(),
     initiativeName: t.initiative_name || undefined,
     recurring: t.recurring,
+  };
+}
+
+/** Maps a CF Org lens donation row (from GET /crowdfunding/organizations/{uid}/donations) to the OrgDonation wire shape. */
+export function mapOrgDonation(d: BackendOrgDonation): OrgDonation {
+  return {
+    id: d.id,
+    recurring: d.type === 'recurring',
+    initiativeId: d.initiative_id || undefined,
+    initiativeName: d.initiative_name || undefined,
+    donorName: d.donor_name,
+    donorEmail: d.donor_email,
+    amountCents: d.amount_cents,
+    date: new Date(d.created_on).getTime(),
   };
 }
 

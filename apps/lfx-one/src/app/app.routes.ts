@@ -111,6 +111,18 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
+      // Crowdfunding donations matched to the organization (#415), behind the same dark-launch guard as Initiatives.
+      path: 'donations',
+      canMatch: [crowdfundingAttributionEnabledGuard],
+      data: {
+        lens: 'org',
+        title: 'Donations',
+        description: 'Crowdfunding donations made on behalf of your organization.',
+        icon: 'fa-light fa-hand-holding-heart',
+      },
+      loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
+    },
+    {
       path: 'overview',
       data: {
         lens: 'org',

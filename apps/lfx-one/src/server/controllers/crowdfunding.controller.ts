@@ -226,6 +226,31 @@ export class CrowdfundingController {
     }
   }
 
+  // GET /api/crowdfunding/org-donations?orgUid=
+  public async getOrgDonations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_donations');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_donations' });
+      }
+
+      const { orgUid, pageSize, offset } = req.query;
+      // Interpolated into the CF path, so it must be an 18-char b2b_org SFID.
+      if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+        throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation: 'get_org_donations' });
+      }
+
+      const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+
+      logger.success(req, 'get_org_donations', startTime, { result_count: donations.data.length, total: donations.total });
+
+      res.json(donations);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/crowdfunding/initiatives-stats[?projectUid=|?orgUid=]
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');

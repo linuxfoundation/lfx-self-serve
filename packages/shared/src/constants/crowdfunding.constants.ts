@@ -12,6 +12,7 @@ import type {
   FundDistributionItem,
   InitiativesResponse,
   MyDonationsResponse,
+  OrgDonationsResponse,
   RecurringDonation,
   RecurringDonationsResponse,
   SponsorshipDonationMode,
@@ -91,6 +92,12 @@ export const EMPTY_TRANSACTION_STATE: { items: CrowdfundingTransaction[]; totalC
   totalCount: 0,
 };
 export const EMPTY_MY_DONATIONS: MyDonationsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,
+  offset: 0,
+};
+export const EMPTY_ORG_DONATIONS: OrgDonationsResponse = {
   data: [],
   total: 0,
   pageSize: DEFAULT_CROWDFUNDING_PAGE_SIZE,

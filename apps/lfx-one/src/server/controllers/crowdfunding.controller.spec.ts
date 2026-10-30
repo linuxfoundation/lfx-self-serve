@@ -121,6 +121,81 @@ describe('CrowdfundingController initiatives scope (#347, #348)', () => {
   });
 });
 
+describe('CrowdfundingController org donations (#415)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'd1',
+            type: 'recurring',
+            initiative_id: 'i1',
+            initiative_name: 'Synthetic Fund',
+            donor_name: 'Synthetic Donor',
+            donor_email: 'donor@example.com',
+            amount_cents: 2500,
+            frequency: 'monthly',
+            status: 'active',
+            created_on: '2026-10-01T00:00:00Z',
+          },
+        ],
+        meta: { total: 1, limit: 10, offset: 20 },
+      }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['a missing orgUid', {}],
+    ['a non-SFID orgUid', { orgUid: 'acme' }],
+    ['a 15-char orgUid', { orgUid: '001000000000000' }],
+    ['a path traversal orgUid', { orgUid: '../me/donations' }],
+    ['a repeated orgUid', { orgUid: [ORG_UID, ORG_UID] }],
+  ])('rejects %s with a 400 before calling CF', async (_label, query) => {
+    const next = vi.fn();
+    await new CrowdfundingController().getOrgDonations(buildReq(query), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('lists from the CF organizations donations endpoint with the user token and maps rows', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().getOrgDonations(buildReq({ orgUid: ORG_UID, pageSize: '10', offset: '20' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://cf.example/crowdfunding/organizations/${ORG_UID}/donations?limit=10&offset=20`);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer user-token');
+    expect(res.json).toHaveBeenCalledWith({
+      data: [
+        {
+          id: 'd1',
+          recurring: true,
+          initiativeId: 'i1',
+          initiativeName: 'Synthetic Fund',
+          donorName: 'Synthetic Donor',
+          donorEmail: 'donor@example.com',
+          amountCents: 2500,
+          date: Date.UTC(2026, 9, 1),
+        },
+      ],
+      total: 1,
+      pageSize: 10,
+      offset: 20,
+    });
+  });
+});
+
 describe('CrowdfundingController initiative writer routes (#259)', () => {
   const INITIATIVE_ID = '00000000-0000-4000-8000-000000000002';
   let fetchMock: ReturnType<typeof vi.fn>;

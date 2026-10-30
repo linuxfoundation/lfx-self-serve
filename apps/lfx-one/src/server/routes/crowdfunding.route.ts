@@ -20,6 +20,7 @@ router.delete('/payment-method', blockDuringImpersonation, (req, res, next) => c
 router.get('/donation-stats', (req, res, next) => crowdfundingController.getMyDonationStats(req, res, next));
 router.get('/recurring-donations/:id', (req, res, next) => crowdfundingController.getRecurringDonationById(req, res, next));
 router.get('/recurring-donations', (req, res, next) => crowdfundingController.getMyRecurringDonations(req, res, next));
+router.get('/org-donations', (req, res, next) => crowdfundingController.getOrgDonations(req, res, next));
 router.get('/my-donations', (req, res, next) => crowdfundingController.getMyDonations(req, res, next));
 router.post('/presigned-url', blockDuringImpersonation, (req, res, next) => crowdfundingController.getPresignedUrl(req, res, next));
 router.delete('/subscriptions/:id', blockDuringImpersonation, (req, res, next) => crowdfundingController.cancelSubscription(req, res, next));

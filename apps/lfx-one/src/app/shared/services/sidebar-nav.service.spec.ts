@@ -630,6 +630,20 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
   });
 
+  it('shows Donations on the org lens with the flag on, without a writer grant (#415)', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set('001000000000000AAA');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/donations')).toBeUndefined();
+
+    crowdfundingAttributionEnabled.set(true);
+    const items = service.sidebarItems();
+    expect(findByLink(items, '/org/acme-inc/donations')).toEqual(expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' }));
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toBeUndefined();
+  });
+
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
     formationEnabled.set(true);
 

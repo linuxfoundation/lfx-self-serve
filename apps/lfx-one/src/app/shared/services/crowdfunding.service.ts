@@ -26,6 +26,7 @@ import {
   InitiativesResponse,
   InitiativesScope,
   MyDonationsResponse,
+  OrgDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
   RecurringDonation,
@@ -106,6 +107,17 @@ export class CrowdfundingService {
     return this.http
       .get<MyDonationsResponse>('/api/crowdfunding/my-donations', { params: httpParams })
       .pipe(catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations')));
+  }
+
+  /** Donations matched to an organization (Org lens, #415). Errors surface (403 not an auditor, 5xx CF/FGA down) for the page to show. */
+  public getOrgDonations(params: { orgUid: string; pageSize?: number; offset?: number }): Observable<OrgDonationsResponse> {
+    let httpParams = new HttpParams().set('orgUid', params.orgUid);
+    if (params.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset != null) httpParams = httpParams.set('offset', String(params.offset));
+
+    return this.http
+      .get<OrgDonationsResponse>('/api/crowdfunding/org-donations', { params: httpParams })
+      .pipe(catchError(this.logAndRethrow('getOrgDonations')));
   }
 
   public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
