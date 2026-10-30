@@ -22,7 +22,7 @@ Not from the signed-in app: ballots are read-only there. (While a vote is active
 
 ## Can I follow a description link without leaving my ballot?
 
-Yes. Web links in a vote description are blue and underlined and open in a new tab, so the vote and any choices you have made stay in the original tab. This works on the vote's page, in the ballot drawer, and on a personalized ballot link. Email and phone links keep their usual behavior.
+Yes. Web links in a vote description are blue and underlined and open in a new tab, so the vote and any choices you have made stay in the original tab. Plain-text addresses starting with `http://` or `https://` become clickable too; the description's formatting and existing links stay intact. This works on the vote's page, in the ballot drawer, and on a personalized ballot link. Email and phone links keep their usual behavior.
 
 Malformed web links and links to private or local network addresses are blocked and do not open. If a description link does nothing, ask the vote creator to check the address and provide a public web link.
 

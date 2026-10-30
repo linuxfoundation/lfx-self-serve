@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ This article explains the vote's page, which shows how a vote is going and how i
 
 The page header shows the vote's title, status, whether ballots are named or pseudo-anonymous, its group, voting method, close date and how many voters were invited. Select **Votes** at the top to go back to the list.
 
-Web links in the vote's description are blue and underlined. Selecting one opens it in a new tab, leaving the vote's page open. The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
+Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Existing rich-text formatting and links are preserved. The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
 
 If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
 
