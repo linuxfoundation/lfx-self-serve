@@ -1638,7 +1638,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
 
     it('says every related organization on the code tile when the account has no Insights organization, even under insights', async () => {
-      orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null, relatedOrgCount: 2 });
+      orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 2 });
       await mount('browser', '/?tab=employees&employment=current');
       await answer();
 

@@ -63,7 +63,6 @@ export interface OrgLensOrgScope {
   hasInsightsOrg: boolean;
   insightsOrgId: string | null;
   insightsOrgName: string | null;
-  insightsOrgSlug: string | null;
   /** Distinct organizations with code activity on the account in two years. */
   relatedOrgCount: number;
 }

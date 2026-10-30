@@ -1211,8 +1211,8 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     expect(spark).toContain("IFF(METRIC_KEY IN ('contributors', 'commits', 'pull-requests'), INSIGHTS_PROJECT_VALUE, PROJECT_VALUE) AS PROJECT_VALUE");
 
     const [viewing, binds] = callOn('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n');
-    expect(viewing).toContain('AND ORG_ORGANIZATION_ID = ?');
-    expect(binds[2]).toBe(INSIGHTS_ORG);
+    expect(viewing).toContain('AND ORG_ACCOUNT_ID = ? AND ORG_ORGANIZATION_ID = ?');
+    expect(binds.slice(2)).toEqual([ORG, INSIGHTS_ORG]);
     expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:insights$/));
   });
 
@@ -1249,6 +1249,20 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     const all = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
     expect(all!.rows.map((row) => row.isViewingOrg)).toEqual([true, true]);
     expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-board-technical-influence:.*:all$/));
+  });
+
+  it('does not flag the Insights organization row under insights when another account carries it', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      if (sql.includes('COUNT(')) return { rows: [{ N: 1 }] };
+      if (sql.includes('DIM_RANK AS RANK'))
+        return { rows: [{ ORG_ORGANIZATION_ID: INSIGHTS_ORG, ORG_ACCOUNT_ID: 'other-account', ORG_NAME: 'Other', RANK: 1 }] };
+      return { rows: [] };
+    });
+
+    const insights = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'insights');
+
+    expect(insights!.rows.map((row) => row.isViewingOrg)).toEqual([false]);
   });
 
   it('reads the account scope row once per board request under insights, and not at all under all', async () => {

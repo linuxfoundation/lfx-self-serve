@@ -17,7 +17,6 @@ const scope = (accountId: string): OrgLensOrgScope => ({
   hasInsightsOrg: true,
   insightsOrgId: `insights-${accountId}`,
   insightsOrgName: `Org ${accountId}`,
-  insightsOrgSlug: null,
   relatedOrgCount: 3,
 });
 const account = (uid: string): Account => ({ accountId: uid, accountName: uid, membershipTier: '', uid, slug: uid });

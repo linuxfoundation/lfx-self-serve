@@ -308,11 +308,11 @@ describe('OrgInvolvementService.getContributorsMonthly — organization scope (l
     expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), 'acc-1', 'insights');
     expect(headlineSql()).toContain('AND INSIGHTS_DAILY_CODE_ACTIVITIES > 0');
     const [sql, binds, options] = trendCall();
-    expect(sql).toContain('SELECT MONTH_START_DATE, insights_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
+    expect(sql).toContain('SELECT MONTH_START_DATE, INSIGHTS_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
     expect(binds).toEqual(['acc-1']);
     expect(options).toEqual({
       expectMissingObject: 'ORG_CONTRIBUTORS_MONTHLY',
-      expectInvalidIdentifier: 'insights_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS',
+      expectInvalidIdentifier: 'INSIGHTS_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS',
     });
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:insights');
   });
@@ -326,7 +326,7 @@ describe('OrgInvolvementService.getContributorsMonthly — organization scope (l
     await new OrgInvolvementService().getContributorsMonthly('acc-1', 'insights');
 
     const trendReads = execute.mock.calls.filter(([query]) => isContributorsTrend(String(query)));
-    expect(trendReads.at(-1)?.[0]).toContain('SELECT MONTH_START_DATE, insights_UNIQUE_CONTRIBUTORS AS UNIQUE_CONTRIBUTORS\n');
+    expect(trendReads.at(-1)?.[0]).toContain('SELECT MONTH_START_DATE, INSIGHTS_UNIQUE_CONTRIBUTORS AS UNIQUE_CONTRIBUTORS\n');
   });
 
   it('reads exactly the all-organizations SQL under all', async () => {

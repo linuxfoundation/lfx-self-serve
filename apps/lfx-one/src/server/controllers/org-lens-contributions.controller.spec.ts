@@ -284,7 +284,6 @@ describe('OrgLensContributionsController organization scope (lfx-self-serve-ops#
       hasInsightsOrg: true,
       insightsOrgId: 'insights-org-1',
       insightsOrgName: 'Example Org',
-      insightsOrgSlug: 'example-org',
       relatedOrgCount: 3,
     };
     getOrgScope.mockResolvedValue(scope);

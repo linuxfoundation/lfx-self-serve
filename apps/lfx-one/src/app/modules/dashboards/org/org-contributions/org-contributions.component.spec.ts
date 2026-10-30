@@ -304,7 +304,7 @@ describe('OrgContributionsComponent', () => {
 
   it('captions every related organization when the account has no Insights organization, even under ?orgScope=insights', async () => {
     const { fixture } = await render(null, {
-      orgScopeInfo: { accountId: 'acc-1', hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null, relatedOrgCount: 3 },
+      orgScopeInfo: { accountId: 'acc-1', hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 3 },
     });
 
     expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');

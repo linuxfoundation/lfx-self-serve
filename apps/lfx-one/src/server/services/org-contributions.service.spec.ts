@@ -531,7 +531,7 @@ describe('OrgContributionsService — organization scope', () => {
     grantInsights();
 
     await service.getContributions(ACCOUNT, query({ metric: 'commits', orgScope: 'insights' }));
-    expect(repoCall().sql).toContain('MIN(insights_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS) AS first_commit_ts');
+    expect(repoCall().sql).toContain('MIN(INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS) AS first_commit_ts');
 
     execute.mockClear();
     await service.getContributions(ACCOUNT, query({ metric: 'commits', teamMembers: 'include', orgScope: 'insights' }));
@@ -544,7 +544,7 @@ describe('OrgContributionsService — organization scope', () => {
       code: '000904',
     });
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('insights_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingTwin;
+      if (sql.includes('INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingTwin;
       return { rows: [] };
     });
 

@@ -18,7 +18,6 @@ const SCOPE: OrgLensOrgScope = {
   hasInsightsOrg: true,
   insightsOrgId: 'insights-1',
   insightsOrgName: 'Example Org',
-  insightsOrgSlug: 'example-org',
   relatedOrgCount: 4,
 };
 
@@ -92,7 +91,7 @@ describe('OrgScopeSelectComponent', () => {
   });
 
   it('shows a disabled All related organizations and a note when the account has no Insights organization, leaving the page control alone', async () => {
-    await mount({ info: { ...SCOPE, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null } });
+    await mount({ info: { ...SCOPE, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null } });
 
     expect(select().form()).not.toBe(form);
     expect(select().form().get('orgScope')?.value).toBe('all');

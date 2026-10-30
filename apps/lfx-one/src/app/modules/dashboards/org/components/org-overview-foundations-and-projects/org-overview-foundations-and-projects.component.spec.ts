@@ -3,7 +3,7 @@
 
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensFoundationProject, OrgLensFoundationsAndProjectsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -100,5 +100,36 @@ describe('OrgOverviewFoundationsAndProjectsComponent maintainer roles (lfx-self-
     expect(maintainers('envoy')).toBe('0');
     expect(maintainers('unavailable')).toBe('—');
     expect(maintainers('non-lf')).toBe('—');
+  });
+});
+
+describe('OrgOverviewFoundationsAndProjectsComponent project navigation (lfx-self-serve-ops#1219)', () => {
+  interface Rows {
+    onProjectRowClick: (row: OrgLensFoundationProject) => void;
+    onProjectRowKeydown: (event: KeyboardEvent, row: OrgLensFoundationProject) => void;
+  }
+
+  async function navigateFrom(url: string, open: (component: Rows, row: OrgLensFoundationProject) => void) {
+    const fixture = await render([project('k8s')]);
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl(url);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    open(fixture.componentInstance as unknown as Rows, project('k8s'));
+    return navigate;
+  }
+
+  it('carries ?orgScope=all to the project, by click and by keyboard', async () => {
+    const clicked = await navigateFrom('/?orgScope=all', (component, row) => component.onProjectRowClick(row));
+    expect(clicked).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: { orgScope: 'all' } });
+
+    const keyed = await navigateFrom('/?orgScope=all', (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
+    expect(keyed).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: { orgScope: 'all' } });
+  });
+
+  it('sends no orgScope from the default or an unknown value', async () => {
+    for (const url of ['/', '/?orgScope=insights', '/?orgScope=bogus']) {
+      const navigate = await navigateFrom(url, (component, row) => component.onProjectRowClick(row));
+      expect(navigate).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: {} });
+    }
   });
 });

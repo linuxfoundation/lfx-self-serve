@@ -976,7 +976,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
   });
 
   it('says every related organization on the Contributors tile when the account has no Insights organization, even under insights', async () => {
-    orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null, relatedOrgCount: 2 });
+    orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 2 });
     await mount('/?tab=contributors');
     const tooltip = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content;
 

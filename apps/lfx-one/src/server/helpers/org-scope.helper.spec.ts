@@ -28,7 +28,6 @@ const snowflake = { execute } as unknown as SnowflakeService;
 const ROW = {
   INSIGHTS_ORG_ID: 'insights-org-1',
   INSIGHTS_ORG_NAME: 'Example Org',
-  INSIGHTS_ORG_SLUG: 'example-org',
   RELATED_ORG_COUNT: 4,
   HAS_INSIGHTS_ORG: true,
 };
@@ -54,7 +53,6 @@ describe('readOrgLensOrgScope', () => {
       hasInsightsOrg: true,
       insightsOrgId: 'insights-org-1',
       insightsOrgName: 'Example Org',
-      insightsOrgSlug: 'example-org',
       relatedOrgCount: 4,
     });
     const [sql, binds] = execute.mock.calls[0];
@@ -71,7 +69,6 @@ describe('readOrgLensOrgScope', () => {
       hasInsightsOrg: false,
       insightsOrgId: null,
       insightsOrgName: null,
-      insightsOrgSlug: null,
       relatedOrgCount: 0,
     });
   });
@@ -138,9 +135,10 @@ describe('resolveOrgScope', () => {
 });
 
 describe('scope SQL fragments', () => {
-  it('reads a column as is under all and its insights_ twin under insights', () => {
+  it('reads a column as is under all and its insights_ twin, in the column’s case, under insights', () => {
     expect(orgScopeColumn('all', 'code_activities')).toBe('code_activities');
     expect(orgScopeColumn('insights', 'code_activities')).toBe('insights_code_activities');
+    expect(orgScopeColumn('insights', 'UNIQUE_CONTRIBUTORS')).toBe('INSIGHTS_UNIQUE_CONTRIBUTORS');
   });
 
   it('gates rows on an Insights-scoped count only under insights', () => {

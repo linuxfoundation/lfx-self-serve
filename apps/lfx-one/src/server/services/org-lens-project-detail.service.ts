@@ -833,7 +833,7 @@ export class OrgLensProjectDetailService {
 
     const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
     if (row === null) return null;
-    const isOwnOrganization = row.ACCOUNT_ID === orgUid && this.isViewingRow(viewing, row.ACCOUNT_ID, organizationId);
+    const isOwnOrganization = this.isViewingRow(viewing, row.ACCOUNT_ID, organizationId);
 
     const readsMaintainerRoles = this.categorySources(dimension).some((source) => source.countsMaintainerRoles);
     const [position, activitySharePercent, maintainerRoles] = await Promise.all([
@@ -2117,7 +2117,8 @@ export class OrgLensProjectDetailService {
 
   /**
    * The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. Under `insights` it
-   * is the account's Insights organization's row (lfx-self-serve-ops#1219), else the account's best-ranked row.
+   * is the account's Insights organization's row when credited to the account (lfx-self-serve-ops#1219), else the
+   * account's best-ranked row.
    */
   private async fetchViewingLeaderboardRow(viewing: ViewingOrg, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
     const byInsightsOrg = viewing.insightsOrgId !== null;
@@ -2126,7 +2127,7 @@ export class OrgLensProjectDetailService {
         SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
                LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, RANK
         FROM ${this.leaderboardTable()}
-        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${byInsightsOrg ? 'ORG_ORGANIZATION_ID' : 'ORG_ACCOUNT_ID'} = ?
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?${byInsightsOrg ? ' AND ORG_ORGANIZATION_ID = ?' : ''}
         -- One Salesforce account can span multiple leaderboard rows (one per crowd.dev org); pick its
         -- best-ranked row deterministically so the Our-Influence band chips never flip between requests.
         -- ORG_ORGANIZATION_ID is the model's unique per-row grain key and breaks any
@@ -2134,7 +2135,7 @@ export class OrgLensProjectDetailService {
         ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC
         LIMIT 1
       `,
-      [slug, timeRangeType, viewing.insightsOrgId ?? viewing.accountId]
+      [slug, timeRangeType, viewing.accountId, ...(byInsightsOrg ? [viewing.insightsOrgId] : [])]
     );
     return result.rows[0] ?? null;
   }
@@ -2208,8 +2209,9 @@ export class OrgLensProjectDetailService {
     return OrgLensProjectDetailService.orgScopedCardKeys[cardKey] ? `:${scope}` : '';
   }
 
+  /** The viewing org's row: the account's, and under `insights` also the Insights organization's (lfx-self-serve-ops#1219). */
   private isViewingRow(viewing: ViewingOrg, accountId: string | null, organizationId: string | null): boolean {
-    return viewing.insightsOrgId === null ? accountId === viewing.accountId : organizationId === viewing.insightsOrgId;
+    return accountId === viewing.accountId && (viewing.insightsOrgId === null || organizationId === viewing.insightsOrgId);
   }
 
   private mapHero(row: HeroRow, slug: string, foundationLabel: string): OrgLensProjectHero {

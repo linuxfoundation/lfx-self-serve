@@ -1473,7 +1473,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
     });
 
-    it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels', async () => {
+    it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels, still naming every unclassified person', async () => {
       grantInsights();
       addRangeRow(ACCOUNT, 'former-insights', '365d', true, 'formerinsights', 'Former Insights', null, 9);
       setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'former-insights', '365d', [2, 2, 2]);
@@ -1491,20 +1491,20 @@ describe('OrgLensPeopleService person-key company emails', () => {
         ['unclassified-insights', 1],
       ]);
       expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+      // Someone with no employment record but only other organizations' code is not listed, but is still named, so the
+      // page never takes their access-only live row for a current employee.
+      expect(response.unclassifiedUsernames?.sort()).toEqual(['uninsights', 'unother']);
       const offRoster = queries().filter((query) => /ORG_PEOPLE_(ALL_RANGES|UNCLASSIFIED_CONTRIBUTORS)/.test(query) && !/IS_FORMER = FALSE/.test(query));
-      const rowReads = offRoster.filter((query) => query.includes('ORDER BY NAME'));
-      const labelReads = offRoster.filter((query) => query.includes('INNER JOIN'));
-      expect(rowReads).toHaveLength(2);
-      expect(labelReads).toHaveLength(2);
-      for (const query of rowReads) {
-        expect(query).toContain('AND INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
-        expect(query).toContain('INSIGHTS_COMMITS_COUNT AS COMMITS_COUNT');
-      }
-      for (const query of labelReads) {
-        expect(query).toContain('AND f.INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
-      }
+      const scopedRowReads = offRoster.filter((query) => query.includes('ORDER BY NAME') && query.includes('INSIGHTS_COMMITS_COUNT AS COMMITS_COUNT'));
+      const scopedLabelReads = offRoster.filter((query) => query.includes('INNER JOIN') && query.includes('f.INSIGHTS_CODE_ACTIVITIES_COUNT'));
+      expect(scopedRowReads).toHaveLength(2);
+      expect(scopedLabelReads).toHaveLength(2);
+      for (const query of scopedRowReads) expect(query).toContain('AND INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
+      for (const query of scopedLabelReads) expect(query).toContain('AND f.INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all:insights')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all:insights')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all:all')!)).toBe(false);
     });
 
     it("counts the Code tab's Insights-scoped code under insights, and today's code under all", async () => {

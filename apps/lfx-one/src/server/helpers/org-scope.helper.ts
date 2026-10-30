@@ -12,7 +12,6 @@ import { withOrgCache } from '../services/valkey.service';
 interface OrgLensOrgScopeRow {
   INSIGHTS_ORG_ID: string | null;
   INSIGHTS_ORG_NAME: string | null;
-  INSIGHTS_ORG_SLUG: string | null;
   RELATED_ORG_COUNT: number | null;
   HAS_INSIGHTS_ORG: boolean | null;
 }
@@ -29,7 +28,7 @@ export async function readOrgLensOrgScope(snowflakeService: SnowflakeService, ac
     VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
     async () => {
       const query = `
-        SELECT INSIGHTS_ORG_ID, INSIGHTS_ORG_NAME, INSIGHTS_ORG_SLUG, RELATED_ORG_COUNT, HAS_INSIGHTS_ORG
+        SELECT INSIGHTS_ORG_ID, INSIGHTS_ORG_NAME, RELATED_ORG_COUNT, HAS_INSIGHTS_ORG
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ORG_SCOPE
         WHERE ACCOUNT_ID = ?
         LIMIT 1
@@ -40,7 +39,6 @@ export async function readOrgLensOrgScope(snowflakeService: SnowflakeService, ac
         hasInsightsOrg: row?.HAS_INSIGHTS_ORG === true && !!row.INSIGHTS_ORG_ID,
         insightsOrgId: row?.INSIGHTS_ORG_ID ?? null,
         insightsOrgName: row?.INSIGHTS_ORG_NAME ?? null,
-        insightsOrgSlug: row?.INSIGHTS_ORG_SLUG ?? null,
         relatedOrgCount: Number(row?.RELATED_ORG_COUNT ?? 0),
       };
     },
@@ -59,11 +57,13 @@ export async function resolveOrgScope(snowflakeService: SnowflakeService, accoun
 
 /**
  * The column a count reads under the scope (lfx-self-serve-ops#1219): the model's all-organizations column under `all`,
- * exactly as before, and its `insights_` twin under `insights` — lf-dbt adds the Insights-scoped counts as parallel
+ * exactly as before, and its `insights_` twin under `insights` (`INSIGHTS_` for an upper-case column, so the SQL, logs
+ * and missing-column matching read one case) — lf-dbt adds the Insights-scoped counts as parallel
  * columns on the same rows, recomputed over the Insights organization's activity in repositories LFX Insights counts.
  */
 export function orgScopeColumn(scope: OrgScopeFilter, column: string): string {
-  return scope === 'insights' ? `insights_${column}` : column;
+  if (scope !== 'insights') return column;
+  return column === column.toUpperCase() ? `INSIGHTS_${column}` : `insights_${column}`;
 }
 
 /**

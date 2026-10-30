@@ -247,10 +247,11 @@ export class OrgLensPeopleService {
    * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`). The two populations are disjoint within
    * a warehouse build but cached separately, so someone on both (person key, CDP member or LF username) is listed once,
    * as the former employee, taking the LF username or CDP member only the unclassified row has. `unclassifiedUsernames`
-   * names every person with no employment record in the range and scope, those `exclude` drops included, so their live
-   * access row is never taken for a current employee. Until lf-dbt builds the unclassified table the response carries
-   * former employees only. `orgScope` (lfx-self-serve-ops#1219): under `insights` both populations count the Insights
-   * organization's code only, and someone with none of it is not listed.
+   * names every person with no employment record in the range, those `exclude` drops included, so their live access
+   * row is never taken for a current employee. Until lf-dbt builds the unclassified table the response carries former
+   * employees only. `orgScope` (lfx-self-serve-ops#1219): under `insights` both populations count the Insights
+   * organization's code only, and someone with none of it is not listed; `unclassifiedUsernames` still names them, from
+   * the `all` read, since having no employment record does not depend on the scope.
    */
   public async getFormerEmployees(
     req: Request,
@@ -261,9 +262,10 @@ export class OrgLensPeopleService {
     orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
     const scope = await this.resolveOrgScope(accountId, orgScope);
-    const [former, unclassified, teamMemberKeys] = await Promise.all([
+    const [former, unclassified, unscopedUnclassified, teamMemberKeys] = await Promise.all([
       this.getFormerEmployeesRaw(req, accountId, range, filters.projectScope, scope),
       this.getUnclassifiedContributorsRaw(req, accountId, range, filters.projectScope, scope),
+      scope === 'insights' ? this.getUnclassifiedContributorsRaw(req, accountId, range, filters.projectScope, 'all') : null,
       this.getTeamMemberPersonKeys(accountId, teamMembers),
     ]);
     const offRosterRow = (row: OrgPeopleAllRowRaw): OrgAllEmployeeRowInternal =>
@@ -276,7 +278,13 @@ export class OrgLensPeopleService {
     ];
     const formerByIdentity = new Map(formerRows.flatMap((row) => identities(row).map((identity) => [identity, row] as const)));
     const unclassifiedPeople = (unclassified?.rowsRaw ?? []).map((row) => ({ ...offRosterRow(row), isUnclassified: true }));
-    const unclassifiedUsernames = [...new Set(unclassifiedPeople.flatMap((row) => (row.lfUsername ? [row.lfUsername] : [])))];
+    const unclassifiedUsernames = [
+      ...new Set(
+        (scope === 'insights' ? (unscopedUnclassified?.rowsRaw ?? []).map((row) => this.mapEmployeeRow(row)) : unclassifiedPeople).flatMap((row) =>
+          row.lfUsername ? [row.lfUsername] : []
+        )
+      ),
+    ];
     const unclassifiedRows: OrgAllEmployeeRowInternal[] = [];
     for (const row of unclassifiedPeople) {
       const kept = identities(row)
