@@ -170,8 +170,12 @@ export const ORG_SCOPE_ALL_TOOLTIP =
 /** Added to the organization-scope tooltip on People → All Employees, whose other columns are not code. */
 export const ORG_SCOPE_CODE_ONLY_NOTE = 'Applies to code contributions only.';
 
-/** Note under a disabled organization-scope filter: the account has no Insights organization, so only All related organizations is offered. */
-export const ORG_SCOPE_UNAVAILABLE_NOTE = 'This company has no LFX Insights organization; counts include every related organization.';
+/**
+ * Note under a disabled organization-scope filter: the account has no Insights organization, or its Insights organization
+ * has no code activity on the account in the past 730 days (lf-dbt `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
+ */
+export const ORG_SCOPE_UNAVAILABLE_NOTE =
+  'This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.';
 
 /** The sentence a count's caption or tooltip adds for the organization scope it counts (lfx-self-serve-ops#1219). */
 export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> = {

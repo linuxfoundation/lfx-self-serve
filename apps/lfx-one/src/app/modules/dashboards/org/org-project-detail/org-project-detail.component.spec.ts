@@ -78,7 +78,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -189,7 +189,7 @@ describe('OrgProjectDetailComponent — page-level empty state', () => {
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -286,7 +286,7 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -407,7 +407,7 @@ describe('OrgProjectDetailComponent — organization scope', () => {
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
-        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         { provide: OrgLensProjectDetailService, useValue: detail },
         {
           provide: PersonDetailDrawerService,
@@ -469,6 +469,16 @@ describe('OrgProjectDetailComponent — organization scope', () => {
     component['scopeForm'].controls.orgScope.setValue('insights');
     await fixture.whenStable();
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: null } }));
+  });
+
+  it('keeps ?orgScope=all on the way back to Projects, and nothing at the default', async () => {
+    const { component } = await create({ orgScope: 'all' });
+
+    expect(component['breadcrumbHome']().queryParams).toEqual({ orgScope: 'all' });
+    expect(component['breadcrumbItems']()[0].queryParams).toEqual({ orgScope: 'all' });
+
+    queryParams.next(convertToParamMap({}));
+    expect(component['breadcrumbHome']().queryParams).toEqual({});
   });
 
   it('re-reads both leaderboards with the picked scope', async () => {

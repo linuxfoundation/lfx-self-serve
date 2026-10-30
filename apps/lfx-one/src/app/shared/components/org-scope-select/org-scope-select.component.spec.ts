@@ -9,7 +9,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { ORG_SCOPE_ALL_TOOLTIP, ORG_SCOPE_CODE_ONLY_NOTE, ORG_SCOPE_UNAVAILABLE_NOTE } from '@lfx-one/shared/constants';
 import type { OrgLensOrgScope, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgScopeSelectComponent } from './org-scope-select.component';
 
@@ -25,6 +25,7 @@ const SCOPE: OrgLensOrgScope = {
 describe('OrgScopeSelectComponent', () => {
   let fixture: ComponentFixture<OrgScopeSelectComponent>;
   let current: WritableSignal<OrgLensOrgScope | null>;
+  let retryFailedRead: Mock<() => void>;
   let form: FormGroup<{ orgScope: FormControl<OrgScopeFilter> }>;
 
   const select = (): SelectComponent => fixture.debugElement.query(By.directive(SelectComponent)).componentInstance;
@@ -34,7 +35,7 @@ describe('OrgScopeSelectComponent', () => {
     current.set(info);
     await TestBed.configureTestingModule({
       imports: [OrgScopeSelectComponent],
-      providers: [{ provide: OrgLensOrgScopeService, useValue: { current } }],
+      providers: [{ provide: OrgLensOrgScopeService, useValue: { current, retryFailedRead } }],
     }).compileComponents();
     fixture = TestBed.createComponent(OrgScopeSelectComponent);
     fixture.componentRef.setInput('form', form);
@@ -46,6 +47,7 @@ describe('OrgScopeSelectComponent', () => {
 
   beforeEach(() => {
     current = signal<OrgLensOrgScope | null>(null);
+    retryFailedRead = vi.fn();
     form = new FormGroup({ orgScope: new FormControl<OrgScopeFilter>('insights', { nonNullable: true }) });
   });
 
@@ -105,5 +107,11 @@ describe('OrgScopeSelectComponent', () => {
     await mount();
 
     expect(el().querySelector('[data-testid="page-org-scope-unavailable"]')).toBeNull();
+  });
+
+  it('asks the scope service to retry a failed metadata read when it is created', async () => {
+    await mount({ info: null });
+
+    expect(retryFailedRead).toHaveBeenCalledTimes(1);
   });
 });

@@ -538,6 +538,22 @@ describe('OrgContributionsService — organization scope', () => {
     expect(repoCall().sql).toContain('MIN(insights_org_repo_first_commit_ts) AS first_commit_ts');
   });
 
+  it('falls back to the inclusive insights_ first commit while the Insights non-team twin is not built yet', async () => {
+    grantInsights();
+    const missingTwin = Object.assign(new Error("SQL compilation error:\ninvalid identifier 'INSIGHTS_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'"), {
+      code: '000904',
+    });
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('insights_ORG_REPO_FIRST_NON_TEAM_COMMIT_TS')) throw missingTwin;
+      return { rows: [] };
+    });
+
+    await service.getContributions(ACCOUNT, query({ metric: 'commits', orgScope: 'insights' }));
+
+    const repoReads = execute.mock.calls.filter(([sql]) => String(sql).includes('first_commit_ts'));
+    expect(repoReads.at(-1)?.[0]).toContain('MIN(insights_org_repo_first_commit_ts) AS first_commit_ts');
+  });
+
   it('sums and gates on the Insights-scoped code activities under insights; the feed keeps Insights-scoped commits', async () => {
     grantInsights();
 

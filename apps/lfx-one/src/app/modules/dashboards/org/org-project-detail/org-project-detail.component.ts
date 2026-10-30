@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Params, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -14,7 +14,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import { readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
+import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -127,6 +127,12 @@ export class OrgProjectDetailComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
 
+  // Organization scope (lfx-self-serve-ops#1219), kept in step with `?orgScope=`: the cards, rosters and boards the BFF
+  // scopes re-read on a change; the hero and the influence trend are unscoped.
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
+  });
+
   // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
   // never forces a whole-page reload.
   private readonly heroRetry = signal(0);
@@ -174,19 +180,21 @@ export class OrgProjectDetailComponent {
 
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
-  // Organization scope (lfx-self-serve-ops#1219), kept in step with `?orgScope=`: the cards, rosters and boards the BFF
-  // scopes re-read on a change; the hero and the influence trend are unscoped.
-  protected readonly scopeForm = new FormGroup({
-    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
-  });
   protected readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
     initialValue: this.scopeForm.controls.orgScope.value,
   });
 
   // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
   protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
+  /** The way back to Projects keeps the organization scope, so the sidebar carries it on from there (lfx-self-serve-ops#1219). */
+  private readonly projectsQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
   /** Breadcrumb home, as one stable object: an inline literal in the template would be a new object per change-detection pass. */
-  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({ icon: 'fa-light fa-house', routerLink: this.projectsLink(), styleClass: 'sr-only' }));
+  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({
+    icon: 'fa-light fa-house',
+    routerLink: this.projectsLink(),
+    queryParams: this.projectsQueryParams(),
+    styleClass: 'sr-only',
+  }));
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
@@ -862,7 +870,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink() };
+    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink(), queryParams: this.projectsQueryParams() };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

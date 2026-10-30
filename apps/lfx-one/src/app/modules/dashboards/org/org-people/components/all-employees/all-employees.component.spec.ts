@@ -132,7 +132,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         { provide: AllEmployeesService, useValue: { getAllEmployees, getFormerEmployees, getEmployeeDetail: vi.fn() } },
         { provide: OrgPeopleDirectoryStateService, useValue: { getDirectory, invalidate: vi.fn() } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -1573,7 +1573,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     it('reads the Insights organization by default for the stored, live and former rosters', async () => {
       await mount('browser', '/?tab=employees');
 
-      const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-select"] [aria-label="Organization scope"]');
+      const labelled = el().querySelector('[data-test="org-people-all-employees-org-scope-filter"] [aria-label="Organization scope"]');
       expect(labelled?.textContent?.trim()).toBe('Insights organization');
       expect(orgScopeControl().value).toBe('insights');
       expect(getAllEmployees).toHaveBeenLastCalledWith(ORG, '730d', FILTERS, 'exclude', 'insights');

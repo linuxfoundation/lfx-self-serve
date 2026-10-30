@@ -571,4 +571,17 @@ describe('OrgProjectsComponent — Employees filter', () => {
     expect(component['filterForm'].getRawValue().employees).toEqual([]);
     expect(rowNames()).toEqual(expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']));
   });
+
+  // lfx-self-serve-ops#1219 — a project's detail links keep All related organizations picked on another page.
+  it('carries ?orgScope=all onto the project detail and contributors-drawer links, and nothing at the default', async () => {
+    await open('/?orgScope=all');
+    expect(component['projectDetailQueryParams']()).toEqual({ orgScope: 'all' });
+    expect(component['contributorsDrawerQueryParams']()).toEqual({ orgScope: 'all', card: 'contributors' });
+    const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a[aria-label="View Alpha project detail"]');
+    expect(link?.getAttribute('href')).toContain('orgScope=all');
+
+    await router.navigateByUrl('/?orgScope=insights');
+    await settle();
+    expect(component['projectDetailQueryParams']()).toEqual({});
+  });
 });

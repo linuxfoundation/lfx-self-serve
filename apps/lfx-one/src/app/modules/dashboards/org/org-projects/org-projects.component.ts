@@ -74,6 +74,7 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { orgScopeQueryParams } from '@shared/utils/org-scope-url.util';
 import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
@@ -119,7 +120,6 @@ export class OrgProjectsComponent {
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
-  protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
   /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
   protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
@@ -192,6 +192,12 @@ export class OrgProjectsComponent {
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly formValue = toSignal(this.filterForm.valueChanges, { initialValue: this.filterForm.getRawValue() });
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
+  /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
+  protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
+  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() => ({
+    ...this.projectDetailQueryParams(),
+    [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
+  }));
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);

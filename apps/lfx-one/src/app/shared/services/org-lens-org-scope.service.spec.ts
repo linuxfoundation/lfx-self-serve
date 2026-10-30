@@ -22,6 +22,12 @@ const scope = (accountId: string): OrgLensOrgScope => ({
 });
 const account = (uid: string): Account => ({ accountId: uid, accountName: uid, membershipTier: '', uid, slug: uid });
 
+// Runs the account signal's effect, then lets the stream it feeds settle.
+const flush = async (): Promise<void> => {
+  TestBed.tick();
+  await vi.waitFor(() => undefined);
+};
+
 describe('OrgLensOrgScopeService', () => {
   let service: OrgLensOrgScopeService;
   let http: HttpTestingController;
@@ -70,10 +76,6 @@ describe('OrgLensOrgScopeService', () => {
   });
 
   it('follows the selected account in current, requesting nothing without one', async () => {
-    const flush = async (): Promise<void> => {
-      TestBed.tick();
-      await vi.waitFor(() => undefined);
-    };
     expect(service.current()).toBeNull();
     await flush();
     http.expectNone(() => true);
@@ -92,5 +94,41 @@ describe('OrgLensOrgScopeService', () => {
     await flush();
     http.expectNone('/api/orgs/org-1/lens/org-scope');
     expect(service.current()).toEqual(scope('org-1'));
+  });
+
+  it('clears current while a newly selected account loads, so the previous account never shows', async () => {
+    selectedAccount.set(account('org-1'));
+    await flush();
+    http.expectOne('/api/orgs/org-1/lens/org-scope').flush({ ...scope('org-1'), hasInsightsOrg: false });
+    expect(service.current()?.hasInsightsOrg).toBe(false);
+
+    selectedAccount.set(account('org-2'));
+    await flush();
+    const pending = http.expectOne('/api/orgs/org-2/lens/org-scope');
+    expect(service.current()).toBeNull();
+
+    pending.flush(scope('org-2'));
+    expect(service.current()).toEqual(scope('org-2'));
+  });
+
+  it('recovers current after a failed read when a picker asks, without an account switch', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    selectedAccount.set(account('org-1'));
+    await flush();
+    http.expectOne('/api/orgs/org-1/lens/org-scope').flush('boom', { status: 500, statusText: 'Server Error' });
+    expect(service.current()).toBeNull();
+    expect(error).toHaveBeenCalled();
+
+    service.retryFailedRead();
+    await flush();
+    http.expectOne('/api/orgs/org-1/lens/org-scope').flush(scope('org-1'));
+    expect(service.current()).toEqual(scope('org-1'));
+
+    // A later retry after a successful read asks nothing.
+    service.retryFailedRead();
+    await flush();
+    http.expectNone('/api/orgs/org-1/lens/org-scope');
+    expect(service.current()).toEqual(scope('org-1'));
+    error.mockRestore();
   });
 });

@@ -78,7 +78,7 @@ async function render(
         },
       },
       { provide: ContributionsService, useValue: { getContributions } },
-      { provide: OrgLensOrgScopeService, useValue: { current: signal<OrgLensOrgScope | null>(orgScopeInfo) } },
+      { provide: OrgLensOrgScopeService, useValue: { current: signal<OrgLensOrgScope | null>(orgScopeInfo), retryFailedRead: () => undefined } },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
     ],
   }).compileComponents();

@@ -12,7 +12,7 @@ import {
   PD_VALID_TIME_RANGES,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
+import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 import { parseOrgScope } from '../helpers/org-commit-filters.helper';
@@ -46,12 +46,11 @@ export class OrgLensProjectDetailController {
     const { orgUid, projectSlug, range } = this.context(req);
     const startTime = logger.startOperation(req, 'get_org_lens_project_detail_influence', { org_uid: orgUid, project_slug: projectSlug, range });
     try {
-      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_influence');
-      logger.debug(req, 'get_org_lens_project_detail_influence', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_influence');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_influence');
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_influence');
       const block = await this.service.getInfluenceBlock(orgUid, projectSlug, range, orgScope);
-      this.sendBlock(req, res, 'get_org_lens_project_detail_influence', startTime, orgUid, projectSlug, block);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_influence', startTime, orgUid, projectSlug, block, orgScope);
     } catch (error) {
       next(error);
     }
@@ -82,12 +81,11 @@ export class OrgLensProjectDetailController {
       page_size: pageSize,
     });
     try {
-      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_technical');
-      logger.debug(req, 'get_org_lens_project_detail_board_technical', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_technical');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_technical');
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_technical');
       const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range, metric, page, pageSize, search, orgScope);
-      this.sendBlock(req, res, 'get_org_lens_project_detail_board_technical', startTime, orgUid, projectSlug, block);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_board_technical', startTime, orgUid, projectSlug, block, orgScope);
     } catch (error) {
       next(error);
     }
@@ -105,12 +103,11 @@ export class OrgLensProjectDetailController {
       page_size: pageSize,
     });
     try {
-      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_ecosystem');
-      logger.debug(req, 'get_org_lens_project_detail_board_ecosystem', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_ecosystem');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_ecosystem');
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_ecosystem');
       const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range, metric, page, pageSize, search, orgScope);
-      this.sendBlock(req, res, 'get_org_lens_project_detail_board_ecosystem', startTime, orgUid, projectSlug, block);
+      this.sendBlock(req, res, 'get_org_lens_project_detail_board_ecosystem', startTime, orgUid, projectSlug, block, orgScope);
     } catch (error) {
       next(error);
     }
@@ -131,13 +128,12 @@ export class OrgLensProjectDetailController {
     const cardKey = req.params['cardKey'];
     const startTime = logger.startOperation(req, 'get_org_lens_card_drawer', { org_uid: orgUid, project_slug: projectSlug, card_key: cardKey, range });
     try {
-      const orgScope = parseOrgScope(req, 'get_org_lens_card_drawer');
-      logger.debug(req, 'get_org_lens_card_drawer', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_card_drawer');
       this.assertProjectSlug(projectSlug, 'get_org_lens_card_drawer');
       this.assertCardKey(cardKey, 'get_org_lens_card_drawer');
+      const orgScope = parseOrgScope(req, 'get_org_lens_card_drawer');
       const section = await this.service.getCardDrawer(orgUid, projectSlug, cardKey, range, orgScope);
-      this.sendBlock(req, res, 'get_org_lens_card_drawer', startTime, orgUid, projectSlug, section);
+      this.sendBlock(req, res, 'get_org_lens_card_drawer', startTime, orgUid, projectSlug, section, orgScope);
     } catch (error) {
       next(error);
     }
@@ -165,15 +161,20 @@ export class OrgLensProjectDetailController {
     });
 
     try {
-      const orgScope = parseOrgScope(req, 'get_org_lens_card_roster');
-      logger.debug(req, 'get_org_lens_card_roster', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_card_roster');
       this.assertProjectSlug(projectSlug, 'get_org_lens_card_roster');
       this.assertCardKey(cardKey, 'get_org_lens_card_roster');
+      const orgScope = parseOrgScope(req, 'get_org_lens_card_roster');
 
       const roster = await this.service.getCardRoster(orgUid, orgName, projectSlug, cardKey, range, page, pageSize, orgScope);
 
-      logger.success(req, 'get_org_lens_card_roster', startTime, { org_uid: orgUid, project_slug: projectSlug, card_key: cardKey, total: roster.total });
+      logger.success(req, 'get_org_lens_card_roster', startTime, {
+        org_uid: orgUid,
+        project_slug: projectSlug,
+        card_key: cardKey,
+        org_scope: orgScope,
+        total: roster.total,
+      });
       res.setHeader('Cache-Control', 'no-store');
       res.json(roster);
     } catch (error) {
@@ -200,13 +201,12 @@ export class OrgLensProjectDetailController {
       range,
     });
     try {
-      const orgScope = parseOrgScope(req, operation);
-      logger.debug(req, operation, 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, operation);
       this.assertProjectSlug(projectSlug, operation);
       this.assertOrganizationId(organizationId, operation);
+      const orgScope = parseOrgScope(req, operation);
       const breakdown = await this.service.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range, orgScope);
-      this.sendBlock(req, res, operation, startTime, orgUid, projectSlug, breakdown);
+      this.sendBlock(req, res, operation, startTime, orgUid, projectSlug, breakdown, orgScope);
     } catch (error) {
       next(error);
     }
@@ -271,14 +271,25 @@ export class OrgLensProjectDetailController {
     };
   }
 
-  private sendBlock(req: Request, res: Response, operation: string, startTime: number, orgUid: string, projectSlug: string, block: unknown): void {
+  /** Logs the outcome (with the organization scope a scoped block was read under) and sends the block, or a 404 for `null`. */
+  private sendBlock(
+    req: Request,
+    res: Response,
+    operation: string,
+    startTime: number,
+    orgUid: string,
+    projectSlug: string,
+    block: unknown,
+    orgScope?: OrgScopeFilter
+  ): void {
     res.setHeader('Cache-Control', 'no-store');
+    const metadata = { org_uid: orgUid, project_slug: projectSlug, ...(orgScope ? { org_scope: orgScope } : {}) };
     if (block === null) {
-      logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, found: false });
+      logger.success(req, operation, startTime, { ...metadata, found: false });
       res.status(404).json({ message: 'Not found' });
       return;
     }
-    logger.success(req, operation, startTime, { org_uid: orgUid, project_slug: projectSlug, found: true });
+    logger.success(req, operation, startTime, { ...metadata, found: true });
     res.json(block);
   }
 }

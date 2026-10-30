@@ -44,7 +44,7 @@ import type {
   OrgTeamMembersFilter,
   SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, effectiveOrgScope, normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
@@ -791,8 +791,9 @@ export class OrgLensProjectDetailService {
    *
    * Categories backed by participation records LFX holds privately are omitted entirely for callers
    * outside the subject organization, and named in `withheldCategories`. They are never zeroed,
-   * banded, or rounded: a zero is a claim about the data, absence is not. Belonging is the same
-   * account comparison the board uses for its own-row highlight, so the two cannot drift.
+   * banded, or rounded: a zero is a claim about the data, absence is not. Belonging always needs the
+   * row's account to be the caller's, as before the organization scope; under `insights` the row must
+   * also be the Insights organization's, the one the board highlights.
    *
    * The route middleware authorizes `:orgUid` only, so the (org, slug) catalog row is checked here
    * for the same reason every other block on this page checks it: a grant on one organization must
@@ -832,7 +833,7 @@ export class OrgLensProjectDetailService {
 
     const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
     if (row === null) return null;
-    const isOwnOrganization = this.isViewingRow(viewing, row.ACCOUNT_ID, organizationId);
+    const isOwnOrganization = row.ACCOUNT_ID === orgUid && this.isViewingRow(viewing, row.ACCOUNT_ID, organizationId);
 
     const readsMaintainerRoles = this.categorySources(dimension).some((source) => source.countsMaintainerRoles);
     const [position, activitySharePercent, maintainerRoles] = await Promise.all([
@@ -2186,11 +2187,15 @@ export class OrgLensProjectDetailService {
     };
   }
 
-  /** The effective organization scope and the viewing-organization rule it implies (lfx-self-serve-ops#1219). */
+  /**
+   * The effective organization scope and the viewing-organization rule it implies (lfx-self-serve-ops#1219), from one
+   * read of the account's scope row (none under `all`).
+   */
   private async resolveScope(orgUid: string, orgScope: OrgScopeFilter): Promise<{ scope: OrgScopeFilter; viewing: ViewingOrg }> {
-    const scope = await resolveOrgScope(this.snowflakeService, orgUid, orgScope);
-    const insightsOrgId = scope === 'insights' ? (await readOrgLensOrgScope(this.snowflakeService, orgUid)).insightsOrgId : null;
-    return { scope, viewing: { accountId: orgUid, insightsOrgId } };
+    if (orgScope === 'all') return { scope: 'all', viewing: { accountId: orgUid, insightsOrgId: null } };
+    const info = await readOrgLensOrgScope(this.snowflakeService, orgUid);
+    const scope = effectiveOrgScope(orgScope, info);
+    return { scope, viewing: { accountId: orgUid, insightsOrgId: scope === 'insights' ? info.insightsOrgId : null } };
   }
 
   /** A card's effective scope: only the contributors, commits and pull-request cards are scoped; every other card reads `all`. */

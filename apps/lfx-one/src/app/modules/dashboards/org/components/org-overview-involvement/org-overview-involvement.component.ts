@@ -51,6 +51,11 @@ export class OrgOverviewInvolvementComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  // Organization scope (lfx-self-serve-ops#1219): only the Active Contributors card reads code, so only it re-reads.
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
+  });
+
   public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
   private readonly maintainersLoading = signal(true);
@@ -73,10 +78,6 @@ export class OrgOverviewInvolvementComponent {
     distinctUntilChanged()
   );
 
-  // Organization scope (lfx-self-serve-ops#1219): only the Active Contributors card reads code, so only it re-reads.
-  protected readonly scopeForm = new FormGroup({
-    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
-  });
   private readonly orgScope$: Observable<OrgScopeFilter> = this.scopeForm.controls.orgScope.valueChanges.pipe(
     startWith(this.scopeForm.controls.orgScope.value),
     distinctUntilChanged()

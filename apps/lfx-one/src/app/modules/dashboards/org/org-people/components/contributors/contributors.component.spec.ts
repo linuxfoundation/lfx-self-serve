@@ -125,7 +125,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -526,7 +526,7 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -639,7 +639,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -791,7 +791,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 
@@ -900,7 +900,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
-        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
     }).compileComponents();
 

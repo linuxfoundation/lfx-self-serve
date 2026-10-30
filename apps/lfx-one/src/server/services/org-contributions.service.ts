@@ -227,16 +227,18 @@ export class OrgContributionsService {
       LIMIT ${pagination.size} OFFSET ${offset}
     `;
     const binds = [accountId, ...scope.binds, ...repoSearch.binds];
+    // The scope's own column is the one a not-yet-built warehouse reports missing, so the fallback matches on it.
+    const nonTeamFirstCommitColumn = orgScopeColumn(query.orgScope, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN);
     const read = await readWithOrgTeamMembersFallback(
       query.teamMembers,
       'get_org_lens_contributions_first_commit',
       (firstCommit) =>
         firstCommit === 'exclude'
-          ? this.snowflakeService.execute<ContributionsRepoRow>(sql(orgScopeColumn(query.orgScope, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN)), binds, {
-              expectInvalidIdentifier: [ORG_CDP_TEAM_MEMBER_COLUMN, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN],
+          ? this.snowflakeService.execute<ContributionsRepoRow>(sql(nonTeamFirstCommitColumn), binds, {
+              expectInvalidIdentifier: [ORG_CDP_TEAM_MEMBER_COLUMN, nonTeamFirstCommitColumn],
             })
           : this.snowflakeService.execute<ContributionsRepoRow>(sql(orgScopeColumn(query.orgScope, 'org_repo_first_commit_ts')), binds, scope.queryOptions),
-      ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN
+      nonTeamFirstCommitColumn
     );
     return { rows: read.value.rows, firstCommitUnavailable: read.teamMembersUnavailable };
   }

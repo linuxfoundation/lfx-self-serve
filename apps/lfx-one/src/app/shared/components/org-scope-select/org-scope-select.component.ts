@@ -39,16 +39,26 @@ export class OrgScopeSelectComponent {
   protected readonly unavailable = computed(() => this.orgScopeService.current()?.hasInsightsOrg === false);
   protected readonly options: Signal<OrgScopeOption[]> = computed(() => orgScopeOptions(this.orgScopeService.current()));
 
-  private readonly value: Signal<OrgScopeFilter> = toSignal(
-    toObservable(computed(() => this.form().get(this.control()))).pipe(
-      switchMap((control) => (control ? control.valueChanges.pipe(startWith(control.value)) : of(DEFAULT_ORG_SCOPE))),
-      map((value) => parseOrgScopeFilter(value) ?? DEFAULT_ORG_SCOPE)
-    ),
-    { initialValue: DEFAULT_ORG_SCOPE }
-  );
+  private readonly value: Signal<OrgScopeFilter> = this.initValue();
 
   protected readonly tooltip = computed(() => {
     const text = orgScopeTooltip(this.unavailable() ? 'all' : this.value(), this.orgScopeService.current());
     return this.codeOnly() ? `${text} ${ORG_SCOPE_CODE_ONLY_NOTE}` : text;
   });
+
+  public constructor() {
+    // A page visit after a failed metadata read asks again, so the picker recovers its name, count and availability.
+    this.orgScopeService.retryFailedRead();
+  }
+
+  /** The page control's value, following a swapped `form` or `control` input. */
+  private initValue(): Signal<OrgScopeFilter> {
+    return toSignal(
+      toObservable(computed(() => this.form().get(this.control()))).pipe(
+        switchMap((control) => (control ? control.valueChanges.pipe(startWith(control.value)) : of(DEFAULT_ORG_SCOPE))),
+        map((value) => parseOrgScopeFilter(value) ?? DEFAULT_ORG_SCOPE)
+      ),
+      { initialValue: DEFAULT_ORG_SCOPE }
+    );
+  }
 }

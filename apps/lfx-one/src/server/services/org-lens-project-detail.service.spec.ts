@@ -20,7 +20,12 @@ const { buildOrgCacheKey, getJson, setJson } = vi.hoisted(() => ({
 const INSIGHTS_ORG = 'crowd-insights-org';
 const { resolveOrgScope, readOrgLensOrgScope } = vi.hoisted(() => ({
   resolveOrgScope: vi.fn(async (_snowflake: unknown, _accountId: string, scope: string) => scope),
-  readOrgLensOrgScope: vi.fn(async () => ({ insightsOrgId: 'crowd-insights-org' })),
+  readOrgLensOrgScope: vi.fn(
+    async (): Promise<{ insightsOrgId: string | null; hasInsightsOrg: boolean }> => ({
+      insightsOrgId: 'crowd-insights-org',
+      hasInsightsOrg: true,
+    })
+  ),
 }));
 vi.mock('../helpers/org-scope.helper', () => ({ resolveOrgScope, readOrgLensOrgScope }));
 
@@ -47,6 +52,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const actual = await import('../../../../../packages/shared/src/utils/insights.utils');
   return {
     ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+    ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
     buildInsightsUrl: () => '',
     normalizeHealthScoreCategoryV2: actual.normalizeHealthScoreCategoryV2,
   };
@@ -472,6 +478,16 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     const all = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'all');
     expect(all!.withheldCategories).toEqual([]);
     expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-ecosystem:v3:.*:all$/));
+  });
+
+  // The Insights organization's row credited to another account (an override seed pick, say) is not the caller's own:
+  // releasing the privately sourced categories still needs the caller's account on the row, as under all.
+  it('withholds the private categories of the Insights organization row when another account carries it', async () => {
+    mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
+
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', INSIGHTS_ORG, '1y', 'insights');
+
+    expect(breakdown!.withheldCategories.length).toBeGreaterThan(0);
   });
 
   // Guards the column names themselves: a renamed or mistyped warehouse column reads as absent and
@@ -1164,6 +1180,8 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     buildOrgCacheKey.mockImplementation((_org: string, key: string) => key);
     resolveOrgScope.mockClear();
     resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    readOrgLensOrgScope.mockClear();
+    readOrgLensOrgScope.mockImplementation(async () => ({ insightsOrgId: INSIGHTS_ORG, hasInsightsOrg: true }));
     execute.mockImplementation(async (sql: string) => {
       if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
       if (sql.includes('COUNT(')) return { rows: [{ N: 2 }] };
@@ -1215,6 +1233,7 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
 
   it('falls back to all for an account without an Insights organization', async () => {
     resolveOrgScope.mockResolvedValue('all');
+    readOrgLensOrgScope.mockResolvedValue({ insightsOrgId: null, hasInsightsOrg: false });
 
     await service.getInfluenceBlock(ORG, SLUG, '1y', 'insights');
 
@@ -1230,6 +1249,15 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     const all = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
     expect(all!.rows.map((row) => row.isViewingOrg)).toEqual([true, true]);
     expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-board-technical-influence:.*:all$/));
+  });
+
+  it('reads the account scope row once per board request under insights, and not at all under all', async () => {
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'insights');
+    expect(readOrgLensOrgScope).toHaveBeenCalledTimes(1);
+
+    readOrgLensOrgScope.mockClear();
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
+    expect(readOrgLensOrgScope).not.toHaveBeenCalled();
   });
 
   it.each([
