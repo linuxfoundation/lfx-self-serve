@@ -68,3 +68,6 @@ export type UiInputMode = 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' 
 
 /** Scroll axis of the uikit scroller: a snapping rail, a fading list, or a free two-axis pane. */
 export type UiScrollerDirection = 'horizontal' | 'vertical' | 'both';
+
+/** Colour role of a uikit project banner: `default` for a mode that is on, `gray` for a routine notice. */
+export type UiProjectBannerVariant = 'default' | 'success' | 'warning' | 'error' | 'gray';

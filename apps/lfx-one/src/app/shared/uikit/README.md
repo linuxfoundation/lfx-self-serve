@@ -47,6 +47,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-show-more`      | `UiShowMoreComponent`      | Small button between two rules: "Show 12 More" then "Show Less"; `[(expanded)]`, `aria-expanded`, `aria-controls`; `noBorder`                                          |
 | `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                                                      |
 | `lfx-ui-scroller`       | `UiScrollerComponent`      | Scroll rail or list with edge fades that appear as content clips; optional prev and next buttons; horizontal, vertical, both                                           |
+| `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
 
 ## Design tokens
 
