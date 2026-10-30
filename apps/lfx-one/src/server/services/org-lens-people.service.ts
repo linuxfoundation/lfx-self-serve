@@ -290,7 +290,7 @@ export class OrgLensPeopleService {
     const unclassifiedUsernames = [
       ...new Set([
         ...(unclassified ?? []).flatMap((row) => (row.LF_USERNAME ?? '').trim().toLowerCase() || []),
-        ...unclassifiedPeople.flatMap((row) => row.lfUsername ?? []),
+        ...unclassifiedPeople.flatMap((row) => row.lfUsername?.trim().toLowerCase() || []),
       ]),
     ];
     const unclassifiedRows: OrgAllEmployeeRowInternal[] = [];

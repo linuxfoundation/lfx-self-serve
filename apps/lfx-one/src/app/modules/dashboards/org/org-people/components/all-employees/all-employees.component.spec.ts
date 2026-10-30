@@ -498,6 +498,31 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       }
     });
 
+    it('folds the access row of someone with no employment record whatever case the read names them in', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next({ ...response([], 0), unclassifiedUsernames: [' Alan '] });
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['all', 'current'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      }
+    });
+
     it('lists once, as former with the access badge, someone the read kept as former in place of their unclassified row', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();

@@ -1114,6 +1114,16 @@ describe('OrgLensPeopleService person-key company emails', () => {
         ]);
       });
 
+      it('lowercases a username named from mixed-case contributor rows, as the warehouse rows are', async () => {
+        database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET LF_USERNAME = ' NoRoster ' WHERE PERSON_KEY = '${unclassifiedKey}'`);
+        database.exec('DELETE FROM ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => row.personKey)).toContain(unclassifiedKey);
+        expect(response.unclassifiedUsernames).toEqual(['noroster']);
+      });
+
       it('fails the read on any other warehouse error', async () => {
         database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
 

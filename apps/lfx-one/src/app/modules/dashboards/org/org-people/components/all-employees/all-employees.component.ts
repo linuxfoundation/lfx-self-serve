@@ -691,7 +691,9 @@ export class AllEmployeesComponent {
     const showUnclassified = this.showUnclassified();
     const former = this.formerResponse().accountId === accountId ? this.formerResponse() : null;
     const formerRows = former?.rows ?? [];
-    const unclassifiedUsernames = new Set(former?.unclassifiedUsernames ?? []);
+    const unclassifiedUsernames = new Set(
+      (former?.unclassifiedUsernames ?? []).map((username) => AllEmployeesComponent.usernameKey(username)).filter((username) => !!username)
+    );
     const liveRows = current.accountId === accountId ? current.rows : [];
     // Usernames are matched case-insensitively, as the server merge does.
     const formerUsernames = new Set(formerRows.map((row) => AllEmployeesComponent.usernameKey(row.lfUsername)).filter((username) => !!username));
