@@ -249,6 +249,8 @@ describe('VoteSendBallotsComponent (#4363)', () => {
       getReminderRecipients.mockReturnValue(of([]));
       fixture = TestBed.createComponent(VoteSendBallotsComponent);
       fixture.componentRef.setInput('voteUid', 'v-1');
+      fixture.componentRef.setInput('responded', 4);
+      fixture.componentRef.setInput('invited', 4);
       fixture.detectChanges();
       confirmation = fixture.debugElement.injector.get(ConfirmationService);
     });
@@ -270,6 +272,69 @@ describe('VoteSendBallotsComponent (#4363)', () => {
 
       expect(getReminderRecipients).toHaveBeenLastCalledWith('v-2');
       expect(button().disabled).toBe(false);
+    });
+  });
+
+  describe('empty prefetch without confirmed completion (#4759)', () => {
+    function create(counts: { responded?: number | null; invited?: number | null }, list: { uid: string }[] = []) {
+      fixture.destroy();
+      getReminderRecipients.mockReset();
+      getReminderRecipients.mockReturnValue(of(list));
+      fixture = TestBed.createComponent(VoteSendBallotsComponent);
+      fixture.componentRef.setInput('voteUid', 'v-1');
+      for (const [key, value] of Object.entries(counts)) fixture.componentRef.setInput(key, value);
+      fixture.detectChanges();
+      confirmation = fixture.debugElement.injector.get(ConfirmationService);
+    }
+
+    it.each([
+      ['0 of 4 responded', { responded: 0, invited: 4 }],
+      ['no counts given', {}],
+      ['0 of 0', { responded: 0, invited: 0 }],
+    ])('keeps the button enabled for an empty list with %s', (_label, counts) => {
+      create(counts);
+
+      expect(button().disabled).toBe(false);
+      expect(el().textContent).not.toContain('Everyone has voted');
+    });
+
+    it('lets the click-time read decide: a now-populated list opens the confirmation', () => {
+      create({ responded: 0, invited: 4 });
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+
+      expect(clickAndCapture()?.message).toBe("Email a personal ballot link to the 2 members who haven't voted?");
+    });
+
+    it('toasts when the click-time read is still empty', () => {
+      create({ responded: 0, invited: 4 });
+      button().click();
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
+    });
+
+    it('disables for an empty list when N of N have responded', () => {
+      create({ responded: 4, invited: 4 });
+
+      expect(button().disabled).toBe(true);
+    });
+
+    it('stays enabled when the list is empty at first and populated after a vote change', () => {
+      create({ responded: 0, invited: 4 });
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+      fixture.componentRef.setInput('voteUid', 'v-2');
+      fixture.detectChanges();
+
+      expect(button().disabled).toBe(false);
+    });
+
+    it('drops a click-time failure that arrives after the component is destroyed', () => {
+      const pending = new Subject<{ uid: string }[]>();
+      getReminderRecipients.mockReturnValue(pending);
+      button().click();
+      fixture.destroy();
+      pending.error(new Error('late'));
+
+      expect(add).not.toHaveBeenCalled();
     });
   });
 
