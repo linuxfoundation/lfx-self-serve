@@ -264,3 +264,57 @@ export interface UiSelectValueContext {
 
 /** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
 export type UiSplitButtonVariant = 'primary' | 'secondary';
+
+/** One command in a uikit command menu: a place to go or an action to run. */
+export interface UiCommandItem {
+  /** Stable identifier, unique within the menu. The chosen item is handed back whole, so match on this. */
+  value: string;
+  /** What the row says and what typing matches, such as "Create Committee". */
+  label: string;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-users`. */
+  icon?: string;
+  /** Shortcut hint at the end of the row, one entry per key, such as `['⌘', 'M']`. A hint only; wire the shortcut yourself. */
+  shortcut?: string[];
+  /** Extra words that typing matches but the row does not show, such as "meeting" for "Schedule Meeting". */
+  keywords?: string[];
+  /** The row stays visible but cannot be chosen, and the keyboard skips it. */
+  disabled?: boolean;
+}
+
+/** A titled run of commands in a uikit command menu. Groups with no matching command are hidden while the user types. */
+export interface UiCommandGroup {
+  /** Small heading above the group, such as "Projects". */
+  label: string;
+  /** The commands in the group, in display order. */
+  items: UiCommandItem[];
+}
+
+/** What `UiCommandMenuService.open` needs to show a command menu. */
+export interface UiCommandMenuConfig {
+  /** The commands, grouped. */
+  groups: UiCommandGroup[];
+  /** Accessible name of the dialog, read when it opens. Defaults to "Command menu". */
+  label?: string;
+  /** Placeholder of the search field. */
+  placeholder?: string;
+}
+
+/** A command row of the uikit command menu with the ids and position its template needs. */
+export interface UiCommandItemView {
+  /** The command. */
+  item: UiCommandItem;
+  /** DOM id of the row, the target of `aria-activedescendant`. */
+  id: string;
+  /** Position among all visible commands, across groups. */
+  index: number;
+}
+
+/** A group of the uikit command menu after filtering. */
+export interface UiCommandGroupView {
+  /** DOM id of the group heading, which names the group. */
+  id: string;
+  /** Heading text. */
+  label: string;
+  /** The commands that match the search. */
+  items: UiCommandItemView[];
+}
