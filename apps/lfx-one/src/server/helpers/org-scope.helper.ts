@@ -2,19 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import type { OrgLensOrgScope, OrgScopeFilter } from '@lfx-one/shared/interfaces';
+import type { OrgLensOrgScope, OrgLensOrgScopeRow, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 import { effectiveOrgScope } from '@lfx-one/shared/utils';
 
 import type { SnowflakeService } from '../services/snowflake.service';
 import { withOrgCache } from '../services/valkey.service';
-
-/** Raw `ORG_LENS_ORG_SCOPE` row — one per account (lfx-self-serve-ops#1219). */
-interface OrgLensOrgScopeRow {
-  INSIGHTS_ORG_ID: string | null;
-  INSIGHTS_ORG_NAME: string | null;
-  RELATED_ORG_COUNT: number | null;
-  HAS_INSIGHTS_ORG: boolean | null;
-}
 
 /**
  * The account's organization scope: its LFX Insights organization (the page org, with lf-dbt's override seed) and how

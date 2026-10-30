@@ -145,7 +145,7 @@
       (tabChange)="switchTab($event)"
       (timeRangeChange)="setTimeRange($event)"
       (metricChange)="setMetric($event)">
-      <lfx-org-scope-select [form]="scopeForm" control="orgScope" dataTest="project-detail-org-scope-filter" />
+      <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="project-detail-org-scope-filter" />
     </lfx-org-project-detail-tab-bar>
 
     <!-- Tab content -->

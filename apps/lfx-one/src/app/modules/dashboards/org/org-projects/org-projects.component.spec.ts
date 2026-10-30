@@ -609,4 +609,13 @@ describe('OrgProjectsComponent — Employees filter', () => {
     await settle();
     expect(requestedScopes.at(-1)).toBe('insights');
   });
+
+  it('starts again on page 1 when the organization scope is picked, keeping the Employees filter', async () => {
+    await open('/?employees=p-known&page=2');
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await settle();
+
+    expect(queryParams()).toEqual({ employees: 'p-known', orgScope: 'all' });
+  });
 });

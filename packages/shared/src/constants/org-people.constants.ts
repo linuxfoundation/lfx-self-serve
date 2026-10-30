@@ -173,6 +173,9 @@ export const ORG_SCOPE_CODE_ONLY_NOTE = 'Applies to code contributions only.';
 /** Added to the organization-scope tooltip on Projects, where only the Contributors column follows the pick. */
 export const ORG_SCOPE_PROJECTS_NOTE = 'Applies to the Contributors column only.';
 
+/** Added to the organization-scope tooltip on Project Detail, where maintainer roles, health and influence scores do not follow the pick. */
+export const ORG_SCOPE_PROJECT_DETAIL_NOTE = "Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.";
+
 /**
  * Note under a disabled organization-scope filter: the account has no Insights organization, or its Insights organization
  * has no code activity on the account in the past 730 days (lf-dbt `HAS_INSIGHTS_ORG`), so only All related organizations is offered.

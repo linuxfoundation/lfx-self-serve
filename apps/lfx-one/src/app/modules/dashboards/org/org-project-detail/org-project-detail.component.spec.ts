@@ -5,7 +5,7 @@ import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
-import { PD_HEALTH_TAG } from '@lfx-one/shared/constants';
+import { ORG_SCOPE_PROJECT_DETAIL_NOTE, PD_HEALTH_TAG } from '@lfx-one/shared/constants';
 import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -469,6 +469,12 @@ describe('OrgProjectDetailComponent — organization scope', () => {
     component['scopeForm'].controls.orgScope.setValue('insights');
     await fixture.whenStable();
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: null } }));
+  });
+
+  it('passes the picker the note on what the pick changes on this page', async () => {
+    const { component } = await create();
+
+    expect(component['orgScopeNote']).toBe(ORG_SCOPE_PROJECT_DETAIL_NOTE);
   });
 
   it('keeps ?orgScope=all on the way back to Projects, and nothing at the default', async () => {

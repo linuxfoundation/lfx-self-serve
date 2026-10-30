@@ -66,7 +66,10 @@ export interface OrgPeopleAllRow {
   COURSES_COUNT: number;
 }
 
-/** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
+/**
+ * Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed
+ * array). A ranged read fills it from `NON_CODE_ENGAGED_FOUNDATION_IDS`, the code foundations being live (lfx-self-serve#4735).
+ */
 export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
 
 /** Who an off-roster person is — a former employee's ORG_PEOPLE_ALL_RANGES row or an ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row; no counts. */
@@ -131,3 +134,11 @@ export interface OrgPersonEmploymentRow {
  * the per-row field names (`people-employment:v2`). Someone in neither list has no roster row.
  */
 export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;
+
+/** Raw `ORG_LENS_ORG_SCOPE` row — one per account (lfx-self-serve-ops#1219). */
+export interface OrgLensOrgScopeRow {
+  INSIGHTS_ORG_ID: string | null;
+  INSIGHTS_ORG_NAME: string | null;
+  RELATED_ORG_COUNT: number | null;
+  HAS_INSIGHTS_ORG: boolean | null;
+}

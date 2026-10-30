@@ -27,15 +27,16 @@ export function orgScopeQueryParams(params: ParamMap): Params {
 /**
  * Keeps an Organization scope picker and `?orgScope=` in step (lfx-self-serve-ops#1219), so the pick carries across
  * Overview, People, Code Contributions and Project Detail: a pick is written to the URL (dropped at the default), and a
- * query-only navigation sets the picker. Each side acts only when the other differs, so neither echoes the other. Call
- * from an injection context (constructor).
+ * query-only navigation sets the picker. Each side acts only when the other differs, so neither echoes the other.
+ * `onPick` is merged into the URL with a pick, for a page whose other params the pick invalidates (the Projects list's
+ * `page`). Call from an injection context (constructor).
  */
-export function syncOrgScopeWithUrl(control: FormControl<OrgScopeFilter>, route: ActivatedRoute, router: Router): void {
+export function syncOrgScopeWithUrl(control: FormControl<OrgScopeFilter>, route: ActivatedRoute, router: Router, onPick: Params = {}): void {
   control.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed()).subscribe((scope) => {
     if (scope === readOrgScope(route)) return;
     void router.navigate([], {
       relativeTo: route,
-      queryParams: { [ORG_SCOPE_QUERY_PARAM]: orgScopeUrlParam(scope) },
+      queryParams: { ...onPick, [ORG_SCOPE_QUERY_PARAM]: orgScopeUrlParam(scope) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

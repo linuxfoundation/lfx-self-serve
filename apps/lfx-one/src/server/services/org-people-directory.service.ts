@@ -248,8 +248,9 @@ export class OrgPeopleDirectoryService {
    * downstream — it is serialized to the client or searched by `OrgLensPeopleService`, never mutated.
    * A consumer that needs to mutate it must copy first.
    *
-   * A roster computed while the former-employee read failed is served but not cached: its access-only
-   * principals went unclassified, so they are served without address or title, and storing it would
+   * A roster computed while the stored roster read or the former-employee read failed is served but not
+   * cached: without the stored roster it lists the live sources only, and without the former employees its
+   * access-only principals went unclassified, so they are served without address or title, and storing it would
    * list the former ones as current for the whole TTL.
    */
   public async getLive(
@@ -274,7 +275,7 @@ export class OrgPeopleDirectoryService {
     // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
     const [entry, teamMemberKeys] = await Promise.all([
       coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
-        let formerResolved = true;
+        let complete = true;
         return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
           namespace,
           username,
@@ -282,11 +283,11 @@ export class OrgPeopleDirectoryService {
           VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
           async () => {
             const live = await this.computeLive(req, accountId, range, filters.projectScope, scope);
-            formerResolved = live.formerResolved;
+            complete = live.complete;
             return toCompactDirectory(live.directory);
           },
           isCompactDirectoryEntry,
-          () => formerResolved && isCurrent()
+          () => complete && isCurrent()
         );
       }),
       // A failed team-member read never takes the live roster down with it (the merge itself degrades source by
@@ -305,7 +306,7 @@ export class OrgPeopleDirectoryService {
     range: OrgLensTimeRange | null,
     projectScope: OrgProjectScope,
     orgScope: OrgScopeFilter
-  ): Promise<{ directory: OrgAllEmployeesCountedResponse; formerResolved: boolean }> {
+  ): Promise<{ directory: OrgAllEmployeesCountedResponse; complete: boolean }> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
@@ -328,7 +329,9 @@ export class OrgPeopleDirectoryService {
 
     const base: OrgAllEmployeesInternalResponse = snowflake.status === 'fulfilled' ? snowflake.value : { accountId, rows: [], foundations: [] };
     if (snowflake.status === 'rejected') {
-      logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only', {
+      // Its code counts are read with the People → Contributors rows (lfx-self-serve#4735), so either read failing lands
+      // here. Served from the live sources and kept out of the cache, so the next request reads the stored roster again.
+      logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only, uncached', {
         org_uid: accountId,
         err: snowflake.reason,
       });
@@ -346,7 +349,7 @@ export class OrgPeopleDirectoryService {
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    return { directory, formerResolved: formerUsernames !== null };
+    return { directory, complete: snowflake.status === 'fulfilled' && formerUsernames !== null };
   }
 
   /**

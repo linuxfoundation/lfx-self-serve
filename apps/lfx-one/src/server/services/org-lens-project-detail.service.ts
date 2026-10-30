@@ -38,6 +38,7 @@ import type {
   OrgLensProjectLeaderboardRow,
   OrgLensProjectTrendSeries,
   OrgLensTrendBlock,
+  OrgLensViewingOrg,
   OrgMaintainerRolesCountRow,
   OrgOrganizationMaintainerRolesRow,
   OrgScopeFilter,
@@ -231,15 +232,6 @@ interface TrendSeries {
   orgName: string;
   orgLogoUrl: string;
   combined: number[];
-}
-
-/**
- * Which leaderboard rows are the viewing organization's (lfx-self-serve-ops#1219): every row carrying the account
- * under `all`, and only the account's LFX Insights organization's row under `insights` (`insightsOrgId` set).
- */
-interface ViewingOrg {
-  accountId: string;
-  insightsOrgId: string | null;
 }
 
 interface ActivityBoardRow {
@@ -940,7 +932,7 @@ export class OrgLensProjectDetailService {
     slug: string,
     timeRangeType: string,
     dimension: 'technical' | 'ecosystem',
-    viewing: ViewingOrg,
+    viewing: OrgLensViewingOrg,
     isNonLf: boolean,
     limit: number,
     offset: number,
@@ -996,7 +988,7 @@ export class OrgLensProjectDetailService {
     slug: string,
     timeRangeType: string,
     dimension: 'technical' | 'ecosystem',
-    viewing: ViewingOrg,
+    viewing: OrgLensViewingOrg,
     limit: number,
     offset: number,
     search: string
@@ -2120,7 +2112,7 @@ export class OrgLensProjectDetailService {
    * is the account's Insights organization's row when credited to the account (lfx-self-serve-ops#1219), else the
    * account's best-ranked row.
    */
-  private async fetchViewingLeaderboardRow(viewing: ViewingOrg, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
+  private async fetchViewingLeaderboardRow(viewing: OrgLensViewingOrg, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
     const byInsightsOrg = viewing.insightsOrgId !== null;
     const result = await this.snowflakeService.execute<LeaderboardRow>(
       `
@@ -2141,7 +2133,7 @@ export class OrgLensProjectDetailService {
   }
 
   /** Map a combined-leaderboard row to a Calculated Influence board row (scores + bands + rank). */
-  private mapInfluenceRow(row: LeaderboardRow, viewing: ViewingOrg, isNonLf: boolean): OrgLensProjectLeaderboardRow {
+  private mapInfluenceRow(row: LeaderboardRow, viewing: OrgLensViewingOrg, isNonLf: boolean): OrgLensProjectLeaderboardRow {
     return {
       organizationId: row.ORG_ORGANIZATION_ID ?? '',
       orgName: row.ORG_NAME ?? '',
@@ -2167,7 +2159,7 @@ export class OrgLensProjectDetailService {
   }
 
   /** Map a gold-sourced activity board row to an Activity Count board row (total/pct + warehouse rank). */
-  private mapActivityRow(row: ActivityBoardRow, dimension: 'technical' | 'ecosystem', viewing: ViewingOrg): OrgLensProjectLeaderboardRow {
+  private mapActivityRow(row: ActivityBoardRow, dimension: 'technical' | 'ecosystem', viewing: OrgLensViewingOrg): OrgLensProjectLeaderboardRow {
     const isContributions = dimension === 'technical';
     const total = Math.round(this.num(row.ACTIVITY_TOTAL));
     const pct = this.round1(this.num(row.ACTIVITY_PCT));
@@ -2192,7 +2184,7 @@ export class OrgLensProjectDetailService {
    * The effective organization scope and the viewing-organization rule it implies (lfx-self-serve-ops#1219), from one
    * read of the account's scope row (none under `all`).
    */
-  private async resolveScope(orgUid: string, orgScope: OrgScopeFilter): Promise<{ scope: OrgScopeFilter; viewing: ViewingOrg }> {
+  private async resolveScope(orgUid: string, orgScope: OrgScopeFilter): Promise<{ scope: OrgScopeFilter; viewing: OrgLensViewingOrg }> {
     if (orgScope === 'all') return { scope: 'all', viewing: { accountId: orgUid, insightsOrgId: null } };
     const info = await readOrgLensOrgScope(this.snowflakeService, orgUid);
     const scope = effectiveOrgScope(orgScope, info);
@@ -2210,7 +2202,7 @@ export class OrgLensProjectDetailService {
   }
 
   /** The viewing org's row: the account's, and under `insights` also the Insights organization's (lfx-self-serve-ops#1219). */
-  private isViewingRow(viewing: ViewingOrg, accountId: string | null, organizationId: string | null): boolean {
+  private isViewingRow(viewing: OrgLensViewingOrg, accountId: string | null, organizationId: string | null): boolean {
     return accountId === viewing.accountId && (viewing.insightsOrgId === null || organizationId === viewing.insightsOrgId);
   }
 

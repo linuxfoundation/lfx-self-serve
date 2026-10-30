@@ -264,7 +264,7 @@ beforeEach(() => {
       ACCOUNT_ID TEXT, PERSON_KEY TEXT, TIME_RANGE TEXT, PROJECT_SCOPE TEXT, IS_FORMER INTEGER, LFID TEXT, LF_USERNAME TEXT,
       CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER,
       COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER, MERGED_COMMITS_COUNT INTEGER, CODE_ACTIVITIES_COUNT INTEGER,
-      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, NON_CODE_ENGAGED_FOUNDATION_IDS TEXT DEFAULT '[]', IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
     )
   `);
   // Contributors daily rows (foundation labels, Code detail); also read for the account's CDP team members (lfx-self-serve#4685).
@@ -543,6 +543,10 @@ describe('OrgLensPeopleService username company emails', () => {
 
 describe('OrgLensPeopleService person-key company emails', () => {
   const personKey = 'person-one';
+  // The roster's foundation dropdown also reads the training foundations, which the detail fixture below omits; the
+  // off-roster read classifies against that roster read (lfx-self-serve#4735).
+  const TRAINING_FOUNDATION_COLUMNS =
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT;';
   const activity = {
     boardSeats: [
       {
@@ -829,6 +833,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     const formerKey = 'person-former';
 
     beforeEach(() => {
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
       addRangeRow(ACCOUNT, formerKey, '365d', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
       addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
       addDailyCode(ACCOUNT, formerKey, '2026-05-01', 'foundation-two', 'Foundation Two');
@@ -1119,9 +1124,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   describe('current employees by time range (lfx-self-serve#4163)', () => {
-    // The roster's foundation dropdown also reads the training foundations, which the detail fixture above omits.
     beforeEach(() => {
-      database.exec('ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT;');
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
     });
 
     it('reads only the current rows of the requested range and counts the tiles over them', async () => {
@@ -1152,7 +1156,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ]);
       const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v5:730d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:730d:all')!)).toBe(true);
     });
 
     it('lists the rows of the requested project scope only, counting the code in it', async () => {
@@ -1211,14 +1215,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
       // The live code read is People → Contributors' own entry, shared by the current and the off-roster reads.
       expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
         [
-          'people-all:v5:30d:all:all',
-          'people-all:v5:all:all:all',
-          'people-all:v5:all:lf:all',
+          'people-all:v6:30d:all',
+          'people-all:v6:all:all',
+          'people-all:v6:all:lf',
           'people-contributors:v5:30d:all:all',
           'people-contributors:v5:all:all:all',
           'people-contributors:v5:all:lf:all',
-          'people-employment:v2:30d:all',
-          'people-employment:v2:all:all',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
           'people-unclassified:v2:30d:all',
@@ -1257,7 +1259,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
     });
 
     // lfx-self-serve#4685
@@ -1280,9 +1282,30 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(formerExcluded.rows).toEqual([]);
       // One roster entry per range and scope serves both picks; the team members are cached once per account.
       expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
-        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
       );
       expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
+    });
+
+    // lfx-self-serve#4735: the roster rows and the live code are cached apart, so right after a build they can name one
+    // person by different keys (here a CDP-only identity resolved to an LF identity).
+    it('counts someone once when the stored rows and the live code name them by different person keys', async () => {
+      addRangeRow(ACCOUNT, 'cdp:moved-current', '365d', false, 'movedcurrent', 'Moved Current', null, 0);
+      addRangeRow(ACCOUNT, 'cdp:moved-former', '365d', true, 'movedformer', 'Moved Former', null, 0);
+      for (const key of ['lfid-moved-current', 'lfid-moved-former']) addCodeDay(ACCOUNT, key, '365d', { commits: 2, merged: 2, code: 2 });
+
+      const current = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
+      const offRoster = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+      // The stale keys have no code and nothing else, so they are not listed; the live keys are on no roster row.
+      expect(current.rows).toEqual([]);
+      expect(offRoster.rows.map((row) => [row.personKey, row.isUnclassified === true])).toEqual([
+        ['lfid-moved-current', true],
+        ['lfid-moved-former', true],
+      ]);
+      expect(current.stats.codeContributors + offRoster.stats.codeContributors).toBe(2);
+      // The off-roster read classifies against the roster entry the page lists, not a separate classification read.
+      expect((execute.mock.calls as [string][]).some(([query]) => query.includes("IFF(IS_FORMER, 'former', 'current')"))).toBe(false);
     });
   });
 
@@ -1485,7 +1508,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     }
 
     beforeEach(() => {
-      database.exec('ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT;');
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
       for (const table of ['ORG_PEOPLE_ALL_RANGES', 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS']) {
         database.exec(`
           ALTER TABLE ${table} ADD COLUMN INSIGHTS_COMMITS_COUNT INTEGER DEFAULT 0;
@@ -1500,43 +1523,74 @@ describe('OrgLensPeopleService person-key company emails', () => {
       }
     });
 
-    it('lists current employees with Insights-scoped code or another engagement, counting only that code, under insights', async () => {
-      grantInsights();
-      addRangeRow(ACCOUNT, 'person-insights', '365d', false, 'insights', 'Insights Coder', 'insights@company.example', 10);
-      setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-insights', '365d', [4, 3, 6]);
-      addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
-      addRangeRow(ACCOUNT, 'person-seat', '365d', false, 'seat', 'Seat Holder', 'seat@company.example', 5);
-      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET SEATS_COUNT = 1 WHERE PERSON_KEY = 'person-seat'`);
+    // lfx-self-serve#4735: a current employee is listed for seats, events or courses in the range and scope, or for live
+    // code there (under insights the Insights organization's); the stored row's own code columns decide nothing.
+    it.each(['insights', 'all'] as const)(
+      'lists current employees with live code or another engagement under %s, with the foundations of both',
+      async (orgScope) => {
+        grantInsights();
+        addRangeRow(ACCOUNT, 'person-insights', '365d', false, 'insights', 'Insights Coder', 'insights@company.example', 10);
+        setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-insights', '365d', [4, 3, 6]);
+        // Built before their Insights code arrived: the stored Insights count is 0, the shared read has it.
+        addRangeRow(ACCOUNT, 'person-new-insights', '365d', false, 'newinsights', 'New Insights Coder', 'new@company.example', 7);
+        setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-new-insights', '365d', [2, 2, 2]);
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET INSIGHTS_CODE_ACTIVITIES_COUNT = 0 WHERE PERSON_KEY = 'person-new-insights'`);
+        addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
+        addRangeRow(ACCOUNT, 'person-seat', '365d', false, 'seat', 'Seat Holder', 'seat@company.example', 5);
+        // Stored code foundations (ENGAGED_FOUNDATION_IDS) are the build's; only the seat's foundation is not code.
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET SEATS_COUNT = 1, ENGAGED_FOUNDATION_IDS = '["foundation-old-code","foundation-seat"]', NON_CODE_ENGAGED_FOUNDATION_IDS = '["foundation-seat"]' WHERE PERSON_KEY = 'person-seat'`
+        );
+        addRangeRow(ACCOUNT, 'person-event', '365d', false, 'event', 'Event Goer', 'event@company.example', 0);
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1, NON_CODE_ENGAGED_FOUNDATION_IDS = '["foundation-event"]' WHERE PERSON_KEY = 'person-event'`
+        );
+        // Listed by the build for code the window has since passed, with nothing else.
+        addRangeRow(ACCOUNT, 'person-passed', '365d', false, 'passed', 'Passed Coder', 'passed@company.example', 0);
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET COMMITS_COUNT = 3, CODE_ACTIVITIES_COUNT = 3, INSIGHTS_CODE_ACTIVITIES_COUNT = 3 WHERE PERSON_KEY = 'person-passed'`
+        );
 
-      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+        const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', orgScope);
 
-      expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'insights');
-      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
-        ['person-insights', 4],
-        ['person-seat', 0],
-      ]);
-      const rosterRead = queries().find(
-        (query) => /FROM ORG_PEOPLE_ALL_RANGES|PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL_RANGES/.test(query) && /IS_FORMER = FALSE/.test(query)
-      );
-      // The code counts are live (lfx-self-serve#4735); the stored row only gates who is listed and carries the foundations.
-      expect(rosterRead).not.toMatch(/\bCOMMITS_COUNT\b|AS CODE_ACTIVITIES_COUNT/);
-      expect(rosterRead).toContain('INSIGHTS_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
-      expect(rosterRead).toContain(
-        'AND (INSIGHTS_CODE_ACTIVITIES_COUNT > 0 OR SEATS_COUNT > 0 OR EVENTS_COUNT > 0 OR COURSES_COUNT > 0 OR CERTIFICATIONS_COUNT > 0)'
-      );
-      expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(1);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:insights')!)).toBe(true);
-    });
+        const listed = Object.fromEntries(response.rows.map((row) => [row.personKey, [row.commitsCount, row.engagedFoundationIds]]));
+        expect(listed).toEqual(
+          orgScope === 'insights'
+            ? {
+                'person-insights': [4, ['foundation-two']],
+                'person-new-insights': [2, ['foundation-two']],
+                'person-seat': [0, ['foundation-seat']],
+                'person-event': [0, ['foundation-event']],
+              }
+            : {
+                'person-insights': [10, ['foundation-two']],
+                'person-new-insights': [7, ['foundation-two']],
+                'person-other-org': [8, ['foundation-two']],
+                'person-seat': [5, ['foundation-seat', 'foundation-two']],
+                'person-event': [0, ['foundation-event']],
+              }
+        );
+        expect(response.stats.codeContributors).toBe(orgScope === 'insights' ? 2 : 4);
+        const rosterRead = queries().find(
+          (query) => /FROM ORG_PEOPLE_ALL_RANGES|PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL_RANGES/.test(query) && /IS_FORMER = FALSE/.test(query)
+        );
+        // The stored row carries no code count and no Insights column; one entry serves both scopes.
+        expect(rosterRead).not.toMatch(/COMMITS_COUNT|CODE_ACTIVITIES_COUNT|INSIGHTS/);
+        expect(rosterRead).toContain('NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
+        expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(orgScope === 'insights' ? 1 : 0);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
+      }
+    );
 
-    it("reads today's roster SQL and key when an insights request resolves to all", async () => {
+    it("reads today's code and the shared roster entry when an insights request resolves to all", async () => {
       addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
 
       const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
 
       expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
-      expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:all')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:insights')!)).toBe(false);
+      expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
     });
 
     it('leaves the unranged roster unscoped, without resolving the scope', async () => {
@@ -1574,7 +1628,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       // page never takes their access-only live row for a current employee.
       expect(response.unclassifiedUsernames?.sort()).toEqual(['uninsights', 'unother']);
       // Who they are does not depend on the scope; their code is the People → Contributors read of the scope.
-      const offRoster = queries().filter((query) => /ORG_PEOPLE_(ALL_RANGES|UNCLASSIFIED_CONTRIBUTORS)/.test(query) && /ORDER BY NAME/.test(query));
+      const offRoster = queries().filter((query) => /ORG_PEOPLE_(ALL_RANGES|UNCLASSIFIED_CONTRIBUTORS)/.test(query) && /SELECT PERSON_KEY, LFID/.test(query));
       expect(offRoster).toHaveLength(2);
       for (const query of offRoster) expect(query).not.toContain('INSIGHTS');
       expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(1);
@@ -2030,7 +2084,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
     const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v5:365d:all:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v6:365d:all')!, JSON.stringify(legacy));
     mockRoster();
 
     const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');

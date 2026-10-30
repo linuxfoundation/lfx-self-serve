@@ -50,6 +50,7 @@ import {
   PD_TIME_RANGE_OPTIONS,
   PD_VALID_METRICS,
   PD_VALID_TIME_RANGES,
+  ORG_SCOPE_PROJECT_DETAIL_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   BlockState,
@@ -132,6 +133,8 @@ export class OrgProjectDetailComponent {
   protected readonly scopeForm = new FormGroup({
     orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
   });
+  // What the pick changes here, after the picker's tooltip: maintainer roles, health and influence scores stay.
+  protected readonly orgScopeNote = ORG_SCOPE_PROJECT_DETAIL_NOTE;
 
   // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
   // never forces a whole-page reload.

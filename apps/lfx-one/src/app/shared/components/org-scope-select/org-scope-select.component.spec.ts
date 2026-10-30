@@ -41,7 +41,6 @@ describe('OrgScopeSelectComponent', () => {
     fixture.componentRef.setInput('form', form);
     fixture.componentRef.setInput('dataTest', 'page-org-scope');
     fixture.componentRef.setInput('note', note);
-    fixture.detectChanges();
     await fixture.whenStable();
   }
 
@@ -78,7 +77,6 @@ describe('OrgScopeSelectComponent', () => {
     expect(select().tooltip()).toContain('Counts only Example Org');
 
     form.controls.orgScope.setValue('all');
-    fixture.detectChanges();
     await fixture.whenStable();
 
     expect(select().tooltip()).toBe(ORG_SCOPE_ALL_TOOLTIP);

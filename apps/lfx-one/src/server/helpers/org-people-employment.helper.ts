@@ -26,21 +26,7 @@ export async function readOrgEmploymentPersonKeys(
   if (employment === 'all') {
     return null;
   }
-  return new Set((await readOrgEmploymentClasses(snowflakeService, accountId, range, projectScope))[employment]);
-}
-
-/**
- * The account's classification for a range and project scope: the person keys of its current and its former
- * ORG_PEOPLE_ALL_RANGES rows. Someone in neither has no roster row there — on All Employees, the people with code but
- * no employment record (lfx-self-serve#4730).
- */
-export function readOrgEmploymentClasses(
-  snowflakeService: SnowflakeService,
-  accountId: string,
-  range: OrgLensTimeRange,
-  projectScope: OrgProjectScope
-): Promise<OrgPersonEmploymentKeys> {
-  return withOrgCache(
+  const keys = await withOrgCache(
     accountId,
     `people-employment:v2:${range}:${projectScope}`,
     VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
@@ -57,6 +43,7 @@ export function readOrgEmploymentClasses(
     },
     isEmploymentKeys
   );
+  return new Set(keys[employment]);
 }
 
 /**

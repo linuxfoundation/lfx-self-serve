@@ -1398,6 +1398,25 @@ describe('OrgPeopleDirectoryService.getLive — former employees who still hold 
     expect(recovered.rows.find((row) => row.lfUsername === 'ann')).toMatchObject({ email: 'ann@lfx-partner.example', title: 'Engineer' });
     expect(cache.entry).not.toBeNull();
   });
+
+  // lfx-self-serve#4735: the stored roster's code counts come from the People → Contributors read, so its failure is here.
+  it('serves the live sources without caching them when the stored roster read fails, and reads it again next time', async () => {
+    getAllEmployeesInternal.mockRejectedValueOnce(new Error('contributors read failed'));
+    cache.serveHits = true;
+
+    const failed = await run('365d');
+
+    expect(failed.rows.some((row) => row.lfUsername === 'dclarke')).toBe(false);
+    expect(failed.rows.find((row) => row.lfUsername === 'grace')).toMatchObject({ sources: ['access'] });
+    expect(cache.entry).toBeNull();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_org_people_directory', expect.stringContaining('Snowflake roster failed'), expect.anything());
+
+    const recovered = await run('365d');
+
+    expect(getAllEmployeesInternal).toHaveBeenCalledTimes(2);
+    expect(recovered.rows.find((row) => row.lfUsername === 'dclarke')).toMatchObject({ sources: ['snowflake'] });
+    expect(cache.entry).not.toBeNull();
+  });
 });
 
 // lfx-self-serve-ops#1219

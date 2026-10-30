@@ -58,7 +58,7 @@ import {
   orgContributorsScopePredicate,
 } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
-import { readOrgEmploymentClasses, readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
+import { readOrgFormerUsernames } from '../helpers/org-people-employment.helper';
 import { readOrgTeamMemberPersonKeys } from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { resolveOrgScope } from '../helpers/org-scope.helper';
@@ -194,11 +194,11 @@ export class OrgLensPeopleService {
    * reads that range's current employees in the project scope from ORG_PEOPLE_ALL_RANGES, and counts their code
    * live (lfx-self-serve#4735): every code count (authored commits, merged commits, code activities, for the wire
    * projection to pick from) is the person's People → Contributors row, read through the same cached read, so the
-   * tiles never drift from it after the dbt build's day. `null` reads the unranged ORG_PEOPLE_ALL roster the reassign
-   * pickers use, with its stored code count. The cache holds raw warehouse rows and both accessors map after every
-   * read. `orgScope` is the resolved scope ({@link resolveOrgScope}): under `insights` the code is the Insights
-   * organization's, and a current employee needs that code or another engagement to be listed. The unranged roster is
-   * not scoped.
+   * tiles never drift from it after the dbt build's day. A current employee is listed with seats, events or courses in
+   * the range and scope, or with live code there — under `insights` ({@link resolveOrgScope}) the Insights
+   * organization's — and their engaged foundations are those of the seats, events and courses plus those of the live
+   * code. `null` reads the unranged ORG_PEOPLE_ALL roster the reassign pickers use, with its stored code count and
+   * foundations; it is not scoped. The cache holds raw warehouse rows and both accessors map after every read.
    */
   public async getAllEmployeesInternal(
     accountId: string,
@@ -206,23 +206,9 @@ export class OrgLensPeopleService {
     projectScope: OrgProjectScope,
     orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeesInternalResponse> {
-    // `people-all:v5:{range}:{projectScope}:{orgScope}` | `people-all:v4:roster` (lfx-self-serve#4164,
-    // lfx-self-serve-ops#1219, lfx-self-serve#4735): a ranged read is scoped by project and organization and carries no
-    // code count (`v4` stored the build's), so one entry serves every commit scope and metric.
-    const scope = range ? orgScope : 'all';
     const [raw, liveCode] = await Promise.all([
-      withOrgCompactCache(
-        accountId,
-        range ? `people-all:v5:${range}:${projectScope}:${scope}` : 'people-all:v4:roster',
-        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-        () => this.fetchAllEmployeesRaw(accountId, range, projectScope, scope),
-        {
-          encode: encodeAllEmployeesRaw,
-          decode: decodeAllEmployeesRaw,
-          accept: isCompactAllEmployeesRaw,
-        }
-      ),
-      range ? this.readLiveCode(accountId, range, projectScope, scope) : null,
+      this.readRosterRaw(accountId, range, projectScope),
+      range ? this.readLiveCode(accountId, range, projectScope, orgScope) : null,
     ]);
 
     const rows = raw.rowsRaw.map((row) => this.mapEmployeeRow(row));
@@ -259,10 +245,10 @@ export class OrgLensPeopleService {
     orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
     const scope = await this.resolveOrgScope(accountId, orgScope);
-    const [former, unclassified, employment, liveCode, teamMemberKeys] = await Promise.all([
+    const [former, unclassified, roster, liveCode, teamMemberKeys] = await Promise.all([
       this.getFormerIdentities(accountId, range, filters.projectScope),
       this.getUnclassifiedIdentities(accountId, range, filters.projectScope),
-      readOrgEmploymentClasses(this.snowflakeService, accountId, range, filters.projectScope),
+      this.readRosterRaw(accountId, range, filters.projectScope),
       this.readLiveCode(accountId, range, filters.projectScope, scope),
       this.getTeamMemberPersonKeys(accountId, teamMembers),
     ]);
@@ -293,7 +279,9 @@ export class OrgLensPeopleService {
       ...(row.lfUsername ? [`username:${row.lfUsername}`] : []),
     ];
     const formerByIdentity = new Map(formerRows.flatMap((row) => identities(row).map((identity) => [identity, row] as const)));
-    const onRoster = new Set([...employment.current, ...employment.former]);
+    // On the roster: the current rows the page lists, from the same cached read, and the former rows read here, so
+    // whoever has live code is counted exactly once however far apart the warehouse reads were cached.
+    const onRoster = new Set([...roster.rowsRaw.map((row) => row.PERSON_KEY), ...former.map((row) => row.PERSON_KEY)]);
     const unclassifiedByKey = new Map((unclassified ?? []).map((row) => [row.PERSON_KEY, row]));
     const unclassifiedPeople = [...liveCode.people]
       .filter(([personKey]) => !onRoster.has(personKey))
@@ -594,6 +582,27 @@ export class OrgLensPeopleService {
   }
 
   /**
+   * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
+   * `people-all:v6:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
+   * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
+   * the same entry the page lists.
+   */
+  private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
+    return withOrgCompactCache(
+      accountId,
+      range ? `people-all:v6:${range}:${projectScope}` : 'people-all:v4:roster',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
+      {
+        encode: encodeAllEmployeesRaw,
+        decode: decodeAllEmployeesRaw,
+        accept: isCompactAllEmployeesRaw,
+      }
+    );
+  }
+
+  /**
    * Who the former employees of the range and project scope are, cached per (range, project scope)
    * (`people-former:v4`; `v3` also held the build's code counts per organization scope).
    */
@@ -685,25 +694,17 @@ export class OrgLensPeopleService {
   /**
    * Two parallel Snowflake reads returning raw rows (the current employees, and the foundation pairs);
    * mapping happens after the cache read. A range reads that range's current rows of ORG_PEOPLE_ALL_RANGES in the
-   * project scope without their code counts, which are counted live (lfx-self-serve#4735), and with the engaged
-   * foundations of the organization scope — under `insights` a current employee is listed for Insights-scoped code or
-   * any other engagement; `null` reads the unranged ORG_PEOPLE_ALL roster, whose one code count stands in for all three.
+   * project scope without their code counts, which are counted live (lfx-self-serve#4735), with the foundations of
+   * their seats, events and courses, which no organization scope changes; who is listed is decided after the live
+   * code is known ({@link withLiveCode}). `null` reads the unranged ORG_PEOPLE_ALL roster, whose one code count stands
+   * in for all three.
    */
-  private async fetchAllEmployeesRaw(
-    accountId: string,
-    range: OrgLensTimeRange | null,
-    projectScope: OrgProjectScope,
-    orgScope: OrgScopeFilter
-  ): Promise<OrgAllEmployeesRaw> {
-    const insightsGate =
-      orgScope === 'insights'
-        ? ' AND (INSIGHTS_CODE_ACTIVITIES_COUNT > 0 OR SEATS_COUNT > 0 OR EVENTS_COUNT > 0 OR COURSES_COUNT > 0 OR CERTIFICATIONS_COUNT > 0)'
-        : '';
+  private async fetchAllEmployeesRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     const source = range
       ? {
           from: 'ORG_PEOPLE_ALL_RANGES',
-          counts: orgScope === 'insights' ? 'INSIGHTS_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS' : 'ENGAGED_FOUNDATION_IDS',
-          where: `ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE${insightsGate}`,
+          counts: 'NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS',
+          where: 'ACCOUNT_ID = ? AND TIME_RANGE = ? AND PROJECT_SCOPE = ? AND IS_FORMER = FALSE',
           binds: [accountId, range, projectScope],
         }
       : {
@@ -1221,24 +1222,21 @@ function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiv
 }
 
 /**
- * A current employee's ranged row with its code counted live (lfx-self-serve#4735), or `null` when code was their only
- * engagement and they have none left in the window: the stored row passed the build's engagement gate on code the
- * window has since moved past. The stored engaged foundations carry the build's code foundations alongside seats,
- * events and courses, which are not told apart, so someone with another engagement keeps them, with their live code
- * foundations added; anyone else's are their live code foundations.
+ * A current employee's ranged row with its code counted live (lfx-self-serve#4735), or `null` when they have neither
+ * live code in the window and scopes nor a seat, event or course there. CERTIFICATIONS_COUNT needs no test: each
+ * certificate's course is in COURSES_COUNT. The engaged foundations are those of the seats, events and courses (the
+ * row's NON_CODE_ENGAGED_FOUNDATION_IDS) and those of the live code.
  */
 function withLiveCode(row: OrgAllEmployeeRowInternal, code: OrgPersonLiveCode | undefined): OrgAllEmployeeRowInternal | null {
-  const otherEngagement = row.seatsCount > 0 || row.eventsCount > 0 || row.coursesCount > 0;
-  if (!code && !otherEngagement) {
+  if (!code && row.seatsCount === 0 && row.eventsCount === 0 && row.coursesCount === 0) {
     return null;
   }
-  const codeFoundationIds = code?.foundationIds ?? [];
   return {
     ...row,
     commitsCount: code?.commitsCount ?? 0,
     mergedCommitsCount: code?.mergedCommitsCount ?? 0,
     codeActivitiesCount: code?.codeActivitiesCount ?? 0,
-    engagedFoundationIds: otherEngagement ? [...new Set([...row.engagedFoundationIds, ...codeFoundationIds])] : [...codeFoundationIds],
+    engagedFoundationIds: [...new Set([...row.engagedFoundationIds, ...(code?.foundationIds ?? [])])].sort(),
   };
 }
 

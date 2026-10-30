@@ -305,7 +305,8 @@ export class OrgProjectsComponent {
   );
 
   public constructor() {
-    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router);
+    // A pick changes which projects an Employees filter matches, so it starts again on page 1, as the filters do.
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.resettingFilters) return;
