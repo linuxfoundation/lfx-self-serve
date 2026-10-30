@@ -4,7 +4,7 @@ description: The LFX Self Serve dashboard provides a lens-based overview of your
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, persona, me, foundation, project, org]
-last_updated: 2026-06-22
+last_updated: 2026-10-29
 intercom_collection: Dashboards
 ---
 
@@ -59,6 +59,15 @@ The **Org Overview** page in Org Lens (route: `/org`) shows your organization's 
 - Committee participation by members of your organization
 - Contribution and engagement metrics across projects your company supports
 - Key contacts and representatives for your organization
+
+### Organization scope
+
+Pages in Org Lens that count contributors — the Org Overview's **Active Contributors** card, **People** (Contributors and All Employees), **Code Contributions** and a project's detail page — have an **Organization scope** dropdown:
+
+- **Insights organization** (the default) counts only the organization shown on your company's LFX Insights page, and only in the repositories LFX Insights counts, so the numbers line up with that page.
+- **All related organizations (N)** counts every organization linked to your company account — subsidiaries, acquisitions and duplicate records — in every repository. N is how many of those organizations have code activity in the past two years.
+
+Your choice stays in the page address (`?orgScope=all`) and carries to the other Org Lens pages when you move between them from the sidebar, the Projects list or a project's detail page. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights organization is listed only under **All related organizations**. If your company has no LFX Insights organization with code activity in the past two years, the dropdown is disabled and every related organization is counted.
 
 ### Navigation
 
