@@ -5,6 +5,7 @@ import { Directive, inject, input, signal } from '@angular/core';
 import { UiCommandGroup, UiCommandItem, UiCommandMenuConfig } from '@lfx-one/shared/interfaces';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiCommandMenuComponent } from './command-menu.component';
 import { UiCommandMenuService } from './command-menu.service';
 
@@ -43,16 +44,13 @@ const groups: UiCommandGroup[] = [
 const meta: Meta<UiCommandMenuComponent> = {
   title: 'Uikit/CommandMenu',
   component: UiCommandMenuComponent,
-  decorators: [moduleMetadata({ imports: [StoryOpensCommandMenuDirective, UiCommandMenuComponent] })],
+  decorators: [moduleMetadata({ imports: [StoryOpensCommandMenuDirective, UiButtonComponent, UiCommandMenuComponent] })],
   parameters: { layout: 'padded' },
   args: { label: 'Command menu', placeholder: 'Search projects, people and actions…', groups },
   render: (args) => ({
     props: { config: { groups: args.groups, label: args.label, placeholder: args.placeholder } },
     template: `
-      <!-- The trigger is a plain button styled like the library's secondary button; lfx-ui-button is not realigned yet. -->
-      <button #opener="lfxStoryOpensCommandMenu" type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryOpensCommandMenu]="config">
-        <i class="fa-light fa-magnifying-glass" aria-hidden="true"></i> Open command menu
-      </button>
+      <lfx-ui-button #opener="lfxStoryOpensCommandMenu" variant="outline-neutral" icon="fa-light fa-magnifying-glass" [lfxStoryOpensCommandMenu]="config">Open command menu</lfx-ui-button>
       <p class="copy-14 mt-[12px] text-ui-neutral-600" role="status">Chosen: {{ opener.chosen()?.label ?? 'nothing yet' }}</p>`,
   }),
 };
