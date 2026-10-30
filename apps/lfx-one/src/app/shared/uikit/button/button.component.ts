@@ -10,7 +10,7 @@ import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with seven variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
+ * Button with eight variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
@@ -30,7 +30,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
   },
 })
 export class UiButtonComponent {
-  /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one. */
+  /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
   /** `tiny` is 24px tall, `small` 32px and `medium` 40px. */
   public readonly size = input<UiButtonSize>('medium');
@@ -71,6 +71,8 @@ export class UiButtonComponent {
   /** Icon and spinner size in px: 12 on a tiny button, 16 otherwise. */
   protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
+  /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
+  protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
 
   public constructor() {
     effect(() => {
@@ -91,23 +93,33 @@ export class UiButtonComponent {
     return computed(() => (this.size() === 'tiny' ? 12 : 16));
   }
 
+  private initLinkTabIndex(): Signal<number | null> {
+    return computed(() => {
+      if (this.disabled()) return -1;
+      return this.loading() ? 0 : null;
+    });
+  }
+
   private initClasses(): Signal<string> {
     return computed(() => {
       const base =
         'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline transition-[background-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
-      // Hover and active mix the fill toward slate-900 (14% and 24%); the library has no token for the mix, so the formula is spelled out.
+      // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
       const variants = {
         primary:
           'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
         secondary: 'bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
-        // The 1px accent-300 ring has no utility; an arbitrary shadow keeps the focus ring able to replace it.
+        // The 1px ring geometry is arbitrary and its colour comes from the shadow colour utility, so the focus ring can replace it.
         'secondary-accent':
-          'bg-ui-background-100 text-ui-accent-500 shadow-[0_0_0_1px_var(--ui-accent-300)] hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
+          'bg-ui-background-100 text-ui-accent-500 shadow-[0_0_0_1px] shadow-ui-accent-300 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
         tertiary: 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
         'tertiary-accent': 'bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
         danger:
           'bg-ui-danger-600 text-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
         'danger-tertiary': 'bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
+        // Not in the library: the epic's proposed green action, styled like primary on the success steps.
+        recording:
+          'bg-ui-success-600 text-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
       };
       // Disabled looks the same for every variant; the tertiary family stays transparent and ringless.
       const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());

@@ -3,7 +3,7 @@
 
 <ng-template #content>
   @if (loading()) {
-    <lfx-ui-spinner tone="current" [size]="iconSize()" data-testid="ui-button-spinner" />
+    <lfx-ui-spinner tone="current" [size]="iconSize()" aria-hidden="true" data-testid="ui-button-spinner" />
   } @else if (icon()) {
     <i [class]="icon()" aria-hidden="true"></i>
   }
@@ -20,7 +20,7 @@
     [attr.aria-label]="ariaLabel() || null"
     [attr.aria-disabled]="disabled() || null"
     [attr.aria-busy]="loading() || null"
-    [attr.tabindex]="disabled() ? -1 : null"
+    [attr.tabindex]="linkTabIndex()"
     [lfxUiTooltip]="tooltip()"
     [lfxUiTooltipTitle]="tooltipTitle()"
     [lfxUiTooltipShortcut]="tooltipShortcut()"

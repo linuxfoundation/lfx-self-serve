@@ -59,6 +59,7 @@ describe('UiButtonComponent', () => {
     ['tertiary-accent', 'text-ui-accent-500'],
     ['danger', 'bg-ui-danger-600'],
     ['danger-tertiary', 'text-ui-danger-700'],
+    ['recording', 'bg-ui-success-600'],
   ])('styles the %s variant with %s', async (variant, token) => {
     await set('variant', variant);
     expect(el().classList).toContain(token);
@@ -200,6 +201,11 @@ describe('UiButtonComponent', () => {
       expect(el().getAttribute('aria-busy')).toBe('true');
     });
 
+    it('hides the spinner from assistive tech so a loading button keeps its name', async () => {
+      await set('loading', true);
+      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).getAttribute('aria-hidden')).toBe('true');
+    });
+
     it('uses a 12px spinner on a tiny button', async () => {
       await set('size', 'tiny');
       await set('loading', true);
@@ -234,6 +240,17 @@ describe('UiButtonComponent', () => {
       await set('loading', true);
       expect(el().getAttribute('href')).toBeNull();
       expect(el().getAttribute('aria-busy')).toBe('true');
+    });
+
+    it('keeps a loading link focusable', async () => {
+      await set('link', '/meetings');
+      await set('loading', true);
+      expect(el().getAttribute('tabindex')).toBe('0');
+    });
+
+    it('leaves an idle link out of an explicit tabindex', async () => {
+      await set('link', '/meetings');
+      expect(el().getAttribute('tabindex')).toBeNull();
     });
   });
 

@@ -11,7 +11,10 @@ const meta: Meta<UiButtonComponent> = {
   component: UiButtonComponent,
   // Compodoc cannot read the shared union aliases, so the selects are declared here.
   argTypes: {
-    variant: { control: 'select', options: ['primary', 'secondary', 'secondary-accent', 'tertiary', 'tertiary-accent', 'danger', 'danger-tertiary'] },
+    variant: {
+      control: 'select',
+      options: ['primary', 'secondary', 'secondary-accent', 'tertiary', 'tertiary-accent', 'danger', 'danger-tertiary', 'recording'],
+    },
     size: { control: 'select', options: ['tiny', 'small', 'medium'] },
   },
   decorators: [applicationConfig({ providers: [provideRouter([{ path: '**', children: [] }])] })],
@@ -39,6 +42,8 @@ export const Tertiary: Story = { args: { variant: 'tertiary' } };
 export const TertiaryAccent: Story = { args: { variant: 'tertiary-accent' } };
 export const Danger: Story = { args: { variant: 'danger' } };
 export const DangerTertiary: Story = { args: { variant: 'danger-tertiary' } };
+/** Not in the LFX UI Library: the epic's proposed green action, flagged for the design team. */
+export const Recording: Story = { args: { variant: 'recording', icon: 'fa-light fa-circle-dot' } };
 export const Tiny: Story = { args: { size: 'tiny', variant: 'secondary' } };
 export const Small: Story = { args: { size: 'small', variant: 'secondary' } };
 export const WithLeadingIcon: Story = { args: { icon: 'fa-light fa-plus' } };
@@ -73,12 +78,12 @@ export const Matrix: Story = {
       <div class="flex flex-col gap-[16px]">
         @for (size of ['tiny', 'small', 'medium']; track size) {
           <div class="flex flex-wrap items-center gap-[8px]">
-            @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary']; track variant) {
+            @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary','recording']; track variant) {
               <lfx-ui-button [variant]="variant" [size]="size" icon="fa-light fa-circle">{{ variant }}</lfx-ui-button>
             }
           </div>
           <div class="flex flex-wrap items-center gap-[8px]">
-            @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary']; track variant) {
+            @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary','recording']; track variant) {
               <lfx-ui-button [variant]="variant" [size]="size" [disabled]="true" icon="fa-light fa-circle">{{ variant }}</lfx-ui-button>
             }
             <lfx-ui-button variant="primary" [size]="size" [loading]="true">Saving</lfx-ui-button>
