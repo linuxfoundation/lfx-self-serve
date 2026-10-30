@@ -55,7 +55,11 @@
             data-testid="vote-detail-header-copy-slide" />
         }
         @if (canSendBallots() && !limited()) {
-          <lfx-vote-send-ballots [voteUid]="vote().uid" data-testid="vote-detail-header-send-ballots" />
+          <lfx-vote-send-ballots
+            [voteUid]="vote().uid"
+            [responded]="vote().num_response_received"
+            [invited]="vote().total_voting_request_invitations"
+            data-testid="vote-detail-header-send-ballots" />
         }
         @if (canCastVote() && !limited()) {
           <lfx-button
