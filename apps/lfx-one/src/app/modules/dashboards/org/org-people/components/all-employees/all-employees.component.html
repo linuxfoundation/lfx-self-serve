@@ -202,7 +202,8 @@
           }
         </div>
       } @else {
-        <span class="sr-only" [id]="unclassifiedRowNoteId">{{ unclassifiedRowNote }}</span>
+        <!-- Hidden: read only as the description of the rows' name buttons that point at it, never in the page's reading order. -->
+        <span hidden [id]="unclassifiedRowNoteId">{{ unclassifiedRowNote }}</span>
         <table class="w-full text-sm" data-testid="org-people-all-employees-rows">
           <thead class="bg-gray-50">
             <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">

@@ -968,7 +968,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all')!)).toBe(true);
       });
 
-      it('drops a CDP team member among them under Exclude team members, as their code is all they have', async () => {
+      it('drops a CDP team member among them under Exclude team members, as their code is all they have, still naming them', async () => {
         addUnclassifiedRow(ACCOUNT, 'cdp:team-member', '365d', 'teamer', 'Team Member', 5, true);
         // The team-member keys come from the contributor rows' person-level flag (lfx-self-serve#4685).
         database
@@ -978,12 +978,18 @@ describe('OrgLensPeopleService person-key company emails', () => {
         const excluded = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'exclude');
 
         expect(excluded.rows.map((row) => row.personKey)).toEqual([formerKey, unclassifiedKey]);
+        // Named all the same, so the page never takes their live Org Lens access row for a current employee.
+        expect(excluded.unclassifiedUsernames?.sort()).toEqual(['noroster', 'teamer']);
       });
 
       it('lists someone on both populations once, as the former employee, when the two reads come from different builds', async () => {
         // The two reads are cached separately, so right after a build one can still hold someone who has since moved.
         addUnclassifiedRow(ACCOUNT, formerKey, '365d', 'leftuser', 'Left User', 6);
         addUnclassifiedRow(ACCOUNT, 'cdp:left-user', '365d', ' LeftUser ', 'Left User', 6);
+        // A CDP-only identity the newer build resolved to an LF identity: same CDP member, no username on the stale row.
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', '', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
 
         const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
 

@@ -445,6 +445,32 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(rowKeys()).toEqual([]);
     });
 
+    it('never lists the Org Lens access row of someone with no employment record whose row Exclude team members removed', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'Alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      // A team member with nothing but code: Exclude removed their row, the read still names them.
+      former$.next({ ...response([], 0), unclassifiedUsernames: ['alan'] });
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['all', 'current'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+      }
+    });
+
     it('lists someone with a live seat and no employment record as one current row keeping their code, under "Current" and "All"', async () => {
       // The merged row's count is checked as commits.
       await mount('browser', '/?employment=current&metric=commits');
@@ -488,7 +514,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(tooltip.tooltipEvent).toBe('focus');
       expect(tooltip.disabled).toBe(false);
       const describedBy = (name('cdp:p-7').nativeElement as HTMLElement).getAttribute('aria-describedby');
-      expect(el().querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+      const note = el().querySelector<HTMLElement>(`#${describedBy}`);
+      expect(note?.textContent?.trim()).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+      // Only read as the buttons' description, never on its own in the page.
+      expect(note?.hidden).toBe(true);
 
       expect(name('p-1').injector.get(Tooltip).disabled).toBe(true);
       expect((name('p-1').nativeElement as HTMLElement).hasAttribute('aria-describedby')).toBe(false);
