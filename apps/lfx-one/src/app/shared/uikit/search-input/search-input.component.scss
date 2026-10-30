@@ -1,0 +1,7 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The field has its own clear button, so hide the browser's native one inside lfx-ui-input.
+:host ::ng-deep input[type='search']::-webkit-search-cancel-button {
+  display: none;
+}
