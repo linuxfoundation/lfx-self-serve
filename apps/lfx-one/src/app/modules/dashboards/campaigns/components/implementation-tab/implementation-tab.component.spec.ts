@@ -13795,3 +13795,76 @@ describe('ImplementationTabComponent microsoft image extension', () => {
     expect(at(f).canSubmit()).toBe(true);
   });
 });
+
+/**
+ * #4731. The `unowned-brief-exists` refusal is the one save failure Retry cannot clear and Restore
+ * escapes only by discarding the brief on screen, so the banner offers Replace saved brief on it —
+ * and on nothing else.
+ */
+describe('ImplementationTabComponent replace saved brief', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  function setPersistence(state: CampaignBriefPersistenceState, inFlight = false): void {
+    fixture.componentRef.setInput('briefPersistence', state);
+    fixture.componentRef.setInput('briefSaveInFlight', inFlight);
+    fixture.detectChanges();
+  }
+
+  function replaceButton(): HTMLElement | null {
+    return (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-brief-replace-btn"]');
+  }
+
+  const refused: CampaignBriefPersistenceState = {
+    status: 'error',
+    briefId: '',
+    message: 'This event already has a saved brief for this send that was not opened here, so this one was not saved over it.',
+    approved: false,
+    conflict: 'unowned-brief-exists',
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('offers Replace saved brief on an unowned-brief-exists refusal', () => {
+    setPersistence(refused);
+    expect(replaceButton()).not.toBeNull();
+  });
+
+  it('asks the parent to replace when clicked', () => {
+    setPersistence(refused);
+    const emitted = vi.fn();
+    fixture.componentInstance.replaceSavedBriefRequested.subscribe(emitted);
+
+    // The inner native button: `(onClick)` is the wrapper's gated output, which a host click skips.
+    replaceButton()?.querySelector('button')?.click();
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer it on any other save error', () => {
+    setPersistence({ ...refused, conflict: 'stale-brief' });
+    expect(replaceButton()).toBeNull();
+
+    setPersistence({ ...refused, conflict: undefined });
+    expect(replaceButton()).toBeNull();
+  });
+
+  it('withholds it while a save is in flight', () => {
+    setPersistence(refused, true);
+    expect(replaceButton()).toBeNull();
+  });
+});

@@ -17,6 +17,7 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -1553,6 +1554,251 @@ describe('CampaignsComponent brief persistence', () => {
       // happens before the generation check, because ownership does not expire when the user
       // navigates away. See the queued-save test below for the case that distinction protects.
       expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), null, null, false);
+    });
+
+    /**
+     * #4731. A regenerated brief for an event that already has a saved one is refused as
+     * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
+     * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
+     * and ETag and re-saves the brief on screen as its owner, with the ETag as `If-Match`.
+     */
+    describe('Replace saved brief', () => {
+      let loadBrief: Mock;
+
+      function replace(): void {
+        (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
+      }
+
+      /**
+       * Saves run on a promise chain, so a save a guard failed to stop reaches the service only
+       * once that chain drains. Every "no save was sent" assertion waits for it, or it passes
+       * whether the guard exists or not.
+       */
+      async function drainSaves(): Promise<void> {
+        await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      }
+
+      function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
+        return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
+      }
+
+      beforeEach(async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+        TestBed.tick();
+        await fixture.whenStable();
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('unowned-brief-exists');
+      });
+
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        // A validator was read, so no overwrite licence is granted: the save is a real If-Match.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+        expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+        expect(state().conflict).toBeUndefined();
+      });
+
+      it('replaces with fallback permission when the read returned no ETag', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', null)));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+
+      it('replaces a stored brief this build cannot open', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('creates when the stored brief has gone since the refusal', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
+      });
+
+      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('stale-brief');
+        expect(state().message).toContain('Someone else changed this brief');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+        loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const savesBefore = persistBrief.mock.calls.length;
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(logged).toHaveBeenCalledWith('[campaigns] Failed to read the saved brief to replace it', expect.any(HttpErrorResponse));
+        logged.mockRestore();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        // '' as the refusal carries it: a null id would re-open Create for a brief still unsaved.
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('was not replaced');
+      });
+
+      it('marks an older Restore offer superseded when the replacing save fails', async () => {
+        // The read may see a version newer than the offer Planning cached. If the replace then
+        // fails, restoring that offer must not pair its older content and approval with the newer
+        // ETag this read recorded -- that would enable Create against content never shown.
+        loadBrief.mockReturnValue(of({ ...loaded('stored-1', 'W/"5"'), approved: true }));
+        persistBrief.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const tokenBefore = refreshToken();
+
+        replace();
+        await fixture.whenStable();
+        expect(refreshToken(), 'Planning was not told to re-read the row').toBeGreaterThan(tokenBefore);
+
+        const approvalsBefore = approveBrief.mock.calls.length;
+        // Read under the SAME token the replace's record took: the case a plain stamp waves through.
+        restoreAt(tokenBefore, brief, 'stored-1', true, 'W/"4"');
+        await fixture.whenStable();
+
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('changed after the copy shown here was read');
+        expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
+      });
+
+      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+        // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
+        // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        TestBed.tick();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the foundation changes while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        TestBed.tick();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('does not hand the adopted id to a save queued before the replace', async () => {
+        // Saves are serialized and read ownership when they START. A save queued before the replace
+        // adopted the stored row must not inherit that id: it was never sent with it. The epoch bump
+        // is what refuses it, as a restore's does.
+        const first = new Subject<CampaignBriefPersistResult>();
+        persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(NEVER).mockReturnValueOnce(NEVER);
+        proceed();
+        proceed();
+        await fixture.whenStable();
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        const callsBefore = persistBrief.mock.calls.length;
+
+        // Driven directly: the button is hidden while a save is in flight, so this is the guard
+        // behind that, not a path a click reaches.
+        replace();
+        first.next({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' });
+        first.complete();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls[callsBefore]).toEqual([brief, 'foundation-a', null, null, false]);
+      });
+
+      it('cancels the read when the page is destroyed', () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        fixture.destroy();
+
+        expect(read.observed).toBe(false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the brief is discarded while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        switchProgram();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('returns to idle when brief persistence turns out to be off', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'off', briefId: null });
+      });
+
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+        // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
+        // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
+        // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
+        loadBrief.mockReturnValue(of({ status: 'loaded', briefId: 'stored-1', brief: null, approved: false } as unknown as CampaignBriefLoadResult));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
     });
 
     /**
