@@ -45,6 +45,7 @@ import type {
   FoundationActiveContributorsMonthlyDistinctResponse,
   FoundationCompanyBusFactorResponse,
   FoundationEventsQuarterlyResponse,
+  FoundationHealthMetricCard,
   FoundationHealthScoreDistributionResponse,
   FoundationMaintainersMonthlyResponse,
   FoundationMaintainersResponse,
@@ -985,12 +986,11 @@ export class FoundationHealthComponent {
     detailsOutcome: OrgLensSectionOutcome = 'records',
     detailsLoading = false,
     detailsRetryType = card.drawerType
-  ) {
+  ): FoundationHealthMetricCard {
     return {
       ...card,
       unavailable: outcome === 'records' ? null : FOUNDATION_HEALTH_METRIC_STATE_COPY[outcome],
       detailsUnavailable: detailsOutcome === 'records' ? null : FOUNDATION_HEALTH_METRIC_STATE_COPY[detailsOutcome],
-      detailsLoading,
       retryType: outcome === 'records' ? detailsRetryType : card.drawerType,
       drawerType: detailsOutcome === 'records' && !detailsLoading ? card.drawerType : undefined,
     };

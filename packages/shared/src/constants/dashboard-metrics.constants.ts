@@ -17,6 +17,7 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  FoundationHealthMetricStateCopy,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
   HealthMetricsYearOption,
@@ -190,10 +191,7 @@ export const MARKETING_SOCIAL_PLATFORM_MAP: Record<BrandReachPlatformType, { ico
 // ============================================
 
 /** Card-local copy: missing measurements are neither measured zeros nor access decisions. */
-export const FOUNDATION_HEALTH_METRIC_STATE_COPY: Record<
-  Exclude<OrgLensSectionOutcome, 'records'>,
-  { title: string; description: string; icon: string; retryable: boolean }
-> = {
+export const FOUNDATION_HEALTH_METRIC_STATE_COPY: Record<Exclude<OrgLensSectionOutcome, 'records'>, FoundationHealthMetricStateCopy> = {
   empty: {
     title: 'Data not available yet',
     description: 'Analytics data for this metric is not available for the selected foundation.',

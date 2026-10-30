@@ -168,6 +168,22 @@ export interface DashboardMetricCard {
   isMembershipTier?: boolean;
 }
 
+/** Availability copy displayed when a Foundation Health source has no usable measurement. */
+export interface FoundationHealthMetricStateCopy {
+  title: string;
+  description: string;
+  icon: string;
+  retryable: boolean;
+}
+
+/** Foundation Health card presentation, including headline and supporting-source availability. */
+export interface FoundationHealthMetricCard extends DashboardMetricCard {
+  unavailable: FoundationHealthMetricStateCopy | null;
+  detailsUnavailable: FoundationHealthMetricStateCopy | null;
+  /** Source to retry; it can differ from the card's drawer when only supporting data fails. */
+  retryType?: DashboardDrawerType;
+}
+
 /**
  * Company bus factor data
  * @description Metrics showing concentration risk from top contributing companies
