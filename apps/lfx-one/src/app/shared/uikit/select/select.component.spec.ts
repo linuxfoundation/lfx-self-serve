@@ -798,6 +798,36 @@ describe('UiSelectComponent', () => {
       expect(scroll).toHaveBeenCalled();
     });
 
+    it('opens on the first row that starts with the typed character when nothing is picked', async () => {
+      await set('options', [
+        { value: 'a', label: 'Alpha' },
+        { value: 'p', label: 'Alpine' },
+        { value: 'b', label: 'Beta' },
+      ]);
+      await press('a');
+
+      expect(activeLabel()).toBe('Alpha');
+    });
+
+    it('leaves Escape and Arrow Down alone while the header field is composing text', async () => {
+      vi.spyOn(InteractivityChecker.prototype, 'isVisible').mockReturnValue(true);
+      const slots = create('slots');
+      await slots.whenStable();
+      const slotsTrigger = (slots.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
+      slotsTrigger.click();
+      await slots.whenStable();
+      const field = document.querySelector('[data-testid="search"]') as HTMLInputElement;
+      const keys = ['ArrowDown', 'Escape'].map(
+        (key) => new KeyboardEvent('keydown', { key, keyCode: KEY_CODES[key], isComposing: true, bubbles: true, cancelable: true })
+      );
+      keys.forEach((event) => field.dispatchEvent(event));
+      await slots.whenStable();
+
+      expect(keys.map((event) => event.defaultPrevented)).toEqual([false, false]);
+      expect(document.activeElement).toBe(field);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+    });
+
     it('marks the highlighted row with an outline in forced-colors mode', async () => {
       await open();
 
