@@ -26,8 +26,8 @@
   <lfx-ui-keyboard-input [keys]="['Esc']" size="sm" />
 </div>
 
-<!-- The mousedown guard keeps focus in the search field while a row is clicked. -->
-<div class="min-h-0 flex-1 overflow-auto p-[8px]" (mousedown)="$event.preventDefault()">
+<!-- The mousedown guard keeps focus in the search field while a row is clicked, but leaves the list's own scrollbar alone. -->
+<div class="min-h-0 flex-1 overflow-auto p-[8px]" (mousedown)="keepSearchFocus($event)">
   @if (hasResults()) {
     <div role="listbox" [id]="listboxId" [attr.aria-label]="label()" data-testid="ui-command-menu-listbox">
       @for (group of visibleGroups(); track group.id) {
@@ -36,7 +36,7 @@
           @for (view of group.items; track view.item.value) {
             <div
               role="option"
-              class="group flex h-ui-menu-item w-full cursor-pointer items-center gap-[12px] rounded-ui-sm px-[8px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-100"
+              class="group flex h-ui-menu-item w-full cursor-pointer items-center gap-[12px] rounded-ui-sm px-[8px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-100 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:outline-[color:CanvasText]"
               [id]="view.id"
               [attr.aria-selected]="view.index === activeIndex()"
               [attr.aria-disabled]="view.item.disabled ? 'true' : null"

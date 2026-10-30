@@ -75,6 +75,13 @@ export class UiCommandMenuComponent {
     return `${this.baseId}-option-${index}`;
   }
 
+  protected keepSearchFocus(event: MouseEvent): void {
+    const list = event.currentTarget as HTMLElement;
+    // A press on the list's own scrollbar lands on the list itself, right of its content, and needs its default to drag the thumb.
+    if (event.target === list && event.offsetX >= list.clientWidth) return;
+    event.preventDefault();
+  }
+
   protected onInput(event: Event): void {
     this.query.set((event.target as HTMLInputElement).value);
   }
