@@ -10,8 +10,12 @@ import {
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
@@ -68,6 +72,9 @@ export class AddAccountDialogComponent {
   public resendCount = signal(0);
   public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
   public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
+  public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
+  public readonly verificationSentMessage = EMAIL_VERIFICATION_SENT_MESSAGE;
   public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   public onSelectProvider(provider: IdentityProviderOption): void {
@@ -162,18 +169,32 @@ export class AddAccountDialogComponent {
     this.userService.sendEmailVerificationCode(email).subscribe({
       next: (response) => {
         if (!response.success) {
-          this.verificationError.set(response.message || response.error || 'Failed to resend code');
+          this.verificationError.set(EMAIL_RESEND_FAILED_MESSAGE);
         } else {
           this.resendCount.update((count) => count + 1);
         }
         this.isConnecting.set(false);
         this.resendCooldownUtil.start();
       },
-      error: (err) => {
-        this.verificationError.set(err.error?.message || err.error?.error || 'Failed to resend code');
+      error: () => {
+        this.verificationError.set(EMAIL_RESEND_FAILED_MESSAGE);
         this.isConnecting.set(false);
       },
     });
+  }
+
+  public onChangeEmail(): void {
+    if (this.isConnecting() || this.isVerifying()) {
+      return;
+    }
+
+    this.codeSent.set(false);
+    this.form.controls.email.enable();
+    this.form.controls.email.reset();
+    this.verificationCode.set('');
+    this.verificationError.set('');
+    this.resendCount.set(0);
+    this.resendCooldownUtil.clear();
   }
 
   public onCancel(): void {

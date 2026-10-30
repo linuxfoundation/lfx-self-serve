@@ -17,8 +17,11 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_RESEND_SUPPORT_TITLE,
   INSIGHTS_PUBLIC_API_FLAG,
   PROFILE_EMAILS_PATH,
 } from '@lfx-one/shared/constants';
@@ -98,6 +101,8 @@ export class AccountSettingsComponent {
   public resendCount = signal(0);
   public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
   public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
+  public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
   public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   // ── TOC active section ──
@@ -323,12 +328,16 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
 
   public sendVerificationCode(): void {
-    if (this.addEmailForm.invalid) {
+    if (this.addEmailForm.invalid || this.sendingCode()) {
       return;
     }
 
     const email = this.addEmailForm.value.email!;
     const isResend = this.otpStep();
+    if (isResend && (this.resendCooldown() > 0 || this.showResendSupport())) {
+      return;
+    }
+
     this.sendingCode.set(true);
 
     this.userService
@@ -342,14 +351,15 @@ export class AccountSettingsComponent {
             this.resendCount.set(isResend ? this.resendCount() + 1 : 0);
             this.resendCooldownUtil.start();
           } else {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.message || 'Failed to send verification code' });
+            const detail = isResend ? EMAIL_RESEND_FAILED_MESSAGE : response.message || 'Failed to send verification code';
+            this.messageService.add({ severity: 'error', summary: 'Error', detail });
           }
         },
         error: (error) => {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.error?.message || error.error?.error || 'Failed to send verification code',
+            detail: isResend ? EMAIL_RESEND_FAILED_MESSAGE : error.error?.message || error.error?.error || 'Failed to send verification code',
           });
         },
       });
@@ -390,6 +400,14 @@ export class AccountSettingsComponent {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Verification failed. Please try again.' });
         },
       });
+  }
+
+  public changeEmail(): void {
+    if (this.sendingCode() || this.verifyingOtp()) {
+      return;
+    }
+
+    this.cancelOtpStep();
   }
 
   public cancelOtpStep(): void {

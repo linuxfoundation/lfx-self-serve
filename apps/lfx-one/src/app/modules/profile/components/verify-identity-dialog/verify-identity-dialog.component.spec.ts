@@ -10,6 +10,10 @@ import {
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_TITLE,
 } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
@@ -309,6 +313,14 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       expect(resendButton(root)).toBeNull();
       expect(normalizedText(supportAction(root))).toBe('Contact support');
       expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
+      const callout = root.querySelector('[data-testid="verify-resend-support-callout"]');
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_TITLE);
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_MESSAGE);
+      expect(callout?.getAttribute('role')).toBe('status');
+      expect(root.querySelector('[data-testid="verify-otp-hint"]')).toBeNull();
+      expect(root.querySelector('[data-testid="verify-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).not.toContain('a few minutes');
+      expect(normalizedText(root)).not.toContain('Use a different email');
     });
 
     it('blocks overlapping resends and further requests after escalation', () => {
@@ -316,6 +328,8 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
       const response$ = new Subject<SendEmailVerificationResponse>();
       userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+      expect(normalizedText(resendButton(root))).toBe('Resend code in 60s');
+      expect(normalizedText(root.querySelector('[data-testid="verify-otp-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
 
       vi.advanceTimersByTime(60_000);
       fixture.detectChanges();
@@ -326,6 +340,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       component.onResendCode(); // A second event before change detection must also be ignored.
       fixture.detectChanges();
       expect(button.disabled).toBe(true);
+      expect(normalizedText(button)).toBe('Requesting code…');
       button.click();
       expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
       expect(component.resendCount()).toBe(0);
@@ -365,6 +380,9 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
 
       expect(component.isSendingCode()).toBe(false);
       expect(component.resendCount()).toBe(0);
+      fixture.detectChanges();
+      expect(component.verificationError()).toBe(EMAIL_RESEND_FAILED_MESSAGE);
+      expect(normalizedText(root.querySelector('[data-testid="verify-email-error"]'))).toBe(EMAIL_RESEND_FAILED_MESSAGE);
       vi.advanceTimersByTime(60_000);
       fixture.detectChanges();
       expect((resendButton(root) as HTMLButtonElement).disabled).toBe(false);
@@ -399,6 +417,21 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       component.onCancel();
 
       expect(component.resendCount()).toBe(0);
+    });
+
+    it('opens support from the secondary initial action and the primary escalation action', () => {
+      vi.useFakeTimers();
+      const { component, root, openMessenger } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      (root.querySelector('[data-testid="verify-otp-support-button"]') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+      (root.querySelector('[data-testid="verify-resend-support"] button') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(2);
+      expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
     });
 
     it('words the code hint without promising a code or naming the address status', () => {

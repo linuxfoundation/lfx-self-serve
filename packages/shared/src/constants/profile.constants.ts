@@ -239,14 +239,20 @@ export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to 
 /** Resends allowed on the code step before Resend is replaced by a Contact support action. */
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
 
-/**
- * Code-step hint, neutral about whether the address is already linked (the server answers both the same
- * way). Rendered before an inline "contact support" link, so it ends mid-sentence.
- */
-export const EMAIL_CODE_NOT_RECEIVED_HINT = "Didn't get a code? Check the address and your spam folder. If it still doesn't arrive,";
+/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
 
-/** Escalation guidance shown after the resend threshold, alongside the screen's Contact support action. */
-export const EMAIL_RESEND_SUPPORT_MESSAGE = 'A code can take a few minutes to arrive. Still nothing?';
+/** Standalone code-step hint shown alongside a secondary Contact support action. */
+export const EMAIL_CODE_NOT_RECEIVED_HINT = 'Check the email address above and your spam or junk folder.';
+
+/** Heading for the support-first state after the allowed successful resend. */
+export const EMAIL_RESEND_SUPPORT_TITLE = 'Still waiting for your code?';
+
+/** Escalation guidance that makes no delivery-time promise and preserves late-code entry. */
+export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact support for help. You can still enter the code here if it arrives later.";
+
+/** Retryable, non-identifying error shown when a resend request fails. */
+export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
 
 /** Generic error code for every non-service-unavailable OTP verification failure. */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';

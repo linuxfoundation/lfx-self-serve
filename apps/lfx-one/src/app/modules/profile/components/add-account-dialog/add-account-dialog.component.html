@@ -36,7 +36,11 @@
 
   <!-- Step: Connect (email only) -->
   @if (step() === 'connect') {
-    <p class="text-sm text-slate-600">Enter your email address. If it can be added to your account, we'll send you a verification code.</p>
+    @if (codeSent()) {
+      <p class="text-sm text-slate-600">{{ verificationSentMessage }}</p>
+    } @else {
+      <p class="text-sm text-slate-600">Enter your email address. If it can be added to your account, we'll send you a verification code.</p>
+    }
 
     <div class="flex flex-col gap-4">
       <!-- Email input -->
@@ -61,15 +65,7 @@
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <label class="text-sm font-semibold text-slate-700">Verification code</label>
-            @if (showResendSupport()) {
-              <button
-                type="button"
-                lfxOpenIntercom
-                class="text-sm font-medium text-blue-600 hover:text-blue-700 cursor-pointer"
-                data-testid="add-account-resend-support">
-                <i class="fa-light fa-headset mr-1"></i>Contact support
-              </button>
-            } @else {
+            @if (!showResendSupport()) {
               <button
                 class="text-sm font-medium"
                 [class.cursor-pointer]="resendCooldown() === 0 && !isConnecting()"
@@ -80,10 +76,12 @@
                 [disabled]="resendCooldown() > 0 || isConnecting()"
                 (click)="onResendCode()"
                 data-testid="add-account-resend">
-                @if (resendCooldown() > 0) {
-                  Resend in {{ resendCooldown() }}s
+                @if (isConnecting()) {
+                  Requesting code…
+                } @else if (resendCooldown() > 0) {
+                  Resend code in {{ resendCooldown() }}s
                 } @else {
-                  Resend Code
+                  Resend code
                 }
               </button>
             }
@@ -106,15 +104,25 @@
             </p>
           }
           @if (showResendSupport()) {
-            <p class="text-xs text-slate-700" data-testid="add-account-resend-support-callout">{{ resendSupportMessage }}</p>
+            <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" role="status" data-testid="add-account-resend-support-callout">
+              <div class="flex flex-col gap-1">
+                <p class="text-sm font-semibold text-blue-900">{{ resendSupportTitle }}</p>
+                <p class="text-xs text-blue-900">{{ resendSupportMessage }}</p>
+              </div>
+              <lfx-button type="button" lfxOpenIntercom label="Contact support" severity="primary" size="small" data-testid="add-account-resend-support" />
+            </div>
+          } @else {
+            <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="add-account-otp-hint">
+              <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
+              <div class="flex flex-col items-start gap-1">
+                <p class="text-sm font-semibold text-blue-900">{{ codeNotReceivedTitle }}</p>
+                <p class="text-xs text-blue-900">{{ codeNotReceivedHint }}</p>
+                <button type="button" lfxOpenIntercom class="text-xs font-medium text-blue-900 underline" data-testid="add-account-otp-support-button">
+                  Contact support
+                </button>
+              </div>
+            </div>
           }
-          <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="add-account-otp-hint">
-            <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
-            <p class="text-xs text-blue-900">
-              {{ codeNotReceivedHint }}
-              <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="add-account-otp-support-button">contact support</button>.
-            </p>
-          </div>
         </div>
       }
     </div>
@@ -130,12 +138,12 @@
         styleClass="w-full"
         [loading]="isConnecting()"
         [disabled]="isConnecting()"
-        [label]="isConnecting() ? 'Sending code...' : 'Send verification code'"
+        [label]="isConnecting() ? 'Requesting code…' : 'Send verification code'"
         (onClick)="onSendCode()"
         data-testid="add-account-send-code" />
     } @else {
       <lfx-button
-        severity="primary"
+        [severity]="showResendSupport() ? 'secondary' : 'primary'"
         size="small"
         styleClass="w-full"
         [loading]="isVerifying()"
@@ -143,6 +151,16 @@
         [label]="isVerifying() ? 'Verifying...' : 'Verify email'"
         (onClick)="onVerify()"
         data-testid="add-account-verify" />
+      <lfx-button
+        type="button"
+        label="Use a different email"
+        severity="secondary"
+        variant="outlined"
+        size="small"
+        styleClass="w-full"
+        [disabled]="isConnecting() || isVerifying()"
+        (onClick)="onChangeEmail()"
+        data-testid="add-account-change-email" />
     }
   }
 </div>
