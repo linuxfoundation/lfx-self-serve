@@ -50,6 +50,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
 | `lfx-ui-slider`         | `UiSliderComponent`        | Native range with label and live value; min, max, step, value text; `[(value)]` and forms                                                                              |
 | `lfx-ui-table`          | `UiTableComponent`         | Data table from `columns` and `rows`: header, 48px rows, footer, bordered, striped, interactive, sortable headers, empty row                                           |
+| `lfx-ui-calendar`       | `UiCalendarComponent`      | Inline month grid, one date; arrow, Home, End and Page keys; disabled dates; `[(value)]` and forms                                                                     |
 
 ## Design tokens
 
