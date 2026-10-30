@@ -12862,7 +12862,13 @@ describe('ImplementationTabComponent google stored images', () => {
 
     it('offers suggestions only while a Google image field is on screen, and drops the result on a brief switch', async () => {
       const { f, c } = await mount(true);
-      expect(c['googleSuggestionsEnabled']()).toBe(true);
+      // Display on screen: its four image fields, in the plan's own vocabulary.
+      expect(c['googleSuggestionTargets']()).toEqual([
+        'google-ads/DISPLAY/marketingImages',
+        'google-ads/DISPLAY/squareMarketingImages',
+        'google-ads/DISPLAY/logoImages',
+        'google-ads/DISPLAY/squareLogoImages',
+      ]);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
       expect(c['googleSuggestedApplyResult']()).not.toBe('');
 
@@ -12871,7 +12877,7 @@ describe('ImplementationTabComponent google stored images', () => {
       expect(c['googleSuggestedApplyResult']()).toBe('');
 
       const off = await mount(false);
-      expect(off.c['googleSuggestionsEnabled']()).toBe(false);
+      expect(off.c['googleSuggestionTargets']()).toEqual([]);
     });
   });
 });

@@ -2759,10 +2759,24 @@ export class ImplementationTabComponent implements OnInit {
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
   /**
-   * Whether the slot grid may offer "Use suggested images": only while a Google image slot is on
-   * screen to take them, which `googleImageSlots` already limits to an explicit library yes.
+   * The asset-plan slots "Use suggested images" can fill, as `platform/CHANNEL/slot` in the plan's own
+   * vocabulary: one per plan slot name that maps onto a Google image field on screen. The grid offers
+   * the button only when the plan suggests an image for one of these, so it never promises a fill the
+   * tab cannot make. Empty while no image field is rendered, which `googleImageSlots` already limits to
+   * an explicit library yes.
    */
-  protected readonly googleSuggestionsEnabled: Signal<boolean> = computed(() => Object.keys(this.googleImageSlots()).length > 0);
+  protected readonly googleSuggestionTargets: Signal<string[]> = computed(() => {
+    const targets: string[] = [];
+    for (const key of Object.keys(this.googleImageSlots())) {
+      const [groupName, control] = key.split('.');
+      const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+      if (!channel) continue;
+      for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
+        if (mapped === control) targets.push(`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
+      }
+    }
+    return targets;
+  });
   /** The last apply's result for the brief now open, or `''`. */
   protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
     const result = this.googleSuggestedApply();
@@ -3935,7 +3949,6 @@ export class ImplementationTabComponent implements OnInit {
     this.selectedPlatforms.update((platforms) => platforms.filter((p) => p !== 'twitter-ads'));
   }
 
-  /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
   /**
    * Take the asset plan's suggestions into the Google image fields (#4825): "upload once, auto-assign".
    *
@@ -3989,6 +4002,7 @@ export class ImplementationTabComponent implements OnInit {
     if (filled > 0) this.emitDraft();
   }
 
+  /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
   protected onGoogleImagePick(slotKey: string, assetId: string): void {
     const briefId = this.briefPersistence().briefId ?? '';
     if (!briefId) return;

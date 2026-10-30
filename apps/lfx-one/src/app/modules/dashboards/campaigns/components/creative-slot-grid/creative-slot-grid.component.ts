@@ -62,10 +62,12 @@ export class CreativeSlotGridComponent {
   /** Bumped by the host when an upload adds an asset to the library, to re-read the plan. */
   public readonly reloadToken = input(0);
   /**
-   * Whether the host can take the plan's suggestions into its image fields (#4825). The grid has no
-   * fields of its own, so without a host that can apply them the button would promise nothing.
+   * The plan slots the host can fill (#4825), as `platform/channel/slot` built from an assignment's own
+   * fields. The grid has no fields of its own, so it offers "Use suggested images" only when the plan
+   * suggests an image for one of these — a plan whose suggestions are all for another platform or a
+   * channel not on screen would otherwise get a button that fills nothing.
    */
-  public readonly suggestionsEnabled = input(false);
+  public readonly suggestionTargets = input<readonly string[]>([]);
   /** What the host did with the last suggestions it was handed, or `''`. Shown and announced here, beside the button. */
   public readonly applyResult = input('');
 
@@ -86,10 +88,14 @@ export class CreativeSlotGridComponent {
   protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
-  /** The ready plan's assignments that name an image — what "Use suggested images" would hand over. */
+  /** The ready plan's assignments that name an image for a slot the host can fill — what "Use suggested images" hands over. */
   protected readonly suggestions: Signal<CreativeSlotAssignment[]> = computed(() => {
     const state = this.state();
-    return state.status === 'ready' && state.plan ? state.plan.assignments.filter((assignment) => assignment.assetIds.length > 0) : [];
+    if (state.status !== 'ready' || !state.plan) return [];
+    const targets = new Set(this.suggestionTargets());
+    return state.plan.assignments.filter(
+      (assignment) => assignment.assetIds.length > 0 && targets.has(`${assignment.platform}/${assignment.channel ?? ''}/${assignment.slot}`)
+    );
   });
 
   // === Protected Methods ===

@@ -314,27 +314,35 @@ describe('CreativeSlotGridComponent', () => {
   /** "Use suggested images" (#4825): the grid hands the plan to its host, which decides what to apply. */
   describe('suggested images', () => {
     const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const TARGETS = ['google-ads/PERFORMANCE_MAX/MARKETING_IMAGE', 'google-ads/PERFORMANCE_MAX/LOGO', 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO'];
 
-    it('offers no button while the host cannot apply suggestions', () => {
+    it('offers no button while the host can fill no slot', () => {
       render(ready);
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    /** Suggestions only for slots the host cannot fill — another channel, another platform — would make a button that fills nothing. */
+    it('offers no button when every suggestion is for a slot the host cannot fill', () => {
+      render({ ...ready, suggestionTargets: ['google-ads/DISPLAY/logoImages'] });
       expect(q('creative-slot-grid-apply')).toBeNull();
     });
 
     it('offers no button for a plan that suggests no image', async () => {
       await build({ ...PLAN, assignments: PLAN.assignments.map((a) => ({ ...a, assetIds: [] })) });
-      render({ ...ready, suggestionsEnabled: true });
+      render({ ...ready, suggestionTargets: TARGETS });
       expect(q('creative-slot-grid-apply')).toBeNull();
     });
 
-    it('hands over only the assignments that name an image', async () => {
+    it('hands over only the assignments that name an image for a slot the host can fill', async () => {
       await build({
         ...PLAN,
         assignments: [
           ...PLAN.assignments,
           { ...PLAN.assignments[0], slotKey: 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO', slot: 'LANDSCAPE_LOGO', assetIds: [] },
+          { ...PLAN.assignments[0], slotKey: 'google-ads/DISPLAY/logoImages', channel: 'DISPLAY', slot: 'logoImages', assetIds: ['a-3'] },
         ],
       });
-      render({ ...ready, suggestionsEnabled: true });
+      render({ ...ready, suggestionTargets: TARGETS });
       const emitted: unknown[] = [];
       fixture.componentInstance.applySuggested.subscribe((assignments) => emitted.push(assignments));
 
@@ -344,7 +352,7 @@ describe('CreativeSlotGridComponent', () => {
     });
 
     it("shows the host's result and announces it in a region that was mounted empty", () => {
-      render({ ...ready, suggestionsEnabled: true });
+      render({ ...ready, suggestionTargets: TARGETS });
       expect(q('creative-slot-grid-apply-live')?.textContent?.trim()).toBe('');
       expect(q('creative-slot-grid-apply-result')).toBeNull();
 
