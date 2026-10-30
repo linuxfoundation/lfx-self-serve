@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, applications, accept, decline, graduate, withdraw, mentees]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -21,10 +21,10 @@ The **Current Mentees** tab is where a Program Admin decides on applications for
 ## Steps
 
 1. Go to the **Current Mentees** tab.
-2. Narrow the list with the search box, the status filter (**All statuses**, or one status) and the term filter (**All open terms**, or one term).
+2. Narrow the list with the **Search** box, the **Filter By Status** filter (**All statuses**, or one status) and the **Filter by Term** filter (**All open terms**, or one term). On **Past Mentees** the term filter offers **All closed terms**.
 3. Select **View Tasks** on the row to expand the applicant's prerequisite tasks and download anything they submitted. Use **Add note**, or the note already on the row, for reviewer notes.
 
-   The row and the applicant's name do not open a profile page — what you review is their tasks and the notes on the row.
+   On an **Open** or **Completed** program, the applicant's name links to their public mentee page, which opens in a new tab. On any other program the name is not a link. The row itself does not open anything.
 
 4. Use the row actions:
 

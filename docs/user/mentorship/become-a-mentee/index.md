@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, register, profile, skills]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -20,18 +20,20 @@ Registering creates your mentee profile. Program mentors read it when they revie
 ## Steps
 
 1. Go to [app.lfx.dev/mentorship/mentee](https://app.lfx.dev/mentorship/mentee).
-2. Fill in the registration form:
-   - **About me** — a short introduction for mentors.
-   - **Skills you have** and **skills you want** — add them from the skills list. You can add up to 100 skills of up to 300 characters each.
-   - **Country of residence** — required; the form will not submit without it.
-3. Complete the **Demographics** section if you wish. It is optional, and you can answer "prefer not to say" to any of it.
-4. Tick each statement under **Eligibility Requirements**:
+2. Check the **From Your LFX Profile** card at the top. Your name, email and picture come from your LFX account, not from this form. To change them, select **Edit LFX Profile**. See [Your LFX Profile Card](../lfx-profile-card/).
+3. Fill in the registration form:
+   - **Introduction** — answer "Tell us a little bit about yourself." Mentors read this first.
+   - **Skills** — add **What skills do you currently have?** and **What skills would you like to improve?** from the skills list. You can add up to 100 skills of up to 300 characters each.
+   - **Anything else you want mentors to know?** — optional notes, up to 1,000 characters.
+   - **Country** — your **Country of residence** is required; the form will not submit without it.
+4. Complete the **Demographics** section if you wish. It is optional. Tick the consent box under a question to answer it, or pick "I don't want to provide".
+5. Tick each statement under **Eligibility Requirements**:
    - You are at least 18, or will be by the time the program starts.
    - You are eligible to work in the country you live in for the duration of the mentorship.
    - You do not have another mentee profile and are not taking part in another Linux Foundation mentorship program.
-5. Read the export-controls statement and confirm it applies to you.
-6. Acknowledge the platform terms.
-7. Submit the form.
+6. Tick the **Compliance Confirmation** statement. It certifies that you are not located in, or acting for, a sanctioned country, and are not on the U.S. Treasury's blocked-persons list.
+7. Under **Terms and Conditions**, agree to the LFX Platform Use Agreement and the terms it includes.
+8. Select **Submit**.
 
 ## After completing
 
@@ -52,3 +54,4 @@ If you already have a mentee profile, returning to the Mentee area does not show
 
 - [Apply to a Program](../apply-to-a-program/) — the next step
 - [Edit Your Mentee Profile](../mentee-profile/)
+- [Your LFX Profile Card](../lfx-profile-card/)
