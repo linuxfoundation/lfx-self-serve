@@ -73,9 +73,9 @@ After you send, LFX reports what it knows about each invited voter:
 - **Sent:** the summary was delivered to the voter's email address.
 - **Skipped:** the voter has no email address on file, so nothing was sent to them. Skipped voters are reported, never silently left out.
 - **Failed:** the email could not be sent to the voter.
-- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout or lost connection. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
+- **Unconfirmed:** LFX couldn't confirm whether the email went out, for example after a timeout, lost connection, or an email-service error after sending may have started. Some of these emails may already have been delivered, so check with voters before sending again. Sending again may send duplicate summaries.
 
-If any voter was skipped, failed or unconfirmed, LFX shows a warning instead of a success message. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
+If any voter was skipped, failed or unconfirmed, LFX does not show a complete-success message. If every attempted send fails, the error still reports how many failed and how many voters were skipped for having no email address. If none of the invited voters has an email address, LFX tells you that no summaries were sent. If you try to send before the vote has closed, LFX says the vote hasn't closed yet. The summary is sent only when you ask for it. It is never sent automatically.
 
 ## Clone a vote
 

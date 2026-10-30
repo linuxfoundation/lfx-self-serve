@@ -1599,6 +1599,31 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
   });
 
+  it('reports the skipped and failed counts when every attempted summary was confirmed unsent', async () => {
+    sendVoteSummary.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 502,
+            error: {
+              code: VOTE_SUMMARY_SEND_FAILED,
+              details: { recipient_count: 0, failed_count: 1, skipped_count: 2, uncertain_count: 0 },
+            },
+          })
+      )
+    );
+    await sendSummary();
+
+    expect(messageAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: "Couldn't send summary",
+        detail: 'No summaries were sent: 2 invited voter(s) have no email address; 1 send(s) failed.',
+        life: 8000,
+      })
+    );
+  });
+
   it('shows a retry-safe error for a clear rejection such as a 403', async () => {
     sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN' } })));
     await sendSummary();

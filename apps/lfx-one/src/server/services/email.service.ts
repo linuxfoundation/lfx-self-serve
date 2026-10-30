@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { EMAIL_SEND_UNCONFIRMED, EMAIL_SERVICE_PRE_SEND_REJECTIONS, NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { EmailServiceSendRequest, EmailServiceSendResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -26,9 +26,9 @@ export class EmailService {
   /**
    * Sends one email. Resolves with the reply; an empty reply (no ids) means the service accepted the
    * request but did not send — sending disabled, or a non-prod recipient-domain filter — and is logged.
-   * Throws a 502 `EMAIL_SEND_FAILED` when the service rejects the request or cannot be reached. Only the
-   * unreachable/timeout/unparseable-reply case is marked `transportFailure` (the email may have been
-   * queued); a rejected reply is a confirmed "not sent" and is left unmarked.
+   * Throws 502 on failure. Transport failures carry `transportFailure`; known pre-send refusals use
+   * `EMAIL_SEND_FAILED`. Generic SMTP delivery errors and unknown replies use `EMAIL_SEND_UNCONFIRMED`:
+   * even a received error reply can follow SMTP acceptance, so those must not invite a blind retry.
    */
   public async sendEmail(req: Request, request: EmailServiceSendRequest): Promise<EmailServiceSendResponse> {
     const codec = this.natsService.getCodec();
@@ -44,20 +44,22 @@ export class EmailService {
         operation: 'send_email',
         service: 'email_service',
         originalError: error instanceof Error ? error : undefined,
-        // The request or its reply was lost, so the email may already have been queued — unlike a
-        // rejected reply below, which is a confirmed "not sent". Callers use this to avoid
-        // presenting an ambiguous outcome as a clean failure.
+        // Losing the request or its reply leaves the SMTP outcome unknown.
         transportFailure: true,
       });
     }
 
     if (reply.error) {
-      // The reason is one of the contract's fixed strings; it stays in the log, not the client response.
-      logger.warning(req, 'send_email', 'Email service rejected the email', { reason: reply.error });
-      throw new MicroserviceError('The email service rejected the email', 502, 'EMAIL_SEND_FAILED', {
-        operation: 'send_email',
-        service: 'email_service',
-      });
+      const rejectedBeforeSend = EMAIL_SERVICE_PRE_SEND_REJECTIONS.includes(reply.error);
+      // Only contractually pre-send refusals prove nothing was sent. `email delivery failed`
+      // also covers a disconnect after SMTP DATA acceptance; unknown errors are conservative too.
+      logger.warning(req, 'send_email', 'Email service reported a send error', { rejected_before_send: rejectedBeforeSend });
+      throw new MicroserviceError(
+        rejectedBeforeSend ? 'The email service rejected the email' : 'The email service could not confirm the send outcome',
+        502,
+        rejectedBeforeSend ? 'EMAIL_SEND_FAILED' : EMAIL_SEND_UNCONFIRMED,
+        { operation: 'send_email', service: 'email_service' }
+      );
     }
 
     if (!reply.email_id) {

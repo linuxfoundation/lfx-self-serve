@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  EMAIL_SEND_UNCONFIRMED,
   MIN_VIABLE_REQUEST_BUDGET_MS,
   VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
@@ -931,11 +932,11 @@ export class VoteService {
    *
    * Every invited voter ends up in exactly one bucket (#4689): sent (the email service returned an
    * `email_id`), skipped (no email address on file), failed (confirmed not sent: the service
-   * rejected it or accepted without sending), or uncertain (the NATS request itself failed or timed
-   * out, so the email may already be queued). One recipient's failure never blocks the rest, so a
+   * rejected it before sending or accepted without sending), or uncertain (transport failed or the
+   * email service reported an ambiguous SMTP outcome). One recipient's failure never blocks the rest, so a
    * partial send reports the counts instead of throwing. Only when every attempt was confirmed
-   * failed (nothing sent, nothing uncertain) does it throw, since a retry is then safe. A failure
-   * before any email was attempted is rethrown as `VOTE_SUMMARY_PRECHECK_FAILED`, also safe to retry.
+   * failed (nothing sent, nothing uncertain) does it throw with the known counts, since a retry is then
+   * safe. A failure before any email was attempted is rethrown as `VOTE_SUMMARY_PRECHECK_FAILED`, also safe to retry.
    */
   public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
     let rendered: ReturnType<typeof renderVoteSummaryEmail>;
@@ -1001,8 +1002,11 @@ export class VoteService {
         return;
       }
 
-      // A lost or timed-out request may still have queued the email, so it is "unknown", not "failed".
-      const uncertain = outcome.status === 'rejected' && outcome.reason instanceof MicroserviceError && outcome.reason.transportFailure === true;
+      // A transport failure or ambiguous SMTP reply can follow acceptance, so neither proves failure.
+      const uncertain =
+        outcome.status === 'rejected' &&
+        outcome.reason instanceof MicroserviceError &&
+        (outcome.reason.transportFailure === true || outcome.reason.code === EMAIL_SEND_UNCONFIRMED);
       if (uncertain) {
         uncertainCount += 1;
       } else {
@@ -1016,22 +1020,27 @@ export class VoteService {
       });
     });
 
+    const result: SendVoteSummaryResponse = {
+      recipient_count: sentCount,
+      failed_count: failedCount,
+      skipped_count: skippedCount,
+      uncertain_count: uncertainCount,
+    };
+
     if (sentCount === 0 && uncertainCount === 0 && failedCount > 0) {
       throw new MicroserviceError('No summaries were sent. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
         operation: 'send_vote_summary',
         service: 'vote_service',
+        errorBody: { details: result },
       });
     }
 
     logger.info(req, 'send_vote_summary', 'Sent vote close summary', {
       vote_uid: voteUid,
-      recipient_count: sentCount,
-      failed_count: failedCount,
-      skipped_count: skippedCount,
-      uncertain_count: uncertainCount,
+      ...result,
     });
 
-    return { recipient_count: sentCount, failed_count: failedCount, skipped_count: skippedCount, uncertain_count: uncertainCount };
+    return result;
   }
 
   // ============================================

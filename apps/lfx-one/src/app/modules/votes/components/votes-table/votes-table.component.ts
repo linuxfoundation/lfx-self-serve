@@ -30,6 +30,7 @@ import {
   FilterPillOption,
   GroupsIOMailingList,
   MyVotesQuickFilter,
+  SendVoteSummaryResponse,
   Vote,
   VoteFilterState,
   VoteMailingListReminderDialogData,
@@ -770,6 +771,21 @@ export class VotesTableComponent {
     if (code === VOTE_SUMMARY_PRECHECK_FAILED) {
       this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'Nothing was sent. Please try again.' });
       return;
+    }
+
+    if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
+      const counts = error.error?.details as SendVoteSummaryResponse | undefined;
+      // Only use a complete, confirmed-unsent BFF result. Older servers without details keep the fallback below.
+      if (
+        counts &&
+        counts.recipient_count === 0 &&
+        counts.uncertain_count === 0 &&
+        counts.failed_count > 0 &&
+        [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
+      ) {
+        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: "Couldn't send summary" });
+        return;
+      }
     }
 
     const rejected =

@@ -3195,7 +3195,7 @@ describe('VoteService', () => {
 
       await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({
         statusCode: 502,
-        code: 'VOTE_RESULTS_UNAVAILABLE',
+        code: VOTE_SUMMARY_PRECHECK_FAILED,
       });
       expect(sendEmail).not.toHaveBeenCalled();
     });
