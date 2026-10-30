@@ -1,0 +1,87 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px gap between label, field and message. -->
+<div class="flex min-w-0 flex-col gap-[8px]">
+  @if (label()) {
+    <label class="label-13 text-ui-neutral-600" [id]="labelId" (click)="focusTrigger()" data-testid="ui-select-label">{{ label() }}</label>
+  }
+  <div
+    cdkOverlayOrigin
+    role="combobox"
+    aria-haspopup="listbox"
+    [id]="triggerId"
+    [class]="triggerClasses()"
+    [attr.tabindex]="isDisabled() ? -1 : 0"
+    [attr.aria-expanded]="expanded()"
+    [attr.aria-controls]="expanded() ? listboxId : null"
+    [attr.aria-activedescendant]="activeDescendant()"
+    [attr.aria-labelledby]="label() ? labelId : null"
+    [attr.aria-label]="label() ? null : ariaLabel() || null"
+    [attr.aria-required]="required() ? 'true' : null"
+    [attr.aria-disabled]="isDisabled() ? 'true' : null"
+    [attr.aria-invalid]="error() ? 'true' : null"
+    [attr.aria-describedby]="describedBy()"
+    (click)="toggle()"
+    (keydown)="onKeydown($event)"
+    (blur)="onBlur($event)"
+    data-testid="ui-select-trigger">
+    <ng-content select="[lfxUiSelectPrefix]" />
+    @if (selected()?.icon || prefixIcon()) {
+      <span [class]="valueIconClasses()" data-testid="ui-select-icon"><i [class]="selected()?.icon || prefixIcon()" aria-hidden="true"></i></span>
+    }
+    @if (selected(); as option) {
+      <span class="flex min-w-0 flex-1 items-center overflow-hidden" data-testid="ui-select-value">
+        @if (valueTemplate(); as custom) {
+          <ng-container *ngTemplateOutlet="custom.template; context: { $implicit: option }" />
+        } @else {
+          <span class="truncate" [attr.title]="option.label">{{ option.label }}</span>
+        }
+      </span>
+    } @else {
+      <span class="min-w-0 flex-1 truncate text-ui-neutral-500" data-testid="ui-select-placeholder">{{ placeholder() }}</span>
+    }
+    <span [class]="chevronClasses()"><i class="fa-light fa-chevron-down" aria-hidden="true"></i></span>
+  </div>
+  @if (error()) {
+    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-select-error">{{ error() }}</lfx-ui-error>
+  } @else if (hint()) {
+    <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-select-hint">{{ hint() }}</p>
+  }
+</div>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin()"
+  [cdkConnectedOverlayOpen]="expanded()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayMinWidth]="panelWidth()"
+  [cdkConnectedOverlayDisableClose]="true"
+  [cdkConnectedOverlayFlexibleDimensions]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
+  (detach)="closePanel()">
+  <!-- Exact px, not rem; 14px root. The listbox mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
+  <div
+    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    (focusout)="onPanelFocusOut($event)"
+    data-testid="ui-select-panel">
+    <div
+      class="shrink-0 border-b border-ui-neutral-alpha-200 p-[6px] empty:hidden"
+      (mousedown)="onHeaderMousedown($event)"
+      (keydown)="onHeaderKeydown($event)"
+      data-testid="ui-select-header">
+      <ng-content select="[lfxUiSelectHeader]" />
+    </div>
+    <div
+      role="listbox"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto p-[6px]"
+      tabindex="-1"
+      [id]="listboxId"
+      [attr.aria-labelledby]="label() ? labelId : null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      (mousedown)="$event.preventDefault()"
+      data-testid="ui-select-listbox">
+      <ng-content />
+    </div>
+  </div>
+</ng-template>
