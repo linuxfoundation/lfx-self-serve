@@ -22,7 +22,7 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
-        @if (view() && !runState()) {
+        @if (view()) {
           <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
         }
       </div>
@@ -172,7 +172,7 @@
         [polling]="publicProgressPolling()"
         [continuous]="publicProgressPolling()"
         [refreshKey]="progressRefreshKey()"
-        [loadRevision]="publicProgressPolling()"
+        [loadRevision]="readStoredBody()"
         [revisionId]="revisionParam()"
         [expectedPending]="!!generationParam()"
         [viewSnapshot]="view()"
@@ -466,72 +466,6 @@
           @if (isAeoDocument() && current.aeoGeoReport?.report) {
             <ng-container [ngTemplateOutlet]="auditReport" />
           }
-          @if (current.type.kind === 'living' && !current.revision.latest) {
-            @let active = currentRevision();
-            @let viewedAuthor = viewedAuthorLabel();
-            @let viewedDate = current.revision.createdAt | date: 'd MMM';
-            @let historySummary =
-              "You're viewing v" +
-              current.revision.number +
-              (viewedDate ? ' · ' + viewedDate : '') +
-              ' · ' +
-              viewedAuthor +
-              (active ? ' · v' + active.number + ' is current' : '');
-            <!-- The tester requested 32–36px height and 13px type. Below lg, clear the layout's sticky menu (h-10 + py-3 + border = 4rem + 1px). -->
-            <!-- Offsets target the standard layout; the impersonation banner is an accepted offset exception. -->
-            <div
-              class="sticky top-[calc(4rem+1px)] lg:top-0 z-10 flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
-              role="group"
-              aria-label="Revision navigation"
-              [attr.aria-busy]="restoringId() !== null"
-              data-testid="mktg-document-view-history-bar">
-              <span
-                class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-                tabindex="0"
-                role="note"
-                [textContent]="historySummary"
-                [attr.aria-label]="historySummary"
-                [pTooltip]="historySummary"
-                tooltipPosition="bottom"
-                tooltipEvent="both"
-                [escape]="true"
-                appendTo="body"
-                data-testid="mktg-document-view-history-bar-summary"></span>
-              <span
-                class="min-w-0 flex-1 sm:hidden"
-                [textContent]="'Viewing v' + current.revision.number"
-                data-testid="mktg-document-view-history-bar-mobile-summary"></span>
-              <span class="sm:hidden" aria-hidden="true">·</span>
-              <button
-                type="button"
-                class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
-                [disabled]="writePending()"
-                data-testid="mktg-document-view-history-bar-make-current"
-                (click)="onRestore(current.revision)">
-                @if (restoringId() === current.revision.id) {
-                  <span>Saving…</span>
-                } @else {
-                  <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
-                  <span class="sm:hidden">Make current</span>
-                }
-              </button>
-              @if (active) {
-                <span class="sm:hidden" aria-hidden="true">·</span>
-                <a
-                  class="shrink-0 text-blue-700 underline hover:text-blue-900"
-                  [routerLink]="submittingGeneration() ? null : []"
-                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-                  [attr.tabindex]="submittingGeneration() ? -1 : null"
-                  [queryParams]="{ revision: active.id }"
-                  queryParamsHandling="merge"
-                  data-testid="mktg-document-view-history-bar-back">
-                  <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
-                  <span class="sm:hidden">Back</span>
-                </a>
-              }
-            </div>
-          }
-          <!-- History precedes the asset headers in DOM, preserving its keyboard summary after Back. -->
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
               class="block min-w-0"
@@ -543,7 +477,7 @@
               [kit]="printKit()"
               [approvedAsset]="approvedFramework()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -583,7 +517,7 @@
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -636,6 +570,85 @@
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
+            @if (current.type.kind === 'living' && !current.revision.latest) {
+              @let active = currentRevision();
+              @let viewedAuthor = viewedAuthorLabel();
+              @let viewedDate = current.revision.createdAt | date: 'd MMM';
+              @let historySummary =
+                "You're viewing v" +
+                current.revision.number +
+                (viewedDate ? ' · ' + viewedDate : '') +
+                ' · ' +
+                viewedAuthor +
+                (active ? ' · v' + active.number + ' is current' : '');
+              <!-- The Revisions slot keeps new navigation out of the content column: the tabs never move. -->
+              <div
+                class="flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
+                role="group"
+                aria-label="Revision navigation"
+                [attr.aria-busy]="restoringId() !== null"
+                data-testid="mktg-document-view-history-bar">
+                <span
+                  class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                  tabindex="0"
+                  role="note"
+                  [textContent]="historySummary"
+                  [attr.aria-label]="historySummary"
+                  [pTooltip]="historySummary"
+                  tooltipPosition="bottom"
+                  tooltipEvent="both"
+                  [escape]="true"
+                  appendTo="body"
+                  data-testid="mktg-document-view-history-bar-summary"></span>
+                <span
+                  class="min-w-0 flex-1 sm:hidden"
+                  [textContent]="'Viewing v' + current.revision.number"
+                  data-testid="mktg-document-view-history-bar-mobile-summary"></span>
+                <span class="sm:hidden" aria-hidden="true">·</span>
+                <button
+                  type="button"
+                  class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
+                  [disabled]="writePending()"
+                  data-testid="mktg-document-view-history-bar-make-current"
+                  (click)="onRestore(current.revision)">
+                  @if (restoringId() === current.revision.id) {
+                    <span>Saving…</span>
+                  } @else {
+                    <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
+                    <span class="sm:hidden">Make current</span>
+                  }
+                </button>
+                @if (active) {
+                  <span class="sm:hidden" aria-hidden="true">·</span>
+                  <a
+                    class="shrink-0 text-blue-700 underline hover:text-blue-900"
+                    [routerLink]="submittingGeneration() ? null : []"
+                    [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+                    [attr.tabindex]="submittingGeneration() ? -1 : null"
+                    [queryParams]="{ revision: active.id }"
+                    queryParamsHandling="merge"
+                    data-testid="mktg-document-view-history-bar-back">
+                    <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
+                    <span class="sm:hidden">Back</span>
+                  </a>
+                }
+              </div>
+            }
+            @if (newlyApprovedRevision(); as approved) {
+              <p class="text-xs text-gray-500" data-testid="mktg-document-view-new-approval" role="status">
+                v{{ approved.number }} was {{ approved.approval ? 'approved' : 'produced' }} by {{ approved.authorLabel }} ·
+                <a
+                  [routerLink]="submittingGeneration() ? null : []"
+                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+                  [attr.tabindex]="submittingGeneration() ? -1 : null"
+                  [queryParams]="{ revision: approved.id }"
+                  queryParamsHandling="merge"
+                  data-testid="mktg-document-view-new-approval-open"
+                  class="text-blue-600 hover:text-blue-800"
+                  >Open it</a
+                >
+              </p>
+            }
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
               @for (revision of visibleRevisionRows(); track revision.id) {
                 <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->

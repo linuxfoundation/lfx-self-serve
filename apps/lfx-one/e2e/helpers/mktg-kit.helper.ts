@@ -34,16 +34,20 @@ import { columnAssetRevisionResponse } from './mktg-os-asset-views.helper';
 const unexpectedCalls = new WeakMap<Page, string[]>();
 
 /** Every kit case fails on an unrecognized Marketing request; no quiet catch-all responses. */
-export const kitTest = baseTest.extend<{ kitRequestCheck: void }>({
+export const kitTest = baseTest.extend<{ kitRequestCheck: (page: Page) => void }>({
   timezoneId: 'UTC',
   kitRequestCheck: [
     async ({ page }, use) => {
       skipWhenAuthMissing();
       const calls: string[] = [];
+      const pages = [page];
       unexpectedCalls.set(page, calls);
-      await use(undefined);
+      await use((additionalPage) => {
+        pages.push(additionalPage);
+        unexpectedCalls.set(additionalPage, calls);
+      });
       expect(calls, 'Unexpected Marketing OS requests (writes are blocked, never sent live)').toEqual([]);
-      unexpectedCalls.delete(page);
+      pages.forEach((registered) => unexpectedCalls.delete(registered));
     },
     { auto: true },
   ],

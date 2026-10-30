@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@playwright/test';
+import type { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, kitDocuments, kitRevision, kitJson, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 import { DOCUMENTS_URL, openDocuments, setupDocuments, startedDocumentRun } from './helpers/mktg-os-documents.helper';
@@ -30,6 +31,83 @@ test('living document lands with its catalog title and resolved action, never Ru
   await expect(page.getByTestId('mktg-document-view-run-again')).toHaveText('Create a new version');
 });
 
+test('an approval in a second browser context updates the open document in place without reload', async ({ page, browser, kitRequestCheck }, info) => {
+  const type = kitDocuments(true).groups.find((group) => group.type.agentKey === 'foundation-message')?.type;
+  if (!type) throw new Error('Missing synthetic framework type');
+  const original = kitRevision(type);
+  const newer = { ...original.revision, id: `000004-${'b'.repeat(64)}`, number: 4, latest: false };
+  let response: MktgRevisionResponse = { ...original, revisions: [newer, original.revision] };
+  const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
+  await setupKit(page, { loaded: true });
+  await page.route(
+    (url) => url.pathname === path,
+    (route) => kitJson(route, response)
+  );
+  await page.route(
+    (url) => url.pathname === `${path}/revisions/${newer.id}`,
+    (route) => kitJson(route, { ...response, revision: response.revisions[0], approval: response.revisions[0]?.approval })
+  );
+  await openKit(page, `/documents/${type.agentKey}/living`);
+  await expect(page.getByTestId('mktg-document-view-content')).toBeVisible();
+  const tab = page.getByTestId('mktg-framework-view-tab-numbers');
+  await tab.click();
+  const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions', 'mktg-framework-view-tab-numbers'];
+  for (const id of ids) await page.getByTestId(id).evaluate((node) => (node.dataset['liveIdentity'] = 'kept'));
+  const originalUrl = page.url();
+  const content = await page.getByTestId('mktg-document-view-content').textContent();
+  const fresh = await browser.newContext({ storageState: info.project.use.storageState, proxy: info.project.use.proxy, baseURL: info.project.use.baseURL });
+  try {
+    const approver = await fresh.newPage();
+    kitRequestCheck(approver);
+    await setupKit(approver, { loaded: true });
+    await approver.route(
+      (url) => url.pathname === path,
+      (route) => kitJson(route, response)
+    );
+    await approver.route(
+      (url) => url.pathname === `${path}/comments`,
+      (route) => kitJson(route, { revisionId: new URL(route.request().url()).searchParams.get('revision'), threads: [] })
+    );
+    await approver.route(
+      (url) => url.pathname === `${path}/revisions/${newer.id}`,
+      (route) => kitJson(route, { ...response, revision: newer })
+    );
+    await approver.route(
+      (url) => url.pathname === `${path}/revisions/${newer.id}/approve`,
+      async (route) => {
+        expect(route.request().method()).toBe('POST');
+        const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+        const approved = { ...newer, approval, latest: true };
+        response = {
+          ...original,
+          revisions: [approved, { ...original.revision, latest: false }],
+          approvedCurrent: { revisionId: approved.id, number: approved.number },
+        };
+        await kitJson(route, { ...response, revision: approved, approval });
+      }
+    );
+    await openKit(approver, `/documents/${type.agentKey}/living`);
+    await approver.getByTestId('mktg-document-view-open-4').click();
+    await approver.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    await approver.getByRole('button', { name: 'Approve anyway', exact: true }).click();
+    await expect(approver.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
+    await expect(page.getByTestId('mktg-document-view-new-approval')).toContainText('v4 was approved by Synthetic reviewer', { timeout: 20_000 });
+    await expect(page.getByTestId('mktg-document-view-new-approval').getByRole('link', { name: 'Open it' })).toHaveAttribute(
+      'href',
+      new RegExp(`revision=${newer.id}`)
+    );
+    await expect(page.getByTestId('mktg-document-view-current-4')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-revision-label-4')).toContainText('Approved');
+    await expect(page).toHaveURL(originalUrl);
+    for (const id of ids) await expect(page.getByTestId(id)).toHaveAttribute('data-live-identity', 'kept');
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('mktg-document-view-content')).toHaveText(content ?? '');
+    await expect(page.getByTestId('mktg-document-view-loading')).toHaveCount(0);
+  } finally {
+    await fresh.close();
+  }
+});
+
 test('two document progress polls keep the selected tab, expanded history, composer, focus and scroll', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await setupKit(page, { loaded: true });
@@ -42,22 +120,26 @@ test('two document progress polls keep the selected tab, expanded history, compo
       ? stored.revision
       : { ...stored.revision, number, id: `${String(number).padStart(6, '0')}-${'a'.repeat(64)}`, latest: false };
   });
-  const response = {
+  let response: MktgRevisionResponse = {
     ...stored,
     revisions,
     runs: [{ ...startedDocumentRun('writing'), project: KIT_PROJECT.uid, agentKey: type.agentKey }],
   };
   const path = `/api/mktg-agents/documents/${type.agentKey}/living`;
   let polls = 0;
+  let bodyReads = 0;
   await page.route(
     (url) => url.pathname === path,
-    (route) => kitJson(route, response)
+    async (route) => {
+      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
+      await kitJson(route, response);
+    }
   );
   await page.route(
     (url) => url.pathname.startsWith(`${path}/revisions/`),
     async (route) => {
+      bodyReads++;
       await kitJson(route, response);
-      if (new URL(route.request().url()).searchParams.get('poll') === '1') polls++;
     }
   );
   await openKit(page, `/documents/${type.agentKey}/living`);
@@ -72,9 +154,17 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await composer.fill('Synthetic draft kept while document progress refreshes.');
   await composer.focus();
   await composer.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
+  const readiness = page.getByTestId('mktg-document-view-readiness');
+  await expect(readiness).toBeVisible();
+  const readyText = await readiness.textContent();
+  const tabs = page.getByTestId('mktg-framework-view-tabs');
+  const tabsTop = (await tabs.boundingBox())?.y;
+  expect(tabsTop).toBeDefined();
   const scroll = await page.evaluate(() => window.scrollY);
   const before = polls;
+  const bodyReadsBefore = bodyReads;
   await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+  expect(bodyReads).toBe(bodyReadsBefore);
   await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page).toHaveURL(/tab=numbers/);
   await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
@@ -83,6 +173,22 @@ test('two document progress polls keep the selected tab, expanded history, compo
   await expect(composer).toHaveAttribute('data-refresh-identity', 'kept');
   await expect(composer).toBeFocused();
   expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+  const produced = { ...stored.revision, id: `000010-${'a'.repeat(64)}`, number: 10, latest: true };
+  response = {
+    ...response,
+    runs: [],
+    revisions: [produced, ...revisions.map((row) => ({ ...row, latest: false }))],
+    current: { revisionId: produced.id, changedAt: '2026-10-29T12:00:00Z', changedBy: null },
+  };
+  const beforeStore = polls;
+  await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThan(beforeStore);
+  await expect(page.getByTestId('mktg-document-view-new-approval')).toContainText('v10 was produced');
+  await expect(page.getByTestId('mktg-document-view-revisions').getByTestId('mktg-document-view-history-bar')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-content').getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
+  await expect(readiness).toHaveText(readyText ?? '');
+  expect((await tabs.boundingBox())?.y).toBe(tabsTop);
+  expect(bodyReads).toBe(bodyReadsBefore);
+  await expect(composer).toBeFocused();
 });
 
 test('two same-scope comments refreshes keep the heading and thread nodes without a skeleton', async ({ page }) => {
