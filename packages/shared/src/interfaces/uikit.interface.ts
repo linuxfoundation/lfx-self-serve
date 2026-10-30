@@ -157,3 +157,9 @@ export interface UiTableColumnView {
   /** Font Awesome classes of the sort arrow of a sortable header. */
   sortIcon: string;
 }
+
+/** Size of a uikit collapse group: `default` has 20px headings, `small` 14px headings and tighter padding. */
+export type UiCollapseSize = 'default' | 'small';
+
+/** Heading level (`aria-level`) of the triggers in a uikit collapse group. */
+export type UiCollapseHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
