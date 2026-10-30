@@ -30,6 +30,7 @@
         >{{ tab.label }}</span
       >
       @if (tab.count !== undefined) {
+        <!-- 12px as an exact px value, not rem (14px root), matching the library. -->
         <span class="text-[12px] font-normal tabular-nums text-ui-neutral-400" [attr.data-testid]="'ui-tab-count-' + tab.value">{{ tab.count }}</span>
       }
     </button>

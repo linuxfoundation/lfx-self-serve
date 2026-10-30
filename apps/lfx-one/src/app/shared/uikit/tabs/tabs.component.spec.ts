@@ -89,7 +89,9 @@ describe('UiTabsComponent', () => {
 
     expect(list.className).toContain('gap-[24px]');
     expect(list.className).toContain('overflow-x-auto');
-    expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-[inset_0_-1px_0_0]');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-ui-neutral-alpha-200');
+    expect((fixture.nativeElement as HTMLElement).className).not.toContain('var(');
     expect(tab('upcoming').className).toContain('label-14');
     expect(tab('upcoming').className).toContain('pt-[8px]');
     expect(tab('upcoming').className).toContain('pb-[14px]');
@@ -122,6 +124,9 @@ describe('UiTabsComponent', () => {
     expect(tab('upcoming').className).toContain('px-[12px]');
     expect(tab('upcoming').className).toContain('aria-selected:before:bg-ui-accent-100');
     expect(tab('upcoming').className).toContain('aria-selected:text-ui-accent-700');
+    expect(tab('upcoming').className).toContain('text-ui-neutral-600');
+    expect(tab('upcoming').className).toContain('hover:text-ui-neutral-900');
+    expect(tab('upcoming').className).toContain('motion-reduce:before:transition-none');
     expect(tab('upcoming').className).not.toContain('pb-[11px]');
     expect(tab('upcoming').className).not.toContain('text-[13px]');
   });
@@ -130,8 +135,8 @@ describe('UiTabsComponent', () => {
     const list = fixture.nativeElement.querySelector('[role="tablist"]') as HTMLElement;
 
     for (const cls of ['px-[4px]', 'pt-[4px]', '-mx-[4px]', '-mt-[4px]']) expect(list.className).toContain(cls);
-    expect(list.className).toContain('pointer-events-none');
-    expect(tab('upcoming').className).toContain('pointer-events-auto');
+    expect(list.className).not.toContain('pointer-events');
+    expect(tab('upcoming').className).not.toContain('pointer-events');
   });
 
   it('keeps the tab width steady with a hidden bold copy of the label', () => {
@@ -205,23 +210,59 @@ describe('UiTabsComponent', () => {
     expect(fixture.componentInstance.value()).toBe('upcoming');
   });
 
-  it('moves with the arrow keys, wrapping and skipping disabled tabs', async () => {
+  it('moves with the arrow keys, wrapping and landing on disabled tabs without selecting them', async () => {
     await press('upcoming', 'ArrowRight');
     expect(fixture.componentInstance.value()).toBe('past');
+    expect(document.activeElement).toBe(tab('past'));
 
     await press('past', 'ArrowRight');
+    expect(document.activeElement).toBe(tab('drafts'));
+    expect(fixture.componentInstance.value()).toBe('past');
+
+    await press('drafts', 'ArrowRight');
     expect(fixture.componentInstance.value()).toBe('upcoming');
+    expect(document.activeElement).toBe(tab('upcoming'));
 
     await press('upcoming', 'ArrowLeft');
+    expect(document.activeElement).toBe(tab('drafts'));
+    expect(fixture.componentInstance.value()).toBe('upcoming');
+
+    await press('drafts', 'ArrowLeft');
     expect(fixture.componentInstance.value()).toBe('past');
   });
 
-  it('jumps to the first and last enabled tab with Home and End', async () => {
+  it('jumps to the first and last tab with Home and End, even when the last is disabled', async () => {
     await press('upcoming', 'End');
-    expect(fixture.componentInstance.value()).toBe('past');
-
-    await press('past', 'Home');
+    expect(document.activeElement).toBe(tab('drafts'));
     expect(fixture.componentInstance.value()).toBe('upcoming');
+
+    await press('drafts', 'Home');
+    expect(document.activeElement).toBe(tab('upcoming'));
+    expect(fixture.componentInstance.value()).toBe('upcoming');
+  });
+
+  it('keeps a focused disabled tab out of the tab order and does not select it when activated', async () => {
+    await press('past', 'ArrowRight');
+    expect(document.activeElement).toBe(tab('drafts'));
+    expect(tab('drafts').getAttribute('tabindex')).toBe('-1');
+
+    tab('drafts').click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.value()).toBe('upcoming');
+  });
+
+  it('opens the reason tooltip when arrow keys move focus onto a disabled tab', async () => {
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    tab('past').focus();
+    tab('past').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(document.activeElement).toBe(tab('drafts'));
+    expect(container.querySelector('[data-testid="ui-tooltip"]')?.textContent?.trim()).toBe('Drafts are not available yet');
   });
 
   it('moves focus to the newly selected tab', async () => {

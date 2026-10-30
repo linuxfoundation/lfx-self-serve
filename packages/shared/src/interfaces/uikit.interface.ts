@@ -13,9 +13,9 @@ export interface UiTabItem {
   count?: number;
   /** Spoken form of the count, announced as "label, countLabel" (for example `102 meetings`). Use it when the bare number is not enough. */
   countLabel?: string;
-  /** Font Awesome class string for a 14px icon before the label, for example `fa-brands fa-github`. */
+  /** Font Awesome class string for an icon before the label, 14px (13px in small default tabs), for example `fa-brands fa-github`. */
   icon?: string;
-  /** Greys the tab out and removes it from keyboard navigation. */
+  /** Greys the tab out and blocks selection. Arrow keys, Home and End still move focus onto it so its reason tooltip opens; it stays out of the initial tab stop. */
   disabled?: boolean;
   /** Tooltip explaining why a disabled tab is unavailable. Shown on hover; ignored while the tab is enabled. */
   disabledReason?: string;

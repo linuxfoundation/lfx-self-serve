@@ -8,7 +8,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
  * Tabs for switching sections of one page, following the WAI-ARIA tabs pattern: a labelled `tablist`, roving `tabindex`, and
- * Left/Right/Home/End moving focus and selection together. Use `[(value)]` to read and set the selection.
+ * Left/Right/Home/End moving focus and selection together. Disabled tabs take focus from those keys without being selected, so their
+ * reason tooltip opens, but they stay out of the initial tab stop. Use `[(value)]` to read and set the selection.
  * `variant="default"` is an underline with a 2px accent bar on a rule; `variant="secondary"` is 32px pills. `size="small"` (13px) is the
  * one used on Meetings. A tab can have a count, an icon, and a disabled state with a tooltip that says why. The component renders the
  * tablist only: render the `role="tabpanel"` elements yourself and point them at `idPrefix`.
@@ -50,23 +51,9 @@ export class UiTabsComponent {
 
   protected onKeydown(event: KeyboardEvent, index: number): void {
     const tabs = this.tabs();
-    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
-    let next = -1;
-    if (step) {
-      // Walk in the arrow's direction, wrapping, until an enabled tab turns up.
-      for (let i = 1; i <= tabs.length; i++) {
-        const candidate = (index + step * i + tabs.length * i) % tabs.length;
-        if (!tabs[candidate].disabled) {
-          next = candidate;
-          break;
-        }
-      }
-    } else if (event.key === 'Home') {
-      next = tabs.findIndex((t) => !t.disabled);
-    } else if (event.key === 'End') {
-      next = tabs.map((t) => !t.disabled).lastIndexOf(true);
-    }
-    if (next < 0) return;
+    // Arrows wrap; every tab, disabled ones included, can take focus.
+    const next = { ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+    if (next === undefined) return;
     event.preventDefault();
     this.select(tabs[next]);
     this.tabElements()[next]?.nativeElement.focus();
@@ -82,14 +69,13 @@ export class UiTabsComponent {
 
   private initHostClasses(): Signal<string> {
     // The rule is an inset shadow on the host, so the selected bar sits on top of it (as in the library).
-    return computed(() => (this.variant() === 'secondary' ? '' : 'shadow-[inset_0_-1px_0_var(--ui-neutral-alpha-200)]'));
+    return computed(() => (this.variant() === 'secondary' ? '' : 'shadow-[inset_0_-1px_0_0] shadow-ui-neutral-alpha-200'));
   }
 
   private initListClasses(): Signal<string> {
     return computed(() => {
-      // Exact px gap, not rem; 14px root. The 4px padding (offset by negative margins, so layout is unchanged) gives the focus ring room
-      // inside the scroll area; the list lets pointer events through so those margins never cover neighbouring content.
-      const base = 'pointer-events-none -mx-[4px] -mt-[4px] flex items-end overflow-x-auto px-[4px] pt-[4px] isolate';
+      // Exact px gap, not rem; 14px root. The 4px padding, offset by negative margins, gives the focus ring room inside the scroll area.
+      const base = '-mx-[4px] -mt-[4px] flex items-end overflow-x-auto px-[4px] pt-[4px] isolate';
       return this.variant() === 'secondary' ? `${base} gap-[4px]` : `${base} gap-[24px]`;
     });
   }
@@ -97,10 +83,10 @@ export class UiTabsComponent {
   private initTabClasses(): Signal<string> {
     return computed(() => {
       const base =
-        'pointer-events-auto relative inline-flex items-center whitespace-nowrap border-0 bg-transparent label-14 transition-[color] duration-ui-base focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-400 aria-disabled:hover:text-ui-neutral-400';
+        'relative inline-flex items-center whitespace-nowrap border-0 bg-transparent label-14 transition-[color] duration-ui-base focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-400 aria-disabled:hover:text-ui-neutral-400';
       if (this.variant() === 'secondary') {
         // Exact px sizes, not rem; the 10px radius is the library's radius-sm minus 2px (no token).
-        return `${base} h-[32px] gap-[8px] rounded-[10px] px-[12px] text-ui-neutral-600 before:absolute before:inset-0 before:z-[-1] before:rounded-ui-sm before:bg-transparent before:transition-[background-color] before:duration-ui-base before:content-[''] hover:before:bg-ui-neutral-alpha-50 aria-selected:cursor-default aria-selected:font-medium aria-selected:text-ui-accent-700 aria-selected:before:bg-ui-accent-100`;
+        return `${base} h-[32px] gap-[8px] rounded-[10px] px-[12px] text-ui-neutral-600 hover:text-ui-neutral-900 before:absolute before:inset-0 before:z-[-1] before:rounded-ui-sm before:bg-transparent before:transition-[background-color] before:duration-ui-base before:content-[''] motion-reduce:before:transition-none hover:before:bg-ui-neutral-alpha-50 aria-selected:cursor-default aria-selected:font-medium aria-selected:text-ui-accent-700 aria-selected:before:bg-ui-accent-100`;
       }
       // Exact px padding and gap, not rem; the selected bar is a 2px ::after on the tab's bottom edge.
       const size = this.size() === 'small' ? 'pb-[11px] text-[13px]' : 'pb-[14px]';

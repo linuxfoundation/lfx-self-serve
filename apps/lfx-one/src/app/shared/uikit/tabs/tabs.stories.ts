@@ -76,7 +76,7 @@ export const WithSpokenCount: Story = {
 };
 export const WithPanelIds: Story = { args: { idPrefix: 'meetings' } };
 export const SecondSelected: Story = { args: { value: 'past' } };
-/** A disabled tab keeps its place, greyed. Hover it to see why. */
+/** A disabled tab keeps its place, greyed. Hover it or arrow onto it to see why. */
 export const WithDisabledTab: Story = {
   args: {
     ariaLabel: 'Project',
