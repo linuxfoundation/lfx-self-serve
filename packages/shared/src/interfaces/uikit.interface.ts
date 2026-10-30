@@ -169,3 +169,6 @@ export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'te
 
 /** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiButtonSize = 'tiny' | 'small' | 'medium';
+
+/** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
+export type UiSwitchSize = 'tiny' | 'small' | 'medium';
