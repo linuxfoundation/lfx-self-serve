@@ -5,13 +5,15 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input, signal } from '@angular/core';
 import { PublicProjectSummary } from '@lfx-one/shared/interfaces';
 
+import { VoteLinkMarkComponent } from '../vote-link-mark/vote-link-mark.component';
+
 /**
- * Compact header block for the login-free ballot page (#4692): project logo (LFX mark when there is none), project
- * name, vote title, status chip and deadline. Branding is optional; with no project it shows the LFX mark and the title.
+ * Compact header block for the login-free ballot page (#4692): LFX mark (always, top-left), project logo when there
+ * is one, project name, vote title, status chip and deadline. Branding is optional; with no project logo the LFX mark is the only mark.
  */
 @Component({
   selector: 'lfx-vote-link-header',
-  imports: [DatePipe],
+  imports: [DatePipe, VoteLinkMarkComponent],
   templateUrl: './vote-link-header.component.html',
 })
 export class VoteLinkHeaderComponent {
@@ -21,7 +23,7 @@ export class VoteLinkHeaderComponent {
   /** Shown as the status chip; omitted when empty. */
   public readonly statusLabel = input<string>('');
 
-  /** The logo URL that failed to load; it falls back to the LFX mark rather than a broken image. */
+  /** The logo URL that failed to load; it is dropped rather than shown as a broken image. */
   private readonly failedLogoUrl = signal<string | null>(null);
   protected readonly logoUrl = computed(() => {
     const url = this.project()?.logo_url;

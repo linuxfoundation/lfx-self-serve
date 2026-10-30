@@ -5,9 +5,7 @@
 <main class="bg-gray-50 min-h-dvh flex flex-col" data-testid="vote-link-page">
   <div class="mx-auto w-full max-w-[720px] flex-1 px-4 pt-6 flex flex-col gap-6">
     @if (showStandaloneMark()) {
-      <div class="flex items-center justify-center">
-        <img src="/images/logo_lfx.svg" alt="LFX" class="w-auto h-10" data-testid="vote-link-lfx-mark" />
-      </div>
+      <lfx-vote-link-mark />
     }
 
     @switch (state()) {
