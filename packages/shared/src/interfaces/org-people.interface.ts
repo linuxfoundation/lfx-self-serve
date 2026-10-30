@@ -56,7 +56,7 @@ export interface OrgScopeOption {
   value: OrgScopeFilter;
 }
 
-/** The account's organization scope (`GET /api/orgs/:orgUid/lens/org-scope`, `ORG_LENS_ORG_SCOPE`). */
+/** The account's organization scope (`GET /api/orgs/:orgUid/lens/org-scope`, from its `ORG_LENS_ACCOUNT_CONTEXT` row). */
 export interface OrgLensOrgScope {
   accountId: string;
   /** `false` when no Insights organization is mapped or it has no code activity in two years: only `all` is offered. */

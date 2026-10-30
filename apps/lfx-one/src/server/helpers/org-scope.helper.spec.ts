@@ -26,8 +26,8 @@ const execute = vi.fn();
 const snowflake = { execute } as unknown as SnowflakeService;
 
 const ROW = {
-  INSIGHTS_ORG_ID: 'insights-org-1',
-  INSIGHTS_ORG_NAME: 'Example Org',
+  CDEV_ORG_ID: 'insights-org-1',
+  CDEV_ORG_NAME: 'Example Org',
   RELATED_ORG_COUNT: 4,
   HAS_INSIGHTS_ORG: true,
 };
@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe('readOrgLensOrgScope', () => {
-  it("maps the account's ORG_LENS_ORG_SCOPE row, binding only the account", async () => {
+  it("maps the account's ORG_LENS_ACCOUNT_CONTEXT row, binding only the account", async () => {
     expect(await readOrgLensOrgScope(snowflake, ACCOUNT)).toEqual({
       accountId: ACCOUNT,
       hasInsightsOrg: true,
@@ -56,7 +56,8 @@ describe('readOrgLensOrgScope', () => {
       relatedOrgCount: 4,
     });
     const [sql, binds] = execute.mock.calls[0];
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ORG_SCOPE');
+    expect(sql).toContain('SELECT CDEV_ORG_ID, CDEV_ORG_NAME, RELATED_ORG_COUNT, HAS_INSIGHTS_ORG');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT');
     expect(sql).toContain('WHERE ACCOUNT_ID = ?');
     expect(binds).toEqual([ACCOUNT]);
   });
@@ -74,13 +75,13 @@ describe('readOrgLensOrgScope', () => {
   });
 
   it('offers no Insights organization when the row flags one but carries no organization id', async () => {
-    execute.mockResolvedValue({ rows: [{ ...ROW, INSIGHTS_ORG_ID: null }] });
+    execute.mockResolvedValue({ rows: [{ ...ROW, CDEV_ORG_ID: null }] });
 
     expect((await readOrgLensOrgScope(snowflake, ACCOUNT)).hasInsightsOrg).toBe(false);
   });
 
-  it('offers no Insights organization when the row does not flag one', async () => {
-    execute.mockResolvedValue({ rows: [{ ...ROW, HAS_INSIGHTS_ORG: null, RELATED_ORG_COUNT: null }] });
+  it.each([null, false])('offers no Insights organization when the row flags none (HAS_INSIGHTS_ORG %s)', async (flag) => {
+    execute.mockResolvedValue({ rows: [{ ...ROW, HAS_INSIGHTS_ORG: flag, RELATED_ORG_COUNT: null }] });
 
     const scope = await readOrgLensOrgScope(snowflake, ACCOUNT);
     expect(scope.hasInsightsOrg).toBe(false);
@@ -119,7 +120,7 @@ describe('resolveOrgScope', () => {
   it.each([
     ['no row', []],
     ['no Insights organization', [{ ...ROW, HAS_INSIGHTS_ORG: false }]],
-    ['a flag without an organization id', [{ ...ROW, INSIGHTS_ORG_ID: null }]],
+    ['a flag without an organization id', [{ ...ROW, CDEV_ORG_ID: null }]],
   ])('falls back to all for an account with %s', async (_label, rows) => {
     execute.mockResolvedValue({ rows });
 

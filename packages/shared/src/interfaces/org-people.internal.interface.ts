@@ -135,10 +135,10 @@ export interface OrgPersonEmploymentRow {
  */
 export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;
 
-/** Raw `ORG_LENS_ORG_SCOPE` row — one per account (lfx-self-serve-ops#1219). */
+/** The organization-scope columns of the account's `ORG_LENS_ACCOUNT_CONTEXT` row — one per account (lfx-self-serve-ops#1219). */
 export interface OrgLensOrgScopeRow {
-  INSIGHTS_ORG_ID: string | null;
-  INSIGHTS_ORG_NAME: string | null;
+  CDEV_ORG_ID: string | null;
+  CDEV_ORG_NAME: string | null;
   RELATED_ORG_COUNT: number | null;
   HAS_INSIGHTS_ORG: boolean | null;
 }

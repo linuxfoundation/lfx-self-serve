@@ -9,9 +9,10 @@ import type { SnowflakeService } from '../services/snowflake.service';
 import { withOrgCache } from '../services/valkey.service';
 
 /**
- * The account's organization scope: its LFX Insights organization (the page org, with lf-dbt's override seed) and how
- * many organizations have code activity on it. An account with no row offers only All related organizations. Cached
- * once per account: it does not depend on the range or any filter.
+ * The account's organization scope, from its `ORG_LENS_ACCOUNT_CONTEXT` row: its LFX Insights organization (the page
+ * org, with lf-dbt's override seed; `CDEV_ORG_ID` / `CDEV_ORG_NAME`) and how many organizations have code activity on
+ * it. An account with no row, or whose row does not flag an Insights organization, offers only All related
+ * organizations. Cached once per account: it does not depend on the range or any filter.
  */
 export async function readOrgLensOrgScope(snowflakeService: SnowflakeService, accountId: string): Promise<OrgLensOrgScope> {
   return withOrgCache<OrgLensOrgScope>(
@@ -20,17 +21,17 @@ export async function readOrgLensOrgScope(snowflakeService: SnowflakeService, ac
     VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
     async () => {
       const query = `
-        SELECT INSIGHTS_ORG_ID, INSIGHTS_ORG_NAME, RELATED_ORG_COUNT, HAS_INSIGHTS_ORG
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ORG_SCOPE
+        SELECT CDEV_ORG_ID, CDEV_ORG_NAME, RELATED_ORG_COUNT, HAS_INSIGHTS_ORG
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
         WHERE ACCOUNT_ID = ?
         LIMIT 1
       `;
       const row = (await snowflakeService.execute<OrgLensOrgScopeRow>(query, [accountId])).rows[0];
       return {
         accountId,
-        hasInsightsOrg: row?.HAS_INSIGHTS_ORG === true && !!row.INSIGHTS_ORG_ID,
-        insightsOrgId: row?.INSIGHTS_ORG_ID ?? null,
-        insightsOrgName: row?.INSIGHTS_ORG_NAME ?? null,
+        hasInsightsOrg: row?.HAS_INSIGHTS_ORG === true && !!row.CDEV_ORG_ID,
+        insightsOrgId: row?.CDEV_ORG_ID ?? null,
+        insightsOrgName: row?.CDEV_ORG_NAME ?? null,
         relatedOrgCount: Number(row?.RELATED_ORG_COUNT ?? 0),
       };
     },

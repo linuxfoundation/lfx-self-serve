@@ -16,7 +16,8 @@ export function orgScopeUrlParam(scope: OrgScopeFilter): OrgScopeFilter | null {
 
 /**
  * The scope a read serves for a pick (lfx-self-serve-ops#1219): `insights` only when the account has an Insights
- * organization, else `all` — an account with none, or with no `ORG_LENS_ORG_SCOPE` row, offers only All related organizations.
+ * organization, else `all` — an account with none, or with no `ORG_LENS_ACCOUNT_CONTEXT` row, offers only All related
+ * organizations.
  */
 export function effectiveOrgScope(scope: OrgScopeFilter, info: Pick<OrgLensOrgScope, 'hasInsightsOrg'> | null | undefined): OrgScopeFilter {
   return scope === 'insights' && info?.hasInsightsOrg === true ? 'insights' : 'all';
