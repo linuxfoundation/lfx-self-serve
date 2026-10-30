@@ -35,7 +35,7 @@
         @if (valueTemplate(); as custom) {
           <ng-container *ngTemplateOutlet="custom.template; context: { $implicit: option }" />
         } @else {
-          <span class="truncate">{{ option.label }}</span>
+          <span class="truncate" [attr.title]="option.label">{{ option.label }}</span>
         }
       </span>
     } @else {
@@ -72,6 +72,7 @@
     <div
       role="listbox"
       class="flex min-h-0 flex-1 flex-col overflow-y-auto p-[6px]"
+      tabindex="-1"
       [id]="listboxId"
       [attr.aria-labelledby]="label() ? labelId : null"
       [attr.aria-label]="label() ? null : ariaLabel() || null"

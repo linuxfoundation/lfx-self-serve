@@ -12,7 +12,6 @@ import { UiOptionHost } from './option-host';
  * hold an avatar, a badge or a second line of description. Without content the row shows `label`. `label` stays required: it is the text the
  * trigger shows once the option is picked, and what type-ahead matches. Give the content its own text for screen readers; the row's accessible
  * name comes from it.
- *
  */
 @Component({
   selector: 'lfx-ui-option',
@@ -59,7 +58,7 @@ export class UiOptionComponent {
   }
 
   private initItem(): UiOption {
-    // Getters over the input signals, so the CDK key manager can read plain `disabled` and `getLabel()` without the component being typed as one.
+    // Getters over the input signals, so the CDK key manager can read a plain `disabled` without the component being typed as one.
     const { id, value, label, disabled, icon } = this;
     return {
       id,
@@ -75,7 +74,6 @@ export class UiOptionComponent {
       get icon() {
         return icon();
       },
-      getLabel: () => label(),
     };
   }
 

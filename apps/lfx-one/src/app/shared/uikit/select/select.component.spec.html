@@ -44,7 +44,7 @@
     <lfx-ui-select ariaLabel="Project" placeholder="Pick one" [(value)]="value">
       <i lfxUiSelectPrefix class="fa-light fa-calendar" data-testid="prefix"></i>
       <input lfxUiSelectHeader type="search" aria-label="Search" data-testid="search" (input)="query.set($any($event.target).value)" />
-      @for (option of projects; track option) {
+      @for (option of projects(); track option) {
         @if (option.toLowerCase().includes(query().toLowerCase())) {
           <lfx-ui-option [value]="option.toLowerCase()" [label]="option" />
         }

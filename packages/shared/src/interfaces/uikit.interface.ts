@@ -231,7 +231,7 @@ export interface UiToastRef {
   /** Removes the toast now. Does nothing if it is already gone. */
   dismiss(): void;
 
-/** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled` and `getLabel()`. */
+/** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled`. */
 export interface UiOption {
   /** DOM id of the option row. The list points `aria-activedescendant` at it. */
   readonly id: string;
@@ -243,8 +243,6 @@ export interface UiOption {
   readonly disabled: boolean;
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. Empty when the option has none. */
   readonly icon: string;
-  /** Text the CDK key manager matches typed characters against. Same as `label`. */
-  getLabel(): string;
 }
 
 /** What a custom uikit select value template receives: the picked option as the implicit value. */

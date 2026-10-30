@@ -6,7 +6,8 @@
     ><i [class]="icon()" aria-hidden="true"></i
   ></span>
 }
-<span class="min-w-0 flex-1 truncate" data-testid="ui-option-content"
+<!-- Native title: focus stays on the trigger, so a tooltip here would be pointer-only. -->
+<span class="min-w-0 flex-1 truncate" [attr.title]="label()" data-testid="ui-option-content"
   ><ng-content>{{ label() }}</ng-content></span
 >
 @if (isSelected()) {

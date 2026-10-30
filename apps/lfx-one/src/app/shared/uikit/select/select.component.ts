@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { _IdGenerator, ListKeyManager } from '@angular/cdk/a11y';
+import { _IdGenerator, InteractivityChecker, ListKeyManager } from '@angular/cdk/a11y';
 import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
@@ -15,7 +15,9 @@ import {
   inject,
   Injector,
   input,
+  linkedSignal,
   model,
+  output,
   Signal,
   signal,
   viewChild,
@@ -44,14 +46,17 @@ import { UiSelectValueDirective } from './select-value.directive';
  * Slots, by attribute: `lfxUiSelectPrefix` (content before the value in the trigger, such as an icon or an avatar), `lfxUiSelectHeader` (the top
  * of the panel, such as a search field; the first focusable element in it takes focus when the panel opens, Escape closes and returns focus to the
  * trigger, and Arrow Down hands focus back to the list) and `<ng-template lfxUiSelectValue let-option>` (what the trigger shows for the picked
- * option, instead of its label). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows.
+ * option, instead of its label). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows,
+ * and reset the query from `openChange`. The trigger keeps showing the picked option while a filter hides its row.
  *
- * Built to the WAI-ARIA select-only combobox pattern: focus stays on the trigger, the list is a `listbox`, and the highlighted row is announced
- * with `aria-activedescendant`. Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`).
+ * Built to the WAI-ARIA select-only combobox pattern: the list is a `listbox` and the highlighted row is announced with `aria-activedescendant`.
+ * Focus stays on the trigger, except while a header field has it. Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`).
  *
  * Keyboard: Arrow Down, Arrow Up, Enter or Space opens the list on the chosen row. Arrows, Home, End, Page Up and Page Down move through
- * it, typing jumps to a row by its label, Enter or Space picks, Escape closes without picking, Tab picks and moves on.
- * Use it for short lists; for search or several values use the combobox or multi-select.
+ * it, typing jumps to a row by its label, Enter or Space picks, Escape closes without picking, Tab picks and moves on. With a header field,
+ * a typed character on the closed trigger only opens the list, so typing starts in the field. Tab from the last header field hands focus back
+ * to the trigger and moves on, and Shift+Tab from the first one stops on the trigger; neither picks an option.
+ * Use it for short lists. For typed input that is the value itself, use the combobox; for several values, the multi-select.
  */
 @Component({
   selector: 'lfx-ui-select',
@@ -67,6 +72,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly checker = inject(InteractivityChecker);
   protected readonly origin = viewChild.required(CdkOverlayOrigin);
   protected readonly overlay = viewChild.required(CdkConnectedOverlay);
   protected readonly valueTemplate = contentChild(UiSelectValueDirective);
@@ -96,6 +102,8 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   public readonly pill = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The `value` of the picked option, or `null` for none. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string | null>(null);
+  /** Emits `true` when the list opens and `false` when it closes, so a page can reset its search query. */
+  public readonly openChange = output<boolean>();
 
   protected readonly triggerId = this.baseId;
   protected readonly labelId = `${this.baseId}-label`;
@@ -107,13 +115,15 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
   ];
   protected readonly open = signal(false);
-  protected readonly activeIndex = signal(-1);
+  // The highlighted option by identity, so it survives the options changing under it.
+  protected readonly activeItem = signal<UiOption | null>(null);
   protected readonly panelWidth = signal(0);
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
   protected readonly selectedIndex: Signal<number> = computed(() => this.options().findIndex((option) => option.value === this.value()));
-  protected readonly selected: Signal<UiOption | null> = computed(() => this.options()[this.selectedIndex()] ?? null);
-  protected readonly activeOption: Signal<UiOption | null> = computed(() => (this.open() ? (this.options()[this.activeIndex()] ?? null) : null));
+  protected readonly selected: Signal<UiOption | null> = this.initSelected();
+  protected readonly activeOption: Signal<UiOption | null> = this.initActiveOption();
+  protected readonly activeIndex: Signal<number> = computed(() => this.options().findIndex((option) => option === this.activeOption()));
   protected readonly activeDescendant: Signal<string | null> = computed(() => this.activeOption()?.id ?? null);
   protected readonly describedBy: Signal<string | null> = computed(() => {
     if (this.error()) return this.errorId;
@@ -133,7 +143,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     super();
     if (this.ngControl) this.ngControl.valueAccessor = this;
     this.keyManager.change.pipe(takeUntilDestroyed()).subscribe((index) => {
-      this.activeIndex.set(index);
+      this.activeItem.set(this.options()[index] ?? null);
       this.scrollActiveIntoView();
     });
   }
@@ -164,12 +174,14 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   }
 
   public pick(option: UiOption): void {
-    this.select(this.options().findIndex((candidate) => candidate === option));
+    this.select(option);
   }
 
   public highlight(option: UiOption): void {
-    const index = this.options().findIndex((candidate) => candidate === option);
-    if (this.activeIndex() !== index && !option.disabled) this.keyManager.setActiveItem(index);
+    const index = this.options().indexOf(option);
+    if (this.activeIndex() === index || option.disabled) return;
+    this.syncKeyManager();
+    this.keyManager.setActiveItem(index);
   }
 
   protected focusTrigger(): void {
@@ -185,11 +197,18 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     if (this.isDisabled()) return;
     if (!this.open()) {
       const opensOnly = ['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key);
-      if (opensOnly) event.preventDefault();
-      // Home, End and a typed character open the list and then move the highlight, like the native select.
-      if (opensOnly || event.key === 'Home' || event.key === 'End' || this.isCharacter(event)) this.openPanel();
+      const typed = !opensOnly && this.isCharacter(event);
+      if (opensOnly || typed) event.preventDefault();
+      // A typed character opens the list, then jumps to its row unless a header field takes focus for the typing.
+      if (typed) {
+        this.openPanel(event.key);
+        return;
+      }
+      // Home and End open the list and then move the highlight, like the native select.
+      if (opensOnly || event.key === 'Home' || event.key === 'End') this.openPanel();
       if (opensOnly || !this.open()) return;
     }
+    this.syncKeyManager();
 
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -198,10 +217,10 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       this.closePanel();
     } else if (event.key === 'Enter' || (event.key === ' ' && !this.isTyping()) || (event.key === 'ArrowUp' && event.altKey)) {
       event.preventDefault();
-      this.select(this.activeIndex());
+      this.select(this.activeOption());
     } else if (event.key === 'Tab') {
       // Tab picks the highlighted row and lets focus move on.
-      this.select(this.activeIndex());
+      this.select(this.activeOption());
     } else if (this.isCharacter(event)) {
       event.preventDefault();
       this.typeAhead(event.key);
@@ -240,11 +259,18 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       // The trigger owns `aria-activedescendant`, so list navigation continues from there.
       event.preventDefault();
       this.focusTrigger();
+    } else if (event.key === 'Tab') {
+      // The panel sits at the end of the body, so Tab out of it would land on <body>: hand focus to the trigger first.
+      const fields = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('*')).filter((el) => this.checker.isTabbable(el));
+      const edge = event.shiftKey ? fields[0] : fields.at(-1);
+      if (edge && edge !== event.target) return;
+      this.focusTrigger();
+      // Forward, the default Tab goes on from the trigger; backward, the trigger is where focus stops.
+      if (event.shiftKey) event.preventDefault();
     }
   }
 
-  protected select(index: number): void {
-    const option = this.options()[index];
+  protected select(option: UiOption | null): void {
     if (!option || option.disabled) return;
     this.value.set(option.value);
     this.onChange?.(option.value);
@@ -254,10 +280,12 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   }
 
   protected closePanel(): void {
+    const wasOpen = this.open();
     this.open.set(false);
-    this.activeIndex.set(-1);
+    this.activeItem.set(null);
     this.keyManager.updateActiveItem(-1);
     this.typed = '';
+    if (wasOpen) this.openChange.emit(false);
   }
 
   protected scrollActiveIntoView(): void {
@@ -265,52 +293,26 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     afterNextRender(() => this.document.getElementById(this.activeOption()?.id ?? '')?.scrollIntoView({ block: 'nearest' }), { injector: this.injector });
   }
 
-  private openPanel(): void {
-    if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
-    this.open.set(true);
-    // Open on the chosen row, or on the first one that can be picked.
-    const start = this.selectedIndex() >= 0 ? this.selectedIndex() : this.options().findIndex((option) => !option.disabled);
-    this.keyManager.updateActiveItem(start);
-    this.activeIndex.set(start);
-    this.scrollActiveIntoView();
-    this.focusHeader();
+  private initSelected(): Signal<UiOption | null> {
+    // A filter can remove the picked row while the value stays; keep showing the last match until the value changes.
+    return linkedSignal<{ options: UiOption[]; value: string | null }, UiOption | null>({
+      source: () => ({ options: this.options(), value: this.value() }),
+      computation: ({ options, value }, previous) => {
+        const match = options.find((option) => option.value === value);
+        if (match) return match;
+        return previous?.value && previous.value.value === value ? previous.value : null;
+      },
+    });
   }
 
-  // A search field in the header takes focus on open, so typing filters at once.
-  private focusHeader(): void {
-    const focusable = '[data-testid="ui-select-header"] :is(input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"]))';
-    afterNextRender(() => this.overlay().overlayRef?.overlayElement.querySelector<HTMLElement>(focusable)?.focus(), { injector: this.injector });
-  }
-
-  private panelHolds(node: EventTarget | null): boolean {
-    return node instanceof Node && !!this.overlay().overlayRef?.overlayElement.contains(node);
-  }
-
-  private isTyping(): boolean {
-    return this.typed !== '' && Date.now() - this.typedAt <= 500;
-  }
-
-  // Own type-ahead: the CDK one waits for a pause before it moves, the pattern asks for an immediate jump and a half-second buffer.
-  private typeAhead(char: string): void {
-    this.typed = this.isTyping() ? this.typed + char.toLowerCase() : char.toLowerCase();
-    this.typedAt = Date.now();
-    const options = this.options();
-    // One letter pressed repeatedly cycles through the options that start with it; a longer word narrows from the current row.
-    const cycling = [...this.typed].every((c) => c === this.typed[0]);
-    const prefix = cycling ? this.typed[0] : this.typed;
-    const from = cycling ? this.activeIndex() + 1 : this.activeIndex();
-    for (let step = 0; step < options.length; step++) {
-      const index = (from + step) % options.length;
-      if (!options[index].disabled && options[index].label.toLowerCase().startsWith(prefix)) {
-        this.keyManager.setActiveItem(index);
-        return;
-      }
-    }
-  }
-
-  private isCharacter(event: KeyboardEvent): boolean {
-    return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+  private initActiveOption(): Signal<UiOption | null> {
+    return computed(() => {
+      if (!this.open()) return null;
+      const options = this.options();
+      const item = this.activeItem();
+      // The highlighted row may have left the list (a filter) or been disabled: fall back to the first row that can be picked.
+      return (item && !item.disabled && options.includes(item) ? item : options.find((option) => !option.disabled)) ?? null;
+    });
   }
 
   private initKeyManager(): ListKeyManager<UiOption> {
@@ -353,5 +355,65 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       const sizes = { tiny: 'ml-[10px] text-[10px]', small: 'ml-[10px] text-[12px]', medium: 'ml-[12px] text-[12px]' };
       return `inline-flex shrink-0 items-center text-ui-neutral-600 ${sizes[this.size()]}`;
     });
+  }
+
+  // Opens on the chosen row, or on the first one that can be picked (the active option falls back to it).
+  private openPanel(typed?: string): void {
+    if (this.isDisabled() || this.open()) return;
+    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
+    this.open.set(true);
+    this.activeItem.set(this.options()[this.selectedIndex()] ?? null);
+    this.syncKeyManager();
+    this.scrollActiveIntoView();
+    this.focusHeader(typed);
+    this.openChange.emit(true);
+  }
+
+  // A search field in the header takes focus on open, so typing filters at once. Without one, a character that opened the list jumps to its row.
+  private focusHeader(typed?: string): void {
+    const focusable = '[data-testid="ui-select-header"] :is(input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"]))';
+    afterNextRender(
+      () => {
+        const field = this.overlay().overlayRef?.overlayElement.querySelector<HTMLElement>(focusable);
+        if (field) field.focus();
+        else if (typed && this.open()) this.typeAhead(typed);
+      },
+      { injector: this.injector }
+    );
+  }
+
+  // The options can change while the list is open, and the key manager only follows silently: point it at the highlighted row before it acts.
+  private syncKeyManager(): void {
+    this.keyManager.updateActiveItem(this.activeIndex());
+  }
+
+  private panelHolds(node: EventTarget | null): boolean {
+    return node instanceof Node && !!this.overlay().overlayRef?.overlayElement.contains(node);
+  }
+
+  private isTyping(): boolean {
+    return this.typed !== '' && Date.now() - this.typedAt <= 500;
+  }
+
+  // Own type-ahead: the CDK one waits for a pause before it moves, the pattern asks for an immediate jump and a half-second buffer.
+  private typeAhead(char: string): void {
+    this.typed = this.isTyping() ? this.typed + char.toLowerCase() : char.toLowerCase();
+    this.typedAt = Date.now();
+    const options = this.options();
+    // One letter pressed repeatedly cycles through the options that start with it; a longer word narrows from the current row.
+    const cycling = [...this.typed].every((c) => c === this.typed[0]);
+    const prefix = cycling ? this.typed[0] : this.typed;
+    const from = cycling ? this.activeIndex() + 1 : this.activeIndex();
+    for (let step = 0; step < options.length; step++) {
+      const index = (from + step) % options.length;
+      if (!options[index].disabled && options[index].label.toLowerCase().startsWith(prefix)) {
+        this.keyManager.setActiveItem(index);
+        return;
+      }
+    }
+  }
+
+  private isCharacter(event: KeyboardEvent): boolean {
+    return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
   }
 }
