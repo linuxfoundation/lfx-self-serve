@@ -20,6 +20,7 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { TableComponent } from '@components/table/table.component';
@@ -51,6 +52,7 @@ import {
   PD_VALID_METRICS,
   PD_VALID_TIME_RANGES,
   ORG_SCOPE_PROJECT_DETAIL_NOTE,
+  DEFAULT_ORG_SCOPE,
 } from '@lfx-one/shared/constants';
 import type {
   BlockState,
@@ -101,6 +103,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     OrgLensEmptyStateComponent,
     OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
+    MoreFiltersToggleComponent,
     OrgScopeSelectComponent,
     PersonDetailDrawerComponent,
     TableComponent,
@@ -135,6 +138,10 @@ export class OrgProjectDetailComponent {
   });
   // What the pick changes here, after the picker's tooltip: maintainer roles, health and influence scores stay.
   protected readonly orgScopeNote = ORG_SCOPE_PROJECT_DETAIL_NOTE;
+  // The organization scope sits behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted
+  // while not at its default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => (this.orgScope() !== DEFAULT_ORG_SCOPE ? 1 : 0));
 
   // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
   // never forces a whole-page reload.

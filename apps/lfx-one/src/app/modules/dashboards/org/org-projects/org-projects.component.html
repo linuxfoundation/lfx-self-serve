@@ -81,9 +81,11 @@
               placeholder="All Employees"
               data-testid="org-projects-employee-filter" />
           </div>
-          <div class="w-full sm:w-60">
-            <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
-          </div>
+          <lfx-more-filters-toggle
+            [(expanded)]="moreFiltersExpanded"
+            [count]="hiddenFilterCount()"
+            controls="org-projects-more-filters"
+            dataTest="org-projects-more-filters-toggle" />
         </div>
         <div class="flex items-center gap-2">
           <lfx-button
@@ -105,6 +107,16 @@
             [tooltip]="addProjectDisabledReason()"
             (onClick)="openAddProjects()"
             data-testid="org-projects-add-project" />
+        </div>
+      </div>
+      <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+      <div
+        id="org-projects-more-filters"
+        class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 sm:flex-row sm:items-center"
+        [class.hidden]="!moreFiltersExpanded()"
+        data-testid="org-projects-more-filters">
+        <div class="w-full sm:w-60">
+          <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
         </div>
       </div>
 

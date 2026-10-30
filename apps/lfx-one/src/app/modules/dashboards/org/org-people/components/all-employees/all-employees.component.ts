@@ -29,6 +29,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
@@ -129,6 +130,7 @@ import { AllEmployeesDetailComponent } from './all-employees-detail.component';
     InputTextComponent,
     SelectComponent,
     OrgScopeSelectComponent,
+    MoreFiltersToggleComponent,
     AllEmployeesDetailComponent,
   ],
   templateUrl: './all-employees.component.html',
@@ -339,6 +341,18 @@ export class AllEmployeesComponent {
   protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
   // The filter bar's "Clear filters" also covers the code-count option, which changes the count but not who is listed.
   protected readonly canClearFilters: Signal<boolean> = computed(() => this.isFiltering() || this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE);
+  // The secondary filters behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted while not
+  // at their default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(
+    () =>
+      [
+        this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
+        this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE,
+        this.selectedTeamMembers() !== DEFAULT_ORG_TEAM_MEMBERS,
+        this.selectedOrgScope() !== DEFAULT_ORG_SCOPE,
+      ].filter(Boolean).length
+  );
 
   // Precomputed aria-sort per column — keeps the template free of method calls in [attr.aria-sort] bindings.
   protected readonly ariaSortMap: Signal<Record<OrgAllEmployeeSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());

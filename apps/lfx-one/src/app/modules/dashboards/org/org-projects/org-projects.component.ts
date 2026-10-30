@@ -12,6 +12,7 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  DEFAULT_ORG_SCOPE,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
   INFLUENCE_BAND_BAR_FILL_CLASS,
@@ -27,6 +28,7 @@ import {
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   ORG_SCOPE_PROJECTS_NOTE,
+  ORG_SCOPE_QUERY_PARAM,
   PD_CONTRIBUTORS_CARD_KEY,
   PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
@@ -65,6 +67,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -97,6 +100,7 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
     MenuComponent,
     MultiSelectComponent,
     OrgLensEmptyStateComponent,
+    MoreFiltersToggleComponent,
     OrgScopeSelectComponent,
     PopoverModule,
     RouterLink,
@@ -203,6 +207,10 @@ export class OrgProjectsComponent {
   private readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
     initialValue: this.scopeForm.controls.orgScope.value,
   });
+  // The organization scope sits behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted
+  // while not at its default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => (this.orgScope() !== DEFAULT_ORG_SCOPE ? 1 : 0));
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
   /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
   protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
@@ -387,12 +395,13 @@ export class OrgProjectsComponent {
     });
   }
 
-  /** One navigation clears every filter and the workspace, so neither write can restore the other's pre-reset params. */
+  /** One navigation clears every filter, the organization scope and the workspace, so no write can restore another's pre-reset params. */
   protected resetFilters(): void {
     this.resettingFilters = true;
     this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
     this.resettingFilters = false;
-    this.writeQueryParams({ foundation: null, employees: null, workspace: null, page: null });
+    // The organization scope too, hidden behind "More filters" or not (lfx-self-serve#4735); the URL sync resets its picker.
+    this.writeQueryParams({ foundation: null, employees: null, workspace: null, page: null, [ORG_SCOPE_QUERY_PARAM]: null });
   }
 
   protected openAddProjects(): void {

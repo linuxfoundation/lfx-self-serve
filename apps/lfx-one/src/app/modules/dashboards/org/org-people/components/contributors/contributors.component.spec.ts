@@ -983,4 +983,44 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     expect(form().controls['orgScope'].value).toBe('insights');
     expect(tooltip).toContain('Every organization related to the company');
   });
+
+  // lfx-self-serve#4735: the secondary filters sit behind "More filters".
+  describe('behind More filters', () => {
+    const toggle = (): HTMLButtonElement => el().querySelector('[data-testid="org-people-contributors-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el().querySelector('#org-people-contributors-more-filters')!;
+
+    it('keeps code count, employment, team members and organization scope collapsed by default', async () => {
+      await mount('/?tab=contributors');
+
+      const bar = el().querySelector<HTMLElement>('[data-testid="org-people-contributors-filter-bar"]')!;
+      expect(panel().classList).toContain('hidden');
+      expect(toggle().textContent?.trim()).toBe('More filters');
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().getAttribute('aria-controls')).toBe('org-people-contributors-more-filters');
+      for (const test of ['metric', 'employment', 'team-members', 'org-scope']) {
+        expect(panel().querySelector(`[data-test="org-people-contributors-${test}-filter"]`)).not.toBeNull();
+        expect(bar.querySelector(`[data-test="org-people-contributors-${test}-filter"]`)).toBeNull();
+      }
+      for (const test of ['foundation', 'project', 'time-range', 'project-scope']) {
+        expect(bar.querySelector(`[data-test="org-people-contributors-${test}-filter"]`)).not.toBeNull();
+      }
+    });
+
+    it('counts the hidden filters a shared link sets, shows them on the toggle, and Clear filters resets them', async () => {
+      await mount('/?tab=contributors&metric=commits&employment=current&teamMembers=include&orgScope=all');
+      expect(toggle().textContent?.trim()).toBe('More filters (4)');
+
+      toggle().click();
+      await settle();
+      expect(panel().classList).not.toContain('hidden');
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+
+      clear()!.click();
+      await settle();
+      expect(router().url).toBe('/?tab=contributors');
+      toggle().click();
+      await settle();
+      expect(toggle().textContent?.trim()).toBe('More filters');
+    });
+  });
 });

@@ -15,6 +15,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -115,6 +116,7 @@ import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, d
     StatCardGridComponent,
     TableComponent,
     PersonDetailDrawerComponent,
+    MoreFiltersToggleComponent,
     OrgScopeSelectComponent,
   ],
   templateUrl: './org-contributions.component.html',
@@ -202,6 +204,17 @@ export class OrgContributionsComponent {
   protected readonly query: Signal<OrgContributionsQuery> = computed(() => this.initQuery());
   // Shows the filter bar's "Clear filters" while any filter differs from its default.
   protected readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
+  // The secondary filters behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted while not
+  // at their default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => {
+    const query = this.query();
+    return [
+      orgCodeFilterValues(query).metric !== DEFAULT_ORG_CODE_MEASURE,
+      query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS,
+      query.orgScope !== DEFAULT_ORG_SCOPE,
+    ].filter(Boolean).length;
+  });
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),

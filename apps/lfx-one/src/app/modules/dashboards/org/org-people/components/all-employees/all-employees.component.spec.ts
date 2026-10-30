@@ -1647,6 +1647,69 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
     });
   });
 
+  // lfx-self-serve#4735: the secondary filters sit behind "More filters".
+  describe('in the browser, with the secondary filters behind More filters', () => {
+    const toggle = (): HTMLButtonElement => el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el().querySelector('#org-people-all-employees-more-filters')!;
+    const inRow = (testid: string, row: HTMLElement): boolean => !!row.querySelector(`[data-testid="${testid}"], [data-test="${testid}"]`);
+
+    it('keeps code count, employment, team members and organization scope collapsed by default, the rest visible', async () => {
+      await mount('browser', '/?tab=employees');
+
+      const bar = el().querySelector<HTMLElement>('[data-testid="org-people-all-employees-filter-bar"]')!;
+      expect(panel().classList).toContain('hidden');
+      expect(toggle().textContent?.trim()).toBe('More filters');
+      expect(toggle().getAttribute('aria-expanded')).toBe('false');
+      expect(toggle().getAttribute('aria-controls')).toBe('org-people-all-employees-more-filters');
+      for (const testid of [
+        'org-people-all-employees-search-input',
+        'org-people-all-employees-foundation-filter',
+        'org-people-all-employees-range-filter',
+        'org-people-all-employees-project-scope-filter',
+      ]) {
+        expect(inRow(testid, bar)).toBe(true);
+      }
+      for (const testid of [
+        'org-people-all-employees-employment-filter',
+        'org-people-all-employees-metric-filter',
+        'org-people-all-employees-team-members-filter',
+        'org-people-all-employees-org-scope-filter',
+      ]) {
+        expect(inRow(testid, panel())).toBe(true);
+        expect(inRow(testid, bar)).toBe(false);
+      }
+    });
+
+    it('counts the hidden filters a shared link sets, and shows and hides them on the toggle', async () => {
+      await mount('browser', '/?tab=employees&employment=current&metric=commits&teamMembers=include&orgScope=all');
+
+      expect(toggle().textContent?.trim()).toBe('More filters (4)');
+      expect(panel().classList).toContain('hidden');
+
+      toggle().click();
+      await settle();
+      expect(panel().classList).not.toContain('hidden');
+      expect(toggle().getAttribute('aria-expanded')).toBe('true');
+      expect(toggle().textContent?.trim()).toBe('Fewer filters');
+
+      toggle().click();
+      await settle();
+      expect(panel().classList).toContain('hidden');
+      expect(toggle().textContent?.trim()).toBe('More filters (4)');
+    });
+
+    it('resets the hidden filters too on Clear filters, so the count disappears', async () => {
+      await mount('browser', '/?tab=employees&metric=commits&orgScope=all');
+      expect(toggle().textContent?.trim()).toBe('More filters (2)');
+
+      el().querySelector<HTMLButtonElement>('[data-testid="org-people-all-employees-clear-filters"]')!.click();
+      await settle();
+
+      expect(toggle().textContent?.trim()).toBe('More filters');
+      expect(TestBed.inject(Router).url).toBe('/?tab=employees');
+    });
+  });
+
   describe('on the server, with ?employment=former', () => {
     it('keeps the skeleton and requests nothing, so the browser render replaces it', async () => {
       await mount('server', '/?employment=former');

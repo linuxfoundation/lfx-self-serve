@@ -134,7 +134,7 @@
       </section>
     }
 
-    <!-- B2 Filter strip: tabs on left, metric toggle (leaderboards only) + time range on right. Always interactive while blocks load. -->
+    <!-- B2 Filter strip: tabs on left, metric toggle (leaderboards only), "More filters" + time range on right. Always interactive while blocks load. -->
     <lfx-org-project-detail-tab-bar
       [tabs]="tabs"
       [activeTab]="activeTab()"
@@ -145,8 +145,23 @@
       (tabChange)="switchTab($event)"
       (timeRangeChange)="setTimeRange($event)"
       (metricChange)="setMetric($event)">
-      <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="project-detail-org-scope-filter" />
+      <lfx-more-filters-toggle
+        [(expanded)]="moreFiltersExpanded"
+        [count]="hiddenFilterCount()"
+        controls="project-detail-more-filters"
+        dataTest="project-detail-more-filters-toggle" />
     </lfx-org-project-detail-tab-bar>
+
+    <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735): the organization scope -->
+    <div
+      id="project-detail-more-filters"
+      class="flex w-full items-center justify-end gap-4 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm"
+      [class.hidden]="!moreFiltersExpanded()"
+      data-testid="project-detail-more-filters">
+      <div class="w-full sm:w-60">
+        <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="project-detail-org-scope-filter" />
+      </div>
+    </div>
 
     <!-- Tab content -->
     @switch (activeTab()) {

@@ -618,4 +618,32 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
     expect(queryParams()).toEqual({ employees: 'p-known', orgScope: 'all' });
   });
+
+  // lfx-self-serve#4735: the organization scope sits behind "More filters".
+  it('keeps the organization scope behind More filters, counted from the address, and Reset filters clears it', async () => {
+    await open('/?orgScope=all&employees=p-known');
+    const el = fixture.nativeElement as HTMLElement;
+    const toggle = (): HTMLButtonElement => el.querySelector('[data-testid="org-projects-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el.querySelector('#org-projects-more-filters')!;
+
+    expect(panel().classList).toContain('hidden');
+    expect(panel().querySelector('[data-test="org-projects-org-scope-filter"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-projects-toolbar"] [data-test="org-projects-org-scope-filter"]')).toBeNull();
+    expect(toggle().getAttribute('aria-controls')).toBe('org-projects-more-filters');
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().textContent?.trim()).toBe('More filters (1)');
+
+    toggle().click();
+    await settle();
+    expect(panel().classList).not.toContain('hidden');
+    expect(toggle().textContent?.trim()).toBe('Fewer filters');
+
+    component['resetFilters']();
+    await settle();
+    expect(queryParams()).toEqual({});
+    expect(component['scopeForm'].controls.orgScope.value).toBe('insights');
+    toggle().click();
+    await settle();
+    expect(toggle().textContent?.trim()).toBe('More filters');
+  });
 });

@@ -854,4 +854,47 @@ describe('OrgContributionsComponent', () => {
       'Code contributions (commits, pull requests, reviews and comments)'
     );
   });
+
+  // lfx-self-serve#4735: the secondary filters sit behind "More filters".
+  describe('behind More filters', () => {
+    const toggle = (el: HTMLElement): HTMLButtonElement => el.querySelector('[data-testid="org-contributions-more-filters-toggle"]')!;
+    const panel = (el: HTMLElement): HTMLElement => el.querySelector('#org-contributions-more-filters')!;
+
+    it('keeps code count, team members and organization scope collapsed by default', async () => {
+      const { fixture } = await render(null);
+      const el = fixture.nativeElement as HTMLElement;
+      const bar = el.querySelector<HTMLElement>('[data-testid="org-contributions-filter-bar"]')!;
+
+      expect(panel(el).classList).toContain('hidden');
+      expect(toggle(el).textContent?.trim()).toBe('More filters');
+      expect(toggle(el).getAttribute('aria-expanded')).toBe('false');
+      expect(toggle(el).getAttribute('aria-controls')).toBe('org-contributions-more-filters');
+      for (const test of ['metric', 'team-members', 'org-scope']) {
+        expect(panel(el).querySelector(`[data-test="org-contributions-${test}-filter"]`)).not.toBeNull();
+        expect(bar.querySelector(`[data-test="org-contributions-${test}-filter"]`)).toBeNull();
+      }
+      for (const test of ['date-range', 'project-scope', 'foundation']) {
+        expect(bar.querySelector(`[data-test="org-contributions-${test}-filter"]`)).not.toBeNull();
+      }
+    });
+
+    it('counts the hidden filters a shared link sets, shows them on the toggle, and Clear filters resets them', async () => {
+      const { fixture } = await render(null, { queryParams: { metric: 'commits', teamMembers: 'include', orgScope: 'all' } });
+      const el = fixture.nativeElement as HTMLElement;
+      expect(toggle(el).textContent?.trim()).toBe('More filters (3)');
+
+      toggle(el).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(panel(el).classList).not.toContain('hidden');
+      expect(toggle(el).textContent?.trim()).toBe('Fewer filters');
+
+      el.querySelector<HTMLButtonElement>('[data-testid="org-contributions-filter-bar-clear-filters"]')!.click();
+      await pastDebounce(fixture);
+      toggle(el).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(toggle(el).textContent?.trim()).toBe('More filters');
+    });
+  });
 });

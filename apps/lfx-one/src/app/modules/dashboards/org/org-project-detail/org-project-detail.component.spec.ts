@@ -382,12 +382,13 @@ describe('OrgProjectDetailComponent — organization scope', () => {
   let detail: Record<string, Mock>;
 
   async function create(
-    initialQuery: Record<string, string> = {}
+    initialQuery: Record<string, string> = {},
+    hero: OrgLensProjectHero | null = null
   ): Promise<{ fixture: ComponentFixture<OrgProjectDetailComponent>; component: OrgProjectDetailComponent }> {
     queryParams = new BehaviorSubject<ParamMap>(convertToParamMap(initialQuery));
     navigate = vi.fn();
     detail = {
-      getHero: vi.fn(() => of(null)),
+      getHero: vi.fn(() => of(hero ? { hero, isNonLfProject: false } : null)),
       getInfluenceBlock: vi.fn(() => of(null)),
       getTrendBlock: vi.fn(() => of(null)),
       getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
@@ -449,6 +450,44 @@ describe('OrgProjectDetailComponent — organization scope', () => {
     await create();
 
     expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'insights');
+  });
+
+  // lfx-self-serve#4735: the organization scope sits behind "More filters".
+  it('keeps the organization scope behind More filters in the filter strip, counted from the address', async () => {
+    const hero: OrgLensProjectHero = {
+      projectName: 'Kubernetes',
+      description: '',
+      logoUrl: '',
+      lfxInsightsUrl: null,
+      firstCommit: null,
+      softwareValueUsd: null,
+      health: null,
+      healthOverallScore: null,
+      healthMaxScore: null,
+      healthCoveredCategoryCount: null,
+      healthMaintainer: null,
+      healthSecurity: null,
+      healthDevelopment: null,
+      foundationLabel: '',
+    };
+    const { fixture } = await create({ orgScope: 'all' }, hero);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const toggle = (): HTMLButtonElement => el.querySelector('[data-testid="project-detail-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el.querySelector('#project-detail-more-filters')!;
+
+    expect(el.querySelector('lfx-org-project-detail-tab-bar [data-testid="project-detail-more-filters-toggle"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-project-detail-tab-bar [data-test="project-detail-org-scope-filter"]')).toBeNull();
+    expect(panel().querySelector('[data-test="project-detail-org-scope-filter"]')).not.toBeNull();
+    expect(panel().classList).toContain('hidden');
+    expect(toggle().getAttribute('aria-controls')).toBe('project-detail-more-filters');
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().textContent?.trim()).toBe('More filters (1)');
+
+    toggle().click();
+    await fixture.whenStable();
+    expect(panel().classList).not.toContain('hidden');
+    expect(toggle().textContent?.trim()).toBe('Fewer filters');
   });
 
   it('reads the influence cards under the scope the URL names', async () => {

@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_EMPLOYMENT,
   DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
@@ -65,6 +66,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, mer
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
@@ -94,7 +96,17 @@ import { ContributorsService } from '../../services/contributors.service';
 /** Contributors tab body — search + foundation + project + time-range + commit-filter bar, four stat cards (Maintainer roles / Contributors / Projects / Foundations), sortable table with chevron-toggled per-project Projects Involved sub-table. */
 @Component({
   selector: 'lfx-org-people-contributors',
-  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, OrgScopeSelectComponent, SelectComponent, SkeletonModule, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    EmptyStateComponent,
+    InputTextComponent,
+    MoreFiltersToggleComponent,
+    OrgScopeSelectComponent,
+    SelectComponent,
+    SkeletonModule,
+    TooltipModule,
+  ],
   templateUrl: './contributors.component.html',
 })
 export class ContributorsComponent {
@@ -242,6 +254,18 @@ export class ContributorsComponent {
   // The filter bar's "Clear filters" also covers the code-count option, which changes the count but not who is listed.
   protected readonly canClearFilters: Signal<boolean> = computed(
     () => this.isFiltering() || !sameOrgCommitFilters(this.commitFilters(), DEFAULT_ORG_COMMIT_FILTERS)
+  );
+  // The secondary filters behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted while not
+  // at their default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(
+    () =>
+      [
+        orgCodeFilterValues(this.commitFilters()).metric !== DEFAULT_ORG_CODE_MEASURE,
+        this.employment() !== DEFAULT_ORG_EMPLOYMENT,
+        this.teamMembers() !== DEFAULT_ORG_TEAM_MEMBERS,
+        this.orgScope() !== DEFAULT_ORG_SCOPE,
+      ].filter(Boolean).length
   );
 
   protected readonly ariaSortMap: Signal<Record<OrgContributorSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
