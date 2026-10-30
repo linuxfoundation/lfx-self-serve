@@ -63,8 +63,43 @@
     box-shadow: var(--ui-shadow-focus);
   }
 
-  // forced-colors drops box-shadow, so focus falls back to a system-colour outline
+  // forced-colors drops shadows and fills, so the track, thumb and focus use system colours
   @media (forced-colors: active) {
+    // keeps the gradient fill, which forced colors would otherwise drop; every colour here is a system colour
+    forced-color-adjust: none;
+
+    &::-webkit-slider-runnable-track {
+      background: linear-gradient(to right, Highlight var(--val), GrayText var(--val));
+    }
+
+    &::-moz-range-track {
+      background: GrayText;
+    }
+
+    &::-moz-range-progress {
+      background: Highlight;
+    }
+
+    &::-webkit-slider-thumb {
+      box-sizing: border-box;
+      border: 2px solid CanvasText;
+      background: Canvas;
+    }
+
+    &::-moz-range-thumb {
+      box-sizing: border-box;
+      border: 2px solid CanvasText;
+      background: Canvas;
+    }
+
+    &:disabled::-webkit-slider-thumb {
+      border-color: GrayText;
+    }
+
+    &:disabled::-moz-range-thumb {
+      border-color: GrayText;
+    }
+
     &:focus-visible {
       outline: 2px solid Highlight;
       outline-offset: 2px;

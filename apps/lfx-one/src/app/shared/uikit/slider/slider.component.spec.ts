@@ -116,6 +116,14 @@ describe('UiSliderComponent', () => {
     expect(fixture.componentInstance.value()).toBe(0.0000003);
   });
 
+  it('steps back from an off-step maximum, like the native range', async () => {
+    await set('step', 10);
+    await set('max', 95);
+    await set('value', 100);
+
+    expect(output().textContent?.trim()).toBe('90');
+  });
+
   it('gives each instance its own ids', () => {
     const other = TestBed.createComponent(UiSliderComponent);
     other.componentRef.setInput('label', 'Other');

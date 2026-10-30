@@ -90,16 +90,21 @@ export class UiSliderComponent implements ControlValueAccessor {
     });
   }
 
-  /** Rounds to the nearest step from `min`, then clamps to `[min, max]`, trimming binary noise such as 0.30000000000000004. */
+  /** Clamps to `[min, max]`, then rounds to the nearest step from `min` without passing `max`, trimming binary noise such as 0.30000000000000004. */
   private snap(raw: number): number {
+    const { min, max } = { min: this.min(), max: this.max() };
     const step = this.step();
+    const clamped = Math.min(Math.max(raw, min), max);
+    if (!(step > 0)) return clamped;
     // toExponential keeps 1e-7 from reading as zero decimals, which String() would.
     const decimals = (n: number): number => {
       const [mantissa, exponent] = n.toExponential().split('e');
       return Math.max(0, (mantissa.split('.')[1] ?? '').length - Number(exponent));
     };
-    const precision = Math.max(decimals(step), decimals(this.min()));
-    const stepped = step > 0 ? Number((Math.round((raw - this.min()) / step) * step + this.min()).toFixed(precision)) : raw;
-    return Math.min(Math.max(stepped, this.min()), this.max());
+    const precision = Math.max(decimals(step), decimals(min));
+    const at = (count: number): number => Number((count * step + min).toFixed(precision));
+    const count = Math.round((clamped - min) / step);
+    // Like the native range, an off-step `max` is not reachable: step back from a rounded-up value.
+    return at(count) > max ? at(count - 1) : at(count);
   }
 }
