@@ -42,11 +42,11 @@
     [class.is-open]="showMobileSidebar()"
     [attr.inert]="showMobileSidebar() ? null : ''"
     role="dialog"
-    aria-modal="true"
+    [attr.aria-modal]="chunkLoadRecovery.needsReload() ? null : 'true'"
     aria-label="Navigation"
     tabindex="-1"
     pFocusTrap
-    [pFocusTrapDisabled]="!showMobileSidebar()"
+    [pFocusTrapDisabled]="!showMobileSidebar() || chunkLoadRecovery.needsReload()"
     data-testid="mobile-sidebar-drawer">
     @if (mobileNavbarMounted()) {
       <!-- The drawer's lens tabs preview a lens's menu without switching the page's (#4208), so its selectors follow the menu lens. -->
