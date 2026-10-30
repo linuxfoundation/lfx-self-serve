@@ -69,6 +69,7 @@ export class UiSliderComponent implements ControlValueAccessor {
     if (this.ngControl) this.ngControl.valueAccessor = this;
     // The browser re-snaps the native value on min/max/step change; re-write it after render.
     afterRenderEffect(() => {
+      // Read min/max/step directly: snapped() can stay unchanged and then would not re-run this.
       this.min();
       this.max();
       this.step();
