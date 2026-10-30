@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, model, numberAttribute, Signal, signal } from '@angular/core';
+import {
+  afterRenderEffect,
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  input,
+  model,
+  numberAttribute,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 
 /**
@@ -46,11 +60,20 @@ export class UiSliderComponent implements ControlValueAccessor {
   protected readonly percent: Signal<number> = this.initPercent();
   protected readonly displayValue: Signal<string> = computed(() => this.valueText() || String(this.snapped()));
 
+  private readonly range = viewChild.required<ElementRef<HTMLInputElement>>('range');
+
   private onChange: ((value: number) => void) | null = null;
   private onTouched: (() => void) | null = null;
 
   public constructor() {
     if (this.ngControl) this.ngControl.valueAccessor = this;
+    // The browser re-snaps the native value when min, max or step change, but `[value]` skips an unchanged snapped value; write it after render.
+    afterRenderEffect(() => {
+      this.min();
+      this.max();
+      this.step();
+      this.range().nativeElement.value = String(this.snapped());
+    });
   }
 
   public writeValue(value: number | null): void {

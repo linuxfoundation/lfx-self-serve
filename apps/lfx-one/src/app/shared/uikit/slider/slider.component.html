@@ -7,8 +7,8 @@
     <label [for]="inputId" data-testid="ui-slider-label">{{ label() }}</label>
     <output [for]="inputId" [class.text-ui-neutral-900]="!isDisabled()" data-testid="ui-slider-value">{{ displayValue() }}</output>
   </div>
-  <!-- shortcut: [value] is skipped when snapped() is unchanged, so changing min and step in one pass can leave the native value stale. revisit: if a consumer does that. -->
   <input
+    #range
     type="range"
     class="ui-slider"
     [id]="inputId"
