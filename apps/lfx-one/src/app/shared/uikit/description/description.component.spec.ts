@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { OverlayContainer } from '@angular/cdk/overlay';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiDescriptionComponent } from './description.component';
 
@@ -15,6 +16,16 @@ describe('UiDescriptionComponent', () => {
   const value = () => host.querySelector('[data-testid="ui-description-value"]') as HTMLElement;
   const help = () => host.querySelector('[data-testid="ui-description-help"]');
 
+  const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
+  // Attach the host so the tooltip can position, then hover with only the timers faked.
+  const hover = async (target: Element | null): Promise<void> => {
+    document.body.appendChild(host);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    target?.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(400);
+  };
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [UiDescriptionComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiDescriptionComponent);
@@ -22,6 +33,11 @@ describe('UiDescriptionComponent', () => {
     fixture.componentRef.setInput('label', 'Region');
     fixture.componentRef.setInput('value', 'Europe (Lisbon)');
     await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    host.remove();
   });
 
   it('renders a definition list with the title and the value', () => {
@@ -51,15 +67,24 @@ describe('UiDescriptionComponent', () => {
     expect(value().className).toContain('tabular-nums');
   });
 
-  it('truncates a long value and exposes the full value as a tooltip', async () => {
-    expect(value().getAttribute('title')).toBeNull();
+  it('shows no tooltip on a value that is not truncated', async () => {
     expect(value().className).not.toContain('truncate');
 
+    await hover(value());
+
+    expect(tooltip()).toBeNull();
+  });
+
+  it('truncates a long value and shows the full value in a tooltip on hover', async () => {
     fixture.componentRef.setInput('ellipsis', true);
     await fixture.whenStable();
 
     expect(value().className).toContain('truncate');
-    expect(value().getAttribute('title')).toBe('Europe (Lisbon)');
+    expect(value().getAttribute('title')).toBeNull();
+
+    await hover(value());
+
+    expect(tooltip()?.textContent?.trim()).toBe('Europe (Lisbon)');
   });
 
   it('caps a right-aligned truncated value at the column width', async () => {
@@ -77,7 +102,16 @@ describe('UiDescriptionComponent', () => {
 
     expect(help()?.getAttribute('role')).toBe('img');
     expect(help()?.getAttribute('aria-label')).toBe('Your membership tier');
-    expect(help()?.getAttribute('title')).toBe('Your membership tier');
+    expect(help()?.getAttribute('title')).toBeNull();
     expect(help()?.className).toContain('fa-circle-question');
+  });
+
+  it('shows the help text in a tooltip on hover', async () => {
+    fixture.componentRef.setInput('help', 'Your membership tier');
+    await fixture.whenStable();
+
+    await hover(help());
+
+    expect(tooltip()?.textContent?.trim()).toBe('Your membership tier');
   });
 });

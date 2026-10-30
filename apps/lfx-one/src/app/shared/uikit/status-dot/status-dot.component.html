@@ -1,7 +1,17 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<span [class]="dotClasses()" aria-hidden="true" data-testid="ui-status-dot-marker"></span>
-@if (!dotOnly()) {
+@if (dotOnly()) {
+  <span
+    class="inline-flex rounded-full focus-visible:shadow-focus focus-visible:outline-none"
+    role="img"
+    tabindex="0"
+    [attr.aria-label]="text()"
+    [lfxUiTooltip]="text()"
+    data-testid="ui-status-dot-image">
+    <span [class]="dotClasses()" aria-hidden="true" data-testid="ui-status-dot-marker"></span>
+  </span>
+} @else {
+  <span [class]="dotClasses()" aria-hidden="true" data-testid="ui-status-dot-marker"></span>
   <span data-testid="ui-status-dot-label">{{ text() }}</span>
 }
