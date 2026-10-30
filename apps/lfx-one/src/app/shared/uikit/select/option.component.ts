@@ -8,7 +8,7 @@ import { UiOption } from '@lfx-one/shared/interfaces';
 import { UiOptionHost } from './option-host';
 
 /**
- * One choice of an `lfx-ui-select`: `<lfx-ui-option value="cncf" label="CNCF">...</lfx-ui-option>`. The projected content is the row, so it can
+ * One choice of an `lfx-ui-select` or `lfx-ui-combobox`: `<lfx-ui-option value="cncf" label="CNCF">...</lfx-ui-option>`. The projected content is the row, so it can
  * hold an avatar, a badge or a second line of description. Without content the row shows `label`. `label` stays required: it is the text the
  * trigger shows once the option is picked, and what type-ahead matches. Give the content its own text for screen readers; the row's accessible
  * name comes from it.
@@ -47,6 +47,9 @@ export class UiOptionComponent {
 
   protected readonly isSelected: Signal<boolean> = computed(() => this.host.isSelected(this.item));
   protected readonly isActive: Signal<boolean> = computed(() => this.host.isActive(this.item));
+  protected readonly isVisible: Signal<boolean> = computed(() => this.host.isVisible?.(this.item) ?? true);
+  /** The plain label split around the part the list emphasises (the typed text of a combobox). */
+  protected readonly labelParts: Signal<{ before: string; match: string; after: string }> = this.initLabelParts();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
 
   protected pick(): void {
@@ -77,11 +80,22 @@ export class UiOptionComponent {
     };
   }
 
+  private initLabelParts(): Signal<{ before: string; match: string; after: string }> {
+    return computed(() => {
+      const label = this.label();
+      const range = this.host.matchRange?.(this.item) ?? null;
+      if (!range) return { before: label, match: '', after: '' };
+      return { before: label.slice(0, range[0]), match: label.slice(range[0], range[1]), after: label.slice(range[1]) };
+    });
+  }
+
   private initHostClasses(): Signal<string> {
     return computed(() => {
       // Forced-colors drops the highlight fill, so an inset outline marks the highlighted row.
       // Exact px, not rem; 14px root. 40px is the menu-item height token (no min-height utility), so taller content grows the row; 10px radius is the panel radius minus its 6px padding.
-      return 'group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]';
+      // A row the list filters out is removed from the layout and from the accessibility tree.
+      const visibility = this.isVisible() ? '' : ' hidden';
+      return `group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]${visibility}`;
     });
   }
 }

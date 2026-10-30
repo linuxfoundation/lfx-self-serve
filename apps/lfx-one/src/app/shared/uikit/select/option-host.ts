@@ -16,4 +16,8 @@ export abstract class UiOptionHost {
   public abstract pick(option: UiOption): void;
   /** Moves the keyboard highlight to the option, for the pointer. A disabled option is ignored. */
   public abstract highlight(option: UiOption): void;
+  /** False while the list filters and the option does not match; the row is hidden. A list that does not filter leaves it out and keeps every row visible. */
+  public isVisible?(option: UiOption): boolean;
+  /** The part of the option's label to emphasise, as `[start, end)`, or `null` for none. Only a row that shows its plain label is emphasised. */
+  public matchRange?(option: UiOption): [number, number] | null;
 }

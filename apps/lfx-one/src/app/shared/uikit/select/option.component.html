@@ -7,9 +7,9 @@
   ></span>
 }
 <!-- Native title: focus stays on the trigger, so a tooltip here would be pointer-only. -->
-<span class="min-w-0 flex-1 truncate" [attr.title]="label()" data-testid="ui-option-content"
-  ><ng-content>{{ label() }}</ng-content></span
->
+<!-- The text parts touch the emphasis on purpose: a space there would show in the row. -->
+<!-- prettier-ignore -->
+<span class="min-w-0 flex-1 truncate" [attr.title]="label()" data-testid="ui-option-content"><ng-content>{{ labelParts().before }}@if (labelParts().match) {<strong class="font-medium">{{ labelParts().match }}</strong>}{{ labelParts().after }}</ng-content></span>
 @if (isSelected()) {
   <span class="inline-flex shrink-0 items-center text-[12px] text-ui-accent-500" data-testid="ui-option-check"
     ><i class="fa-light fa-check" aria-hidden="true"></i

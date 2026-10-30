@@ -11,7 +11,8 @@ import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     role: 'group',
-    class: 'flex shrink-0 flex-col',
+    // A group whose rows are all filtered out disappears with them.
+    class: 'flex shrink-0 flex-col [&:not(:has([role=option]:not(.hidden)))]:hidden',
     '[attr.aria-labelledby]': 'labelId',
     'data-testid': 'ui-option-group',
   },
