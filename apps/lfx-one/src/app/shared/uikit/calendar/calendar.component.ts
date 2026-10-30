@@ -37,6 +37,8 @@ import { UiButtonComponent } from '../button/button.component';
   host: { class: 'inline-block', '(focusout)': 'onFocusOut($event)' },
 })
 export class UiCalendarComponent implements ControlValueAccessor {
+  // True from a keyboard or click move until focus is restored: a month change destroys the focused button and fires focusout with no target.
+  private refocusing = false;
   private readonly titleBaseId = inject(_IdGenerator).getId('lfx-ui-calendar-');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -54,6 +56,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   protected readonly titleId = `${this.titleBaseId}title`;
   protected readonly formDisabled = signal(false);
   /** The date that holds the roving tab stop; its month is the month on show. Resets when the value changes. */
+  // shortcut: an empty calendar reads today from new Date() at render, so a UTC server can differ from the client near midnight. revisit: when it renders on the server without a value.
   protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfDay(new Date()));
   protected readonly focusedKey: Signal<string> = computed(() => toLocalDateOnlyString(this.focusedDate()));
   protected readonly title: Signal<string> = computed(() => new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(this.focusedDate()));
@@ -100,8 +103,9 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   protected onFocusOut(event: FocusEvent): void {
-    // Touched when focus leaves the whole calendar, not when it moves between its own buttons.
-    if (!this.host.nativeElement.contains(event.relatedTarget as Node | null)) this.onTouched?.();
+    // Touched when focus leaves the whole calendar, not when it moves between its own buttons or a month rebuild drops it.
+    if (this.refocusing || this.host.nativeElement.contains(event.relatedTarget as Node | null)) return;
+    this.onTouched?.();
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -174,7 +178,14 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   private focusActiveDay(): void {
-    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-date="${this.focusedKey()}"]`)?.focus(), { injector: this.injector });
+    this.refocusing = true;
+    afterNextRender(
+      () => {
+        this.host.nativeElement.querySelector<HTMLElement>(`[data-date="${this.focusedKey()}"]`)?.focus();
+        this.refocusing = false;
+      },
+      { injector: this.injector }
+    );
   }
 
   private dayClasses(day: UiCalendarDay, gridOff: boolean): string {
@@ -184,7 +195,11 @@ export class UiCalendarComponent implements ControlValueAccessor {
     const dot = day.today
       ? "after:absolute after:bottom-[5px] after:left-1/2 after:-ml-[2px] after:h-[4px] after:w-[4px] after:rounded-ui-full after:content-['']"
       : '';
-    if (day.selected) return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+    if (day.selected) {
+      // An unavailable selected date keeps its fill and gains the strike-through; the ink stays white to stay readable on the fill.
+      const unavailable = day.disabled ? 'cursor-not-allowed line-through' : '';
+      return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+    }
     if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
     const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';
     const interaction = gridOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-ui-neutral-alpha-100';

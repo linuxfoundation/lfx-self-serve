@@ -79,6 +79,15 @@ describe('UiCalendarComponent', () => {
     expect(day('2026-10-13').parentElement?.getAttribute('aria-selected')).toBe('false');
   });
 
+  it('strikes through a selected date that is unavailable', async () => {
+    await set('value', new Date(2026, 9, 12));
+    await set('isDateDisabled', (date: Date) => date.getDate() === 12);
+
+    expect(day('2026-10-12').className).toContain('bg-ui-accent-500');
+    expect(day('2026-10-12').className).toContain('line-through');
+    expect(day('2026-10-12').className).toContain('cursor-not-allowed');
+  });
+
   it('opens on the selected date month and keeps one tab stop on it', async () => {
     await set('value', new Date(2026, 4, 20));
 
@@ -218,6 +227,15 @@ describe('UiCalendarComponent', () => {
       await formFixture.whenStable();
 
       expect(root.querySelector('[data-testid="ui-calendar-title"]')?.textContent?.trim()).toBe('October 2026');
+    });
+
+    it('does not mark the control touched when a month change drops focus', async () => {
+      const grid = (formFixture.nativeElement as HTMLElement).querySelector('[role="grid"]') as HTMLElement;
+      grid.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+      formDay('2026-10-12').dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+      await formFixture.whenStable();
+
+      expect(formFixture.componentInstance.control.touched).toBe(false);
     });
 
     it('marks the control touched when focus leaves the calendar without a pick', async () => {
