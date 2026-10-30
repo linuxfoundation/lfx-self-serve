@@ -840,6 +840,16 @@ describe('UiSelectComponent', () => {
       expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
     });
 
+    it('keeps a disabled chosen value on Enter instead of picking the first enabled row', async () => {
+      await set('value', 'lfai');
+      await press('ArrowDown');
+
+      expect(activeLabel()).toBe('LF AI & Data');
+      await press('Enter');
+
+      expect(fixture.componentInstance.value()).toBe('lfai');
+    });
+
     it('does not pick on the repeats of a held Enter or Space', async () => {
       await press('Enter');
       await press('Enter', { repeat: true });
