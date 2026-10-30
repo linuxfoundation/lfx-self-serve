@@ -97,7 +97,9 @@ const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontS
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./src/**/*.{html,ts}'],
+  // Story templates need utilities in Storybook, but must not add scan work or
+  // story-only CSS to application builds. Set by .storybook/main.ts for both targets.
+  content: ['./src/**/*.{html,ts}', ...(process.env.LFX_STORYBOOK_BUILD === 'true' ? [] : ['!./src/**/*.stories.ts'])],
   safelist: [
     'bg-violet-400',
     'bg-blue-400',

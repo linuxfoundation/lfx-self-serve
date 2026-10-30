@@ -6,6 +6,9 @@ import { dirname, join } from 'node:path';
 
 import type { StorybookConfig } from '@storybook/angular';
 
+// Keep story-only Tailwind utilities in both interactive and static Storybook builds.
+process.env['LFX_STORYBOOK_BUILD'] = 'true';
+
 const require = createRequire(import.meta.url);
 
 // Yarn nests @storybook/angular under apps/lfx-one while `storybook` is hoisted to the root, so a bare
