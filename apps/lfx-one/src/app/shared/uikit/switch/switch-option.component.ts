@@ -66,10 +66,11 @@ export class UiSwitchOptionComponent {
         medium: 'gap-[6px] rounded-[9px] px-[12px] button-14',
       };
       // The checked segment is raised; in the dark theme it is neutral-200 because background-100 is the track's neighbour there.
-      // forced-colors: fills and shadows vanish, so the checked segment gets a Highlight fill and border, and the focus ring becomes an outline.
-      const fill = this.isChecked()
-        ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200 forced-colors:border forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText]"
-        : '';
+      // forced-colors: fills and shadows vanish, so the checked segment gets a border (Highlight, with a Highlight fill when enabled) and the focus ring becomes an outline.
+      const forcedChecked = this.isDisabled()
+        ? 'forced-colors:border forced-colors:border-[color:GrayText]'
+        : 'forced-colors:border forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText]';
+      const fill = this.isChecked() ? `bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200 ${forcedChecked}` : '';
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
       if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400 forced-colors:text-[color:GrayText]';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';
