@@ -6,7 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 /** A full-bleed 1px rule between groups of options. Purely visual: a listbox may only own options and groups, so it is hidden from assistive technology. */
 @Component({
   selector: 'lfx-ui-option-separator',
-  template: '',
+  templateUrl: './option-separator.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     'aria-hidden': 'true',

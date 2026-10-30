@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { InteractivityChecker } from '@angular/cdk/a11y';
 import { Component, input, model, viewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
@@ -48,7 +49,7 @@ class SelectHostComponent {
   public readonly pill = input<boolean>(false);
   public readonly prefixIcon = input<string>('');
   public readonly query = model<string>('');
-  public readonly projects = ['Kubernetes', 'Envoy', 'Sigstore'];
+  public readonly projects = input<string[]>(['Kubernetes', 'Envoy', 'Sigstore']);
   public readonly control = new FormControl<string | null>('openssf');
 }
 
@@ -569,6 +570,16 @@ describe('UiSelectComponent', () => {
       slotsTrigger().focus();
     });
 
+    it('only opens the list when a character is typed on the closed trigger, so typing starts in the field', async () => {
+      const event = new KeyboardEvent('keydown', { key: 's', keyCode: 83, bubbles: true, cancelable: true });
+      slotsTrigger().dispatchEvent(event);
+      await slotsFixture.whenStable();
+
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+      expect(document.activeElement).toBe(search());
+      expect(slotsTrigger().getAttribute('aria-activedescendant')).toBe(optionEls()[0].id);
+    });
+
     it('shows prefix content inside the trigger, before the value', () => {
       const prefix = slotsTrigger().querySelector('[data-testid="prefix"]') as HTMLElement;
 
@@ -657,6 +668,156 @@ describe('UiSelectComponent', () => {
 
       expect(slotsFixture.componentInstance.value()).toBe('envoy');
       expect(document.activeElement).toBe(slotsTrigger());
+    });
+  });
+
+  describe('while the options change under an open list', () => {
+    let filterFixture: ComponentFixture<SelectHostComponent>;
+
+    const filterTrigger = (): HTMLElement => (filterFixture.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
+    const filterPress = async (key: string): Promise<void> => {
+      filterTrigger().dispatchEvent(new KeyboardEvent('keydown', { key, keyCode: KEY_CODES[key], bubbles: true, cancelable: true }));
+      await filterFixture.whenStable();
+    };
+
+    beforeEach(async () => {
+      filterFixture = create('slots');
+      filterFixture.componentRef.setInput('projects', ['Kubernetes', 'Envoy', 'Sigstore', 'SLSA']);
+      await filterFixture.whenStable();
+      filterTrigger().focus();
+    });
+
+    it('keeps the trigger on the picked option while a filter hides its row', async () => {
+      filterFixture.componentInstance.value.set('envoy');
+      filterTrigger().click();
+      await filterFixture.whenStable();
+      filterFixture.componentRef.setInput('query', 'sig');
+      await filterFixture.whenStable();
+
+      expect(optionEls().map((el) => el.textContent?.trim())).toEqual(['Sigstore']);
+      expect(filterTrigger().querySelector('[data-testid="ui-select-value"]')?.textContent).toContain('Envoy');
+      expect(filterTrigger().querySelector('[data-testid="ui-select-placeholder"]')).toBeNull();
+    });
+
+    it('drops the kept option once the value changes to one that is not listed', async () => {
+      filterFixture.componentInstance.value.set('envoy');
+      filterFixture.componentRef.setInput('query', 'sig');
+      await filterFixture.whenStable();
+      filterFixture.componentInstance.value.set('gone');
+      await filterFixture.whenStable();
+
+      expect(filterTrigger().querySelector('[data-testid="ui-select-placeholder"]')).not.toBeNull();
+    });
+
+    it('keeps a highlight and picks with Enter after a filter removes the highlighted row', async () => {
+      filterTrigger().click();
+      await filterFixture.whenStable();
+      await filterPress('End');
+      expect(document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim()).toBe('SLSA');
+
+      filterFixture.componentRef.setInput('query', 'sig');
+      await filterFixture.whenStable();
+      const active = document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '');
+      expect(active?.textContent?.trim()).toBe('Sigstore');
+
+      await filterPress('Enter');
+      expect(filterFixture.componentInstance.value()).toBe('sigstore');
+    });
+
+    it('continues arrow navigation from the highlighted row after the list is filtered', async () => {
+      filterTrigger().click();
+      await filterFixture.whenStable();
+      await filterPress('ArrowDown');
+      expect(document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim()).toBe('Envoy');
+
+      filterFixture.componentRef.setInput('query', 's');
+      await filterFixture.whenStable();
+      // Rows left: Kubernetes, Sigstore, SLSA. Envoy is gone, so the highlight falls back to the first row and the arrows go on from there.
+      expect(document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim()).toBe('Kubernetes');
+      await filterPress('ArrowDown');
+
+      expect(document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim()).toBe('Sigstore');
+    });
+  });
+
+  describe('openChange', () => {
+    it('emits true when the list opens and false when it closes', async () => {
+      const emitted: boolean[] = [];
+      fixture.componentInstance.select().openChange.subscribe((open) => emitted.push(open));
+
+      await open();
+      await press('Escape');
+      await open();
+      await open();
+
+      expect(emitted).toEqual([true, false, true, false]);
+    });
+
+    it('does not emit again for a close that changes nothing', async () => {
+      const emitted: boolean[] = [];
+      fixture.componentInstance.select().openChange.subscribe((open) => emitted.push(open));
+
+      await press('Escape');
+      fixture.componentInstance.select().setDisabledState(true);
+
+      expect(emitted).toEqual([]);
+    });
+  });
+
+  describe('Tab from a header field', () => {
+    beforeEach(() => {
+      // jsdom has no layout, so every element reads as hidden to the CDK's tabbable check.
+      vi.spyOn(InteractivityChecker.prototype, 'isVisible').mockReturnValue(true);
+    });
+
+    const openWithHeader = async (): Promise<{ fixture: ComponentFixture<SelectHostComponent>; trigger: HTMLElement; field: HTMLInputElement }> => {
+      const slots = create('slots');
+      await slots.whenStable();
+      const slotsTrigger = (slots.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
+      slotsTrigger.focus();
+      slotsTrigger.click();
+      await slots.whenStable();
+      return { fixture: slots, trigger: slotsTrigger, field: document.querySelector('[data-testid="search"]') as HTMLInputElement };
+    };
+
+    it('hands focus to the trigger and lets the Tab move on, without picking', async () => {
+      const { fixture: slots, trigger: slotsTrigger, field } = await openWithHeader();
+      const event = new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true, cancelable: true });
+      field.dispatchEvent(event);
+      await slots.whenStable();
+
+      expect(document.activeElement).toBe(slotsTrigger);
+      expect(event.defaultPrevented).toBe(false);
+      expect(slots.componentInstance.value()).toBeNull();
+    });
+
+    it('stops on the trigger for Shift+Tab from the first field', async () => {
+      const { fixture: slots, trigger: slotsTrigger, field } = await openWithHeader();
+      const event = new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, shiftKey: true, bubbles: true, cancelable: true });
+      field.dispatchEvent(event);
+      await slots.whenStable();
+
+      expect(document.activeElement).toBe(slotsTrigger);
+      expect(event.defaultPrevented).toBe(true);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+    });
+
+    it('leaves Tab alone between two header fields', async () => {
+      const { fixture: slots, trigger: slotsTrigger, field } = await openWithHeader();
+      const second = document.createElement('input');
+      field.after(second);
+      const forward = new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true, cancelable: true });
+      field.focus();
+      field.dispatchEvent(forward);
+      const backward = new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, shiftKey: true, bubbles: true, cancelable: true });
+      second.focus();
+      second.dispatchEvent(backward);
+      await slots.whenStable();
+
+      expect(document.activeElement).toBe(second);
+      expect(document.activeElement).not.toBe(slotsTrigger);
+      expect(forward.defaultPrevented).toBe(false);
+      expect(backward.defaultPrevented).toBe(false);
     });
   });
 
