@@ -156,7 +156,9 @@ describe('Family export slot', () => {
     expect(api.run).not.toHaveBeenCalled();
   });
 
-  it('scrolls to the slot and focuses Download PDF when lookup finishes, without starting an export', async () => {
+  it('scrolls to the slot and focuses Download PDF only after lookup and PDF preparation finish', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
     const pending = new Subject<MktgFamilyExportLastResponse>();
     api.last.mockReturnValue(pending);
     const { fixture, root, button } = await setup();
@@ -170,6 +172,13 @@ describe('Family export slot', () => {
     expect(focus).not.toHaveBeenCalled();
     pending.next(lookup());
     await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    expect(focus).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['focusRequested']()).toBe(true);
+    ready();
+    await Promise.resolve();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(false);
     expect(focus).toHaveBeenCalledOnce();
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(api.run).not.toHaveBeenCalled();
@@ -292,7 +301,98 @@ describe('Family export slot', () => {
     expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
     expect(api.printView).toHaveBeenCalledOnce();
     fixture.destroy();
-    expect(print.clear).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(print.clear).toHaveBeenCalled();
+  });
+
+  it('marks readiness when preparation resolves after rendering and prints synchronously on the first enabled click', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    const { fixture, root, button } = await setup();
+    expect(root.querySelector('[data-testid="family-export-print-document"] > *')).not.toBeNull();
+    expect(fixture.componentInstance['pdfReady']()).toBe(false);
+    expect(button('pdf')?.disabled).toBe(true);
+    ready();
+    await Promise.resolve();
+    // Do not call detectChanges/whenStable here: the original zoneless latch needed a click to render.
+    expect(fixture.componentInstance['pdfReady']()).toBe(true);
+    expect(fixture.componentInstance['pdfPending']()).toBe(false);
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(false);
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the PDF disabled until completed preparation has also been marked ready', async () => {
+    const { fixture, button } = await setup();
+    expect(fixture.componentInstance['pdfPreparedScope']()).not.toBe('');
+    fixture.componentInstance['pdfReady'].set(false);
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    button('pdf')?.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the checking line and Download PDF disabled during font preparation, with no new copy or print', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    const { fixture, root, button } = await setup();
+    button('pdf')?.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    expect(button('slides')?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="family-export-loading"]')?.textContent).toContain('Checking approved assets and the last export…');
+    expect(root.textContent).not.toContain('Preparing PDF');
+    ready();
+    await Promise.resolve();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
+    expect(button('pdf')?.textContent?.trim()).toBe('Download PDF');
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(print.printNow).not.toHaveBeenCalled();
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('reports a font preparation failure without printing or leaving the PDF busy', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let fail: (reason: Error) => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((_resolve, reject) => (fail = reject)));
+    const { fixture, root, button } = await setup();
+    expect(button('pdf')?.disabled).toBe(true);
+    button('pdf')?.click();
+    await fixture.whenStable();
+    fail(new Error('Synthetic font preparation failure'));
+    await Promise.resolve();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-error"]')?.textContent).toContain('could not be prepared for PDF');
+    expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(fixture.componentInstance['pdfReady']()).toBe(false);
+    expect(print.printNow).not.toHaveBeenCalled();
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    button('pdf')?.click();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-error"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-loading"]')).not.toBeNull();
+    expect(button('pdf')?.disabled).toBe(true);
+    expect(button('pdf')?.textContent?.trim()).toBe('Download PDF');
+    button('pdf')?.click();
+    expect(api.printView).toHaveBeenCalledTimes(2);
+    ready();
+    await Promise.resolve();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
+    expect(print.printNow).not.toHaveBeenCalled();
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
   });
 
   it('composes all four print roots in exporter order with a family cover, contents and branded type', async () => {
@@ -430,13 +530,17 @@ describe('Family export slot', () => {
     expect(print.printNow).not.toHaveBeenCalled();
   });
 
-  it('offers an explicit second click if approved revisions are not yet prepared, never auto-printing', async () => {
+  it('holds Download PDF disabled while approved revisions load, then prints on the first enabled click', async () => {
     const pending = new Subject<MktgFamilyPrintView>();
     api.printView.mockReturnValue(pending);
     const { fixture, root, button } = await setup();
     expect(api.printView).toHaveBeenCalledOnce();
+    expect(button('pdf')?.disabled).toBe(true);
+    expect(button('pdf')?.textContent?.trim()).toBe('Download PDF');
+    expect(root.querySelector('[data-testid="family-export-loading"]')).not.toBeNull();
     button('pdf')?.click();
     await fixture.whenStable();
+    expect(print.printNow).not.toHaveBeenCalled();
     expect(button('pdf')?.disabled).toBe(true);
     pending.next({
       framework: null,
@@ -451,8 +555,10 @@ describe('Family export slot', () => {
     });
     pending.complete();
     await fixture.whenStable();
-    expect(root.textContent).toContain('Your PDF is ready — click to open the print preview');
-    expect(button('pdf')?.textContent).toContain('Open print preview');
+    expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
+    expect(button('pdf')?.textContent?.trim()).toBe('Download PDF');
+    expect(button('pdf')?.disabled).toBe(false);
     expect(print.printNow).not.toHaveBeenCalled();
     button('pdf')?.click();
     expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);

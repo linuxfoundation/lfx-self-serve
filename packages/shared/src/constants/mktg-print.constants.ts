@@ -61,6 +61,14 @@ export const MKTG_PRINT_REVERSED_FILTER = 'brightness(0) invert(1)';
 export const MKTG_PRINT_FONT_WAIT_MS = 3000;
 
 /**
+ * How long the hidden print frame stays after its print dialog opened when no
+ * `afterprint` arrives (ms): iOS Safari builds its preview asynchronously and
+ * may never fire the event, so the frame is kept well past any preview, then
+ * reclaimed. The next print, or the view's `clear`, removes it at once.
+ */
+export const MKTG_PRINT_FRAME_LINGER_MS = 5 * 60 * 1000;
+
+/**
  * The weights the framework print sets the brand's typeface in, loaded before
  * the print dialog opens: the body (400), the headings, tagline and key
  * numbers (`font-medium`, 500) and the labels (`font-semibold`, 600).

@@ -470,7 +470,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
 
     fixture.destroy();
-    expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    expect(printer.clear).toHaveBeenCalled();
   });
 
   it('prints approved current bytes/version independently of the newer viewed Draft', async () => {

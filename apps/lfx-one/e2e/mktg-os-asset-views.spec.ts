@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/brand-kit.constants';
-import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-print.constants';
-import { MKTG_SLIDES_EXPORT_AGENT_KEYS, MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
+import {
+  BRAND_KIT_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  MKTG_SLIDES_EXPORT_AGENT_KEYS,
+  MKTG_SLIDES_EXPORT_API_PATH,
+} from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LETTER, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 import {
   columnAssetRevisionResponse,
@@ -197,30 +201,33 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
-  test(`${key} print media fills a paper-sized viewport without content-column containment`, async ({ page, browserName }, info) => {
+  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
-    await page.addInitScript(() => {
-      window.print = () => undefined;
-    });
+    await stubMktgPrintFrame(page);
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
-    const print = page.getByTestId(key === 'brand-kit' ? 'mktg-brand-kit-print' : 'mktg-framework-print');
-    await expect(print).toBeHidden();
+    const testId = key === 'brand-kit' ? 'mktg-brand-kit-print' : 'mktg-framework-print';
+    await expect(page.getByTestId(testId)).toBeHidden();
     await page
       .getByTestId(prefix + '-download-pdf')
       .getByRole('button')
       .click();
-    await expect(page.locator('body')).toHaveClass(new RegExp(key === 'brand-kit' ? BRAND_KIT_PRINT_BODY_CLASS : FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
-    await page.emulateMedia({ media: 'print' });
-    // Media emulation does not paginate or apply @page margins. Measure against
-    // a paper-sized initial containing block, not the app shell's offset wrapper.
-    const paperViewport = { width: 8.5 * 96, height: 11 * 96 };
-    await page.setViewportSize(paperViewport);
+    const bodyClass = key === 'brand-kit' ? BRAND_KIT_PRINT_BODY_CLASS : FOUNDATION_MESSAGE_PRINT_BODY_CLASS;
+    await expectMktgPrintFrame(page, bodyClass, key === 'brand-kit' ? 'lfx-mktg-brand-kit-print' : 'lfx-mktg-framework-print');
+    // The page itself is never put under print media by production: the app shell stays as it was.
+    await expect(page.locator('body')).not.toHaveClass(new RegExp(bodyClass));
+    await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
+    // Media emulation does not paginate or apply @page margins. Measure the frame's own layout
+    // against a paper-sized initial containing block: that is the document the dialog prints.
+    const frame = await layoutMktgPrintFrame(page, PRINT_FRAME_LETTER);
+    const print = frame.getByTestId(testId);
     await expect(print).toBeVisible();
-    await expect(page.getByTestId('mktg-document-view-revisions')).toBeHidden();
+    // Only the print-only wrapper was cloned: none of the screen shell travels into the frame.
+    await expect(frame.getByTestId('mktg-document-view-revisions')).toHaveCount(0);
+    await expect(frame.getByTestId(prefix + '-download-pdf')).toHaveCount(0);
     const box = await print.boundingBox();
     if (!box) throw new Error('The approved print document must be rendered');
-    expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: paperViewport.width });
+    expect({ x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width) }).toEqual({ x: 0, y: 0, width: PRINT_FRAME_LETTER.width });
     if (key === 'brand-kit') {
       await expect(print.locator('.kit-chapter')).toHaveCount(5);
       await expect(print.locator('lfx-mktg-print-chapter-header h2 > span')).toHaveText(['1', '2', '3', '4', '5']);
@@ -228,7 +235,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print).toHaveCSS('page', 'mktg-framework');
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
     } else {
-      await expect(page.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+      await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
@@ -246,7 +253,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         expect(tracking).toBeCloseTo(0.16);
       }
       // Visibility-only hiding leaves screen canvas height behind. The entire
-      // ancestor chain must be white/content-sized, and siblings out of flow.
+      // ancestor chain in the frame must be white/content-sized, and nothing else in flow.
       const flow = await print.evaluate((root) => {
         const ancestors = [];
         let parent = root.parentElement;
@@ -258,7 +265,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         return {
           ancestors,
           end: root.getBoundingClientRect().bottom,
-          bodyEnd: document.body.getBoundingClientRect().bottom,
+          bodyEnd: root.ownerDocument.body.getBoundingClientRect().bottom,
         };
       });
       for (const ancestor of flow.ancestors) {
@@ -267,10 +274,12 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
         expect(ancestor.overflow).toBe('visible');
       }
       expect(Math.abs(flow.bodyEnd - flow.end)).toBeLessThan(2);
-      await expect(page.getByTestId('mktg-document-view-revisions')).toHaveCSS('display', 'none');
     }
-    if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
+    // page.pdf prints the app window, not the frame, so there is no PDF artifact; the screenshot
+    // shows the laid-out frame over the page.
     await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
+    await page.emulateMedia({ media: 'screen' });
+    await finishMktgPrintFrame(page);
   });
   test(`${key} reads the last export while approved bytes remain pending`, async ({ page }, info) => {
     const lastRead = page.waitForRequest((request) => new URL(request.url()).pathname === `${MKTG_SLIDES_EXPORT_API_PATH}/last`);

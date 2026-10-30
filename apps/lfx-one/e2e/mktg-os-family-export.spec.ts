@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -135,59 +136,64 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prepares all four assets then opens print synchronously on the explicit preview click', async ({ page }, info) => {
+test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
+  await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
-  await page.evaluate(() => {
-    window.print = () => {
-      document.body.dataset['familyPrintClass'] = document.body.className;
-    };
-  });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
-  await pdf.click();
   await expect(pdf).toBeDisabled();
-  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
+  await expect(pdf).toHaveText('Download PDF');
+  await expect(page.getByTestId('family-export-slides').getByRole('button')).toBeEnabled();
+  await expect(page.getByTestId('family-export-loading')).toHaveText('Checking approved assets and the last export…');
+  await expect(page.getByTestId('family-export-actions')).not.toContainText('Preparing PDF');
+  await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
   controls.releasePrint();
-  await expect(pdf).toHaveText('Open print preview');
-  await expect(page.getByTestId('family-export-pdf-ready')).toHaveText('Your PDF is ready — click to open the print preview');
-  await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
-  // Keep a JS stack around the entire click dispatch. Inspect before returning:
-  // even a resolved Promise/await would run too late to satisfy this assertion.
+  await expect(page.getByTestId('family-export-loading')).toHaveCount(0);
+  await expect(pdf).toBeEnabled();
+  await expect(pdf).toHaveText('Download PDF');
+  await expect(page.getByTestId('family-export-pdf-ready')).toHaveCount(0);
+  await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
+  // Frame creation remains in the click task. Its own resource wait precedes frame.print().
   const synchronousClass = await pdf.evaluate((button) => {
     if (!(button instanceof HTMLButtonElement)) throw new Error('Missing synthetic PDF button');
     button.click();
-    return document.body.dataset['familyPrintClass'] ?? '';
+    return document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]')?.contentDocument?.body.className ?? '';
   });
   expect(synchronousClass).toContain(MKTG_FAMILY_PRINT_BODY_CLASS);
-  await expect(page.locator('body')).toHaveAttribute('data-family-print-class', new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS), { timeout: 15_000 });
+  await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
   await expect(page.getByTestId('family-export-actions').getByRole('heading')).toHaveText('Export the family');
   await expect(page.getByTestId('family-export-actions')).toContainText('Google Slides: framework, brand kit, boilerplates and FAQ (approved current).');
-  const printDocument = page.getByTestId('family-export-print-document');
+  // The page keeps its screen presentation: the source document stays hidden and the body unmarked.
+  await expect(page.getByTestId('family-export-print-document')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(new RegExp(MKTG_FAMILY_PRINT_BODY_CLASS));
+  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
+  // The geometry proof measures the frame's document: the one the dialog prints.
+  const printFrame = await layoutMktgPrintFrame(page);
+  const printDocument = printFrame.getByTestId('family-export-print-document');
   for (const selector of ['lfx-mktg-framework-print', 'lfx-mktg-brand-kit-print', 'lfx-mktg-boilerplates-print', 'lfx-mktg-faq-print']) {
     await expect(printDocument.locator(selector)).toHaveCount(1);
   }
-  await expect(page.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
-  await expect(page.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
-  await expect(page.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
-  await expect(printDocument).toBeHidden();
-  await expect(page.getByTestId('family-export-pdf-note')).toHaveText('PDF: framework, brand kit, boilerplates and FAQ (approved current).');
-  await page.emulateMedia({ media: 'print' });
-  const cover = page.getByTestId('family-export-print-cover');
+  await expect(printFrame.getByTestId('family-export-print-contents').locator('dd')).toHaveText(['Messaging framework', 'Brand kit', 'Boilerplates', 'FAQ']);
+  await expect(printFrame.getByTestId('mktg-boilerplates-print-length')).toHaveCount(4);
+  await expect(printFrame.getByTestId('mktg-faq-print')).toContainText('Needs an answer');
+  // Only the wrapper travels: the card's controls are not in the frame.
+  await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
+  const cover = printFrame.getByTestId('family-export-print-cover');
   await expect(cover).toBeVisible();
-  await expect(page.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
-  await expect(page.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
-  await expect(page.getByTestId('family-export-print-logo')).toBeVisible();
+  await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
+  await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
+  await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();
   const coverColors = await cover.evaluate((element) => ({ ink: getComputedStyle(element).color, ground: getComputedStyle(element).backgroundColor }));
   expect(coverColors.ground).toBe('rgb(255, 255, 255)');
   expect(coverColors.ink).not.toBe(coverColors.ground);
-  // The screen shell's canvas must not bleed through below a short print section.
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  // No screen canvas may bleed through below a short print section.
+  await expect(printFrame.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   const ancestorBackgrounds = await printDocument.evaluate((element) => {
     const backgrounds: string[] = [];
     for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) backgrounds.push(getComputedStyle(ancestor).backgroundColor);
     return backgrounds;
   });
   expect(ancestorBackgrounds.every((color) => color === 'rgb(255, 255, 255)')).toBe(true);
-  await expect(page.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
+  await expect(printFrame.getByTestId('family-export-print-contents').locator('dt')).toHaveText(['01', '02', '03', '04']);
   await expect(printDocument.locator('lfx-mktg-framework-print h2 > span')).toHaveText(['01.1', '01.2']);
   await expect(printDocument.getByTestId('mktg-framework-print-goals')).toBeVisible();
   await expect(printDocument.getByTestId('mktg-framework-print-pillars')).toHaveCount(0);
@@ -198,7 +204,7 @@ test('Download PDF prepares all four assets then opens print synchronously on th
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head')).toBeVisible();
     await expect(printDocument.locator(selector).getByTestId('mktg-print-running-head').locator('img')).toBeVisible();
   }
-  await expect(page.getByTestId('mktg-framework-print-cover')).toBeHidden();
+  await expect(printFrame.getByTestId('mktg-framework-print-cover')).toBeHidden();
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-chapter > thead')).toHaveCount(5);
   await expect(printDocument.locator('lfx-mktg-brand-kit-print .kit-usage-frame')).toHaveCount(4);
@@ -245,7 +251,7 @@ test('Download PDF prepares all four assets then opens print synchronously on th
   await expect(printDocument.locator('lfx-mktg-brand-kit-print')).toContainText('02.5 Voice in brief');
   await page.screenshot({ path: info.outputPath('four-assets-print-document.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
-  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  await finishMktgPrintFrame(page);
   await page.screenshot({ path: info.outputPath('family-pdf-ready.png'), fullPage: true });
 });
 

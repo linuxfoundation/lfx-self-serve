@@ -1260,7 +1260,7 @@ describe('MktgDocumentViewComponent', () => {
       // Same call stack, with no stability/font/network await after the click.
       expect(print.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
       harness.fixture.destroy();
-      expect(print.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+      expect(print.clear).toHaveBeenCalled();
     });
 
     it.each(['linkedin-post', 'member-360'])('preserves current-main reading and immutable run actions for %s', async (agentKey) => {
