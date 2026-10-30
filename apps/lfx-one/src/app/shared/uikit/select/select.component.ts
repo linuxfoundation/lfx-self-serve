@@ -221,7 +221,8 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       this.closePanel();
     } else if (event.key === 'Enter' || (event.key === ' ' && !this.isTyping()) || (event.key === 'ArrowUp' && event.altKey)) {
       event.preventDefault();
-      this.select(this.activeOption());
+      // Holding the key that opened the list must not pick on its repeats.
+      if (!event.repeat) this.select(this.activeOption());
     } else if (event.key === 'Tab') {
       // Tab picks the highlighted row and lets focus move on.
       this.select(this.activeOption());
