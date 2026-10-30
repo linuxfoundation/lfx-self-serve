@@ -101,9 +101,13 @@ export class MktgPrintService {
     const cleanup = () => {
       clearTimeout(fallback);
       view.removeEventListener('afterprint', cleanup);
+      // Removing a focused frame drops focus on the body. Return it to the control that opened the
+      // dialog, but only while focus is still in the frame or nowhere: cleanup also runs from the
+      // iOS linger timer, a superseding print and clear(), when the user may be in another field.
+      const active = this.document.activeElement;
+      const restore = focused?.isConnected === true && (active === null || active === frame || active === this.document.body);
       frame.remove();
-      // Return focus to the control that opened the dialog, if it is still on the page.
-      if (focused?.isConnected) focused.focus({ preventScroll: true });
+      if (restore) focused?.focus({ preventScroll: true });
       if (this.frame === frame) {
         this.frame = null;
         this.cleanupFrame = null;

@@ -59,7 +59,11 @@ describe('MktgPrintService isolated frame', () => {
       const result = append(node);
       if (node instanceof HTMLIFrameElement && node.contentWindow && node.contentDocument) {
         node.contentWindow.print = framePrint;
-        node.contentWindow.focus = frameFocus;
+        // As in a browser, focusing the frame window makes the frame element the page's active element.
+        node.contentWindow.focus = (...args: []) => {
+          frameFocus(...args);
+          node.focus();
+        };
         node.contentWindow.stop = frameStop;
         Object.defineProperty(node.contentDocument, 'fonts', { value: { load: frameFont }, configurable: true });
       }
@@ -179,12 +183,37 @@ describe('MktgPrintService isolated frame', () => {
     configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
     await releaseFrame();
     expect(frameFocus).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(currentFrame());
     expect(refocus).not.toHaveBeenCalled();
     currentFrame().contentWindow?.dispatchEvent(new Event('afterprint'));
     expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
     expect(document.body.classList.contains(FOUNDATION_MESSAGE_PRINT_BODY_CLASS)).toBe(false);
     expect(refocus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+    expect(document.activeElement).toBe(button);
     button.remove();
+  });
+
+  it.each([
+    ['afterprint', (frame: HTMLIFrameElement) => frame.contentWindow?.dispatchEvent(new Event('afterprint'))],
+    ['the linger fallback', () => vi.advanceTimersByTime(MKTG_PRINT_FRAME_LINGER_MS)],
+    ['a superseding print', () => service.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS)],
+    ['clear()', () => service.clear()],
+  ])('does not steal focus on %s from a field the user moved to', async (_path, teardown) => {
+    const button = document.createElement('button');
+    const field = document.createElement('input');
+    document.body.append(button, field);
+    button.focus();
+    const refocus = vi.spyOn(button, 'focus');
+    configure().printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    await releaseFrame();
+    const frame = currentFrame();
+    field.focus();
+    teardown(frame);
+    expect(frame.isConnected).toBe(false);
+    expect(refocus).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field);
+    button.remove();
+    field.remove();
   });
 
   it('does not refocus a control that left the page while the dialog was open', async () => {
