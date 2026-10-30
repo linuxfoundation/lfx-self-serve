@@ -29,23 +29,29 @@ describe('VoteLinkHeaderComponent (#4692)', () => {
     expect(byId('vote-link-project-logo')?.getAttribute('src')).toBe(PROJECT.logo_url);
     expect(byId('vote-link-project-name')?.textContent).toContain('Synthetic Project');
     expect(byId('vote-link-title')?.textContent).toContain('Synthetic vote');
-    expect(byId('vote-link-lfx-mark')).toBeNull();
+    expect(byId('vote-link-lfx-mark')).not.toBeNull();
+  });
+
+  it('links the LFX mark to a plain / with no query or fragment', () => {
+    render({ project: PROJECT });
+
+    expect(byId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
   });
 
   it('shows only the LFX mark and the title when there is no project', () => {
     render({ project: null });
 
-    expect(byId('vote-link-lfx-mark')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-link-lfx-mark"]').length).toBe(1);
     expect(byId('vote-link-project-name')).toBeNull();
   });
 
-  it('falls back to the LFX mark when the logo fails to load', () => {
+  it('drops a logo that fails to load and keeps the single LFX mark', () => {
     render({ project: PROJECT });
     byId('vote-link-project-logo')!.dispatchEvent(new Event('error'));
     fixture.detectChanges();
 
     expect(byId('vote-link-project-logo')).toBeNull();
-    expect(byId('vote-link-lfx-mark')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-link-lfx-mark"]').length).toBe(1);
     expect(byId('vote-link-project-name')?.textContent).toContain('Synthetic Project');
   });
 

@@ -15,6 +15,7 @@ import { VoteService } from '@services/vote.service';
 import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
 import { VoteLinkHeaderComponent } from '../components/vote-link-header/vote-link-header.component';
+import { VoteLinkMarkComponent } from '../components/vote-link-mark/vote-link-mark.component';
 import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vote-link-thank-you.component';
 
 /**
@@ -26,7 +27,7 @@ import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vot
  */
 @Component({
   selector: 'lfx-vote-link-ballot',
-  imports: [ButtonComponent, VoteBallotFormComponent, VoteLinkHeaderComponent, VoteLinkThankYouComponent],
+  imports: [ButtonComponent, VoteBallotFormComponent, VoteLinkHeaderComponent, VoteLinkMarkComponent, VoteLinkThankYouComponent],
   templateUrl: './vote-link-ballot.component.html',
 })
 export class VoteLinkBallotComponent implements OnInit, OnDestroy {

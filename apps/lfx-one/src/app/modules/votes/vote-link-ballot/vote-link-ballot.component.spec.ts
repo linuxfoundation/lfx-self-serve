@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -102,6 +102,21 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(getLinkBallot).not.toHaveBeenCalled();
     expect(state()).toBe('invalid');
     expect(testId('vote-link-invalid')?.textContent).toContain('This link is invalid or has expired');
+  });
+
+  it('shows the LFX mark linking to a plain / on the invalid-link state (#4753)', async () => {
+    await open(of(BALLOT), '');
+
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+  });
+
+  it('shows the LFX mark linking to a plain / while the ballot is loading, with nothing token-derived in the page (#4753)', async () => {
+    await open(NEVER);
+
+    expect(state()).toBe('loading');
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+    expect(fixture.nativeElement.innerHTML).not.toContain(TOKEN);
   });
 
   it('renders the vote and form for an active vote with title and description only, no identity chrome', async () => {
@@ -342,7 +357,7 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(text('vote-link-project-name')).toBe('Synthetic Project');
     expect(testId('vote-link-project-logo')?.getAttribute('src')).toBe(PROJECT.logo_url);
     expect(text('vote-link-title')).toBe('Synthetic board vote');
-    expect(testId('vote-link-lfx-mark')).toBeNull();
+    expect(testId('vote-link-lfx-mark')).not.toBeNull();
   });
 
   it('looks the project up by slug when only the slug is present', async () => {
@@ -370,12 +385,12 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(testId('vote-link-project-name')).toBeNull();
   });
 
-  it('falls back to the LFX mark when the project has no logo', async () => {
+  it('shows only the LFX mark, once, when the project has no logo', async () => {
     getPublicProjectSummary.mockReturnValue(of({ ...PROJECT, logo_url: null }));
     await openWith({ ...BALLOT, project_uid: 'p-1' });
 
     expect(testId('vote-link-project-logo')).toBeNull();
-    expect(testId('vote-link-lfx-mark')).not.toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="vote-link-lfx-mark"]').length).toBe(1);
     expect(text('vote-link-project-name')).toBe('Synthetic Project');
   });
 
@@ -420,13 +435,15 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(text('vote-link-thank-you-secret')).toBe('Your ballot is secret');
   });
 
-  it('says "Your vote is updated" after an update, with no navigation, sign-in prompt or identity', async () => {
+  it('says "Your vote is updated" after an update, with only the two Self Serve links and no sign-in prompt or identity', async () => {
     await openWith({ ...BALLOT, pseudo_anonymity: false, ballot: { ...BALLOT.ballot, already_voted: true, vote_status: 'responded' } });
     (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
     submit();
 
     expect(text('vote-link-thank-you-heading')).toBe('Your vote is updated');
-    expect(fixture.nativeElement.querySelector('a, nav, lfx-button')).toBeNull();
+    expect(fixture.nativeElement.querySelector('nav, lfx-button')).toBeNull();
+    const hrefs = Array.from<HTMLAnchorElement>(fixture.nativeElement.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/', '/votes']);
     expect(fixture.nativeElement.textContent).not.toMatch(/sign in|log in/i);
   });
 
