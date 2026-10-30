@@ -21,11 +21,12 @@ import {
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import type { OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type { OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgScopeColumn, orgScopeRowPredicate, resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -98,7 +99,10 @@ export class OrgInvolvementService {
     );
   }
 
-  public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
+  public async getContributorsMonthly(accountId: string, orgScope: OrgScopeFilter): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    // `:{scope}` (lfx-self-serve-ops#1219): the effective organization scope, so an account without an Insights org
+    // shares its `all` entry.
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
     // `contributors:v5`: the trend reads lf-dbt's ORG_CONTRIBUTORS_MONTHLY, now every project with team members left out
     // (lf-dbt#3149). (`v4`: the headline counts all projects over the last 2 years, the Org Lens default view
     // (lfx-self-serve#4694), and leaves out CDP team members as the People -> Contributors default does
@@ -108,10 +112,10 @@ export class OrgInvolvementService {
     let degraded = false;
     return withOrgCache(
       accountId,
-      'contributors:v5',
+      `contributors:v5:${scope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchContributorsMonthly(accountId);
+        const fetched = await this.fetchContributorsMonthly(accountId, scope);
         degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
         return fetched.response;
       },
@@ -216,8 +220,11 @@ export class OrgInvolvementService {
    * team members.
    */
   private async fetchContributorsMonthly(
-    accountId: string
+    accountId: string,
+    scope: OrgScopeFilter
   ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; trendMissing: boolean; teamMembersUnavailable: boolean }> {
+    // Under `insights` (lfx-self-serve-ops#1219) the headline keeps only rows with Insights-scoped code and the trend
+    // reads the views' insights_ twins; under `all` both reads are unchanged.
     const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
       SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
@@ -225,10 +232,13 @@ export class OrgInvolvementService {
         ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
         ${orgTeamMembersPredicate(teamMembers)}
+        ${orgScopeRowPredicate(scope, 'INSIGHTS_DAILY_CODE_ACTIVITIES')}
     `;
+    const uniqueColumn = orgScopeColumn(scope, 'UNIQUE_CONTRIBUTORS');
+    const excludingColumn = orgScopeColumn(scope, ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN);
     // Under `exclude` the trend reads the view's count without team members, aliased to the inclusive column's name.
     const trendQuery = (teamMembers: OrgTeamMembersFilter): string => `
-      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? `${ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN} AS ` : ''}UNIQUE_CONTRIBUTORS
+      SELECT MONTH_START_DATE, ${teamMembers === 'exclude' ? excludingColumn : uniqueColumn}${scope === 'all' && teamMembers !== 'exclude' ? '' : ' AS UNIQUE_CONTRIBUTORS'}
       FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
       WHERE ACCOUNT_ID = ?
       ORDER BY MONTH_START_DATE ASC
@@ -245,14 +255,14 @@ export class OrgInvolvementService {
           this.snowflakeService
             .execute<ContributorsMonthlyRow>(trendQuery(teamMembers), [accountId], {
               expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_VIEW,
-              ...orgTeamMembersQueryOptions(teamMembers, ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN),
+              ...orgTeamMembersQueryOptions(teamMembers, excludingColumn),
             })
             .then((result) => result.rows)
             .catch((error: unknown) => {
               if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_VIEW)) return null;
               throw error;
             }),
-        ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN
+        excludingColumn
       ),
     ]);
 

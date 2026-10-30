@@ -105,6 +105,9 @@
             tooltipPosition="top"
             dataTest="org-contributions-team-members-filter" />
         </div>
+        <div class="w-full sm:w-60">
+          <lfx-org-scope-select [form]="filterForm" dataTest="org-contributions-org-scope-filter" />
+        </div>
         <div class="w-full sm:w-52">
           <lfx-select
             [form]="filterForm"

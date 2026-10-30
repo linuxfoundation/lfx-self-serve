@@ -43,6 +43,31 @@ export interface OrgTeamMembersOption {
   value: OrgTeamMembersFilter;
 }
 
+/**
+ * Which crowd.dev organizations an Org Lens code count credits to the account (lfx-self-serve-ops#1219): `insights`, the
+ * organization behind the account's LFX Insights page and only repositories LFX Insights counts; `all`, every
+ * organization linked to the account in every repository.
+ */
+export type OrgScopeFilter = 'insights' | 'all';
+
+/** Dropdown option for the organization-scope filter. */
+export interface OrgScopeOption {
+  label: string;
+  value: OrgScopeFilter;
+}
+
+/** The account's organization scope (`GET /api/orgs/:orgUid/lens/org-scope`, `ORG_LENS_ORG_SCOPE`). */
+export interface OrgLensOrgScope {
+  accountId: string;
+  /** `false` when no Insights organization is mapped or it has no code activity in two years: only `all` is offered. */
+  hasInsightsOrg: boolean;
+  insightsOrgId: string | null;
+  insightsOrgName: string | null;
+  insightsOrgSlug: string | null;
+  /** Distinct organizations with code activity on the account in two years. */
+  relatedOrgCount: number;
+}
+
 /** The account's CDP team members, as the server reads them for a Team members pick (lfx-self-serve#4685). */
 export interface OrgTeamMemberKeys {
   /** Person keys left out of code-based numbers; `null` under `include`, or when the flag cannot be read. */

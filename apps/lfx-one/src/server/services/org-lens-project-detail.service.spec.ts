@@ -11,7 +11,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }));
 // Defaults to null so every suite here bypasses the cache; the cache-contract suite opts in.
-const { buildOrgCacheKey, getJson, setJson } = vi.hoisted(() => ({ buildOrgCacheKey: vi.fn(() => null as string | null), getJson: vi.fn(), setJson: vi.fn() }));
+const { buildOrgCacheKey, getJson, setJson } = vi.hoisted(() => ({
+  buildOrgCacheKey: vi.fn<(org: string, key: string) => string | null>(() => null),
+  getJson: vi.fn(),
+  setJson: vi.fn(),
+}));
+// The account's Insights organization (lfx-self-serve-ops#1219); by default the asked-for scope is served as is.
+const INSIGHTS_ORG = 'crowd-insights-org';
+const { resolveOrgScope, readOrgLensOrgScope } = vi.hoisted(() => ({
+  resolveOrgScope: vi.fn(async (_snowflake: unknown, _accountId: string, scope: string) => scope),
+  readOrgLensOrgScope: vi.fn(async () => ({ insightsOrgId: 'crowd-insights-org' })),
+}));
+vi.mock('../helpers/org-scope.helper', () => ({ resolveOrgScope, readOrgLensOrgScope }));
 
 vi.mock('./snowflake.service', async () => {
   // The real predicate, so a missing-object degrade (and which object is blamed) runs as in production.
@@ -403,7 +414,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   ] as const)('emits exactly the shared %s category keys, in the shared order', async (dimension, categories) => {
     mockWarehouse();
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y', 'all');
 
     expect(keysOf(breakdown!.categories)).toEqual(keysOf(categories));
     expect(breakdown!.withheldCategories).toEqual([]);
@@ -412,7 +423,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it('omits the privately-sourced ecosystem categories for a caller outside the subject organization', async () => {
     mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'all');
 
     // Reported in the withheld list's own order, which is what the drawer's name-only rows key off.
     const ecosystemKeys = keysOf(ORG_LEADERBOARD_DETAIL_ECOSYSTEM_CATEGORIES);
@@ -424,7 +435,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it('withholds nothing on the technical dimension, whose categories are all publicly derivable', async () => {
     mockWarehouse({ breakdown: { ...breakdownRow, ACCOUNT_ID: 'a-different-account' } });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all');
 
     expect(breakdown!.withheldCategories).toEqual([]);
     expect(keysOf(breakdown!.categories)).toEqual(keysOf(ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES));
@@ -435,14 +446,32 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it('returns null when the viewing organization has no catalog row for the project', async () => {
     mockWarehouse({ hero: null });
 
-    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.toBeNull();
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all')).resolves.toBeNull();
   });
 
   it('returns null for the ecosystem dimension on a non-LF project, matching its empty board', async () => {
     mockWarehouse({ hero: { ...heroRow, IS_LF_PROJECT: false } });
 
-    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y')).resolves.toBeNull();
-    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y')).resolves.not.toBeNull();
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'all')).resolves.toBeNull();
+    await expect(service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all')).resolves.not.toBeNull();
+  });
+
+  // lfx-self-serve-ops#1219: under insights only the account's Insights organization is the caller's own organization.
+  it('treats only the Insights organization as the caller own under insights, under a scope-suffixed key', async () => {
+    buildOrgCacheKey.mockImplementation((_org: string, key: string) => key);
+    getJson.mockResolvedValue(null);
+    mockWarehouse();
+
+    const other = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'insights');
+    expect(other!.withheldCategories.length).toBeGreaterThan(0);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-ecosystem:v3:.*:insights$/));
+
+    const own = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', INSIGHTS_ORG, '1y', 'insights');
+    expect(own!.withheldCategories).toEqual([]);
+
+    const all = await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'all');
+    expect(all!.withheldCategories).toEqual([]);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-ecosystem:v3:.*:all$/));
   });
 
   // Guards the column names themselves: a renamed or mistyped warehouse column reads as absent and
@@ -450,7 +479,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it.each(['technical', 'ecosystem'] as const)('resolves a warehouse column for every %s category it declares', async (dimension) => {
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y', 'all');
 
     for (const figure of breakdown!.categories) {
       expect(figure.points, `${figure.key} points`).toBeGreaterThan(0);
@@ -471,7 +500,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   ] as const)('serves a lifetime total for %s only where the warehouse totals it per project', async (dimension, projectScoped) => {
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y', 'all');
 
     const served = breakdown!.categories.filter((figure) => figure.projectAllTimeTotal !== undefined).map((figure) => figure.key);
     expect(served).toEqual([...projectScoped]);
@@ -485,7 +514,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   ] as const)('serves %s category points that sum to the total score it reports', async (dimension, expectedTotal) => {
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, dimension, SUBJECT, '1y', 'all');
 
     expect(breakdown!.totalScore).toBe(expectedTotal);
     const summed = breakdown!.categories.reduce((total, figure) => total + figure.points, 0);
@@ -501,7 +530,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     async (range, days) => {
       mockWarehouse({ breakdown: populatedBreakdownRow });
 
-      const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, range);
+      const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, range, 'all');
 
       expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5, count: 2, projectTotal: 20 });
       const rolesCalls = (execute.mock.calls as [string, unknown[]][]).filter(([sql]) => sql.includes('PROJECT_MAINTAINER_ROLES'));
@@ -514,7 +543,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it('does not read maintainer roles for the ecosystem dimension', async () => {
     mockWarehouse();
 
-    await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y');
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'ecosystem', SUBJECT, '1y', 'all');
 
     expect((execute.mock.calls as [string][]).some(([sql]) => sql.includes('PROJECT_MAINTAINER_ROLES'))).toBe(false);
   });
@@ -524,7 +553,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     getJson.mockResolvedValue(null);
     mockWarehouse({ breakdown: populatedBreakdownRow, rolesMissing: true });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all');
 
     expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5 });
     expect(breakdown!.totalScore).toBe(42.5);
@@ -536,7 +565,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
     getJson.mockResolvedValue(null);
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
-    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all');
 
     expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-breakdown-technical:v3:/));
     expect(setJson).toHaveBeenCalledWith('breakdown-key', expect.objectContaining({ organizationId: SUBJECT }), expect.anything());
@@ -546,7 +575,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
   it("leaves CDP team members' roles out of the organization's count, not out of every company's total", async () => {
     mockWarehouse({ breakdown: populatedBreakdownRow });
 
-    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+    await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all');
 
     const [[sql, , options]] = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes('PROJECT_MAINTAINER_ROLES'));
     const credited = 'ORGANIZATION_ID = ? AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)';
@@ -565,7 +594,7 @@ describe('OrgLensProjectDetailService.getLeaderboardBreakdown', () => {
       return answer(sql);
     });
 
-    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y');
+    const breakdown = await service.getLeaderboardBreakdown(ORG, SLUG, 'technical', SUBJECT, '1y', 'all');
 
     expect(breakdown!.categories.find((figure) => figure.key === 'maintainer')).toEqual({ key: 'maintainer', points: 3.5, count: 2, projectTotal: 20 });
     expect(setJson).not.toHaveBeenCalled();
@@ -587,7 +616,7 @@ describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
   });
 
   it('labels the card "Commits" under a versioned cache key', async () => {
-    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
 
     const commits = block!.technical.find((card) => card.key === 'commits');
     expect(commits?.label).toBe('Commits');
@@ -624,7 +653,7 @@ describe('OrgLensProjectDetailService board cache contract', () => {
   it('serves a cached page whose rows carry an organization id', async () => {
     cachedPage([{ organizationId: 'crowd-org-1', orgName: 'Acme' }]);
 
-    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
 
     expect(page!.rows).toHaveLength(1);
     expect(execute).not.toHaveBeenCalled();
@@ -633,7 +662,7 @@ describe('OrgLensProjectDetailService board cache contract', () => {
   it('rejects a cached page whose rows predate the organization id, so the board re-fetches', async () => {
     cachedPage([{ orgName: 'Acme' }]);
 
-    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
 
     expect(execute).toHaveBeenCalled();
   });
@@ -641,7 +670,7 @@ describe('OrgLensProjectDetailService board cache contract', () => {
   it('still serves an empty cached page, which carries no rows to validate', async () => {
     cachedPage([]);
 
-    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '');
+    const page = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
 
     expect(page!.rows).toEqual([]);
     expect(execute).not.toHaveBeenCalled();
@@ -664,7 +693,7 @@ describe('OrgLensProjectDetailService.getCardRoster paging', () => {
   }
 
   it('caps an oversized page at the deepest allowed page', async () => {
-    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 1e25, 10);
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 1e25, 10, 'all');
 
     const sql = rosterSql();
     expect(sql).toContain('LIMIT 10 OFFSET 1000000');
@@ -672,7 +701,7 @@ describe('OrgLensProjectDetailService.getCardRoster paging', () => {
   });
 
   it('truncates a fractional page', async () => {
-    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10);
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10, 'all');
 
     expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
   });
@@ -710,7 +739,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     ['2y', [ORG, SLUG, 730]],
     ['all', [ORG, SLUG]],
   ] as const)('counts the card for toggle %s from the roles overlapping its range', async (range, binds) => {
-    const block = await service.getInfluenceBlock(ORG, SLUG, range);
+    const block = await service.getInfluenceBlock(ORG, SLUG, range, 'all');
 
     const card = block!.technical.find((entry) => entry.key === 'maintainers');
     expect(card?.label).toBe('Maintainer roles');
@@ -733,7 +762,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
       return { rows: sql.includes('PROJECT_NAME') ? [heroRow] : [] };
     });
 
-    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
 
     expect(block!.technical.find((entry) => entry.key === 'maintainers')?.caption).toEqual({
       prefix: 'No data for this metric yet.',
@@ -748,7 +777,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     ['1y', [ORG, SLUG, 365]],
     ['all', [ORG, SLUG]],
   ] as const)('lists one roster row per role overlapping toggle %s, the same rows the card counts', async (range, binds) => {
-    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', range, 0, 10);
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', range, 0, 10, 'all');
 
     expect(page.total).toBe(2);
     expect(page.rows.map((row) => row.cells.slice(1).map((cell) => cell.text))).toEqual([
@@ -779,7 +808,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
       return { rows: [{ MAINTAINER_NAME: 'Ada Lovelace', PERSON_AVATAR_URL: null, ROLE_START_DATE: '2024-03-05', ROLE_END_DATE: null }] };
     });
 
-    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all');
 
     expect(page.total).toBe(1);
     expect(page.rows.map((row) => row.cells.slice(1).map((cell) => cell.text))).toEqual([['Mar 5, 2024', 'Current']]);
@@ -803,20 +832,20 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
       return { rows: [] };
     });
 
-    expect(await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).toEqual({ rows: [], total: 0 });
+    expect(await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all')).toEqual({ rows: [], total: 0 });
     expect(setJson).not.toHaveBeenCalled();
   });
 
   it('still fails the roster on any other error', async () => {
     execute.mockRejectedValue(new Error('Warehouse timeout'));
 
-    await expect(service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10)).rejects.toThrow('Warehouse timeout');
+    await expect(service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all')).rejects.toThrow('Warehouse timeout');
   });
 
   // lfx-self-serve#4685: the account's roles leave CDP team members out, as the Overview and Contributors counts do.
   it("leaves CDP team members' roles out of the card count and its roster", async () => {
-    await service.getInfluenceBlock(ORG, SLUG, '1y');
-    await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+    await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all');
 
     const reads = (execute.mock.calls as [string, unknown[], unknown][]).filter(([sql]) => sql.includes('ORG_MAINTAINER_ROLES'));
     expect(reads).toHaveLength(3);
@@ -838,8 +867,8 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
       return answer(sql);
     });
 
-    const block = await service.getInfluenceBlock(ORG, SLUG, '1y');
-    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+    const block = await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all');
 
     expect(block!.technical.find((entry) => entry.key === 'maintainers')?.caption.emphasis).toBe('3');
     expect(page.total).toBe(2);
@@ -861,7 +890,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
       return answer(sql);
     });
 
-    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10);
+    const page = await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'all');
 
     expect(page.total).toBe(2);
     const calls = execute.mock.calls as [string, unknown[], unknown][];
@@ -952,7 +981,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
     async (range) => {
       mockWarehouse();
 
-      const maintainers = card(await service.getInfluenceBlock(ORG, SLUG, range), 'maintainers');
+      const maintainers = card(await service.getInfluenceBlock(ORG, SLUG, range, 'all'), 'maintainers');
 
       expect(maintainers.sparkline).toHaveLength(36);
       expect(maintainers.sparkline.slice(-3)).toEqual([0, 2, 3]);
@@ -965,7 +994,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   it('draws the all-time sparkline from the maintainer-roles series per lifetime bucket, on the shared bucket axis', async () => {
     mockWarehouse();
 
-    const block = await service.getInfluenceBlock(ORG, SLUG, 'all');
+    const block = await service.getInfluenceBlock(ORG, SLUG, 'all', 'all');
 
     expect(block!.periods).toEqual(['2024', '2025']);
     expect(card(block, 'maintainers')).toMatchObject({ sparkline: [1, 4], projectSparkline: [5, 9] });
@@ -976,14 +1005,14 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   it('shows no maintainers sparkline when the account holds no roles on the project', async () => {
     mockWarehouse({ roles: false });
 
-    expect(card(await service.getInfluenceBlock(ORG, SLUG, '1y'), 'maintainers')).toMatchObject({ sparkline: [], projectSparkline: [] });
+    expect(card(await service.getInfluenceBlock(ORG, SLUG, '1y', 'all'), 'maintainers')).toMatchObject({ sparkline: [], projectSparkline: [] });
   });
 
   it('stores the influence block under a versioned key when every roles read succeeded', async () => {
     buildOrgCacheKey.mockReturnValue('influence-key');
     mockWarehouse();
 
-    await service.getInfluenceBlock(ORG, SLUG, '1y');
+    await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
 
     expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:/));
     expect(setJson).toHaveBeenCalledWith('influence-key', expect.objectContaining({ technical: expect.anything() }), expect.anything());
@@ -996,7 +1025,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   ] as const)("reads the %s maintainer-roles account series without team members' roles from %s, every other value as is", async (range, table, period) => {
     mockWarehouse();
 
-    await service.getInfluenceBlock(ORG, SLUG, range);
+    await service.getInfluenceBlock(ORG, SLUG, range, 'all');
 
     const [[sql, , options]] = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes(`.${table}`));
     expect(sql).toContain(
@@ -1021,7 +1050,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
         return answer(sql);
       });
 
-      const block = await service.getInfluenceBlock(ORG, SLUG, range);
+      const block = await service.getInfluenceBlock(ORG, SLUG, range, 'all');
 
       expect(card(block, 'maintainers').sparkline.slice(-inclusive.length)).toEqual(inclusive);
       expect(card(block, 'contributors').sparkline).toContain(6);
@@ -1033,7 +1062,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   it("keeps team members' roles in the drawer's every-company total", async () => {
     mockWarehouse();
 
-    await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+    await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'all');
 
     const [[sql]] = callsOn('PROJECT_MAINTAINER_ROLES');
     expect(sql).not.toContain('IS_CDP_TEAM_MEMBER');
@@ -1046,7 +1075,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   ] as const)('totals every company roles overlapping toggle %s in the maintainers drawer', async (range, binds) => {
     mockWarehouse();
 
-    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', range);
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', range, 'all');
 
     expect(drawer!.definition.total).toBe('1,234');
     const [[, bound]] = callsOn('PROJECT_MAINTAINER_ROLES');
@@ -1056,7 +1085,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
   it('does not read maintainer roles for another card drawer', async () => {
     mockWarehouse();
 
-    await service.getCardDrawer(ORG, SLUG, 'contributors', '1y');
+    await service.getCardDrawer(ORG, SLUG, 'contributors', '1y', 'all');
 
     expect(callsOn('PROJECT_MAINTAINER_ROLES')).toEqual([]);
   });
@@ -1065,7 +1094,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
     buildOrgCacheKey.mockReturnValue('drawer-key');
     mockWarehouse({ missingTable: 'PROJECT_MAINTAINER_ROLES' });
 
-    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'all');
 
     expect(drawer!.definition.total).toBe('—');
     expect(setJson).not.toHaveBeenCalled();
@@ -1075,7 +1104,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
     buildOrgCacheKey.mockReturnValue('drawer-key');
     mockWarehouse({ projectRoles: 0 });
 
-    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y');
+    const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'all');
 
     expect(drawer!.definition.total).toBe('0');
     expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:/));
@@ -1102,7 +1131,7 @@ describe('OrgLensProjectDetailService.getTechnicalBoard paging', () => {
   }
 
   it('caps an oversized page at the deepest allowed page', async () => {
-    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 1e25, 10, '');
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 1e25, 10, '', 'all');
 
     const sql = boardSql();
     expect(sql).toContain('LIMIT 10 OFFSET 1000000');
@@ -1110,8 +1139,138 @@ describe('OrgLensProjectDetailService.getTechnicalBoard paging', () => {
   });
 
   it('truncates a fractional page', async () => {
-    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 2.7, 10, '');
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 2.7, 10, '', 'all');
 
     expect(boardSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});
+
+describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#1219)', () => {
+  const service = new OrgLensProjectDetailService();
+  // The Insights-scoped reads; INSIGHTS_PROJECT_SLUG is an unrelated, pre-existing join column.
+  const SCOPED_READ = /INSIGHTS_(TECH|ORG_VALUE|PROJECT_VALUE|CONTRIBUTIONS)|IS_INSIGHTS_SCOPE/;
+  const sqls = (): string[] => (execute.mock.calls as [string][]).map(([sql]) => sql);
+  const callOn = (needle: string): [string, unknown[]] => {
+    const call = (execute.mock.calls as [string, unknown[]][]).find(([sql]) => sql.includes(needle));
+    expect(call, needle).toBeDefined();
+    return call!;
+  };
+
+  beforeEach(() => {
+    execute.mockReset();
+    getJson.mockReset();
+    getJson.mockResolvedValue(null);
+    buildOrgCacheKey.mockReset();
+    buildOrgCacheKey.mockImplementation((_org: string, key: string) => key);
+    resolveOrgScope.mockClear();
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      if (sql.includes('COUNT(')) return { rows: [{ N: 2 }] };
+      if (sql.includes('DIM_RANK AS RANK')) {
+        return {
+          rows: [
+            { ORG_ORGANIZATION_ID: 'crowd-other-entity', ORG_ACCOUNT_ID: ORG, ORG_NAME: 'Acme Labs', RANK: 1 },
+            { ORG_ORGANIZATION_ID: INSIGHTS_ORG, ORG_ACCOUNT_ID: ORG, ORG_NAME: 'Acme', RANK: 2 },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+  });
+
+  it('reads the Insights card columns, scoped sparkline values and the Insights organization row under insights', async () => {
+    await service.getInfluenceBlock(ORG, SLUG, '1y', 'insights');
+
+    const [cards] = callOn('ORG_LENS_PROJECT_DETAIL_CARDS');
+    expect(cards).toContain('INSIGHTS_TECH_CONTRIBUTORS_PCT AS TECH_CONTRIBUTORS_PCT, INSIGHTS_TECH_COMMITS_PCT AS TECH_COMMITS_PCT');
+    expect(cards).toContain('INSIGHTS_TECH_PR_OPENED_TOTAL AS TECH_PR_OPENED_TOTAL');
+    expect(cards).not.toContain('INSIGHTS_TECH_AVG_MERGE');
+    expect(cards).not.toContain('INSIGHTS_ECO');
+
+    const [spark] = callOn('ORG_LENS_PROJECT_DETAIL_SPARKLINES');
+    expect(spark).toContain("IFF(METRIC_KEY IN ('contributors', 'commits', 'pull-requests'), INSIGHTS_ORG_VALUE, ");
+    expect(spark).toContain("IFF(METRIC_KEY IN ('contributors', 'commits', 'pull-requests'), INSIGHTS_PROJECT_VALUE, PROJECT_VALUE) AS PROJECT_VALUE");
+
+    const [viewing, binds] = callOn('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n');
+    expect(viewing).toContain('AND ORG_ORGANIZATION_ID = ?');
+    expect(binds[2]).toBe(INSIGHTS_ORG);
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:insights$/));
+  });
+
+  it('reads exactly today’s columns and the account rows under all, with only the key suffixed', async () => {
+    await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
+
+    expect(sqls().some((sql) => SCOPED_READ.test(sql))).toBe(false);
+    const [cards] = callOn('ORG_LENS_PROJECT_DETAIL_CARDS');
+    expect(cards).toContain('SELECT TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,');
+    expect(cards).toContain('TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,');
+    const [spark] = callOn('ORG_LENS_PROJECT_DETAIL_SPARKLINES');
+    expect(spark).toContain(' AS ORG_VALUE, PROJECT_VALUE\n');
+    const [viewing, binds] = callOn('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n');
+    expect(viewing).toContain('AND ORG_ACCOUNT_ID = ?');
+    expect(binds[2]).toBe(ORG);
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:all$/));
+  });
+
+  it('falls back to all for an account without an Insights organization', async () => {
+    resolveOrgScope.mockResolvedValue('all');
+
+    await service.getInfluenceBlock(ORG, SLUG, '1y', 'insights');
+
+    expect(sqls().some((sql) => SCOPED_READ.test(sql))).toBe(false);
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:all$/));
+  });
+
+  it('flags only the Insights organization row as the viewing organization under insights, every account row under all', async () => {
+    const insights = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'insights');
+    expect(insights!.rows.map((row) => row.isViewingOrg)).toEqual([false, true]);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-board-technical-influence:.*:insights$/));
+
+    const all = await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 0, 10, '', 'all');
+    expect(all!.rows.map((row) => row.isViewingOrg)).toEqual([true, true]);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-board-technical-influence:.*:all$/));
+  });
+
+  it.each([
+    ['contributors', 'INSIGHTS_CONTRIBUTIONS_COUNT > 0'],
+    ['commits', 'COALESCE(IS_INSIGHTS_SCOPE, FALSE)'],
+    ['pull-requests', 'COALESCE(IS_INSIGHTS_SCOPE, FALSE)'],
+  ] as const)('gates the %s roster rows and its count under insights only', async (cardKey, gate) => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, cardKey, '1y', 0, 10, 'insights');
+    const scoped = sqls();
+    expect(scoped).toHaveLength(2);
+    for (const sql of scoped) expect(sql).toContain(`AND ${gate}`);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:.*:insights$/));
+
+    execute.mockClear();
+    await service.getCardRoster(ORG, 'Acme', SLUG, cardKey, '1y', 0, 10, 'all');
+    for (const sql of sqls()) expect(sql).not.toMatch(SCOPED_READ);
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:.*:all$/));
+  });
+
+  it('reads the contributors roster count from the Insights column under insights', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 0, 10, 'insights');
+
+    const [page] = callOn('OFFSET');
+    expect(page).toContain('INSIGHTS_CONTRIBUTIONS_COUNT AS CONTRIBUTIONS_COUNT');
+    expect(page).toContain('ORDER BY INSIGHTS_CONTRIBUTIONS_COUNT DESC NULLS LAST');
+  });
+
+  it('leaves unscoped cards (maintainers) unresolved and their keys unchanged', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'maintainers', '1y', 0, 10, 'insights');
+    await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'insights');
+
+    expect(resolveOrgScope).not.toHaveBeenCalled();
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:[^:]*$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:[^:]*$/));
+    expect(sqls().some((sql) => SCOPED_READ.test(sql))).toBe(false);
+  });
+
+  it('reads the Insights totals for a scoped card drawer under a scope-suffixed key', async () => {
+    await service.getCardDrawer(ORG, SLUG, 'commits', '1y', 'insights');
+
+    expect(callOn('ORG_LENS_PROJECT_DETAIL_CARDS')[0]).toContain('INSIGHTS_TECH_COMMITS_TOTAL AS TECH_COMMITS_TOTAL');
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:.*:insights$/));
   });
 });

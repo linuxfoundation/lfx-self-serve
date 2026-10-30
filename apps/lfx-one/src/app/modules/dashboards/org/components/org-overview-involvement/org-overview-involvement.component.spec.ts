@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
@@ -13,7 +14,7 @@ import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse } fro
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { OrgOverviewInvolvementComponent } from './org-overview-involvement.component';
 
@@ -46,6 +47,7 @@ async function buildMetrics(
   TestBed.configureTestingModule({
     imports: [OrgOverviewInvolvementComponent],
     providers: [
+      provideRouter([]),
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgInvolvementAnalyticsService, useValue: analytics },
     ],
@@ -145,5 +147,73 @@ describe('OrgOverviewInvolvementComponent active contributors', () => {
     expect(card?.subtitle).toContain('Acme Motors');
     expect(card?.chartCaption).toContain('Jan 2030');
     expect(card?.chartCaption).toContain(ORG_DEFAULT_PROJECT_SCOPE_LABEL);
+  });
+});
+
+describe('OrgOverviewInvolvementComponent organization scope (lfx-self-serve-ops#1219)', () => {
+  async function mount(initialUrl: string) {
+    const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+    const reads = {
+      getFoundationCoverage: vi.fn(() => of({ accountId: ACCOUNT_ID, foundationCount: 1, foundations: [] })),
+      getContributorsMonthly: vi.fn(() => of({ accountId: ACCOUNT_ID, totalActiveContributors: 100, monthlyData: [], monthlyLabels: [] })),
+      getMaintainersMonthly: vi.fn(() => of({ accountId: ACCOUNT_ID, maintainerRoles: 1, monthlyData: [], monthlyLabels: [] })),
+      getEventAttendanceMonthly: vi.fn(() =>
+        of({ accountId: ACCOUNT_ID, accountName: '', totalAttended: 0, totalSpeakers: 0, attendeesMonthlyData: [], speakersMonthlyData: [], monthlyLabels: [] })
+      ),
+      getCertifiedEmployeesMonthly: vi.fn(() =>
+        of({ accountId: ACCOUNT_ID, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] })
+      ),
+      getTrainingEnrollments: vi.fn(() => of({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] })),
+    };
+    TestBed.configureTestingModule({
+      imports: [OrgOverviewInvolvementComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount } },
+        { provide: OrgInvolvementAnalyticsService, useValue: reads },
+      ],
+    });
+    TestBed.overrideComponent(OrgOverviewInvolvementComponent, { set: { template: '', imports: [] } });
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl(initialUrl);
+    const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
+    await fixture.whenStable();
+    const form = (fixture.componentInstance as unknown as { scopeForm: { controls: { orgScope: { setValue(value: string): void } } } }).scopeForm;
+    return { fixture, reads, router, form };
+  }
+
+  it('sends the default insights scope when the URL has none, and the URL scope when it has one', async () => {
+    const { reads } = await mount('/');
+    expect(reads.getContributorsMonthly).toHaveBeenLastCalledWith(ACCOUNT_ID, 'insights');
+
+    TestBed.resetTestingModule();
+    const withAll = await mount('/?orgScope=all');
+    expect(withAll.reads.getContributorsMonthly).toHaveBeenLastCalledWith(ACCOUNT_ID, 'all');
+  });
+
+  it('re-reads only the contributors card on a pick, writing the pick to the URL and dropping it at the default', async () => {
+    const { fixture, reads, router, form } = await mount('/');
+    const otherReads = [
+      reads.getFoundationCoverage,
+      reads.getMaintainersMonthly,
+      reads.getEventAttendanceMonthly,
+      reads.getCertifiedEmployeesMonthly,
+      reads.getTrainingEnrollments,
+    ];
+    const otherCounts = otherReads.map((read) => read.mock.calls.length);
+
+    form.controls.orgScope.setValue('all');
+    await fixture.whenStable();
+
+    expect(reads.getContributorsMonthly).toHaveBeenCalledTimes(2);
+    expect(reads.getContributorsMonthly).toHaveBeenLastCalledWith(ACCOUNT_ID, 'all');
+    expect(otherReads.map((read) => read.mock.calls.length)).toEqual(otherCounts);
+    expect(router.url).toBe('/?orgScope=all');
+
+    form.controls.orgScope.setValue('insights');
+    await fixture.whenStable();
+
+    expect(reads.getContributorsMonthly).toHaveBeenLastCalledWith(ACCOUNT_ID, 'insights');
+    expect(router.url).toBe('/');
   });
 });

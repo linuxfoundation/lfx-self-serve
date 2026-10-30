@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // OrgPeopleDirectoryService's constructor, so they must be mocked at module level.
 const {
   getAllEmployeesInternal,
+  resolveOrgScope,
   getFormerUsernames,
   getTeamMemberPersonKeys,
   fetchAllOrgSeats,
@@ -30,6 +31,7 @@ const {
   cache,
 } = vi.hoisted(() => ({
   getAllEmployeesInternal: vi.fn(),
+  resolveOrgScope: vi.fn(),
   getFormerUsernames: vi.fn(),
   getTeamMemberPersonKeys: vi.fn(),
   fetchAllOrgSeats: vi.fn(),
@@ -51,6 +53,7 @@ const {
 vi.mock('./org-lens-people.service', () => ({
   OrgLensPeopleService: class {
     public getAllEmployeesInternal = getAllEmployeesInternal;
+    public resolveOrgScope = resolveOrgScope;
     public getFormerUsernames = getFormerUsernames;
     public getTeamMemberPersonKeys = getTeamMemberPersonKeys;
   },
@@ -114,6 +117,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   ...(await vi.importActual<object>('@lfx-one/shared/constants/org-commit-filters.constants')),
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-people.constants')),
   VALKEY_CACHE: {
     ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v6',
     ORG_LENS_PERUSER_TTL_SECONDS: 30,
@@ -239,6 +243,8 @@ beforeEach(() => {
   cache.encodedRows = null;
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
+  // The scope served (lfx-self-serve-ops#1219): `all` unless a test grants the account an Insights organization.
+  resolveOrgScope.mockResolvedValue('all');
   getFormerUsernames.mockResolvedValue([]);
   getTeamMemberPersonKeys.mockResolvedValue({ excluded: null, unavailable: false });
   fetchAllOrgSeats.mockResolvedValue([]);
@@ -962,7 +968,9 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
       .mockResolvedValue(baseResponse([storedRow({ name: 'After Reassign' })]));
 
     const stale = run();
-    evictPerUserOrgFetch('org-people-dir:v6:365d:all', 'tester', ACCOUNT);
+    // The read resolves its organization scope before it starts the computation an eviction drops.
+    await vi.waitFor(() => expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1));
+    evictPerUserOrgFetch('org-people-dir:v6:365d:all:all', 'tester', ACCOUNT);
     expect((await run()).rows[0].name).toBe('After Reassign');
 
     release(baseResponse([storedRow({ name: 'Before Reassign' })]));
@@ -988,10 +996,10 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await recent).rows[0].name).toBe('Last 30 Days');
     expect(allTime.rows[0].name).toBe('All Time');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, '30d', 'all'],
-      [ACCOUNT, 'all', 'all'],
+      [ACCOUNT, '30d', 'all', 'all'],
+      [ACCOUNT, 'all', 'all', 'all'],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v6:30d:all', 'org-people-dir:v6:all:all']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:30d:all:all', 'org-people-dir:v6:all:all:all']);
   });
 
   it('keeps each project scope apart, while one entry serves every commit scope and metric, projected per request', async () => {
@@ -1006,13 +1014,13 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
 
     expect([commits, code, merged].map((response) => response.rows[0].commitsCount)).toEqual([10, 25, 4]);
     expect(code.stats.codeContributors).toBe(1);
-    expect(getAllEmployeesInternal.mock.calls).toEqual([[ACCOUNT, '365d', 'lf']]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v6:365d:lf', 'org-people-dir:v6:365d:lf', 'org-people-dir:v6:365d:lf']);
+    expect(getAllEmployeesInternal.mock.calls).toEqual([[ACCOUNT, '365d', 'lf', 'all']]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:365d:lf:all', 'org-people-dir:v6:365d:lf:all', 'org-people-dir:v6:365d:lf:all']);
 
     cache.entry = null;
     expect((await run('365d', { ...FILTERS, projectScope: 'non_lf' })).rows[0].name).toBe('Non-LF');
-    expect(getAllEmployeesInternal).toHaveBeenLastCalledWith(ACCOUNT, '365d', 'non_lf');
-    expect(cache.namespaces.at(-1)).toBe('org-people-dir:v6:365d:non_lf');
+    expect(getAllEmployeesInternal).toHaveBeenLastCalledWith(ACCOUNT, '365d', 'non_lf', 'all');
+    expect(cache.namespaces.at(-1)).toBe('org-people-dir:v6:365d:non_lf:all');
   });
 
   it('serves the unranged roster (no range) from its own cache namespace and stored read', async () => {
@@ -1023,10 +1031,10 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     expect((await run(null)).rows[0].name).toBe('Roster');
     expect((await run('365d')).rows[0].name).toBe('Ranged');
     expect(getAllEmployeesInternal.mock.calls).toEqual([
-      [ACCOUNT, null, 'all'],
-      [ACCOUNT, '365d', 'all'],
+      [ACCOUNT, null, 'all', 'all'],
+      [ACCOUNT, '365d', 'all', 'all'],
     ]);
-    expect(cache.namespaces).toEqual(['org-people-dir:v6:roster', 'org-people-dir:v6:365d:all']);
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:roster', 'org-people-dir:v6:365d:all:all']);
   });
 });
 
@@ -1083,7 +1091,7 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
 
     expect(cache.namespaces).toEqual(['org-people-dir:v6:roster', 'org-people-dir:v6:roster']);
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
-    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all', 'all');
     expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
     for (const response of [nonLf, picker]) {
       expect(response.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Sam Seat']);
@@ -1116,7 +1124,7 @@ describe('OrgPeopleDirectoryService.getLive — LF engagement under the non-LF p
 
     const picker = await run(null, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' });
 
-    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all');
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all', 'all');
     expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
     expect(fetchAllOrgSeats).toHaveBeenCalledTimes(1);
     expect(picker.rows.map((row) => row.name).sort()).toEqual(['Dano Qualls', 'Devon Clarke', 'Kay Cee', 'Nina Coder', 'Sam Seat']);
@@ -1389,5 +1397,42 @@ describe('OrgPeopleDirectoryService.getLive — former employees who still hold 
     expect(recovered.rows.find((row) => row.lfUsername === 'grace')?.isFormer).toBe(true);
     expect(recovered.rows.find((row) => row.lfUsername === 'ann')).toMatchObject({ email: 'ann@lfx-partner.example', title: 'Engineer' });
     expect(cache.entry).not.toBeNull();
+  });
+});
+
+// lfx-self-serve-ops#1219
+describe('OrgPeopleDirectoryService.getLive — organization scope', () => {
+  it('resolves the requested scope, insights by default, and keys and reads the ranged directory by the scope served', async () => {
+    resolveOrgScope.mockImplementation(async (_account: string, scope: string) => scope);
+
+    await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS);
+    await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '365d', FILTERS, 'exclude', 'all');
+
+    expect(resolveOrgScope.mock.calls).toEqual([
+      [ACCOUNT, 'insights'],
+      [ACCOUNT, 'all'],
+    ]);
+    expect(getAllEmployeesInternal.mock.calls).toEqual([
+      [ACCOUNT, '365d', 'all', 'insights'],
+      [ACCOUNT, '365d', 'all', 'all'],
+    ]);
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:365d:all:insights', 'org-people-dir:v6:365d:all:all']);
+  });
+
+  it('serves the all-organizations entry when an insights request resolves to all', async () => {
+    await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, '30d', FILTERS, 'exclude', 'insights');
+
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, '30d', 'all', 'all');
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:30d:all:all']);
+  });
+
+  it('leaves the unranged roster unscoped, without resolving the scope', async () => {
+    resolveOrgScope.mockImplementation(async (_account: string, scope: string) => scope);
+
+    await new OrgPeopleDirectoryService().getLive(req, ACCOUNT, null, FILTERS, 'exclude', 'insights');
+
+    expect(resolveOrgScope).not.toHaveBeenCalled();
+    expect(getAllEmployeesInternal).toHaveBeenCalledWith(ACCOUNT, null, 'all', 'all');
+    expect(cache.namespaces).toEqual(['org-people-dir:v6:roster']);
   });
 });

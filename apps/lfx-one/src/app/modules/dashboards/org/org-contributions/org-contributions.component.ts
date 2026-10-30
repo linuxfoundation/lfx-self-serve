@@ -15,6 +15,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -26,6 +27,7 @@ import {
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
   ORG_ALL_FOUNDATIONS_LABEL,
@@ -37,6 +39,7 @@ import {
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_LABEL,
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
@@ -62,6 +65,7 @@ import type {
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
   OrgProjectScope,
+  OrgScopeFilter,
   OrgProjectScopeOption,
   OrgTeamMembersFilter,
   OrgTeamMembersOption,
@@ -73,13 +77,16 @@ import {
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
+  orgScopeUrlParam,
   orgTeamMembersUrlParam,
   parseOrgLensTimeRange,
+  parseOrgScopeFilter,
   parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
 } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -108,11 +115,13 @@ import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, d
     StatCardGridComponent,
     TableComponent,
     PersonDetailDrawerComponent,
+    OrgScopeSelectComponent,
   ],
   templateUrl: './org-contributions.component.html',
 })
 export class OrgContributionsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgScopeService = inject(OrgLensOrgScopeService);
   private readonly dataService = inject(ContributionsService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
@@ -150,6 +159,7 @@ export class OrgContributionsComponent {
         nonNullable: true,
       }
     ),
+    orgScope: new FormControl<OrgScopeFilter>(parseOrgScopeFilter(this.initialParams.get(ORG_SCOPE_QUERY_PARAM)) ?? DEFAULT_ORG_SCOPE, { nonNullable: true }),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -202,10 +212,15 @@ export class OrgContributionsComponent {
 
   protected readonly kpis = computed(() => this.response().kpis);
   protected readonly kpiCards: Signal<StatCardItem[]> = computed(() => this.initKpiCards());
-  /** States the counting rule and exact window under the KPI strip, so displayed figures can be matched to source data. */
-  protected readonly windowCaption: Signal<string> = computed(() =>
-    describeContributionsCaption(this.query(), this.companyName(), describeContributionsWindow(this.query().dateRange))
-  );
+  /**
+   * States the counting rule and exact window under the KPI strip, so displayed figures can be matched to source data,
+   * and the organization scope served: an account without an Insights organization is served every related one.
+   */
+  protected readonly windowCaption: Signal<string> = computed(() => {
+    const query = this.query();
+    const orgScope = this.orgScopeService.current()?.hasInsightsOrg === false ? 'all' : query.orgScope;
+    return describeContributionsCaption({ ...query, orgScope }, this.companyName(), describeContributionsWindow(query.dateRange));
+  });
   protected readonly metricLabels: Signal<ContributionsMetricLabels> = computed(() => CONTRIBUTIONS_METRIC_LABELS[this.query().metric]);
   private readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.query().metric]);
   protected readonly metricDefinition: Signal<string> = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.query()).metric]);
@@ -321,6 +336,17 @@ export class OrgContributionsComponent {
         if (teamMembers !== this.filterForm.controls.teamMembers.value) this.filterForm.patchValue({ teamMembers });
       });
 
+    // `?orgScope=` is shared with Overview, People and Project Detail (lfx-self-serve-ops#1219); same echo guard.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgScopeFilter(params.get(ORG_SCOPE_QUERY_PARAM)) ?? DEFAULT_ORG_SCOPE),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((orgScope) => {
+        if (orgScope !== this.filterForm.controls.orgScope.value) this.filterForm.patchValue({ orgScope });
+      });
+
     // The Employees selection came from the previous org's roster, so a change between two resolved orgs (a switch,
     // or Back/Forward across one) clears it; the switch navigation strips `?employees=` too. `initQuery` sends no
     // Employees from the moment the org changes until this runs; the clear then reaches the filter values at once, not
@@ -360,6 +386,7 @@ export class OrgContributionsComponent {
       range: query.dateRange,
       codeFilters: { projectScope: query.projectScope, commitScope: query.commitScope, metric: query.metric },
       teamMembers: query.teamMembers,
+      orgScope: query.orgScope,
     });
   }
 
@@ -405,6 +432,7 @@ export class OrgContributionsComponent {
       projectScope: DEFAULT_ORG_COMMIT_FILTERS.projectScope,
       metric: DEFAULT_ORG_CODE_MEASURE,
       teamMembers: DEFAULT_ORG_TEAM_MEMBERS,
+      orgScope: DEFAULT_ORG_SCOPE,
     });
   }
 
@@ -430,6 +458,7 @@ export class OrgContributionsComponent {
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       employees: staleEmployees ? [] : (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
       teamMembers: values.teamMembers ?? DEFAULT_ORG_TEAM_MEMBERS,
+      orgScope: values.orgScope ?? DEFAULT_ORG_SCOPE,
       sort: this.sort(),
       dir: this.dir(),
       commitSort: this.commitSort(),
@@ -448,6 +477,7 @@ export class OrgContributionsComponent {
       query.projects.length > 0 ||
       query.employees.length > 0 ||
       query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS ||
+      query.orgScope !== DEFAULT_ORG_SCOPE ||
       !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
     );
   }
@@ -576,8 +606,14 @@ export class OrgContributionsComponent {
    * filters the user has already left.
    */
   private reconcileSelections(res: OrgContributionsResponse, query: OrgContributionsQuery): void {
-    const { dateRange, projectScope, foundation, teamMembers } = this.filterForm.getRawValue();
-    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation || teamMembers !== query.teamMembers) {
+    const { dateRange, projectScope, foundation, teamMembers, orgScope } = this.filterForm.getRawValue();
+    if (
+      dateRange !== query.dateRange ||
+      projectScope !== query.projectScope ||
+      foundation !== query.foundation ||
+      teamMembers !== query.teamMembers ||
+      orgScope !== query.orgScope
+    ) {
       return;
     }
     const control = this.filterForm.controls.foundation;
@@ -623,6 +659,7 @@ export class OrgContributionsComponent {
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
         [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(query.teamMembers),
+        [ORG_SCOPE_QUERY_PARAM]: orgScopeUrlParam(query.orgScope),
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
         commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,

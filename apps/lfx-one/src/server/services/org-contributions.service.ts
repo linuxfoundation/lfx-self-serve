@@ -21,6 +21,7 @@ import type {
   OrgContributionsQuery,
   OrgContributionsResponse,
   OrgLensTimeRange,
+  OrgLensOrgScope,
   SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
 import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
@@ -28,6 +29,7 @@ import { createHash } from 'crypto';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
+import { orgScopeColumn, orgScopeFlagPredicate, orgScopeRowPredicate, readOrgLensOrgScope, resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
@@ -39,7 +41,9 @@ const CODE_ACTIVITY_TABLE = 'ANALYTICS.PLATINUM_LFX_ONE.ORG_CODE_ACTIVITY_DAILY'
  * Code Contributions page data access (LFXV2-1894). Commits (metric `commits`, and the Commits feed under either
  * metric) read `ORG_CODE_CONTRIBUTIONS`, one row per authored commit SHA; metric `code` reads the KPI strip,
  * Repositories table and filter-option counts from `ORG_CODE_ACTIVITY_DAILY`. The Foundation and Project filters
- * match `foundation_id` and the project exactly, as People → Contributors does (lfx-self-serve#4559).
+ * match `foundation_id` and the project exactly, as People → Contributors does (lfx-self-serve#4559). Under the
+ * `insights` organization scope (lfx-self-serve-ops#1219) every read keeps the Insights organization's code in
+ * repositories LFX Insights counts: commits flagged `is_insights_scope`, and code activity's `insights_` counts.
  */
 export class OrgContributionsService {
   private readonly snowflakeService: SnowflakeService;
@@ -48,11 +52,18 @@ export class OrgContributionsService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
+  /** The account's organization scope for the Organization scope picker (lfx-self-serve-ops#1219). */
+  public getOrgScope(accountId: string): Promise<OrgLensOrgScope> {
+    return readOrgLensOrgScope(this.snowflakeService, accountId);
+  }
+
   /** KPI strip + filter options + server-paginated Repositories table + Commits feed. */
-  public async getContributions(accountId: string, query: OrgContributionsQuery): Promise<OrgContributionsResponse> {
+  public async getContributions(accountId: string, requested: OrgContributionsQuery): Promise<OrgContributionsResponse> {
     if (!accountId) {
-      return emptyResponse(accountId, query.dateRange);
+      return emptyResponse(accountId, requested.dateRange);
     }
+    // The scope served, not the one asked: an account without an Insights organization reads (and caches) `all`.
+    const query: OrgContributionsQuery = { ...requested, orgScope: await resolveOrgScope(this.snowflakeService, accountId, requested.orgScope) };
 
     // `v5`: exact project match, the foundation filter and foundation options (lfx-self-serve#4559), and filter arrays
     // delimited by JSON in the signature. A payload read while the team-member flag (team members served) or the non-team
@@ -149,7 +160,7 @@ export class OrgContributionsService {
       SELECT
         COUNT(DISTINCT COALESCE(project_id, project_slug, project_name)) AS PROJECTS_WITH_ACTIVITY,
         COUNT(DISTINCT repository_url) AS REPOSITORIES,
-        COALESCE(SUM(code_activities), 0) AS COMMITS
+        COALESCE(SUM(${scope.codeActivities}), 0) AS COMMITS
       FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
@@ -221,10 +232,10 @@ export class OrgContributionsService {
       'get_org_lens_contributions_first_commit',
       (firstCommit) =>
         firstCommit === 'exclude'
-          ? this.snowflakeService.execute<ContributionsRepoRow>(sql(ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN), binds, {
+          ? this.snowflakeService.execute<ContributionsRepoRow>(sql(orgScopeColumn(query.orgScope, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN)), binds, {
               expectInvalidIdentifier: [ORG_CDP_TEAM_MEMBER_COLUMN, ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN],
             })
-          : this.snowflakeService.execute<ContributionsRepoRow>(sql('org_repo_first_commit_ts'), binds, scope.queryOptions),
+          : this.snowflakeService.execute<ContributionsRepoRow>(sql(orgScopeColumn(query.orgScope, 'org_repo_first_commit_ts')), binds, scope.queryOptions),
       ORG_REPO_FIRST_NON_TEAM_COMMIT_COLUMN
     );
     return { rows: read.value.rows, firstCommitUnavailable: read.teamMembersUnavailable };
@@ -251,6 +262,7 @@ export class OrgContributionsService {
         FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
           ${orgTeamMembersPredicate(query.teamMembers)}
+          ${orgScopeRowPredicate(query.orgScope, 'insights_code_activities')}
         GROUP BY repository_url
       ),
       repo_agg AS (
@@ -262,7 +274,7 @@ export class OrgContributionsService {
           ANY_VALUE(project_slug) AS project_slug,
           ANY_VALUE(project_logo) AS project_logo,
           ANY_VALUE(source) AS source,
-          SUM(code_activities) AS commits,
+          SUM(${scope.codeActivities}) AS commits,
           MAX(activity_date) AS last_commit_ts
         FROM ${CODE_ACTIVITY_TABLE}
         WHERE account_id = ?
@@ -407,7 +419,7 @@ export class OrgContributionsService {
         ANY_VALUE(project_slug) AS project_slug,
         ANY_VALUE(project_name) AS project_name,
         ANY_VALUE(foundation_id) AS foundation_id,
-        SUM(code_activities) AS commits
+        SUM(${scope.codeActivities}) AS commits
       FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
@@ -443,7 +455,7 @@ export class OrgContributionsService {
       SELECT
         member_id,
         ANY_VALUE(member_display_name) AS member_display_name,
-        SUM(code_activities) AS commits
+        SUM(${scope.codeActivities}) AS commits
       FROM ${CODE_ACTIVITY_TABLE}
       WHERE account_id = ?
         ${scope.datePredicate}
@@ -470,6 +482,8 @@ interface ScopeFilters {
   binds: string[];
   /** Snowflake options of every read: under Exclude team members, a missing flag column is expected (lfx-self-serve#4685). */
   queryOptions: SnowflakeQueryOptions | undefined;
+  /** The code-activity count column of the organization scope (`code_activities`, or its `insights_` twin). */
+  codeActivities: string;
 }
 
 interface SearchFilter {
@@ -492,15 +506,29 @@ function viewAwarePagination(query: OrgContributionsQuery, tab: ContributionsVie
   return { page: 1, size: 1 };
 }
 
-/** Filters over `ORG_CODE_CONTRIBUTIONS` (one row per authored commit SHA). */
+/**
+ * Filters over `ORG_CODE_CONTRIBUTIONS` (one row per authored commit SHA). Under `insights` only commits flagged
+ * `is_insights_scope` are read, and "merged" is the Insights scope's own flag.
+ */
 function buildCommitScopeFilters(query: OrgContributionsQuery): ScopeFilters {
-  const mergedPredicate = query.commitScope === 'merged' ? 'AND is_merged = TRUE' : '';
-  return buildScopeFilters(query, dateRangePredicate(query.dateRange), `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate}`);
+  const mergedPredicate = query.commitScope === 'merged' ? `AND ${orgScopeColumn(query.orgScope, 'is_merged')} = TRUE` : '';
+  return buildScopeFilters(
+    query,
+    dateRangePredicate(query.dateRange),
+    `${orgProjectScopePredicate(query.projectScope)} ${mergedPredicate} ${orgScopeFlagPredicate(query.orgScope)}`
+  );
 }
 
-/** Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project, foundation and member columns; commit scope has no meaning for code activity. */
+/**
+ * Filters over `ORG_CODE_ACTIVITY_DAILY`, which carries the same project, foundation and member columns; commit scope has
+ * no meaning for code activity. Under `insights` only rows with Insights-scoped code are read.
+ */
 function buildCodeScopeFilters(query: OrgContributionsQuery): ScopeFilters {
-  return buildScopeFilters(query, activityDatePredicate(query.dateRange), orgProjectScopePredicate(query.projectScope));
+  return buildScopeFilters(
+    query,
+    activityDatePredicate(query.dateRange),
+    `${orgProjectScopePredicate(query.projectScope)} ${orgScopeRowPredicate(query.orgScope, 'insights_code_activities')}`
+  );
 }
 
 /** Every read applies `scopePredicate`, so the team-members exclusion rides along with the project (and commit) scope. */
@@ -520,6 +548,7 @@ function buildScopeFilters(query: OrgContributionsQuery, datePredicate: string, 
     employeePredicate,
     binds,
     queryOptions: orgTeamMembersQueryOptions(query.teamMembers),
+    codeActivities: orgScopeColumn(query.orgScope, 'code_activities'),
   };
 }
 
@@ -666,6 +695,7 @@ function contributionsSignature(query: OrgContributionsQuery): string {
     [...query.projects].sort(),
     [...query.employees].sort(),
     query.teamMembers,
+    query.orgScope,
   ];
   return createHash('sha256').update(JSON.stringify(parts), 'utf8').digest('hex');
 }

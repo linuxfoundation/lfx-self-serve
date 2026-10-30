@@ -40,6 +40,7 @@ import type {
   OrgLensTrendBlock,
   OrgMaintainerRolesCountRow,
   OrgOrganizationMaintainerRolesRow,
+  OrgScopeFilter,
   OrgTeamMembersFilter,
   SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
@@ -47,6 +48,7 @@ import { buildInsightsUrl, normalizeHealthScoreCategoryV2 } from '@lfx-one/share
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { readOrgLensOrgScope, resolveOrgScope } from '../helpers/org-scope.helper';
 import { orgTeamMembersPredicate, orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { clampInteger, escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
@@ -231,6 +233,15 @@ interface TrendSeries {
   combined: number[];
 }
 
+/**
+ * Which leaderboard rows are the viewing organization's (lfx-self-serve-ops#1219): every row carrying the account
+ * under `all`, and only the account's LFX Insights organization's row under `insights` (`insightsOrgId` set).
+ */
+interface ViewingOrg {
+  accountId: string;
+  insightsOrgId: string | null;
+}
+
 interface ActivityBoardRow {
   BOARD_TYPE: string;
   ORG_ORGANIZATION_ID: string | null;
@@ -404,6 +415,11 @@ export class OrgLensProjectDetailService {
   // shipped component maps points to a fixed 36-month label axis by position and slices per range.
   private static readonly sparklineMonths = 36;
 
+  // Cards whose counts lf-dbt recomputes over the Insights organization's activity (lfx-self-serve-ops#1219): their
+  // card figures, sparkline series, drawer totals and rosters follow the organization scope; every other card does not.
+  private static readonly orgScopedCardKeys: Record<string, true> = { contributors: true, commits: true, 'pull-requests': true };
+  private static readonly orgScopedMetricKeysSql = "METRIC_KEY IN ('contributors', 'commits', 'pull-requests')";
+
   // Static drawer definition metadata for the 14 cards (LFXV2-1885 DN9 Phase 1): definition copy,
   // total-column semantics, table headers, project-total aggregation, and the ecosystem cards'
   // static source label. Technical cards' data source is derived from the platforms model per project.
@@ -539,9 +555,11 @@ export class OrgLensProjectDetailService {
     cardKey: string,
     range: OrgLensLeaderboardTimeRange,
     page: number,
-    pageSize: number
+    pageSize: number,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLensCardRosterPage> {
-    const provider = this.rosterProvider(cardKey, range, DEFAULT_ORG_TEAM_MEMBERS);
+    const scope = await this.resolveCardScope(orgUid, cardKey, orgScope);
+    const provider = this.rosterProvider(cardKey, range, DEFAULT_ORG_TEAM_MEMBERS, scope);
     if (provider === null) return { rows: [], total: 0 };
 
     const slug = projectSlug.trim().toLowerCase();
@@ -551,7 +569,7 @@ export class OrgLensProjectDetailService {
 
     // `v3`: the maintainers roster leaves CDP team members' roles out, as the card count does (lfx-self-serve#4685).
     // (`v2`: the maintainers roster is the account's maintainer roles following the toggle, lfx-self-serve#4482.)
-    const cacheKey = `project-detail-roster:v3:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}`;
+    const cacheKey = `project-detail-roster:v3:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}${this.cardScopeKeySuffix(cardKey, scope)}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardRosterPage>(key, OrgLensProjectDetailService.isRosterPage);
@@ -560,7 +578,7 @@ export class OrgLensProjectDetailService {
 
     // A missing team-member flag pages every role (team members included); like a missing table, it is never stored.
     const read = await readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_lens_project_detail_roster', (teamMembers) =>
-      this.readRoster(this.rosterProvider(cardKey, range, teamMembers) ?? provider, orgUid, slug, safeSize, offset)
+      this.readRoster(this.rosterProvider(cardKey, range, teamMembers, scope) ?? provider, orgUid, slug, safeSize, offset)
     );
     if (key !== null && !read.value.degraded && !read.teamMembersUnavailable) {
       await valkeyService.setJson(key, read.value.page, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
@@ -591,14 +609,20 @@ export class OrgLensProjectDetailService {
     return block;
   }
 
-  public async getInfluenceBlock(orgUid: string, projectSlug: string, range: OrgLensLeaderboardTimeRange): Promise<OrgLensInfluenceBlock | null> {
+  public async getInfluenceBlock(
+    orgUid: string,
+    projectSlug: string,
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgLensInfluenceBlock | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
     // `v6`: the Maintainer roles sparkline reads the `maintainer-roles` series of the shared sparkline tables, its
     // account line without CDP team members' roles (lf-dbt#3149). (`v5`: the card count and its sparkline series leave
     // CDP team members out, lfx-self-serve#4685; `v4`: the maintainers sparkline counts maintainer roles following the
     // toggle, lfx-self-serve#4605.)
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v6:${this.paramSignature([slug, range])}`);
+    const { scope, viewing: viewingOrg } = await this.resolveScope(orgUid, orgScope);
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v6:${this.paramSignature([slug, range])}:${scope}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -616,12 +640,12 @@ export class OrgLensProjectDetailService {
     // `all` reads the adaptive lifetime-bucketed model and carries its own variable `periods[]` axis
     // (LFXV2-2867 D9) — the same shared bucket axis the trend chart uses (D7).
     const [cardRows, maintainerRoles, viewing, sparkData] = await Promise.all([
-      this.fetchCards(orgUid, slug, timeRangeType),
+      this.fetchCards(orgUid, slug, timeRangeType, scope),
       this.fetchMaintainerRolesCount(orgUid, slug, range),
       // Only the viewing org's own row is needed here (for the section-title band chips), so fetch
       // that single row rather than the whole board — the board itself is now paged separately.
-      this.fetchViewingLeaderboardRow(orgUid, slug, timeRangeType).catch(() => null),
-      range === 'all' ? this.fetchLifetimeSparklineData(orgUid, slug) : this.fetchMonthlySparklineData(orgUid, slug),
+      this.fetchViewingLeaderboardRow(viewingOrg, slug, timeRangeType).catch(() => null),
+      range === 'all' ? this.fetchLifetimeSparklineData(orgUid, slug, scope) : this.fetchMonthlySparklineData(orgUid, slug, scope),
     ]);
 
     const cards = cardRows[0] ?? null;
@@ -704,9 +728,10 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLensLeaderboardPage | null> {
-    return this.fetchBoardPage(orgUid, projectSlug, range, 'technical', metric, page, pageSize, search);
+    return this.fetchBoardPage(orgUid, projectSlug, range, 'technical', metric, page, pageSize, search, orgScope);
   }
 
   public async getEcosystemBoard(
@@ -716,21 +741,24 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLensLeaderboardPage | null> {
-    return this.fetchBoardPage(orgUid, projectSlug, range, 'ecosystem', metric, page, pageSize, search);
+    return this.fetchBoardPage(orgUid, projectSlug, range, 'ecosystem', metric, page, pageSize, search, orgScope);
   }
 
   public async getCardDrawer(
     orgUid: string,
     projectSlug: string,
     cardKey: string,
-    range: OrgLensLeaderboardTimeRange
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLensCardDetailSection | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
+    const scope = await this.resolveCardScope(orgUid, cardKey, orgScope);
     // `v3`: the maintainers total counts every company's maintainer roles following the toggle (lfx-self-serve#4605).
-    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v3:${this.paramSignature([slug, cardKey, range])}`);
+    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v3:${this.paramSignature([slug, cardKey, range])}${this.cardScopeKeySuffix(cardKey, scope)}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardDetailSection>(key, OrgLensProjectDetailService.isCardDetailSection);
       if (cached !== null) return cached;
@@ -741,7 +769,7 @@ export class OrgLensProjectDetailService {
 
     const isMaintainers = cardKey === 'maintainers';
     const [cardRows, platformRows, maintainerRolesTotal] = await Promise.all([
-      this.fetchCards(orgUid, slug, timeRangeType),
+      this.fetchCards(orgUid, slug, timeRangeType, scope),
       this.fetchPlatforms(slug, timeRangeType),
       isMaintainers ? this.fetchProjectMaintainerRolesTotal(slug, range) : Promise.resolve(null),
     ]);
@@ -776,7 +804,8 @@ export class OrgLensProjectDetailService {
     projectSlug: string,
     dimension: 'technical' | 'ecosystem',
     organizationId: string,
-    range: OrgLensLeaderboardTimeRange
+    range: OrgLensLeaderboardTimeRange,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLeaderboardDetailBreakdown | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
@@ -788,7 +817,9 @@ export class OrgLensProjectDetailService {
     // `v3`: the clicked organization's maintainer roles (the N of "N of M") leave CDP team members out; every company's
     // total (M) stays inclusive (lfx-self-serve#4685). (`v2`: the maintainer category counts maintainer roles following
     // the toggle, lfx-self-serve#4605.)
-    const cacheKey = `project-detail-breakdown-${dimension}:v3:${this.paramSignature([slug, range, organizationId])}`;
+    // Own-organization status follows the organization scope (lfx-self-serve-ops#1219), so the key carries it.
+    const { scope, viewing } = await this.resolveScope(orgUid, orgScope);
+    const cacheKey = `project-detail-breakdown-${dimension}:v3:${this.paramSignature([slug, range, organizationId])}:${scope}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLeaderboardDetailBreakdown>(key, OrgLensProjectDetailService.isLeaderboardBreakdown);
@@ -801,7 +832,7 @@ export class OrgLensProjectDetailService {
 
     const row = await this.fetchBreakdownRow(slug, timeRangeType, organizationId);
     if (row === null) return null;
-    const isOwnOrganization = row.ACCOUNT_ID === orgUid;
+    const isOwnOrganization = this.isViewingRow(viewing, row.ACCOUNT_ID, organizationId);
 
     const readsMaintainerRoles = this.categorySources(dimension).some((source) => source.countsMaintainerRoles);
     const [position, activitySharePercent, maintainerRoles] = await Promise.all([
@@ -856,7 +887,8 @@ export class OrgLensProjectDetailService {
     metric: OrgLensLeaderboardMetric,
     page: number,
     pageSize: number,
-    search: string
+    search: string,
+    orgScope: OrgScopeFilter
   ): Promise<OrgLensLeaderboardPage | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
@@ -864,8 +896,10 @@ export class OrgLensProjectDetailService {
     const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
     const term = search.trim();
+    // The rows are the same under both scopes; only which row is flagged as the viewing organization differs.
+    const { scope, viewing } = await this.resolveScope(orgUid, orgScope);
 
-    const cacheKey = `project-detail-board-${dimension}-${metric}:${this.paramSignature([slug, range, safePage, safeSize, term.toLowerCase()])}`;
+    const cacheKey = `project-detail-board-${dimension}-${metric}:${this.paramSignature([slug, range, safePage, safeSize, term.toLowerCase()])}:${scope}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensLeaderboardPage>(key, OrgLensProjectDetailService.isLeaderboardPage);
@@ -884,8 +918,8 @@ export class OrgLensProjectDetailService {
     } else {
       const { rows, total } =
         metric === 'activity'
-          ? await this.fetchActivityBoardPage(slug, timeRangeType, dimension, orgUid, safeSize, offset, term)
-          : await this.fetchInfluenceBoardPage(slug, timeRangeType, dimension, orgUid, isNonLf, safeSize, offset, term);
+          ? await this.fetchActivityBoardPage(slug, timeRangeType, dimension, viewing, safeSize, offset, term)
+          : await this.fetchInfluenceBoardPage(slug, timeRangeType, dimension, viewing, isNonLf, safeSize, offset, term);
       block = { rows, total, isNonLfProject: isNonLf };
     }
 
@@ -905,7 +939,7 @@ export class OrgLensProjectDetailService {
     slug: string,
     timeRangeType: string,
     dimension: 'technical' | 'ecosystem',
-    orgUid: string,
+    viewing: ViewingOrg,
     isNonLf: boolean,
     limit: number,
     offset: number,
@@ -947,7 +981,7 @@ export class OrgLensProjectDetailService {
       this.snowflakeService.execute<{ N: number }>(countSql, countParams),
     ]);
     return {
-      rows: pageResult.rows.map((row) => this.mapInfluenceRow(row, orgUid, isNonLf)),
+      rows: pageResult.rows.map((row) => this.mapInfluenceRow(row, viewing, isNonLf)),
       total: this.num(countResult.rows[0]?.N ?? 0),
     };
   }
@@ -961,7 +995,7 @@ export class OrgLensProjectDetailService {
     slug: string,
     timeRangeType: string,
     dimension: 'technical' | 'ecosystem',
-    orgUid: string,
+    viewing: ViewingOrg,
     limit: number,
     offset: number,
     search: string
@@ -999,7 +1033,7 @@ export class OrgLensProjectDetailService {
       this.snowflakeService.execute<{ N: number }>(countSql, params),
     ]);
     return {
-      rows: pageResult.rows.map((row) => this.mapActivityRow(row, dimension, orgUid)),
+      rows: pageResult.rows.map((row) => this.mapActivityRow(row, dimension, viewing)),
       total: this.num(countResult.rows[0]?.N ?? 0),
     };
   }
@@ -1177,15 +1211,20 @@ export class OrgLensProjectDetailService {
     return result.rows[0] ?? null;
   }
 
-  private async fetchCards(orgUid: string, slug: string, timeRangeType: string): Promise<CardsRow[]> {
+  /**
+   * Under `insights` the contributors, commits and pull-request figures and totals read lf-dbt's Insights-scoped twins,
+   * aliased to the same names (lfx-self-serve-ops#1219); every other card column is unscoped.
+   */
+  private async fetchCards(orgUid: string, slug: string, timeRangeType: string, scope: OrgScopeFilter): Promise<CardsRow[]> {
+    const tech = (column: string): string => (scope === 'insights' ? `INSIGHTS_${column} AS ${column}` : column);
     const result = await this.snowflakeService.execute<CardsRow>(
       `
-        SELECT TECH_CONTRIBUTORS_PCT, TECH_COMMITS_PCT, TECH_PR_OPENED_PCT,
+        SELECT ${tech('TECH_CONTRIBUTORS_PCT')}, ${tech('TECH_COMMITS_PCT')}, ${tech('TECH_PR_OPENED_PCT')},
                TECH_AVG_MERGE_TIME_SPEED_PCT, TECH_AVG_MERGE_TIME_SPEED_CATEGORY,
                ECO_COLLABORATION_PCT, ECO_MEETING_ATTENDANCE_COUNT, ECO_BOARD_MEMBERS_COUNT,
                ECO_COMMITTEE_MEMBERS_PCT, ECO_EVENT_ATTENDANCE_PCT, ECO_EVENT_SPEAKERS_PCT,
                ECO_EVENT_SPONSORSHIPS_PCT, ECO_MEETUP_ATTENDANCE_PCT, ECO_CERTIFIED_INDIVIDUALS_PCT,
-               TECH_CONTRIBUTORS_TOTAL, TECH_COMMITS_TOTAL, TECH_PR_OPENED_TOTAL,
+               ${tech('TECH_CONTRIBUTORS_TOTAL')}, ${tech('TECH_COMMITS_TOTAL')}, ${tech('TECH_PR_OPENED_TOTAL')},
                TECH_AVG_MERGE_TIME_SECONDS,
                ECO_COLLABORATION_TOTAL, ECO_MEETING_ATTENDANCE_TOTAL, ECO_BOARD_MEMBERS_TOTAL,
                ECO_COMMITTEE_MEMBERS_TOTAL, ECO_EVENT_ATTENDANCE_TOTAL, ECO_EVENT_SPEAKERS_TOTAL,
@@ -1286,25 +1325,32 @@ export class OrgLensProjectDetailService {
    * `maintainer-roles` series' account value is lf-dbt's count without CDP team members' roles (lfx-self-serve#4685),
    * aliased to ORG_VALUE; the column is NULL on every other series, which keep ORG_VALUE, and the grey all-companies line
    * (PROJECT_VALUE) stays inclusive. Until the column is built the read falls back to ORG_VALUE for every series (team
-   * members' roles counted) and reports `teamMembersUnavailable`, so its absence never blanks the other cards.
+   * members' roles counted) and reports `teamMembersUnavailable`, so its absence never blanks the other cards. Under
+   * `insights` the contributors, commits and pull-request series read the Insights-scoped values, NULL on every other
+   * series (lfx-self-serve-ops#1219), so those keep their values.
    */
   private async fetchSparklineRows<T>(
     orgUid: string,
     slug: string,
     table: string,
-    periodColumn: 'SPAN_MONTH' | 'BUCKET_INDEX'
+    periodColumn: 'SPAN_MONTH' | 'BUCKET_INDEX',
+    scope: OrgScopeFilter
   ): Promise<{ value: T[]; teamMembersUnavailable: boolean }> {
     return readWithOrgTeamMembersFallback(
       DEFAULT_ORG_TEAM_MEMBERS,
       'get_org_lens_project_detail_sparklines',
       async (teamMembers) => {
-        const orgValue =
+        const accountValue =
           teamMembers === 'exclude'
-            ? `IFF(METRIC_KEY = '${ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY}', COALESCE(${ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN}, ORG_VALUE), ORG_VALUE) AS ORG_VALUE`
+            ? `IFF(METRIC_KEY = '${ORG_LENS_PROJECT_MAINTAINER_ROLES_METRIC_KEY}', COALESCE(${ORG_LENS_PROJECT_ORG_VALUE_EXCLUDING_COLUMN}, ORG_VALUE), ORG_VALUE)`
             : 'ORG_VALUE';
+        const scopedMetrics = OrgLensProjectDetailService.orgScopedMetricKeysSql;
+        const scopedValue = scope === 'insights' ? `IFF(${scopedMetrics}, INSIGHTS_ORG_VALUE, ${accountValue})` : accountValue;
+        const orgValue = scopedValue === 'ORG_VALUE' ? scopedValue : `${scopedValue} AS ORG_VALUE`;
+        const projectValue = scope === 'insights' ? `IFF(${scopedMetrics}, INSIGHTS_PROJECT_VALUE, PROJECT_VALUE) AS PROJECT_VALUE` : 'PROJECT_VALUE';
         const result = await this.snowflakeService.execute<T>(
           `
-            SELECT METRIC_KEY, ${periodColumn}, ${orgValue}, PROJECT_VALUE
+            SELECT METRIC_KEY, ${periodColumn}, ${orgValue}, ${projectValue}
             FROM ${table}
             WHERE ACCOUNT_ID = ? AND PROJECT_SLUG = ?
           `,
@@ -1318,8 +1364,8 @@ export class OrgLensProjectDetailService {
   }
 
   /** 1y/2y card sparklines: trailing monthly values on the fixed month axis (client slices to range). */
-  private async fetchMonthlySparklineData(orgUid: string, slug: string): Promise<SparklineData> {
-    const rows = await this.fetchSparklineRows<SparkRow>(orgUid, slug, this.sparklinesTable(), 'SPAN_MONTH');
+  private async fetchMonthlySparklineData(orgUid: string, slug: string, scope: OrgScopeFilter): Promise<SparklineData> {
+    const rows = await this.fetchSparklineRows<SparkRow>(orgUid, slug, this.sparklinesTable(), 'SPAN_MONTH', scope);
     return { index: this.buildSparklineIndex(rows.value), axis: this.monthAxis(), teamMembersUnavailable: rows.teamMembersUnavailable };
   }
 
@@ -1328,9 +1374,9 @@ export class OrgLensProjectDetailService {
    * axis. The axis (and therefore `periods[]`) comes from the bucket spine so every card lines up
    * with the trend and with each other even when a metric has no data in some buckets.
    */
-  private async fetchLifetimeSparklineData(orgUid: string, slug: string): Promise<SparklineData> {
+  private async fetchLifetimeSparklineData(orgUid: string, slug: string, scope: OrgScopeFilter): Promise<SparklineData> {
     const [rows, axis] = await Promise.all([
-      this.fetchSparklineRows<SparkLifetimeRow>(orgUid, slug, this.sparklinesLifetimeTable(), 'BUCKET_INDEX'),
+      this.fetchSparklineRows<SparkLifetimeRow>(orgUid, slug, this.sparklinesLifetimeTable(), 'BUCKET_INDEX', scope),
       this.fetchLifetimeAxis(slug),
     ]);
     return {
@@ -1633,9 +1679,11 @@ export class OrgLensProjectDetailService {
   /**
    * Per-card roster provider (wrapper table + projection + optional predicate + order + row mapping); null when a card
    * has no roster. `teamMembers` applies to the maintainers roster, the account's roles: under `exclude` CDP team
-   * members' roles are left out, as the card count does (lfx-self-serve#4685).
+   * members' roles are left out, as the card count does (lfx-self-serve#4685). `scope` applies to the contributors,
+   * commits and pull-request rosters: under `insights` they keep the Insights-scoped rows (lfx-self-serve-ops#1219).
    */
-  private rosterProvider(cardKey: string, range: OrgLensLeaderboardTimeRange, teamMembers: OrgTeamMembersFilter): RosterProvider | null {
+  private rosterProvider(cardKey: string, range: OrgLensLeaderboardTimeRange, teamMembers: OrgTeamMembersFilter, scope: OrgScopeFilter): RosterProvider | null {
+    const insights = scope === 'insights';
     switch (cardKey) {
       case 'board-members':
         return {
@@ -1739,8 +1787,9 @@ export class OrgLensProjectDetailService {
       case 'contributors':
         return {
           table: this.contributorsTable(),
-          select: 'PERSON_NAME, PERSON_AVATAR_URL, USERNAME, FIRST_ACTIVITY_TS, MOST_RECENT_ACTIVITY_TS, CONTRIBUTIONS_COUNT',
-          orderBy: 'CONTRIBUTIONS_COUNT DESC NULLS LAST',
+          select: `PERSON_NAME, PERSON_AVATAR_URL, USERNAME, FIRST_ACTIVITY_TS, MOST_RECENT_ACTIVITY_TS, ${insights ? 'INSIGHTS_CONTRIBUTIONS_COUNT AS CONTRIBUTIONS_COUNT' : 'CONTRIBUTIONS_COUNT'}`,
+          ...(insights ? { where: 'INSIGHTS_CONTRIBUTIONS_COUNT > 0' } : {}),
+          orderBy: `${insights ? 'INSIGHTS_CONTRIBUTIONS_COUNT' : 'CONTRIBUTIONS_COUNT'} DESC NULLS LAST`,
           map: (r) => ({
             cells: [
               this.personCell(this.str(r['PERSON_NAME']), this.str(r['PERSON_AVATAR_URL'])),
@@ -1831,6 +1880,7 @@ export class OrgLensProjectDetailService {
         return {
           table: this.commitsTable(),
           select: 'REPOSITORY_GROUP, PERSON_NAME, PERSON_AVATAR_URL, COMMIT_DATE, COMMIT_MESSAGE',
+          ...(insights ? { where: 'COALESCE(IS_INSIGHTS_SCOPE, FALSE)' } : {}),
           orderBy: 'COMMIT_DATE DESC NULLS LAST',
           map: (r) => ({
             cells: [
@@ -1845,6 +1895,7 @@ export class OrgLensProjectDetailService {
         return {
           table: this.pullRequestsTable(),
           select: 'REPOSITORY_GROUP, PERSON_NAME, PERSON_AVATAR_URL, OPENED_DATE, PR_TITLE',
+          ...(insights ? { where: 'COALESCE(IS_INSIGHTS_SCOPE, FALSE)' } : {}),
           orderBy: 'OPENED_DATE DESC NULLS LAST',
           map: (r) => ({
             cells: [
@@ -2063,14 +2114,18 @@ export class OrgLensProjectDetailService {
     return series;
   }
 
-  /** The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. */
-  private async fetchViewingLeaderboardRow(orgUid: string, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
+  /**
+   * The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. Under `insights` it
+   * is the account's Insights organization's row (lfx-self-serve-ops#1219), else the account's best-ranked row.
+   */
+  private async fetchViewingLeaderboardRow(viewing: ViewingOrg, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
+    const byInsightsOrg = viewing.insightsOrgId !== null;
     const result = await this.snowflakeService.execute<LeaderboardRow>(
       `
         SELECT ORG_ACCOUNT_ID, ORG_NAME, ORG_LOGO_URL, SCORE_COMBINED, SCORE_TECHNICAL, SCORE_ECOSYSTEM,
                LEVEL_COMBINED, LEVEL_TECHNICAL, LEVEL_ECOSYSTEM, RANK
         FROM ${this.leaderboardTable()}
-        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ORG_ACCOUNT_ID = ?
+        WHERE PROJECT_SLUG = ? AND TIME_RANGE_TYPE = ? AND ${byInsightsOrg ? 'ORG_ORGANIZATION_ID' : 'ORG_ACCOUNT_ID'} = ?
         -- One Salesforce account can span multiple leaderboard rows (one per crowd.dev org); pick its
         -- best-ranked row deterministically so the Our-Influence band chips never flip between requests.
         -- ORG_ORGANIZATION_ID is the model's unique per-row grain key and breaks any
@@ -2078,13 +2133,13 @@ export class OrgLensProjectDetailService {
         ORDER BY RANK ASC NULLS LAST, SCORE_COMBINED DESC, ORG_NAME ASC, ORG_ORGANIZATION_ID ASC
         LIMIT 1
       `,
-      [slug, timeRangeType, orgUid]
+      [slug, timeRangeType, viewing.insightsOrgId ?? viewing.accountId]
     );
     return result.rows[0] ?? null;
   }
 
   /** Map a combined-leaderboard row to a Calculated Influence board row (scores + bands + rank). */
-  private mapInfluenceRow(row: LeaderboardRow, orgUid: string, isNonLf: boolean): OrgLensProjectLeaderboardRow {
+  private mapInfluenceRow(row: LeaderboardRow, viewing: ViewingOrg, isNonLf: boolean): OrgLensProjectLeaderboardRow {
     return {
       organizationId: row.ORG_ORGANIZATION_ID ?? '',
       orgName: row.ORG_NAME ?? '',
@@ -2105,12 +2160,12 @@ export class OrgLensProjectDetailService {
       // Rank is the DIM_RANK computed in fetchInfluenceBoardPage; leave undefined only if RANK is
       // somehow absent so the client never renders "#0" for a real row.
       warehouseRank: this.numOrNull(row.RANK) === null ? undefined : Math.round(this.num(row.RANK)),
-      isViewingOrg: row.ORG_ACCOUNT_ID === orgUid,
+      isViewingOrg: this.isViewingRow(viewing, row.ORG_ACCOUNT_ID, row.ORG_ORGANIZATION_ID),
     };
   }
 
   /** Map a gold-sourced activity board row to an Activity Count board row (total/pct + warehouse rank). */
-  private mapActivityRow(row: ActivityBoardRow, dimension: 'technical' | 'ecosystem', orgUid: string): OrgLensProjectLeaderboardRow {
+  private mapActivityRow(row: ActivityBoardRow, dimension: 'technical' | 'ecosystem', viewing: ViewingOrg): OrgLensProjectLeaderboardRow {
     const isContributions = dimension === 'technical';
     const total = Math.round(this.num(row.ACTIVITY_TOTAL));
     const pct = this.round1(this.num(row.ACTIVITY_PCT));
@@ -2127,8 +2182,29 @@ export class OrgLensProjectDetailService {
         collaborationsPct: isContributions ? 0 : pct,
       },
       warehouseRank: this.numOrNull(row.RANK) === null ? undefined : Math.round(this.num(row.RANK)),
-      isViewingOrg: row.ORG_ACCOUNT_ID === orgUid,
+      isViewingOrg: this.isViewingRow(viewing, row.ORG_ACCOUNT_ID, row.ORG_ORGANIZATION_ID),
     };
+  }
+
+  /** The effective organization scope and the viewing-organization rule it implies (lfx-self-serve-ops#1219). */
+  private async resolveScope(orgUid: string, orgScope: OrgScopeFilter): Promise<{ scope: OrgScopeFilter; viewing: ViewingOrg }> {
+    const scope = await resolveOrgScope(this.snowflakeService, orgUid, orgScope);
+    const insightsOrgId = scope === 'insights' ? (await readOrgLensOrgScope(this.snowflakeService, orgUid)).insightsOrgId : null;
+    return { scope, viewing: { accountId: orgUid, insightsOrgId } };
+  }
+
+  /** A card's effective scope: only the contributors, commits and pull-request cards are scoped; every other card reads `all`. */
+  private async resolveCardScope(orgUid: string, cardKey: string, orgScope: OrgScopeFilter): Promise<OrgScopeFilter> {
+    return OrgLensProjectDetailService.orgScopedCardKeys[cardKey] ? resolveOrgScope(this.snowflakeService, orgUid, orgScope) : 'all';
+  }
+
+  /** Scoped cards' cache keys carry the scope; every other card's key is unchanged. */
+  private cardScopeKeySuffix(cardKey: string, scope: OrgScopeFilter): string {
+    return OrgLensProjectDetailService.orgScopedCardKeys[cardKey] ? `:${scope}` : '';
+  }
+
+  private isViewingRow(viewing: ViewingOrg, accountId: string | null, organizationId: string | null): boolean {
+    return viewing.insightsOrgId === null ? accountId === viewing.accountId : organizationId === viewing.insightsOrgId;
   }
 
   private mapHero(row: HeroRow, slug: string, foundationLabel: string): OrgLensProjectHero {

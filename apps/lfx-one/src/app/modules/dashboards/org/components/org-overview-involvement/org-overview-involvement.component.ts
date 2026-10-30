@@ -3,8 +3,11 @@
 
 import { Component, computed, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
@@ -20,7 +23,8 @@ import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { distinctUntilChanged, map, Observable, of, switchMap, tap } from 'rxjs';
+import { readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
+import { combineLatest, distinctUntilChanged, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import type {
   DashboardMetricCard,
@@ -30,19 +34,22 @@ import type {
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgInvolvementMaintainersMonthlyResponse,
+  OrgScopeFilter,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
 
 @Component({
   selector: 'lfx-org-overview-involvement',
-  imports: [FilterPillsComponent, MetricCardComponent, ScrollShadowDirective],
+  imports: [FilterPillsComponent, MetricCardComponent, OrgScopeSelectComponent, ScrollShadowDirective],
   templateUrl: './org-overview-involvement.component.html',
   styleUrl: './org-overview-involvement.component.scss',
 })
 export class OrgOverviewInvolvementComponent {
   private readonly analyticsService = inject(OrgInvolvementAnalyticsService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
@@ -66,6 +73,15 @@ export class OrgOverviewInvolvementComponent {
     distinctUntilChanged()
   );
 
+  // Organization scope (lfx-self-serve-ops#1219): only the Active Contributors card reads code, so only it re-reads.
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
+  });
+  private readonly orgScope$: Observable<OrgScopeFilter> = this.scopeForm.controls.orgScope.valueChanges.pipe(
+    startWith(this.scopeForm.controls.orgScope.value),
+    distinctUntilChanged()
+  );
+
   private readonly coverageData = this.initializeCoverageData();
   private readonly maintainersData = this.initializeMaintainersData();
   private readonly contributorsData = this.initializeContributorsData();
@@ -85,6 +101,10 @@ export class OrgOverviewInvolvementComponent {
   private readonly trainingEnrollmentsCard = this.initializeTrainingEnrollmentsCard();
 
   public readonly primaryMetrics = this.initializePrimaryMetrics();
+
+  public constructor() {
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router);
+  }
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
@@ -108,9 +128,10 @@ export class OrgOverviewInvolvementComponent {
 
   private initializeContributorsData(): Signal<OrgInvolvementContributorsMonthlyResponse> {
     return this.buildOrgDataSignal(
-      (id) => this.analyticsService.getContributorsMonthly(id),
+      (id) => this.analyticsService.getContributorsMonthly(id, this.scopeForm.controls.orgScope.value),
       (accountId) => ({ accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] }),
-      this.contributorsLoading
+      this.contributorsLoading,
+      this.orgScope$
     );
   }
 
@@ -200,15 +221,19 @@ export class OrgOverviewInvolvementComponent {
     return allCards.filter((item) => item.category === filter).map((item) => item.card);
   }
 
-  /** Skip HTTP on empty accountId, echo accountId in the empty envelope, and rely on the service's catchError. */
+  /**
+   * Skip HTTP on empty accountId, echo accountId in the empty envelope, and rely on the service's catchError. `refresh$`
+   * re-runs the loader for a card whose read also depends on a picker (the organization scope).
+   */
   private buildOrgDataSignal<T extends { accountId: string }>(
     loader: (accountId: string) => Observable<T>,
     emptyValue: (accountId: string) => T,
-    loading: WritableSignal<boolean>
+    loading: WritableSignal<boolean>,
+    refresh$: Observable<unknown> = of(null)
   ): Signal<T> {
     return toSignal(
-      this.selectedAccountId$.pipe(
-        switchMap((accountId) => {
+      combineLatest([this.selectedAccountId$, refresh$]).pipe(
+        switchMap(([accountId]) => {
           if (!accountId) {
             loading.set(false);
             return of(emptyValue(accountId));

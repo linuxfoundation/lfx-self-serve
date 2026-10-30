@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_ORG_TEAM_MEMBERS, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, ORG_UNRANGED_ROSTER_FILTERS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
+  ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS,
+  ORG_UNRANGED_ROSTER_FILTERS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -20,6 +26,7 @@ import type {
   OrgLensTimeRange,
   OrgPersonSource,
   OrgProjectScope,
+  OrgScopeFilter,
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
@@ -250,11 +257,15 @@ export class OrgPeopleDirectoryService {
     accountId: string,
     range: OrgLensTimeRange | null,
     requestedFilters: OrgCommitFilters,
-    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
     const filters = range ? requestedFilters : ORG_UNRANGED_ROSTER_FILTERS;
     const username = getEffectiveUsername(req) ?? '';
-    const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope);
+    // The organization scope picks which code counts the stored rows carry and who is listed for code alone
+    // (lfx-self-serve-ops#1219), so it is part of the entry; the unranged roster is not scoped.
+    const scope = range ? await this.peopleService.resolveOrgScope(accountId, orgScope) : 'all';
+    const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope, scope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
@@ -270,7 +281,7 @@ export class OrgPeopleDirectoryService {
           accountId,
           VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
           async () => {
-            const live = await this.computeLive(req, accountId, range, filters.projectScope);
+            const live = await this.computeLive(req, accountId, range, filters.projectScope, scope);
             formerResolved = live.formerResolved;
             return toCompactDirectory(live.directory);
           },
@@ -292,7 +303,8 @@ export class OrgPeopleDirectoryService {
     req: Request,
     accountId: string,
     range: OrgLensTimeRange | null,
-    projectScope: OrgProjectScope
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
   ): Promise<{ directory: OrgAllEmployeesCountedResponse; formerResolved: boolean }> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
@@ -307,7 +319,7 @@ export class OrgPeopleDirectoryService {
     // so someone who left without credited code and still holds Org Lens access stays listed as current (a known gap).
     // The unranged picker roster is classified the same way, so the assignment pickers do not offer them.
     const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
-      this.peopleService.getAllEmployeesInternal(accountId, range, projectScope),
+      this.peopleService.getAllEmployeesInternal(accountId, range, projectScope, orgScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
       this.keyContactsService.getEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),

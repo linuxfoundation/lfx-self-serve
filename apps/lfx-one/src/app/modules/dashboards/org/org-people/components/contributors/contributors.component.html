@@ -92,6 +92,9 @@
         tooltipPosition="top"
         dataTest="org-people-contributors-team-members-filter" />
     </div>
+    <div class="w-full sm:w-60">
+      <lfx-org-scope-select [form]="filterForm" dataTest="org-people-contributors-org-scope-filter" />
+    </div>
     @if (canClearFilters()) {
       <button
         type="button"

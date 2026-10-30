@@ -15,6 +15,7 @@ import {
 import type { OrgLensLeaderboardMetric, OrgLensLeaderboardTimeRange } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
+import { parseOrgScope } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -45,9 +46,11 @@ export class OrgLensProjectDetailController {
     const { orgUid, projectSlug, range } = this.context(req);
     const startTime = logger.startOperation(req, 'get_org_lens_project_detail_influence', { org_uid: orgUid, project_slug: projectSlug, range });
     try {
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_influence');
+      logger.debug(req, 'get_org_lens_project_detail_influence', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_influence');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_influence');
-      const block = await this.service.getInfluenceBlock(orgUid, projectSlug, range);
+      const block = await this.service.getInfluenceBlock(orgUid, projectSlug, range, orgScope);
       this.sendBlock(req, res, 'get_org_lens_project_detail_influence', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);
@@ -79,9 +82,11 @@ export class OrgLensProjectDetailController {
       page_size: pageSize,
     });
     try {
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_technical');
+      logger.debug(req, 'get_org_lens_project_detail_board_technical', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_technical');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_technical');
-      const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range, metric, page, pageSize, search);
+      const block = await this.service.getTechnicalBoard(orgUid, projectSlug, range, metric, page, pageSize, search, orgScope);
       this.sendBlock(req, res, 'get_org_lens_project_detail_board_technical', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);
@@ -100,9 +105,11 @@ export class OrgLensProjectDetailController {
       page_size: pageSize,
     });
     try {
+      const orgScope = parseOrgScope(req, 'get_org_lens_project_detail_board_ecosystem');
+      logger.debug(req, 'get_org_lens_project_detail_board_ecosystem', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_project_detail_board_ecosystem');
       this.assertProjectSlug(projectSlug, 'get_org_lens_project_detail_board_ecosystem');
-      const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range, metric, page, pageSize, search);
+      const block = await this.service.getEcosystemBoard(orgUid, projectSlug, range, metric, page, pageSize, search, orgScope);
       this.sendBlock(req, res, 'get_org_lens_project_detail_board_ecosystem', startTime, orgUid, projectSlug, block);
     } catch (error) {
       next(error);
@@ -124,10 +131,12 @@ export class OrgLensProjectDetailController {
     const cardKey = req.params['cardKey'];
     const startTime = logger.startOperation(req, 'get_org_lens_card_drawer', { org_uid: orgUid, project_slug: projectSlug, card_key: cardKey, range });
     try {
+      const orgScope = parseOrgScope(req, 'get_org_lens_card_drawer');
+      logger.debug(req, 'get_org_lens_card_drawer', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_card_drawer');
       this.assertProjectSlug(projectSlug, 'get_org_lens_card_drawer');
       this.assertCardKey(cardKey, 'get_org_lens_card_drawer');
-      const section = await this.service.getCardDrawer(orgUid, projectSlug, cardKey, range);
+      const section = await this.service.getCardDrawer(orgUid, projectSlug, cardKey, range, orgScope);
       this.sendBlock(req, res, 'get_org_lens_card_drawer', startTime, orgUid, projectSlug, section);
     } catch (error) {
       next(error);
@@ -156,11 +165,13 @@ export class OrgLensProjectDetailController {
     });
 
     try {
+      const orgScope = parseOrgScope(req, 'get_org_lens_card_roster');
+      logger.debug(req, 'get_org_lens_card_roster', 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, 'get_org_lens_card_roster');
       this.assertProjectSlug(projectSlug, 'get_org_lens_card_roster');
       this.assertCardKey(cardKey, 'get_org_lens_card_roster');
 
-      const roster = await this.service.getCardRoster(orgUid, orgName, projectSlug, cardKey, range, page, pageSize);
+      const roster = await this.service.getCardRoster(orgUid, orgName, projectSlug, cardKey, range, page, pageSize, orgScope);
 
       logger.success(req, 'get_org_lens_card_roster', startTime, { org_uid: orgUid, project_slug: projectSlug, card_key: cardKey, total: roster.total });
       res.setHeader('Cache-Control', 'no-store');
@@ -189,10 +200,12 @@ export class OrgLensProjectDetailController {
       range,
     });
     try {
+      const orgScope = parseOrgScope(req, operation);
+      logger.debug(req, operation, 'Org scope', { org_scope: orgScope });
       assertOrgUid(orgUid, operation);
       this.assertProjectSlug(projectSlug, operation);
       this.assertOrganizationId(organizationId, operation);
-      const breakdown = await this.service.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range);
+      const breakdown = await this.service.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range, orgScope);
       this.sendBlock(req, res, operation, startTime, orgUid, projectSlug, breakdown);
     } catch (error) {
       next(error);

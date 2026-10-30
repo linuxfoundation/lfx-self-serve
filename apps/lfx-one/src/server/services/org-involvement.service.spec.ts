@@ -16,6 +16,9 @@ const { withOrgCache } = vi.hoisted(() => ({
 }));
 vi.mock('./valkey.service', () => ({ withOrgCache }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
+// The scope read is its own spec's concern; here it answers the pick, or `all` for an account without an Insights org.
+const { resolveOrgScope } = vi.hoisted(() => ({ resolveOrgScope: vi.fn(async (_snowflake: unknown, _accountId: string, scope: string) => scope) }));
+vi.mock('../helpers/org-scope.helper', async (importOriginal) => ({ ...(await importOriginal<object>()), resolveOrgScope }));
 vi.mock('./logger.service', () => ({ logger: { warning: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() } }));
 
 /** Snowflake's answer to a column lf-dbt has not built yet. */
@@ -178,15 +181,15 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
   });
 
   it('answers the live count as the headline and the modeled monthly counts as the trend, and stores the card', async () => {
-    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [310, 0], monthlyLabels: ['Jan 2030', 'Feb 2030'] });
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:all');
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(true);
   });
 
   it('counts distinct people with code in all projects over the last 2 years, team members left out, the Contributors default rule, binding only the account', async () => {
-    await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => !isContributorsTrend(String(query)))!;
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY');
@@ -201,7 +204,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
   });
 
   it("selects the trend's count without team members, so it agrees with the headline", async () => {
-    await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     const [sql, , options] = execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
     expect(sql).toContain('SELECT MONTH_START_DATE, UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
@@ -217,7 +220,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
       return isContributorsTrend(sql) ? { rows: [] } : { rows: [{ ACTIVE_CONTRIBUTORS: 890 }] };
     });
 
-    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     expect(response.totalActiveContributors).toBe(890);
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
@@ -231,7 +234,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
         : { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
     });
 
-    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [312], monthlyLabels: ['Jan 2030'] });
     const trendReads = execute.mock.calls.filter(([query]) => isContributorsTrend(String(query)));
@@ -240,7 +243,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
   });
 
   it("selects the trend from lf-dbt's view, binding only the account", async () => {
-    await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     const [sql, binds] = execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_CONTRIBUTORS_MONTHLY');
@@ -254,7 +257,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
       return { rows: [{ ACTIVE_CONTRIBUTORS: 883 }] };
     });
 
-    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1');
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
 
     expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 883, monthlyData: [], monthlyLabels: [] });
     expect(withOrgCache.mock.calls.at(-1)?.[5]?.(response)).toBe(false);
@@ -264,7 +267,7 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
   it('answers zero and an empty trend for an account without code', async () => {
     execute.mockResolvedValue({ rows: [] });
 
-    expect(await new OrgInvolvementService().getContributorsMonthly('acc-1')).toEqual({
+    expect(await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all')).toEqual({
       accountId: 'acc-1',
       totalActiveContributors: 0,
       monthlyData: [],
@@ -281,6 +284,66 @@ describe('OrgInvolvementService.getContributorsMonthly — the People -> Contrib
       return { rows: [] };
     });
 
-    await expect(new OrgInvolvementService().getContributorsMonthly('acc-1')).rejects.toThrow('Warehouse timeout');
+    await expect(new OrgInvolvementService().getContributorsMonthly('acc-1', 'all')).rejects.toThrow('Warehouse timeout');
+  });
+});
+
+describe('OrgInvolvementService.getContributorsMonthly — organization scope (lfx-self-serve-ops#1219)', () => {
+  beforeEach(() => {
+    execute.mockReset();
+    withOrgCache.mockClear();
+    resolveOrgScope.mockClear();
+    execute.mockImplementation(async (sql: string) =>
+      isContributorsTrend(sql) ? { rows: [{ MONTH_START_DATE: new Date(2030, 0, 15), UNIQUE_CONTRIBUTORS: 40 }] } : { rows: [{ ACTIVE_CONTRIBUTORS: 55 }] }
+    );
+  });
+
+  const headlineSql = (): string => String(execute.mock.calls.find(([query]) => !isContributorsTrend(String(query)))![0]);
+  const trendCall = (): unknown[] => execute.mock.calls.find(([query]) => isContributorsTrend(String(query)))!;
+
+  it('keeps only rows with Insights-scoped code and reads the Insights trend column under insights, keyed per scope', async () => {
+    const response = await new OrgInvolvementService().getContributorsMonthly('acc-1', 'insights');
+
+    expect(response).toEqual({ accountId: 'acc-1', totalActiveContributors: 55, monthlyData: [40], monthlyLabels: ['Jan 2030'] });
+    expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), 'acc-1', 'insights');
+    expect(headlineSql()).toContain('AND INSIGHTS_DAILY_CODE_ACTIVITIES > 0');
+    const [sql, binds, options] = trendCall();
+    expect(sql).toContain('SELECT MONTH_START_DATE, insights_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
+    expect(binds).toEqual(['acc-1']);
+    expect(options).toEqual({
+      expectMissingObject: 'ORG_CONTRIBUTORS_MONTHLY',
+      expectInvalidIdentifier: 'insights_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS',
+    });
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:insights');
+  });
+
+  it('reads the Insights inclusive twin while the view has no Insights team-member count yet', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS')) throw invalidIdentifier('INSIGHTS_UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS');
+      return isContributorsTrend(sql) ? { rows: [] } : { rows: [{ ACTIVE_CONTRIBUTORS: 55 }] };
+    });
+
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'insights');
+
+    const trendReads = execute.mock.calls.filter(([query]) => isContributorsTrend(String(query)));
+    expect(trendReads.at(-1)?.[0]).toContain('SELECT MONTH_START_DATE, insights_UNIQUE_CONTRIBUTORS AS UNIQUE_CONTRIBUTORS\n');
+  });
+
+  it('reads exactly the all-organizations SQL under all', async () => {
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'all');
+
+    expect(headlineSql()).not.toMatch(/insights/i);
+    expect(String(trendCall()[0])).not.toMatch(/insights/i);
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:all');
+  });
+
+  it('serves and keys the all-organizations read when the account has no Insights org', async () => {
+    resolveOrgScope.mockResolvedValueOnce('all');
+
+    await new OrgInvolvementService().getContributorsMonthly('acc-1', 'insights');
+
+    expect(headlineSql()).not.toMatch(/insights/i);
+    expect(String(trendCall()[0])).toContain('SELECT MONTH_START_DATE, UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS AS UNIQUE_CONTRIBUTORS');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('contributors:v5:all');
   });
 });

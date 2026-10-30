@@ -15,8 +15,17 @@ import {
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
   ORG_TEAM_MEMBERS_EMPTY_HINT,
 } from '@lfx-one/shared/constants';
-import type { OrgCommitFilters, OrgContributorsResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type {
+  OrgCommitFilters,
+  OrgContributorsResponse,
+  OrgEmploymentFilter,
+  OrgLensOrgScope,
+  OrgLensTimeRange,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
 import { Observable, of } from 'rxjs';
@@ -27,6 +36,10 @@ import { ContributorsService } from '../../services/contributors.service';
 import { ContributorsComponent } from './contributors.component';
 
 const ORG = SYNTHETIC_ORG_ACCOUNT_ID;
+
+/** The account's organization scope the Organization scope picker and the tooltips read; reset to unknown before each test. */
+const orgScopeInfo = signal<OrgLensOrgScope | null>(null);
+beforeEach(() => orgScopeInfo.set(null));
 
 /** One person on two projects: commits favour Kubernetes, code contributions favour OpenTelemetry. */
 function contributorsResponse(): OrgContributorsResponse {
@@ -89,7 +102,8 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
       timeRange: OrgLensTimeRange,
       filters: OrgCommitFilters,
       employment: OrgEmploymentFilter,
-      teamMembers: OrgTeamMembersFilter
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
     ) => Observable<OrgContributorsResponse>
   >;
 
@@ -111,6 +125,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
       ],
     }).compileComponents();
 
@@ -139,20 +154,20 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     expect(form().controls['metric'].value).toBe('code');
     expect(form().controls['projectScope'].value).toBe('all');
     expect(form().contains('commitScope')).toBe(false);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'code' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'code' }, 'all', 'exclude', 'insights');
   });
 
   it('keeps an explicit ?metric=commits in the URL and drops it again for All code contributions', async () => {
     await mount('/?tab=contributors&metric=commits');
 
     expect(form().controls['metric'].value).toBe('commits');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'all', 'exclude', 'insights');
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors&metric=commits');
 
     form().controls['metric'].setValue('code');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
   });
 
@@ -163,14 +178,21 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     await mount(`/?projectScope=lf&metric=${metric}`);
 
     expect(form().controls['metric'].value).toBe(metric);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'lf', ...params }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'lf', ...params }, 'all', 'exclude', 'insights');
   });
 
   it('opens a legacy commitScope=merged link as Only main branch commits and rewrites it to metric=merged', async () => {
     await mount('/?tab=contributors&projectScope=lf&commitScope=merged');
 
     expect(form().controls['metric'].value).toBe('merged');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'lf', commitScope: 'merged', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(
+      ORG,
+      '730d',
+      { projectScope: 'lf', commitScope: 'merged', metric: 'commits' },
+      'all',
+      'exclude',
+      'insights'
+    );
     const url = TestBed.inject(Router).url;
     expect(url).toContain('metric=merged');
     expect(url).not.toContain('commitScope=');
@@ -179,7 +201,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
   it('reads an unknown value as its default', async () => {
     await mount('/?projectScope=everything&metric=prs');
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
   });
 
   it('refetches on a filter change and writes it to the URL, dropping defaults', async () => {
@@ -188,7 +210,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['projectScope'].setValue('non_lf');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'non_lf' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'non_lf' }, 'all', 'exclude', 'insights');
     let url = TestBed.inject(Router).url;
     expect(url).toContain('projectScope=non_lf');
     expect(url).toContain('tab=contributors');
@@ -198,7 +220,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['metric'].setValue('merged');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(
+      ORG,
+      '730d',
+      { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+      'all',
+      'exclude',
+      'insights'
+    );
     url = TestBed.inject(Router).url;
     expect(url).toContain('metric=merged');
     expect(url).not.toContain('commitScope=');
@@ -206,7 +235,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().patchValue({ projectScope: 'lf', metric: 'code' });
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope: 'lf' }, 'all', 'exclude', 'insights');
     url = TestBed.inject(Router).url;
     expect(url).toContain('projectScope=lf');
     expect(url).not.toContain('metric=');
@@ -230,7 +259,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['metric'].setValue('merged');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'merged', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(
+      ORG,
+      '730d',
+      { projectScope: 'all', commitScope: 'merged', metric: 'commits' },
+      'all',
+      'exclude',
+      'insights'
+    );
     expect(text('org-people-contributors-count-header')).toBe('Commits');
     info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(ORG_MAIN_BRANCH_COMMITS_DEFINITION);
@@ -238,7 +274,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
     form().controls['metric'].setValue('commits');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'all', commitScope: 'all', metric: 'commits' }, 'all', 'exclude', 'insights');
     expect(text('org-people-contributors-count-header')).toBe('Commits');
     expect(el().querySelector('[data-testid="org-people-contributors-row-p-1"]')?.textContent).toContain('12');
     info = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-count-header-info"]'));
@@ -290,10 +326,11 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
       metric: 'code',
       employment: 'all',
       teamMembers: 'exclude',
+      orgScope: 'insights',
     });
     // The range and the commit filters reset together, so one read starts, not one per changed value.
     expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
   });
@@ -308,14 +345,14 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
 
     expect(fixture.componentInstance).toBe(instance);
     expect(form().getRawValue()).toMatchObject({ projectScope: 'lf', metric: 'commits' });
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', { projectScope: 'lf', commitScope: 'all', metric: 'commits' }, 'all', 'exclude', 'insights');
     expect(text('org-people-contributors-count-header')).toBe('Commits');
 
     await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
     await settle();
 
     expect(form().getRawValue()).toMatchObject({ projectScope: 'all', metric: 'code' });
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(navigate).not.toHaveBeenCalled();
     expect(TestBed.inject(Router).url).toBe('/?tab=contributors');
   });
@@ -453,6 +490,7 @@ describe('ContributorsComponent — commit filters (lfx-self-serve#4164)', () =>
         range: '730d',
         codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
         teamMembers: 'exclude',
+        orgScope: 'insights',
       })
     );
   });
@@ -466,7 +504,8 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
       timeRange: OrgLensTimeRange,
       filters: OrgCommitFilters,
       employment: OrgEmploymentFilter,
-      teamMembers: OrgTeamMembersFilter
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
     ) => Observable<OrgContributorsResponse>
   >;
 
@@ -487,6 +526,7 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
       ],
     }).compileComponents();
 
@@ -503,19 +543,19 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
     await mount('/?tab=contributors&range=90d');
 
     expect(form().controls['timeRange'].value).toBe('90d');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '90d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '90d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
   });
 
   it('reads an unknown range as the default', async () => {
     await mount('/?tab=contributors&range=2y');
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
   });
 
   it('reads a legacy ?range=12mo as Past 365 days, as the BFF does', async () => {
     await mount('/?tab=contributors&range=12mo');
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '365d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
   });
 
   it('writes a picked range to the URL, keeping the tab, and drops it at the default', async () => {
@@ -525,7 +565,7 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
     await settle();
 
     expect(router().url).toBe('/?tab=contributors&range=30d');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '30d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '30d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
 
     form().controls['timeRange'].setValue('730d');
     await settle();
@@ -541,7 +581,7 @@ describe('ContributorsComponent — shared range (lfx-self-serve#4159)', () => {
     await settle();
 
     expect(form().controls['timeRange'].value).toBe('all');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, 'all', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, 'all', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -575,7 +615,8 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
       timeRange: OrgLensTimeRange,
       filters: OrgCommitFilters,
       employment: OrgEmploymentFilter,
-      teamMembers: OrgTeamMembersFilter
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
     ) => Observable<OrgContributorsResponse>
   >;
 
@@ -598,6 +639,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
       ],
     }).compileComponents();
 
@@ -623,7 +665,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
       'All employees',
     ]);
     expect(form().controls['employment'].value).toBe('all');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
   });
@@ -632,7 +674,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     await mount('/?tab=contributors&employment=current');
 
     expect(form().controls['employment'].value).toBe('current');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'current', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'current', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors&employment=current');
     expect(clear()?.textContent?.trim()).toBe('Clear filters');
   });
@@ -643,13 +685,13 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     form().controls['employment'].setValue('current');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'current', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'current', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors&employment=current');
 
     form().controls['employment'].setValue('all');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
   });
 
@@ -661,7 +703,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     await settle();
 
     expect(form().controls['employment'].value).toBe('former');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'former', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'former', 'exclude', 'insights');
     expect(navigate).not.toHaveBeenCalled();
   });
 
@@ -669,7 +711,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
     await mount('/?tab=contributors&employment=everyone');
 
     expect(form().controls['employment'].value).toBe('all');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors&employment=everyone');
   });
 
@@ -682,7 +724,7 @@ describe('ContributorsComponent — employment filter (lfx-self-serve#4627)', ()
 
     expect(form().controls['employment'].value).toBe('all');
     expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
   });
@@ -725,7 +767,8 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
       timeRange: OrgLensTimeRange,
       filters: OrgCommitFilters,
       employment: OrgEmploymentFilter,
-      teamMembers: OrgTeamMembersFilter
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
     ) => Observable<OrgContributorsResponse>
   >;
 
@@ -748,6 +791,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
       ],
     }).compileComponents();
 
@@ -766,7 +810,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
     const labelled = el().querySelector('[data-test="org-people-contributors-team-members-filter"] [aria-label="Team members"]');
     expect(labelled?.textContent?.trim()).toBe('Exclude team members');
     expect((fixture.componentInstance as unknown as { teamMembersTooltip: string }).teamMembersTooltip).toContain('Org Lens does too by default.');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
     expect(clear()).toBeNull();
   });
@@ -777,13 +821,13 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
     form().controls['teamMembers'].setValue('include');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'include');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'include', 'insights');
     expect(router().url).toBe('/?tab=contributors&teamMembers=include');
 
     form().controls['teamMembers'].setValue('exclude');
     await settle();
 
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
   });
 
@@ -791,7 +835,7 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
     await mount('/?tab=contributors&teamMembers=include');
 
     expect(form().controls['teamMembers'].value).toBe('include');
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'include');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'include', 'insights');
     expect(clear()?.textContent?.trim()).toBe('Clear filters');
   });
 
@@ -819,7 +863,124 @@ describe('ContributorsComponent — team members filter (lfx-self-serve#4685)', 
 
     expect(form().controls['teamMembers'].value).toBe('exclude');
     expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
-    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
     expect(router().url).toBe('/?tab=contributors');
+  });
+});
+
+describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)', () => {
+  let fixture: ComponentFixture<ContributorsComponent>;
+  let getContributors: Mock<
+    (
+      orgUid: string,
+      timeRange: OrgLensTimeRange,
+      filters: OrgCommitFilters,
+      employment: OrgEmploymentFilter,
+      teamMembers: OrgTeamMembersFilter,
+      orgScope: OrgScopeFilter
+    ) => Observable<OrgContributorsResponse>
+  >;
+
+  const el = (): HTMLElement => fixture.nativeElement;
+  const form = (): FormGroup => (fixture.componentInstance as unknown as { filterForm: FormGroup }).filterForm;
+  const router = (): Router => TestBed.inject(Router);
+  const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-contributors-clear-filters"]');
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function mount(initialUrl: string): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [ContributorsComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: ContributorsService, useValue: { getContributors } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo } },
+      ],
+    }).compileComponents();
+
+    await router().navigateByUrl(initialUrl);
+    fixture = TestBed.createComponent(ContributorsComponent);
+    await settle();
+  }
+
+  beforeEach(() => {
+    getContributors = vi.fn(() => of(contributorsResponse()));
+  });
+
+  it('opens on the Insights organization by default and sends orgScope=insights', async () => {
+    await mount('/?tab=contributors');
+
+    expect(form().controls['orgScope'].value).toBe('insights');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
+    expect(el().querySelector('[data-test="org-people-contributors-org-scope-filter"] [aria-label="Organization scope"]')?.textContent?.trim()).toBe(
+      'Insights organization'
+    );
+    expect(router().url).toBe('/?tab=contributors');
+    expect(clear()).toBeNull();
+  });
+
+  it('reads ?orgScope=all from a shared link into the picker and the request', async () => {
+    await mount('/?tab=contributors&orgScope=all');
+
+    expect(form().controls['orgScope'].value).toBe('all');
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'all');
+    expect(clear()?.textContent?.trim()).toBe('Clear filters');
+  });
+
+  it('refetches on All related organizations and writes it to the URL, dropping it again at the Insights organization', async () => {
+    await mount('/?tab=contributors');
+
+    form().controls['orgScope'].setValue('all');
+    await settle();
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'all');
+    expect(router().url).toBe('/?tab=contributors&orgScope=all');
+
+    form().controls['orgScope'].setValue('insights');
+    await settle();
+
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
+    expect(router().url).toBe('/?tab=contributors');
+  });
+
+  it('Clear filters resets the organization scope to the Insights organization in one read and drops the param', async () => {
+    await mount('/?tab=contributors&orgScope=all');
+    const callsBeforeClear = getContributors.mock.calls.length;
+
+    clear()?.click();
+    await settle();
+
+    expect(form().controls['orgScope'].value).toBe('insights');
+    expect(getContributors).toHaveBeenCalledTimes(callsBeforeClear + 1);
+    expect(getContributors).toHaveBeenLastCalledWith(ORG, '730d', DEFAULT_ORG_COMMIT_FILTERS, 'all', 'exclude', 'insights');
+    expect(router().url).toBe('/?tab=contributors');
+  });
+
+  it('says on the Contributors tile which organizations it counts', async () => {
+    await mount('/?tab=contributors');
+    const tooltip = (): string | undefined =>
+      fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content as string | undefined;
+
+    expect(tooltip()).toContain("Only the company's LFX Insights organization");
+
+    form().controls['orgScope'].setValue('all');
+    await settle();
+
+    expect(tooltip()).toContain('Every organization related to the company');
+  });
+
+  it('says every related organization on the Contributors tile when the account has no Insights organization, even under insights', async () => {
+    orgScopeInfo.set({ accountId: ORG, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null, relatedOrgCount: 2 });
+    await mount('/?tab=contributors');
+    const tooltip = fixture.debugElement.query(By.css('[data-testid="org-people-contributors-stat-contributors-info"]')).injector.get(Tooltip).content;
+
+    expect(form().controls['orgScope'].value).toBe('insights');
+    expect(tooltip).toContain('Every organization related to the company');
   });
 });

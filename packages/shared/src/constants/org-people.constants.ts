@@ -15,6 +15,8 @@ import type {
   OrgEmploymentFilter,
   OrgEmploymentOption,
   OrgEventAttendeesResponse,
+  OrgScopeFilter,
+  OrgScopeOption,
   OrgTeamMembersFilter,
   OrgTeamMembersOption,
   OrgTraineesResponse,
@@ -139,6 +141,43 @@ export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choos
 
 /** The person-level CDP team-member flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
 export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
+
+/**
+ * Organization-scope filter on every Org Lens page with contributor counts — Overview, People → Contributors and All
+ * Employees (code only), Code Contributions and Project Detail (lfx-self-serve-ops#1219). `insights`, the default, counts
+ * only the crowd.dev organization behind the account's LFX Insights page and only repositories LFX Insights counts, as
+ * that page does; `all` counts every organization linked to the account in every repository. Maintainer roles, seats,
+ * events and training are not affected.
+ */
+export const ORG_SCOPE_OPTIONS: readonly OrgScopeOption[] = [
+  { label: 'Insights organization', value: 'insights' },
+  { label: 'All related organizations', value: 'all' },
+] as const;
+
+/** Default organization scope — the URL drops `?orgScope=` when it is active. */
+export const DEFAULT_ORG_SCOPE: OrgScopeFilter = 'insights';
+
+/** URL query parameter of the organization-scope filter. */
+export const ORG_SCOPE_QUERY_PARAM = 'orgScope';
+
+/** Accessible label of the organization-scope filter. */
+export const ORG_SCOPE_LABEL = 'Organization scope';
+
+/** Tooltip on the organization-scope filter while All related organizations is picked. */
+export const ORG_SCOPE_ALL_TOOLTIP =
+  'Counts every organization linked to this company account (subsidiaries, acquisitions and duplicate records), in every repository.';
+
+/** Added to the organization-scope tooltip on People → All Employees, whose other columns are not code. */
+export const ORG_SCOPE_CODE_ONLY_NOTE = 'Applies to code contributions only.';
+
+/** Note under a disabled organization-scope filter: the account has no Insights organization, so only All related organizations is offered. */
+export const ORG_SCOPE_UNAVAILABLE_NOTE = 'This company has no LFX Insights organization; counts include every related organization.';
+
+/** The sentence a count's caption or tooltip adds for the organization scope it counts (lfx-self-serve-ops#1219). */
+export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> = {
+  insights: "Only the company's LFX Insights organization, in repositories LFX Insights counts.",
+  all: 'Every organization related to the company, in every repository.',
+};
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 

@@ -7,7 +7,8 @@ import type { CompactOrgAllEmployeesRawCache, OrgCommitFilters, OrgLensTimeRange
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, cacheValues } = vi.hoisted(() => ({
+const { execute, getLive, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
+  resolveOrgScope: vi.fn(),
   execute: vi.fn(),
   getLive: vi.fn(),
   cacheValues: new Map<string, string>(),
@@ -58,6 +59,11 @@ vi.mock('ioredis', () => ({
       /* No connection in this fixture. */
     }
   },
+}));
+// The scope served (lfx-self-serve-ops#1219): `all` unless a test grants the account an Insights organization.
+vi.mock('../helpers/org-scope.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/org-scope.helper')>()),
+  resolveOrgScope,
 }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
 vi.mock('./valkey.service', async () => {
@@ -257,6 +263,7 @@ beforeEach(() => {
     return { rows };
   });
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
+  resolveOrgScope.mockResolvedValue('all');
   service = new OrgLensPeopleService();
 });
 
@@ -862,7 +869,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(response.rows.map((row) => row.personKey)).toEqual(['person-non-lf']);
       expect(response.foundations).toEqual([{ foundationId: 'foundation-x', foundationName: 'Foundation X' }]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:non_lf')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:non_lf:all')!)).toBe(true);
     });
 
     it('fails closed on a failed former check, even over addresses cached while the person was current, and does not remember it', async () => {
@@ -909,12 +916,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(degraded.rows.map((row) => row.personKey)).toEqual([formerKey]);
       expect(degraded.foundations).toEqual([]);
       expect(logger.warning).toHaveBeenCalledWith(REQ, 'get_org_lens_people_former', expect.any(String), { err: expect.any(Error) });
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all')!)).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all:all')!)).toBe(false);
 
       database.exec('ALTER TABLE SAVED_DAILY RENAME TO ORG_PEOPLE_CONTRIBUTORS_DAILY');
       const recovered = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS);
       expect(recovered.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all:all')!)).toBe(true);
     });
 
     it('fails the former read when the roster read fails', async () => {
@@ -965,7 +972,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
           { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
           { foundationId: 'foundation-three', foundationName: 'Foundation Three' },
         ]);
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all')!)).toBe(true);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all:all')!)).toBe(true);
       });
 
       it('drops a CDP team member among them under Exclude team members, as their code is all they have, still naming them', async () => {
@@ -1041,7 +1048,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         const before = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
 
         expect(before.rows.map((row) => row.personKey)).toEqual([formerKey]);
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all')!)).toBe(false);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all:all')!)).toBe(false);
         const unclassifiedRead = (execute.mock.calls as [string, unknown[], unknown][]).find(([query]) =>
           query.includes('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS')
         );
@@ -1095,7 +1102,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ]);
       const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:730d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:730d:all:all')!)).toBe(true);
     });
 
     it('lists the rows of the requested project scope only', async () => {
@@ -1145,13 +1152,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
         [
-          'people-all:v4:30d:all',
-          'people-all:v4:all:all',
-          'people-all:v4:all:lf',
-          'people-former:v3:30d:all',
-          'people-former:v3:all:all',
-          'people-unclassified:v1:30d:all',
-          'people-unclassified:v1:all:all',
+          'people-all:v4:30d:all:all',
+          'people-all:v4:all:all:all',
+          'people-all:v4:all:lf:all',
+          'people-former:v3:30d:all:all',
+          'people-former:v3:all:all:all',
+          'people-unclassified:v1:30d:all:all',
+          'people-unclassified:v1:all:all:all',
         ]
           .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
           .sort()
@@ -1185,7 +1192,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:all')!)).toBe(true);
     });
 
     // lfx-self-serve#4685
@@ -1208,7 +1215,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(formerExcluded.rows).toEqual([]);
       // One roster entry per range and scope serves both picks; the team members are cached once per account.
       expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
-        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
       );
       expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
     });
@@ -1334,7 +1341,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       await codeIn('365d', { ...LF_COMMITS, metric: 'code' });
 
       expect(dailyReads()).toHaveLength(1);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:lf`)!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:lf:all`)!)).toBe(true);
     });
 
     it('keeps the trailing-year commits, without a view, when the opener sends no filters', async () => {
@@ -1385,6 +1392,159 @@ describe('OrgLensPeopleService person-key company emails', () => {
       const liveOnly = await service.getEmployeeDetail(REQ, ACCOUNT, LIVE_PERSON, '90d', LF_COMMITS);
       expect(liveOnly).toMatchObject({ code: [], totalCommits: 0, codeView: { range: '90d', ...LF_COMMITS } });
       expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  // lfx-self-serve-ops#1219
+  describe('organization scope', () => {
+    const grantInsights = () => resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
+    const queries = (): string[] => (execute.mock.calls as [string][]).map(([query]) => query);
+
+    /** The Insights organization's share of a ranged row's code: `[commits, merged, code activities]`. */
+    function setInsightsCounts(table: string, key: string, range: string, counts: [number, number, number], foundations = '["foundation-insights"]'): void {
+      database
+        .prepare(
+          `UPDATE ${table} SET INSIGHTS_COMMITS_COUNT = ?, INSIGHTS_MERGED_COMMITS_COUNT = ?, INSIGHTS_CODE_ACTIVITIES_COUNT = ?, INSIGHTS_ENGAGED_FOUNDATION_IDS = ? WHERE PERSON_KEY = ? AND TIME_RANGE = ?`
+        )
+        .run(...counts, foundations, key, range);
+    }
+
+    beforeEach(() => {
+      database.exec('ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT;');
+      for (const table of ['ORG_PEOPLE_ALL_RANGES', 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS']) {
+        database.exec(`
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_COMMITS_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_MERGED_COMMITS_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_CODE_ACTIVITIES_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_ENGAGED_FOUNDATION_IDS TEXT;
+        `);
+      }
+      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES ADD COLUMN CERTIFICATIONS_COUNT INTEGER DEFAULT 0');
+      for (const column of ['COMMITS', 'MERGED_COMMITS', 'SCOPE_COMMITS', 'SCOPE_MERGED_COMMITS', 'CODE_ACTIVITIES']) {
+        database.exec(`ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_${column} INTEGER DEFAULT 0`);
+      }
+    });
+
+    it('lists current employees with Insights-scoped code or another engagement, counting only that code, under insights', async () => {
+      grantInsights();
+      addRangeRow(ACCOUNT, 'person-insights', '365d', false, 'insights', 'Insights Coder', 'insights@company.example', 10);
+      setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-insights', '365d', [4, 3, 6]);
+      addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
+      addRangeRow(ACCOUNT, 'person-seat', '365d', false, 'seat', 'Seat Holder', 'seat@company.example', 5);
+      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET SEATS_COUNT = 1 WHERE PERSON_KEY = 'person-seat'`);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+      expect(resolveOrgScope).toHaveBeenCalledWith(expect.anything(), ACCOUNT, 'insights');
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        ['person-insights', 4],
+        ['person-seat', 0],
+      ]);
+      const rosterRead = queries().find(
+        (query) => /FROM ORG_PEOPLE_ALL_RANGES|PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL_RANGES/.test(query) && /IS_FORMER = FALSE/.test(query)
+      );
+      expect(rosterRead).toContain('INSIGHTS_COMMITS_COUNT AS COMMITS_COUNT');
+      expect(rosterRead).toContain('INSIGHTS_CODE_ACTIVITIES_COUNT AS CODE_ACTIVITIES_COUNT');
+      expect(rosterRead).toContain('INSIGHTS_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
+      expect(rosterRead).toContain(
+        'AND (INSIGHTS_CODE_ACTIVITIES_COUNT > 0 OR SEATS_COUNT > 0 OR EVENTS_COUNT > 0 OR COURSES_COUNT > 0 OR CERTIFICATIONS_COUNT > 0)'
+      );
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:insights')!)).toBe(true);
+    });
+
+    it("reads today's roster SQL and key when an insights request resolves to all", async () => {
+      addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
+      expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:insights')!)).toBe(false);
+    });
+
+    it('leaves the unranged roster unscoped, without resolving the scope', async () => {
+      grantInsights();
+
+      await service.getAllEmployees(ACCOUNT, null, FILTERS, 'exclude', 'insights');
+
+      expect(resolveOrgScope).not.toHaveBeenCalled();
+      expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v4:roster')!)).toBe(true);
+    });
+
+    it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels', async () => {
+      grantInsights();
+      addRangeRow(ACCOUNT, 'former-insights', '365d', true, 'formerinsights', 'Former Insights', null, 9);
+      setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'former-insights', '365d', [2, 2, 2]);
+      addRangeRow(ACCOUNT, 'former-other-org', '365d', true, 'formerother', 'Former Other', null, 9);
+      addDailyCode(ACCOUNT, 'former-insights', daysAgo(5), 'foundation-two', 'Foundation Two');
+      addDailyCode(ACCOUNT, 'former-other-org', daysAgo(5), 'foundation-x', 'Foundation X');
+      addUnclassifiedRow(ACCOUNT, 'unclassified-insights', '365d', 'uninsights', 'Unclassified Insights', 5);
+      setInsightsCounts('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS', 'unclassified-insights', '365d', [1, 1, 3]);
+      addUnclassifiedRow(ACCOUNT, 'unclassified-other-org', '365d', 'unother', 'Unclassified Other', 5);
+
+      const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        ['former-insights', 2],
+        ['unclassified-insights', 1],
+      ]);
+      expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+      const offRoster = queries().filter((query) => /ORG_PEOPLE_(ALL_RANGES|UNCLASSIFIED_CONTRIBUTORS)/.test(query) && !/IS_FORMER = FALSE/.test(query));
+      const rowReads = offRoster.filter((query) => query.includes('ORDER BY NAME'));
+      const labelReads = offRoster.filter((query) => query.includes('INNER JOIN'));
+      expect(rowReads).toHaveLength(2);
+      expect(labelReads).toHaveLength(2);
+      for (const query of rowReads) {
+        expect(query).toContain('AND INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
+        expect(query).toContain('INSIGHTS_COMMITS_COUNT AS COMMITS_COUNT');
+      }
+      for (const query of labelReads) {
+        expect(query).toContain('AND f.INSIGHTS_CODE_ACTIVITIES_COUNT > 0');
+      }
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v3:365d:all:insights')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v1:365d:all:insights')!)).toBe(true);
+    });
+
+    it("counts the Code tab's Insights-scoped code under insights, and today's code under all", async () => {
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES,
+            INSIGHTS_DAILY_COMMITS, INSIGHTS_DAILY_MERGED_COMMITS, INSIGHTS_DAILY_SCOPE_COMMITS, INSIGHTS_DAILY_SCOPE_MERGED_COMMITS, INSIGHTS_DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, 'foundation-one', 'Foundation One', 1, 'cdp', 'name', 'Project', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(ACCOUNT, personKey, 'project-both', daysAgo(10), 6, 6, 6, 6, 9, 2, 2, 2, 2, 3);
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, 'foundation-one', 'Foundation One', 1, 'cdp', 'name', 'Project', 4, 4, 4, 4, 4)`
+        )
+        .run(ACCOUNT, personKey, 'project-other-org', daysAgo(10));
+      const commits: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
+
+      const all = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', commits, 'include', 'all');
+      expect(all.code.map((row) => [row.projectId, row.commits])).toEqual([
+        ['project-both', 6],
+        ['project-other-org', 4],
+      ]);
+
+      grantInsights();
+      execute.mockClear();
+      const insights = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', commits, 'include', 'insights');
+
+      expect(insights.code.map((row) => [row.projectId, row.commits])).toEqual([['project-both', 2]]);
+      expect(insights.totalCommits).toBe(2);
+      const codeRead = queries().find((query) => query.includes('ORG_PEOPLE_CONTRIBUTORS_DAILY') && query.includes('GROUP BY project_id'));
+      expect(codeRead).toContain('SUM(insights_daily_commits) AS COMMITS');
+      expect(codeRead).toContain('SUM(insights_daily_code_activities) AS CODE_ACTIVITIES');
+      expect(codeRead).toContain('AND insights_daily_code_activities > 0');
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:all:insights`)!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:all:all`)!)).toBe(true);
     });
   });
 });
@@ -1616,7 +1776,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
     const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v4:365d:all:all')!, JSON.stringify(legacy));
     mockRoster();
 
     const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');

@@ -32,6 +32,9 @@
   <!-- Filter Pills row -->
   <div class="flex flex-wrap items-center gap-2 mb-4">
     <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="handleFilterChange($event)"></lfx-filter-pills>
+    <div class="ml-auto">
+      <lfx-org-scope-select [form]="scopeForm" control="orgScope" dataTest="dashboard-involvement-org-scope-filter" />
+    </div>
   </div>
 
   <div class="relative overflow-hidden">

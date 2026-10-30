@@ -113,10 +113,13 @@ export const ORG_ALL_EMPLOYEE_CODE_NOTE = {
 /**
  * Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). The headline is the
  * People → Contributors default tile (the Org Lens default view), so it says so in the same words as the Maintainer roles card.
+ * The Organization scope (lfx-self-serve-ops#1219) picks whose code that is.
  */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
   `People with at least one code contribution (commit, pull request, review or comment) in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} ` +
-  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. Bots and CDP team members excluded.`;
+  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. ` +
+  'The Organization scope picks the LFX Insights organization (in repositories LFX Insights counts) or every related organization. ' +
+  'Bots and CDP team members excluded.';
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =

@@ -11,9 +11,10 @@ import {
   ORG_COMMITS_DEFINITION,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
 } from '@lfx-one/shared/constants';
-import type { Account, OrgContributionsResponse, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
+import type { Account, OrgContributionsResponse, OrgLensEmptyStateName, OrgLensOrgScope } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
@@ -45,7 +46,12 @@ function personDrawerStub() {
 
 async function render(
   state: OrgLensEmptyStateName | null,
-  { settled = true, queryParams = {} as Record<string, string>, response = EMPTY_ORG_CONTRIBUTIONS_RESPONSE as OrgContributionsResponse } = {}
+  {
+    settled = true,
+    queryParams = {} as Record<string, string>,
+    response = EMPTY_ORG_CONTRIBUTIONS_RESPONSE as OrgContributionsResponse,
+    orgScopeInfo = null as OrgLensOrgScope | null,
+  } = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
   const getContributions = vi.fn(() => of(response));
@@ -72,6 +78,7 @@ async function render(
         },
       },
       { provide: ContributionsService, useValue: { getContributions } },
+      { provide: OrgLensOrgScopeService, useValue: { current: signal<OrgLensOrgScope | null>(orgScopeInfo) } },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
     ],
   }).compileComponents();
@@ -135,6 +142,7 @@ describe('OrgContributionsComponent', () => {
         range: '730d',
         codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
         teamMembers: 'exclude',
+        orgScope: 'insights',
       })
     );
   });
@@ -263,6 +271,45 @@ describe('OrgContributionsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ teamMembers: 'include', page: null }) }));
   });
 
+  it('opens on the Insights organization by default and sends orgScope=insights', async () => {
+    const { fixture, getContributions } = await render(null);
+
+    expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('insights');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'insights' }));
+    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights organization");
+  });
+
+  it('reads ?orgScope=all from a shared link into the picker and the request', async () => {
+    const { fixture, getContributions } = await render(null, { queryParams: { orgScope: 'all' } });
+
+    expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('all');
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'all' }));
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+  });
+
+  it('writes ?orgScope=all when All related organizations is picked, and drops it again for the Insights organization', async () => {
+    const { fixture, navigate, getContributions } = await render(null);
+    const { orgScope } = fixture.componentInstance['filterForm'].controls;
+
+    orgScope.setValue('all');
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'all' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ orgScope: 'all' }) }));
+
+    orgScope.setValue('insights');
+    await pastDebounce(fixture);
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'insights' }));
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: expect.objectContaining({ orgScope: null }) }));
+  });
+
+  it('captions every related organization when the account has no Insights organization, even under ?orgScope=insights', async () => {
+    const { fixture } = await render(null, {
+      orgScopeInfo: { accountId: 'acc-1', hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, insightsOrgSlug: null, relatedOrgCount: 3 },
+    });
+
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+  });
+
   it.each([
     ['merged', { commitScope: 'merged', metric: 'commits' }, 'Commits', 'only commits on the main branch', ORG_MAIN_BRANCH_COMMITS_DEFINITION],
     ['code', { commitScope: 'all', metric: 'code' }, 'Code contributions', 'Code contributions (commits, pull requests', ORG_CODE_CONTRIBUTIONS_DEFINITION],
@@ -337,6 +384,7 @@ describe('OrgContributionsComponent', () => {
         projects: 'alpha',
         employees: 'e-1',
         teamMembers: 'include',
+        orgScope: 'all',
       },
     });
     const el = fixture.nativeElement as HTMLElement;
@@ -355,6 +403,7 @@ describe('OrgContributionsComponent', () => {
       projectScope: 'all',
       metric: 'code',
       teamMembers: 'exclude',
+      orgScope: 'insights',
     });
     expect(getContributions).toHaveBeenLastCalledWith(
       'org-uid-1',
@@ -369,6 +418,7 @@ describe('OrgContributionsComponent', () => {
         commitScope: 'all',
         metric: 'code',
         teamMembers: 'exclude',
+        orgScope: 'insights',
       })
     );
     expect(navigate).toHaveBeenLastCalledWith(
@@ -385,6 +435,7 @@ describe('OrgContributionsComponent', () => {
           projects: null,
           employees: null,
           teamMembers: null,
+          orgScope: null,
         }),
       })
     );

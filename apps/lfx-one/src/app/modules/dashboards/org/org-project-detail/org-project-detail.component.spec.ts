@@ -11,12 +11,13 @@ import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, EMPTY, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
 
@@ -77,6 +78,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -187,6 +189,7 @@ describe('OrgProjectDetailComponent — page-level empty state', () => {
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -283,6 +286,7 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -365,5 +369,133 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
     expect(component['heroHealthAriaLabel']()).toBe(
       'Health: Fair, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
+  });
+});
+
+/**
+ * lfx-self-serve-ops#1219: the Organization scope picker drives every scoped Project Detail read and is kept in step with
+ * `?orgScope=` (dropped at the default, insights).
+ */
+describe('OrgProjectDetailComponent — organization scope', () => {
+  let queryParams: BehaviorSubject<ParamMap>;
+  let navigate: Mock;
+  let detail: Record<string, Mock>;
+
+  async function create(
+    initialQuery: Record<string, string> = {}
+  ): Promise<{ fixture: ComponentFixture<OrgProjectDetailComponent>; component: OrgProjectDetailComponent }> {
+    queryParams = new BehaviorSubject<ParamMap>(convertToParamMap(initialQuery));
+    navigate = vi.fn();
+    detail = {
+      getHero: vi.fn(() => of(null)),
+      getInfluenceBlock: vi.fn(() => of(null)),
+      getTrendBlock: vi.fn(() => of(null)),
+      getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
+      getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+      getLeaderboardBreakdown: vi.fn(() => of(null)),
+      getCardDrawer: vi.fn(() => of(null)),
+      getCardRoster: vi.fn(() => of({ rows: [], total: 0 })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
+        },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null) } },
+        { provide: OrgLensProjectDetailService, useValue: detail },
+        {
+          provide: PersonDetailDrawerService,
+          useValue: {
+            open: vi.fn(),
+            close: vi.fn(),
+            isOpen: signal(false),
+            activeContext: signal(null),
+            activeTab: signal('events'),
+            loading: signal(false),
+            error: signal(null),
+            emailError: signal(false),
+            emailsLoading: signal(false),
+            companyEmails: signal([]),
+          },
+        },
+        { provide: Router, useValue: { navigate, events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: of(convertToParamMap({ projectSlug: 'k8s' })),
+            queryParamMap: queryParams.asObservable(),
+            snapshot: {
+              get queryParamMap(): ParamMap {
+                return queryParams.value;
+              },
+            },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgProjectDetailComponent);
+    await fixture.whenStable();
+    return { fixture, component: fixture.componentInstance };
+  }
+
+  it('reads the influence cards under insights when the URL names no scope', async () => {
+    await create();
+
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'insights');
+  });
+
+  it('reads the influence cards under the scope the URL names', async () => {
+    await create({ orgScope: 'all' });
+
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'all');
+  });
+
+  it('re-reads the influence cards and writes ?orgScope= on a pick, dropping it at the default', async () => {
+    const { fixture, component } = await create();
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'all');
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: 'all' } }));
+
+    queryParams.next(convertToParamMap({ orgScope: 'all' }));
+    component['scopeForm'].controls.orgScope.setValue('insights');
+    await fixture.whenStable();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: null } }));
+  });
+
+  it('re-reads both leaderboards with the picked scope', async () => {
+    const { fixture, component } = await create({ tab: 'pd-leaderboards' });
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+
+    expect(detail['getTechnicalBoard']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), expect.any(String), 0, 10, '', 'all');
+    expect(detail['getEcosystemBoard']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), expect.any(String), 0, 10, '', 'all');
+  });
+
+  it('keys the card drawer cache by scope and sends the scope with the drawer and roster reads', async () => {
+    const { fixture, component } = await create();
+
+    component['loadDrawer']('commits');
+    component['loadDrawer']('commits');
+    expect(detail['getCardDrawer']).toHaveBeenCalledTimes(1);
+    expect(detail['getCardDrawer']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 'insights');
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+    component['loadDrawer']('commits');
+    expect(detail['getCardDrawer']).toHaveBeenCalledTimes(2);
+    expect(detail['getCardDrawer']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 'all');
+
+    component['loadRosterPage']('commits', 0, 10);
+    expect(detail['getCardRoster']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 0, 10, 'all');
   });
 });
