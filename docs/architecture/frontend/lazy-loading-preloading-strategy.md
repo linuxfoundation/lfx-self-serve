@@ -115,14 +115,59 @@ export class CustomPreloadingStrategy implements PreloadingStrategy {
       }
 
       // Smart delay-based preloading
-      const delay = route.data['preloadDelay'] || 2000;
-      return timer(delay).pipe(mergeMap(() => load()));
+      const delay = route.data['preloadDelay'] ?? 2000;
+      return timer(delay).pipe(
+        mergeMap(() => load()),
+        catchError((error) => {
+          console.error('Route preloading failed', error);
+          return of(null);
+        })
+      );
     }
 
     return of(null);
   }
 }
 ```
+
+### Loading Failure Recovery
+
+Foreground router navigation errors and the global `ChunkLoadErrorHandler` delegate
+to the root-scoped `ChunkLoadRecoveryService`. It recognizes browser dynamic-import
+failures, named `ChunkLoadError`s, and bounded, cycle-safe error wrappers. A confirmed
+import failure can refresh the current address once per 60 seconds; persistent
+storage must be readable and writable before an automatic reload is allowed. Duplicate
+router/global reports during the same reload are idempotent. A repeat failure or
+unavailable loop-guard storage produces an eager root-level recovery banner instead.
+If the current document survives a reload attempt (for example, the user cancels a
+`beforeunload` prompt), a watchdog restores manual recovery after
+`CHUNK_LOAD_RELOAD_WATCHDOG_MS`. It never schedules another automatic reload and
+leaves the persistent loop marker intact. Its timer is cleared on service destruction.
+
+Angular's deferred-dependency error (`code === -750`, NG0750) discards the original
+failure reason. Without corroborating import-failure evidence, it opens the banner
+but does **not** automatically refresh: a component evaluation bug is not necessarily
+a stale asset. Existing local `@error` fallbacks remain unchanged.
+
+The banner offers **Reload page** and **Contact support**, warns about unsaved changes,
+and does not replace routed content. Explicit reload remains available if storage is
+blocked. Recovery never navigates to a URL taken from an error, and does not clear
+the loop marker at bootstrap/navigation completion because deferred failures can arrive
+later. This mechanism requires the initial application to have bootstrapped; it cannot
+repair a main bundle that never loaded.
+
+When recovery appears, its alert announces the failure without taking focus from
+an input, textarea, select, or rich-text edit (including inside the mobile drawer).
+Lost focus, inert regions, or non-editing mobile navigation focus move to the banner
+container after rendering, **not** to the destructive reload control. Tab reaches
+the actions without turning an in-flight Space/Enter into a reload. Other active
+controls retain focus. The mobile drawer pauses its focus trap and modal restriction
+while the banner is visible, without closing/unmounting the drawer or losing state.
+Recovery remains keyboard-reachable after a failed navigation with no `NavigationEnd`.
+
+Background preload failures, including a synchronous `load()` throw, are caught and
+reported without activating foreground recovery or ending future preloading. The
+foreground navigation path can still recover if that dependency fails when needed.
 
 ### Preloading Configuration
 

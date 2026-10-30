@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (recovery.needsReload()) {
+  <!-- Keep recovery actions above modal/drawer masks so a failed lazy overlay cannot hide them. -->
+  <section
+    #recoveryPanel
+    tabindex="-1"
+    role="alert"
+    aria-labelledby="chunk-load-recovery-heading"
+    aria-atomic="true"
+    class="fixed bottom-4 left-4 right-4 z-[11000] flex flex-col gap-3 rounded-lg border border-red-300 bg-white p-4 text-gray-900 shadow-lg sm:flex-row sm:items-center sm:justify-between"
+    data-testid="chunk-load-recovery">
+    <div class="flex flex-col gap-1">
+      <h2 id="chunk-load-recovery-heading" class="font-semibold">Part of this page couldn't load.</h2>
+      <p class="text-sm">Check your connection, then reload. Reloading may discard unsaved changes.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <lfx-ui-button [loading]="recovery.reloading()" (click)="recovery.reload()" data-testid="chunk-load-recovery-reload">Reload page</lfx-ui-button>
+      <lfx-ui-button variant="secondary" lfxOpenIntercom data-testid="chunk-load-recovery-support">Contact support</lfx-ui-button>
+    </div>
+  </section>
+}

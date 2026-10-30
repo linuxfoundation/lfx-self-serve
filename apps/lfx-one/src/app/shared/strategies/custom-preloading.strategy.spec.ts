@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { Route } from '@angular/router';
-import { firstValueFrom, of } from 'rxjs';
+import { firstValueFrom, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CustomPreloadingStrategy } from './custom-preloading.strategy';
@@ -20,6 +20,7 @@ describe('CustomPreloadingStrategy', () => {
 
   afterEach(() => {
     window.history.pushState({}, '', '/');
+    vi.restoreAllMocks();
   });
 
   it('returns of(null) and does not load on /invite (GH-2290)', async () => {
@@ -38,5 +39,19 @@ describe('CustomPreloadingStrategy', () => {
 
     await expect(firstValueFrom(strategy.preload(route, load))).resolves.toBe('chunk');
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['observable', 'synchronous'])('contains a %s preload failure without terminating later loads', async (kind) => {
+    window.history.pushState({}, '', '/meetings');
+    const error = new Error('Failed to fetch dynamically imported module');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const load = () => {
+      if (kind === 'synchronous') throw error;
+      return throwError(() => error);
+    };
+    const route = { data: { preload: true, preloadDelay: 0 } } as Route;
+    await expect(firstValueFrom(strategy.preload(route, load))).resolves.toBeNull();
+    await expect(firstValueFrom(strategy.preload(route, () => of('next route')))).resolves.toBe('next route');
+    expect(console.error).toHaveBeenCalledWith('Route preloading failed', error);
   });
 });
