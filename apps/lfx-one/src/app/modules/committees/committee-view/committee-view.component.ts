@@ -417,7 +417,7 @@ export class CommitteeViewComponent {
         if (!target.key) {
           return of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt });
         }
-        return this.projectService.getProject(target.key, false).pipe(
+        return this.projectService.getProject(target.key, false, { strictWriter: true }).pipe(
           map((project) => ({ uid: target.uid, writer: project?.writer === true, failed: project === null, attempt: target.attempt })),
           catchError(() => of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt }))
         );

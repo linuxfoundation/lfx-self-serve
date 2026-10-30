@@ -551,6 +551,7 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(component.editLink()).toEqual({ commands: getGroupCommands(currentCommittee, 'edit'), queryParams: { project: 'proj' } });
+      expect(getProject()).toHaveBeenCalledWith('proj', false, { strictWriter: true });
     });
 
     it('hides the link from a committee-only writer, since writerGuard would redirect them with an access-denied notice', () => {
@@ -598,6 +599,8 @@ describe('CommitteeViewComponent', () => {
       expect(component.canShareWeeklyBriefByEmail()).toBe(false);
       flush();
       expect(getProject()).toHaveBeenCalledTimes(2);
+      expect(getProject()).toHaveBeenNthCalledWith(1, 'proj', false, { strictWriter: true });
+      expect(getProject()).toHaveBeenNthCalledWith(2, 'proj', false, { strictWriter: true });
 
       pending.next({ writer: true });
       pending.complete();

@@ -166,11 +166,12 @@ export class ProjectController {
 
       const includeMeetingCoordinator = req.query['meeting_coordinator'] === 'true';
       const includeAuditor = req.query['auditor'] === 'true';
+      const strictWriter = req.query['strict_writer'] === 'true';
 
       // A uuid slug fetches by id; otherwise resolve by slug
       const project = isUuid(slug)
-        ? await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeAuditor)
-        : await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeAuditor);
+        ? await this.projectService.getProjectById(req, slug, true, includeMeetingCoordinator, includeAuditor, strictWriter)
+        : await this.projectService.getProjectBySlug(req, slug, includeMeetingCoordinator, includeAuditor, strictWriter);
 
       logger.success(req, 'get_project_by_slug', startTime, {
         slug,

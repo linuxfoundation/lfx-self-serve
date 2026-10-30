@@ -99,8 +99,14 @@ export class ProjectService {
    * Fetches a project by slug OR uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs and
    * resolves them via getProjectById, so callers holding either identifier can use this method.
    * Note the two identifiers cache under separate keys for the same project.
+   * `strictWriter` opts into a failure-preserving writer check, isolated from ordinary cached
+   * lookups. A failed check emits null and evicts the entry, so the caller can offer a retry.
    */
-  public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project | null> {
+  public getProject(
+    slugOrUid: string,
+    current: boolean = true,
+    options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }
+  ): Observable<Project | null> {
     const cacheKey = `${slugOrUid}:${current}${this.roleCheckCacheSuffix(options)}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = this.buildRoleCheckParams(options);
@@ -158,7 +164,7 @@ export class ProjectService {
    * `options` mirrors getProject's role-check query params, with matching `:mc`/`:aud`
    * cache-key suffixes so a role-scoped entry never collides with the plain one.
    */
-  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project> {
+  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): Observable<Project> {
     const cacheKey = `${slugOrUid}${this.roleCheckCacheSuffix(options)}`;
     if (!this.strictProjectCache.has(cacheKey)) {
       const params = this.buildRoleCheckParams(options);
@@ -302,7 +308,7 @@ export class ProjectService {
    * check fails (HTTP 200, not an error), so absence on a requested check means "unknown", not "no
    * role". Writers skip the checks server-side and unrequested checks legitimately omit the field.
    */
-  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean }): boolean {
+  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): boolean {
     if (project.writer === true) {
       return false;
     }
@@ -313,7 +319,7 @@ export class ProjectService {
    * Role-check query params shared by getProject/getProjectStrict — one builder so a future
    * role flag can't be added to one lookup but not the other.
    */
-  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean }): HttpParams | undefined {
+  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): HttpParams | undefined {
     let params: HttpParams | undefined;
     if (options?.meetingCoordinator) {
       params = new HttpParams().set('meeting_coordinator', 'true');
@@ -321,11 +327,14 @@ export class ProjectService {
     if (options?.auditor) {
       params = (params ?? new HttpParams()).set('auditor', 'true');
     }
+    if (options?.strictWriter) {
+      params = (params ?? new HttpParams()).set('strict_writer', 'true');
+    }
     return params;
   }
 
   /** Cache-key suffix for the role-check variants — a role-scoped entry never collides with the plain one. */
-  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean }): string {
-    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): string {
+    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}${options?.strictWriter ? ':writer-strict' : ''}`;
   }
 }
