@@ -61,6 +61,23 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(success()).toBeNull();
   });
 
+  it('keeps the large presenter button by default', () => {
+    const host = el().querySelector('[data-testid="vote-send-ballots-button"] button') as HTMLButtonElement;
+
+    expect(host.className).toContain('min-h-[44px]');
+    expect(host.className).not.toContain('p-button-sm');
+    expect(host.className).not.toContain('p-button-outlined');
+  });
+
+  it('renders the small outlined button for the compact variant', () => {
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+
+    expect(button().className).toContain('p-button-sm');
+    expect(button().className).toContain('p-button-outlined');
+    expect(button().className).not.toContain('min-h-[44px]');
+  });
+
   it('asks for confirmation naming the number of members who have not voted, and sends nothing yet', () => {
     const confirmation = clickAndCapture();
 

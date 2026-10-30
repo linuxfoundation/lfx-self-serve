@@ -35,6 +35,14 @@
             (onClick)="sendReminder.emit()"
             data-testid="vote-detail-header-send-reminder" />
         }
+        @if (canSendBallots() && !limited()) {
+          <lfx-vote-send-ballots
+            [voteUid]="vote().uid"
+            [responded]="vote().num_response_received"
+            [invited]="vote().total_voting_request_invitations"
+            variant="compact"
+            data-testid="vote-detail-header-send-ballots" />
+        }
         @if (canPresent() && !limited()) {
           <lfx-button
             label="Present"
@@ -53,13 +61,6 @@
             [loading]="slideBusy()"
             (onClick)="copySlide.emit()"
             data-testid="vote-detail-header-copy-slide" />
-        }
-        @if (canSendBallots() && !limited()) {
-          <lfx-vote-send-ballots
-            [voteUid]="vote().uid"
-            [responded]="vote().num_response_received"
-            [invited]="vote().total_voting_request_invitations"
-            data-testid="vote-detail-header-send-ballots" />
         }
         @if (canCastVote() && !limited()) {
           <lfx-button
