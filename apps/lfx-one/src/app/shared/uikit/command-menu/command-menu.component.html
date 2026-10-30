@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<h2 class="sr-only" [id]="titleId" data-testid="ui-command-menu-title">{{ label() }}</h2>
+<!-- Exact px, not rem; 14px root. 56px search row with a 16px gutter, as in the library. -->
+<div
+  class="flex h-[56px] shrink-0 items-center gap-[12px] px-[16px] text-[16px] text-ui-neutral-600 shadow-[inset_0_-1px_0_theme(colors.ui.neutral-alpha.200)]"
+  data-testid="ui-command-menu-search">
+  <i class="fa-light fa-magnifying-glass" aria-hidden="true"></i>
+  <input
+    type="text"
+    role="combobox"
+    class="min-w-0 flex-1 bg-transparent copy-16 text-ui-neutral-900 outline-none placeholder:text-ui-neutral-500"
+    autocomplete="off"
+    spellcheck="false"
+    aria-autocomplete="list"
+    [attr.aria-label]="label()"
+    [attr.aria-expanded]="hasResults()"
+    [attr.aria-controls]="hasResults() ? listboxId : null"
+    [attr.aria-activedescendant]="activeDescendant()"
+    [placeholder]="placeholder()"
+    [value]="query()"
+    (input)="onInput($event)"
+    (keydown)="onKeydown($event)"
+    data-testid="ui-command-menu-input" />
+  <lfx-ui-keyboard-input [keys]="['Esc']" size="sm" />
+</div>
+
+<!-- The mousedown guard keeps focus in the search field while a row is clicked. -->
+<div class="min-h-0 flex-1 overflow-auto p-[8px]" (mousedown)="$event.preventDefault()">
+  @if (hasResults()) {
+    <div role="listbox" [id]="listboxId" [attr.aria-label]="label()" data-testid="ui-command-menu-listbox">
+      @for (group of visibleGroups(); track group.id) {
+        <div role="group" [attr.aria-labelledby]="group.id" data-testid="ui-command-menu-group">
+          <div [id]="group.id" class="label-12 px-[8px] pb-[4px] pt-[8px] text-ui-neutral-600" data-testid="ui-command-menu-group-label">{{ group.label }}</div>
+          @for (view of group.items; track view.id) {
+            <div
+              role="option"
+              class="group flex h-ui-menu-item w-full cursor-pointer items-center gap-[12px] rounded-ui-sm px-[8px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-100"
+              [id]="view.id"
+              [attr.aria-selected]="view.index === activeIndex()"
+              [attr.aria-disabled]="view.item.disabled ? 'true' : null"
+              [attr.data-highlighted]="view.index === activeIndex() ? '' : null"
+              (mousemove)="highlight(view.index)"
+              (click)="choose(view.index)"
+              data-testid="ui-command-menu-item">
+              @if (view.item.icon) {
+                <span
+                  class="inline-flex w-[16px] shrink-0 justify-center text-[14px] text-ui-neutral-600 group-aria-disabled:text-ui-neutral-500"
+                  data-testid="ui-command-menu-item-icon">
+                  <i [class]="view.item.icon" aria-hidden="true"></i>
+                </span>
+              }
+              <span class="min-w-0 flex-1 truncate" data-testid="ui-command-menu-item-label">{{ view.item.label }}</span>
+              @if (view.item.shortcut?.length) {
+                <lfx-ui-keyboard-input [keys]="view.item.shortcut ?? []" size="sm" />
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+  <div role="status" data-testid="ui-command-menu-status">
+    @if (!hasResults()) {
+      <p class="copy-14 px-[8px] py-[32px] text-center text-ui-neutral-600" data-testid="ui-command-menu-empty">{{ emptyText() }}</p>
+    }
+  </div>
+</div>
+
+<div
+  class="label-13 flex h-[44px] shrink-0 items-center justify-end gap-[16px] bg-ui-background-200 px-[16px] text-ui-neutral-600 shadow-[inset_0_1px_0_theme(colors.ui.neutral-alpha.200)]"
+  data-testid="ui-command-menu-footer">
+  <span class="inline-flex items-center gap-[6px]">Open <lfx-ui-keyboard-input [keys]="['↵']" size="sm" /></span>
+  <span class="inline-flex items-center gap-[6px]">Navigate <lfx-ui-keyboard-input [keys]="['↑', '↓']" size="sm" /></span>
+</div>
