@@ -124,6 +124,30 @@ describe('UiSliderComponent', () => {
     expect(output().textContent?.trim()).toBe('90');
   });
 
+  it('keeps the native value when min and step change in the same update', async () => {
+    await set('step', 5);
+    await set('value', 50);
+    // jsdom does not re-snap on attribute changes, so mimic the browser: setting step moves the native value off the model.
+    const step = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'step') as PropertyDescriptor;
+    Object.defineProperty(range(), 'step', {
+      configurable: true,
+      get(this: HTMLInputElement): string {
+        return step.get?.call(this) as string;
+      },
+      set(this: HTMLInputElement, next: string) {
+        step.set?.call(this, next);
+        this.value = '47';
+      },
+    });
+    // The snapped value stays 50, so [value] is not rewritten.
+    fixture.componentRef.setInput('min', 7);
+    fixture.componentRef.setInput('step', 1);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe(50);
+    expect(range().value).toBe('50');
+  });
+
   it('gives each instance its own ids', () => {
     const other = TestBed.createComponent(UiSliderComponent);
     other.componentRef.setInput('label', 'Other');
