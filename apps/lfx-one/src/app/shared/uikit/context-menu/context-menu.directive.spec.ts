@@ -49,6 +49,11 @@ describe('UiContextMenuDirective', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let container: HTMLElement;
 
+  // `whenStable` waits on a timer, so under fake timers flush them instead.
+  const settle = async (): Promise<void> => {
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+    else await fixture.whenStable();
+  };
   const el = (id: string): HTMLElement => fixture.nativeElement.querySelector(`#${id}`) as HTMLElement;
   const menus = (): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="ui-menu"]'));
   const item = (id: string): HTMLElement => container.querySelector(`#${id}`) as HTMLElement;
@@ -57,14 +62,26 @@ describe('UiContextMenuDirective', () => {
   const key = async (target: Element, k: string, init: KeyboardEventInit = {}): Promise<KeyboardEvent> => {
     const event = new KeyboardEvent('keydown', { key: k, keyCode: keyCodes[k], bubbles: true, cancelable: true, ...init });
     target.dispatchEvent(event);
-    await fixture.whenStable();
+    await settle();
     return event;
   };
   const rightClick = async (target: Element): Promise<MouseEvent> => {
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 120, clientY: 80 });
     target.dispatchEvent(event);
-    await fixture.whenStable();
+    await settle();
     return event;
+  };
+
+  const pointer = (target: Element, type: string, init: PointerEventInit = {}): void => {
+    target.dispatchEvent(
+      new PointerEvent(type, { pointerType: 'touch', pointerId: 1, isPrimary: true, bubbles: true, cancelable: true, clientX: 60, clientY: 50, ...init })
+    );
+  };
+  // Records the `contextmenu` events that reach the host, capturing so the CDK handler cannot hide them.
+  const spyContextMenu = (target: Element): MouseEvent[] => {
+    const seen: MouseEvent[] = [];
+    target.addEventListener('contextmenu', (e) => seen.push(e as MouseEvent), { capture: true });
+    return seen;
   };
 
   beforeEach(async () => {
@@ -78,8 +95,11 @@ describe('UiContextMenuDirective', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     fixture.destroy();
+    // The fixture host was moved out of TestBed's root, so TestBed does not remove it.
+    fixture.nativeElement.remove();
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
@@ -235,5 +255,217 @@ describe('UiContextMenuDirective', () => {
 
     // The inner directive steps aside and the outer host takes the key from its bubbled event.
     expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Project actions']);
+  });
+  describe('menu key on Windows', () => {
+    it('cancels the browser menu that Chromium raises on keyup, once focus is in our menu', async () => {
+      el('outer').focus();
+      await key(el('outer'), 'ContextMenu');
+      expect(document.activeElement).toBe(item('edit'));
+
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 });
+      item('edit').dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('leaves the browser menu alone outside our menu', async () => {
+      await rightClick(el('outer'));
+
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      document.body.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('stops cancelling once the menu has closed', async () => {
+      const other = document.createElement('div');
+      other.setAttribute('role', 'menu');
+      document.body.appendChild(other);
+      await rightClick(el('outer'));
+      const whileOpen = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      other.dispatchEvent(whileOpen);
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await fixture.whenStable();
+
+      const afterClose = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      other.dispatchEvent(afterClose);
+      other.remove();
+
+      expect(whileOpen.defaultPrevented).toBe(true);
+      expect(afterClose.defaultPrevented).toBe(false);
+    });
+  });
+
+  describe('long press on a touch screen', () => {
+    beforeEach(() => vi.useFakeTimers());
+
+    it('opens the menu at the press point after about half a second', async () => {
+      const seen = spyContextMenu(el('outer'));
+      pointer(el('outer'), 'pointerdown');
+
+      vi.advanceTimersByTime(499);
+      expect(menus().length).toBe(0);
+
+      vi.advanceTimersByTime(1);
+      await settle();
+
+      expect(menus().length).toBe(1);
+      expect(seen[0].clientX).toBe(60);
+      expect(seen[0].clientY).toBe(50);
+      expect(menus()[0].getAttribute('aria-label')).toBe('Project actions');
+    });
+
+    it('does not open for a mouse or a pen', async () => {
+      pointer(el('outer'), 'pointerdown', { pointerType: 'mouse' });
+      pointer(el('outer'), 'pointerdown', { pointerType: 'pen' });
+
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('cancels when the finger lifts early, or the browser cancels the touch', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(300);
+      pointer(el('outer'), 'pointerup');
+      vi.advanceTimersByTime(1000);
+
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(300);
+      pointer(el('outer'), 'pointercancel');
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('cancels once the finger drifts past the tolerance, and ignores a small wobble', async () => {
+      pointer(el('outer'), 'pointerdown');
+      pointer(el('outer'), 'pointermove', { clientX: 66, clientY: 56 });
+      vi.advanceTimersByTime(500);
+      await settle();
+      expect(menus().length).toBe(1);
+
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await settle();
+
+      pointer(el('outer'), 'pointerdown');
+      pointer(el('outer'), 'pointermove', { clientX: 60, clientY: 62 });
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('cancels when a second finger lands', async () => {
+      pointer(el('outer'), 'pointerdown');
+      pointer(el('outer'), 'pointerdown', { pointerId: 2, isPrimary: false });
+
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('does not open a second time when the browser raises its own contextmenu', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(300);
+      await rightClick(el('outer'));
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(1);
+      expect(fixture.componentInstance.events()).toEqual(['opened']);
+    });
+
+    it('swallows the browser contextmenu that follows ours instead of closing and reopening the menu', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      const native = await rightClick(el('outer'));
+
+      expect(native.defaultPrevented).toBe(true);
+      expect(menus().length).toBe(1);
+      expect(fixture.componentInstance.events()).toEqual(['opened']);
+    });
+
+    it('keeps the menu open when the browser sends a click as the finger lifts', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      pointer(el('outer'), 'pointerup');
+      el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await settle();
+
+      expect(menus().length).toBe(1);
+
+      // Only that one click is swallowed: the next outside click closes the menu.
+      el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await settle();
+      expect(menus().length).toBe(0);
+    });
+
+    it('stops expecting the release click after a moment', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      pointer(el('outer'), 'pointerup');
+      vi.advanceTimersByTime(300);
+
+      el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('treats a later right-click as a right-click again', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      pointer(el('outer'), 'pointerup');
+      pointer(el('outer'), 'pointerdown', { pointerType: 'mouse' });
+      await rightClick(el('outer'));
+
+      expect(fixture.componentInstance.events()).toEqual(['opened', 'closed', 'opened']);
+    });
+
+    it('stays quiet while disabled', async () => {
+      fixture.componentInstance.outerDisabled.set(true);
+      await settle();
+
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('opens only the innermost menu, and the outer one when the inner is disabled', async () => {
+      pointer(el('nested'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Nested actions']);
+
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fixture.componentInstance.nestedDisabled.set(true);
+      await settle();
+      pointer(el('nested'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+
+      expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Project actions']);
+    });
+
+    it('clears a pending press when the host is destroyed', () => {
+      const host = el('outer');
+      const dispatch = vi.spyOn(host, 'dispatchEvent');
+      pointer(host, 'pointerdown');
+      fixture.destroy();
+
+      vi.advanceTimersByTime(1000);
+
+      expect(dispatch.mock.calls.filter(([e]) => e.type === 'contextmenu').length).toBe(0);
+    });
   });
 });

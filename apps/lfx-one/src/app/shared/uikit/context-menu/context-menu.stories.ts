@@ -29,7 +29,7 @@ const meta: Meta<UiContextMenuDirective> = {
       <div class="edge flex h-[96px] w-[320px] items-center rounded-ui-md bg-ui-background-100 px-[16px] label-14 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none"
         tabindex="0" [lfxUiContextMenu]="menu" [lfxUiContextMenuDisabled]="!!cfg.lfxUiContextMenuDisabled">
         Kubernetes
-        <span class="ml-auto label-13 text-ui-neutral-600">Right-click, or focus and press Shift+F10</span>
+        <span class="ml-auto label-13 text-ui-neutral-600">Right-click, long-press, or focus and press Shift+F10</span>
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">
@@ -45,7 +45,7 @@ const meta: Meta<UiContextMenuDirective> = {
 export default meta;
 type Story = StoryObj<UiContextMenuDirective>;
 
-/** Opens at the pointer on right-click, or below the focused card with Shift+F10 or the context menu key. Try the arrow keys and Escape. */
+/** Opens at the pointer on right-click or a touch long press, or below the focused card with Shift+F10 or the context menu key. Try the arrow keys and Escape. */
 export const Default: Story = {};
 
 /** The same menu behind a ⋯ button. The right-click is a shortcut to what the button already offers, never the only way. */

@@ -3,12 +3,12 @@
 
 import { CdkContextMenuTrigger } from '@angular/cdk/menu';
 import { DOCUMENT } from '@angular/common';
-import { Directive, ElementRef, inject } from '@angular/core';
+import { DestroyRef, Directive, ElementRef, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 /**
- * Opens a `lfx-ui-menu` where the user right-clicks the host, or from the keyboard with Shift+F10 or the Menu (context menu) key
- * while the host or something inside it has focus. Put the menu in an `<ng-template>` and pass it to the directive. The menu opens at the
+ * Opens a `lfx-ui-menu` where the user right-clicks the host, long-presses it on a touch screen, or uses the keyboard with Shift+F10 or the
+ * Menu (context menu) key while the host or something inside it has focus. Put the menu in an `<ng-template>` and pass it to the directive. The menu opens at the
  * pointer, flips to stay inside the window, and takes focus on its first item. Arrow keys, Home, End, type-ahead and Escape work as in `lfx-ui-menu`.
  * With several nested hosts, only the innermost enabled one opens.
  *
@@ -36,17 +36,51 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
       outputs: ['cdkContextMenuOpened: lfxUiContextMenuOpened', 'cdkContextMenuClosed: lfxUiContextMenuClosed'],
     },
   ],
-  host: { '(keydown)': 'onKeydown($event)', 'data-testid': 'ui-context-menu-trigger' },
+  host: {
+    '(keydown)': 'onKeydown($event)',
+    '(pointerdown)': 'onPointerDown($event)',
+    '(pointermove)': 'onPointerMove($event)',
+    '(pointerup)': 'onPointerUp()',
+    '(pointercancel)': 'cancelLongPress()',
+    // The browser raised its own contextmenu (Android does on a long press), so the CDK trigger opens the menu and ours must not.
+    '(contextmenu)': 'cancelLongPress()',
+    'data-testid': 'ui-context-menu-trigger',
+  },
 })
 export class UiContextMenuDirective {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly trigger = inject(CdkContextMenuTrigger);
   private readonly document = inject(DOCUMENT);
   private opener: HTMLElement | null = null;
+  private readonly longPressMs = 500;
+  // Finger drift in px that turns a press into a scroll or drag.
+  private readonly longPressTolerance = 10;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private pressX = 0;
+  private pressY = 0;
+  private openedByLongPress = false;
+  // Time in ms after a long press is released in which the tap's own `click` is still expected.
+  private readonly releaseClickMs = 300;
+  private releaseClickTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
-    this.trigger.opened.pipe(takeUntilDestroyed()).subscribe(() => (this.opener = this.document.activeElement as HTMLElement | null));
-    this.trigger.closed.pipe(takeUntilDestroyed()).subscribe(() => this.returnFocus());
+    this.trigger.opened.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.opener = this.document.activeElement as HTMLElement | null;
+      this.document.addEventListener('contextmenu', this.onDocumentContextMenu, true);
+      this.document.addEventListener('click', this.onDocumentClick, true);
+    });
+    this.trigger.closed.pipe(takeUntilDestroyed()).subscribe(() => {
+      this.document.removeEventListener('contextmenu', this.onDocumentContextMenu, true);
+      this.document.removeEventListener('click', this.onDocumentClick, true);
+      this.openedByLongPress = false;
+      this.returnFocus();
+    });
+    inject(DestroyRef).onDestroy(() => {
+      this.cancelLongPress();
+      this.clearReleaseClick();
+      this.document.removeEventListener('contextmenu', this.onDocumentContextMenu, true);
+      this.document.removeEventListener('click', this.onDocumentClick, true);
+    });
   }
 
   protected onKeydown(event: KeyboardEvent): void {
@@ -59,6 +93,73 @@ export class UiContextMenuDirective {
     const { left, bottom } = (event.target as HTMLElement).getBoundingClientRect();
     this.host.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0, clientX: left, clientY: bottom }));
   }
+
+  protected onPointerDown(event: PointerEvent): void {
+    this.openedByLongPress = false;
+    this.clearReleaseClick();
+    if (event.pointerType !== 'touch' || this.trigger.disabled) return;
+    // A second finger is a pinch or a scroll, not a long press.
+    if (this.longPressTimer !== null) {
+      this.cancelLongPress();
+      return;
+    }
+    const { clientX, clientY } = event;
+    const target = event.target as Element;
+    this.pressX = clientX;
+    this.pressY = clientY;
+    // Safari on iOS never raises `contextmenu`, so raise it from the press point; from the touched element, so the innermost enabled host takes it.
+    this.longPressTimer = setTimeout(() => {
+      this.longPressTimer = null;
+      target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY }));
+      this.openedByLongPress = this.trigger.isOpen();
+    }, this.longPressMs);
+  }
+
+  protected onPointerUp(): void {
+    this.cancelLongPress();
+    if (!this.openedByLongPress) return;
+    // Some browsers send the tap's `click` once the finger lifts; the CDK would read it as an outside click and close the menu.
+    this.releaseClickTimer = setTimeout(() => (this.releaseClickTimer = null), this.releaseClickMs);
+  }
+
+  protected onPointerMove(event: PointerEvent): void {
+    if (this.longPressTimer !== null && Math.hypot(event.clientX - this.pressX, event.clientY - this.pressY) > this.longPressTolerance) this.cancelLongPress();
+  }
+
+  protected cancelLongPress(): void {
+    if (this.longPressTimer === null) return;
+    clearTimeout(this.longPressTimer);
+    this.longPressTimer = null;
+  }
+
+  private clearReleaseClick(): void {
+    if (this.releaseClickTimer === null) return;
+    clearTimeout(this.releaseClickTimer);
+    this.releaseClickTimer = null;
+  }
+
+  // Swallows the click that follows a long press, in the capture phase of the document so it beats the CDK's outside-click handler on the body.
+  private readonly onDocumentClick = (event: Event): void => {
+    if (this.releaseClickTimer === null) return;
+    this.clearReleaseClick();
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  // Runs while the menu is open, in the capture phase of the document so it beats the CDK's outside-click handler on the body.
+  private readonly onDocumentContextMenu = (event: Event): void => {
+    const target = event.target as Element | null;
+    // Windows Chromium raises `contextmenu` for the Menu key on keyup, after focus is in our menu, so cancel it or the browser menu opens on top.
+    if (target?.closest?.('[role="menu"]')) {
+      event.preventDefault();
+      return;
+    }
+    // Android raises its own `contextmenu` on a long press. If ours came first, swallow it: the CDK would otherwise close the menu and reopen it.
+    if (this.openedByLongPress && target && this.host.contains(target)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   // Escape or a chosen item takes the focused menu item away with the menu, so hand focus back to where it was. A click that already moved focus elsewhere stays.
   private returnFocus(): void {
