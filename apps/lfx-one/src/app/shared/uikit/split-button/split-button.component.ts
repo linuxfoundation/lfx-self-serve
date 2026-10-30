@@ -46,7 +46,6 @@ import { UiButtonComponent } from '../button/button.component';
   selector: 'lfx-ui-split-button',
   imports: [CdkMenuTrigger, UiButtonComponent],
   templateUrl: './split-button.component.html',
-  styleUrl: './split-button.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'relative isolate inline-flex',
@@ -84,8 +83,13 @@ export class UiSplitButtonComponent {
 
   public constructor() {
     afterNextRender(() => {
-      const measure = (): void =>
-        this.chevronOffset.set(this.chevron().nativeElement.getBoundingClientRect().left - this.hostElement.nativeElement.getBoundingClientRect().left);
+      const measure = (): void => {
+        const host = this.hostElement.nativeElement;
+        const hostRect = host.getBoundingClientRect();
+        // A scaled ancestor (the modal enters at scale 0.96) shrinks the rects, so divide by the scale to get layout px; within half a px counts as unscaled.
+        const scale = host.offsetWidth && Math.abs(hostRect.width - host.offsetWidth) > 0.5 ? hostRect.width / host.offsetWidth : 1;
+        this.chevronOffset.set((this.chevron().nativeElement.getBoundingClientRect().left - hostRect.left) / scale);
+      };
       measure();
       if (typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(measure);
@@ -109,8 +113,10 @@ export class UiSplitButtonComponent {
         medium: 'h-ui-medium rounded-r-ui-sm text-[16px]',
       };
       // The rings of two neighbouring halves overlap by 1px; the primary fill has no ring and gets a divider instead.
+      // shortcut: hover/active mixes spelled out with var(), matching lfx-ui-button. revisit: when the library ships hover/active mix tokens.
       const variants = {
-        primary: 'split-chevron-primary bg-ui-accent-500 text-white',
+        primary:
+          'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
         secondary: '-ml-px bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
       };
       const disabled = '-ml-px pointer-events-none bg-ui-neutral-50 text-ui-neutral-500 edge';

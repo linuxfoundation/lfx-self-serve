@@ -40,7 +40,7 @@ describe('UiSplitButtonComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let container: HTMLElement;
 
-  const main = (): HTMLButtonElement => fixture.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+  const main = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="ui-split-button-main"] button') as HTMLButtonElement;
   const chevron = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="ui-split-button-chevron"]') as HTMLButtonElement;
   const menu = (): HTMLElement | null => container.querySelector('[data-testid="ui-menu"]');
   // CDK Menu reads `keyCode`, so the synthetic events carry it.
@@ -204,6 +204,20 @@ describe('UiSplitButtonComponent', () => {
 
     expect(trigger.menuPosition?.[0].offsetX).toBe(-120);
     rect.mockRestore();
+    measured.destroy();
+  });
+
+  it('measures the menu offset in layout px inside a scaled ancestor, such as a modal entering at scale 0.96', async () => {
+    // Laid out 130px wide with the chevron 86.25px in; at scale 0.96 the rects read 124.8px and 82.8px.
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(130);
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return (this.tagName === 'BUTTON' ? { left: 82.8, width: 0 } : { left: 0, width: 124.8 }) as DOMRect;
+    });
+    const measured = TestBed.createComponent(TestHostComponent);
+    await measured.whenStable();
+    const trigger = measured.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+
+    expect(trigger.menuPosition?.[0].offsetX).toBeCloseTo(-86.25, 2);
     measured.destroy();
   });
 });
