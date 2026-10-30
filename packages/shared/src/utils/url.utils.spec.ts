@@ -30,6 +30,32 @@ describe('normalizeToUrl', () => {
 });
 
 describe('extractUrlCandidates', () => {
+  it.each(['https://example.com[1]', 'https://example.com:443[12]', 'https://[2606:4700:4700::1111][1]'])(
+    'ends a hostname URL before a citation: %s',
+    (text) => {
+      const url = text.slice(0, text.lastIndexOf('['));
+      expect(extractUrlCandidates(text)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(text)).toEqual([url]);
+    }
+  );
+
+  it('separates adjacent labeled links without losing original offsets', () => {
+    const text = '[label](https://one.example/path)[next](https://two.example/path)';
+    const urls = ['https://one.example/path', 'https://two.example/path'];
+    expect(extractUrlCandidates(text)).toEqual(urls.map((url) => ({ url, index: text.indexOf(url) })));
+    expect(extractUrls(text)).toEqual(urls);
+  });
+
+  it.each([
+    'https://example.com/path[1]',
+    'https://example.com?items[]=one',
+    'https://example.com#section[1]',
+    'https://[2606:4700:4700::1111]/path[1]?items[]=one#section[1]',
+  ])('retains URL brackets outside hostname citations: %s', (url) => {
+    expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+    expect(extractUrls(url)).toEqual([url]);
+  });
+
   it('preserves offsets and punctuation boundaries without applying a destination policy', () => {
     const text = 'Read (https://example.com.localhost/guide), then https://example.com.';
     expect(extractUrlCandidates(text)).toEqual([

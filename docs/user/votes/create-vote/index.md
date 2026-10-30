@@ -4,7 +4,7 @@ description: How to create a vote in LFX Self Serve with the three-step form, in
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, create, questions, abstain, draft, governance, elections]
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 intercom_collection: Votes
 ---
 
@@ -60,7 +60,7 @@ Below the questions, **Comment Questions** let you ask voters an open-ended ques
 
 ## Step 3: Review and Open Vote
 
-The review step summarizes the vote's details, questions, and comment questions. The description appears below its label exactly as you typed it, with your line breaks and spacing kept. Select **Edit** on a card to jump back to that step and change it.
+The review step summarizes the vote's details, questions, and comment questions. The description appears below its label with plain-text line breaks and spacing preserved. Supported HTML descriptions display their formatting. Select **Edit** on a card to jump back to that step and change it.
 
 When everything looks right, select **Open Vote**. A confirmation asks whether to open it now, and warns that once opened, notifications are sent and voting begins immediately. Select **Yes, open vote** to continue, or **Cancel** to go back.
 

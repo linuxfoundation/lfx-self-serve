@@ -248,7 +248,8 @@ describe('VotePresenterComponent', () => {
       await mount();
 
       expect(question().textContent).toBe(raw);
-      for (const cls of ['whitespace-pre-wrap', 'prose', 'prose-invert', 'text-[28px]', 'max-h-[calc(3*1.4*28px)]', 'overflow-y-auto', 'max-w-[900px]']) {
+      expect(question().querySelector('span.whitespace-pre-wrap')).toBeTruthy();
+      for (const cls of ['whitespace-normal', 'prose', 'prose-invert', 'text-[28px]', 'max-h-[calc(3*1.4*28px)]', 'overflow-y-auto', 'max-w-[900px]']) {
         expect(question().classList.contains(cls)).toBe(true);
       }
       expect(question().classList.contains('[&_p]:m-0')).toBe(false);

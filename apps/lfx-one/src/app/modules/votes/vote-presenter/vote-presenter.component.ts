@@ -4,6 +4,7 @@
 import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -76,6 +77,7 @@ function tallyBarClass(option: VoteResultsOption): string {
     PresenterShellComponent,
     VoteRankedQuestionResultsComponent,
     VoteSendBallotsComponent,
+    VoteDescriptionPipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './vote-presenter.component.html',

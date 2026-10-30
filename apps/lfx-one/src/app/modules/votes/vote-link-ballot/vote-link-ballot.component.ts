@@ -4,6 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, OnDestroy, OnInit, PLATFORM_ID, signal } from '@angular/core';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
@@ -33,6 +34,7 @@ import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vot
     ButtonComponent,
     ExternalLinksDirective,
     LinkifyHtmlPipe,
+    VoteDescriptionPipe,
     VoteBallotFormComponent,
     VoteLinkHeaderComponent,
     VoteLinkMarkComponent,

@@ -183,9 +183,9 @@
               @if (v.description) {
                 <!-- Question text: 28px, scrolls past ~3 lines. Angular sanitizes the HTML, same as the results drawer. -->
                 <div
-                  class="vote-description max-w-[900px] max-h-[calc(3*1.4*28px)] overflow-y-auto text-[28px] leading-[1.4] text-gray-300 whitespace-pre-wrap break-words prose prose-invert [&_p]:[font-size:inherit] [&_p]:[line-height:inherit] [&_li]:[font-size:inherit] [&_li]:[line-height:inherit] [&_strong]:text-inherit"
+                  class="vote-description max-w-[900px] max-h-[calc(3*1.4*28px)] overflow-y-auto text-[28px] leading-[1.4] text-gray-300 whitespace-normal break-words prose prose-invert [&_p]:[font-size:inherit] [&_p]:[line-height:inherit] [&_li]:[font-size:inherit] [&_li]:[line-height:inherit] [&_strong]:text-inherit"
                   tabindex="0"
-                  [innerHTML]="v.description"
+                  [innerHTML]="v.description | voteDescription"
                   data-testid="vote-presenter-question"></div>
               }
             </div>

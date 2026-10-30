@@ -238,12 +238,13 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     const description = el('vote-cast-drawer-description');
     expect(description).toBeTruthy();
     // whitespace-pre-wrap preserves line breaks, blank lines, repeated spaces and indentation while still wrapping.
-    expect(description!.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(description!.querySelector('span.whitespace-pre-wrap')).toBeTruthy();
+    expect(description!.classList.contains('whitespace-normal')).toBe(true);
     expect(description!.classList.contains('whitespace-pre-line')).toBe(false);
     expect(description!.classList.contains('prose')).toBe(true);
     expect(description!.textContent).toBe('  Line one\n\n\n    - indented  bullet\n1.  Line two');
-    // Plain text must not parse into child elements.
-    expect(description!.children).toHaveLength(0);
+    // The plain-text wrapper must not interpret user text as HTML.
+    expect(description!.querySelector('span.whitespace-pre-wrap')!.children).toHaveLength(0);
   });
 
   it('neutralizes attack payloads via the Angular sanitizer', async () => {

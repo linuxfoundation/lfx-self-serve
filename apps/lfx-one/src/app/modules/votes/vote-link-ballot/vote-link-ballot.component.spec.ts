@@ -186,8 +186,8 @@ describe('VoteLinkBallotComponent (#4363)', () => {
       await open(of({ ...BALLOT, description: raw }));
 
       expect(description()?.textContent).toBe(raw);
-      expect(description()?.children).toHaveLength(0);
-      expect(description()?.classList.contains('whitespace-pre-wrap')).toBe(true);
+      expect(description()?.querySelector('span.whitespace-pre-wrap')?.children).toHaveLength(0);
+      expect(description()?.classList.contains('whitespace-normal')).toBe(true);
       expect(description()?.classList.contains('prose')).toBe(true);
       expect(description()?.classList.contains('max-sm:max-h-[40dvh]')).toBe(true);
       expect(description()?.getAttribute('role')).toBe('region');

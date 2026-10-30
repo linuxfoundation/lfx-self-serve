@@ -30,11 +30,11 @@
           @if (description()) {
             <div class="flex flex-col gap-1">
               <span class="text-gray-500">Description:</span>
-              <!-- Plain text or sanitized rich HTML; pre-wrap keeps indentation and blank lines. Angular's [innerHTML] sanitizer applies. -->
+              <!-- Plain text keeps its spacing; legacy HTML uses normal HTML whitespace. Angular's [innerHTML] sanitizer applies. -->
               <div
-                class="prose prose-sm max-w-none text-sm text-gray-900 text-left whitespace-pre-wrap break-words [&_a]:text-blue-600 [&_a]:underline"
+                class="prose prose-sm max-w-none text-sm text-gray-900 text-left whitespace-normal break-words [&_a]:text-blue-600 [&_a]:underline"
                 lfxExternalLinks
-                [innerHTML]="description() | linkifyHtml"
+                [innerHTML]="description() | voteDescription | linkifyHtml"
                 data-testid="vote-review-description"></div>
             </div>
           }

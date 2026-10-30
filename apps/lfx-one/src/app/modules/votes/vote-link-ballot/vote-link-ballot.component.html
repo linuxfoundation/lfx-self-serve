@@ -92,9 +92,9 @@
             @if (b.description) {
               <!-- Poll-creator-authored rich HTML; Angular's [innerHTML] sanitizer applies. Capped on phones so the ballot starts in view. -->
               <div
-                class="prose prose-sm max-w-none text-sm text-slate-700 whitespace-pre-wrap break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
+                class="prose prose-sm max-w-none text-sm text-slate-700 whitespace-normal break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
                 lfxExternalLinks
-                [innerHTML]="b.description | linkifyHtml"
+                [innerHTML]="b.description | voteDescription | linkifyHtml"
                 [attr.tabindex]="0"
                 role="region"
                 aria-label="Vote description"

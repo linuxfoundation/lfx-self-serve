@@ -24,6 +24,7 @@ import {
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
@@ -131,7 +132,7 @@ describe('VoteDetailComponent', () => {
       // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgTemplateOutlet, LinkifyHtmlPipe, ...realImports],
+          imports: [NgTemplateOutlet, LinkifyHtmlPipe, VoteDescriptionPipe, ...realImports],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -304,9 +305,10 @@ describe('VoteDetailComponent', () => {
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
-      const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-wrap"]');
+      const description = testId(fixture, 'vote-detail-description')?.querySelector('div.prose');
       expect(description?.textContent).toBe(raw);
       expect(description?.classList.contains('prose')).toBe(true);
+      expect(description?.querySelector('span.whitespace-pre-wrap')).toBeTruthy();
     });
 
     it('renders supported description HTML and strips unsafe content (#4727)', async () => {
@@ -316,7 +318,7 @@ describe('VoteDetailComponent', () => {
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
-      const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-wrap"]');
+      const description = testId(fixture, 'vote-detail-description')?.querySelector('div.prose');
       expect(description?.querySelector('p')?.textContent).toBe('One');
       expect(description?.querySelector('ul > li')?.textContent).toBe('A');
       expect(description?.querySelector('script')).toBeNull();

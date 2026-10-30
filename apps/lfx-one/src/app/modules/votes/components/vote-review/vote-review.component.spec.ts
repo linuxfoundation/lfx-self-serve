@@ -44,9 +44,24 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
     await render(raw);
 
     expect(description()?.textContent).toBe(raw);
-    expect(description()?.children).toHaveLength(0);
-    expect(description()?.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(description()?.querySelector('span.whitespace-pre-wrap')?.children).toHaveLength(0);
+    expect(description()?.classList.contains('whitespace-normal')).toBe(true);
     expect(description()?.classList.contains('text-left')).toBe(true);
+  });
+
+  it('preserves placeholders and entities as literal plain text', async () => {
+    const raw = 'Use <username> to sign in &copy; at https://example.com';
+    await render(raw);
+    expect(description()?.textContent).toBe(raw);
+    expect(description()?.querySelector('username')).toBeNull();
+    expect(description()?.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+  });
+
+  it('uses normal whitespace for rich HTML source indentation', async () => {
+    await render('<ul> <li>One</li> <li>Two</li> </ul>');
+    expect(description()?.classList.contains('whitespace-normal')).toBe(true);
+    expect(description()?.querySelector('.whitespace-pre-wrap')).toBeNull();
+    expect(description()?.querySelectorAll('ul > li')).toHaveLength(2);
   });
 
   it('renders supported HTML as elements, not literal tags', async () => {
@@ -84,7 +99,7 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
     try {
       const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
       description()?.querySelector('a')?.dispatchEvent(event);
-      expect(event.defaultPrevented).toBe(true);
+      expect(description()?.querySelector('a')?.hasAttribute('href')).toBe(false);
       expect(opened).not.toHaveBeenCalled();
     } finally {
       opened.mockRestore();

@@ -3,6 +3,7 @@
 
 import { LowerCasePipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
+import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,7 +17,7 @@ import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-review',
-  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule, ExternalLinksDirective, LinkifyHtmlPipe],
+  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule, ExternalLinksDirective, LinkifyHtmlPipe, VoteDescriptionPipe],
   templateUrl: './vote-review.component.html',
 })
 export class VoteReviewComponent {

@@ -185,25 +185,37 @@ export function extractUrlCandidates(text: string): { url: string; index: number
     const raw = match[0];
     let start = 0;
     let bracketDepth = 0;
+    let parenthesisDepth = 0;
+    let inAuthority = true;
 
-    // Scan each raw match once: an unmatched ] ends a prose label, but balanced
-    // brackets remain part of paths, query parameters, and IPv6 hosts.
+    // Keep URL brackets, but stop at hostname citations, unmatched prose closers,
+    // and the boundary between adjacent Markdown-style links. Scan each match once.
     for (let end = 0; end <= raw.length; end++) {
       const char = raw.charAt(end);
-      if (char === '[') {
+      const authorityStart = start + (raw.slice(start, start + 8).toLowerCase() === 'https://' ? 8 : 7);
+      if (end >= authorityStart && (char === '/' || char === '?' || char === '#')) inAuthority = false;
+      const hostnameCitation = char === '[' && inAuthority && end > authorityStart && raw.charAt(end - 1) !== '@';
+      const adjacentLabel = char === ')' && parenthesisDepth === 0 && bracketDepth === 0 && raw.charAt(end + 1) === '[';
+
+      if (char === '(') parenthesisDepth++;
+      if (char === ')' && parenthesisDepth > 0) parenthesisDepth--;
+
+      if (char === '[' && !hostnameCitation) {
         bracketDepth++;
       } else if (char === ']' && bracketDepth > 0) {
         bracketDepth--;
-      } else if (char === ']' || end === raw.length) {
+      } else if (hostnameCitation || adjacentLabel || char === ']' || end === raw.length) {
         candidates.push({ url: trimTrailingPunctuation(raw.slice(start, end)), index: match.index + start });
 
-        // Only search beyond the label boundary, never inside a rejected URL.
+        // Only search beyond a prose boundary, never inside a rejected URL.
         nextUrl.lastIndex = end + 1;
         const next = nextUrl.exec(raw);
         if (!next) break;
         start = next.index;
         end = start - 1;
         bracketDepth = 0;
+        parenthesisDepth = 0;
+        inAuthority = true;
       }
     }
   }
