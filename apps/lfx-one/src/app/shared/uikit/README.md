@@ -56,6 +56,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 | `lfx-ui-textarea`       | `UiTextareaComponent`      | Multi-line field: label, hint, error, 80px minimum, vertical resize, `maxlength`; `[(value)]` and forms                                                                |
 | `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, with `empty-state-action` buttons below; title is a heading at a level you set                                      |
+| `lfx-ui-toast`          | `UiToastComponent`         | Message toast: default, success, warning, error; up to two actions, dismiss button, 5s or 8s auto-dismiss that pauses on hover and focus; `role="status"` or `"alert"` |
+| `UiToastService`        | `UiToastService`           | Bottom-right stack in a CDK overlay, newest on top, kept as a polite live region; `show()` returns a handle, `dismissAll()`                                            |
 
 ## Design tokens
 
