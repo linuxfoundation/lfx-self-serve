@@ -253,6 +253,8 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   }
 
   protected onHeaderKeydown(event: KeyboardEvent): void {
+    // Composition keys are not ours; the overlay's own Escape close is off for the same reason.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       // A select inside a modal must not close the modal as well.
@@ -379,7 +381,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
         // A hidden or disabled field in the header cannot take focus, so skip to the first one that can.
         const field = Array.from(candidates).find((candidate) => this.checker.isFocusable(candidate));
         if (field) field.focus();
-        else if (typed && this.open()) this.typeAhead(typed);
+        else if (typed && this.open()) this.typeAhead(typed, true);
       },
       { injector: this.injector }
     );
@@ -399,14 +401,16 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   }
 
   // Own type-ahead: the CDK one waits for a pause before it moves, the pattern asks for an immediate jump and a half-second buffer.
-  private typeAhead(char: string): void {
+  private typeAhead(char: string, opening = false): void {
     this.typed = this.isTyping() ? this.typed + char.toLowerCase() : char.toLowerCase();
     this.typedAt = Date.now();
     const options = this.options();
     // One letter pressed repeatedly cycles through the options that start with it; a longer word narrows from the current row.
     const cycling = [...this.typed].every((c) => c === this.typed[0]);
     const prefix = cycling ? this.typed[0] : this.typed;
-    const from = Math.max(0, cycling ? this.activeIndex() + 1 : this.activeIndex());
+    // The character that opens the list with nothing picked starts at the fallback row, so the first match wins.
+    const startAtActive = opening && this.selectedIndex() < 0;
+    const from = Math.max(0, cycling && !startAtActive ? this.activeIndex() + 1 : this.activeIndex());
     for (let step = 0; step < options.length; step++) {
       const index = (from + step) % options.length;
       if (!options[index].disabled && options[index].label.toLowerCase().startsWith(prefix)) {
