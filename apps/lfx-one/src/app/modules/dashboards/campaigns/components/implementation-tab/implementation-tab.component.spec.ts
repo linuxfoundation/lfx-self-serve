@@ -14222,6 +14222,7 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     public naturalWidth = 0;
     public naturalHeight = 0;
     public src = '';
+    public referrerPolicy = '';
     public constructor() {
       images.push(this);
     }
@@ -14269,9 +14270,11 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
 
     images[0].load(300, 300);
 
-    expect(warning(c)).toContain('Not 1.91:1');
+    expect(warning(c)).toContain('Measured here as not 1.91:1');
     expect(warning(c)).toContain('https://cdn.example.com/square.png (300x300)');
-    expect(warning(c)).toContain('Create will be refused for it.');
+    // "Likely": a browser applies EXIF rotation that campaign-service's decoder does not.
+    expect(warning(c)).toContain('Create will likely be refused for it;');
+    expect(images[0]).toMatchObject({ referrerPolicy: 'no-referrer' });
   });
 
   it('says nothing about a pasted image that fits', () => {
@@ -14304,10 +14307,10 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     expect(warning(c)).toContain('Could not be loaded here');
     // A late load after the timeout changes nothing.
     images[0].load(300, 300);
-    expect(warning(c)).not.toContain('Not 1.91:1');
+    expect(warning(c)).not.toContain('Measured here as not');
   });
 
-  it('drops the warning when the URL is removed, and does not probe a URL twice', () => {
+  it('drops the warning when the URL is removed', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     setUrls(c, 'https://cdn.example.com/square.png');
     c['onGoogleImageFieldBlur'](group, marketingField());
@@ -14316,11 +14319,55 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
 
     setUrls(c, '');
     expect(warning(c)).toBeUndefined();
+  });
 
-    setUrls(c, 'https://cdn.example.com/square.png');
+  /** The content behind a URL can change — an operator re-uploads a corrected image — so a settled URL is checked again. */
+  it('re-checks a settled URL on the next blur, clearing a warning the corrected image no longer earns', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hero.png');
     c['onGoogleImageFieldBlur'](group, marketingField());
-    expect(images).toHaveLength(1);
+    images[0].load(300, 300);
     expect(warning(c)).toContain('(300x300)');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('retries a URL that could not be loaded', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://flaky.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+    expect(warning(c)).toContain('Could not be loaded here');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('does not start a second probe while one for the same URL is still loading', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/slow.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  it('names every misfit and every unchecked URL in one line, in the plural', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/a.png\nhttps://cdn.example.com/b.png\nhttps://down.example.com/c.png\nhttps://down.example.com/d.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    images[1].load(100, 52);
+    images[2].fail();
+    images[3].fail();
+
+    const line = warning(c) ?? '';
+    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52). Create will likely be refused for them;');
+    expect(line).toContain('not checked: https://down.example.com/c.png, https://down.example.com/d.png. campaign-service checks them again at Create.');
   });
 
   it('probes nothing for a non-image field or a value that is not an http(s) URL', () => {

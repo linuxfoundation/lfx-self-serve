@@ -249,6 +249,7 @@ import {
   googleCreativeImageFit,
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
+  isHttpUrl,
   googlePromotionRefusal,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
@@ -1602,8 +1603,9 @@ export class ImplementationTabComponent implements OnInit {
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
   /**
-   * What the browser learned about each pasted Google image URL, keyed by the URL itself: content-
-   * addressed, so a result stays true whichever slot, brief or draft the URL turns up in again.
+   * What the browser last learned about each pasted Google image URL, keyed by the URL itself, so a
+   * result follows the URL into any slot it is pasted into. Refreshed on every blur (see
+   * `onGoogleImageFieldBlur`), because what a URL serves can change.
    */
   private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
 
@@ -5043,14 +5045,16 @@ export class ImplementationTabComponent implements OnInit {
    * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
    * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
    * nothing; this only tells the operator while they are still on the field rather than at Create.
-   * Each URL is probed once, and a URL already probed keeps its answer.
+   * A URL is probed again on every blur unless a probe for it is still running: a host that was slow
+   * or down may answer now, and an operator who fixed a hosted image at the same URL needs the
+   * corrected answer, not the cached one.
    */
   protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
     if (!field.image || !isPlatformBrowser(this.platformId)) return;
     const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
     const known = this.googleTypedImageProbes();
     for (const url of this.splitCreativeLines(raw)) {
-      if (known[url] === undefined && this.isHttpUrl(url)) {
+      if (known[url]?.state !== 'checking' && isHttpUrl(url, true)) {
         this.probeGoogleTypedImage(url);
       }
     }
@@ -9125,16 +9129,6 @@ export class ImplementationTabComponent implements OnInit {
     }
   }
 
-  /** Whether a pasted value is an absolute http(s) URL — the only kind a probe is worth making for. */
-  private isHttpUrl(value: string): boolean {
-    try {
-      const protocol = new URL(value).protocol;
-      return protocol === 'https:' || protocol === 'http:';
-    } catch {
-      return false;
-    }
-  }
-
   /**
    * Load one pasted URL as an image and record its natural size, or that it could not be loaded within
    * `GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS`. Only ever called in the browser (`onGoogleImageFieldBlur`).
@@ -9144,6 +9138,8 @@ export class ImplementationTabComponent implements OnInit {
   private probeGoogleTypedImage(url: string): void {
     this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: { state: 'checking' } }));
     const image = new Image();
+    // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
+    image.referrerPolicy = 'no-referrer';
     let settled = false;
     // Stops the probe without recording anything: the tab is gone, or the answer is in.
     const stop = (): void => {
@@ -9186,7 +9182,8 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The advisory line under each rendered Google image slot about its pasted URLs (see
    * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
-   * its warning with it. A URL still loading says nothing yet.
+   * its warning with it. A URL still loading says nothing yet, and no line is not a promise: a browser
+   * follows redirects and loads formats (WebP, SVG) that campaign-service refuses.
    */
   private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
     return computed(() => {
@@ -9210,8 +9207,10 @@ export class ImplementationTabComponent implements OnInit {
           }
           const lines: string[] = [];
           if (misfits.length > 0) {
+            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
+            // the raw pixels, so a rotated photo can measure differently there.
             lines.push(
-              `Not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will be refused for ${misfits.length === 1 ? 'it' : 'them'}.`
+              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
             );
           }
           if (unchecked.length > 0) {
