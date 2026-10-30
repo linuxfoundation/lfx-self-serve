@@ -415,7 +415,8 @@ export class CommitteeViewComponent {
           return of(null);
         }
         if (!target.key) {
-          return of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt });
+          // Missing project context is not a transient lookup failure; retrying cannot supply it.
+          return of({ uid: target.uid, writer: false, failed: false, attempt: target.attempt });
         }
         return this.projectService.getProject(target.key, false, { strictWriter: true }).pipe(
           map((project) => ({ uid: target.uid, writer: project?.writer === true, failed: project === null, attempt: target.attempt })),

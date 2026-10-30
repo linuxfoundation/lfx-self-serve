@@ -574,6 +574,18 @@ describe('CommitteeViewComponent', () => {
       expect(getProject()).not.toHaveBeenCalled();
     });
 
+    it.each([undefined, ''])('settles sharing access without a retryable failure when project keys are %s', (key) => {
+      asWriter({ project_slug: key, project_uid: key });
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toBeNull();
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(getProject()).not.toHaveBeenCalled();
+    });
+
     it.each(['null', 'error'])('distinguishes a %s project lookup failure from a permission denial', (failure) => {
       asWriter();
       getProject().mockReturnValue(failure === 'null' ? of(null) : throwError(() => new Error('temporarily unavailable')));

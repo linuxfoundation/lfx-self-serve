@@ -1276,7 +1276,7 @@ test.describe('WG Weekly Brief card — Email Group Members (flag ON)', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button').getByRole('button');
     await expect(shareBtn).toBeVisible();
     await expect(shareBtn).toBeEnabled();
     await shareBtn.click();
@@ -1314,7 +1314,7 @@ test.describe('WG Weekly Brief card — Email Group Members (flag ON)', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1337,7 +1337,7 @@ test.describe('WG Weekly Brief card — Share disabled (no mailing list)', () =>
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button').getByRole('button');
     await expect(shareBtn).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(shareBtn).toBeDisabled();
 
@@ -1375,7 +1375,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1402,7 +1402,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 
@@ -1418,7 +1418,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 
@@ -1433,7 +1433,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1459,7 +1459,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 
