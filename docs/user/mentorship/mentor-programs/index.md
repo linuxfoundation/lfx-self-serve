@@ -38,12 +38,13 @@ In the same section, the table lists your programs with their status. A request 
 
 ## Request status
 
-| Status        | What it means                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------- |
-| **Pending**   | Raised and awaiting the Program Admin's decision — whether you asked or they invited you |
-| **Approved**  | You mentor the program; it now appears under My Programs                                 |
-| **Declined**  | The Program Admin did not approve it                                                     |
-| **Withdrawn** | You pulled the request; you can ask again                                                |
+| Status        | What it means                                                                 |
+| ------------- | ----------------------------------------------------------------------------- |
+| **Pending**   | You raised it, and it is awaiting the Program Admin's decision                |
+| **Invited**   | A Program Admin invited you; answer with **Accept** or **Decline** on its row |
+| **Approved**  | You mentor the program; it now appears under My Programs                      |
+| **Declined**  | The Program Admin did not approve it                                          |
+| **Withdrawn** | You pulled the request; you can ask again                                     |
 
 An invitation a Program Admin sent you appears in the same table, with **Accept** and **Decline** actions. Accepting an invitation puts you straight onto the program — unlike a request you raise yourself, which waits for a Program Admin to approve it.
 

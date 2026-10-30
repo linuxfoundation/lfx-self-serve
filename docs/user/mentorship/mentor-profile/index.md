@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, profile, skills, history]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -14,6 +14,8 @@ Your mentor profile is what Program Admins read when they decide on your request
 ## Before you begin
 
 Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentor → Mentor Profile**.
+
+The tab opens with the **From Your LFX Profile** card, which shows the account details your mentor profile uses. See [Your LFX Profile Card](../lfx-profile-card/).
 
 ## Steps
 
@@ -34,3 +36,4 @@ The profile also lists the programs you have mentored:
 
 - [Become a Mentor](../become-a-mentor/)
 - [Your Mentor Programs](../mentor-programs/)
+- [Your LFX Profile Card](../lfx-profile-card/)
