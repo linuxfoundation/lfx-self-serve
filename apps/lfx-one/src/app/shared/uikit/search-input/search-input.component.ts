@@ -31,10 +31,15 @@ export class UiSearchInputComponent {
 
   /** Esc clears the text and keeps the event from closing an enclosing dialog; with no text the event passes through. */
   protected onEscape(event: Event): void {
+    // Esc during IME composition cancels the composition only; keep the committed text and the dialog.
+    if ((event as KeyboardEvent).isComposing) {
+      event.stopPropagation();
+      return;
+    }
     if (!this.value()) return;
     event.preventDefault();
     event.stopPropagation();
-    this.value.set('');
+    this.clear();
   }
 
   protected clear(): void {

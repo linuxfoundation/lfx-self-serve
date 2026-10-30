@@ -127,6 +127,36 @@ describe('UiSearchInputComponent', () => {
     expect(outer).not.toHaveBeenCalled();
   });
 
+  it('keeps the text and the dialog on Escape during IME composition', async () => {
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+    const outer = vi.fn();
+    host.addEventListener('keydown', outer);
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('kube');
+    expect(event.defaultPrevented).toBe(false);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to the field when Escape is pressed on the clear button', async () => {
+    document.body.appendChild(host);
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+
+    (clear() as HTMLButtonElement).focus();
+    (clear() as HTMLButtonElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('');
+    expect(clear()).toBeNull();
+    expect(document.activeElement).toBe(input());
+    host.remove();
+  });
+
   it('lets Escape pass when there is no text', async () => {
     const outer = vi.fn();
     host.addEventListener('keydown', outer);
