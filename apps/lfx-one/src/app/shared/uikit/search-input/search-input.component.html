@@ -10,6 +10,8 @@
   [ariaLabel]="ariaLabel()"
   [disabled]="disabled()"
   [(value)]="value"
+  (keydown.escape)="onEscape($event)"
+  class="[&_input::-webkit-search-cancel-button]:hidden"
   data-testid="ui-search-input">
   @if (value() && !disabled()) {
     <!-- Exact px, not rem; 14px root: a 20px round button with an 8px gap to the edge. -->

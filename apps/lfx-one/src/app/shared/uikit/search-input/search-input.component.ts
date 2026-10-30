@@ -13,7 +13,6 @@ import { UiInputComponent } from '../input/input.component';
   selector: 'lfx-ui-search-input',
   imports: [UiInputComponent],
   templateUrl: './search-input.component.html',
-  styleUrl: './search-input.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // min() keeps the 300px default from overflowing a narrow container.
   host: { class: 'block min-w-[min(300px,100%)]' },
@@ -29,6 +28,14 @@ export class UiSearchInputComponent {
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The current text. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string>('');
+
+  /** Esc clears the text and keeps the event from closing an enclosing dialog; with no text the event passes through. */
+  protected onEscape(event: Event): void {
+    if (!this.value()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.value.set('');
+  }
 
   protected clear(): void {
     this.value.set('');

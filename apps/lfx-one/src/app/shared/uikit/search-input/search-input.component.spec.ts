@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiSearchInputComponent } from './search-input.component';
 
@@ -109,6 +109,33 @@ describe('UiSearchInputComponent', () => {
     expect(clear()).toBeNull();
     expect(document.activeElement).toBe(input());
     host.remove();
+  });
+
+  it('clears the text on Escape and stops the event so an enclosing dialog stays open', async () => {
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+    const outer = vi.fn();
+    host.addEventListener('keydown', outer);
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('');
+    expect(input().value).toBe('');
+    expect(event.defaultPrevented).toBe(true);
+    expect(outer).not.toHaveBeenCalled();
+  });
+
+  it('lets Escape pass when there is no text', async () => {
+    const outer = vi.fn();
+    host.addEventListener('keydown', outer);
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(outer).toHaveBeenCalledTimes(1);
   });
 
   it('hides the clear button while disabled', async () => {
