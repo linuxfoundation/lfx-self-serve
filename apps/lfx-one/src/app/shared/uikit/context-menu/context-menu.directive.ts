@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdkContextMenuTrigger } from '@angular/cdk/menu';
+import { CdkContextMenuTrigger, MENU_STACK } from '@angular/cdk/menu';
 import { DOCUMENT } from '@angular/common';
 import { DestroyRef, Directive, ElementRef, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -11,6 +11,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
  * Menu (context menu) key while the host or something inside it has focus. Put the menu in an `<ng-template>` and pass it to the directive. The menu opens at the
  * pointer, flips to stay inside the window, and takes focus on its first item. Arrow keys, Home, End, type-ahead and Escape work as in `lfx-ui-menu`.
  * With several nested hosts, only the innermost enabled one opens.
+ * On touch, a long press can also start the browser's text selection on a host that holds text; add `select-none` to the host if that gets in the way.
  *
  * A context menu is a shortcut, never the only way to an action: mirror the actions of the object's ⋯ menu. Keyboard users need a focusable
  * host, such as a row or card with `tabindex="0"`, so give it one.
@@ -42,14 +43,16 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
     '(pointermove)': 'onPointerMove($event)',
     '(pointerup)': 'onPointerUp()',
     '(pointercancel)': 'cancelLongPress()',
-    // The browser raised its own contextmenu (Android does on a long press), so the CDK trigger opens the menu and ours must not.
-    '(contextmenu)': 'cancelLongPress()',
+    '(contextmenu)': 'onContextMenu()',
+    // The host answers a long press with this menu, so drop the iOS link and image callout; text selection is left to the host.
+    class: '[-webkit-touch-callout:none]',
     'data-testid': 'ui-context-menu-trigger',
   },
 })
 export class UiContextMenuDirective {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly trigger = inject(CdkContextMenuTrigger);
+  private readonly menuStackId = inject(MENU_STACK).id;
   private readonly document = inject(DOCUMENT);
   private opener: HTMLElement | null = null;
   private readonly longPressMs = 500;
@@ -68,10 +71,12 @@ export class UiContextMenuDirective {
       this.opener = this.document.activeElement as HTMLElement | null;
       this.document.addEventListener('contextmenu', this.onDocumentContextMenu, true);
       this.document.addEventListener('click', this.onDocumentClick, true);
+      this.document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
     });
     this.trigger.closed.pipe(takeUntilDestroyed()).subscribe(() => {
       this.document.removeEventListener('contextmenu', this.onDocumentContextMenu, true);
       this.document.removeEventListener('click', this.onDocumentClick, true);
+      this.document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
       this.openedByLongPress = false;
       this.returnFocus();
     });
@@ -80,6 +85,7 @@ export class UiContextMenuDirective {
       this.clearReleaseClick();
       this.document.removeEventListener('contextmenu', this.onDocumentContextMenu, true);
       this.document.removeEventListener('click', this.onDocumentClick, true);
+      this.document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
     });
   }
 
@@ -96,10 +102,9 @@ export class UiContextMenuDirective {
 
   protected onPointerDown(event: PointerEvent): void {
     this.openedByLongPress = false;
-    this.clearReleaseClick();
     if (event.pointerType !== 'touch' || this.trigger.disabled) return;
-    // A second finger is a pinch or a scroll, not a long press.
-    if (this.longPressTimer !== null) {
+    // Only the first finger can start a long press; another one is a pinch or a scroll.
+    if (!event.isPrimary) {
       this.cancelLongPress();
       return;
     }
@@ -113,6 +118,13 @@ export class UiContextMenuDirective {
       target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY }));
       this.openedByLongPress = this.trigger.isOpen();
     }, this.longPressMs);
+  }
+
+  // The browser raised its own `contextmenu` (Android does on a long press) before our timer, so the CDK trigger opens the menu and ours must not.
+  protected onContextMenu(): void {
+    if (this.longPressTimer === null) return;
+    this.cancelLongPress();
+    this.openedByLongPress = true;
   }
 
   protected onPointerUp(): void {
@@ -138,6 +150,9 @@ export class UiContextMenuDirective {
     this.releaseClickTimer = null;
   }
 
+  // Any new press means the click that follows is a real tap, not the release of the long press.
+  private readonly onDocumentPointerDown = (): void => this.clearReleaseClick();
+
   // Swallows the click that follows a long press, in the capture phase of the document so it beats the CDK's outside-click handler on the body.
   private readonly onDocumentClick = (event: Event): void => {
     if (this.releaseClickTimer === null) return;
@@ -150,11 +165,12 @@ export class UiContextMenuDirective {
   private readonly onDocumentContextMenu = (event: Event): void => {
     const target = event.target as Element | null;
     // Windows Chromium raises `contextmenu` for the Menu key on keyup, after focus is in our menu, so cancel it or the browser menu opens on top.
-    if (target?.closest?.('[role="menu"]')) {
+    // The CDK tags every panel of this trigger's menu stack with its id, so another menu on the page keeps its browser menu.
+    if (target?.closest?.(`[data-cdk-menu-stack-id="${this.menuStackId}"]`)) {
       event.preventDefault();
       return;
     }
-    // Android raises its own `contextmenu` on a long press. If ours came first, swallow it: the CDK would otherwise close the menu and reopen it.
+    // After a long press, the browser's own `contextmenu` on the host would make the CDK close and reopen the menu, so swallow it.
     if (this.openedByLongPress && target && this.host.contains(target)) {
       event.preventDefault();
       event.stopPropagation();

@@ -277,22 +277,34 @@ describe('UiContextMenuDirective', () => {
       expect(event.defaultPrevented).toBe(false);
     });
 
-    it('stops cancelling once the menu has closed', async () => {
+    it('leaves the browser menu of another menu on the page alone while ours is open', async () => {
       const other = document.createElement('div');
       other.setAttribute('role', 'menu');
       document.body.appendChild(other);
       await rightClick(el('outer'));
-      const whileOpen = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-      other.dispatchEvent(whileOpen);
-      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await fixture.whenStable();
 
-      const afterClose = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-      other.dispatchEvent(afterClose);
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      other.dispatchEvent(event);
       other.remove();
 
-      expect(whileOpen.defaultPrevented).toBe(true);
-      expect(afterClose.defaultPrevented).toBe(false);
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('stops cancelling once the menu has closed', async () => {
+      await rightClick(el('outer'));
+      const stackId = item('edit').closest('[data-cdk-menu-stack-id]')?.getAttribute('data-cdk-menu-stack-id') ?? '';
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await fixture.whenStable();
+      const stale = document.createElement('div');
+      stale.setAttribute('data-cdk-menu-stack-id', stackId);
+      document.body.appendChild(stale);
+
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      stale.dispatchEvent(event);
+      stale.remove();
+
+      expect(stackId).not.toBe('');
+      expect(event.defaultPrevented).toBe(false);
     });
   });
 
@@ -358,6 +370,15 @@ describe('UiContextMenuDirective', () => {
       expect(menus().length).toBe(0);
     });
 
+    it('ignores a finger that is not the first, even when the first is elsewhere', async () => {
+      pointer(el('outer'), 'pointerdown', { pointerId: 2, isPrimary: false });
+
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
     it('cancels when a second finger lands', async () => {
       pointer(el('outer'), 'pointerdown');
       pointer(el('outer'), 'pointerdown', { pointerId: 2, isPrimary: false });
@@ -414,6 +435,31 @@ describe('UiContextMenuDirective', () => {
       vi.advanceTimersByTime(300);
 
       el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('keeps the menu open for the release click when the browser opened it first', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(300);
+      await rightClick(el('outer'));
+      pointer(el('outer'), 'pointerup');
+      el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await settle();
+
+      expect(menus().length).toBe(1);
+    });
+
+    it('lets a new tap through, even right after the release', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      pointer(el('outer'), 'pointerup');
+
+      pointer(document.body, 'pointerdown', { pointerId: 3 });
+      pointer(document.body, 'pointerup', { pointerId: 3 });
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await settle();
 
       expect(menus().length).toBe(0);
