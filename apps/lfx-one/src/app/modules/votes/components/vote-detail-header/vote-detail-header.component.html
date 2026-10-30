@@ -96,7 +96,7 @@
         @if (closeDateText()) {
           <span
             class="inline-flex items-center gap-1.5"
-            [pTooltip]="closeTime()! | longTimezone: viewerTimezone"
+            [pTooltip]="closeTime() | longTimezone: viewerTimezone"
             tooltipPosition="top"
             tooltipEvent="both"
             tabindex="0"
@@ -104,8 +104,7 @@
             data-testid="vote-detail-header-close-date">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
           </span>
-          @let remaining = hasTimeRemaining() ? (vote().end_time! | dueDateLabel: viewerTimezone) : '';
-          @if (remaining) {
+          @if (timeRemainingText(); as remaining) {
             <span class="inline-flex items-center gap-1.5 font-medium {{ remaining | dueDateLabelColor }}" data-testid="vote-detail-header-time-remaining">
               <i class="fa-light fa-hourglass-half" aria-hidden="true"></i>{{ remaining }}
             </span>

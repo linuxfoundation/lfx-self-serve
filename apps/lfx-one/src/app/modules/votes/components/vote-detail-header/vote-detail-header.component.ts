@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal, Signal, viewChildren } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -32,17 +33,19 @@ import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots
     TagComponent,
     TooltipModule,
     VoteSendBallotsComponent,
-    DueDateLabelPipe,
     DueDateLabelColorPipe,
     LongTimezonePipe,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
   ],
+  providers: [DueDateLabelPipe],
   templateUrl: './vote-detail-header.component.html',
 })
 export class VoteDetailHeaderComponent {
   // === Services ===
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly dueDateLabelPipe = inject(DueDateLabelPipe);
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -78,6 +81,10 @@ export class VoteDetailHeaderComponent {
   // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
+  // === Clock State ===
+  private readonly countdownTick = signal(0);
+  private countdownTimer: ReturnType<typeof setTimeout> | undefined;
+
   // === Computed Signals ===
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
   protected readonly canSendReminder: Signal<boolean> = computed(() => this.audience() === 'creator' && this.isActive());
@@ -92,15 +99,20 @@ export class VoteDetailHeaderComponent {
     return normalizePollStatus(vote.status) === PollStatus.ENDED ? vote.early_end_time || vote.end_time : vote.end_time;
   });
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
+  protected readonly timeRemainingText: Signal<string> = this.initTimeRemainingText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
 
-  // === Protected Methods ===
-  /** Re-check the exact deadline on each render; a calendar-day label can still say "today" after close. */
-  protected hasTimeRemaining(): boolean {
-    return this.isActive() && new Date(this.vote().end_time).getTime() > Date.now();
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.vote)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.refreshCountdownClock());
+      this.destroyRef.onDestroy(() => clearTimeout(this.countdownTimer));
+    }
   }
 
+  // === Protected Methods ===
   /**
    * WAI-ARIA tabs keyboard model: arrows wrap, Home/End jump to the ends, and focus follows the selected tab. Arrows move
    * from the focused pill, since `activeTab` only updates once the parent's `?tab=` navigation settles.
@@ -142,6 +154,17 @@ export class VoteDetailHeaderComponent {
     });
   }
 
+  private initTimeRemainingText(): Signal<string> {
+    return computed(() => {
+      this.countdownTick();
+      const endTime = this.vote().end_time;
+      const deadline = new Date(endTime).getTime();
+      if (!this.isActive() || Number.isNaN(deadline) || deadline <= Date.now()) return '';
+      // Invoke the shared formatter on each clock invalidation, not a pure template pipe with unchanged inputs.
+      return this.dueDateLabelPipe.transform(endTime, this.viewerTimezone);
+    });
+  }
+
   /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the votes table. */
   private initEndedEarlyNote(): Signal<string | null> {
     return computed(() => {
@@ -157,5 +180,19 @@ export class VoteDetailHeaderComponent {
       if (invited === undefined || invited === null) return null;
       return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
     });
+  }
+
+  /** Re-evaluate only at the next label boundary or exact deadline; vote changes replace the pending timeout. */
+  private refreshCountdownClock(): void {
+    clearTimeout(this.countdownTimer);
+    this.countdownTick.update((tick) => tick + 1);
+    const now = Date.now();
+    const deadline = new Date(this.vote().end_time).getTime();
+    if (!this.isActive() || !Number.isFinite(deadline) || deadline <= now) return;
+
+    // In the browser viewerTimezone is the host zone; calendar midnight handles 23/25-hour DST days.
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    this.countdownTimer = setTimeout(() => this.refreshCountdownClock(), Math.min(deadline, midnight.getTime()) - now);
   }
 }

@@ -43,7 +43,6 @@ describe('VoteDetailHeaderComponent', () => {
         { provide: MessageService, useValue: { add: () => undefined } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(VoteDetailHeaderComponent);
   });
 
   function render(
@@ -57,6 +56,7 @@ describe('VoteDetailHeaderComponent', () => {
       limited?: boolean;
     } = {}
   ): void {
+    fixture = TestBed.createComponent(VoteDetailHeaderComponent);
     fixture.componentRef.setInput('vote', inputs.vote ?? makeVote());
     fixture.componentRef.setInput('audience', inputs.audience ?? 'voter');
     fixture.componentRef.setInput('canCastVote', inputs.canCastVote ?? false);
@@ -206,6 +206,105 @@ describe('VoteDetailHeaderComponent', () => {
       render({ limited: true });
 
       expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+  });
+
+  describe('mounted countdown clock (#4767)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.stubEnv('TZ', 'UTC');
+      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'browser' });
+    });
+
+    afterEach(() => {
+      fixture.destroy();
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    });
+
+    // Flush scheduled zoneless rendering, not fixture.detectChanges: elapsed time must update the DOM itself.
+    async function tick(ms: number): Promise<void> {
+      await vi.advanceTimersByTimeAsync(ms);
+      await fixture.whenStable();
+    }
+
+    it('removes the countdown when the mounted vote reaches its deadline', async () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+
+      await tick(999);
+      expect(exists('vote-detail-header-time-remaining')).toBe(true);
+      await tick(2);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 26, 2026 4:00 PM UTC');
+    });
+
+    it('refreshes the relative label at midnight without changing vote inputs', async () => {
+      vi.setSystemTime(new Date('2026-10-26T23:59:59Z'));
+      render({ vote: makeVote({ end_time: '2026-10-28T16:00:00Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 2 days');
+
+      await tick(1_001);
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
+    });
+
+    it('uses the viewer-local midnight across a daylight-saving transition', async () => {
+      vi.stubEnv('TZ', 'America/New_York');
+      vi.setSystemTime(new Date('2026-03-08T05:00:00Z')); // Midnight EST; the next midnight is only 23 hours away.
+      render({ vote: makeVote({ end_time: '2026-03-09T16:00:00Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
+
+      await tick(23 * 60 * 60 * 1_000 + 1);
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+    });
+
+    it('reschedules expiry when the deadline changes on the mounted header', async () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
+      await fixture.whenStable();
+      fixture.componentRef.setInput('vote', makeVote({ end_time: '2026-10-26T16:00:02Z' }));
+      await tick(1);
+
+      await tick(1_000);
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+      await tick(1_000);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it('cancels the clock when the vote ends early', async () => {
+      render();
+      await fixture.whenStable();
+      fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-26T16:00:00Z' }));
+      await tick(1);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('cleans up the pending countdown timeout when destroyed', async () => {
+      render();
+      await fixture.whenStable();
+      expect(vi.getTimerCount()).toBe(1);
+
+      fixture.destroy();
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('does not schedule a countdown timeout during SSR', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      render();
+      await fixture.whenStable();
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
+      expect(vi.getTimerCount()).toBe(0);
     });
   });
 
