@@ -4511,9 +4511,9 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
 
 /**
- * Shown on the Performance Max creative when its copy was prefilled from the brief (#4784). The copy
- * makes the creative a started one, which Google refuses without its required images, so the note
- * says both ways forward.
+ * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
+ * (#4784). That copy makes the creative a started one, which Google refuses without its required
+ * images, so the note says both ways forward.
  */
 export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
   'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';

@@ -127,9 +127,9 @@ import {
   GOOGLE_CREATIVE_IMAGE_MAX_BYTES,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
-  GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_LINKEDIN_BUDGET_USD,
@@ -1472,10 +1472,11 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleCallouts = signal<string[]>([]);
   /**
-   * Whether the Performance Max copy was prefilled from this brief (#4784), so the section can say
-   * where it came from and what a started creative still needs. Cleared by `resetGoogleFields`.
+   * The Performance Max copy the brief seeded (#4784), kept so the section's prefill notice can tell
+   * whether what is on screen is still that copy. Null when nothing was seeded; cleared by
+   * `resetGoogleFields`.
    */
-  protected readonly performanceMaxPrefilled = signal(false);
+  private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -3164,6 +3165,7 @@ export class ImplementationTabComponent implements OnInit {
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
+  protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
   /**
@@ -6452,17 +6454,21 @@ export class ImplementationTabComponent implements OnInit {
    * A brief with none of this copy leaves the group as `resetGoogleFields` left it, empty.
    */
   private seedPerformanceMaxCreative(brief: CampaignBriefOutput): void {
-    const search = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
-    // `google_display` is the Demand Gen key the generator writes; `demand_gen` is the older one the
-    // BFF still accepts (`campaign-proxy.service.ts`), so a brief saved under it seeds too.
-    const demandGen = (brief.structuredCopy?.['google_display'] ?? brief.structuredCopy?.['demand_gen']) as Record<string, unknown> | undefined;
+    const search = this.generatedCopy(brief, ['google_search']);
+    // `google_display` is the Demand Gen key the generator writes, and `demand_gen` the older one;
+    // `getDisplayCopy` on the Planning tab reads both, at the top level and under `platforms`.
+    const demandGen = this.generatedCopy(brief, ['google_display', 'demand_gen']);
     // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
     // declares `width` or `max`, and the literal tuple type would refuse the lookup.
     const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'];
     const fitting = (control: string, values: unknown): string[] => {
       const spec = specs.find((field) => field.control === control);
       if (spec === undefined || !Array.isArray(values)) return [];
-      const unique = [...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.trim()))];
+      // A line break inside one generated value would split it into extra entries of a one-per-line
+      // field, past the width and count it was checked against, so it is folded into a space.
+      const unique = [
+        ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
+      ];
       return unique.filter((value) => value !== '' && (spec.width === undefined || codePointLength(value) <= spec.width));
     };
     const capped = (control: string, values: string[]): string[] => values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
@@ -6473,19 +6479,39 @@ export class ImplementationTabComponent implements OnInit {
     const descriptions = capped('descriptions', descriptionPool);
     const isShort = (value: string): boolean => codePointLength(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
     const short = descriptionPool.find(isShort);
-    if (short !== undefined && !descriptions.some(isShort) && descriptions.length > 0) {
+    if (short !== undefined && !descriptions.some(isShort)) {
       descriptions[descriptions.length - 1] = short;
     }
     const businessName = fitting('businessName', [demandGen?.['business_name']])[0] ?? '';
 
     if (headlines.length === 0 && longHeadlines.length === 0 && descriptions.length === 0 && businessName === '') return;
-    this.campaignForm.controls.performanceMaxCreative.patchValue({
+    const seeded = {
       headlines: headlines.join('\n'),
       longHeadlines: longHeadlines.join('\n'),
       descriptions: descriptions.join('\n'),
       businessName,
-    });
-    this.performanceMaxPrefilled.set(true);
+    };
+    this.performanceMaxSeed.set(seeded);
+    this.campaignForm.controls.performanceMaxCreative.patchValue(seeded);
+  }
+
+  /**
+   * One platform's generated copy from the brief, by the first key present, at the top level or
+   * nested under `platforms` — the shapes `getSearchCopy` and `getDisplayCopy` on the Planning tab
+   * read. Shared by the Search seed and the Performance Max seed so the two cannot disagree about
+   * where a brief keeps its copy.
+   */
+  private generatedCopy(brief: CampaignBriefOutput, keys: readonly string[]): Record<string, unknown> | undefined {
+    const copy = brief.structuredCopy;
+    if (!copy) return undefined;
+    const nested = copy['platforms'] as Record<string, unknown> | undefined;
+    for (const source of [copy, nested]) {
+      for (const key of keys) {
+        const found = source?.[key];
+        if (found !== null && typeof found === 'object') return found as Record<string, unknown>;
+      }
+    }
+    return undefined;
   }
 
   /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
@@ -6781,7 +6807,7 @@ export class ImplementationTabComponent implements OnInit {
       this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
-    const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
+    const searchCopy = this.generatedCopy(brief, ['google_search']);
     if (searchCopy) {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
@@ -6992,7 +7018,7 @@ export class ImplementationTabComponent implements OnInit {
    * sub-forms: they reach neither the draft nor a create until an entry is added.
    */
   private resetGoogleFields(): void {
-    this.performanceMaxPrefilled.set(false);
+    this.performanceMaxSeed.set(null);
     this.campaignForm.patchValue({
       searchBudgetPct: CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
       includeSearch: true,
@@ -7061,6 +7087,25 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   // === Private Initializers ===
+  /**
+   * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
+   * copy the brief seeded into it.
+   *
+   * Derived rather than latched. A restored draft overwrites the seed after it runs, and an operator
+   * may clear or rewrite the copy, so a flag set at seed time would go on saying "filled in from the
+   * brief" over empty fields or over copy they wrote. A draft saved straight from the seeded state —
+   * the ordinary tab round trip — restores the same values, so the notice survives that.
+   */
+  private initPerformanceMaxPrefillShown(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const seed = this.performanceMaxSeed();
+      if (seed === null) return false;
+      const raw = this.campaignForm.controls.performanceMaxCreative.getRawValue() as Record<string, string>;
+      return Object.entries(seed).some(([field, value]) => value !== '' && raw[field] === value);
+    });
+  }
+
   /**
    * Whether the budget-split slider changes anything the user is about to create.
    *

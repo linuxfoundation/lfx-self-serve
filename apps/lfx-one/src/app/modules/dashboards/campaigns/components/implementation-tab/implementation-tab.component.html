@@ -2151,7 +2151,7 @@
             about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
-          @if (section.channel === 'performance-max' && performanceMaxPrefilled()) {
+          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
             <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
           }
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">

@@ -14023,7 +14023,7 @@ describe('ImplementationTabComponent performance max prefill', () => {
   }
 
   function prefilled(): boolean {
-    return (fixture.componentInstance as unknown as { performanceMaxPrefilled(): boolean }).performanceMaxPrefilled();
+    return (fixture.componentInstance as unknown as { performanceMaxPrefillShown(): boolean }).performanceMaxPrefillShown();
   }
 
   const generated = {
@@ -14111,12 +14111,79 @@ describe('ImplementationTabComponent performance max prefill', () => {
       registrationUrl: 'https://events.example.com/kubecon',
       headlines: [''],
       descriptions: [''],
-      googleCreatives: { performanceMaxCreative: { headlines: 'Operator headline', businessName: 'Operator Co' } },
+      // The whole group, as `emitDraft` snapshots it: every field is the operator's.
+      googleCreatives: {
+        performanceMaxCreative: {
+          headlines: 'Operator headline',
+          longHeadlines: 'Operator long headline',
+          descriptions: 'Operator description',
+          businessName: 'Operator Co',
+        },
+      },
     } as unknown as CampaignImplementationDraft;
     seed(brief(generated), draft);
 
     expect(pmax()['headlines']).toBe('Operator headline');
     expect(pmax()['businessName']).toBe('Operator Co');
+    // The operator's copy is not the brief's, so the notice must not claim it is.
+    expect(prefilled()).toBe(false);
+  });
+
+  /** A draft as the parent holds it, with the given Performance Max fields. */
+  function draftWith(performanceMaxCreative: Record<string, string>): CampaignImplementationDraft {
+    return {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      googleCreatives: { performanceMaxCreative },
+    } as unknown as CampaignImplementationDraft;
+  }
+
+  it('drops the notice when a restored draft cleared the copy, as the notice invites', () => {
+    seed(brief(generated), draftWith({ headlines: '', longHeadlines: '', descriptions: '', businessName: '' }));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('keeps the notice across a round trip that restores the seeded copy unchanged', () => {
+    seed(brief(generated));
+    const seeded = { ...pmax() };
+    fixture.componentRef.setInput('briefData', null);
+    fixture.detectChanges();
+
+    seed(brief(generated), draftWith(seeded));
+
+    expect(prefilled()).toBe(true);
+  });
+
+  it('drops the notice once the operator rewrites the seeded copy', () => {
+    seed(brief(generated));
+    const group = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'];
+    group.patchValue({ headlines: 'Mine', longHeadlines: 'Mine too', descriptions: 'Mine as well', businessName: 'Mine Co' });
+
+    expect(prefilled()).toBe(false);
+  });
+
+  it('folds a line break inside one generated value into a space', () => {
+    seed(brief({ google_search: { headlines: ['Join\nKubeCon EU'], descriptions: [] } }));
+
+    expect(lines(pmax()['headlines'])).toEqual(['Join KubeCon EU']);
+  });
+
+  it('reads copy nested under platforms, for Search and Performance Max alike', () => {
+    seed(
+      brief({
+        platforms: { google_search: { headlines: ['Nested headline'], descriptions: ['Nested description'] }, google_display: { business_name: 'CNCF' } },
+      })
+    );
+
+    const searchHeadlines = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['headlines'].getRawValue();
+    expect(searchHeadlines).toEqual(['Nested headline']);
+    expect(lines(pmax()['headlines'])).toEqual(['Nested headline']);
+    expect(pmax()['businessName']).toBe('CNCF');
   });
 
   it('clears the prefill when a brief without copy replaces one with it', () => {
