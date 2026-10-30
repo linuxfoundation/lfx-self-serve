@@ -134,6 +134,16 @@
           [ngClass]="activeTab() === tab.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
           [attr.data-testid]="'vote-detail-header-tab-' + tab.key">
           <i class="fa-light {{ tab.icon }} mr-1.5" aria-hidden="true"></i>{{ tab.label }}
+          @if (tab.count) {
+            <span
+              class="ml-1.5 rounded-full px-1.5 text-xs font-semibold"
+              [ngClass]="activeTab() === tab.key ? 'bg-white text-blue-800' : 'bg-gray-200 text-gray-700'"
+              aria-hidden="true"
+              [attr.data-testid]="'vote-detail-header-tab-count-' + tab.key"
+              >{{ tab.count }}</span
+            >
+            <span class="sr-only">, {{ tab.countLabel }}</span>
+          }
         </button>
       }
     </div>
