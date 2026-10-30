@@ -38,4 +38,4 @@ export const PastDisabled: Story = {
     template: `<div class="rounded-ui-sm bg-ui-background-100 p-[12px] shadow-menu"><lfx-ui-calendar [isDateDisabled]="past" /></div>`,
   }),
 };
-export const PinnedToday: Story = { args: { today: new Date(2026, 11, 31) } };
+export const PinnedToday: Story = { args: { today: '2026-12-31' } };

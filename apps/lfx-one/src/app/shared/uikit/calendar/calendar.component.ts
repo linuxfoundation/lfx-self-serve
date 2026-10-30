@@ -19,7 +19,7 @@ import {
 } from '@angular/core';
 import { ControlValueAccessor, NgControl } from '@angular/forms';
 import { UiCalendarDay, UiCalendarWeek } from '@lfx-one/shared/interfaces';
-import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
+import { parseLocalDateString, toLocalDateOnlyString } from '@lfx-one/shared/utils';
 
 import { UiButtonComponent } from '../button/button.component';
 
@@ -50,8 +50,8 @@ export class UiCalendarComponent implements ControlValueAccessor {
   public readonly weekStartsOn = input<0 | 1>(0);
   /** Accessible name for the grid when the month title is not enough. Leave empty to use the month title. */
   public readonly ariaLabel = input<string>('');
-  /** The date treated as today. Defaults to the current date; pin it so a server and a client in another timezone agree near midnight. */
-  public readonly today = input<Date | null>(null);
+  /** The day treated as today, as a local `YYYY-MM-DD` string. Leave `null` to use the live current date; pin it so a server and a client in another timezone agree near midnight. */
+  public readonly today = input<string | null>(null);
   /** The selected date, or `null`. Supports two-way binding with `[(value)]`. */
   public readonly value = model<Date | null>(null);
 
@@ -208,7 +208,8 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   private startOfToday(): Date {
-    return this.startOfDay(this.today() ?? new Date());
+    const pinned = this.today();
+    return pinned ? parseLocalDateString(pinned) : this.startOfDay(new Date());
   }
 
   private startOfDay(date: Date): Date {

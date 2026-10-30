@@ -72,7 +72,7 @@ describe('UiCalendarComponent', () => {
 
   it('uses a pinned today for the opening month and the today marker', async () => {
     // The faked clock says 29 Oct 2026; the pinned date wins, as when a server and client disagree near midnight.
-    await set('today', new Date(2027, 0, 1, 23, 59));
+    await set('today', '2027-01-01');
 
     expect(title()).toBe('January 2027');
     expect(day('2027-01-01').getAttribute('aria-current')).toBe('date');
@@ -81,7 +81,7 @@ describe('UiCalendarComponent', () => {
 
   it('keeps the selected date month when today is pinned elsewhere', async () => {
     await set('value', new Date(2026, 4, 20));
-    await set('today', new Date(2027, 0, 1));
+    await set('today', '2027-01-01');
 
     expect(title()).toBe('May 2026');
     expect(host.querySelectorAll('[aria-current="date"]').length).toBe(0);
