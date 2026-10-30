@@ -33,7 +33,7 @@ It is browser-only: the caller passes `DOCUMENT` and only subscribes when `isPla
 
 ## Share panel and Copy slide
 
-Link first: the large vote link and a Copy link button (Clipboard API, inline confirmation), then the QR. The QR is generated in the browser by `uqr` (MIT, zero dependencies), dynamic-imported inside `lfx-vote-qr`, which draws the modules as one SVG path with `role="img"`. Copy slide renders the static `lfx-vote-slide` artboard off-screen at 1920x1080 with `html-to-image` (dynamic import), copies the PNG with `ClipboardItem`, and falls back to a download named `<vote-slug>-vote-slide.png`. Title truncation (`truncateVoteTitle`, 80 characters, word-safe) is shared by the presenter and the slide.
+Link first: the large vote link and a Copy link button (Clipboard API, inline confirmation), then the QR. The QR is generated in the browser by `uqr` (MIT, zero dependencies), dynamic-imported inside `lfx-qr-code`, which draws the modules as one SVG path with `role="img"`. Copy slide renders the static `lfx-share-slide` artboard off-screen at 1920x1080 with `html-to-image` (dynamic import), copies the PNG with `ClipboardItem`, and falls back to a download named `<vote-slug>-vote-slide.png`. Title truncation (`truncateVoteTitle`, 80 characters, word-safe) is shared by the presenter and the slide.
 
 ## Entry points
 
