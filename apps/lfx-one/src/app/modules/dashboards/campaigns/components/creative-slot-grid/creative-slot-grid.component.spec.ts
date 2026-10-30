@@ -310,4 +310,49 @@ describe('CreativeSlotGridComponent', () => {
     render({ platforms: ['reddit-ads', 'google-ads'] });
     expect(getCreativeAssetPlan).toHaveBeenCalledTimes(1);
   });
+
+  /** "Use suggested images" (#4825): the grid hands the plan to its host, which decides what to apply. */
+  describe('suggested images', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+
+    it('offers no button while the host cannot apply suggestions', () => {
+      render(ready);
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('offers no button for a plan that suggests no image', async () => {
+      await build({ ...PLAN, assignments: PLAN.assignments.map((a) => ({ ...a, assetIds: [] })) });
+      render({ ...ready, suggestionsEnabled: true });
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('hands over only the assignments that name an image', async () => {
+      await build({
+        ...PLAN,
+        assignments: [
+          ...PLAN.assignments,
+          { ...PLAN.assignments[0], slotKey: 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO', slot: 'LANDSCAPE_LOGO', assetIds: [] },
+        ],
+      });
+      render({ ...ready, suggestionsEnabled: true });
+      const emitted: unknown[] = [];
+      fixture.componentInstance.applySuggested.subscribe((assignments) => emitted.push(assignments));
+
+      q('creative-slot-grid-apply')?.click();
+
+      expect(emitted).toEqual([PLAN.assignments]);
+    });
+
+    it("shows the host's result and announces it in a region that was mounted empty", () => {
+      render({ ...ready, suggestionsEnabled: true });
+      expect(q('creative-slot-grid-apply-live')?.textContent?.trim()).toBe('');
+      expect(q('creative-slot-grid-apply-result')).toBeNull();
+
+      render({ applyResult: 'Filled 2 empty image slots with suggested images.' });
+
+      expect(text('creative-slot-grid-apply-result')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(text('creative-slot-grid-apply-live')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(q('creative-slot-grid-apply-result')?.getAttribute('role')).toBeNull();
+    });
+  });
 });

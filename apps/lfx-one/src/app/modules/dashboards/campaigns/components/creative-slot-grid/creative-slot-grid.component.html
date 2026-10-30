@@ -26,6 +26,9 @@
        Interrupting an operator mid-field for it would be the wrong urgency. The visible lines
        below carry no role of their own, or the same sentence would be announced twice. -->
   <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-live">{{ liveMessage() }}</div>
+  <!-- The result of "Use suggested images", announced for the same reason and in its own region: the
+       plan's own message above does not change when suggestions are applied. -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-apply-live">{{ applyResult() }}</div>
 
   @if (state().status === 'loading') {
     <p class="text-xs text-gray-500" data-testid="creative-slot-grid-loading">Checking which slots this library covers…</p>
@@ -55,6 +58,24 @@
         <p class="text-xs text-gray-700" data-testid="creative-slot-grid-open-count">
           {{ openCount() }} slot{{ openCount() === 1 ? '' : 's' }} still {{ openCount() === 1 ? 'needs' : 'need' }} an image.
         </p>
+      }
+
+      @if (suggestionsEnabled() && suggestions().length > 0) {
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="rounded border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
+            (click)="applySuggestions()"
+            data-testid="creative-slot-grid-apply">
+            Use suggested images
+          </button>
+          <span class="text-2xs text-gray-500"
+            >Fills empty Google image fields with the best-fitting stored images. Fields you have filled are left as they are.</span
+          >
+        </div>
+      }
+      @if (applyResult()) {
+        <p class="text-xs text-gray-700" data-testid="creative-slot-grid-apply-result">{{ applyResult() }}</p>
       }
 
       <div class="flex flex-col gap-4">

@@ -113,6 +113,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
@@ -205,6 +207,7 @@ import type {
   CreativeAssetLibraryState,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
+  CreativeSlotAssignment,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
@@ -1598,6 +1601,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
+  private readonly googleSuggestedApply = signal<{ briefId: string; message: string } | null>(null);
 
   // === Computed Signals ===
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
@@ -2753,6 +2758,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /**
+   * Whether the slot grid may offer "Use suggested images": only while a Google image slot is on
+   * screen to take them, which `googleImageSlots` already limits to an explicit library yes.
+   */
+  protected readonly googleSuggestionsEnabled: Signal<boolean> = computed(() => Object.keys(this.googleImageSlots()).length > 0);
+  /** The last apply's result for the brief now open, or `''`. */
+  protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
+    const result = this.googleSuggestedApply();
+    return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.message : '';
+  });
   /**
    * Why Create is blocked for a stored Google image the request cannot carry, or that
    * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
@@ -3921,6 +3936,59 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
+  /**
+   * Take the asset plan's suggestions into the Google image fields (#4825): "upload once, auto-assign".
+   *
+   * Only EMPTY fields are filled — no held image and no pasted URL — so whatever the operator chose
+   * stays, and pressing again after more uploads fills only what is still empty. Only fields on
+   * screen are touched (the plan covers every Google channel; the tab renders one), each up to its
+   * own catalogued `max`, and only for the open brief. The combined marketing-image cap is not
+   * re-checked here, as it is not for a manual pick: campaign-service refuses an over-cap creative
+   * before anything is created.
+   */
+  protected onApplySuggestedGoogleImages(assignments: readonly CreativeSlotAssignment[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!briefId) return;
+    const slots = this.googleImageSlots();
+    const held = this.googleHeldImages();
+    let filled = 0;
+    let kept = 0;
+    for (const assignment of assignments) {
+      if (assignment.platform !== 'google-ads' || assignment.assetIds.length === 0) continue;
+      const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_ADS_CHANNEL_TYPE_ENUMS[candidate] === assignment.channel);
+      if (!channel) continue;
+      // The plan names the slot in the platform layer's vocabulary, not the request's; see the table.
+      const control = GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel][assignment.slot];
+      if (!control) continue;
+      const groupName = GOOGLE_CREATIVE_REQUEST_KEYS[channel];
+      const key = `${groupName}.${control}`;
+      if (!slots[key]) continue;
+      const raw = this.campaignForm.controls[groupName].getRawValue() as Record<string, string | null | undefined>;
+      if ((held[key] ?? []).length > 0 || this.splitCreativeLines(raw[control]).length > 0) {
+        kept += 1;
+        continue;
+      }
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      const max = fields.find((field) => field.control === control)?.max ?? assignment.assetIds.length;
+      for (const assetId of assignment.assetIds.slice(0, max)) {
+        this.holdGoogleImage(key, { id: assetId, name: '', briefId });
+      }
+      filled += 1;
+    }
+    const slotWord = (n: number): string => (n === 1 ? 'slot' : 'slots');
+    let message = 'No suggested images to apply: no Google image field on screen has a suggestion.';
+    if (filled > 0) {
+      message = `Filled ${filled} empty image ${slotWord(filled)} with suggested images.`;
+    } else if (kept > 0) {
+      message = 'Nothing to fill: every image field with a suggestion already has images.';
+    }
+    if (filled > 0 && kept > 0) {
+      message += ` Left ${kept} ${slotWord(kept)} you had already filled as ${kept === 1 ? 'it was' : 'they were'}.`;
+    }
+    this.googleSuggestedApply.set({ briefId, message });
+    if (filled > 0) this.emitDraft();
+  }
+
   protected onGoogleImagePick(slotKey: string, assetId: string): void {
     const briefId = this.briefPersistence().briefId ?? '';
     if (!briefId) return;

@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import type {
   CampaignPlatform,
   CreativeSlotCoverageGroup,
   CreativeSlotCoverageRow,
+  CreativeSlotAssignment,
   CreativeSlotCoverageState,
   CreativeSlotGap,
 } from '@lfx-one/shared/interfaces';
@@ -60,6 +61,20 @@ export class CreativeSlotGridComponent {
   public readonly platforms = input<readonly CampaignPlatform[]>([]);
   /** Bumped by the host when an upload adds an asset to the library, to re-read the plan. */
   public readonly reloadToken = input(0);
+  /**
+   * Whether the host can take the plan's suggestions into its image fields (#4825). The grid has no
+   * fields of its own, so without a host that can apply them the button would promise nothing.
+   */
+  public readonly suggestionsEnabled = input(false);
+  /** What the host did with the last suggestions it was handed, or `''`. Shown and announced here, beside the button. */
+  public readonly applyResult = input('');
+
+  // === Outputs ===
+  /**
+   * The plan's assignments that name at least one stored image, for the host to apply. Which of them
+   * it takes — and that it fills only empty fields — is the host's decision, not the grid's.
+   */
+  public readonly applySuggested = output<CreativeSlotAssignment[]>();
 
   // === Signals ===
   /** Bumped by Refresh. Part of the request identity, so each press is one more read. */
@@ -71,8 +86,20 @@ export class CreativeSlotGridComponent {
   protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
+  /** The ready plan's assignments that name an image — what "Use suggested images" would hand over. */
+  protected readonly suggestions: Signal<CreativeSlotAssignment[]> = computed(() => {
+    const state = this.state();
+    return state.status === 'ready' && state.plan ? state.plan.assignments.filter((assignment) => assignment.assetIds.length > 0) : [];
+  });
 
   // === Protected Methods ===
+  protected applySuggestions(): void {
+    const suggestions = this.suggestions();
+    if (suggestions.length > 0) {
+      this.applySuggested.emit(suggestions);
+    }
+  }
+
   protected refresh(): void {
     if (this.state().status !== 'loading') {
       this.attempts.update((n) => n + 1);

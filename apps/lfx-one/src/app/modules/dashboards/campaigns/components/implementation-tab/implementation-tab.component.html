@@ -3936,7 +3936,10 @@
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"
             [platforms]="selectedPlatforms()"
-            [reloadToken]="creativeLibraryRevision()" />
+            [reloadToken]="creativeLibraryRevision()"
+            [suggestionsEnabled]="googleSuggestionsEnabled()"
+            [applyResult]="googleSuggestedApplyResult()"
+            (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
 
