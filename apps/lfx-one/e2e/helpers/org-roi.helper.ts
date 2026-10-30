@@ -5,7 +5,7 @@ import { expect, Page, Route, test } from '@playwright/test';
 // Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
 // @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 import type { OrgLensRoiAnnualRow, OrgLensRoiProjectAnnual } from '@lfx-one/shared/interfaces';
 
@@ -363,6 +363,7 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       personaProjects: {},
       projects: [],
       organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
+      isLFStaff: true,
       isRootWriter: false,
     })
   );
@@ -406,11 +407,11 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
 /**
  * Pin feature flags for this page, before any application code runs.
  *
- * Without this the ROI specs cannot run at all. `/org/roi` sits behind a `canMatch` guard, and the
- * flag SDK evaluates twice — first against an anonymous context at bootstrap, then again once the
- * authenticated user context is applied. A flag targeted at named users is false in that first
- * window, so the guard can resolve against it and redirect before the real value arrives, leaving
- * every case skipped or asserting against a page that has already navigated away.
+ * A flag-gated route cannot be exercised without this. The flag SDK evaluates twice — first against an
+ * anonymous context at bootstrap, then again once the authenticated user context is applied. A flag
+ * targeted at named users is false in that first window, so a `canMatch` guard can resolve against it
+ * and redirect before the real value arrives, leaving every case skipped or asserting against a page
+ * that has already navigated away.
  *
  * The override is read only by non-production builds; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
  */
@@ -421,23 +422,35 @@ export async function stubFeatureFlags(page: Page, flags: Record<string, boolean
   ] as const);
 }
 
+/**
+ * Skips the case unless the real e2e session is LF staff. ROI Metrics is open to LF staff only, and the server-side guard and the
+ * API read the real persona, which a browser stub cannot change, so any other user is redirected away. Asking before navigating
+ * keeps the skip to confirmed non-staff sessions: a staff session that is redirected still fails the case.
+ */
+export async function skipUnlessLfStaff(page: Page): Promise<void> {
+  const response = await page.request.get('/api/user/personas?enriched=true');
+  expect(response.ok(), 'the personas lookup behind the ROI staff gate must answer').toBe(true);
+  const persona = (await response.json()) as { isLFStaff?: boolean };
+  test.skip(persona.isLFStaff !== true, 'ROI Metrics is LF-staff only and this e2e user is not');
+}
+
 export async function gotoOrgRoiPage(page: Page): Promise<void> {
   await gotoRoiRoute(page, ORG_ROI_URL, 'org-roi-page');
 }
 
 /**
- * The project detail route. It is a child of `/org/roi`, so it is matched by the same fail-closed
- * dark-launch guard — the flag override below is what lets it resolve at all.
+ * The project detail route. It is a child of `/org/roi`, so it is matched by the same LF-staff-only
+ * guard; any other e2e user is redirected away and the case is skipped.
  */
 export async function gotoOrgRoiProjectDetail(page: Page, slug: string): Promise<void> {
   await gotoRoiRoute(page, orgRoiProjectDetailUrl(slug), 'org-roi-project-detail-page');
 }
 
 async function gotoRoiRoute(page: Page, url: string, testId: string): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
   await seedSelectedOrgCookie(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
+  await skipUnlessLfStaff(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
