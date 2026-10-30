@@ -45,7 +45,7 @@ export class UiTableComponent {
   public readonly bordered = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Tints every even body row. */
   public readonly striped = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Rows highlight on hover, show a pointer, take keyboard focus and report `rowActivate` on click, Enter or Space. */
+  /** Rows highlight on hover, show a pointer, take keyboard focus and report `rowActivate` on click, Enter or Space. Treat that as a shortcut: put the primary action in a cell as a link or button, because a screen reader announces the row as an ordinary row. */
   public readonly interactive = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Text of the single row shown when there are no rows. */
   public readonly emptyLabel = input<string>('No results');
@@ -71,8 +71,8 @@ export class UiTableComponent {
   }
 
   protected onRowClick(event: Event, row: Record<string, unknown>): void {
-    // A click on a link, button or field inside the row belongs to that control, not to the row.
-    const inner = (event.target as Element).closest('a, button, input, select, textarea, [role="button"], [tabindex]');
+    // A click on a link, button, field or label inside the row belongs to that control, not to the row.
+    const inner = (event.target as Element).closest('a, button, input, select, textarea, label, [role="button"], [tabindex]');
     if (inner && inner !== event.currentTarget) return;
     this.activate(row);
   }

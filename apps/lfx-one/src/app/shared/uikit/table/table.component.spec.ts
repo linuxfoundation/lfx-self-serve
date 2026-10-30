@@ -24,7 +24,7 @@ const rows = [
 @Component({
   selector: 'lfx-ui-table-test-host',
   imports: [UiTableComponent, UiTableCellDirective],
-  template: `<!-- prettier-ignore --><lfx-ui-table label="T" [columns]="columns" [rows]="rows" rowKey="id" interactive (rowActivate)="activated.push($event)"><ng-template lfxUiTableCell="project" let-row let-column="column"><button type="button">{{ row.project }}/{{ column.key }}</button></ng-template></lfx-ui-table>`,
+  template: `<!-- prettier-ignore --><lfx-ui-table label="T" [columns]="columns" [rows]="rows" rowKey="id" interactive (rowActivate)="activated.push($event)"><ng-template lfxUiTableCell="project" let-row let-column="column"><button type="button">{{ row.project }}/{{ column.key }}</button></ng-template><ng-template lfxUiTableCell="contributions" let-row><label>{{ row.contributions }}</label></ng-template></lfx-ui-table>`,
 })
 class HostComponent {
   public readonly columns = columns;
@@ -194,12 +194,15 @@ describe('UiTableComponent', () => {
     expect(fixture.componentInstance.sort()).toEqual({ key: 'contributions', direction: 'asc' });
   });
 
-  it('does not activate an interactive row for a click on a control inside a cell template', async () => {
+  it('does not activate an interactive row for a click on a control or label inside a cell template', async () => {
     const withTemplate = TestBed.createComponent(HostComponent);
     await withTemplate.whenStable();
     const el = withTemplate.nativeElement as HTMLElement;
 
     (el.querySelector('tbody button') as HTMLButtonElement).click();
+    expect(withTemplate.componentInstance.activated).toEqual([]);
+
+    (el.querySelector('tbody label') as HTMLLabelElement).click();
     expect(withTemplate.componentInstance.activated).toEqual([]);
 
     (el.querySelector('tbody td') as HTMLElement).click();
