@@ -53,6 +53,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-calendar`       | `UiCalendarComponent`      | Inline month grid, one date; arrow, Home, End and Page keys; disabled dates; `[(value)]` and forms                                                                     |
 | `lfx-ui-collapse`       | `UiCollapseComponent`      | Accordion group; `lfx-ui-collapse-item` (`UiCollapseItemComponent`) holds any content; `[(open)]`, exclusive, small                                                    |
 | `lfx-ui-switch`         | `UiSwitchComponent`        | Segmented control, 2 to 4 views: radiogroup of `lfx-ui-switch-option` radios, three sizes, icon-only with tooltip; `[(value)]`, forms                                  |
+| `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 
 ## Design tokens
 
