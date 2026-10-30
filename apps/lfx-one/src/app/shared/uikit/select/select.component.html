@@ -13,8 +13,8 @@
     [id]="triggerId"
     [class]="triggerClasses()"
     [attr.tabindex]="isDisabled() ? -1 : 0"
-    [attr.aria-expanded]="open()"
-    [attr.aria-controls]="open() ? listboxId : null"
+    [attr.aria-expanded]="expanded()"
+    [attr.aria-controls]="expanded() ? listboxId : null"
     [attr.aria-activedescendant]="activeDescendant()"
     [attr.aria-labelledby]="label() ? labelId : null"
     [attr.aria-label]="label() ? null : ariaLabel() || null"
@@ -53,7 +53,7 @@
 <ng-template
   cdkConnectedOverlay
   [cdkConnectedOverlayOrigin]="origin()"
-  [cdkConnectedOverlayOpen]="open()"
+  [cdkConnectedOverlayOpen]="expanded()"
   [cdkConnectedOverlayPositions]="positions"
   [cdkConnectedOverlayMinWidth]="panelWidth()"
   (detach)="closePanel()">

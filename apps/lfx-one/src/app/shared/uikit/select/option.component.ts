@@ -79,8 +79,9 @@ export class UiOptionComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
+      // Forced-colors drops the highlight fill, so an inset outline marks the highlighted row.
       // Exact px, not rem; 14px root. 40px is the menu-item height token (no min-height utility), so taller content grows the row; 10px radius is the panel radius minus its 6px padding.
-      return 'group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50';
+      return 'group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]';
     });
   }
 }

@@ -120,6 +120,8 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   protected readonly panelWidth = signal(0);
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
+  // The panel closes when the field is disabled under it.
+  protected readonly expanded: Signal<boolean> = computed(() => this.open() && !this.isDisabled());
   protected readonly selectedIndex: Signal<number> = computed(() => this.options().findIndex((option) => option.value === this.value()));
   protected readonly selected: Signal<UiOption | null> = this.initSelected();
   protected readonly activeOption: Signal<UiOption | null> = this.initActiveOption();
@@ -271,7 +273,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   }
 
   protected select(option: UiOption | null): void {
-    if (!option || option.disabled) return;
+    if (!option || option.disabled || this.isDisabled()) return;
     this.value.set(option.value);
     this.onChange?.(option.value);
     this.closePanel();
@@ -307,7 +309,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
 
   private initActiveOption(): Signal<UiOption | null> {
     return computed(() => {
-      if (!this.open()) return null;
+      if (!this.expanded()) return null;
       const options = this.options();
       const item = this.activeItem();
       // The highlighted row may have left the list (a filter) or been disabled: fall back to the first row that can be picked.
@@ -374,7 +376,9 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     const focusable = '[data-testid="ui-select-header"] :is(input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"]))';
     afterNextRender(
       () => {
-        const field = this.overlay().overlayRef?.overlayElement.querySelector<HTMLElement>(focusable);
+        const candidates = this.overlay().overlayRef?.overlayElement.querySelectorAll<HTMLElement>(focusable) ?? [];
+        // A hidden or disabled field in the header cannot take focus, so skip to the first one that can.
+        const field = Array.from(candidates).find((candidate) => this.checker.isFocusable(candidate));
         if (field) field.focus();
         else if (typed && this.open()) this.typeAhead(typed);
       },
@@ -403,7 +407,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     // One letter pressed repeatedly cycles through the options that start with it; a longer word narrows from the current row.
     const cycling = [...this.typed].every((c) => c === this.typed[0]);
     const prefix = cycling ? this.typed[0] : this.typed;
-    const from = cycling ? this.activeIndex() + 1 : this.activeIndex();
+    const from = Math.max(0, cycling ? this.activeIndex() + 1 : this.activeIndex());
     for (let step = 0; step < options.length; step++) {
       const index = (from + step) % options.length;
       if (!options[index].disabled && options[index].label.toLowerCase().startsWith(prefix)) {
