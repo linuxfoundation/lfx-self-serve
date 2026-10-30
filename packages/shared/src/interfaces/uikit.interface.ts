@@ -173,9 +173,6 @@ export interface UiTableColumnView {
 /** Size of a uikit collapse group: `default` has 20px headings, `small` 14px headings and tighter padding. */
 export type UiCollapseSize = 'default' | 'small';
 
-/** Heading level (`aria-level`) of the triggers in a uikit collapse group. */
-export type UiCollapseHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
-
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
@@ -190,3 +187,6 @@ export type UiChoiceboxType = 'radio' | 'checkbox';
 
 /** Number of equal columns in a uikit choicebox group. */
 export type UiChoiceboxColumns = 1 | 2 | 3;
+
+/** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
+export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
