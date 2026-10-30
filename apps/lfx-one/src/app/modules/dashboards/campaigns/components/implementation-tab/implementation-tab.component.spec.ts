@@ -5100,7 +5100,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
 
       expect(q('implementation-google-channel-single-note')?.textContent).toContain('created on its own');
 
-      // The pair the split funds, reached the one way this road still allows: a restored selection.
+      // The pair the split funds, reached by a route this road still allows: a restored selection.
       seedGoogleForm({ includeSearch: true, includeDemandGen: true }, cutover);
 
       expect(q('implementation-budget-split')).toBeNull();
@@ -5116,6 +5116,30 @@ describe('ImplementationTabComponent google channels capability gate', () => {
       // Named, not cleared: which campaign to make is the operator's call.
       expect(value('includeSearch')).toBe(true);
       expect(value('includeDemandGen')).toBe(true);
+    });
+
+    it('omits the note, and the description pointing at it, when Search is the only type offered', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: false, googleChannels: false, googleCreative: true });
+
+      expect(q('implementation-google-channel-single-note')).toBeNull();
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('describes each type checkbox by the note, so ticking one explains unticking the rest', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      const note = fixture.nativeElement.querySelector('#implementation-google-channel-single-note');
+      expect(note).not.toBeNull();
+      for (const control of ['includeSearch', 'includeDemandGen', 'includePerformanceMax', 'includeDisplay']) {
+        expect(checkbox(control)?.getAttribute('aria-describedby'), control).toBe('implementation-google-channel-single-note');
+      }
+    });
+
+    it('describes no checkbox by the note on the legacy road', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: false, googleCreative: false });
+
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+      expect(checkbox('includeDemandGen')?.getAttribute('aria-describedby')).toBeNull();
     });
 
     it('raises the conflict when the capability answer arrives after a multi-type selection', () => {

@@ -283,6 +283,7 @@
                 type="checkbox"
                 formControlName="includeSearch"
                 (change)="onGoogleChannelPicked('search', $event)"
+                [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
@@ -295,6 +296,7 @@
                   type="checkbox"
                   formControlName="includeDemandGen"
                   (change)="onGoogleChannelPicked('demand-gen', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
               </label>
@@ -310,6 +312,7 @@
                   type="checkbox"
                   formControlName="includePerformanceMax"
                   (change)="onGoogleChannelPicked('performance-max', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-performance-max"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
@@ -345,6 +348,7 @@
                   type="checkbox"
                   formControlName="includeDisplay"
                   (change)="onGoogleChannelPicked('display', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-display"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Display Campaign
@@ -353,8 +357,10 @@
           </div>
           <!-- #4755. The campaign-service road creates one Google type per create, so the row above is
                an exclusive choice there; say so, since checkboxes alone read as "tick several". -->
-          @if (googleCreativeAvailable()) {
-            <p class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
+          <!-- Only where there is a choice to make: with Search the sole box offered, "choose one" says nothing.
+               The id is each type checkbox's `aria-describedby`, gated on the same signal. -->
+          @if (googleChannelNoteShown()) {
+            <p id="implementation-google-channel-single-note" class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
               Each Google campaign type is created on its own, so choose one.
             </p>
           }

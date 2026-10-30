@@ -1810,19 +1810,32 @@ export class ImplementationTabComponent implements OnInit {
    * (#4755), or null when it does not.
    *
    * That road creates ONE type per create: `canSubmit` returns false for a pair because
-   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ever ticking a
-   * second type there, so the one way to arrive here is a restored draft saved with several — and
-   * without this the button sits disabled with nothing on screen saying why. Named rather than
+   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
+   * type once that road is known, so two routes remain: a restored draft saved with several, and a
+   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
+   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
+   * nothing on screen saying why. Named rather than
    * cleared: dropping a restored choice unseen would decide for the operator which campaign to make.
    */
+  /**
+   * Whether the "one type per create" note under the Google type row is shown (#4755): only on the
+   * campaign-service road, and only when there is more than one type to choose between.
+   *
+   * One signal for the note AND for the checkboxes' `aria-describedby`, so a box never points at a
+   * note that is not rendered. The description is what tells a screen-reader user why ticking one
+   * type unticks the others.
+   */
+  protected readonly googleChannelNoteShown = computed(() => this.googleCreativeAvailable() && (this.demandGenAvailable() || this.googleChannelsAvailable()));
+
   protected readonly googleChannelConflict = computed<string | null>(() => {
     void this.campaignFormRevision();
-    if (!this.googleCreativeAvailable() || !this.showGoogleSection()) return null;
+    // No `showGoogleSection` test: the one consumer renders inside that section's own `@if`.
+    if (!this.googleCreativeAvailable()) return null;
     const channels = this.selectedGoogleChannels();
     if (channels.length < 2) return null;
     const labels = channels.map((channel) => GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]);
     const listed = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
-    // The BFF refusal's own wording (`createCampaigns`), and like it this does NOT promise that a
+    // The BFF refusal's first sentence (`createCampaigns`), and like that refusal it does NOT promise a
     // second type can then be added to the same brief: that depends on the campaign-service version
     // deployed, and a retry into a refusal after the first create has spent budget is worse than
     // saying nothing.
