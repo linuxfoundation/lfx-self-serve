@@ -13,8 +13,8 @@ import { UiCommandMenuComponent } from './command-menu.component';
  * Opens the command palette in a modal. `open` resolves, through `ref.closed`, with the chosen `UiCommandItem`, or with nothing when
  * the user dismisses it. Only one palette is open at a time: calling `open` again returns the one on screen.
  *
- * Nothing is bound to the keyboard until you ask. The library opens the palette with ⌘K or Ctrl K from anywhere; `bindShortcut` does that,
- * and you call it once from the app shell with the commands that exist at that moment.
+ * Nothing is bound to the keyboard until you ask. The library opens the palette with ⌘K or Ctrl K from anywhere; `bindShortcut` does that
+ * (⌘K on Apple platforms, Ctrl K elsewhere), and you call it once from the app shell with the commands that exist at that moment.
  */
 @Injectable({ providedIn: 'root' })
 export class UiCommandMenuService {
@@ -34,11 +34,17 @@ export class UiCommandMenuService {
     return ref;
   }
 
-  /** Opens the palette with ⌘K (macOS) or Ctrl K, and closes it with the same key. Returns a function that removes the listener. */
+  /**
+   * Opens the palette with ⌘K on Apple platforms or Ctrl K elsewhere, and closes it with the same key. Ctrl K stays free on macOS, where it deletes
+   * to the end of the line. Holding the key down does not toggle it again. Returns a function that removes the listener.
+   */
   public bindShortcut(getConfig: () => UiCommandMenuConfig): () => void {
     const onKeydown = (event: KeyboardEvent): void => {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
+      const apple = /mac|iphone|ipad|ipod/i.test(this.document.defaultView?.navigator.platform ?? '');
+      const modifier = apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+      if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
       event.preventDefault();
+      if (event.repeat) return;
       if (this.ref?.overlayRef.hasAttached()) this.ref.close();
       else this.open(getConfig());
     };

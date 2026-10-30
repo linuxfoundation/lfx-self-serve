@@ -1,23 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Directive, inject, input } from '@angular/core';
+import { Directive, inject, input, signal } from '@angular/core';
 import { UiCommandGroup, UiCommandItem, UiCommandMenuConfig } from '@lfx-one/shared/interfaces';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
 import { UiCommandMenuComponent } from './command-menu.component';
 import { UiCommandMenuService } from './command-menu.service';
 
-/** Story helper: opens the palette through `UiCommandMenuService` when the host is clicked and shows what it resolved with. */
-@Directive({ selector: '[lfxStoryOpensCommandMenu]', host: { '(click)': 'open()' } })
+/** Story helper: opens the palette through `UiCommandMenuService` when the host is clicked and keeps what it resolved with in `chosen`. */
+@Directive({ selector: '[lfxStoryOpensCommandMenu]', exportAs: 'lfxStoryOpensCommandMenu', host: { '(click)': 'open()' } })
 class StoryOpensCommandMenuDirective {
   public readonly lfxStoryOpensCommandMenu = input.required<UiCommandMenuConfig>();
-  public chosen: UiCommandItem | undefined;
+  public readonly chosen = signal<UiCommandItem | undefined>(undefined);
 
   private readonly service = inject(UiCommandMenuService);
 
   protected open(): void {
-    this.service.open(this.lfxStoryOpensCommandMenu()).closed.subscribe((item) => (this.chosen = item));
+    this.service.open(this.lfxStoryOpensCommandMenu()).closed.subscribe((item) => this.chosen.set(item));
   }
 }
 
@@ -50,9 +50,10 @@ const meta: Meta<UiCommandMenuComponent> = {
     props: { config: { groups: args.groups, label: args.label, placeholder: args.placeholder } },
     template: `
       <!-- The trigger is a plain button styled like the library's secondary button; lfx-ui-button is not realigned yet. -->
-      <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryOpensCommandMenu]="config">
+      <button #opener="lfxStoryOpensCommandMenu" type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryOpensCommandMenu]="config">
         <i class="fa-light fa-magnifying-glass" aria-hidden="true"></i> Open command menu
-      </button>`,
+      </button>
+      <p class="copy-14 mt-[12px] text-ui-neutral-600" role="status">Chosen: {{ opener.chosen()?.label ?? 'nothing yet' }}</p>`,
   }),
 };
 export default meta;
@@ -60,9 +61,6 @@ type Story = StoryObj<UiCommandMenuComponent>;
 
 /** Opens in a modal with the search field focused. Type to filter, Arrow Down and Arrow Up to move, Enter to choose, Escape to close. */
 export const Default: Story = {};
-
-/** "calendar" is a keyword of Schedule Meeting, not part of its label, and still finds it. */
-export const MatchesKeywords: Story = {};
 
 /** The palette rendered in place, without a modal, as the library draws it. In an app it always opens through the service. */
 export const InlineLayout: Story = {
@@ -73,6 +71,17 @@ export const InlineLayout: Story = {
         <lfx-ui-command-menu [groups]="groups" [label]="label" [placeholder]="placeholder" />
       </div>`,
   }),
+};
+
+/** "calendar" is a keyword of Schedule Meeting, not part of its label, and still finds it. The search is filled in for you. */
+export const MatchesKeywords: Story = {
+  render: InlineLayout.render,
+  play: async ({ canvasElement }) => {
+    const input = canvasElement.querySelector('input');
+    if (!input) return;
+    input.value = 'calendar';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  },
 };
 
 /** With nothing to match, the list gives way to a message that names the search. */

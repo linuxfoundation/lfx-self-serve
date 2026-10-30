@@ -33,7 +33,7 @@
       @for (group of visibleGroups(); track group.id) {
         <div role="group" [attr.aria-labelledby]="group.id" data-testid="ui-command-menu-group">
           <div [id]="group.id" class="label-12 px-[8px] pb-[4px] pt-[8px] text-ui-neutral-600" data-testid="ui-command-menu-group-label">{{ group.label }}</div>
-          @for (view of group.items; track view.id) {
+          @for (view of group.items; track view.item.value) {
             <div
               role="option"
               class="group flex h-ui-menu-item w-full cursor-pointer items-center gap-[12px] rounded-ui-sm px-[8px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-100"
@@ -51,7 +51,8 @@
                   <i [class]="view.item.icon" aria-hidden="true"></i>
                 </span>
               }
-              <span class="min-w-0 flex-1 truncate" data-testid="ui-command-menu-item-label">{{ view.item.label }}</span>
+              <!-- Rows are not focusable (aria-activedescendant), so a native title is the practical way to show a truncated label. -->
+              <span class="min-w-0 flex-1 truncate" [attr.title]="view.item.label" data-testid="ui-command-menu-item-label">{{ view.item.label }}</span>
               @if (view.item.shortcut?.length) {
                 <lfx-ui-keyboard-input [keys]="view.item.shortcut ?? []" size="sm" />
               }
