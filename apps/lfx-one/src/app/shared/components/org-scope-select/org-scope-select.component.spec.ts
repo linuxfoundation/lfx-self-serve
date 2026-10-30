@@ -30,7 +30,7 @@ describe('OrgScopeSelectComponent', () => {
   const select = (): SelectComponent => fixture.debugElement.query(By.directive(SelectComponent)).componentInstance;
   const el = (): HTMLElement => fixture.nativeElement;
 
-  async function mount({ info = SCOPE as OrgLensOrgScope | null, codeOnly = false } = {}): Promise<void> {
+  async function mount({ info = SCOPE as OrgLensOrgScope | null, note = null as string | null } = {}): Promise<void> {
     current.set(info);
     await TestBed.configureTestingModule({
       imports: [OrgScopeSelectComponent],
@@ -39,7 +39,7 @@ describe('OrgScopeSelectComponent', () => {
     fixture = TestBed.createComponent(OrgScopeSelectComponent);
     fixture.componentRef.setInput('form', form);
     fixture.componentRef.setInput('dataTest', 'page-org-scope');
-    fixture.componentRef.setInput('codeOnly', codeOnly);
+    fixture.componentRef.setInput('note', note);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -83,8 +83,8 @@ describe('OrgScopeSelectComponent', () => {
     expect(select().tooltip()).toBe(ORG_SCOPE_ALL_TOOLTIP);
   });
 
-  it('says the pick applies to code contributions only when codeOnly', async () => {
-    await mount({ codeOnly: true });
+  it('appends the page note to the tooltip', async () => {
+    await mount({ note: ORG_SCOPE_CODE_ONLY_NOTE });
 
     expect(select().tooltip()).toMatch(new RegExp(`${ORG_SCOPE_CODE_ONLY_NOTE.replace('.', '\\.')}$`));
     expect(select().tooltip()).toContain('Counts only Example Org');

@@ -26,6 +26,7 @@ import {
   ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  ORG_SCOPE_PROJECTS_NOTE,
   PD_CONTRIBUTORS_CARD_KEY,
   PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
@@ -45,6 +46,7 @@ import type {
   OrgProjectsTableRow,
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
+  OrgScopeFilter,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
 import { buildHealthAriaLabel, downloadCsv, formatHealthLabel, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
@@ -63,6 +65,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
@@ -74,7 +77,7 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
-import { orgScopeQueryParams } from '@shared/utils/org-scope-url.util';
+import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
 import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
@@ -94,6 +97,7 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
     MenuComponent,
     MultiSelectComponent,
     OrgLensEmptyStateComponent,
+    OrgScopeSelectComponent,
     PopoverModule,
     RouterLink,
     SelectComponent,
@@ -122,6 +126,7 @@ export class OrgProjectsComponent {
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
   /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
   protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
+  protected readonly orgScopeNote = ORG_SCOPE_PROJECTS_NOTE;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -137,6 +142,10 @@ export class OrgProjectsComponent {
   protected readonly filterForm = new FormGroup({
     foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, { nonNullable: true }),
     employees: new FormControl<string[]>(this.readEmployeesFromUrl(), { nonNullable: true }),
+  });
+  /** Organization scope (lfx-self-serve-ops#1219): only the contributors column follows it. */
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
   });
   /** Name field for the add / rename workspace dialog. */
   protected readonly workspaceForm = new FormGroup({
@@ -191,6 +200,9 @@ export class OrgProjectsComponent {
   // Computed / toSignal
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly formValue = toSignal(this.filterForm.valueChanges, { initialValue: this.filterForm.getRawValue() });
+  private readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
+    initialValue: this.scopeForm.controls.orgScope.value,
+  });
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
   /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
   protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
@@ -293,6 +305,7 @@ export class OrgProjectsComponent {
   );
 
   public constructor() {
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router);
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.resettingFilters) return;
@@ -761,12 +774,13 @@ export class OrgProjectsComponent {
         workspaceError: this.workspaceError(),
         workspaceLoading: this.workspaceLoading(),
         _workspaces: this.workspacesResponse(),
+        orgScope: this.orgScope(),
         _reload: this.reload(),
       }))
     );
     return toSignal(
       account$.pipe(
-        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces }) => {
+        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces, orgScope }) => {
           if (!account?.uid || !workspace || workspaceError || workspaceLoading || _workspaces === null) {
             this.projectsLoading.set(false);
             return of(null);
@@ -780,7 +794,7 @@ export class OrgProjectsComponent {
           this.projectsError.set(false);
           return concat(
             of(null),
-            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs, orgScope).pipe(
               tap((response) => {
                 for (const project of response.projects) {
                   for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {

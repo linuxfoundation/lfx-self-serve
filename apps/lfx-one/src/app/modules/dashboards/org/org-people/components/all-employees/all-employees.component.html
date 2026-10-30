@@ -88,7 +88,7 @@
         dataTest="org-people-all-employees-team-members-select" />
     </div>
     <div class="w-full md:w-60">
-      <lfx-org-scope-select [form]="filterForm" [codeOnly]="true" dataTest="org-people-all-employees-org-scope-filter" />
+      <lfx-org-scope-select [form]="filterForm" [note]="orgScopeNote" dataTest="org-people-all-employees-org-scope-filter" />
     </div>
     @if (canClearFilters()) {
       <button

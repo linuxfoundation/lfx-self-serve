@@ -81,6 +81,9 @@
               placeholder="All Employees"
               data-testid="org-projects-employee-filter" />
           </div>
+          <div class="w-full sm:w-60">
+            <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <lfx-button

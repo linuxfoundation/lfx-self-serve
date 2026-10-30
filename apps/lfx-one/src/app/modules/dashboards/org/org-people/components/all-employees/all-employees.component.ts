@@ -62,6 +62,7 @@ import {
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
   ORG_SCOPE_CAPTION_PHRASE,
+  ORG_SCOPE_CODE_ONLY_NOTE,
   ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_LABEL,
   ORG_TEAM_MEMBERS_OPTIONS,
@@ -156,6 +157,7 @@ export class AllEmployeesComponent {
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
   protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
   protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
+  protected readonly orgScopeNote = ORG_SCOPE_CODE_ONLY_NOTE;
   protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
   protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
   // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.

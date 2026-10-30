@@ -62,14 +62,14 @@ The **Org Overview** page in Org Lens (route: `/org`) shows your organization's 
 
 ### Organization scope
 
-Pages in Org Lens that count contributors — the Org Overview's **Active Contributors** card, **People** (Contributors and All Employees), **Code Contributions** and a project's detail page — have an **Organization scope** dropdown:
+Pages in Org Lens that count contributors — the Org Overview's **Active Contributors** card, **People** (Contributors and All Employees), **Code Contributions**, the **Projects** list and a project's detail page — have an **Organization scope** dropdown:
 
 - **Insights organization** (the default) counts only the organization shown on your company's LFX Insights page, and only in the repositories LFX Insights counts, so the numbers line up with that page.
 - **All related organizations (N)** counts every organization linked to your company account — subsidiaries, acquisitions and duplicate records — in every repository. N is how many of those organizations have code activity in the past two years.
 
 Your choice stays in the page address (`?orgScope=all`) and carries to the other Org Lens pages when you move between them from the sidebar, the Projects list or a project's detail page. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights organization is listed only under **All related organizations**. If your company has no LFX Insights organization with code activity in the past two years, the dropdown is disabled and every related organization is counted.
 
-The **Projects** list has no dropdown: its contributor counts always include every related organization, so a project's detail page under **Insights organization** can show fewer contributors than the list. On a project's detail page, contributors' first and most recent activity dates also come from every related organization.
+On the **Projects** list the choice changes the **Contributors** column only; influence, health, participants and maintainers are the same under both options. On a project's detail page, contributors' first and most recent activity dates come from every related organization.
 
 ### Navigation
 

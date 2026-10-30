@@ -5,7 +5,7 @@ import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
-import { DEFAULT_ORG_SCOPE, ORG_SCOPE_CODE_ONLY_NOTE, ORG_SCOPE_LABEL, ORG_SCOPE_UNAVAILABLE_NOTE } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_SCOPE, ORG_SCOPE_LABEL, ORG_SCOPE_UNAVAILABLE_NOTE } from '@lfx-one/shared/constants';
 import type { OrgScopeFilter, OrgScopeOption } from '@lfx-one/shared/interfaces';
 import { orgScopeOptions, orgScopeTooltip, parseOrgScopeFilter } from '@lfx-one/shared/utils';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
@@ -29,8 +29,8 @@ export class OrgScopeSelectComponent {
   public readonly form = input.required<FormGroup>();
   public readonly control = input<string>('orgScope');
   public readonly dataTest = input<string>('org-scope-filter');
-  /** People → All Employees: the pick changes code columns only, which the tooltip says. */
-  public readonly codeOnly = input<boolean>(false);
+  /** A page where the pick changes only some columns says which, after the tooltip (e.g. `ORG_SCOPE_CODE_ONLY_NOTE`). */
+  public readonly note = input<string | null>(null);
 
   protected readonly label = ORG_SCOPE_LABEL;
   protected readonly unavailableNote = ORG_SCOPE_UNAVAILABLE_NOTE;
@@ -43,7 +43,8 @@ export class OrgScopeSelectComponent {
 
   protected readonly tooltip = computed(() => {
     const text = orgScopeTooltip(this.unavailable() ? 'all' : this.value(), this.orgScopeService.current());
-    return this.codeOnly() ? `${text} ${ORG_SCOPE_CODE_ONLY_NOTE}` : text;
+    const note = this.note();
+    return note ? `${text} ${note}` : text;
   });
 
   public constructor() {
