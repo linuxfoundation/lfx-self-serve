@@ -14321,8 +14321,12 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     expect(warning(c)).toBeUndefined();
   });
 
-  /** The content behind a URL can change — an operator re-uploads a corrected image — so a settled URL is checked again. */
-  it('re-checks a settled URL on the next blur, clearing a warning the corrected image no longer earns', () => {
+  /**
+   * A settled URL is probed again, so a host that answers differently now is heard. In a real browser a
+   * same-URL replacement may still come back from the cache, which is why this is best effort; here the
+   * fake answers whatever the test loads.
+   */
+  it('probes a settled URL again on the next blur and shows the newer answer', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     setUrls(c, 'https://cdn.example.com/hero.png');
     c['onGoogleImageFieldBlur'](group, marketingField());
@@ -14345,6 +14349,36 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     c['onGoogleImageFieldBlur'](group, marketingField());
     images[1].load(1200, 628);
     expect(warning(c)).toBeUndefined();
+  });
+
+  it('starts one probe for a URL pasted on two lines', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/twice.png\nhttps://cdn.example.com/twice.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  /** The line appears after focus has left the field, so an always-mounted region announces it. */
+  it('announces the line in a live region that is mounted empty, naming the section and field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.detectChanges();
+    const region = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-google-image-url-check-live"]');
+    expect(region()).not.toBeNull();
+    expect(region()?.textContent?.trim()).toBe('');
+    expect(region()?.getAttribute('role')).toBe('status');
+
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const marketingLabel = (marketingField() as { label: string }).label;
+    expect(region()?.textContent?.trim()).toContain(`${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here as not 1.91:1`);
+    // The visible line carries no role, so the text is read once.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]')?.getAttribute('role')
+    ).toBeNull();
   });
 
   it('does not start a second probe while one for the same URL is still loading', () => {

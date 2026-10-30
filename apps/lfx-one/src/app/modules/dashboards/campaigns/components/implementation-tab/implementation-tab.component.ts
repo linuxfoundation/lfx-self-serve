@@ -1604,8 +1604,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPixelId = signal('');
   /**
    * What the browser last learned about each pasted Google image URL, keyed by the URL itself, so a
-   * result follows the URL into any slot it is pasted into. Refreshed on every blur (see
-   * `onGoogleImageFieldBlur`), because what a URL serves can change.
+   * result follows the URL into any slot it is pasted into. Probed again on every blur (see
+   * `onGoogleImageFieldBlur`), best effort where the browser answers from its cache.
    */
   private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
 
@@ -2765,6 +2765,23 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
   /** The advisory line under a Google image slot about its pasted URLs, keyed `<request key>.<control>`; absent when there is nothing to say. */
   protected readonly googleTypedImageWarnings: Signal<Record<string, string>> = this.initGoogleTypedImageWarnings();
+  /**
+   * Every current pasted-URL line, each named by its section and field, for the always-mounted live
+   * region. The lines arrive after focus has left the field, so the visible span alone would never be
+   * announced; the region is mounted empty and only its text changes, as the template's other
+   * announcements are. `''` when there is nothing to say.
+   */
+  protected readonly googleTypedImageAnnouncement: Signal<string> = computed(() => {
+    const warnings = this.googleTypedImageWarnings();
+    const lines: string[] = [];
+    for (const section of this.googleCreativeSections()) {
+      for (const field of section.fields) {
+        const warning = warnings[`${section.groupName}.${field.control}`];
+        if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
+      }
+    }
+    return lines.join(' ');
+  });
   /**
    * Why Create is blocked for a stored Google image the request cannot carry, or that
    * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
@@ -5045,16 +5062,18 @@ export class ImplementationTabComponent implements OnInit {
    * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
    * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
    * nothing; this only tells the operator while they are still on the field rather than at Create.
-   * A URL is probed again on every blur unless a probe for it is still running: a host that was slow
-   * or down may answer now, and an operator who fixed a hosted image at the same URL needs the
-   * corrected answer, not the cached one.
+   * A URL is probed again on every blur unless a probe for it is still running, so a host that was
+   * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
+   * effort only: the browser may answer from its cache with the old image, and busting the cache
+   * would break signed URLs. A replaced image is reliably re-checked under a new URL.
    */
   protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
     if (!field.image || !isPlatformBrowser(this.platformId)) return;
     const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
-    const known = this.googleTypedImageProbes();
     for (const url of this.splitCreativeLines(raw)) {
-      if (known[url]?.state !== 'checking' && isHttpUrl(url, true)) {
+      // Read live, not from a snapshot taken before the loop: a URL pasted on two lines is marked
+      // `checking` by its first probe, so the second line starts none.
+      if (this.googleTypedImageProbes()[url]?.state !== 'checking' && isHttpUrl(url, true)) {
         this.probeGoogleTypedImage(url);
       }
     }

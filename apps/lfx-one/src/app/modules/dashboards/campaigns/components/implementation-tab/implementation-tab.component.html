@@ -69,6 +69,16 @@
 </div>
 
 <!--
+  Pasted Google image URL checks, announced. Top-level and mounted empty for the reason the regions
+  above are: each line under an image field appears after focus has left that field, inside an `@if`
+  that the result itself creates, so it is never announced on its own. The visible line has no role,
+  so nothing is read twice.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-image-url-check-live">
+  {{ googleTypedImageAnnouncement() }}
+</div>
+
+<!--
   Reddit no-ad warning, announced.
 
   Top-level and outside the guard for the reason the two regions above are: the visible copy lives
