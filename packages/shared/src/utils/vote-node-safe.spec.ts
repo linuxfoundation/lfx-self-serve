@@ -6,6 +6,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import type { Vote } from '../interfaces/poll.interface';
+
 // Plain Node, no Angular setup: loading either module must never reach Angular or date-fns. Both are mocked to throw on import.
 vi.mock('@angular/forms', () => {
   throw new Error('@angular/forms must not be imported by the Node-safe vote utils');

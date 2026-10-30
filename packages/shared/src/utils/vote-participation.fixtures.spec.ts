@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { computeVoteRowParticipation } from './vote-participation.utils';
 import fixtures from './vote-participation.fixtures.json';
 
+import type { PollStatus } from '../enums/poll.enum';
 import type { Vote } from '../interfaces/poll.interface';
 
 /**
@@ -20,17 +21,18 @@ describe('vote-participation.fixtures.json', () => {
   });
 
   it.each(fixtures)('computeVoteRowParticipation: $name', ({ input, expected }) => {
-    const toCount = (value: number | string | null): number | null => (value === 'NaN' ? Number.NaN : (value as number | null));
-    const vote = {
+    // The contract deliberately sends null and "NaN" for counts the Vote interface types as `number`; only those two fields (and the JSON status string) are cast.
+    const toCount = (value: number | string | null): number => (value === 'NaN' ? Number.NaN : (value as number));
+    const vote: Vote = {
       uid: 'vote-uid',
       name: 'Fixture vote',
       project_uid: 'project-uid',
-      status: input.status,
+      status: input.status as PollStatus,
       end_time: input.end_time,
-      early_end_time: input.early_end_time,
+      early_end_time: input.early_end_time ?? undefined,
       num_response_received: toCount(input.num_response_received),
       total_voting_request_invitations: toCount(input.total_voting_request_invitations),
-    } as unknown as Vote;
+    };
 
     expect(computeVoteRowParticipation(vote)).toMatchObject(expected);
   });
