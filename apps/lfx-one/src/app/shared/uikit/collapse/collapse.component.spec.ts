@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { UiCollapseSize } from '@lfx-one/shared/interfaces';
+import { UiCollapseHeadingLevel, UiCollapseSize } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { UiCollapseItemComponent } from './collapse-item.component';
@@ -28,7 +28,7 @@ class TestHostComponent {
   public readonly open = signal<string[]>([]);
   public readonly exclusive = signal(false);
   public readonly size = signal<UiCollapseSize>('default');
-  public readonly headingLevel = signal(3);
+  public readonly headingLevel = signal<UiCollapseHeadingLevel>(3);
 }
 
 @Component({
@@ -54,6 +54,15 @@ class SoloTestHostComponent {}
 })
 class RichTestHostComponent {}
 
+@Component({
+  selector: 'lfx-ui-collapse-nested-test-host',
+  imports: [UiCollapseComponent, UiCollapseItemComponent],
+  template: `<lfx-ui-collapse exclusive size="small" [headingLevel]="2">
+    <lfx-ui-collapse-item value="faq" title="FAQ"><lfx-ui-collapse-item value="adv" title="Advanced">Nested.</lfx-ui-collapse-item></lfx-ui-collapse-item>
+  </lfx-ui-collapse>`,
+})
+class NestedTestHostComponent {}
+
 describe('UiCollapseComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let host: HTMLElement;
@@ -66,7 +75,7 @@ describe('UiCollapseComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [TestHostComponent, RichTestHostComponent, AttrTestHostComponent, SoloTestHostComponent],
+      imports: [TestHostComponent, RichTestHostComponent, AttrTestHostComponent, SoloTestHostComponent, NestedTestHostComponent],
     }).compileComponents();
     fixture = TestBed.createComponent(TestHostComponent);
     host = fixture.nativeElement as HTMLElement;
@@ -231,6 +240,23 @@ describe('UiCollapseComponent', () => {
     await attr.whenStable();
 
     expect(buttons.map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'true']);
+  });
+
+  it('treats an item nested in a section as standalone, not controlled by the outer group', async () => {
+    const nested = TestBed.createComponent(NestedTestHostComponent);
+    await nested.whenStable();
+    const el = nested.nativeElement as HTMLElement;
+    const [outer, inner] = Array.from(el.querySelectorAll<HTMLButtonElement>('[data-testid="ui-collapse-trigger"]'));
+
+    outer.click();
+    await nested.whenStable();
+    inner.click();
+    await nested.whenStable();
+
+    expect(outer.getAttribute('aria-expanded')).toBe('true');
+    expect(inner.getAttribute('aria-expanded')).toBe('true');
+    expect(inner.className).toContain('heading-20');
+    expect(el.querySelectorAll('[data-testid="ui-collapse-heading"]')[1].getAttribute('aria-level')).toBe('3');
   });
 
   it('works as a single toggle without a group', async () => {

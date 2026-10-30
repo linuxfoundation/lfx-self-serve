@@ -15,6 +15,8 @@ import { UiCollapseComponent } from './collapse.component';
   selector: 'lfx-ui-collapse-item',
   templateUrl: './collapse-item.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // An item nested in this item's section must not resolve the outer group, so it behaves as a standalone item.
+  providers: [{ provide: UiCollapseComponent, useValue: null }],
   host: {
     // Separator is an inset shadow (library geometry), so the item is 1px shorter than with a border.
     class: 'block shadow-[inset_0_-1px_0_0] shadow-ui-neutral-alpha-200',
@@ -24,15 +26,16 @@ import { UiCollapseComponent } from './collapse.component';
   },
 })
 export class UiCollapseItemComponent {
-  private readonly group = inject(UiCollapseComponent, { optional: true });
+  private readonly group = inject(UiCollapseComponent, { optional: true, skipSelf: true });
   /** Unique per instance, so trigger and panel ids never collide. */
   protected readonly idPrefix = inject(_IdGenerator).getId('lfx-ui-collapse-item-');
-  private readonly standaloneOpen = signal(false);
 
   /** Stable value that identifies this item in the group's `[(open)]` list. */
   public readonly value = input.required<string>();
   /** Heading text shown in the trigger button. */
   public readonly title = input.required<string>();
+
+  private readonly standaloneOpen = signal(false);
 
   /** The group's heading level, or 3 when used on its own. */
   protected readonly headingLevel: Signal<number> = computed(() => this.group?.headingLevel() ?? 3);
