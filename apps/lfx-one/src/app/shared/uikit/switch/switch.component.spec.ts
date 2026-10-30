@@ -14,7 +14,7 @@ import { UiSwitchComponent } from './switch.component';
   selector: 'lfx-ui-test-model-host',
   imports: [UiSwitchComponent, UiSwitchOptionComponent],
   template:
-    '<lfx-ui-switch ariaLabel="Range" [size]="size()" [disabled]="disabled()" [name]="name()" [(value)]="value"><lfx-ui-switch-option value="24h" label="24h" /><lfx-ui-switch-option value="7d" label="7d" /><lfx-ui-switch-option value="30d" label="30d" /><lfx-ui-switch-option value="90d" label="90d" [disabled]="true" /><lfx-ui-switch-option value="list" label="List" icon="fa-light fa-list" [iconOnly]="true" /></lfx-ui-switch>',
+    '<lfx-ui-switch ariaLabel="Range" [size]="size()" [disabled]="disabled()" [name]="name()" [(value)]="value"><lfx-ui-switch-option value="24h" label="24h" /><lfx-ui-switch-option value="7d" label="7d" /><lfx-ui-switch-option value="30d" label="30d" /><lfx-ui-switch-option value="90d" label="90d" [disabled]="true" /><lfx-ui-switch-option value="list" label="List" icon="fa-light fa-list" [iconOnly]="true" /><lfx-ui-switch-option value="code" label="Code" icon="fa-light fa-code" /></lfx-ui-switch>',
 })
 class ModelHostComponent {
   public readonly size = signal<UiSwitchSize>('medium');
@@ -71,14 +71,14 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
     });
 
     it('checks the option that matches value', () => {
-      expect(inputs().map((input) => input.checked)).toEqual([false, true, false, false, false]);
+      expect(inputs().map((input) => input.checked)).toEqual([false, true, false, false, false, false]);
     });
 
     it('writes value back when an option is chosen', async () => {
       inputs()[2].click();
       await fixture.whenStable();
       expect(fixture.componentInstance.value()).toBe('30d');
-      expect(inputs().map((input) => input.checked)).toEqual([false, false, true, false, false]);
+      expect(inputs().map((input) => input.checked)).toEqual([false, false, true, false, false, false]);
     });
 
     it('raises only the checked segment', async () => {
@@ -130,10 +130,26 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
       expect(describedBy).toBeTruthy();
     });
 
-    it('shows a visible label next to an icon on a labelled option', () => {
+    it('shows a visible label on a text-only option', () => {
       const option = host.querySelectorAll('lfx-ui-switch-option')[0];
       expect(option.querySelector('i')).toBeNull();
       expect((option.querySelector('[data-testid="ui-switch-option-text"]') as HTMLElement).classList).not.toContain('sr-only');
+    });
+
+    it('shows a visible label next to an icon on a labelled option', () => {
+      const option = host.querySelectorAll('lfx-ui-switch-option')[5];
+      expect(option.querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+      const text = option.querySelector('[data-testid="ui-switch-option-text"]') as HTMLElement;
+      expect(text.textContent).toBe('Code');
+      expect(text.classList).not.toContain('sr-only');
+    });
+
+    it('marks the checked segment with a Highlight fill and border, and the focus ring with an outline, in forced colours', () => {
+      expect(segments()[1].classList).toContain('forced-colors:bg-[color:Highlight]');
+      expect(segments()[1].classList).toContain('forced-colors:border');
+      expect(segments()[0].classList).not.toContain('forced-colors:bg-[color:Highlight]');
+      expect(segments()[0].classList).toContain('forced-colors:peer-focus-visible:outline');
+      expect(segments()[3].classList).toContain('forced-colors:text-[color:GrayText]');
     });
   });
 

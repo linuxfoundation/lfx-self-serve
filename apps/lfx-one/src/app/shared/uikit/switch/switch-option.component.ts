@@ -59,16 +59,19 @@ export class UiSwitchOptionComponent {
     return computed(() => {
       // Exact px, not rem: 14px root. Segment radius is the track radius minus its padding (9, 7 and 6px: no ui-* utility); padding and gap are library steps.
       const base =
-        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none peer-focus-visible:shadow-focus';
+        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
       const sizes = {
         tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12',
         small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium',
         medium: 'gap-[6px] rounded-[9px] px-[12px] button-14',
       };
       // The checked segment is raised; in the dark theme it is neutral-200 because background-100 is the track's neighbour there.
-      const fill = this.isChecked() ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200" : '';
+      // forced-colors: fills and shadows vanish, so the checked segment gets a Highlight fill and border, and the focus ring becomes an outline.
+      const fill = this.isChecked()
+        ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200 forced-colors:border forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText]"
+        : '';
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
-      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400';
+      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400 forced-colors:text-[color:GrayText]';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';
       return `${base} ${sizes[this.group.size()]} ${fill} ${ink}`;
     });
