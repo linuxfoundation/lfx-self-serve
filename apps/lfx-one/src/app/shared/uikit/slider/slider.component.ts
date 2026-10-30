@@ -93,7 +93,11 @@ export class UiSliderComponent implements ControlValueAccessor {
   /** Rounds to the nearest step from `min`, then clamps to `[min, max]`, trimming binary noise such as 0.30000000000000004. */
   private snap(raw: number): number {
     const step = this.step();
-    const decimals = (n: number): number => (String(n).split('.')[1] ?? '').length;
+    // toExponential keeps 1e-7 from reading as zero decimals, which String() would.
+    const decimals = (n: number): number => {
+      const [mantissa, exponent] = n.toExponential().split('e');
+      return Math.max(0, (mantissa.split('.')[1] ?? '').length - Number(exponent));
+    };
     const precision = Math.max(decimals(step), decimals(this.min()));
     const stepped = step > 0 ? Number((Math.round((raw - this.min()) / step) * step + this.min()).toFixed(precision)) : raw;
     return Math.min(Math.max(stepped, this.min()), this.max());

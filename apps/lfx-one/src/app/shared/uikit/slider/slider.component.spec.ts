@@ -106,6 +106,16 @@ describe('UiSliderComponent', () => {
     expect(output().textContent?.trim()).toBe('1.2');
   });
 
+  it('keeps tiny fractional steps exact', async () => {
+    await set('max', 0.000001);
+    await set('step', 0.0000001);
+    range().value = '0.0000003';
+    range().dispatchEvent(new Event('input'));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe(0.0000003);
+  });
+
   it('gives each instance its own ids', () => {
     const other = TestBed.createComponent(UiSliderComponent);
     other.componentRef.setInput('label', 'Other');

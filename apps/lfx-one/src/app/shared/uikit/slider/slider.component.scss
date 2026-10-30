@@ -63,6 +63,14 @@
     box-shadow: var(--ui-shadow-focus);
   }
 
+  // forced-colors drops box-shadow, so focus falls back to a system-colour outline
+  @media (forced-colors: active) {
+    &:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+    }
+  }
+
   &:disabled {
     opacity: var(--ui-opacity-disabled);
     cursor: not-allowed;
