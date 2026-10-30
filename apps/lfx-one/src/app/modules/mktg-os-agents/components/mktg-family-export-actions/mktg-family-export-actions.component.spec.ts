@@ -331,6 +331,7 @@ describe('Family export slot', () => {
     await fixture.whenStable();
     expect(button('pdf')?.disabled).toBe(true);
     ready();
+    await Promise.resolve();
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="family-export-pdf-ready"]')?.textContent).toContain('Your PDF is ready');
     expect(button('pdf')?.textContent).toContain('Open print preview');
@@ -349,6 +350,7 @@ describe('Family export slot', () => {
     button('pdf')?.click();
     await fixture.whenStable();
     fail(new Error('Synthetic font preparation failure'));
+    await Promise.resolve();
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="family-export-error"]')?.textContent).toContain('could not be prepared for PDF');
     expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
