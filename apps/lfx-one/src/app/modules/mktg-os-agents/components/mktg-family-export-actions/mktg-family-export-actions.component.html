@@ -11,7 +11,7 @@
     <p class="text-xs text-gray-500" data-testid="family-export-unsupported">This family has no assets supported by the exporter yet.</p>
   } @else {
     <p class="text-sm text-gray-500">{{ slidesNote }}</p>
-    <lfx-button [label]="pdfLabel()" [disabled]="!canPrint()" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" (onClick)="downloadPdf()" />
+    <lfx-button label="Download PDF" [disabled]="!canPrint()" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" (onClick)="downloadPdf()" />
     <lfx-button
       label="Export to Google Slides"
       [disabled]="!canExport()"
@@ -22,7 +22,8 @@
       (onClick)="export()" />
     @if (!writer()) {
       <p class="text-xs text-gray-500" data-testid="family-export-access">You need write access to this project to export its Marketing OS documents.</p>
-    } @else if (checking()) {
+    } @else if (checking() || pdfPending()) {
+      <!-- The same checking line lasts until the PDF is prepared and mounted: one transition, no new copy. -->
       <p role="status" class="text-xs text-gray-500" data-testid="family-export-loading">Checking approved assets and the last export…</p>
     } @else if (lookupError()) {
       <lfx-message severity="error" [text]="lookupError()" data-testid="family-export-lookup-error" />

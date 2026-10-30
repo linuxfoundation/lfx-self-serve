@@ -12,9 +12,7 @@ import {
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
   MKTG_DOCUMENT_TYPES,
-  MKTG_FAMILY_PDF_LABEL,
   MKTG_FAMILY_PDF_NOTE,
-  MKTG_FAMILY_PDF_PREPARING_LABEL,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
@@ -84,28 +82,22 @@ export class MktgFamilyExportActionsComponent {
   protected readonly message = signal('');
   protected readonly partialLink = signal<string | null>(null);
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
+  protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
   private readonly retry = new Subject<boolean>();
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
   protected readonly pdfReady = signal(false);
   protected readonly pdfPreparedScope = signal('');
-  private readonly pdfPending = signal(false);
+  /** True from the lookup's end until the PDF is prepared and mounted (or failed): the card's checking line stays and Download PDF stays disabled meanwhile. */
+  protected readonly pdfPending = signal(false);
   private pdfScope = '';
 
   protected readonly writer = computed(() => this.context.canWrite());
   protected readonly target = this.initTarget();
-  protected readonly busy = computed(() => this.phase() === 'running');
+  protected readonly busy = computed(() => this.phase() === 'running' || this.printing());
   protected readonly canExport = this.initCanExport();
   protected readonly canPrint = this.initCanPrint();
-  /**
-   * One solid primary, never disabled by preparation: a busy primary only changes its label, and
-   * once per preparation (the approval check that precedes it counts as preparing, so the label
-   * does not flicker on the way). A failed preparation reads "Download PDF" again: a press re-runs it.
-   */
-  protected readonly pdfLabel = computed(() =>
-    this.pdfPending() || (this.writer() && this.checking()) ? MKTG_FAMILY_PDF_PREPARING_LABEL : MKTG_FAMILY_PDF_LABEL
-  );
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
@@ -125,7 +117,7 @@ export class MktgFamilyExportActionsComponent {
               { injector: this.injector }
             );
             this.focusRequested.set(false);
-          } else if (!this.checking()) this.focusRequested.set(false);
+          } else if (!this.checking() && !this.canExport()) this.focusRequested.set(false);
         });
       this.initLookup();
       this.initPdf();
@@ -187,8 +179,7 @@ export class MktgFamilyExportActionsComponent {
       this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
       return;
     }
-    // "Preparing PDF…": a press does nothing. After a failed preparation, a press runs it again (never prints by itself).
-    if (this.pdfPending()) return;
+    this.printing.set(true);
     this.message.set('');
     this.pdfRetry.next();
   }
@@ -205,6 +196,7 @@ export class MktgFamilyExportActionsComponent {
           this.pdfPending.set(false);
           this.pdfScope = '';
           this.pdfPreparedScope.set('');
+          this.printing.set(false);
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
@@ -234,6 +226,7 @@ export class MktgFamilyExportActionsComponent {
       .subscribe((prepared) => {
         if (!prepared) {
           this.pdfPending.set(false);
+          this.printing.set(false);
           return;
         }
         if (this.printView() !== prepared.view) return;
@@ -266,6 +259,7 @@ export class MktgFamilyExportActionsComponent {
     this.pdfScope = key;
     this.pdfReady.set(true);
     this.pdfPending.set(false);
+    this.printing.set(false);
     return true;
   }
 
@@ -283,7 +277,7 @@ export class MktgFamilyExportActionsComponent {
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(() => this.canExport());
+    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.message()));
   }
 
   private initMemberVersions(): Signal<string> {
@@ -315,6 +309,7 @@ export class MktgFamilyExportActionsComponent {
           this.run?.unsubscribe();
           this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
           this.printView.set(null);
+          this.printing.set(false);
           this.lookup.set(null);
           this.completed.set(null);
           this.phase.set('idle');

@@ -136,18 +136,20 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('the PDF button reads Preparing PDF… and ignores a press until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
+test('Download PDF stays disabled behind the checking line until prepared, then the first click prints from the isolated frame', async ({ page }, info) => {
   await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
-  await expect(pdf).toBeEnabled();
-  await expect(pdf).toHaveText('Preparing PDF…');
-  await pdf.click();
-  await expect(pdf).toHaveText('Preparing PDF…');
+  await expect(pdf).toBeDisabled();
+  await expect(pdf).toHaveText('Download PDF');
+  await expect(page.getByTestId('family-export-slides').getByRole('button')).toBeEnabled();
+  await expect(page.getByTestId('family-export-loading')).toHaveText('Checking approved assets and the last export…');
+  await expect(page.getByTestId('family-export-actions')).not.toContainText('Preparing PDF');
   await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
   controls.releasePrint();
-  await expect(pdf).toHaveText('Download PDF');
+  await expect(page.getByTestId('family-export-loading')).toHaveCount(0);
   await expect(pdf).toBeEnabled();
+  await expect(pdf).toHaveText('Download PDF');
   await expect(page.getByTestId('family-export-pdf-ready')).toHaveCount(0);
   await expect(page.getByTestId('lfx-print-frame')).toHaveCount(0);
   // Frame creation remains in the click task. Its own resource wait precedes frame.print().

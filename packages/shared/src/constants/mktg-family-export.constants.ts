@@ -20,6 +20,3 @@ export const MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE = 'Available once the framewo
 
 export const MKTG_FAMILY_SLIDES_NOTE = 'Google Slides: framework, brand kit, boilerplates and FAQ (approved current).';
 export const MKTG_FAMILY_PDF_NOTE = 'PDF: framework, brand kit, boilerplates and FAQ (approved current).';
-/** The family's PDF button: one solid primary, never disabled by preparation; only its label says the PDF is still being prepared. */
-export const MKTG_FAMILY_PDF_LABEL = 'Download PDF';
-export const MKTG_FAMILY_PDF_PREPARING_LABEL = 'Preparing PDF…';
