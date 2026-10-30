@@ -21,6 +21,8 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignSurveyEmailCountOption,
+  CampaignSurveyTypeOption,
   CampaignGoalOption,
   CampaignOptimizeControlLever,
   CampaignOptimizeLever,
@@ -108,6 +110,7 @@ export function campaignPlatformMonitorable(platform: CampaignPlatform): boolean
 export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
   { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
   { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
+  { id: 'survey', label: 'Survey & Report', breadcrumbLabel: 'Survey & Report' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -3598,6 +3601,118 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
  * rejected there rather than silently addressing a different brief.
  */
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
+
+/**
+ * Every stage a SURVEY campaign can occupy — a separate vocabulary from `CAMPAIGN_EMAIL_STAGES`,
+ * not an extension of it.
+ *
+ * An email stage names WHICH SEND in an event's series it is; a survey stage names WHICH ASSET is
+ * being promoted. Upstream enforces the split in both directions (`briefIdentityPairProblem` and
+ * the column's own pair CHECK), so `(email, 'Survey Promo')` and `(survey, 'Final Countdown')` are
+ * both refused — pooling the two lists here would offer the operator a pair the server rejects.
+ */
+export const CAMPAIGN_SURVEY_STAGES = ['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo'] as const;
+
+/**
+ * What the operator picks on the survey surface: which SEND of which asset this is.
+ *
+ * The counterpart of `CAMPAIGN_EMAIL_TYPES`, and deliberately the same shape, so the stage picker
+ * renders from either list without a second code path. `keywords` rank clone templates the same
+ * way they do for email.
+ *
+ * A survey's promotion is a SERIES — an opening send, a reminder while it is still in field, and a
+ * closing push — so three of the four entries promote the same instrument at different points.
+ * Each is its own brief with its own audience and its own draft, exactly as the six event stages
+ * are. Report promotion has no series: a published report does not close, so there is no reminder
+ * or closing send to write.
+ */
+export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
+  {
+    id: 'survey-promo',
+    label: 'Survey Promotion',
+    stage: 'Survey Promo',
+    keywords: ['survey', 'participate', 'research', 'questionnaire'],
+  },
+  {
+    id: 'survey-reminder',
+    label: 'Survey Reminder',
+    stage: 'Survey Reminder',
+    keywords: ['survey', 'reminder', 'still open', 'research', 'participate'],
+  },
+  {
+    id: 'survey-closing',
+    label: 'Survey Closing',
+    stage: 'Survey Closing',
+    keywords: ['survey', 'closing', 'last chance', 'deadline', 'final'],
+  },
+  {
+    id: 'report-promo',
+    label: 'Report Promotion',
+    stage: 'Report Promo',
+    keywords: ['report', 'findings', 'research', 'insights', 'study'],
+  },
+] as const;
+
+/** The survey type a fresh selection starts on. */
+export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
+
+/**
+ * Every stage a SEND surface can carry, email and survey together. For the places that only
+ * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
+ */
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+
+/**
+ * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
+ * every form in `viewform`). A survey brief is keyed on its slug, so these fall back to the asset's
+ * own name instead of making every form in a project one brief.
+ */
+export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Set(['viewform', 'formresponse', 'edit', 'index', 'form', 'survey', 's', 'r']);
+
+/**
+ * The longest survey source document campaign-service accepts, in characters, counted as
+ * `campaignSurveySourceTextLength` counts them. Longer is a 400 at brief save and at copy
+ * generation upstream: the copy would otherwise be written from a cut document, silently losing a
+ * finding, date or incentive.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS = 3000;
+
+/**
+ * A raw-length ceiling checked BEFORE the source is normalised and counted, so an oversized body
+ * is refused without copying it. Generous on purpose: collapsing whitespace can shrink a pasted
+ * document, so the raw text may run well past the counted limit and still be within it.
+ */
+export const CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS * 8;
+
+/** The longest send-workflow name campaign-service accepts. */
+export const CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS = 200;
+
+/** The most briefs (and dates) one send workflow can carry upstream. */
+export const CAMPAIGN_SEND_WORKFLOW_MAX_SENDS = 10;
+
+/**
+ * sessionStorage key prefix for how many times a survey series was started over, per project and
+ * survey slug. A restarted series writes NEW briefs (`<slug>-r2`, `-r3`...) so campaign-service
+ * creates new drafts; remembering the count across a reload keeps the page from writing the
+ * ORIGINAL briefs again, whose drafts campaign-service would hand back unchanged.
+ */
+export const CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX = 'lfx-campaigns-survey-series-restart:';
+
+/** A send-workflow date as campaign-service takes it: a calendar date, YYYY-MM-DD. */
+export const CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * How many emails a survey can be promoted by: one, sent on its own, or the full three-send
+ * series (promo, reminder, closing).
+ *
+ * There is no two-send option. A series is sent by copying ONE configured HubSpot workflow, and
+ * campaign-service requires that workflow's send-step count to equal the number of briefs -- so a
+ * second series length would need a second source workflow, which the deployment does not have.
+ */
+export const CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS: readonly CampaignSurveyEmailCountOption[] = [
+  { count: 1, label: 'One email', description: 'A single send, scheduled on its own', stages: ['Survey Promo'] },
+  { count: 3, label: 'Three emails', description: 'Opening, reminder, then closing', stages: ['Survey Promo', 'Survey Reminder', 'Survey Closing'] },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Audience Builder

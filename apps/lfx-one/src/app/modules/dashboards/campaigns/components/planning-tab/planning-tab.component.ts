@@ -8,8 +8,15 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { CAMPAIGN_EVENT_URL_MAX_LENGTH, CAMPAIGN_EVENT_URL_QUERY_PARAM, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
-import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import {
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
+  CAMPAIGN_EVENT_URL_QUERY_PARAM,
+  CAMPAIGN_GOALS,
+  CAMPAIGN_PLATFORMS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+} from '@lfx-one/shared/constants';
+import { campaignSurveySourceTextLength, coerceCampaignEventDetails, deriveSurveySlug, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -19,7 +26,7 @@ import type {
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
-  CampaignEmailStage,
+  CampaignSendStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignKeyword,
@@ -61,7 +68,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -115,7 +122,7 @@ export class PlanningTabComponent implements OnInit {
    *
    * Empty for paid, which has no series, and the default keeps every paid caller unchanged.
    */
-  public readonly emailStage = input<CampaignEmailStage | ''>('');
+  public readonly emailStage = input<CampaignSendStage | ''>('');
 
   /**
    * Bumped by the parent whenever it has CHANGED the stored row this planner last looked up.
@@ -165,8 +172,32 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly refineApplies = computed(() => [...this.selectedPlatforms()].some((p) => p !== 'twitter-ads'));
 
-  /** Whether this planner is planning an email rather than paid ads. */
-  protected readonly isEmail = computed(() => this.deliveryType() === 'email');
+  /**
+   * Whether this planner is planning a SEND rather than paid ads.
+   *
+   * Named for what it actually gates. Every use of it asks "is this not paid?" -- hide the budget
+   * card, hide the ad channels, skip the platform requirement, omit `platforms` from the request --
+   * and all of those are equally true of the survey surface. It was called `isEmail` when email
+   * was the only send surface; keeping that name while survey rode on it would have made eleven
+   * template sites read as a claim the code no longer makes.
+   */
+  protected readonly isEmailLike = computed(() => this.deliveryType() !== 'paid-marketing');
+
+  /** Survey & Report: planned from a pasted source document rather than a scraped event page. */
+  protected readonly isSurvey = computed(() => this.deliveryType() === 'survey');
+
+  /**
+   * The URL card's wording. On survey the field is not a page to scrape but the link the call to
+   * action opens, so the event copy would describe work this surface does not do.
+   *
+   * Overridden here rather than in `programTypeConfig`, which describes the PROGRAM (events vs
+   * education) and is orthogonal to the delivery surface.
+   */
+  protected readonly urlCardLabel = computed(() => (this.isSurvey() ? 'Link being promoted' : this.programTypeConfig().urlLabel));
+  protected readonly urlCardPlaceholder = computed(() => (this.isSurvey() ? 'https://...' : this.programTypeConfig().urlPlaceholder));
+  protected readonly urlCardHelp = computed(() =>
+    this.isSurvey() ? 'The survey or report landing page — whatever the call to action should open.' : this.programTypeConfig().urlHelp
+  );
 
   // === Outputs ===
   public readonly proceedToImplementation = output<CampaignBriefOutput>();
@@ -227,6 +258,10 @@ export class PlanningTabComponent implements OnInit {
   // === Forms ===
   protected readonly briefForm = this.fb.nonNullable.group({
     url: ['', [Validators.required]],
+    // The SURVEY surface's source document. Not `Validators.required`: the control exists on every
+    // surface, and requiring it unconditionally would make the paid and email forms invalid for a
+    // field they never show. `canGenerate` applies the requirement on the one surface that has it.
+    sourceText: [''],
     campaignGoal: ['conversions'],
     targetAudience: [''],
     valueProp: [''],
@@ -254,6 +289,9 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly isEditingEmailBrief = signal<boolean>(false);
 
+  /** Why an edit could not be saved -- the survey source over campaign-service's limit. */
+  protected readonly emailEditError = signal<string>('');
+
   /**
    * The email brief editor, as a FormGroup rather than six signals.
    *
@@ -269,6 +307,8 @@ export class PlanningTabComponent implements OnInit {
    * consequence.
    */
   protected readonly emailEditForm = this.fb.group({
+    // Survey surface only; the event surface leaves it empty and the generator omits the line.
+    sourceText: [''],
     name: [''],
     dates: [''],
     city: [''],
@@ -632,6 +672,19 @@ export class PlanningTabComponent implements OnInit {
 
   // === Computed Signals ===
   private readonly formValid = toSignal(this.briefForm.statusChanges, { initialValue: this.briefForm.status });
+  /** The pasted source document, as typed. Only the survey surface shows or sends it. */
+  protected readonly sourceTextValue = toSignal(this.briefForm.controls.sourceText.valueChanges, {
+    initialValue: this.briefForm.controls.sourceText.value,
+  });
+
+  /** The limit campaign-service enforces on the source document, for the counter. */
+  protected readonly sourceTextMaxChars = CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS;
+
+  /** Its length as campaign-service counts it, so the counter and the server's 400 agree. */
+  protected readonly sourceTextLength = computed(() => campaignSurveySourceTextLength(this.sourceTextValue() ?? ''));
+
+  protected readonly sourceTextTooLong = computed(() => this.sourceTextLength() > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS);
+
   /**
    * Email has no ad-channel requirement, and that asymmetry is the point of LFXV2-3201.
    *
@@ -640,7 +693,19 @@ export class PlanningTabComponent implements OnInit {
    * under a tab labelled Email and had to pick Google Ads before the channel would let them
    * proceed, which is not a requirement so much as a bug wearing one's clothes.
    */
-  protected readonly canGenerate = computed(() => this.formValid() === 'VALID' && (this.isEmail() || this.selectedPlatforms().size > 0));
+  protected readonly canGenerate = computed(() => {
+    if (this.formValid() !== 'VALID') {
+      return false;
+    }
+    // Survey writes the email from the pasted document and scrapes nothing, so an empty one
+    // leaves the generator with no facts at all -- it would return three lines or refuse.
+    // Over the limit is refused upstream at save rather than cut, so Generate waits for a
+    // shorter document instead of streaming a brief that cannot be saved.
+    if (this.isSurvey()) {
+      return (this.sourceTextValue() ?? '').trim() !== '' && !this.sourceTextTooLong();
+    }
+    return this.isEmailLike() || this.selectedPlatforms().size > 0;
+  });
   protected readonly isGenerating = computed(() => this.step() === 'generating');
   protected readonly hasResults = computed(() => this.step() === 'review');
   protected readonly linkedInSponsoredCopy = computed<Record<string, unknown> | null>(() => {
@@ -722,6 +787,18 @@ export class PlanningTabComponent implements OnInit {
 
   // === Lifecycle ===
   public ngOnInit(): void {
+    // The source text is half of a survey brief's identity (its title names a Google Form), so
+    // editing it re-runs the lookup. The lookup itself is debounced and de-duplicated downstream.
+    this.briefForm.controls.sourceText.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      if (this.isSurvey()) {
+        this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
+      }
+    });
+    // And when the SURFACE changes: the same Google Form link is `viewform` to the email lookup
+    // and its title to the survey one, so the slug has to be derived again for the new surface.
+    this.deliveryType$.pipe(skip(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
+    });
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
 
     // `switchMap`, so an edited URL cancels the lookup for the previous one. The persist path
@@ -1050,19 +1127,7 @@ export class PlanningTabComponent implements OnInit {
     // records what was last LOOKED UP, not what was last typed, so an empty field leaves both the
     // offer and the key alone and retyping the same url is correctly a no-op with the offer still
     // on screen.
-    const slug = this.extractSlug(url);
-    if (slug.length > 0) {
-      if (slug !== this.currentSlug) {
-        this.currentSlug = slug;
-        this.savedBrief.set(null);
-        this.savedBriefId = null;
-        this.savedBriefEtag = null;
-        this.savedBriefApproved = false;
-        this.savedBriefReadAt = 0;
-        this.savedBriefWarning.set(null);
-      }
-      this.slugInput$.next(slug);
-    }
+    this.refreshBriefLookup(url);
     this.syncEventParam(url);
   }
 
@@ -1078,7 +1143,7 @@ export class PlanningTabComponent implements OnInit {
     // Guarding the ACTION rather than the offer keeps both properties: the offer survives an
     // emptied field and comes back when the url is retyped, and it can only ever be applied while
     // the field still names its own event.
-    if (this.extractSlug(this.briefForm.controls.url.value) !== this.currentSlug) {
+    if (this.slugForLookup(this.briefForm.controls.url.value) !== this.currentSlug) {
       return;
     }
     const brief = this.savedBrief();
@@ -1402,10 +1467,13 @@ export class PlanningTabComponent implements OnInit {
       // already means "use the default" for every paid caller and cannot also mean email. This
       // field is what makes the server skip ad-copy and keyword generation entirely.
       deliveryType: this.deliveryType(),
+      // Survey only. Sent trimmed and omitted elsewhere, so the paid and email requests stay
+      // byte-identical to what they were before this surface existed.
+      ...(this.isSurvey() ? { sourceText: (this.briefForm.controls.sourceText.value ?? '').trim() } : {}),
       // Still omitted for email — `[]` would claim the user deselected every channel rather than
       // that ad channels do not apply here. With `deliveryType` above, the server no longer has
       // to infer anything from its absence.
-      ...(this.isEmail() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
+      ...(this.isEmailLike() ? {} : { platforms: [...this.selectedPlatforms()] as CampaignPlatform[] }),
       campaignGoal: (this.briefForm.controls.campaignGoal.value || undefined) as CampaignGoal | undefined,
       targetAudience: this.briefForm.controls.targetAudience.value.trim() || undefined,
       valueProp: this.briefForm.controls.valueProp.value.trim() || undefined,
@@ -1413,7 +1481,7 @@ export class PlanningTabComponent implements OnInit {
       // a value could reach it without the card being visible — a restored paid brief repopulates
       // the form. The server appends "Total Campaign Budget: $N" to the copy prompt, so a stray
       // value would put a paid-ad number into an email brief rather than merely go unread.
-      totalBudget: !this.isEmail() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
+      totalBudget: !this.isEmailLike() && budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : undefined,
       programType: this.programTypeConfig().id,
     };
 
@@ -1454,6 +1522,11 @@ export class PlanningTabComponent implements OnInit {
     // user is looking at their correction on screen.
     if (this.isEditingEmailBrief()) {
       this.saveEmailEdit();
+      // Refused (a survey source over the limit): the editor stays open with its error, and the
+      // handoff stops -- otherwise the PREVIOUS facts go forward while the screen shows the edit.
+      if (this.isEditingEmailBrief()) {
+        return;
+      }
     }
     const url = this.briefForm.controls.url.value.trim();
     const fallbackName = this.extractEventName(url);
@@ -1555,6 +1628,9 @@ export class PlanningTabComponent implements OnInit {
       return;
     }
     this.emailEditForm.setValue({
+      // Defaulted: a scraped event brief carries no source document, and `setValue` throws on a
+      // missing control value, which broke the email editor for every event brief.
+      sourceText: d.sourceText ?? '',
       name: d.name,
       dates: d.dates,
       city: d.city,
@@ -1577,8 +1653,30 @@ export class PlanningTabComponent implements OnInit {
     if (d === null) {
       return;
     }
+    // The same limit campaign-service enforces at save: a longer source would be refused there,
+    // after the operator had moved on believing the edit was kept.
+    // A survey's copy is written from its source text alone, so an emptied one is refused here
+    // rather than saved and refused by campaign-service later.
+    if (this.isSurvey() && (this.emailEditForm.controls.sourceText.value ?? '').trim() === '') {
+      this.emailEditError.set('Paste the survey or report text the emails are written from.');
+      return;
+    }
+    const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
+    if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
+      this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);
+      return;
+    }
+    this.emailEditError.set('');
+    const editedSource = (this.emailEditForm.controls.sourceText.value ?? '').trim();
+    const editedUrl = (this.emailEditForm.controls.registrationUrl.value ?? '').trim();
+    // A survey's slug follows its title when the link names only a page (a Google Form): the
+    // lookup derives it from the source text, so an edited title has to move the stored slug with
+    // it, or the brief is saved under a name its own lookup can never find again.
+    const surveySlug = this.isSurvey() ? deriveSurveySlug(editedUrl || d.registrationUrl, editedSource) : '';
     this.eventDetails.set({
       ...d,
+      ...(surveySlug !== '' ? { slug: surveySlug } : {}),
+      sourceText: (this.emailEditForm.controls.sourceText.value ?? '').trim(),
       name: (this.emailEditForm.controls.name.value ?? '').trim(),
       dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
       city: (this.emailEditForm.controls.city.value ?? '').trim(),
@@ -1684,7 +1782,7 @@ export class PlanningTabComponent implements OnInit {
     // An email brief generates no copy, so `structuredCopy` is null and that guard returns
     // silently — leaving a user who reached Refine (via a restored paid brief, or any future
     // caller) pressing Regenerate and watching nothing happen. Says why instead.
-    if (this.isEmail()) {
+    if (this.isEmailLike()) {
       this.errorMessage.set('Refining email copy is not supported yet.');
       return;
     }
@@ -1891,12 +1989,35 @@ export class PlanningTabComponent implements OnInit {
     // `onRestoreSavedEmailBrief`, which does not. Promising the approval on the email tab would be
     // a sentence the code never delivers, so that channel says only what is true of it.
     if (result.status === 'loaded' && !result.approved) {
-      return this.isEmail()
+      return this.isEmailLike()
         ? 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it brings the stored brief back for editing.'
         : 'This event has a saved brief that was never approved, so campaigns cannot be created from it yet. Restoring it approves the stored brief.';
     }
 
     return null;
+  }
+
+  /**
+   * Point the saved-brief lookup at the brief this form now names. Split from `onUrlInput` so an
+   * edit to a survey's source text -- half of its identity -- re-runs only this, not the
+   * HubSpot UTM lookup keyed on the URL.
+   */
+  private refreshBriefLookup(url: string): void {
+    // A survey brief is stored under `deriveSurveySlug` -- its title when the link ends in a
+    // generic page such as `viewform` -- so it is looked up under the same, or it is never found.
+    const slug = this.slugForLookup(url);
+    if (slug.length > 0) {
+      if (slug !== this.currentSlug) {
+        this.currentSlug = slug;
+        this.savedBrief.set(null);
+        this.savedBriefId = null;
+        this.savedBriefEtag = null;
+        this.savedBriefApproved = false;
+        this.savedBriefReadAt = 0;
+        this.savedBriefWarning.set(null);
+      }
+      this.slugInput$.next(slug);
+    }
   }
 
   private extractEventName(url: string): string {
@@ -1907,6 +2028,25 @@ export class PlanningTabComponent implements OnInit {
     } catch {
       return '';
     }
+  }
+
+  /**
+   * The slug the saved-brief lookup and the restore guard both key on: the survey derivation (a
+   * Google Form by its title) on the survey surface, the URL's last segment elsewhere. ONE
+   * function, so the guard cannot compare a different derivation than the lookup made.
+   */
+  private slugForLookup(url: string): string {
+    if (!this.isSurvey()) {
+      return this.extractSlug(url);
+    }
+    // '' for an empty or half-typed link, as `extractSlug` gives: the survey derivation falls
+    // back to the title, which would otherwise let the restore guard pass with no link at all.
+    try {
+      new URL(url.trim());
+    } catch {
+      return '';
+    }
+    return deriveSurveySlug(url, this.briefForm.controls.sourceText.value);
   }
 
   /**

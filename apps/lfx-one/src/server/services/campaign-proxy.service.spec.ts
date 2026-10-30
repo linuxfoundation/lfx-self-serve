@@ -508,6 +508,82 @@ describe('CampaignProxyService email delivery type', () => {
     );
     expect(generatedAdCopy()).toBe(true);
   });
+  describe('survey delivery type', () => {
+    const surveyRequest = {
+      url: 'https://surveys.example.com/r/cloud-native-2026',
+      deliveryType: 'survey' as const,
+      sourceText: '\n  2026 Cloud Native Survey\nTwelve questions, closes 30 November.',
+      targetAudience: ' platform engineers ',
+    };
+
+    it('writes the brief from the pasted document: no fetch, no model call', async () => {
+      vi.mocked(fetchSafeUrl).mockClear();
+      const events = await drain(service.streamBrief(req, surveyRequest, new AbortController().signal) as AsyncGenerator<{ type: string; data: unknown }>);
+
+      expect(vi.mocked(fetchSafeUrl)).not.toHaveBeenCalled();
+      expect(aiCalls).toEqual([]);
+      const details = events.find((e) => e.type === 'event')?.data as Record<string, unknown>;
+      // The first non-empty line names it; the promoted URL is the button destination and slug.
+      expect(details).toMatchObject({
+        sourceText: '2026 Cloud Native Survey\nTwelve questions, closes 30 November.',
+        name: '2026 Cloud Native Survey',
+        slug: 'cloud-native-2026',
+        registrationUrl: 'https://surveys.example.com/r/cloud-native-2026',
+        audience: 'platform engineers',
+      });
+      expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('names a Google Form after its title, not after the `viewform` every form ends in', async () => {
+      const events = await drain(
+        service.streamBrief(
+          req,
+          { ...surveyRequest, url: 'https://docs.google.com/forms/d/e/1FAIpQ/viewform' },
+          new AbortController().signal
+        ) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      // Two forms in one project would otherwise share one brief, keyed on the slug.
+      expect((events.find((e) => e.type === 'event')?.data as Record<string, unknown>)['slug']).toBe('2026-cloud-native-survey');
+    });
+
+    it('refuses a source over the limit instead of cutting it', async () => {
+      const events = await drain(
+        service.streamBrief(req, { ...surveyRequest, sourceText: 'x'.repeat(3001) }, new AbortController().signal) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('error');
+      expect(String(events[0].data)).toContain('3000-character limit');
+    });
+
+    it('refuses a survey with nothing pasted rather than inventing its facts', async () => {
+      const events = await drain(
+        service.streamBrief(req, { ...surveyRequest, sourceText: '   ' }, new AbortController().signal) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      expect(events).toEqual([{ type: 'error', data: 'Paste the survey or report text to write the email from.' }]);
+    });
+
+    it('refuses to refine a survey brief, as it does an email one', async () => {
+      const events = await drain(
+        service.streamRefinedBrief(
+          req,
+          { currentCopy: {}, currentKeywords: [], feedback: 'shorter', deliveryType: 'survey' },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      expect(events).toEqual([{ type: 'error', data: 'Refining email copy is not supported yet.' }]);
+      expect(aiCalls).toEqual([]);
+    });
+  });
 });
 
 /**

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
@@ -18,7 +19,7 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, deriveSurveySlug, parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -1513,7 +1514,9 @@ export class CampaignProxyService {
     // message further down promises "generating copy from URL" — which is false for email, where
     // no copy is generated at all. A status line that names work the stream will not do is the
     // same class of falsehood as a silent skip.
-    const isEmail = body.deliveryType === 'email';
+    // Every SEND surface. Email and survey both skip ad-copy, keyword and targeting generation --
+    // upstream writes their copy from the brief instead -- so the gate asks "is this not paid?".
+    const isEmail = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
 
     // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
     // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
@@ -1525,6 +1528,85 @@ export class CampaignProxyService {
     // read as two different problems.
     if (isEmail && isRefinement) {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
+    // The SURVEY surface takes its facts from the pasted document, so it neither fetches nor
+    // extracts. Placed before the scrape block rather than threaded through it: every step below
+    // -- validate the URL, fetch it, run the extraction model over the HTML, verify links against
+    // the page's anchors -- asks a question about a page that is not the source of truth here. A
+    // survey's call-to-action often opens a bare form with nothing to read.
+    //
+    // Deterministic, with no model call: the operator supplied the facts, so inventing a second
+    // interpretation of them would be the thing the generator's own prompt forbids.
+    if (body.deliveryType === 'survey') {
+      const rawSourceText = typeof body.sourceText === 'string' ? body.sourceText : '';
+      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
+      // generation, because the copy would otherwise be written from a truncated source. Checked
+      // on the RAW value before it is trimmed, so an oversized body is never copied.
+      if (campaignSurveySourceTextTooLong(rawSourceText)) {
+        yield {
+          type: 'error',
+          data: `The pasted text is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit. Shorten it so no finding, date or incentive is cut from the email.`,
+        };
+        return;
+      }
+      const sourceText = rawSourceText.trim();
+      if (sourceText === '') {
+        yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
+        return;
+      }
+      yield { type: 'status', data: 'Reading the source document...' };
+
+      // The first non-empty line names the asset. The brief needs an identity -- upstream keys it
+      // on `(project, slug, delivery, stage)` and the Implement tab titles campaigns from it --
+      // and a document's own opening line is what its author called it. Bounded because this
+      // becomes a campaign name, and a pasted document can open with a paragraph.
+      const firstLine =
+        sourceText
+          .split('\n')
+          .map((line) => line.trim())
+          .find((line) => line !== '') ?? '';
+      const name = firstLine.slice(0, 120);
+
+      // The SAME derivation the planner looks the brief up with (`deriveSurveySlug`), so a saved
+      // survey -- a Google Form named after its title rather than `viewform` -- is found again.
+      const slug = deriveSurveySlug(body.url, sourceText);
+      // campaign-service keys the brief on the slug and refuses an empty one, so say so here.
+      if (slug === '') {
+        yield { type: 'error', data: 'Could not name this campaign: start the pasted text with the survey or report title.' };
+        return;
+      }
+
+      yield {
+        type: 'event',
+        data: {
+          // The whole factual basis of the copy. campaign-service reads it back as `sourceText`
+          // and renders it into the prompt as "Source document".
+          sourceText,
+          name,
+          slug,
+          // The call-to-action destination. Named `registrationUrl` because that is the field the
+          // generator already resolves a button's href from; on this surface it is the survey or
+          // report being promoted.
+          registrationUrl: body.url,
+          dates: '',
+          city: '',
+          countryCode: '',
+          audience: typeof body.targetAudience === 'string' ? body.targetAudience.trim() : '',
+          themes: [],
+          speakers: [],
+          formatNotes: '',
+          description: '',
+          agendaUrl: '',
+          cfpUrl: '',
+          venueUrl: '',
+          sponsorshipUrl: '',
+          heroImageUrl: '',
+          sponsors: [],
+        },
+      };
+      yield { type: 'done', data: null };
       return;
     }
 
@@ -1919,7 +2001,8 @@ export class CampaignProxyService {
     // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
     // for it to refine on an email brief either — the copy it would rewrite was never generated —
     // so the request is refused rather than answered with a broken call.
-    if (body.deliveryType === 'email') {
+    // Every send surface, as on the generate path: survey generates no ad copy either.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
