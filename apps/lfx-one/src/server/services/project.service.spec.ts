@@ -53,8 +53,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
     '../../../../../packages/shared/src/constants/project-staff.constants'
   );
+  const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
+    '../../../../../packages/shared/src/constants/api.constants'
+  );
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
+    ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
     // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
     // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
     CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
@@ -2033,6 +2037,59 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
     service = new ProjectService();
   });
 
+  it.each([true, false])('returns a verified writer=%s when strict writer checking is requested', async (writer) => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
+    checkSingleAccessStrict.mockResolvedValueOnce(writer);
+
+    const result = await service.getProjectById(req, 'p1', true, false, false, true);
+
+    expect(result.writer).toBe(writer);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'writer_guard' });
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('propagates an actual access-check outage and allows a later strict lookup to recover (#4688)', async () => {
+    // Exercise the real project -> access-check boundary, not a mock that assumes false is authoritative.
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    const outage = new MicroserviceError('access check unavailable', 503, 'SERVICE_UNAVAILABLE');
+    proxyRequest
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockRejectedValueOnce(outage)
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockResolvedValueOnce({ results: ['project:p1#writer_guard@user:synthetic-writer\ttrue'] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toBe(outage);
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).resolves.toMatchObject({ writer: true });
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('does not turn an incomplete strict access-check response into a denial', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockResolvedValueOnce({ results: [] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toMatchObject({ code: 'ACCESS_CHECK_INCOMPLETE' });
+  });
+
+  it('preserves the ordinary non-strict lookup fallback for existing callers', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockRejectedValueOnce(new Error('fga unavailable'));
+
+    await expect(service.getProjectById(req, 'p1')).resolves.toMatchObject({ writer: false });
+  });
+
+  it('forwards opt-in strict writer checking through slug resolution', async () => {
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', writer: true } as Project);
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+
+    await service.getProjectBySlug(req, 'test-project', false, false, true);
+
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, false, false, true);
+  });
+
   it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
     addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
@@ -2065,7 +2122,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
     await service.getProjectBySlug(req, 'p1', false, true);
 
-    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
+    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true, false);
   });
 
   it('resolves the encoded slug via HTTP and retains the detail access and role checks', async () => {
@@ -2077,7 +2134,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
     await expect(service.getProjectBySlug(req, 'test project', true, true)).resolves.toBe(project);
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/slug-to-uid/test%20project', 'GET');
-    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true);
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true, false);
     expect(legacyLookup).not.toHaveBeenCalled();
   });
 

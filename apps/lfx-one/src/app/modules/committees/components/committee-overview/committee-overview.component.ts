@@ -113,6 +113,9 @@ export class CommitteeOverviewComponent {
   public members = input<CommitteeMember[]>([]);
   public membersLoading = input<boolean>(true);
   public canEdit = input<boolean>(false);
+  public canShareWeeklyBriefByEmail = input<boolean>(false);
+  public shareAccessLoading = input<boolean>(false);
+  public shareAccessError = input<boolean>(false);
   public myRole = input<string | null>(null);
   public myMemberUid = input<string | null>(null);
   public myRoleLoading = input<boolean>(true);
@@ -139,6 +142,7 @@ export class CommitteeOverviewComponent {
   public readonly joinRequested = output<void>();
   public readonly tabNavigated = output<string>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
+  public readonly shareAccessRetryRequested = output<void>();
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);

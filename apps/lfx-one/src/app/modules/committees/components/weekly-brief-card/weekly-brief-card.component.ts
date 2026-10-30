@@ -102,12 +102,16 @@ export class WeeklyBriefCardComponent {
   // Inputs
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+  public readonly canShareWeeklyBriefByEmail = input<boolean>(false);
+  public readonly shareAccessLoading = input<boolean>(false);
+  public readonly shareAccessError = input<boolean>(false);
 
   // Outputs — 'tab'/'vote-drawer' source-ref actions bubble up so the parent switches its tab or
   // opens the vote page (mirrors committee-overview.component.ts's tabNavigated output and
   // openVote method for its activity feed, both of which this binds straight through to).
   public readonly tabNavigated = output<string>();
   public readonly voteRequested = output<string>();
+  public readonly shareAccessRetryRequested = output<void>();
 
   // Rating is server-blocked during impersonation (rateBrief/clearBriefRating resolve the
   // impersonated user's own identity for the write — see weekly-brief.route.ts's
@@ -375,6 +379,17 @@ export class WeeklyBriefCardComponent {
   // promise a destination the send never uses.
   public readonly shareAudienceLabel: Signal<string> = computed(() => `all members of ${this.committee()?.name ?? 'this committee'}`);
 
+  // The server authorizes the email share against the REAL caller (LFXV2-3093), while the access input
+  // reflects the effective user, so the client gate is skipped while impersonating and the server decides.
+  public readonly shareBlockedByAccess: Signal<boolean> = computed(
+    () => !this.impersonating() && (this.shareAccessLoading() || !this.canShareWeeklyBriefByEmail())
+  );
+  // Denial copy only once the lookup settles, so authorized writers never see a flash of it.
+  public readonly shareAccessDenied: Signal<boolean> = computed(
+    () => !this.impersonating() && !this.shareAccessLoading() && !this.shareAccessError() && !this.canShareWeeklyBriefByEmail()
+  );
+  public readonly shareAccessFailed: Signal<boolean> = computed(() => !this.impersonating() && !this.shareAccessLoading() && this.shareAccessError());
+
   public constructor() {
     this.initBriefResponseSubscription();
   }
@@ -557,8 +572,8 @@ export class WeeklyBriefCardComponent {
     const revision = this.brief()?.revision;
     if (!committeeUid || revision === undefined) return;
     this.confirmationService.confirm({
-      header: 'Share to Mailing List',
-      message: `Send the current brief by email to ${this.shareAudienceLabel()}?`,
+      header: 'Email Group Members',
+      message: `Send the current brief by email to ${this.shareAudienceLabel()}? This goes to the group's members, not the mailing list's subscribers, and won't appear in the mailing list's history.`,
       icon: 'fa-light fa-paper-plane',
       acceptLabel: 'Send',
       rejectLabel: 'Cancel',
@@ -1075,7 +1090,7 @@ export class WeeklyBriefCardComponent {
           if (status === 404) {
             detail = 'No brief available to share.';
           } else if (status === 403) {
-            detail = 'Only project writers can share the weekly brief by email. Contact a project administrator.';
+            detail = 'Only project writers can email the brief to group members. Contact a project administrator.';
           } else if (status === 409) {
             if (code === 'NO_MAILING_LIST') {
               detail = 'No mailing list configured for this committee.';

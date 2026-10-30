@@ -1517,7 +1517,7 @@ describe('WeeklyBriefCardComponent — read-only auditor path (GH-2031)', () => 
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-copy-button"]')).toBeNull();
   });
 
-  it('does not render the Share to Mailing List button for a read-only auditor', () => {
+  it('does not render the Email Group Members button for a read-only auditor', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-button"]')).toBeNull();
   });
 
@@ -1533,5 +1533,175 @@ describe('WeeklyBriefCardComponent — read-only auditor path (GH-2031)', () => 
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('[data-test="weekly-brief-card-edit-textarea"]')).toBeNull();
+  });
+});
+
+/**
+ * Covers the email-share copy and project-writer gating (#4688). The server authorizes the share
+ * against `project:{uid}#writer` (NOT_PROJECT_WRITER), so the card must disable the action with a
+ * visible explanation for committee-only writers instead of letting them hit a 403.
+ */
+describe('WeeklyBriefCardComponent — Email Group Members (#4688)', () => {
+  let fixture: ComponentFixture<WeeklyBriefCardComponent>;
+  let component: WeeklyBriefCardComponent;
+  let shareWeeklyBrief: ReturnType<typeof vi.fn>;
+  let impersonating: WritableSignal<boolean>;
+
+  const COMMITTEE: Committee = {
+    uid: 'committee-1',
+    name: 'Test Committee',
+    project_uid: 'project-1',
+    has_mailing_list: true,
+  } as Committee;
+
+  const BRIEF_RESPONSE: WeeklyBriefCurrentResponse = {
+    brief: {
+      uid: 'brief-1',
+      committee_uid: 'committee-1',
+      window_start: '2026-08-02T00:00:00Z',
+      window_end: '2026-08-08T23:59:59Z',
+      state: 'generated',
+      brief_text: 'Weekly summary.',
+      source_refs: [],
+      prompt_version: 'v1',
+      model: 'test-model',
+      regeneration_count: 0,
+      private_source_present: false,
+      created_at: '2026-08-08T00:00:00Z',
+      updated_at: '2026-08-08T00:00:00Z',
+      revision: 3,
+    },
+    throttle: { generates_used: 1, generates_limit: 2, regenerations_used: 0, regenerations_limit: 3, window_resets_at: '2026-08-09T00:00:00Z' },
+    caller_rating: null,
+  };
+
+  const shareButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-button"] button');
+  const accessHint = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-access-hint"]');
+
+  async function render(inputs: { canShare: boolean; loading?: boolean; failed?: boolean; committee?: Committee }): Promise<void> {
+    fixture.componentRef.setInput('committee', inputs.committee ?? COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.componentRef.setInput('canShareWeeklyBriefByEmail', inputs.canShare);
+    fixture.componentRef.setInput('shareAccessLoading', inputs.loading ?? false);
+    fixture.componentRef.setInput('shareAccessError', inputs.failed ?? false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    shareWeeklyBrief = vi.fn(() => of({ committee_name: 'Test Committee', total_recipients: 2 }));
+    impersonating = signal(false);
+
+    await TestBed.configureTestingModule({
+      imports: [WeeklyBriefCardComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: WeeklyBriefService,
+          useValue: {
+            getWeeklyBrief: vi.fn(() => of(BRIEF_RESPONSE)),
+            shareWeeklyBrief,
+            listWeeklyBriefs: vi.fn(() => of({ data: [] })),
+          },
+        },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(WeeklyBriefCardComponent);
+    component = fixture.componentInstance;
+  });
+
+  it('labels the action "Email Group Members"', async () => {
+    await render({ canShare: true });
+
+    expect(shareButton()?.textContent).toContain('Email Group Members');
+    expect(fixture.nativeElement.textContent).not.toContain('Share to Mailing List');
+  });
+
+  it('names the group and disclaims mailing-list subscribers and history in the confirmation', async () => {
+    await render({ canShare: true });
+    const confirmSpy = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
+
+    component.onShareToMailingList();
+
+    const opts = confirmSpy.mock.calls.at(-1)?.[0];
+    expect(opts?.header).toBe('Email Group Members');
+    expect(opts?.message).toContain('all members of Test Committee');
+    expect(opts?.message).toContain("not the mailing list's subscribers");
+    expect(opts?.message).toContain("won't appear in the mailing list's history");
+  });
+
+  it('enables the button for a project writer and sends the confirmed revision', async () => {
+    await render({ canShare: true });
+    const confirmSpy = vi.spyOn(TestBed.inject(ConfirmationService), 'confirm');
+
+    expect(shareButton()?.disabled).toBe(false);
+    expect(accessHint()).toBeNull();
+
+    component.onShareToMailingList();
+    confirmSpy.mock.calls.at(-1)?.[0]?.accept?.();
+
+    expect(shareWeeklyBrief).toHaveBeenCalledWith('committee-1', 3);
+  });
+
+  it('disables the button and shows the access hint for a non-project writer', async () => {
+    await render({ canShare: false });
+
+    expect(shareButton()?.disabled).toBe(true);
+    expect(accessHint()?.textContent).toContain('Only project writers can email the brief to group members');
+  });
+
+  it('disables the button without the denial hint while the project-writer lookup is unresolved', async () => {
+    await render({ canShare: false, loading: true });
+
+    expect(shareButton()?.disabled).toBe(true);
+    expect(accessHint()).toBeNull();
+  });
+
+  it('distinguishes a failed lookup from denial and emits an explicit retry request', async () => {
+    await render({ canShare: false, failed: true });
+    const retry = vi.spyOn(component.shareAccessRetryRequested, 'emit');
+
+    expect(shareButton()?.disabled).toBe(true);
+    expect(accessHint()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-access-error"]')?.textContent).toContain(
+      'Unable to verify sharing access'
+    );
+    fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-access-retry"] button').click();
+    expect(retry).toHaveBeenCalledOnce();
+    expect(shareWeeklyBrief).not.toHaveBeenCalled();
+  });
+
+  it('hides the verification error while retrying or impersonating', async () => {
+    await render({ canShare: false, failed: true, loading: true });
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-access-error"]')).toBeNull();
+    expect(accessHint()).toBeNull();
+    expect(shareButton()?.disabled).toBe(true);
+
+    impersonating.set(true);
+    await render({ canShare: false, failed: true });
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-access-error"]')).toBeNull();
+    expect(shareButton()?.disabled).toBe(false);
+  });
+
+  it('keeps the existing no-mailing-list hint and omits the access hint when there is no mailing list', async () => {
+    await render({ canShare: false, committee: { ...COMMITTEE, has_mailing_list: false } as Committee });
+
+    expect(shareButton()?.disabled).toBe(true);
+    expect(accessHint()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-share-disabled-hint"]')).not.toBeNull();
+  });
+
+  it('defers to the server check while impersonating, since the server authorizes the real caller', async () => {
+    impersonating.set(true);
+    await render({ canShare: false });
+
+    expect(shareButton()?.disabled).toBe(false);
+    expect(accessHint()).toBeNull();
   });
 });
