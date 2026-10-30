@@ -134,7 +134,8 @@ describe('UiChoiceboxGroupComponent and UiChoiceboxComponent', () => {
 
     it('disables one tile and explains why through a tooltip description and a hidden reason', () => {
       const associate = inputs()[2];
-      expect(associate.disabled).toBe(true);
+      expect(associate.disabled).toBe(false);
+      expect(associate.getAttribute('aria-disabled')).toBe('true');
       expect(tiles()[2].classList).toContain('bg-ui-neutral-50');
       expect(tiles()[2].classList).toContain('cursor-not-allowed');
       expect(host.querySelector(`#${associate.getAttribute('aria-describedby')?.split(' ').pop()}`)?.textContent).toBe('Only for academic institutions');
@@ -144,10 +145,60 @@ describe('UiChoiceboxGroupComponent and UiChoiceboxComponent', () => {
       expect(host.querySelectorAll('[data-testid="ui-choicebox-reason"]')).toHaveLength(1);
     });
 
-    it('disables every tile with the group', async () => {
+    it('disables every tile with the group, keeping the one that has a reason focusable', async () => {
       fixture.componentInstance.disabled.set(true);
       await fixture.whenStable();
-      expect(inputs().every((input) => input.disabled)).toBe(true);
+      expect(inputs().map((input) => input.disabled)).toEqual([true, true, false]);
+      expect(inputs()[2].getAttribute('aria-disabled')).toBe('true');
+    });
+
+    describe('a disabled tile with a reason', () => {
+      it('stays reachable from the keyboard', () => {
+        const associate = inputs()[2];
+        associate.focus();
+        expect(document.activeElement).toBe(associate);
+      });
+
+      it('has no aria-disabled when it is enabled or has no reason', () => {
+        expect(inputs()[0].hasAttribute('aria-disabled')).toBe(false);
+        expect(inputs()[0].disabled).toBe(false);
+      });
+
+      it('ignores a click or Space press', async () => {
+        await click(2);
+        // The browser undoes a cancelled click; jsdom does not re-check the sibling radio, so only the locked tile and the value are asserted.
+        expect(fixture.componentInstance.value()).toBe('gold');
+        expect(inputs()[2].checked).toBe(false);
+      });
+
+      it('puts the previous radio back when an arrow key checks it', async () => {
+        const associate = inputs()[2];
+        associate.checked = true;
+        associate.dispatchEvent(new Event('change', { bubbles: true }));
+        await fixture.whenStable();
+        expect(fixture.componentInstance.value()).toBe('gold');
+        expect(inputs().map((input) => input.checked)).toEqual([true, false, false]);
+      });
+
+      it('leaves no radio checked when nothing was chosen before the arrow key', async () => {
+        fixture.componentInstance.value.set(null);
+        await fixture.whenStable();
+        const associate = inputs()[2];
+        associate.checked = true;
+        associate.dispatchEvent(new Event('change', { bubbles: true }));
+        await fixture.whenStable();
+        expect(fixture.componentInstance.value()).toBeNull();
+        expect(inputs().some((input) => input.checked)).toBe(false);
+      });
+
+      it('cannot be added to a checkbox group', async () => {
+        fixture.componentInstance.type.set('checkbox');
+        fixture.componentInstance.values.set([]);
+        await fixture.whenStable();
+        await click(2);
+        expect(fixture.componentInstance.values()).toEqual([]);
+        expect(inputs()[2].checked).toBe(false);
+      });
     });
 
     it('collects several chosen tiles in checkbox mode and clears them again', async () => {

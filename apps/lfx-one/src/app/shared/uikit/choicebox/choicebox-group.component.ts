@@ -23,6 +23,9 @@ import { UiChoiceboxColumns, UiChoiceboxType } from '@lfx-one/shared/interfaces'
   },
 })
 export class UiChoiceboxGroupComponent implements ControlValueAccessor {
+  // Per-app generator: a module-level counter would drift between SSR requests and the client.
+  private readonly generatedName = inject(_IdGenerator).getId('lfx-ui-choicebox-group-');
+
   /** Visible group label, rendered as the `<legend>`. Leave empty and set `ariaLabel` when the surrounding UI already names the group. */
   public readonly label = input<string>('');
   /** Accessible name. Required when `label` is empty, or the group is announced without a name. Ignored when `label` is set. */
@@ -50,8 +53,6 @@ export class UiChoiceboxGroupComponent implements ControlValueAccessor {
   /** True when the group is disabled by input or by its form control. Read by `lfx-ui-choicebox`. */
   public readonly isDisabled: Signal<boolean> = this.initIsDisabled();
 
-  // Per-app generator: a module-level counter would drift between SSR requests and the client.
-  private readonly generatedName = inject(_IdGenerator).getId('lfx-ui-choicebox-group-');
   private onChangeFn?: (value: string | string[] | null) => void;
   private onTouchedFn?: () => void;
 

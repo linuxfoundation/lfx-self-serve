@@ -23,35 +23,63 @@ import { UiChoiceboxGroupComponent } from './choicebox-group.component';
   },
 })
 export class UiChoiceboxComponent {
+  protected readonly group = inject(UiChoiceboxGroupComponent);
+  /** Ids that tie the title, the description and the disabled reason to the input. */
+  private readonly ids = inject(_IdGenerator);
+
   /** What the group's value becomes (radio) or gains (checkbox) when this tile is chosen. */
   public readonly value = input.required<string>();
   /** Title, in Title Case. */
   public readonly label = input.required<string>();
   /** Description under the title, in a sentence ending with a period. */
   public readonly description = input<string>('');
-  /** Disables this tile: it keeps its place but cannot be chosen or focused. */
+  /** Disables this tile: it keeps its place but cannot be chosen. It cannot be focused either, unless it has a `disabledReason`. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Why the tile is disabled. Shown as a tooltip on hover and read as the input's description. Used only while disabled. */
+  /**
+   * Why the tile is disabled. Shown as a tooltip on hover and on keyboard focus, and read as the input's description. Used only while disabled.
+   * A tile with a reason stays focusable (`aria-disabled` instead of native `disabled`) so keyboard users can reach the reason.
+   */
   public readonly disabledReason = input<string>('');
 
-  protected readonly group = inject(UiChoiceboxGroupComponent);
+  protected readonly titleId = this.ids.getId('lfx-ui-choicebox-title-');
+  protected readonly descriptionId = this.ids.getId('lfx-ui-choicebox-description-');
+  protected readonly reasonId = this.ids.getId('lfx-ui-choicebox-reason-');
   protected readonly isChecked: Signal<boolean> = this.initIsChecked();
   protected readonly isDisabled: Signal<boolean> = this.initIsDisabled();
   protected readonly reason: Signal<string> = this.initReason();
+  /** True while a disabled tile explains itself: its input stays focusable and ignores every attempt to choose it. */
+  protected readonly isLocked: Signal<boolean> = this.initIsLocked();
   protected readonly describedBy: Signal<string | null> = this.initDescribedBy();
   protected readonly tileClasses: Signal<string> = this.initTileClasses();
   protected readonly titleClasses: Signal<string> = this.initTitleClasses();
   protected readonly controlClasses: Signal<string> = this.initControlClasses();
   protected readonly dotClasses: Signal<string> = this.initDotClasses();
 
-  /** Ids that tie the title, the description and the disabled reason to the input. */
-  private readonly ids = inject(_IdGenerator);
-  protected readonly titleId = this.ids.getId('lfx-ui-choicebox-title-');
-  protected readonly descriptionId = this.ids.getId('lfx-ui-choicebox-description-');
-  protected readonly reasonId = this.ids.getId('lfx-ui-choicebox-reason-');
+  // A locked input is not natively disabled, so the click that would choose it is cancelled here.
+  protected onClick(event: Event): void {
+    if (this.isLocked()) event.preventDefault();
+  }
 
   protected onChange(event: Event): void {
-    this.group.choose(this.value(), (event.target as HTMLInputElement).checked);
+    const input = event.target as HTMLInputElement;
+    if (this.isLocked()) {
+      this.restoreChoice(input);
+      return;
+    }
+    this.group.choose(this.value(), input.checked);
+  }
+
+  // Arrow keys check a focusable radio before a click handler can stop them, so the previous choice is put back.
+  private restoreChoice(input: HTMLInputElement): void {
+    if (!this.group.isRadio()) {
+      input.checked = this.isChecked();
+      return;
+    }
+    const chosen = this.group.value();
+    input
+      .closest('fieldset')
+      ?.querySelectorAll<HTMLInputElement>('input[type="radio"]')
+      .forEach((radio) => (radio.checked = radio.value === chosen));
   }
 
   private initIsChecked(): Signal<boolean> {
@@ -64,6 +92,10 @@ export class UiChoiceboxComponent {
 
   private initReason(): Signal<string> {
     return computed(() => (this.isDisabled() ? this.disabledReason() : ''));
+  }
+
+  private initIsLocked(): Signal<boolean> {
+    return computed(() => this.reason() !== '');
   }
 
   private initDescribedBy(): Signal<string | null> {

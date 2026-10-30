@@ -10,9 +10,11 @@
       [attr.name]="group.isRadio() ? group.groupName() : null"
       [value]="value()"
       [checked]="isChecked()"
-      [disabled]="isDisabled()"
+      [disabled]="isDisabled() && !isLocked()"
+      [attr.aria-disabled]="isLocked() ? 'true' : null"
       [attr.aria-labelledby]="titleId"
       [attr.aria-describedby]="describedBy()"
+      (click)="onClick($event)"
       (change)="onChange($event)"
       data-testid="ui-choicebox-input" />
     @if (isChecked() && group.isRadio()) {
