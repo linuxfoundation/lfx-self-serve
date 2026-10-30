@@ -11,12 +11,14 @@
       [attr.aria-selected]="value() === tab.value"
       [attr.aria-disabled]="tab.disabled ? 'true' : null"
       [attr.aria-label]="tab.countLabel ? tab.label + ', ' + tab.countLabel : null"
-      [attr.tabindex]="focusIndex() === i ? 0 : -1"
+      [attr.tabindex]="tabStopIndex() === i ? 0 : -1"
       [attr.id]="idPrefix() ? idPrefix() + '-tab-' + tab.value : null"
       [attr.aria-controls]="idPrefix() ? idPrefix() + '-panel-' + tab.value : null"
       [lfxUiTooltip]="tab.disabledReason ?? ''"
       [lfxUiTooltipDisabled]="!tab.disabled"
       (click)="select(tab)"
+      (focus)="focusedIndex.set(i)"
+      (blur)="focusedIndex.set(null)"
       (keydown)="onKeydown($event, i)"
       [attr.data-testid]="'ui-tab-' + tab.value">
       @if (tab.icon) {

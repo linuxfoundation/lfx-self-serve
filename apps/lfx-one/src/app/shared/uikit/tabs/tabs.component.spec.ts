@@ -134,7 +134,7 @@ describe('UiTabsComponent', () => {
   it('leaves the focus ring room inside the scroll area without moving the layout', () => {
     const list = fixture.nativeElement.querySelector('[role="tablist"]') as HTMLElement;
 
-    for (const cls of ['px-[4px]', 'pt-[4px]', '-mx-[4px]', '-mt-[4px]']) expect(list.className).toContain(cls);
+    for (const cls of ['p-[4px]', '-mx-[4px]', '-my-[4px]']) expect(list.className).toContain(cls);
     expect(list.className).not.toContain('pointer-events');
     expect(tab('upcoming').className).not.toContain('pointer-events');
   });
@@ -241,13 +241,24 @@ describe('UiTabsComponent', () => {
     expect(fixture.componentInstance.value()).toBe('upcoming');
   });
 
-  it('keeps a focused disabled tab out of the tab order and does not select it when activated', async () => {
+  it('makes a focused disabled tab the only tab stop, and restores the resting stop on blur, so Tab and Shift+Tab leave the list', async () => {
+    const stops = () => Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')).filter((t) => (t as HTMLElement).getAttribute('tabindex') === '0');
     await press('past', 'ArrowRight');
-    expect(document.activeElement).toBe(tab('drafts'));
-    expect(tab('drafts').getAttribute('tabindex')).toBe('-1');
+    await fixture.whenStable();
 
+    expect(document.activeElement).toBe(tab('drafts'));
+    expect(stops()).toEqual([tab('drafts')]);
+
+    tab('drafts').blur();
+    await fixture.whenStable();
+    expect(stops()).toEqual([tab('upcoming')]);
+  });
+
+  it('does not select a disabled tab when it is activated', async () => {
+    await press('past', 'ArrowRight');
     tab('drafts').click();
     await fixture.whenStable();
+
     expect(fixture.componentInstance.value()).toBe('upcoming');
   });
 

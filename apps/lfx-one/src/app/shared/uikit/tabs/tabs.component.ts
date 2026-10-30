@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, ElementRef, input, model, Signal, viewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, input, model, signal, Signal, viewChildren } from '@angular/core';
 import { UiTabItem, UiTabsSize, UiTabsVariant } from '@lfx-one/shared/interfaces';
 
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
@@ -37,9 +37,13 @@ export class UiTabsComponent {
   public readonly value = model<string>('');
 
   private readonly tabElements = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
+  /** Index of the tab that holds focus, or null when focus is outside the list. */
+  protected readonly focusedIndex = signal<number | null>(null);
 
-  /** The one tab in the tab order: the selected enabled tab, else the first enabled tab. */
+  /** The resting tab stop: the selected enabled tab, else the first enabled tab. */
   protected readonly focusIndex: Signal<number> = this.initFocusIndex();
+  /** The one tab in the tab order: the focused tab (a disabled one included) while focus is in the list, else the resting tab stop. */
+  protected readonly tabStopIndex: Signal<number> = computed(() => this.focusedIndex() ?? this.focusIndex());
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly listClasses: Signal<string> = this.initListClasses();
   protected readonly tabClasses: Signal<string> = this.initTabClasses();
@@ -74,8 +78,8 @@ export class UiTabsComponent {
 
   private initListClasses(): Signal<string> {
     return computed(() => {
-      // Exact px gap, not rem; 14px root. The 4px padding, offset by negative margins, gives the focus ring room inside the scroll area.
-      const base = '-mx-[4px] -mt-[4px] flex items-end overflow-x-auto px-[4px] pt-[4px] isolate';
+      // Exact px gap, not rem; 14px root. The 4px padding, offset by negative margins, gives the focus ring room on every side inside the scroll area.
+      const base = '-mx-[4px] -my-[4px] flex items-end overflow-x-auto p-[4px] isolate';
       return this.variant() === 'secondary' ? `${base} gap-[4px]` : `${base} gap-[24px]`;
     });
   }
