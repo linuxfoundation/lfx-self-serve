@@ -4,7 +4,7 @@ description: How to present a vote on screen, extend its deadline, send the resu
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, present, extend, clone, summary, qr-code, deadline]
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 intercom_collection: Votes
 ---
 
@@ -24,6 +24,8 @@ You need permission to manage the vote. If you don't have it, **Present** isn't 
 ### While the vote is open
 
 The presenter shows the vote's title and description (with its paragraphs, line breaks, and lists kept; a long description scrolls inside its own area), a live count of how many people have voted out of how many are eligible, and when the vote closes. It does not show how the votes are splitting. Tallies stay hidden until the vote ends.
+
+Descriptions follow the same [formatting rules](../create-vote/#description-formatting) as the ballot and vote page, including a literal fallback for mixed unsupported placeholders and HTML.
 
 On the right it shows a **Copy link** button and a QR code with the text **In the room? Scan instead**, so people can open the vote on their phones. The page refreshes itself, and a line at the bottom shows how long ago it last updated. If the connection drops, it keeps trying to reconnect.
 

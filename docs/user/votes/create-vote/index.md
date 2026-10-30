@@ -66,6 +66,12 @@ When everything looks right, select **Open Vote**. A confirmation asks whether t
 
 If the close time passes while you are on the form, you see a **Deadline expired** message and LFX takes you back to step 1 to pick a new deadline.
 
+### Description formatting
+
+Plain text keeps its line breaks and indentation. Supported HTML is sanitized and displays its formatting; a source newline next to an explicit HTML line break does not add another blank line.
+
+If a description mixes bare unsupported placeholders such as `<username>` with HTML, the whole description displays literally, including its tags and entity spellings such as `&copy;`. This avoids silently losing saved text, but formatting tags in that ambiguous description do not apply. This same rule is used in the review, ballot drawer, personalized ballot, vote page, and presenter.
+
 ## Save a draft instead
 
 Select **Save as Draft** on any step to save your work without opening the vote. A draft needs only a **Vote Title** and a **Group**, and any comment questions you added must not be blank. Drafts are not visible to voters, and no notifications are sent.

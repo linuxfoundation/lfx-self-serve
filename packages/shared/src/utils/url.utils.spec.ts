@@ -46,6 +46,28 @@ describe('extractUrlCandidates', () => {
     expect(extractUrls(text)).toEqual(urls);
   });
 
+  it.each(['https://one.example/path', 'https://one.example/path[2026]', 'https://[2606:4700:4700::1111]/path'])(
+    'separates a bare URL from an immediately following labeled link: %s',
+    (first) => {
+      const second = 'https://two.example/path';
+      const text = `Read ${first}[next](${second}), then continue`;
+      expect(extractUrlCandidates(text)).toEqual([
+        { url: first, index: text.indexOf(first) },
+        { url: second, index: text.indexOf(second) },
+      ]);
+      expect(extractUrls(text)).toEqual([first, second]);
+    }
+  );
+
+  it.each(['https://one.example/path?next=', 'https://one.example/path#next=', 'http://localhost/path?next='])(
+    'keeps a bracketed nested destination inside a query or fragment: %s',
+    (prefix) => {
+      const url = `${prefix}[next](https://two.example/path)`;
+      expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(url)).toEqual(prefix.includes('localhost') ? [] : [url]);
+    }
+  );
+
   it.each([',', ';', '!', '.', ':'])('separates labeled links across %s without changing destinations or offsets', (separator) => {
     const text = `Read [one](https://one.example/path)${separator}[two](https://two.example/path)`;
     const urls = ['https://one.example/path', 'https://two.example/path'];

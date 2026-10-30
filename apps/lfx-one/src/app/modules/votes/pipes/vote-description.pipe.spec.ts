@@ -31,6 +31,28 @@ describe('VoteDescriptionPipe', () => {
     }
   );
 
+  it.each([
+    'Use <username> &copy; <strong>Important</strong>',
+    '<strong>Important</strong>\n\n  <USERNAME> &amp; &#169;',
+    '<p>Use <placeholder/> &lt;value&gt;</p>',
+    '<strong>Important</strong> </placeholder> &copy;',
+  ])('renders ambiguous placeholder/HTML input entirely literally: %s', (value) => {
+    for (const linkify of [false, true]) {
+      const result = render(value, linkify);
+      expect(result.textContent).toBe(value);
+      expect(result.querySelector('.whitespace-pre-wrap')?.children).toHaveLength(0);
+      expect(result.querySelector('username, placeholder, strong, p')).toBeNull();
+    }
+  });
+
+  it('still interprets entities in unambiguous supported legacy HTML', () => {
+    for (const linkify of [false, true]) {
+      const result = render('<p><strong>Important</strong> &copy; &amp; &lt;username&gt;</p>', linkify);
+      expect(result.querySelector('p strong')?.textContent).toBe('Important');
+      expect(result.textContent).toBe('Important © & <username>');
+    }
+  });
+
   it('links plain URLs without interpreting adjacent placeholders or entities', () => {
     const value = 'Use <username> &copy; at https://example.com/guide?items[]=one&mode=two';
     const result = render(value, true);
@@ -64,6 +86,24 @@ describe('VoteDescriptionPipe', () => {
       const result = render(`<${tag}>Old proposal</${tag}>`, linkify);
       expect(result.querySelector(tag)?.textContent).toBe('Old proposal');
       expect(result.textContent).toBe('Old proposal');
+    }
+  });
+
+  it.each([
+    { html: 'First<br>\nSecond', text: 'FirstSecond', breaks: 1 },
+    { html: 'First\n<br>Second', text: 'FirstSecond', breaks: 1 },
+    { html: 'First \r\n <br> \r\n  Second', text: 'FirstSecond', breaks: 1 },
+    { html: '<strong>First<br>\nSecond</strong>', text: 'FirstSecond', breaks: 1 },
+    { html: 'First<strong>\n<br></strong>\nSecond', text: 'FirstSecond', breaks: 1 },
+    { html: 'First<br><strong>\n  Second</strong>', text: 'FirstSecond', breaks: 1 },
+    { html: 'First<br>\n<br>\nSecond', text: 'FirstSecond', breaks: 2 },
+    { html: 'Heading\n\n  First<br>\nSecond\n  Last', text: 'Heading\n\n  FirstSecond\n  Last', breaks: 1 },
+    { html: 'First<br>  Second', text: 'First  Second', breaks: 1 },
+  ])('does not duplicate explicit breaks with adjacent source line endings: $html', ({ html, text, breaks }) => {
+    for (const linkify of [false, true]) {
+      const result = render(html, linkify);
+      expect(result.querySelectorAll('br')).toHaveLength(breaks);
+      expect(result.textContent).toBe(text);
     }
   });
 
@@ -104,6 +144,16 @@ describe('VoteDescriptionPipe', () => {
     }
   );
 
+  it.each(['script', 'style', 'template'])('does not mistake a discarded %s subtree for a literal placeholder', (tag) => {
+    for (const linkify of [false, true]) {
+      const result = render(`<p>ok<br>next</p><${tag}>discard me</${tag}>`, linkify);
+      expect(result.querySelector('p')?.textContent).toBe('oknext');
+      expect(result.querySelector('p br')).toBeTruthy();
+      expect(result.querySelector(tag)).toBeNull();
+      expect(result.textContent).not.toContain('discard me');
+    }
+  });
+
   it('keeps HTML sanitization active', () => {
     const result = render('<p>ok</p><script>attack()</script><img src="x" onerror="attack()"><a href="javascript:attack()">bad</a>');
     expect(result.querySelector('script, [onerror]')).toBeNull();
@@ -114,6 +164,9 @@ describe('VoteDescriptionPipe', () => {
     const detachedDocument = document.implementation.createHTMLDocument('server');
     TestBed.configureTestingModule({ providers: [{ provide: DOCUMENT, useValue: detachedDocument }] });
     expect(render('Use <username> &copy;').textContent).toBe('Use <username> &copy;');
+    const mixed = 'Use <username> &copy; <strong>Important</strong>';
+    expect(render(mixed, true).textContent).toBe(mixed);
+    expect(render('First<br>\nSecond').textContent).toBe('FirstSecond');
     expect(render('<a href="//127.0.0.1/">Local</a>').querySelector('a')?.hasAttribute('href')).toBe(false);
     expect(render('<a href="/guide">Guide</a>').querySelector('a')?.getAttribute('href')).toBe('/guide');
   });

@@ -183,18 +183,22 @@ export function extractUrlCandidates(text: string): { url: string; index: number
 
   for (const match of text.matchAll(URL_DETECTION_REGEX)) {
     const raw = match[0];
+    const labeledLinkStarts = new Set(Array.from(raw.matchAll(/\[[^\[\]]*\]\(https?:\/\//gi), (label) => label.index));
     let start = 0;
     let bracketDepth = 0;
     let parenthesisDepth = 0;
     let inAuthority = true;
+    let inQueryOrFragment = false;
 
     // Keep URL brackets, but stop at hostname citations, unmatched prose closers,
-    // and the closing delimiter of a labeled link. Scan each match once.
+    // and labeled-link delimiters. Query/fragment values may themselves contain nested URLs.
     for (let end = 0; end <= raw.length; end++) {
       const char = raw.charAt(end);
       const authorityStart = start + (raw.slice(start, start + 8).toLowerCase() === 'https://' ? 8 : 7);
       if (end >= authorityStart && (char === '/' || char === '?' || char === '#')) inAuthority = false;
+      if (end >= authorityStart && (char === '?' || char === '#')) inQueryOrFragment = true;
       const hostnameCitation = char === '[' && inAuthority && end > authorityStart && raw.charAt(end - 1) !== '@';
+      const followingLabeledLink = char === '[' && bracketDepth === 0 && !inQueryOrFragment && labeledLinkStarts.has(end);
       const labeledLinkEnd =
         char === ')' &&
         parenthesisDepth === 0 &&
@@ -205,11 +209,11 @@ export function extractUrlCandidates(text: string): { url: string; index: number
       if (char === '(') parenthesisDepth++;
       if (char === ')' && parenthesisDepth > 0) parenthesisDepth--;
 
-      if (char === '[' && !hostnameCitation) {
+      if (char === '[' && !hostnameCitation && !followingLabeledLink) {
         bracketDepth++;
       } else if (char === ']' && bracketDepth > 0) {
         bracketDepth--;
-      } else if (hostnameCitation || labeledLinkEnd || char === ']' || end === raw.length) {
+      } else if (hostnameCitation || followingLabeledLink || labeledLinkEnd || char === ']' || end === raw.length) {
         candidates.push({ url: trimTrailingPunctuation(raw.slice(start, end)), index: match.index + start });
 
         // Only search beyond a prose boundary, never inside a rejected URL.
@@ -221,6 +225,7 @@ export function extractUrlCandidates(text: string): { url: string; index: number
         bracketDepth = 0;
         parenthesisDepth = 0;
         inAuthority = true;
+        inQueryOrFragment = false;
       }
     }
   }
