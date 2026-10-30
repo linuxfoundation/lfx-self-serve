@@ -833,22 +833,18 @@ export class UserService {
 
     // See module-level LATEST_PAST_MEETINGS_FETCH_SIZE / RETURN_LIMIT JSDoc for why we
     // over-fetch here.
-    const response = await this.microserviceProxy
-      .proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting',
-        filter_grants: 'direct',
-        sort: 'name_desc',
-        page_size: LATEST_PAST_MEETINGS_FETCH_SIZE,
-        ...projectFilterParams,
-      })
-      .catch((error) => {
-        logger.warning(req, 'get_user_latest_past_meetings', 'Past meeting query failed, returning empty list', {
-          err: error,
-        });
-        return null;
-      });
+    // Propagate failures instead of degrading to [] — see getUserMeetings for full rationale
+    // (GH-4780): an empty result here is indistinguishable from "no past meetings". This is the
+    // method the dashboard's Me-lens "last meeting" card actually calls.
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'v1_past_meeting',
+      filter_grants: 'direct',
+      sort: 'name_desc',
+      page_size: LATEST_PAST_MEETINGS_FETCH_SIZE,
+      ...projectFilterParams,
+    });
 
-    if (!response || !response.resources || response.resources.length === 0) {
+    if (!response.resources || response.resources.length === 0) {
       return [];
     }
 

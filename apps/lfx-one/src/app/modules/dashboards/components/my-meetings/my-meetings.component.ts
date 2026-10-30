@@ -32,7 +32,8 @@ export class MyMeetingsComponent {
 
   // Set when the underlying fetch failed (e.g. a `fga-sync` read_tuples outage, GH-4780) rather
   // than genuinely returning zero rows — lets the template show "couldn't load" + retry instead of
-  // silently rendering the same empty state as a user with no meetings.
+  // silently rendering the same empty state as a user with no meetings. Backed by
+  // UserService.getUserMeetings / getUserLatestPastMeetings, both of which now propagate failures.
   protected readonly upcomingError = signal(false);
   protected readonly pastError = signal(false);
 
@@ -127,7 +128,8 @@ export class MyMeetingsComponent {
 
           return source$.pipe(
             tap(() => loading.set(false)),
-            catchError(() => {
+            catchError((err) => {
+              console.error('my-meetings fetch failed', err);
               loading.set(false);
               error.set(true);
               return of([] as T[]);

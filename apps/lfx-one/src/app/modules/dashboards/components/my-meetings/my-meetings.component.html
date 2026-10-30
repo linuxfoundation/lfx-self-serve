@@ -45,8 +45,7 @@
           [pastMeeting]="true" />
       } @else if (pastError()) {
         <div
-          class="rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
-          style="background: linear-gradient(to bottom, #f3f4f6, #ffffff)"
+          class="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
           data-testid="dashboard-last-meeting-error">
           <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400 shrink-0"></i>
           <p class="text-sm font-medium text-gray-700">Couldn't load your past meetings</p>
@@ -54,8 +53,7 @@
         </div>
       } @else {
         <div
-          class="rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
-          style="background: linear-gradient(to bottom, #f3f4f6, #ffffff)"
+          class="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
           data-testid="dashboard-last-meeting-empty">
           <i class="fa-light fa-clock-rotate-left text-4xl text-gray-400 shrink-0"></i>
           <div>
@@ -97,8 +95,7 @@
           [overlappingCount]="overlappingNextCount()" />
       } @else if (upcomingError()) {
         <div
-          class="rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
-          style="background: linear-gradient(to bottom, #eff6ff, #ffffff)"
+          class="bg-gradient-to-b from-blue-50 to-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
           data-testid="dashboard-next-meeting-error">
           <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400 shrink-0"></i>
           <p class="text-sm font-medium text-gray-700">Couldn't load your upcoming meetings</p>
@@ -106,8 +103,7 @@
         </div>
       } @else {
         <div
-          class="rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
-          style="background: linear-gradient(to bottom, #eff6ff, #ffffff)"
+          class="bg-gradient-to-b from-blue-50 to-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
           data-testid="dashboard-next-meeting-empty">
           <i class="fa-light fa-calendar-check text-4xl text-gray-400 shrink-0"></i>
           <div>
