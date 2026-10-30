@@ -21,6 +21,7 @@ import {
   StatCardItem,
   Vote,
   VoteDetailState,
+  VoteDetailTabOption,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
@@ -1525,6 +1526,91 @@ describe('VoteDetailComponent', () => {
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toEqual(['overview', 'results']);
     });
 
+    describe('count badges (#4768)', () => {
+      const tabFor = (fixture: ComponentFixture<VoteDetailComponent>, key: VoteDetailTabOption['key']): VoteDetailTabOption | undefined =>
+        read<readonly VoteDetailTabOption[]>(fixture, 'tabs').find((tab) => tab.key === key);
+      const twoComments = (): PollCommentResult[] => [
+        {
+          prompt: { prompt_id: 'prompt-1', prompt: 'Any concerns?' },
+          responses: [
+            { vote_id: 'response-1', comment_text: 'First synthetic comment', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false },
+            { vote_id: 'response-2', comment_text: 'Second synthetic comment', vote_creation_time: '2026-10-21T12:00:00Z', abstained: false },
+          ],
+        },
+      ];
+
+      beforeEach(() => {
+        projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      });
+
+      it('counts the comments once results load and the invited voters', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 12 })));
+        voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: twoComments() }));
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'comments')).toEqual(expect.objectContaining({ count: 2, countLabel: '2 comments' }));
+        expect(tabFor(fixture, 'voters')).toEqual(expect.objectContaining({ count: 12, countLabel: '12 invited voters' }));
+        expect(tabFor(fixture, 'overview')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'results')?.count).toBeUndefined();
+      });
+
+      it('uses singular screen-reader text for one comment and one invited voter', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 1 })));
+        voteService.getVoteResults.mockReturnValue(
+          of({ ...makeResults(), comment_results: [{ ...twoComments()[0], responses: twoComments()[0].responses.slice(0, 1) }] })
+        );
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'comments')?.countLabel).toBe('1 comment');
+        expect(tabFor(fixture, 'voters')?.countLabel).toBe('1 invited voter');
+      });
+
+      it('shows no badge for zero comments or a zero invited count', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 0 })));
+        voteService.getVoteResults.mockReturnValue(of(makeResults()));
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'comments')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'voters')?.count).toBeUndefined();
+      });
+
+      it('shows no Voters badge when the invited count is missing', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote()));
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'voters')).toBeDefined();
+        expect(tabFor(fixture, 'voters')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'voters')?.countLabel).toBeUndefined();
+      });
+
+      it('shows no Comments badge while results are loading', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 12 })));
+        voteService.getVoteResults.mockReturnValue(new Subject<VoteResultsResponse>());
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'comments')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'voters')?.count).toBe(12);
+      });
+
+      it('shows no Comments badge when the results request fails', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 12 })));
+        voteService.getVoteResults.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'comments')?.count).toBeUndefined();
+      });
+
+      it('hides the Comments badge while pseudo-anonymous comments are held', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, total_voting_request_invitations: 12 })));
+        voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: twoComments(), results_held: true }));
+        const fixture = await setup();
+
+        expect(read(fixture, 'resultsHeld')).toBe(true);
+        expect(tabFor(fixture, 'comments')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'voters')?.count).toBe(12);
+      });
+    });
+
     it.each([
       { label: 'omitted', prompts: undefined },
       { label: 'empty', prompts: [] },
@@ -1967,6 +2053,8 @@ describe('VoteDetailComponent', () => {
       const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
       const page = testId(fixture, 'vote-detail-page')!.cloneNode(true) as HTMLElement;
       page.querySelector('[data-testid="vote-detail-summary"]')?.remove();
+      // The Voters tab badge carries its own screen-reader text (#4768); the tab strip is not a header fact.
+      page.querySelectorAll('[role="tab"] .sr-only').forEach((el) => el.remove());
       const text = page.textContent?.toLowerCase() ?? '';
       const facts = ['Synthetic Steering Committee', 'Plurality vote', '12 invited voters', 'pseudo-anonymous'];
       const deadline = testId(fixture, 'vote-detail-header-close-date')

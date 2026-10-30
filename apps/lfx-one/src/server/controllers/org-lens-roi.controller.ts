@@ -12,7 +12,7 @@ import { logger } from '../services/logger.service';
 import { OrgLensRoiService } from '../services/org-lens-roi.service';
 
 // `assertOrgLensRead` must run before any cache or Snowflake access in every handler.
-// Feature flags are browser-only and gate none of these endpoints.
+// The LF-staff gate (`requireOrgLensRoiAudience`) runs ahead of these handlers as route middleware.
 export class OrgLensRoiController {
   private readonly service: OrgLensRoiService;
 

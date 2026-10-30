@@ -4,11 +4,13 @@ description: How the Org Lens ROI page estimates your organization's investment 
 audience: [all]
 product_area: Dashboards
 tags: [org, org lens, roi, return on investment, investment, return, estimation method, markup]
-last_updated: 2026-10-13
+last_updated: 2026-10-30
 intercom_collection: Dashboards
 ---
 
-The **ROI Metrics** page in Org Lens (route: `/org/roi`) estimates what your organization invests in Linux Foundation projects through its public contribution activity, and the economic return associated with those projects.
+The **ROI Metrics** page in Org Lens estimates what your organization invests in Linux Foundation projects through its public contribution activity, and the economic return associated with those projects.
+
+Find the page in the **LF Staff Only** section at the bottom of the Org Lens menu. Only Linux Foundation staff can see that section or open the page.
 
 Full documentation of the ROI model is being written. This page summarizes what the ROI page itself states.
 
