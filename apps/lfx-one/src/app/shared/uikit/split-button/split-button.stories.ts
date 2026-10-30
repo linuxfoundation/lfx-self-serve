@@ -52,7 +52,7 @@ export const WithIcon: Story = { args: { icon: 'fa-light fa-rocket' } };
 
 export const Disabled: Story = { args: { disabled: true } };
 
-/** Both sizes and variants side by side. */
+/** All three sizes of both variants, side by side. */
 export const Sizes: Story = {
   render: () => ({
     template: `
