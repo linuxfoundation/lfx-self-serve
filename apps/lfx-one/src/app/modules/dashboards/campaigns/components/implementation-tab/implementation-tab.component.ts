@@ -2771,6 +2771,12 @@ export class ImplementationTabComponent implements OnInit {
     const result = this.googleSuggestedApply();
     return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.seq : 0;
   });
+  /**
+   * How many images each on-screen Google image field holds — pasted lines plus library images held
+   * for the open brief — keyed by every plan `slot_key` that maps onto it, for the slot grid (#4833).
+   * Only fields holding something appear.
+   */
+  protected readonly googleFormFilledSlots: Signal<Record<string, number>> = this.initGoogleFormFilledSlots();
   /** The last apply's result for the brief now open, or `''`. */
   protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
     const result = this.googleSuggestedApply();
@@ -7485,6 +7491,27 @@ export class ImplementationTabComponent implements OnInit {
         }
       }
       return targets;
+    });
+  }
+
+  private initGoogleFormFilledSlots(): Signal<Record<string, number>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const briefId = this.briefPersistence().briefId ?? '';
+      const held = this.googleHeldImages();
+      const filled: Record<string, number> = {};
+      for (const key of Object.keys(this.googleImageSlots())) {
+        const [groupName, control] = key.split('.');
+        const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+        if (!channel) continue;
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue() as Record<string, string | null | undefined>;
+        const count = this.splitCreativeLines(raw[control]).length + (held[key] ?? []).filter((image) => image.briefId === briefId).length;
+        if (count === 0) continue;
+        for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
+          if (mapped === control) filled[`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`] = count;
+        }
+      }
+      return filled;
     });
   }
 

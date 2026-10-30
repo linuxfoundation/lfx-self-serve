@@ -24,6 +24,7 @@ const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> 
 
 /**
  * Which of a brief's stored images fill which platform image slots, and what is still missing.
+ * A slot the host's form already fills (`formFilled`) reads as filled in the form instead (#4833).
  *
  * Reads `get-asset-plan` itself rather than taking a plan as an input: the plan is derived from the
  * library and the platform selection, both of which change while the operator is on this tab, and a
@@ -75,6 +76,12 @@ export class CreativeSlotGridComponent {
    * whose text does not change announces nothing, so this is what makes the second one heard.
    */
   public readonly applySeq = input(0);
+  /**
+   * How many images each slot already has IN THE FORM — pasted URLs plus picked library images —
+   * keyed by `slot_key` (#4833). The plan reads only the stored library, so without this a slot the
+   * operator filled by hand would still read as missing while the form above it is satisfied.
+   */
+  public readonly formFilled = input<Readonly<Record<string, number>>>({});
 
   // === Outputs ===
   /**
@@ -215,7 +222,7 @@ export class CreativeSlotGridComponent {
         const gap = slotGaps.get(assignment.slotKey);
         emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
-        this.push(groups, assignment.platform, assignment.channel, {
+        this.pushRow(groups, assignment.platform, assignment.channel, assignment.minCount, {
           key: assignment.slotKey,
           label: assignment.label,
           requirement: assignment.requirement,
@@ -239,7 +246,7 @@ export class CreativeSlotGridComponent {
           continue;
         }
         emitted.add(key);
-        this.push(groups, gap.platform, gap.channel, {
+        this.pushRow(groups, gap.platform, gap.channel, gap.need, {
           key,
           label: gap.label,
           requirement: '',
@@ -372,6 +379,29 @@ export class CreativeSlotGridComponent {
       rows: [row],
       openCount: 0,
     });
+  }
+
+  /**
+   * Push a row, read against the form first: a slot whose field already holds at least the images it
+   * requires (and at least one) is covered for THIS campaign whatever the library holds, so it reads
+   * "Filled in the form" with its count and is not open. A cross-slot rule row (`rule:` key) names no
+   * single field, so it never matches and keeps its library reading.
+   */
+  private pushRow(
+    groups: Map<string, CreativeSlotCoverageGroup>,
+    platform: string,
+    channel: string | undefined,
+    required: number,
+    row: CreativeSlotCoverageRow
+  ): void {
+    const inForm = this.formFilled()[row.key] ?? 0;
+    const covered = inForm > 0 && inForm >= required;
+    this.push(
+      groups,
+      platform,
+      channel,
+      covered ? { ...row, status: 'filled', statusLabel: 'Filled in the form', countText: `${inForm} in the form`, reason: '' } : row
+    );
   }
 
   private statusOf(filled: number, short: boolean): CreativeSlotCoverageRow['status'] {
