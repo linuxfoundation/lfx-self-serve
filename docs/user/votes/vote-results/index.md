@@ -38,7 +38,7 @@ Summary cards below the tab strip show how many people have responded and how ma
 The buttons at the top right depend on the vote's status:
 
 - **Send reminder** on active votes. See [Send a reminder](../manage-votes/#send-a-reminder).
-- **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
+- **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. On the vote page a **Ballots sent** message confirms how many members were emailed. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
 - **Present** and **Copy slide** on active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
 - **Cast vote**, if you are also invited and haven't voted yet.
 

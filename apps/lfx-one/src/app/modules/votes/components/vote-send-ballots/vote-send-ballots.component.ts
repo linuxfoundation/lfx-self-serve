@@ -60,6 +60,10 @@ export class VoteSendBallotsComponent {
   protected readonly compact = computed(() => this.variant() === 'compact');
   protected readonly buttonSize = computed(() => (this.compact() ? 'small' : undefined));
   protected readonly buttonStyleClass = computed(() => (this.compact() ? undefined : 'min-h-[44px]'));
+  protected readonly sentMessage = computed(() => {
+    const result = this.sent();
+    return result ? `Ballots sent to ${this.members(result.count)}` : '';
+  });
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
@@ -188,6 +192,10 @@ export class VoteSendBallotsComponent {
         next: ({ sent, skipped }) => {
           this.sent.set({ count: sent, at: new Date() });
           this.startCooldown();
+          // The compact variant has no visible status line, so the toast is its confirmation.
+          if (this.compact()) {
+            this.messageService.add({ severity: 'success', summary: 'Ballots sent', detail: `to ${this.members(sent)}` });
+          }
           if (skipped > 0) {
             this.messageService.add({
               severity: 'warn',
@@ -220,6 +228,10 @@ export class VoteSendBallotsComponent {
         : "We couldn't confirm whether ballots were sent. Check with the members before retrying, since retrying may send duplicate emails.",
       life: 8000,
     });
+  }
+
+  private members(count: number): string {
+    return `${count} ${count === 1 ? 'member' : 'members'}`;
   }
 
   private startCooldown(): void {

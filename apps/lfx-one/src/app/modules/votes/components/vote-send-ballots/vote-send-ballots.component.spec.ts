@@ -211,6 +211,38 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(button().disabled).toBe(false);
   });
 
+  it('compact variant shows no visible status line, announces it in a live region and toasts success', () => {
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
+    const live = el().querySelector('[data-testid="vote-send-ballots-live"]') as HTMLElement;
+    expect(success()).toBeNull();
+    expect(live.classList).toContain('sr-only');
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent?.trim()).toBe('Ballots sent to 3 members');
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Ballots sent', detail: 'to 3 members' });
+  });
+
+  it('compact variant toast uses the singular for one member', () => {
+    sendBallots.mockReturnValue(of({ sent: 1, skipped: 0 }));
+    fixture.componentRef.setInput('variant', 'compact');
+    fixture.detectChanges();
+    clickAndCapture()?.accept?.();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'to 1 member' }));
+  });
+
+  it('presenter variant keeps the visible line and shows no success toast', () => {
+    clickAndCapture()?.accept?.();
+    fixture.detectChanges();
+
+    expect(success()).not.toBeNull();
+    expect(el().querySelector('[data-testid="vote-send-ballots-live"]')).toBeNull();
+    expect(add).not.toHaveBeenCalled();
+  });
+
   it('uses a two-minute cooldown', () => {
     expect(VOTE_SEND_BALLOTS_COOLDOWN_MS).toBe(120_000);
   });
