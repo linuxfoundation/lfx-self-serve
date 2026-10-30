@@ -306,6 +306,52 @@ describe('VoteDetailHeaderComponent', () => {
     expect(tabs).toEqual(['comments']);
   });
 
+  describe('tab count badges (#4768)', () => {
+    const countTabs = [
+      ...VOTE_DETAIL_TABS.map((tab) => ({ ...tab })).filter((tab) => tab.key === 'overview' || tab.key === 'results'),
+      { key: 'comments' as const, label: 'Comments', icon: 'fa-comments', count: 5, countLabel: '5 comments' },
+      { key: 'voters' as const, label: 'Voters', icon: 'fa-users', count: 1, countLabel: '1 invited voter' },
+    ];
+    const tabEl = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-tab-${key}"]`);
+
+    it('renders an aria-hidden badge plus screen-reader text', () => {
+      render();
+      fixture.componentRef.setInput('tabs', countTabs);
+      fixture.detectChanges();
+
+      const badge = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-tab-count-comments"]');
+      expect(badge.textContent.trim()).toBe('5');
+      expect(badge.getAttribute('aria-hidden')).toBe('true');
+      expect(tabEl('comments').querySelector('.sr-only')?.textContent?.trim()).toBe(', 5 comments');
+      expect(tabEl('voters').querySelector('.sr-only')?.textContent?.trim()).toBe(', 1 invited voter');
+    });
+
+    it('shows no badge for tabs without a count or with a zero count', () => {
+      render();
+      fixture.componentRef.setInput('tabs', [...countTabs.slice(0, 3), { ...countTabs[3], count: 0 }]);
+      fixture.detectChanges();
+
+      expect(exists('vote-detail-header-tab-count-overview')).toBe(false);
+      expect(exists('vote-detail-header-tab-count-results')).toBe(false);
+      expect(exists('vote-detail-header-tab-count-comments')).toBe(true);
+      expect(exists('vote-detail-header-tab-count-voters')).toBe(false);
+      expect(tabEl('voters').querySelector('.sr-only')).toBeNull();
+    });
+
+    it('shows the badge on both the active and inactive tab', () => {
+      render();
+      fixture.componentRef.setInput('tabs', countTabs);
+      fixture.componentRef.setInput('activeTab', 'comments');
+      fixture.detectChanges();
+
+      expect(exists('vote-detail-header-tab-count-comments')).toBe(true);
+      expect(exists('vote-detail-header-tab-count-voters')).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-header-tab-count-comments"]').classList).toContain('bg-white');
+      expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-header-tab-count-comments"]').classList).toContain('text-blue-800');
+      expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-header-tab-count-voters"]').className).toContain('bg-gray-200');
+    });
+  });
+
   it('keeps only the selected tab in the Tab order and points it at the page panel', () => {
     render();
     const tab = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="vote-detail-header-tab-${key}"]`);

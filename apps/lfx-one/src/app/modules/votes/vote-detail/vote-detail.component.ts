@@ -652,8 +652,26 @@ export class VoteDetailComponent {
       if (!this.showVoteDetails()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
       const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
-      return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
+      return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters)).map((tab) => ({
+        ...tab,
+        ...this.tabCount(tab.key),
+      }));
     });
+  }
+
+  /** Badge for a tab, or nothing: Comments waits for loaded, un-held results; zero and unknown counts show no badge (#4768). */
+  private tabCount(key: VoteDetailTab): Pick<VoteDetailTabOption, 'count' | 'countLabel'> {
+    if (key === 'comments') {
+      const count = this.commentCount();
+      if (!this.hasLoadedResults() || this.resultsHeld() || count <= 0) return {};
+      return { count, countLabel: `${count} ${count === 1 ? 'comment' : 'comments'}` };
+    }
+    if (key === 'voters') {
+      const count = this.vote()?.total_voting_request_invitations ?? 0;
+      if (count <= 0) return {};
+      return { count, countLabel: `${count} invited ${count === 1 ? 'voter' : 'voters'}` };
+    }
+    return {};
   }
 
   /** A `?tab=` the vote doesn't offer (no detail/result comment prompts, or Voters without access) falls back to the default tab. */
