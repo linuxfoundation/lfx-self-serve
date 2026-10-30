@@ -24,13 +24,20 @@
     [attr.aria-describedby]="describedBy()"
     (click)="toggle()"
     (keydown)="onKeydown($event)"
-    (blur)="onBlur()"
+    (blur)="onBlur($event)"
     data-testid="ui-select-trigger">
+    <ng-content select="[lfxUiSelectPrefix]" />
     @if (selected()?.icon || prefixIcon()) {
       <span [class]="valueIconClasses()" data-testid="ui-select-icon"><i [class]="selected()?.icon || prefixIcon()" aria-hidden="true"></i></span>
     }
     @if (selected(); as option) {
-      <span class="min-w-0 flex-1 truncate" data-testid="ui-select-value">{{ option.label }}</span>
+      <span class="flex min-w-0 flex-1 items-center overflow-hidden" data-testid="ui-select-value">
+        @if (valueTemplate(); as custom) {
+          <ng-container *ngTemplateOutlet="custom.template; context: { $implicit: option }" />
+        } @else {
+          <span class="truncate">{{ option.label }}</span>
+        }
+      </span>
     } @else {
       <span class="min-w-0 flex-1 truncate text-ui-neutral-500" data-testid="ui-select-placeholder">{{ placeholder() }}</span>
     }
@@ -50,38 +57,27 @@
   [cdkConnectedOverlayPositions]="positions"
   [cdkConnectedOverlayMinWidth]="panelWidth()"
   (detach)="closePanel()">
-  <!-- Exact px, not rem; 14px root. The mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
+  <!-- Exact px, not rem; 14px root. The listbox mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
   <div
-    role="listbox"
-    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 p-[6px] shadow-menu"
-    [id]="listboxId"
-    [attr.aria-labelledby]="label() ? labelId : null"
-    [attr.aria-label]="label() ? null : ariaLabel() || null"
-    (mousedown)="$event.preventDefault()"
-    data-testid="ui-select-listbox">
-    @for (option of options(); track option.value; let i = $index) {
-      <div
-        role="option"
-        class="group flex h-ui-menu-item shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50"
-        [id]="optionId(i)"
-        [attr.aria-selected]="i === selectedIndex()"
-        [attr.aria-disabled]="option.disabled ? 'true' : null"
-        [attr.data-highlighted]="i === activeIndex() ? '' : null"
-        (mousemove)="highlight(i)"
-        (click)="select(i)"
-        data-testid="ui-select-option">
-        @if (option.icon) {
-          <span class="inline-flex shrink-0 items-center text-[14px] text-ui-neutral-600 group-aria-disabled:text-ui-neutral-500"
-            ><i [class]="option.icon" aria-hidden="true"></i
-          ></span>
-        }
-        <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
-        @if (i === selectedIndex()) {
-          <span class="inline-flex shrink-0 items-center text-[12px] text-ui-accent-500" data-testid="ui-select-check"
-            ><i class="fa-light fa-check" aria-hidden="true"></i
-          ></span>
-        }
-      </div>
-    }
+    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    (focusout)="onPanelFocusOut($event)"
+    data-testid="ui-select-panel">
+    <div
+      class="shrink-0 border-b border-ui-neutral-alpha-200 p-[6px] empty:hidden"
+      (mousedown)="onHeaderMousedown($event)"
+      (keydown)="onHeaderKeydown($event)"
+      data-testid="ui-select-header">
+      <ng-content select="[lfxUiSelectHeader]" />
+    </div>
+    <div
+      role="listbox"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto p-[6px]"
+      [id]="listboxId"
+      [attr.aria-labelledby]="label() ? labelId : null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      (mousedown)="$event.preventDefault()"
+      data-testid="ui-select-listbox">
+      <ng-content />
+    </div>
   </div>
 </ng-template>

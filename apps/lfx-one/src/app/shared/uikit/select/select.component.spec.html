@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@switch (mode()) {
+  @case ('basic') {
+    <lfx-ui-select
+      label="Foundation"
+      placeholder="Pick a foundation"
+      [ariaLabel]="ariaLabel()"
+      [hint]="hint()"
+      [error]="error()"
+      [size]="size()"
+      [disabled]="disabled()"
+      [required]="required()"
+      [pill]="pill()"
+      [prefixIcon]="prefixIcon()"
+      [(value)]="value">
+      @for (option of options(); track option.value) {
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="!!option.disabled" [icon]="option.icon ?? ''" />
+      }
+    </lfx-ui-select>
+  }
+  @case ('rich') {
+    <lfx-ui-select ariaLabel="Owner" [(value)]="value">
+      <ng-template lfxUiSelectValue let-option>
+        <span data-testid="custom-value">Owner: {{ option.label }} ({{ option.value }})</span>
+      </ng-template>
+      <lfx-ui-option-group label="Team">
+        <lfx-ui-option value="maria" label="Maria Santos">
+          <span class="flex flex-col" data-testid="rich-row"><span>Maria Santos</span><span>Maintainer</span></span>
+        </lfx-ui-option>
+        <lfx-ui-option value="joao" label="Joao Pires" disabled />
+        <lfx-ui-option value="nuno" label="Nuno Esteves" />
+      </lfx-ui-option-group>
+      <lfx-ui-option-separator />
+      <lfx-ui-option-group label="Guests">
+        <lfx-ui-option value="ana" label="Ana Costa" />
+      </lfx-ui-option-group>
+      <lfx-ui-option-separator />
+      <lfx-ui-option value="nobody" label="Nobody" />
+    </lfx-ui-select>
+  }
+  @case ('slots') {
+    <lfx-ui-select ariaLabel="Project" placeholder="Pick one" [(value)]="value">
+      <i lfxUiSelectPrefix class="fa-light fa-calendar" data-testid="prefix"></i>
+      <input lfxUiSelectHeader type="search" aria-label="Search" data-testid="search" (input)="query.set($any($event.target).value)" />
+      @for (option of projects; track option) {
+        @if (option.toLowerCase().includes(query().toLowerCase())) {
+          <lfx-ui-option [value]="option.toLowerCase()" [label]="option" />
+        }
+      }
+    </lfx-ui-select>
+    <button type="button" data-testid="outside">Outside</button>
+  }
+  @case ('form') {
+    <lfx-ui-select label="Foundation" [formControl]="control">
+      @for (option of options(); track option.value) {
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="!!option.disabled" />
+      }
+    </lfx-ui-select>
+  }
+}

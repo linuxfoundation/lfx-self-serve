@@ -1,15 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, input, model, viewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { UiOption } from '@lfx-one/shared/interfaces';
+import { UiInputSize } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiOptionGroupComponent } from './option-group.component';
+import { UiOptionSeparatorComponent } from './option-separator.component';
+import { UiOptionComponent } from './option.component';
+import { UiSelectValueDirective } from './select-value.directive';
 import { UiSelectComponent } from './select.component';
 
-const OPTIONS: UiOption[] = [
+interface TestOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  icon?: string;
+}
+
+const OPTIONS: TestOption[] = [
   { value: 'cncf', label: 'Cloud Native Computing Foundation' },
   { value: 'openssf', label: 'OpenSSF' },
   { value: 'lfai', label: 'LF AI & Data', disabled: true },
@@ -19,11 +30,25 @@ const OPTIONS: UiOption[] = [
 
 @Component({
   selector: 'lfx-ui-select-test-host',
-  imports: [UiSelectComponent, ReactiveFormsModule],
-  template: `<lfx-ui-select label="Foundation" [options]="options" [formControl]="control" />`,
+  imports: [UiSelectComponent, UiOptionComponent, UiOptionGroupComponent, UiOptionSeparatorComponent, UiSelectValueDirective, ReactiveFormsModule],
+  templateUrl: './select.component.spec.html',
 })
-class FormHostComponent {
-  public readonly options = OPTIONS;
+class SelectHostComponent {
+  public readonly select = viewChild.required(UiSelectComponent);
+  /** Which composition the template renders. */
+  public readonly mode = input<'basic' | 'rich' | 'slots' | 'form'>('basic');
+  public readonly options = input<TestOption[]>(OPTIONS);
+  public readonly value = model<string | null>(null);
+  public readonly ariaLabel = input<string>('');
+  public readonly hint = input<string>('');
+  public readonly error = input<string>('');
+  public readonly size = input<UiInputSize>('medium');
+  public readonly disabled = input<boolean>(false);
+  public readonly required = input<boolean>(false);
+  public readonly pill = input<boolean>(false);
+  public readonly prefixIcon = input<string>('');
+  public readonly query = model<string>('');
+  public readonly projects = ['Kubernetes', 'Envoy', 'Sigstore'];
   public readonly control = new FormControl<string | null>('openssf');
 }
 
@@ -43,13 +68,19 @@ const KEY_CODES: Record<string, number> = {
   l: 76,
 };
 
+const create = (mode: 'basic' | 'rich' | 'slots' | 'form'): ComponentFixture<SelectHostComponent> => {
+  const created = TestBed.createComponent(SelectHostComponent);
+  created.componentRef.setInput('mode', mode);
+  return created;
+};
+
 describe('UiSelectComponent', () => {
-  let fixture: ComponentFixture<UiSelectComponent>;
+  let fixture: ComponentFixture<SelectHostComponent>;
   let host: HTMLElement;
 
   const trigger = (): HTMLElement => host.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
   const listbox = (): HTMLElement | null => document.querySelector('[data-testid="ui-select-listbox"]');
-  const optionEls = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-select-option"]'));
+  const optionEls = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]'));
   const set = async (name: string, value: unknown): Promise<void> => {
     fixture.componentRef.setInput(name, value);
     await fixture.whenStable();
@@ -73,12 +104,9 @@ describe('UiSelectComponent', () => {
   beforeEach(async () => {
     // jsdom has no layout, so it has no scrollIntoView either.
     Element.prototype.scrollIntoView = vi.fn();
-    await TestBed.configureTestingModule({ imports: [UiSelectComponent, FormHostComponent] }).compileComponents();
-    fixture = TestBed.createComponent(UiSelectComponent);
+    await TestBed.configureTestingModule({ imports: [SelectHostComponent] }).compileComponents();
+    fixture = create('basic');
     host = fixture.nativeElement as HTMLElement;
-    fixture.componentRef.setInput('label', 'Foundation');
-    fixture.componentRef.setInput('options', OPTIONS);
-    fixture.componentRef.setInput('placeholder', 'Pick a foundation');
     await fixture.whenStable();
   });
 
@@ -99,12 +127,14 @@ describe('UiSelectComponent', () => {
   });
 
   it('uses ariaLabel when there is no visible label', async () => {
-    await set('label', '');
-    await set('ariaLabel', 'Foundation');
+    const bare = TestBed.createComponent(UiSelectComponent);
+    bare.componentRef.setInput('ariaLabel', 'Foundation');
+    await bare.whenStable();
+    const bareTrigger = (bare.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
 
-    expect(host.querySelector('[data-testid="ui-select-label"]')).toBeNull();
-    expect(trigger().getAttribute('aria-label')).toBe('Foundation');
-    expect(trigger().getAttribute('aria-labelledby')).toBeNull();
+    expect((bare.nativeElement as HTMLElement).querySelector('[data-testid="ui-select-label"]')).toBeNull();
+    expect(bareTrigger.getAttribute('aria-label')).toBe('Foundation');
+    expect(bareTrigger.getAttribute('aria-labelledby')).toBeNull();
   });
 
   it('focuses the trigger when the label is clicked', () => {
@@ -133,6 +163,7 @@ describe('UiSelectComponent', () => {
 
     expect(listbox()?.getAttribute('role')).toBe('listbox');
     expect(optionEls().length).toBe(OPTIONS.length);
+    expect(optionEls()[0].getAttribute('role')).toBe('option');
     expect(trigger().getAttribute('aria-expanded')).toBe('true');
     expect(trigger().getAttribute('aria-controls')).toBe(listbox()?.id);
   });
@@ -145,6 +176,15 @@ describe('UiSelectComponent', () => {
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('follows the projected options as they change', async () => {
+    await set('options', [{ value: 'a', label: 'Alpha' }]);
+    await open();
+    expect(optionEls().map((el) => el.textContent?.trim())).toEqual(['Alpha']);
+
+    await set('options', [...OPTIONS, { value: 'a', label: 'Alpha' }]);
+    expect(optionEls().length).toBe(OPTIONS.length + 1);
+  });
+
   it('marks the chosen option and opens with it highlighted', async () => {
     await set('value', 'lfe');
     await open();
@@ -153,6 +193,8 @@ describe('UiSelectComponent', () => {
     expect(optionEls()[0].getAttribute('aria-selected')).toBe('false');
     expect(activeLabel()).toBe('LF Energy');
     expect(optionEls()[3].hasAttribute('data-highlighted')).toBe(true);
+    expect(optionEls()[3].querySelector('[data-testid="ui-option-check"]')).not.toBeNull();
+    expect(optionEls()[0].querySelector('[data-testid="ui-option-check"]')).toBeNull();
   });
 
   it('opens on the first option when nothing is chosen', async () => {
@@ -344,7 +386,7 @@ describe('UiSelectComponent', () => {
 
   it('closes and reports touched when focus leaves', async () => {
     const touched = vi.fn();
-    fixture.componentInstance.registerOnTouched(touched);
+    fixture.componentInstance.select().registerOnTouched(touched);
     trigger().focus();
     await open();
     trigger().dispatchEvent(new FocusEvent('blur'));
@@ -410,6 +452,14 @@ describe('UiSelectComponent', () => {
     expect(trigger().className).toContain('label-12');
   });
 
+  it('rounds the trigger fully as a pill', async () => {
+    expect(trigger().className).not.toContain('rounded-ui-full');
+
+    await set('pill', true);
+    expect(trigger().className).toContain('rounded-ui-full');
+    expect(trigger().className).toContain('px-[16px]');
+  });
+
   it('is out of the tab order, ignores the keyboard and the pointer, and drops the hover ring when disabled', async () => {
     expect(trigger().className).toContain('edge-hover');
 
@@ -424,17 +474,197 @@ describe('UiSelectComponent', () => {
   });
 
   it('gives each instance its own ids', () => {
-    const other = TestBed.createComponent(UiSelectComponent);
+    const other = create('basic');
     other.detectChanges();
 
     expect((other.nativeElement as HTMLElement).querySelector('[role="combobox"]')?.id).not.toBe(trigger().id);
   });
 
-  describe('with a reactive form control', () => {
-    let formFixture: ComponentFixture<FormHostComponent>;
+  describe('with rich options, groups and a value template', () => {
+    let richFixture: ComponentFixture<SelectHostComponent>;
+
+    const richTrigger = (): HTMLElement => (richFixture.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
+    const richPress = async (key: string): Promise<void> => {
+      richTrigger().dispatchEvent(new KeyboardEvent('keydown', { key, keyCode: KEY_CODES[key], bubbles: true, cancelable: true }));
+      await richFixture.whenStable();
+    };
+    const richActive = (): string | undefined => document.getElementById(richTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim();
 
     beforeEach(async () => {
-      formFixture = TestBed.createComponent(FormHostComponent);
+      richFixture = create('rich');
+      await richFixture.whenStable();
+    });
+
+    it('renders the projected content as the row, and the label when there is none', async () => {
+      richTrigger().click();
+      await richFixture.whenStable();
+
+      expect(optionEls()[0].querySelector('[data-testid="rich-row"]')?.textContent).toContain('Maintainer');
+      expect(optionEls()[2].textContent?.trim()).toBe('Nuno Esteves');
+    });
+
+    it('exposes each group as a role="group" named by its title, and hides separators', async () => {
+      richTrigger().click();
+      await richFixture.whenStable();
+      const groups = Array.from(document.querySelectorAll<HTMLElement>('[role="group"]'));
+      const title = (group: HTMLElement): string | undefined => document.getElementById(group.getAttribute('aria-labelledby') ?? '')?.textContent?.trim();
+
+      expect(groups.map(title)).toEqual(['Team', 'Guests']);
+      expect(groups[0].querySelectorAll('[role="option"]').length).toBe(3);
+      document.querySelectorAll('[data-testid="ui-option-separator"]').forEach((separator) => expect(separator.getAttribute('aria-hidden')).toBe('true'));
+      expect(document.querySelectorAll('[data-testid="ui-option-separator"]').length).toBe(2);
+    });
+
+    it('keeps one arrow-key order across groups, skipping the disabled option', async () => {
+      await richPress('ArrowDown');
+      expect(richActive()).toContain('Maria Santos');
+
+      await richPress('ArrowDown');
+      expect(richActive()).toBe('Nuno Esteves');
+
+      await richPress('ArrowDown');
+      expect(richActive()).toBe('Ana Costa');
+
+      await richPress('ArrowDown');
+      expect(richActive()).toBe('Nobody');
+
+      await richPress('Home');
+      expect(richActive()).toContain('Maria Santos');
+    });
+
+    it('types ahead over projected options by their label, not their content', async () => {
+      await richPress('ArrowDown');
+      richTrigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, bubbles: true, cancelable: true }));
+      await richFixture.whenStable();
+
+      expect(richActive()).toBe('Ana Costa');
+    });
+
+    it('picks a projected option and shows the value template for it', async () => {
+      await richPress('ArrowDown');
+      await richPress('ArrowDown');
+      await richPress('Enter');
+
+      expect(richFixture.componentInstance.value()).toBe('nuno');
+      expect((richFixture.nativeElement as HTMLElement).querySelector('[data-testid="custom-value"]')?.textContent).toContain('Owner: Nuno Esteves (nuno)');
+    });
+  });
+
+  describe('with prefix and header slots', () => {
+    let slotsFixture: ComponentFixture<SelectHostComponent>;
+
+    const slotsTrigger = (): HTMLElement => (slotsFixture.nativeElement as HTMLElement).querySelector('[role="combobox"]') as HTMLElement;
+    const search = (): HTMLInputElement | null => document.querySelector<HTMLInputElement>('[data-testid="search"]');
+    const rows = (): string[] => optionEls().map((el) => el.textContent?.trim() ?? '');
+    const keydown = async (target: HTMLElement, key: string): Promise<KeyboardEvent> => {
+      const event = new KeyboardEvent('keydown', { key, keyCode: KEY_CODES[key], bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      await slotsFixture.whenStable();
+      return event;
+    };
+
+    beforeEach(async () => {
+      slotsFixture = create('slots');
+      await slotsFixture.whenStable();
+      slotsTrigger().focus();
+    });
+
+    it('shows prefix content inside the trigger, before the value', () => {
+      const prefix = slotsTrigger().querySelector('[data-testid="prefix"]') as HTMLElement;
+
+      expect(prefix).not.toBeNull();
+      expect(slotsTrigger().firstElementChild).toBe(prefix);
+    });
+
+    it('puts the header content above the list and moves focus to its field on open', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+
+      expect(document.querySelector('[data-testid="ui-select-header"]')?.contains(search())).toBe(true);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')?.contains(search())).toBe(false);
+      expect(document.activeElement).toBe(search());
+      expect(slotsTrigger().getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('lets the page filter the options from the search field', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      (search() as HTMLInputElement).value = 'sig';
+      search()?.dispatchEvent(new Event('input', { bubbles: true }));
+      await slotsFixture.whenStable();
+
+      expect(rows()).toEqual(['Sigstore']);
+    });
+
+    it('closes on Escape from the field and returns focus to the trigger', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      const event = await keydown(search() as HTMLElement, 'Escape');
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).toBeNull();
+      expect(document.activeElement).toBe(slotsTrigger());
+    });
+
+    it('hands focus back to the trigger on Arrow Down, keeping the list open', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      await keydown(search() as HTMLElement, 'ArrowDown');
+
+      expect(document.activeElement).toBe(slotsTrigger());
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+      expect(slotsTrigger().getAttribute('aria-activedescendant')).toBeTruthy();
+    });
+
+    it('stays open while focus moves between the trigger and the header, and closes when it leaves both', async () => {
+      const touched = vi.fn();
+      slotsFixture.componentInstance.select().registerOnTouched(touched);
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+
+      slotsTrigger().dispatchEvent(new FocusEvent('blur', { relatedTarget: search() }));
+      await slotsFixture.whenStable();
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+      expect(touched).not.toHaveBeenCalled();
+
+      search()?.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: slotsTrigger() }));
+      await slotsFixture.whenStable();
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
+
+      search()?.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.querySelector('[data-testid="outside"]') }));
+      await slotsFixture.whenStable();
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).toBeNull();
+      expect(touched).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets the field take a click but keeps focus when the header padding is clicked', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      const onField = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      const onPadding = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      search()?.dispatchEvent(onField);
+      document.querySelector('[data-testid="ui-select-header"]')?.dispatchEvent(onPadding);
+
+      expect(onField.defaultPrevented).toBe(false);
+      expect(onPadding.defaultPrevented).toBe(true);
+    });
+
+    it('returns focus to the trigger after a pick made while focus is in the header', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      optionEls()[1].click();
+      await slotsFixture.whenStable();
+
+      expect(slotsFixture.componentInstance.value()).toBe('envoy');
+      expect(document.activeElement).toBe(slotsTrigger());
+    });
+  });
+
+  describe('with a reactive form control', () => {
+    let formFixture: ComponentFixture<SelectHostComponent>;
+
+    beforeEach(async () => {
+      formFixture = create('form');
       await formFixture.whenStable();
     });
 
