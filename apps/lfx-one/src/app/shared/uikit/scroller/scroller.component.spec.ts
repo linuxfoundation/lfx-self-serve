@@ -189,6 +189,20 @@ describe('UiScrollerComponent', () => {
     expect(document.activeElement).toBe(viewport());
   });
 
+  it('leaves focus on a projected button when the viewport scrolls and the scroller has no buttons of its own', async () => {
+    fixture.componentRef.setInput('buttons', false);
+    await fixture.whenStable();
+    const projected = document.createElement('button');
+    viewport().appendChild(projected);
+    projected.focus();
+
+    setMetrics({ scrollLeft: 200, scrollWidth: 800, clientWidth: 300 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(projected);
+  });
+
   it('moves one item per click, using the spacing between the first two items', async () => {
     setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
     const items = viewport().children;

@@ -34,13 +34,12 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
   styleUrl: './scroller.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'relative block',
+    class: 'relative block min-w-0', // min-w-0: lets the rail shrink and scroll inside a flex or grid parent
     'data-testid': 'ui-scroller',
   },
 })
 export class UiScrollerComponent {
   private readonly destroyRef = inject(DestroyRef);
-  private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** Accessible name of the scrollable region, such as "Projects". Also names the scroll buttons: "Previous Projects". */
   public readonly label = input.required<string>();
@@ -52,6 +51,8 @@ export class UiScrollerComponent {
   public readonly maxHeight = input<number>(220);
 
   protected readonly viewport = viewChild.required<ElementRef<HTMLElement>>('viewport');
+  protected readonly prevButton = viewChild<ElementRef<HTMLButtonElement>>('prevBtn');
+  protected readonly nextButton = viewChild<ElementRef<HTMLButtonElement>>('nextBtn');
   protected readonly canScrollStart = signal(false);
   protected readonly canScrollEnd = signal(false);
 
@@ -105,14 +106,6 @@ export class UiScrollerComponent {
     el.scrollBy({ left: sign * step, behavior: reduced ? 'auto' : 'smooth' });
   }
 
-  /** When the buttons are about to be removed because nothing overflows any more, a focused button hands focus to the viewport. */
-  private keepFocusOnViewport(): void {
-    const active = document.activeElement;
-    if (!this.showButtons() && active instanceof HTMLButtonElement && this.hostEl.nativeElement.contains(active)) {
-      this.viewport().nativeElement.focus();
-    }
-  }
-
   private initViewportClasses(): Signal<string> {
     return computed(() => {
       // Exact px: 12px gap and 2px padding are library steps below the ui spacing scale.
@@ -147,7 +140,16 @@ export class UiScrollerComponent {
     // shortcut: native button styled like the library's circle button. revisit: when lfx-ui-button realigns to the library, swap to it.
     return computed(
       () =>
-        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-border motion-reduce:transition-none'
+        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-border aria-disabled:focus-visible:shadow-focus motion-reduce:transition-none'
     );
+  }
+
+  /** When the scroller's own buttons are about to be removed because nothing overflows any more, focus moves to the viewport. */
+  private keepFocusOnViewport(): void {
+    const active = document.activeElement;
+    const ownButtons = [this.prevButton()?.nativeElement, this.nextButton()?.nativeElement];
+    if (!this.showButtons() && ownButtons.some((button) => button === active)) {
+      this.viewport().nativeElement.focus();
+    }
   }
 }

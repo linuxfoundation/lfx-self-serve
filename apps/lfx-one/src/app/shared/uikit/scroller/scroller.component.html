@@ -3,6 +3,7 @@
 
 @if (showButtons()) {
   <button
+    #prevBtn
     type="button"
     [class]="buttonClasses() + ' -left-[14px]'"
     [attr.aria-disabled]="!canScrollStart() || null"
@@ -13,7 +14,7 @@
   </button>
 }
 <!-- The focus ring sits on this wrapper because the viewport's fade mask would clip it. -->
-<div class="[&:has(:focus-visible)]:shadow-focus" data-testid="ui-scroller-frame">
+<div class="[&:has(>[role=region]:focus-visible)]:shadow-focus" data-testid="ui-scroller-frame">
   <div
     #viewport
     [class]="viewportClasses()"
@@ -30,6 +31,7 @@
 </div>
 @if (showButtons()) {
   <button
+    #nextBtn
     type="button"
     [class]="buttonClasses() + ' -right-[14px]'"
     [attr.aria-disabled]="!canScrollEnd() || null"
