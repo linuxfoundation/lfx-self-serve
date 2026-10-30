@@ -231,3 +231,6 @@ export interface UiToastRef {
   /** Removes the toast now. Does nothing if it is already gone. */
   dismiss(): void;
 }
+
+/** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
+export type UiSplitButtonVariant = 'primary' | 'secondary';

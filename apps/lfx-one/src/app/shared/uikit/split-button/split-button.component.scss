@@ -1,0 +1,11 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// shortcut: hover/active mixes spelled out with var(), matching lfx-ui-button. revisit: when the library ships hover/active mix tokens.
+.split-chevron-primary:hover {
+  background-color: color-mix(in srgb, var(--ui-accent-500) 86%, var(--ui-slate-900));
+}
+
+.split-chevron-primary:active {
+  background-color: color-mix(in srgb, var(--ui-accent-500) 76%, var(--ui-slate-900));
+}
