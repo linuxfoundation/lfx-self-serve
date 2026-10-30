@@ -47,6 +47,8 @@ Both forms resolve via the `apps/lfx-one/tsconfig.json` `paths` mapping above, n
 
 **Rule: code that runs outside Angular's own runtime (Playwright specs/helpers under `apps/lfx-one/e2e/`, standalone Node scripts, etc.) must deep-import the specific `.utils.ts` file it needs, not `@lfx-one/shared/utils`,** even when the barrel already re-exports the symbol — this is a second sanctioned case for deep imports, alongside "the barrel doesn't re-export it."
 
+The pure vote participation and result shaping live in `utils/vote-participation.utils.ts` and `utils/vote-results.utils.ts`, which import no `@angular/*` or `date-fns` and so load in plain Node; `vote.utils.ts` re-exports them, so existing imports are unchanged. `utils/vote-participation.fixtures.json` is the contract for the participation rules: its spec runs it here, and lfx-mcp#193 (Go) runs the same file rather than sharing code.
+
 `@lfx-one/shared/server` is the separate public entry point for Node schema consumers. It exports validation and neutral document/ranking helpers without loading the browser `utils` barrel. The root and browser category barrels must not re-export it.
 
 ## What Goes Where
