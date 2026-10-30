@@ -16,6 +16,7 @@ import {
   MOCK_CATEGORY_ROWS,
   MOCK_SUMMARY,
   ORG_ROI_URL,
+  skipUnlessLfStaff,
   skipWhenAuthMissing,
   stubOrgLensContext,
   SUB_THRESHOLD_CATEGORY_COUNT,
@@ -407,17 +408,15 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
     await stubOrgLensContext(page, { hasAccess: true });
     await page.route('**/api/user/personas*', (route) =>
-      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
+      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false, isLFStaff: true })
     );
     await page.route('**/api/nav/org-items*', (route) => fulfillJson(route, { items: [], next_page_token: null, upstream_failed: false, total: 0 }));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
+    await skipUnlessLfStaff(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_ROI_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/roi')) {
-      test.skip(true, 'org-lens-roi-enabled flag appears off — /org/roi redirected away');
-    }
 
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);

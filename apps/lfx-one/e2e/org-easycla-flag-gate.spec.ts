@@ -13,8 +13,8 @@
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
  *
- * `org-lens-cla-m3-enabled` needs no LaunchDarkly targeting — both cases pin it through the same
- * `stubFeatureFlags` localStorage override the ROI specs use (GH-1655). Pinning is what makes the
+ * `org-lens-cla-m3-enabled` needs no LaunchDarkly targeting — both cases pin it through the
+ * `stubFeatureFlags` localStorage override (GH-1655, in `helpers/org-roi.helper`). Pinning is what makes the
  * flag-off case meaningful: an unpinned flag is already false, so the test would pass against a
  * route that was never guarded.
  */

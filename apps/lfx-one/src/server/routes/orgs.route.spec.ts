@@ -28,6 +28,8 @@ const checkSingleAccessStrict = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
 const resolveOrgLensEdit = vi.fn();
+let lfStaffStub = false;
+const checkLFStaff = vi.fn(async () => lfStaffStub);
 
 // The read gate asks the authorizer for `b2b_org:<uid>#auditor` alongside the roster; unmocked, the
 // real service would hit the bare `proxyRequest` stub and turn every ungranted case into a 503.
@@ -55,6 +57,8 @@ vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit })
 // Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
 let impersonatingStub = false;
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
+// The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
+vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -92,6 +96,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   impersonatingStub = false;
+  lfStaffStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
 });
@@ -182,6 +187,43 @@ describe('orgs router — Org Lens read gate', () => {
     const res = await fetch(`${baseUrl}/api/orgs/me/role-grants`);
 
     expect(res.status).not.toBe(403);
+  });
+});
+
+describe('orgs router — ROI Metrics LF-staff gate', () => {
+  const ROI_PATHS = [
+    '/lens/roi/summary',
+    '/lens/roi/coverage',
+    '/lens/roi/annual',
+    '/lens/roi/investment-breakdown',
+    '/lens/roi/projects',
+    '/lens/roi/projects/synthetic-project/annual',
+    '/lens/roi/projects/synthetic-project',
+  ];
+
+  // GRANTED passes the `/lens` read gate, so a 403 here can only come from the LF-staff gate.
+  it.each(ROI_PATHS)('refuses %s to a non-staff caller', async (path) => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}${path}`);
+
+    expect(res.status).toBe(403);
+    expect(checkLFStaff).toHaveBeenCalled();
+  });
+
+  it('admits LF staff past the gate to the org read gate', async () => {
+    lfStaffStub = true;
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/roi/summary`);
+
+    expect(res.status).not.toBe(403);
+    expect(getAccessAwareOrgs).toHaveBeenCalled();
+  });
+
+  it('refuses LF staff acting as another user', async () => {
+    lfStaffStub = true;
+    impersonatingStub = true;
+
+    expect((await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/roi/summary`)).status).toBe(403);
+    expect(checkLFStaff).not.toHaveBeenCalled();
   });
 });
 
