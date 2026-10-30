@@ -1,18 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { argsToTemplate, type Meta, type StoryObj } from '@storybook/angular';
+import { argsToTemplate, moduleMetadata, type Meta, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiProjectBannerComponent } from './project-banner.component';
 
-// shortcut: native button styled like the small secondary button. revisit: when lfx-ui-button realigns to the library, swap to it.
-// Exact px, not rem; 14px root.
-const action = (label: string): string =>
-  `<button banner-action type="button" class="inline-flex h-ui-small shrink-0 items-center rounded-ui-xs bg-ui-background-100 px-[10px] button-14 text-ui-neutral-900 edge">${label}</button>`;
+const action = (label: string): string => `<lfx-ui-button banner-action variant="secondary" size="small" class="shrink-0">${label}</lfx-ui-button>`;
 
 const meta: Meta<UiProjectBannerComponent> = {
   title: 'Uikit/ProjectBanner',
   component: UiProjectBannerComponent,
+  decorators: [moduleMetadata({ imports: [UiButtonComponent] })],
   args: { variant: 'default', icon: '', announce: false },
   render: (args) => ({
     props: args,
