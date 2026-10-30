@@ -11,7 +11,7 @@ import { VoteService } from '@services/vote.service';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, EMPTY, finalize, Subscription, switchMap } from 'rxjs';
+import { catchError, EMPTY, finalize, Subject, Subscription, switchMap, takeUntil } from 'rxjs';
 
 /**
  * "Send ballots now" (#4363): emails each member who hasn't voted a personal, login-free ballot link. Writer-only and
@@ -51,6 +51,8 @@ export class VoteSendBallotsComponent {
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
   private returnFocusTo: HTMLElement | null = null;
   private pendingRecipients: Subscription | null = null;
+  /** Fires when a click starts, dropping a prefetch that is still loading: the click reads the list itself. */
+  private readonly prefetchCancel = new Subject<void>();
   private focusTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmingTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -63,6 +65,7 @@ export class VoteSendBallotsComponent {
           this.remaining.set(null);
           if (!isPlatformBrowser(this.platformId)) return EMPTY;
           return this.voteService.getReminderRecipients(uid).pipe(
+            takeUntil(this.prefetchCancel),
             catchError((error: unknown) => {
               console.error('Failed to read the voter list for the Send ballots state', error);
               return EMPTY;
@@ -71,7 +74,10 @@ export class VoteSendBallotsComponent {
         }),
         takeUntilDestroyed()
       )
-      .subscribe((recipients) => this.remaining.set(recipients.length));
+      // Only while still unknown: a click's own answer is newer than this one and must not be overwritten by it.
+      .subscribe((recipients) => {
+        if (this.remaining() === null) this.remaining.set(recipients.length);
+      });
 
     inject(DestroyRef).onDestroy(() => {
       this.clearCooldownTimer();
@@ -98,6 +104,7 @@ export class VoteSendBallotsComponent {
     // The uid is captured now: if the parent switches to another vote while a request or the dialog is pending, the
     // answer is dropped so a send can never go to a different vote than the one clicked.
     const uid = this.voteUid();
+    this.prefetchCancel.next();
     // Read before the button disables itself for the request: a disabled button gives up focus, so the dialog's opener
     // would no longer be the active element by the time the answer arrives.
     const active = this.doc.activeElement;

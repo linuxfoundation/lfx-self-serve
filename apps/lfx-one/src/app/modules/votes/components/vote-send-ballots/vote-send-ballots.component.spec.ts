@@ -273,6 +273,26 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     });
   });
 
+  it('keeps the button disabled when the prefetch answers after a click found nobody left (#4744)', () => {
+    fixture.destroy();
+    const prefetch = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReset();
+    getReminderRecipients.mockReturnValueOnce(prefetch).mockReturnValue(of([]));
+    fixture = TestBed.createComponent(VoteSendBallotsComponent);
+    fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.detectChanges();
+
+    button().click();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+
+    prefetch.next(recipients(3));
+    prefetch.complete();
+    fixture.detectChanges();
+
+    expect(button().disabled).toBe(true);
+  });
+
   it('leaves the button enabled when the list cannot be read up front', () => {
     fixture.destroy();
     getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
