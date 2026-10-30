@@ -190,3 +190,44 @@ export type UiChoiceboxColumns = 1 | 2 | 3;
 
 /** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
 export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed. */
+export type UiToastVariant = 'default' | 'success' | 'warning' | 'error';
+
+/** An action button on a uikit toast, such as Undo. Running it dismisses the toast. */
+export interface UiToastAction {
+  /** Button text, in Title Case. */
+  label: string;
+  /** Called when the button is pressed. */
+  run: () => void;
+  /** Gives the button the accent fill. Only honoured on the `default` variant; on coloured toasts every action is a quiet text button. */
+  primary?: boolean;
+}
+
+/** What `UiToastService.show` needs to put a toast on screen. */
+export interface UiToastConfig {
+  /** The message: a short sentence about something that just happened. */
+  message: string;
+  /** Defaults to `default`. */
+  variant?: UiToastVariant;
+  /** Up to two action buttons; any more are ignored. */
+  actions?: UiToastAction[];
+  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 8000 with actions, and never for `error`. */
+  duration?: number;
+  /** Shows the dismiss button. Defaults to `true`. */
+  dismissible?: boolean;
+}
+
+/** A toast in the stack, as `UiToastService` holds it. */
+export interface UiToastItem extends UiToastConfig {
+  /** Unique id, used to dismiss the toast. */
+  id: string;
+}
+
+/** Handle returned by `UiToastService.show`. */
+export interface UiToastRef {
+  /** The toast's unique id. */
+  id: string;
+  /** Removes the toast now. Does nothing if it is already gone. */
+  dismiss(): void;
+}

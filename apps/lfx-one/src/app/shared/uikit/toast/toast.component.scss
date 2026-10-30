@@ -1,0 +1,16 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Short spring on enter, as in the library; no motion when the user asks for less.
+@media (prefers-reduced-motion: no-preference) {
+  :host {
+    animation: toast-in var(--ui-duration-slow) var(--ui-ease);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
