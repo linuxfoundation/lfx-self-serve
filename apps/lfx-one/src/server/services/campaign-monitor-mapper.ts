@@ -7,10 +7,16 @@ import {
   ACCOUNT_MONITOR_METRICS_DISABLED_CODE,
   ACCOUNT_MONITOR_NO_CONNECTION_CODE,
   ACCOUNT_MONITOR_UNSUPPORTED_UPSTREAM_MESSAGE,
+  ERROR_CODES,
   META_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  parseCampaignName,
+  VALID_CAMPAIGN_STATUSES,
 } from '@lfx-one/shared/constants';
 import type {
   AccountMonitorConflictReason,
+  CampaignActionItem,
+  CampaignMetrics,
+  CampaignMonitorResponse,
   CampaignServiceAccountMonitor,
   CampaignServiceAccountMonitorCampaign,
   CampaignServiceConnection,
@@ -24,6 +30,7 @@ import type {
   LinkedInMonitorResponse,
   MetaMonitorResponse,
   MonitorConnectionAccount,
+  MonitorConnectionState,
   RedditMonitorResponse,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
@@ -162,6 +169,114 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
         creativesMeasured: false,
       };
     }),
+  };
+}
+
+/**
+ * campaign-service's Google Ads account monitor as the Google Monitor panel and the Optimize tab
+ * consume it (`CampaignMonitorResponse`, the shape the legacy BFF read of the shared account builds).
+ *
+ * What the legacy read derived from the campaign name is derived the same way here
+ * (`parseCampaignName`): `shortName`, `eventName`, `adFormat` and `targeting`. Google reports no
+ * flight dates, so `startDate`/`endDate` are the read window, as on the legacy path, ending on the
+ * day of `pulledAt`. `avgCpc` is computed from spend and clicks as the legacy path computes it.
+ *
+ * A row campaign-service could not read or pace keeps its `fetchFailed` / `pacingUnknown` flags, and
+ * its `pacingPct` is 0 rather than a figure nobody measured. `pacingLabel` is required by the legacy
+ * shape, so such a row carries `normal`; the flags are what the panel reads, never the label.
+ *
+ * Action items are campaign-service's own, one per finding. The legacy shape groups by event and
+ * carries the campaign's figures, so each item takes them from the campaign it names; an
+ * account-wide finding names none and carries zeros.
+ */
+export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
+  const days = payload.days;
+  const endDate = pulledAt.slice(0, 10);
+  const start = new Date(`${endDate}T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  const startDate = start.toISOString().slice(0, 10);
+
+  const campaigns = (payload.campaigns ?? []).map((row): CampaignMetrics => {
+    const parsed = parseCampaignName(row.name);
+    const status = row.status.toLowerCase() as CampaignMetrics['status'];
+    const conversionsMeasured = typeof row.conversions === 'number';
+    const pacingTrusted = !row.pacing_unknown && !row.fetch_failed;
+    return {
+      name: row.name,
+      shortName: parsed.baseName || row.name,
+      eventName: parsed.baseName,
+      // A name outside the convention carries no ad format; campaign-service says whether it is Search,
+      // which is what the Optimize tab and the legacy rules read the format for.
+      adFormat: parsed.adFormat || (row.is_search_channel ? 'Search' : ''),
+      targeting: parsed.targeting,
+      status: VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown',
+      startDate,
+      endDate,
+      budgetDay: row.budget_day,
+      // The legacy path's figure: the daily budget over the window, which is what pacing is measured against.
+      totalBudget: row.budget_day * days,
+      spend: row.spend,
+      impressions: row.impressions,
+      clicks: row.clicks,
+      ctr: row.ctr,
+      avgCpc: row.clicks > 0 ? row.spend / row.clicks : 0,
+      conversions: conversionsMeasured ? (row.conversions as number) : 0,
+      pacingPct: pacingTrusted ? Math.round(row.pacing_pct) : 0,
+      pacingLabel: pacingTrusted ? row.pacing_label : 'normal',
+      campaignId: row.platform_campaign_id,
+      googleAdsUrl: row.campaign_url ?? '',
+      pacingUnknown: row.pacing_unknown,
+      fetchFailed: row.fetch_failed,
+      conversionsMeasured,
+    };
+  });
+
+  const byId = new Map(campaigns.map((campaign) => [campaign.campaignId, campaign]));
+  const actionItems = (payload.action_items ?? []).map((item): CampaignActionItem => {
+    const campaign = item.campaign_id ? byId.get(item.campaign_id) : undefined;
+    if (campaign) {
+      return {
+        eventName: campaign.eventName,
+        campaigns: [campaign.shortName],
+        campaignUrls: campaign.googleAdsUrl ? { [campaign.shortName]: campaign.googleAdsUrl } : {},
+        priority: item.priority,
+        issue: item.issue,
+        action: item.action,
+        metrics: {
+          spend: campaign.spend,
+          budget: campaign.budgetDay,
+          pacingPct: campaign.pacingPct,
+          impressions: campaign.impressions,
+          clicks: campaign.clicks,
+          conversions: campaign.conversions,
+        },
+      };
+    }
+    const named = item.campaign_name ? parseCampaignName(item.campaign_name).baseName || item.campaign_name : '';
+    return {
+      eventName: named,
+      campaigns: item.campaign_name ? [item.campaign_name] : [],
+      campaignUrls: {},
+      priority: item.priority,
+      issue: item.issue,
+      action: item.action,
+      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0 },
+    };
+  });
+
+  return {
+    pulledAt,
+    dateRange: { mode: `last_${days}_days` },
+    campaigns,
+    accountTotals: {
+      budgetDay: campaigns.reduce((sum, campaign) => sum + campaign.budgetDay, 0),
+      spend: payload.totals.spend,
+      impressions: payload.totals.impressions,
+      clicks: payload.totals.clicks,
+      conversions: typeof payload.totals.conversions === 'number' ? payload.totals.conversions : 0,
+      conversionsMeasured: typeof payload.totals.conversions === 'number',
+    },
+    actionItems,
   };
 }
 
@@ -377,6 +492,43 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
     originalError: error,
     errorBody: isConflictReason(reason) ? { error: reason } : undefined,
   });
+}
+
+/**
+ * Why the Google Ads monitor cannot read through this project's own connection (#4526), as the error
+ * its panel shows. The Google panel has no account picker, so the route resolves the account from the
+ * connection itself and has no connection notice to fall back on: each state becomes a sentence the
+ * panel prints.
+ *
+ * - `no_connection` is the same 404 and `connection_not_found` code an upstream "no connection"
+ *   answer gets in `toAccountMonitorClientError`, so both ways of learning it read alike.
+ * - `no_account` is a 409: the connection exists, but there is no account to read until one is bound.
+ * - `unavailable` is a 503 `SERVICE_ADVISORY`, the one 5xx code whose text the panel shows, so the
+ *   operator sees a retry prompt rather than the generic heading repeated.
+ */
+export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionState, 'connected'>, operation: string): MicroserviceError {
+  const context = { operation, service: 'campaign_controller' };
+  switch (state) {
+    case 'no_connection':
+      return new MicroserviceError('This project has no Google Ads connection of its own to read the account with.', 404, getCodeForStatus(404), {
+        ...context,
+        errorBody: { error: ACCOUNT_MONITOR_NO_CONNECTION_CODE },
+      });
+    case 'no_account':
+      return new MicroserviceError(
+        "This project's Google Ads connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.",
+        409,
+        getCodeForStatus(409),
+        context
+      );
+    default:
+      return new MicroserviceError(
+        "This project's Google Ads connection could not be read just now. Please try again shortly.",
+        503,
+        ERROR_CODES.SERVICE_ADVISORY,
+        context
+      );
+  }
 }
 
 /**

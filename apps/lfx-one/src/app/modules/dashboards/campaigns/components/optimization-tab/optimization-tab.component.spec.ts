@@ -2224,6 +2224,57 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
 
   const q = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
+  /**
+   * The campaign-service Google read (#4526) can return rows it could not read or pace, with zero
+   * placeholders: an unread row must not rank as a 0% CTR, and unknown pacing must not read as 0%.
+   */
+  it('leaves unread display campaigns out and shows unknown pacing as Unknown', () => {
+    fixture.detectChanges();
+    const display = (campaignId: string, overrides: Record<string, unknown>): Record<string, unknown> => ({
+      name: campaignId,
+      shortName: campaignId,
+      eventName: 'KubeCon',
+      adFormat: 'Display',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId,
+      googleAdsUrl: '',
+      ...overrides,
+    });
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void };
+      displayCampaigns: () => { campaignId: string; displayPacingPct: number; displayPacingText: string }[];
+    };
+    instance.monitorData.set({
+      pulledAt: '2026-08-30T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        display('read', { pacingPct: 120 }),
+        display('unread', { fetchFailed: true, ctr: 0, pacingPct: 0 }),
+        display('unpaced', { pacingUnknown: true, pacingPct: 0, ctr: 5 }),
+      ],
+      accountTotals: { budgetDay: 300, impressions: 3000, clicks: 120, spend: 75, conversions: 3 },
+      actionItems: [],
+    });
+
+    expect(instance.displayCampaigns().map((c) => [c.campaignId, c.displayPacingPct, c.displayPacingText])).toEqual([
+      ['read', 100, '120%'],
+      ['unpaced', 0, 'Unknown'],
+    ]);
+  });
+
   it('does not claim ALL keywords are clean when the set was capped', () => {
     renderKeywords(true);
 

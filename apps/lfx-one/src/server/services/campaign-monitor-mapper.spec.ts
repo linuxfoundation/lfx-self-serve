@@ -7,11 +7,14 @@ import type {
   CampaignServiceConnection,
   CampaignServiceHubSpotEmailMonitor,
 } from '@lfx-one/shared/interfaces';
+import { ERROR_CODES } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import {
   toAccountMonitorClientError,
+  toGoogleMonitorConnectionError,
+  toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
@@ -276,6 +279,214 @@ describe('toAccountMonitorClientError', () => {
 
     expect(toAccountMonitorClientError(transport, 'Meta Ads', 'meta_monitor')).toBe(transport);
     expect(toAccountMonitorClientError(plain, 'Meta Ads', 'meta_monitor')).toBe(plain);
+  });
+});
+
+describe('toGoogleMonitorResponse', () => {
+  const GOOGLE_NAME = 'Events | KubeCon NA 2026 | NA | Conversions | Intent | Search | CNCF | MoFU | 2026-09-01';
+
+  function googleRow(overrides: Partial<CampaignServiceAccountMonitorCampaign> = {}): CampaignServiceAccountMonitorCampaign {
+    return row({
+      platform_campaign_id: '24183781329',
+      name: GOOGLE_NAME,
+      status: 'ENABLED',
+      spend: 1890,
+      impressions: 48_200,
+      clicks: 3110,
+      ctr: 6.45,
+      conversions: 12.5,
+      budget_day: 150,
+      total_budget: 0,
+      start_date: '',
+      end_date: '',
+      is_search_channel: true,
+      pacing_pct: 41.6,
+      pacing_label: 'underspending',
+      campaign_url: 'https://ads.google.com/aw/campaigns?campaignId=24183781329',
+      ...overrides,
+    });
+  }
+
+  function googlePayload(overrides: Partial<CampaignServiceAccountMonitor> = {}): CampaignServiceAccountMonitor {
+    return payload({
+      account_id: '8666746580',
+      days: 30,
+      campaigns: [googleRow()],
+      action_items: [{ campaign_id: '24183781329', campaign_name: GOOGLE_NAME, priority: 'MED', issue: 'Only spending 42%', action: 'Broaden targeting' }],
+      totals: { spend: 1890, impressions: 48_200, clicks: 3110, conversions: 12.5, campaign_count: 1 },
+      ...overrides,
+    });
+  }
+
+  it('maps a row onto the legacy Google fields, deriving the name parts as the legacy read did', () => {
+    const result = toGoogleMonitorResponse(googlePayload(), PULLED_AT);
+
+    expect(result.pulledAt).toBe(PULLED_AT);
+    expect(result.dateRange).toEqual({ mode: 'last_30_days' });
+    expect(result.campaigns).toEqual([
+      {
+        name: GOOGLE_NAME,
+        shortName: 'KubeCon NA 2026',
+        eventName: 'KubeCon NA 2026',
+        adFormat: 'Search',
+        targeting: 'Intent',
+        status: 'enabled',
+        // The 30-day read window ending on the day of PULLED_AT (2026-10-13), inclusive.
+        startDate: '2026-09-14',
+        endDate: '2026-10-13',
+        budgetDay: 150,
+        totalBudget: 4500,
+        spend: 1890,
+        impressions: 48_200,
+        clicks: 3110,
+        ctr: 6.45,
+        avgCpc: 1890 / 3110,
+        conversions: 12.5,
+        pacingPct: 42,
+        pacingLabel: 'underspending',
+        campaignId: '24183781329',
+        googleAdsUrl: 'https://ads.google.com/aw/campaigns?campaignId=24183781329',
+        pacingUnknown: false,
+        fetchFailed: false,
+        conversionsMeasured: true,
+      },
+    ]);
+    expect(result.accountTotals).toEqual({ budgetDay: 150, spend: 1890, impressions: 48_200, clicks: 3110, conversions: 12.5, conversionsMeasured: true });
+  });
+
+  it('falls back to the whole name for a name outside the convention, and to unknown for an unrecognised status', () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: 'Brand campaign', status: 'SOMETHING_NEW', campaign_url: undefined })] }),
+      PULLED_AT
+    ).campaigns;
+
+    expect(campaign.shortName).toBe('Brand campaign');
+    expect(campaign.eventName).toBe('');
+    expect(campaign.status).toBe('unknown');
+    // No format in the name, so campaign-service's own Search flag decides it.
+    expect(campaign.adFormat).toBe('Search');
+    expect(campaign.googleAdsUrl).toBe('');
+  });
+
+  it('leaves the ad format empty for a name outside the convention that is not a Search campaign', () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: 'Brand display', is_search_channel: false })] }),
+      PULLED_AT
+    ).campaigns;
+    expect(campaign.adFormat).toBe('');
+  });
+
+  it("keeps the name's own ad format over campaign-service's Search flag", () => {
+    const [campaign] = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ name: GOOGLE_NAME.replace('| Search |', '| Display |') })] }),
+      PULLED_AT
+    ).campaigns;
+    expect(campaign.adFormat).toBe('Display');
+  });
+
+  it('reports an average CPC of 0, not a division by zero, for a row with no clicks', () => {
+    const [campaign] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ clicks: 0, spend: 0 })] }), PULLED_AT).campaigns;
+    expect(campaign.avgCpc).toBe(0);
+  });
+
+  it.each([
+    ['could not pace', { pacing_unknown: true }, 'pacingUnknown'],
+    ['could not read', { fetch_failed: true }, 'fetchFailed'],
+  ] as const)('zeroes pacing for a row campaign-service %s, and keeps the flag for the panel', (_label, overrides, flagName) => {
+    const [campaign] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ ...overrides, pacing_label: 'overspending' })] }), PULLED_AT).campaigns;
+
+    expect(campaign.pacingPct).toBe(0);
+    expect(campaign.pacingLabel).toBe('normal');
+    expect(campaign[flagName]).toBe(true);
+  });
+
+  it('marks unmeasured conversions as a placeholder on the row and on the totals', () => {
+    const result = toGoogleMonitorResponse(
+      googlePayload({ campaigns: [googleRow({ conversions: undefined })], totals: { spend: 1890, impressions: 48_200, clicks: 3110, campaign_count: 1 } }),
+      PULLED_AT
+    );
+
+    expect(result.campaigns[0].conversions).toBe(0);
+    expect(result.campaigns[0].conversionsMeasured).toBe(false);
+    expect(result.accountTotals.conversions).toBe(0);
+    expect(result.accountTotals.conversionsMeasured).toBe(false);
+  });
+
+  it("gives an action item its campaign's event, link and figures", () => {
+    const [item] = toGoogleMonitorResponse(googlePayload(), PULLED_AT).actionItems;
+
+    expect(item).toEqual({
+      eventName: 'KubeCon NA 2026',
+      campaigns: ['KubeCon NA 2026'],
+      campaignUrls: { 'KubeCon NA 2026': 'https://ads.google.com/aw/campaigns?campaignId=24183781329' },
+      priority: 'MED',
+      issue: 'Only spending 42%',
+      action: 'Broaden targeting',
+      metrics: { spend: 1890, budget: 150, pacingPct: 42, impressions: 48_200, clicks: 3110, conversions: 12.5 },
+    });
+  });
+
+  it('gives an account-wide action item no campaign and zero figures, and tolerates absent arrays', () => {
+    const accountWide = toGoogleMonitorResponse(
+      googlePayload({ action_items: [{ priority: 'LOW', issue: 'No conversions tracked', action: 'Add a conversion action' }] }),
+      PULLED_AT
+    );
+    expect(accountWide.actionItems[0]).toEqual({
+      eventName: '',
+      campaigns: [],
+      campaignUrls: {},
+      priority: 'LOW',
+      issue: 'No conversions tracked',
+      action: 'Add a conversion action',
+      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0 },
+    });
+
+    const empty = toGoogleMonitorResponse(
+      googlePayload({
+        campaigns: null as unknown as CampaignServiceAccountMonitorCampaign[],
+        action_items: null as unknown as CampaignServiceAccountMonitor['action_items'],
+        totals: { spend: 0, impressions: 0, clicks: 0, conversions: 0, campaign_count: 0 },
+      }),
+      PULLED_AT
+    );
+    expect(empty.campaigns).toEqual([]);
+    expect(empty.actionItems).toEqual([]);
+    expect(empty.accountTotals.budgetDay).toBe(0);
+  });
+
+  it('names a campaign the item points at but the rows do not carry, by its own name', () => {
+    const [item] = toGoogleMonitorResponse(
+      googlePayload({
+        action_items: [{ campaign_id: '999', campaign_name: GOOGLE_NAME.replace('KubeCon NA 2026', 'OSS EU 2026'), priority: 'HIGH', issue: 'x', action: 'y' }],
+      }),
+      PULLED_AT
+    ).actionItems;
+
+    expect(item.eventName).toBe('OSS EU 2026');
+    expect(item.campaignUrls).toEqual({});
+  });
+});
+
+describe('toGoogleMonitorConnectionError', () => {
+  it('answers a project with no Google Ads connection as the typed 404 a missing connection gets upstream', () => {
+    const error = toGoogleMonitorConnectionError('no_connection', 'campaign_monitor');
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()['error']).toBe('This project has no Google Ads connection of its own to read the account with.');
+    expect(error.toResponse()['upstreamCode']).toBe('connection_not_found');
+  });
+
+  it('answers a connection with no bound account as a 409 naming the remedy', () => {
+    const error = toGoogleMonitorConnectionError('no_account', 'campaign_monitor');
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['error']).toContain('no ad account bound to it');
+    expect(error.toResponse()['upstreamCode']).toBeUndefined();
+  });
+
+  it('answers an unreadable connection as a 503 advisory, so the panel shows its text', () => {
+    const error = toGoogleMonitorConnectionError('unavailable', 'campaign_monitor');
+    expect(error.statusCode).toBe(503);
+    expect(error.code).toBe(ERROR_CODES.SERVICE_ADVISORY);
+    expect(error.toResponse()['error']).toBe("This project's Google Ads connection could not be read just now. Please try again shortly.");
   });
 });
 

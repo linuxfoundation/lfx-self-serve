@@ -986,31 +986,54 @@ export class MonitoringTabComponent implements OnInit {
         clicks: this.formatNumber(totals.clicks),
         ctr: ctr === null ? '—' : this.formatPct(ctr),
         spend: this.formatCurrency(totals.spend),
-        conversions: this.formatNumber(totals.conversions),
+        // Only the campaign-service path sets the flag; the legacy read always measured conversions.
+        conversions: totals.conversionsMeasured === false ? 'Not measured' : this.formatNumber(totals.conversions),
       };
     });
   }
 
+  /**
+   * The Google Ads rows. On the campaign-service path (#4526) a row can arrive unread or unpaced; its
+   * zeros are placeholders, so they render as the other panels render them — every figure a dash for
+   * an unread row, "Unknown" pacing with an empty bar, "Not measured" conversions — never as a
+   * measured 0 or a red 0% bar. The legacy path sets none of the flags, so its rows are unchanged.
+   */
   private initGoogleCampaignRows(): Signal<GoogleMonitorCampaignRowView[]> {
     return computed(() =>
-      this.campaigns().map((campaign) => ({
-        campaignId: campaign.campaignId,
-        title: campaign.eventName || campaign.name,
-        name: campaign.name,
-        shortName: campaign.shortName,
-        startDate: this.formatDate(campaign.startDate),
-        endDate: this.formatDate(campaign.endDate),
-        totalBudget: this.formatCurrency(campaign.totalBudget),
-        spend: this.formatCurrency(campaign.spend),
-        impressions: this.formatNumber(campaign.impressions),
-        clicks: this.formatNumber(campaign.clicks),
-        ctr: this.formatPct(campaign.ctr),
-        avgCpc: this.formatCurrency(campaign.avgCpc),
-        conversions: this.formatNumber(campaign.conversions),
-        pacingBarClass: this.pacingClass(campaign),
-        pacingBarWidth: Math.min(campaign.pacingPct, 100),
-        pacingText: `${campaign.pacingPct}%`,
-      }))
+      this.campaigns().map((campaign) => {
+        const unread = campaign.fetchFailed === true;
+        const pacingKnown = !unread && campaign.pacingUnknown !== true;
+        let pacingText = 'Unknown';
+        if (unread) {
+          pacingText = '—';
+        } else if (pacingKnown) {
+          pacingText = `${campaign.pacingPct}%`;
+        }
+        let conversions = this.formatNumber(campaign.conversions);
+        if (unread) {
+          conversions = '—';
+        } else if (campaign.conversionsMeasured === false) {
+          conversions = 'Not measured';
+        }
+        return {
+          campaignId: campaign.campaignId,
+          title: campaign.eventName || campaign.name,
+          name: campaign.name,
+          shortName: campaign.shortName,
+          startDate: this.formatDate(campaign.startDate),
+          endDate: this.formatDate(campaign.endDate),
+          totalBudget: unread ? '—' : this.formatCurrency(campaign.totalBudget),
+          spend: unread ? '—' : this.formatCurrency(campaign.spend),
+          impressions: unread ? '—' : this.formatNumber(campaign.impressions),
+          clicks: unread ? '—' : this.formatNumber(campaign.clicks),
+          ctr: unread ? '—' : this.formatPct(campaign.ctr),
+          avgCpc: unread ? '—' : this.formatCurrency(campaign.avgCpc),
+          conversions,
+          pacingBarClass: pacingKnown ? this.pacingClass(campaign) : 'bg-gray-300',
+          pacingBarWidth: pacingKnown ? Math.min(campaign.pacingPct, 100) : 0,
+          pacingText,
+        };
+      })
     );
   }
 

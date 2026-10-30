@@ -3393,6 +3393,14 @@ export interface CampaignMetrics {
   pacingLabel: PacingLabel;
   campaignId: string;
   googleAdsUrl: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `pacingPct` is 0 and `pacingLabel` a
+   * placeholder whenever `pacingUnknown` or `fetchFailed` is set.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignActionItem {
@@ -3418,6 +3426,8 @@ export interface CampaignAccountTotals {
   impressions: number;
   clicks: number;
   conversions: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignMonitorResponse {
@@ -3739,13 +3749,17 @@ export interface CampaignServiceAudience {
 // campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
 //
 // campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
-// currency, `ctr` as a PERCENTAGE). The LinkedIn, Meta and Reddit routes map these onto the legacy
-// `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
-// legacy shape and return these unchanged.
+// currency, `ctr` as a PERCENTAGE). The Google Ads, LinkedIn, Meta and Reddit routes map these onto the legacy
+// `CampaignMonitorResponse` / `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the
+// Microsoft, X and HubSpot routes have no legacy shape and return these unchanged.
 // ---------------------------------------------------------------------------
 
-/** The ad platforms with an account-scoped monitor this app proxies (Google is not routed here). */
-export type CampaignServiceMonitorProvider = 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+/**
+ * The ad platforms with an account-scoped monitor this app proxies. `google-ads` is read by the Google
+ * Ads monitor route itself, from the project's own connection, and is not a Monitor tab connection
+ * picker (`MonitorConnectionPlatform`), because the Google panel has no account picker.
+ */
+export type CampaignServiceMonitorProvider = 'google-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
 
 export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
 

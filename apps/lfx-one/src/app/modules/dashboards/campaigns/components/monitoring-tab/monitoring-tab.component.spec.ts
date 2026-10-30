@@ -238,6 +238,78 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis-unavailable"]')).not.toBeNull();
   });
 
+  /**
+   * The campaign-service Google read (#4526) can return a row it could not read or pace, with zero
+   * placeholders. Those render as the other panels render them, never as a measured 0 or a red 0% bar.
+   */
+  describe('Google rows from the campaign-service path', () => {
+    const base = {
+      name: 'C',
+      shortName: 'C',
+      eventName: 'KubeCon',
+      adFormat: 'Search',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 12.5,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId: '555',
+      googleAdsUrl: '',
+    };
+
+    function renderRow(overrides: Record<string, unknown>, totals: Record<string, unknown> = {}): string[] {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, ...overrides }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, ...totals },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      return Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.replace(/\s+/g, ' ').trim() ?? '');
+    }
+
+    const kpiConversions = (): string => fixture.nativeElement.querySelector('[data-testid="monitoring-kpi-conversions"]')?.textContent?.trim() ?? '';
+
+    it('keeps a measured row exactly as the legacy read renders it', () => {
+      const cells = renderRow({ fetchFailed: false, pacingUnknown: false, conversionsMeasured: true });
+      expect(cells.slice(2)).toEqual(['$3,000.00', '$25.00', '1,000', '40', '4.0%', '$0.63', '12.5', '50%']);
+    });
+
+    it('renders every figure of an unread row as a dash', () => {
+      const cells = renderRow({ fetchFailed: true, pacingPct: 0, spend: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0 });
+      expect(cells.slice(2)).toEqual(['—', '—', '—', '—', '—', '—', '—', '—']);
+    });
+
+    it('renders unknown pacing as Unknown with an empty grey bar, not a red 0%', () => {
+      renderRow({ pacingUnknown: true, pacingPct: 0 });
+      const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] .rounded-full .h-full');
+      const text = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] td:last-child span')?.textContent?.trim();
+      expect(text).toBe('Unknown');
+      expect(bar.className).toContain('bg-gray-300');
+      expect(bar.className).not.toContain('bg-red-500');
+      expect(bar.style.width).toBe('0%');
+    });
+
+    it('renders unmeasured conversions as Not measured on the row and in the KPI strip', () => {
+      const cells = renderRow({ conversionsMeasured: false, conversions: 0 }, { conversions: 0, conversionsMeasured: false });
+      expect(cells[cells.length - 2]).toBe('Not measured');
+      expect(kpiConversions()).toBe('Not measured');
+    });
+  });
+
   it('renders an em dash for CTR when nothing was served', () => {
     // Zero impressions: clicks/0 is undefined, so 0% would state a rate never measured.
     renderTotals({ impressions: 0, clicks: 0, spend: 0, conversions: 0 });
