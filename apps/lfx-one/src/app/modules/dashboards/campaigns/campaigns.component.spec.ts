@@ -1569,6 +1569,15 @@ describe('CampaignsComponent brief persistence', () => {
         (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
       }
 
+      /**
+       * Saves run on a promise chain, so a save a guard failed to stop reaches the service only
+       * once that chain drains. Every "no save was sent" assertion waits for it, or it passes
+       * whether the guard exists or not.
+       */
+      async function drainSaves(): Promise<void> {
+        await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      }
+
       function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
         return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
       }
@@ -1652,6 +1661,7 @@ describe('CampaignsComponent brief persistence', () => {
 
         replace();
         await fixture.whenStable();
+        await drainSaves();
 
         expect(logged).toHaveBeenCalledWith('[campaigns] Failed to read the saved brief to replace it', expect.any(HttpErrorResponse));
         logged.mockRestore();
@@ -1684,6 +1694,23 @@ describe('CampaignsComponent brief persistence', () => {
         expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
       });
 
+      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+        // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
+        // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        TestBed.tick();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
       it('drops the read when the foundation changes while it is out', async () => {
         const read = new Subject<CampaignBriefLoadResult>();
         loadBrief.mockReturnValue(read);
@@ -1694,6 +1721,7 @@ describe('CampaignsComponent brief persistence', () => {
         TestBed.tick();
         read.next(loaded('stored-1', 'W/"5"'));
         await fixture.whenStable();
+        await drainSaves();
 
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
@@ -1742,6 +1770,7 @@ describe('CampaignsComponent brief persistence', () => {
         switchProgram();
         read.next(loaded('stored-1', 'W/"5"'));
         await fixture.whenStable();
+        await drainSaves();
 
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
       });
@@ -1752,6 +1781,7 @@ describe('CampaignsComponent brief persistence', () => {
 
         replace();
         await fixture.whenStable();
+        await drainSaves();
 
         expect(persistBrief.mock.calls.length).toBe(savesBefore);
         expect(state()).toMatchObject({ status: 'off', briefId: null });

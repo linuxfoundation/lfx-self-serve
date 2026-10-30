@@ -4202,9 +4202,14 @@ export class CampaignsComponent {
     if (brief === null || projectSlug === '' || key === null) return;
 
     // A discard or a newer save while the read is out makes its answer stale: the brief it would
-    // re-save is no longer the one on screen, or a newer outcome already owns the banner.
+    // re-save is no longer the one on screen, or a newer outcome already owns the banner. The slug is
+    // checked as well, as `loadCreateCapabilitiesFor` does: a foundation switch bumps the display
+    // counter (and never the ownership one) only once the `activeFoundationSlug` subscription runs, and a read answered in between would
+    // otherwise reach `persistBrief`, which files the brief under the NEW foundation.
     const generation = this.briefPersistenceGeneration;
     const ownershipAtSend = this.ownershipGeneration;
+    const mayAdopt = (): boolean =>
+      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
     this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
 
     this.campaignService
@@ -4214,7 +4219,7 @@ export class CampaignsComponent {
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
-          if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
+          if (!mayAdopt()) return;
           // Persistence went dark since the refusal: nothing can be saved or replaced, which is what
           // `persistBrief` reports for `enabled: false` too — the idle state, not an error.
           if (result.status === 'off') {
@@ -4242,7 +4247,7 @@ export class CampaignsComponent {
         },
         error: (err: unknown) => {
           console.error('[campaigns] Failed to read the saved brief to replace it', err);
-          if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
+          if (!mayAdopt()) return;
           this.briefPersistence.set({
             status: 'error',
             // '' as the refusal carries it, NOT null: `canSubmit` blocks an error only while the id is
