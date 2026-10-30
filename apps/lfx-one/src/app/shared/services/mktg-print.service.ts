@@ -3,118 +3,236 @@
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_PRINT_FONT_LINK_ID_PREFIX, MKTG_PRINT_FONT_WAIT_MS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_PRINT_BODY_CLASS,
+  BRAND_KIT_PRINT_ONLY_CLASS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
+  MKTG_FAMILY_PRINT_BODY_CLASS,
+  MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_PRINT_FONT_LINK_ID_PREFIX,
+  MKTG_PRINT_FONT_WAIT_MS,
+  MKTG_PRINT_FONT_WEIGHTS,
+  MKTG_PRINT_FRAME_LINGER_MS,
+} from '@lfx-one/shared/constants';
 
 /**
- * Download PDF for a Marketing OS asset view: the browser's print dialog
- * ("Save as PDF") with the asset's print document alone on paper. The asset
- * view holds its print document in a print-only wrapper; while the body
- * carries the asset's print class (styles.scss) only that document prints.
- * The Messaging Framework's view and the Brand Kit's web view (the book)
- * both print through it, and both print documents load their typeface's
- * stylesheet through it.
+ * Download PDF for a Marketing OS document: the browser's print dialog ("Save
+ * as PDF") with the document alone on paper, printed from an idle, script-free
+ * same-origin frame rather than the app window.
  *
- * The brand's typeface is loaded before the dialog opens: the print document
- * is never laid out on screen, so nothing else would fetch it, and a print
- * taken before the face arrives comes out in the fallback. The wait is
- * capped, so a slow or blocked font never keeps the dialog shut.
+ * Why a frame: WebKit's `window.print()` defers the print while the window's
+ * document loader is busy, and any open fetch, XHR or EventSource counts. LFX
+ * One keeps a LaunchDarkly EventSource open from bootstrap, so the app window
+ * is never idle and Safari (macOS and iOS) never printed. The frame has no
+ * scripts and no streams: once its stylesheets, faces and images have settled
+ * (or the cap has run out and the rest is stopped) its loader is idle, and
+ * `frame.contentWindow.print()` prints it in every browser.
+ *
+ * What the frame holds: the page's `<html>`/`<body>` classes plus the print
+ * body class, every `link[rel=stylesheet]` and `<style>` of the head (never a
+ * `<script>`), and a clone of the surface's print-only wrapper, the one its
+ * body class reveals (`*-print-only`, from the shared constants). The parent
+ * body is never marked: the existing print CSS keeps applying inside the
+ * frame, whose body carries the class instead.
+ *
+ * The brand's typeface is loaded before the dialog opens, in the page (ahead
+ * of the click) and again in the frame, and only after its Google Fonts
+ * stylesheet has loaded: `fonts.load` before the `@font-face` rules exist
+ * matches nothing. Every wait is capped, so a slow or blocked resource never
+ * keeps the dialog shut.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgPrintService {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
-
-  /** Numbers each print request: a request whose number is no longer current after the font wait was cleared (or superseded) and never prints. */
   private request = 0;
   private readonly preparations = new Map<string, Promise<void>>();
+  private readonly stylesheets = new Map<HTMLLinkElement, Promise<void>>();
+  private fontFamily: string | null = null;
+  private weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS;
+  private frame: HTMLIFrameElement | null = null;
+  private cleanupFrame: (() => void) | null = null;
 
-  /** Preload once per typeface/weight set, before a user's print gesture. */
+  /** Preload sheets before faces; fonts.load otherwise resolves empty before @font-face exists. */
   public prepare(fontFamily: string | null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
-    if (!isPlatformBrowser(this.platformId) || !fontFamily) return Promise.resolve();
-    const family = fontFamily.replace(/["']/g, '');
-    const normalized = [...new Set(weights)].sort((a, b) => a - b);
-    const key = JSON.stringify([family, normalized]);
+    if (!isPlatformBrowser(this.platformId)) return Promise.resolve();
+    this.fontFamily = fontFamily?.replace(/["']/g, '') ?? null;
+    this.weights = [...new Set(weights)].sort((a, b) => a - b);
+    if (!this.fontFamily) return Promise.resolve();
+    const family = this.fontFamily;
+    const normalized = this.weights;
+    const key = JSON.stringify([family, normalized, ...Array.from(this.stylesheets.keys(), (link) => link.href)]);
     let preparation = this.preparations.get(key);
     if (!preparation) {
-      preparation = this.loadFont(family, normalized);
+      preparation = this.bounded(async () => {
+        await Promise.all(this.stylesheets.values());
+        await this.loadFont(this.document, family, normalized);
+      });
       this.preparations.set(key, preparation);
     }
     return preparation;
   }
 
-  /** Must be called directly from the click task: WebKit requires user activation. */
+  /** Called in the click task; creates the frame immediately, then prints once its own loader is idle. */
   public printNow(bodyClass: string): void {
-    this.request++;
-    const view = this.document.defaultView;
-    if (!isPlatformBrowser(this.platformId) || !view) return;
-    const body = this.document.body;
-    body.classList.add(bodyClass);
-    view.addEventListener('afterprint', () => body.classList.remove(bodyClass), { once: true });
-    view.print();
-  }
-
-  /**
-   * Prints the document the body class shows, once the given typeface (if
-   * any) has loaded in the given weights or the wait has run out. The class stays while the dialog
-   * is up (the preview renders from it) and goes when the print ends. A
-   * {@link clear} during the font wait cancels the print: the view that asked
-   * for it is gone. Safari caveat: this asynchronous compatibility method loses
-   * user activation; click handlers must prepare ahead and call printNow instead.
-   */
-  public async print(bodyClass: string, fontFamily: string | null = null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
-    // SSR guard: window and the print dialog are browser-only (ssr-safety rule).
-    const view = this.document.defaultView;
-    if (!isPlatformBrowser(this.platformId) || !view) {
+    const request = ++this.request;
+    if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
+    this.cleanupFrame?.();
+    const roots = this.printRoots(bodyClass);
+    if (!roots.length) return;
+    const frame = this.document.createElement('iframe');
+    frame.setAttribute('data-testid', 'lfx-print-frame');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.setAttribute('title', 'Print document');
+    frame.tabIndex = -1;
+    frame.style.cssText = 'position:fixed;width:1px;height:1px;left:0;top:0;opacity:0;pointer-events:none;border:0';
+    this.document.body.appendChild(frame);
+    const doc = frame.contentDocument;
+    const view = frame.contentWindow;
+    if (!doc || !view) {
+      frame.remove();
       return;
     }
+    this.frame = frame;
+    // Never switch the app to print media: its shell rules could hide the iframe itself.
+    let fallback: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      clearTimeout(fallback);
+      view.removeEventListener('afterprint', cleanup);
+      frame.remove();
+      this.document.body.classList.remove(bodyClass);
+      if (this.frame === frame) {
+        this.frame = null;
+        this.cleanupFrame = null;
+      }
+    };
+    this.cleanupFrame = cleanup;
+    doc.open();
+    doc.write('<!doctype html><html><head></head><body></body></html>');
+    doc.close();
+    view.addEventListener('afterprint', cleanup, { once: true });
+    doc.documentElement.className = this.document.documentElement.className;
+    doc.documentElement.lang = this.document.documentElement.lang;
+    doc.documentElement.dir = this.document.documentElement.dir;
+    doc.documentElement.style.cssText = this.document.documentElement.style.cssText;
+    doc.body.className = this.document.body.className;
+    doc.body.classList.add(bodyClass);
+    doc.body.style.cssText = this.document.body.style.cssText;
+    doc.title = this.document.title;
+    const base = doc.createElement('base');
+    base.href = this.document.baseURI;
+    doc.head.appendChild(base);
+    const sheets: Promise<void>[] = [];
+    this.document.head.querySelectorAll('link[rel="stylesheet"], style').forEach((source) => {
+      const clone = source.cloneNode(true) as HTMLStyleElement | HTMLLinkElement;
+      if (clone.tagName === 'LINK') sheets.push(this.waitForStylesheet(clone as HTMLLinkElement));
+      doc.head.appendChild(clone);
+    });
+    // Only the three existing print-only wrappers, selected by their shared constants.
+    // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.
+    roots.forEach((root) => {
+      const clone = root.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('script, iframe, object, embed').forEach((node) => node.remove());
+      [clone, ...Array.from(clone.querySelectorAll('*'))].forEach((element) => {
+        Array.from(element.attributes)
+          .filter((attribute) => attribute.name.startsWith('on'))
+          .forEach((attribute) => element.removeAttribute(attribute.name));
+      });
+      clone.querySelectorAll('img').forEach((image) => (image.loading = 'eager'));
+      doc.body.appendChild(clone);
+    });
+    const family = this.fontFamily;
+    const weights = this.weights;
+    // One bounded wait for the frame's own resources: its stylesheets first (the @font-face rules
+    // live there), then the brand's faces in the frame's FontFaceSet and its images' decode.
+    void this.bounded(async () => {
+      await Promise.all(sheets);
+      if (request !== this.request) return;
+      await Promise.allSettled([this.loadFont(doc, family, weights), ...Array.from(doc.images, (image) => image.decode?.() ?? Promise.resolve())]);
+    }).then(() => {
+      if (request !== this.request || this.frame !== frame) return;
+      // Cancel any resource still loading at the cap: WebKit prints only a frame whose loader is idle.
+      view.stop();
+      view.focus();
+      // iOS may omit afterprint: keep the frame through its asynchronous preview, then reclaim it;
+      // clear() and the next print remove it at once without relying on that event.
+      fallback = setTimeout(cleanup, MKTG_PRINT_FRAME_LINGER_MS);
+      view.print();
+    });
+  }
+
+  /** Compatibility entry point; all surfaces share the same isolated-frame path. */
+  public async print(bodyClass: string, fontFamily: string | null = null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
+    if (!isPlatformBrowser(this.platformId) || !this.document.defaultView) return;
     const request = ++this.request;
     await this.prepare(fontFamily, weights);
-    if (request !== this.request) {
-      return;
-    }
-    this.printNow(bodyClass);
+    if (request === this.request) this.printNow(bodyClass);
   }
 
-  /** Takes the print class off the body and cancels a print still waiting for its font: for a view that goes while its print is under way. */
+  /** Cancel any pending frame/resource wait as well as a compatibility font wait. */
   public clear(bodyClass: string): void {
     this.request++;
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.cleanupFrame?.();
     this.document.body?.classList.remove(bodyClass);
   }
 
-  /**
-   * Adds the typeface's Google Fonts stylesheet to the page's head, once per
-   * stylesheet whichever print document asks first. Browser only: SSR
-   * renders the fallback and never touches the head.
-   */
-  public ensureFontStylesheet(url: string): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
+  /** A shared, bounded promise for each font sheet, including sheets already requested by another surface. */
+  public ensureFontStylesheet(url: string): Promise<void> {
+    if (!isPlatformBrowser(this.platformId)) return Promise.resolve();
     const id = `${MKTG_PRINT_FONT_LINK_ID_PREFIX}${encodeURIComponent(url)}`;
-    if (this.document.getElementById(id)) {
-      return;
+    const existing = this.document.getElementById(id) as HTMLLinkElement | null;
+    const link = existing ?? this.document.createElement('link');
+    if (!existing) {
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = url;
     }
-    const link = this.document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    link.href = url;
-    this.document.head.appendChild(link);
+    let loaded = this.stylesheets.get(link);
+    if (!loaded) {
+      loaded = this.waitForStylesheet(link);
+      this.stylesheets.set(link, loaded);
+    }
+    if (!existing) this.document.head.appendChild(link);
+    return loaded;
   }
 
-  // === Private helpers ===
-  private async loadFont(family: string, weights: readonly number[]): Promise<void> {
-    // Not every browser (nor the test DOM) has the CSS Font Loading API: then the print goes ahead at once.
-    const fonts: FontFaceSet | undefined = this.document.fonts;
-    if (!fonts) {
-      return;
-    }
-    const name = family.replace(/["']/g, '');
-    const loads = weights.map((weight) => fonts.load(`${weight} 1em "${name}"`));
+  private printRoots(bodyClass: string): HTMLElement[] {
+    let wrapper = '';
+    if (bodyClass === MKTG_FAMILY_PRINT_BODY_CLASS) wrapper = MKTG_FAMILY_PRINT_ONLY_CLASS;
+    if (bodyClass === BRAND_KIT_PRINT_BODY_CLASS) wrapper = BRAND_KIT_PRINT_ONLY_CLASS;
+    if (bodyClass === FOUNDATION_MESSAGE_PRINT_BODY_CLASS) wrapper = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+    return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
+  }
+
+  private waitForStylesheet(link: HTMLLinkElement): Promise<void> {
+    if (link.sheet || link.disabled) return Promise.resolve();
+    return new Promise((resolve) => {
+      const settled = () => {
+        clearTimeout(timer);
+        link.removeEventListener('load', settled);
+        link.removeEventListener('error', settled);
+        resolve();
+      };
+      const timer = setTimeout(settled, MKTG_PRINT_FONT_WAIT_MS);
+      link.addEventListener('load', settled, { once: true });
+      link.addEventListener('error', settled, { once: true });
+    });
+  }
+
+  private async loadFont(doc: Document, family: string | null, weights: readonly number[]): Promise<void> {
+    if (!family || !doc.fonts) return;
+    await Promise.allSettled(weights.map((weight) => doc.fonts.load(`${weight} 1em "${family}"`)));
+  }
+
+  /** One total budget, not one full timeout per resource/phase. */
+  private async bounded(work: () => Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, MKTG_PRINT_FONT_WAIT_MS);
     });
-    await Promise.race([Promise.allSettled(loads), timeout]);
+    await Promise.race([work().catch(() => undefined), timeout]);
     clearTimeout(timer);
   }
 }

@@ -4,6 +4,8 @@
 import { expect, test } from '@playwright/test';
 import { AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-print.constants';
+import { expectMktgPrintFrame, finishMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.describe('AEO/GEO audit content', () => {
   test('empty intake history, normalized domain, and blank or 2–5 key pages', async ({ page }, testInfo) => {
@@ -78,7 +80,8 @@ test.describe('AEO/GEO audit content', () => {
     await page.screenshot({ path: testInfo.outputPath('audit-live-feed.png'), fullPage: true });
   });
 
-  test('opens an earlier report, prints PDF instead of Markdown, and offers a fresh run', async ({ page }, testInfo) => {
+  test('opens an earlier report, prints PDF in an isolated frame instead of Markdown, and offers a fresh run', async ({ page }, testInfo) => {
+    await stubMktgPrintFrame(page);
     const app = await setupAudit(page, { previous: true });
     await app.go('/aeo-geo');
     await expect(page.getByTestId('mktg-aeo-run-history-label')).toContainText('1 previous run');
@@ -95,25 +98,20 @@ test.describe('AEO/GEO audit content', () => {
     );
     const downloads: string[] = [];
     page.on('download', (download) => downloads.push(download.suggestedFilename()));
-    await page.evaluate(() => {
-      window.print = () => {
-        document.documentElement.dataset['auditPrinted'] = 'yes';
-      };
-    });
     await expect(page.getByTestId('mktg-document-view-download')).toHaveText('Download PDF');
-    const printedSynchronously = await page
+    const frameCreatedSynchronously = await page
       .getByTestId('mktg-document-view-download')
       .getByRole('button')
       .evaluate((button) => {
         if (!(button instanceof HTMLButtonElement)) throw new Error('Missing synthetic report PDF action');
         button.click();
-        return document.documentElement.dataset['auditPrinted'];
+        return document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]')?.contentDocument?.body.className ?? '';
       });
-    expect(printedSynchronously).toBe('yes');
-    await expect(page.locator('html')).toHaveAttribute('data-audit-printed', 'yes', { timeout: 10_000 });
+    expect(frameCreatedSynchronously).toContain(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    await expectMktgPrintFrame(page, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, '[data-testid="mktg-document-view-print"]');
     await expect(page.getByTestId('mktg-document-view-print')).toContainText('Add a detailed FAQ');
     expect(downloads).toHaveLength(0);
-    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    await finishMktgPrintFrame(page);
     await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('reopened-report.png'), fullPage: true });
   });

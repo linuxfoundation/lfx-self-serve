@@ -6,6 +6,7 @@ import { BRAND_KIT_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/brand-kit.
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-print.constants';
 import { MKTG_SLIDES_EXPORT_AGENT_KEYS, MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants/mktg-slides-export.constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 import {
   columnAssetRevisionResponse,
@@ -197,11 +198,9 @@ test.describe('Native FAQ document approval and header', () => {
 });
 
 for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
-  test(`${key} print media fills a paper-sized viewport without content-column containment`, async ({ page, browserName }, info) => {
+  test(`${key} isolated print frame preserves paper-sized layout without content-column containment`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width: 1280, height: 1000 });
-    await page.addInitScript(() => {
-      window.print = () => undefined;
-    });
+    await stubMktgPrintFrame(page);
     await openAssetDocument(page, key, 200, true, false, columnAssetRevisionResponse(key));
     const prefix = key === 'brand-kit' ? 'brand-kit-web-view' : 'mktg-framework-view';
     const print = page.getByTestId(key === 'brand-kit' ? 'mktg-brand-kit-print' : 'mktg-framework-print');
@@ -210,7 +209,11 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       .getByTestId(prefix + '-download-pdf')
       .getByRole('button')
       .click();
-    await expect(page.locator('body')).toHaveClass(new RegExp(key === 'brand-kit' ? BRAND_KIT_PRINT_BODY_CLASS : FOUNDATION_MESSAGE_PRINT_BODY_CLASS));
+    const bodyClass = key === 'brand-kit' ? BRAND_KIT_PRINT_BODY_CLASS : FOUNDATION_MESSAGE_PRINT_BODY_CLASS;
+    await expectMktgPrintFrame(page, bodyClass, key === 'brand-kit' ? 'lfx-mktg-brand-kit-print' : 'lfx-mktg-framework-print');
+    // Source-only media geometry remains a separate proof; production marks only the frame body.
+    await page.evaluate((name) => document.body.classList.add(name), bodyClass);
+    await expect(page.locator('body')).toHaveClass(new RegExp(bodyClass));
     await page.emulateMedia({ media: 'print' });
     // Media emulation does not paginate or apply @page margins. Measure against
     // a paper-sized initial containing block, not the app shell's offset wrapper.
@@ -271,6 +274,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     }
     if (browserName === 'chromium') await page.pdf({ path: info.outputPath(`${key}.pdf`), preferCSSPageSize: true, printBackground: true });
     await page.screenshot({ path: info.outputPath(`${key}-print.png`), fullPage: true });
+    await finishMktgPrintFrame(page);
   });
   test(`${key} reads the last export while approved bytes remain pending`, async ({ page }, info) => {
     const lastRead = page.waitForRequest((request) => new URL(request.url()).pathname === `${MKTG_SLIDES_EXPORT_API_PATH}/last`);
