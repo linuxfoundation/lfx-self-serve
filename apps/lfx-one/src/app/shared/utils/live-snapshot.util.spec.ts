@@ -51,6 +51,46 @@ describe('createLiveSnapshot', () => {
     expect(live.snapshot()).toBeNull();
   });
 
+  it('cancels the previous fetch and resets the snapshot when the key goes non-null to null', () => {
+    const key = signal<string | null>('a');
+    let unsubscribed = false;
+    const live = TestBed.runInInjectionContext(() =>
+      createLiveSnapshot({
+        key,
+        fetch: (k) =>
+          new Observable<string>((sub) => {
+            sub.next(`v-${k}`);
+            return () => (unsubscribed = true);
+          }),
+        doc,
+        ...timing,
+      })
+    );
+    flush();
+    expect(live.snapshot()?.value).toBe('v-a');
+    key.set(null);
+    flush();
+    expect(unsubscribed).toBe(true);
+    expect(live.snapshot()).toBeNull();
+    expect(live.failures()).toBe(0);
+    vi.advanceTimersByTime(20000);
+    expect(live.snapshot()).toBeNull();
+  });
+
+  it('starts polling again when the key goes null to non-null, keeping generation semantics', () => {
+    const key = signal<string | null>(null);
+    const fetch = vi.fn((k: string) => of(`v-${k}`));
+    const live = TestBed.runInInjectionContext(() => createLiveSnapshot({ key, fetch, doc, ...timing }));
+    flush();
+    expect(fetch).not.toHaveBeenCalled();
+    key.set('b');
+    flush();
+    expect(live.snapshot()?.value).toBe('v-b');
+    const awaiting = live.restart();
+    flush();
+    expect(live.landedGeneration()).toBeGreaterThanOrEqual(awaiting);
+  });
+
   it('counts consecutive failures and keeps polling', () => {
     let calls = 0;
     const live = TestBed.runInInjectionContext(() =>

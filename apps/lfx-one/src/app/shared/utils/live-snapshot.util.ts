@@ -3,7 +3,7 @@
 
 import { computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { filter, map, Observable, switchMap, tap } from 'rxjs';
+import { EMPTY, map, Observable, switchMap, tap } from 'rxjs';
 
 import { createVisibilityPoll } from './visibility-poll.util';
 
@@ -40,7 +40,7 @@ export interface LiveSnapshot<T> {
 /**
  * Live snapshot of one keyed resource, polled with {@link createVisibilityPoll} (visibility-aware, sequential, backoff on error).
  * @description Must be called in an injection context. A changed key drops the previous snapshot and failure count before the
- * new resource is polled. Each event is tagged with its poll generation inside the `switchMap`, and `restart()` bumps the
+ * new resource is polled; a null key does the same and polls nothing, cancelling the previous fetch. Each event is tagged with its poll generation inside the `switchMap`, and `restart()` bumps the
  * generation before the loop restarts, so a result that was already in flight when the restart was requested (older
  * generation) can never settle it; callers compare `landedGeneration() >= restart()`.
  *
@@ -59,7 +59,6 @@ export function createLiveSnapshot<T>(options: LiveSnapshotOptions<T>): LiveSnap
   if (enabled) {
     toObservable(computed(() => ({ key: key(), generation: generation() })))
       .pipe(
-        filter((state): state is { key: string; generation: number } => !!state.key),
         tap(({ key: next }) => {
           if (next !== polledKey) {
             snapshot.set(null);
@@ -67,8 +66,11 @@ export function createLiveSnapshot<T>(options: LiveSnapshotOptions<T>): LiveSnap
           }
           polledKey = next;
         }),
+        // A null key reaches the switchMap on purpose: it cancels the previous key's poll (and any in-flight fetch) and starts none.
         switchMap(({ key: next, generation: tagged }) =>
-          createVisibilityPoll(doc, () => fetch(next), { intervalMs, backoffBaseMs, backoffMaxMs }).pipe(map((event) => ({ event, generation: tagged })))
+          next
+            ? createVisibilityPoll(doc, () => fetch(next), { intervalMs, backoffBaseMs, backoffMaxMs }).pipe(map((event) => ({ event, generation: tagged })))
+            : EMPTY
         ),
         takeUntilDestroyed(destroyRef)
       )
