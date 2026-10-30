@@ -3,6 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UiHeadingLevel } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
@@ -15,7 +16,7 @@ import { UiEmptyStateComponent } from './empty-state.component';
     '<lfx-ui-empty-state icon="fa-light fa-chart-bar" heading="No metrics yet" description="Connect a GitHub organization." [headingLevel]="level()"><span empty-state-media data-testid="media">art</span><lfx-ui-button empty-state-action>Connect GitHub</lfx-ui-button><a empty-state-action href="#">Learn more</a><div data-testid="guide">cards</div></lfx-ui-empty-state>',
 })
 class HostComponent {
-  public readonly level = signal<1 | 2 | 3 | 4 | 5 | 6>(3);
+  public readonly level = signal<UiHeadingLevel>(3);
 }
 
 describe('UiEmptyStateComponent', () => {
