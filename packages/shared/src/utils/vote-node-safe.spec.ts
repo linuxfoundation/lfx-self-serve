@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { PollStatus } from '../enums/poll.enum';
 import type { Vote } from '../interfaces/poll.interface';
 
 // Plain Node, no Angular setup: loading either module must never reach Angular or date-fns. Both are mocked to throw on import.
@@ -23,9 +24,17 @@ describe('Node-safe vote utils', () => {
     const participation = await import('./vote-participation.utils');
     const results = await import('./vote-results.utils');
 
-    expect(
-      participation.computeVoteRowParticipation({ status: 'active', num_response_received: 1, total_voting_request_invitations: 2 } as never).percent
-    ).toBe(50);
+    const vote: Vote = {
+      uid: 'vote-uid',
+      name: 'Node-safe vote',
+      project_uid: 'project-uid',
+      status: PollStatus.ACTIVE,
+      end_time: '2026-06-01T00:00:00Z',
+      num_response_received: 1,
+      total_voting_request_invitations: 2,
+    };
+
+    expect(participation.computeVoteRowParticipation(vote).percent).toBe(50);
     expect(results.votePermalinkPath('abc')).toBe('/votes/abc');
   });
 
