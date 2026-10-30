@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { UiEmptyStateHeadingLevel } from '@lfx-one/shared/interfaces';
+import { UiHeadingLevel } from '@lfx-one/shared/interfaces';
 
 /**
  * What a view shows when there is nothing in it yet: an icon, a title and one sentence, with optional actions.
@@ -33,5 +33,5 @@ export class UiEmptyStateComponent {
   /** Font Awesome class string for the 48px icon tile, e.g. `fa-light fa-calendar`. Leave empty for no tile. */
   public readonly icon = input<string>('');
   /** Heading level (`aria-level`) of the title, 1 to 6. Pick the level that fits the page outline. */
-  public readonly headingLevel = input<UiEmptyStateHeadingLevel>(3);
+  public readonly headingLevel = input<UiHeadingLevel>(3);
 }

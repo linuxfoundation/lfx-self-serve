@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, input, model } from '@angular/core';
-import { UiCollapseHeadingLevel, UiCollapseSize } from '@lfx-one/shared/interfaces';
+import { UiCollapseSize, UiHeadingLevel } from '@lfx-one/shared/interfaces';
 
 /**
  * An accordion group: headings that reveal their section when clicked. Put `lfx-ui-collapse-item` elements inside it.
@@ -24,7 +24,7 @@ export class UiCollapseComponent {
   public readonly size = input<UiCollapseSize>('default');
 
   /** Heading level (`aria-level`) of every item's trigger, 1 to 6. Pick the level that fits the page outline. */
-  public readonly headingLevel = input<UiCollapseHeadingLevel>(3);
+  public readonly headingLevel = input<UiHeadingLevel>(3);
 
   public isOpen(value: string): boolean {
     const open = this.open();

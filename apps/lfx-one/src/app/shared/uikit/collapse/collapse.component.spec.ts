@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { UiCollapseHeadingLevel, UiCollapseSize } from '@lfx-one/shared/interfaces';
+import { UiCollapseSize, UiHeadingLevel } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { UiCollapseItemComponent } from './collapse-item.component';
@@ -28,7 +28,7 @@ class TestHostComponent {
   public readonly open = signal<string[]>([]);
   public readonly exclusive = signal(false);
   public readonly size = signal<UiCollapseSize>('default');
-  public readonly headingLevel = signal<UiCollapseHeadingLevel>(3);
+  public readonly headingLevel = signal<UiHeadingLevel>(3);
 }
 
 @Component({
