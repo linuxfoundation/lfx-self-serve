@@ -89,6 +89,7 @@ describe('UiTabsComponent', () => {
 
     expect(list.className).toContain('gap-[24px]');
     expect(list.className).toContain('overflow-x-auto');
+    expect((fixture.nativeElement as HTMLElement).className).toContain('flow-root');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-[inset_0_-1px_0_0]');
     expect((fixture.nativeElement as HTMLElement).className).toContain('shadow-ui-neutral-alpha-200');
     expect((fixture.nativeElement as HTMLElement).className).not.toContain('var(');

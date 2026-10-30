@@ -19,7 +19,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
   imports: [UiTooltipDirective],
   templateUrl: './tabs.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'block', '[class]': 'hostClasses()' },
+  // flow-root keeps the list's negative margins inside the host, so the rule sits on the tabs' bottom edge.
+  host: { class: 'flow-root', '[class]': 'hostClasses()' },
 })
 export class UiTabsComponent {
   /** The tabs to render, in order. */
