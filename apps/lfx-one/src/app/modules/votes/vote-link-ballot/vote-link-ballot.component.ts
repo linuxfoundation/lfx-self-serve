@@ -11,6 +11,7 @@ import { PollStatus } from '@lfx-one/shared/enums';
 import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
 import { buildVoteAnswerSummary, normalizePollStatus } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { VoteService } from '@services/vote.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { fromEvent, Subject, takeUntil } from 'rxjs';
@@ -27,7 +28,7 @@ import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vot
  */
 @Component({
   selector: 'lfx-vote-link-ballot',
-  imports: [ButtonComponent, ExternalLinksDirective, VoteBallotFormComponent, VoteLinkHeaderComponent, VoteLinkThankYouComponent],
+  imports: [ButtonComponent, ExternalLinksDirective, LinkifyHtmlPipe, VoteBallotFormComponent, VoteLinkHeaderComponent, VoteLinkThankYouComponent],
   templateUrl: './vote-link-ballot.component.html',
 })
 export class VoteLinkBallotComponent implements OnInit, OnDestroy {

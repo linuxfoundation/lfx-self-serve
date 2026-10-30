@@ -78,7 +78,7 @@
                       <div
                         class="text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline"
                         lfxExternalLinks
-                        [innerHTML]="voteData.description"></div>
+                        [innerHTML]="voteData.description | linkifyHtml"></div>
                     </div>
                   </lfx-card>
                 }

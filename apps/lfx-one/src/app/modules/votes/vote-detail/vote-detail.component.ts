@@ -56,6 +56,7 @@ import {
   votePermalinkPath,
   votePresenterPath,
 } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
@@ -115,6 +116,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     ButtonComponent,
     CardComponent,
     ExternalLinksDirective,
+    LinkifyHtmlPipe,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,

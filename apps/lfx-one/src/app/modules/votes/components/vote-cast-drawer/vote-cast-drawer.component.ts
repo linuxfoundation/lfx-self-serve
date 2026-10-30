@@ -31,6 +31,7 @@ import {
   reconcileCommentFormControls,
 } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
@@ -51,6 +52,7 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
   imports: [
     DrawerModule,
     ExternalLinksDirective,
+    LinkifyHtmlPipe,
     SkeletonModule,
     CheckboxModule,
     DragDropModule,

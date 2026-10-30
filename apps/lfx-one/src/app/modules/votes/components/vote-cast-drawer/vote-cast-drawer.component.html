@@ -102,7 +102,7 @@
             <div
               class="text-sm text-slate-700 whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
               lfxExternalLinks
-              [innerHTML]="voteData.description"
+              [innerHTML]="voteData.description | linkifyHtml"
               [attr.tabindex]="0"
               role="region"
               aria-label="Vote description"

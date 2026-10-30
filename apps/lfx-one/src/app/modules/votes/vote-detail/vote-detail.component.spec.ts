@@ -23,6 +23,7 @@ import {
   VoteDetailState,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
@@ -130,7 +131,7 @@ describe('VoteDetailComponent', () => {
       // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgTemplateOutlet, ...realImports],
+          imports: [NgTemplateOutlet, LinkifyHtmlPipe, ...realImports],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -301,12 +302,17 @@ describe('VoteDetailComponent', () => {
     });
 
     it.each([
-      { audience: 'manager', writer: true, response: null },
-      { audience: 'voter', writer: false, response: makeResponse(IndexedVoteResponseStatus.RESPONDED) },
-    ])('styles description links and opens them without leaving the $audience view (#4655)', async ({ writer, response }) => {
-      voteService.fetchVote.mockReturnValue(
-        of(makeVote({ description: '<p>Read the <a href="https://example.com/charter"><strong>charter</strong></a>.</p>' }))
-      );
+      { audience: 'manager', writer: true, response: null, html: '<p>Read the <a href="https://example.com/charter"><strong>charter</strong></a>.</p>' },
+      {
+        audience: 'voter',
+        writer: false,
+        response: makeResponse(IndexedVoteResponseStatus.RESPONDED),
+        html: '<p>Read the <a href="https://example.com/charter"><strong>charter</strong></a>.</p>',
+      },
+      { audience: 'manager (plain URL)', writer: true, response: null, html: 'Read https://example.com/charter.' },
+      { audience: 'voter (plain URL)', writer: false, response: makeResponse(IndexedVoteResponseStatus.RESPONDED), html: 'Read https://example.com/charter.' },
+    ])('styles description links and opens them without leaving the $audience view (#4655)', async ({ writer, response, html }) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ description: html })));
       projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
       voteService.getMyVoteResponse.mockReturnValue(of(response));
       const fixture = await setup('browser', [ExternalLinksDirective]);
@@ -320,7 +326,7 @@ describe('VoteDetailComponent', () => {
         expect(content.classList.contains('[&_a]:underline')).toBe(true);
 
         const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
-        link.querySelector('strong')!.dispatchEvent(event);
+        (link.querySelector('strong') ?? link).dispatchEvent(event);
 
         expect(opened).toHaveBeenCalledExactlyOnceWith('https://example.com/charter', '_blank', 'noopener,noreferrer');
         expect(event.defaultPrevented).toBe(true);
