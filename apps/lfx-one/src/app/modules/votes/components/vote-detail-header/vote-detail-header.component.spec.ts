@@ -241,6 +241,28 @@ describe('VoteDetailHeaderComponent', () => {
       expect(exists('vote-detail-header-send-ballots')).toBe(canSendBallots);
     });
 
+    it('orders the manager actions by job: email actions, presenter actions, then Cast vote', () => {
+      render({ audience: 'creator', canPresent: true, canSendBallots: true, canCastVote: true });
+      const ids = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-header-actions"] > [data-testid]')).map((e) =>
+        (e as HTMLElement).getAttribute('data-testid')
+      );
+
+      expect(ids).toEqual([
+        'vote-detail-header-send-reminder',
+        'vote-detail-header-send-ballots',
+        'vote-detail-header-present',
+        'vote-detail-header-copy-slide',
+        'vote-detail-header-cast-vote',
+      ]);
+    });
+
+    it('renders Send ballots now with the compact variant', () => {
+      render({ audience: 'creator', canSendBallots: true });
+      const ballots = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-send-ballots"]')).componentInstance;
+
+      expect(ballots.variant()).toBe('compact');
+    });
+
     it('hides Present, Copy slide and Send ballots while limited', () => {
       render({ audience: 'creator', canPresent: true, canSendBallots: true, limited: true });
 

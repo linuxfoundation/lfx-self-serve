@@ -40,6 +40,8 @@ export class VoteSendBallotsComponent {
   /** The vote's own counts (`num_response_received`, `total_voting_request_invitations`); an empty voter list disables the button only when they confirm completion. */
   public readonly responded = input<number | null | undefined>(null);
   public readonly invited = input<number | null | undefined>(null);
+  /** `presenter` is the large button on the presenter share panel; `compact` matches the small outlined secondary buttons in the vote detail header. */
+  public readonly variant = input<'presenter' | 'compact'>('presenter');
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
@@ -55,6 +57,9 @@ export class VoteSendBallotsComponent {
     const invited = this.invited() ?? 0;
     return invited > 0 && (this.responded() ?? 0) >= invited;
   });
+  protected readonly compact = computed(() => this.variant() === 'compact');
+  protected readonly buttonSize = computed(() => (this.compact() ? 'small' : undefined));
+  protected readonly buttonStyleClass = computed(() => (this.compact() ? undefined : 'min-h-[44px]'));
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
