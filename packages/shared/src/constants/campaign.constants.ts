@@ -4504,6 +4504,21 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
+ * The short-description width Performance Max needs at least one description to fit: Google renders
+ * it in a short slot the other channels do not have (see the `descriptions` hint in
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
+ */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
+ * (#4784). That copy makes the creative a started one, which Google refuses without its required
+ * images, so the note says both ways forward.
+ */
+export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
+  'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';
+
+/**
  * Why a Google channel's creative is worth filling in, stated per channel.
  *
  * Not decoration. campaign-service ACCEPTS a create with no creative on all three of these

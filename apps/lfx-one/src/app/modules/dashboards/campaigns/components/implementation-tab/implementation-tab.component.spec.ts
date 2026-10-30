@@ -8269,7 +8269,15 @@ describe('ImplementationTabComponent google extension seeding', () => {
       googlePostalGeoLabels: {},
     });
     for (const key of listKeys) expect(held.draft?.[key]).toEqual([]);
-    for (const group of Object.values(held.draft?.googleCreatives ?? {})) for (const value of Object.values(group)) expect(value).toBe('');
+    // Nothing typed for the previous brief survives. Performance Max is the one group the NEXT brief
+    // fills: its own generated Search copy prefills it (#4784), and every other field stays empty.
+    const prefilledFromNext: Record<string, string> = { headlines: 'Attend OSS', descriptions: 'Join us in Denver' };
+    for (const [name, group] of Object.entries(held.draft?.googleCreatives ?? {})) {
+      for (const [field, value] of Object.entries(group)) {
+        const expected = name === 'performanceMaxCreative' ? (prefilledFromNext[field] ?? '') : '';
+        expect(value, `${name}.${field}`).toBe(expected);
+      }
+    }
     const text = fixture.nativeElement.textContent as string;
     for (const stale of ['Hands-On Labs', 'Venue & Travel', 'Conference passes', '415 555 0100', 'Alpha', 'userLists/111', '9031945', 'Stale label']) {
       expect(text).not.toContain(stale);
@@ -13978,5 +13986,222 @@ describe('ImplementationTabComponent replace saved brief', () => {
   it('withholds it while a save is in flight', () => {
     setPersistence(refused, true);
     expect(replaceButton()).toBeNull();
+  });
+});
+
+/**
+ * #4784. Performance Max was the one Google channel whose copy a person still had to write, though
+ * the brief already holds copy of the right shape. The seed fills headlines, long headlines,
+ * descriptions and the business name from the generated Search and Demand Gen copy, each within its
+ * own catalogue bounds, and the draft restore still wins over it.
+ */
+describe('ImplementationTabComponent performance max prefill', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const longText = (n: number): string => 'x'.repeat(n);
+
+  function brief(structuredCopy: Record<string, unknown> | undefined): CampaignBriefOutput {
+    return {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.example.com/kubecon', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      structuredCopy,
+    } as unknown as CampaignBriefOutput;
+  }
+
+  function seed(b: CampaignBriefOutput, draft?: CampaignImplementationDraft): void {
+    if (draft !== undefined) fixture.componentRef.setInput('draft', draft);
+    fixture.componentRef.setInput('briefData', b);
+    fixture.detectChanges();
+  }
+
+  function pmax(): Record<string, string> {
+    return (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'].getRawValue();
+  }
+
+  function lines(value: string): string[] {
+    return value === '' ? [] : value.split('\n');
+  }
+
+  function prefilled(): boolean {
+    return (fixture.componentInstance as unknown as { performanceMaxPrefillShown(): boolean }).performanceMaxPrefillShown();
+  }
+
+  const generated = {
+    google_search: {
+      headlines: ['Join KubeCon EU', 'Cloud native in Amsterdam', 'Register for KubeCon'],
+      descriptions: [
+        'Three days of talks, workshops and the hallway track with the cloud native community.',
+        'Meet the maintainers and end users of the CNCF projects you run in production.',
+      ],
+    },
+    google_display: {
+      headlines: ['KubeCon EU 2026 in Amsterdam', 'Where cloud native meets'],
+      descriptions: ['Register now for KubeCon EU 2026.'],
+      business_name: 'CNCF',
+    },
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('fills headlines, long headlines, descriptions and the business name from the brief', () => {
+    seed(brief(generated));
+
+    expect(lines(pmax()['headlines'])).toEqual(generated.google_search.headlines);
+    expect(lines(pmax()['longHeadlines'])).toEqual(generated.google_display.headlines);
+    expect(lines(pmax()['descriptions'])).toEqual([...generated.google_search.descriptions, ...generated.google_display.descriptions]);
+    expect(pmax()['businessName']).toBe('CNCF');
+    expect(prefilled()).toBe(true);
+  });
+
+  it('keeps every value within its field bounds: width, count and duplicates', () => {
+    // The duplicate sits INSIDE the 15-entry cap, so it is the de-duplication that keeps it out,
+    // not the cap.
+    const headlines = [longText(31), 'Headline 0', 'Headline 0', ...Array.from({ length: 19 }, (_, i) => `Headline ${i + 1}`)];
+    seed(brief({ google_search: { headlines, descriptions: [] }, google_display: { business_name: longText(26) } }));
+
+    const seeded = lines(pmax()['headlines']);
+    expect(seeded).toHaveLength(15);
+    expect(seeded).not.toContain(longText(31));
+    expect(new Set(seeded).size).toBe(seeded.length);
+    expect(pmax()['businessName']).toBe('');
+  });
+
+  it('keeps one description short enough for the short slot when the brief has one', () => {
+    const wordy = Array.from({ length: 5 }, (_, i) => `${longText(70)} ${i}`);
+    seed(brief({ google_search: { headlines: [], descriptions: wordy }, google_display: { descriptions: ['Register today.'] } }));
+
+    const seeded = lines(pmax()['descriptions']);
+    expect(seeded).toHaveLength(5);
+    expect(seeded).toContain('Register today.');
+  });
+
+  it('seeds from the older demand_gen key too', () => {
+    seed(brief({ demand_gen: { headlines: ['Legacy long headline'], business_name: 'CNCF' } }));
+
+    expect(lines(pmax()['longHeadlines'])).toEqual(['Legacy long headline']);
+    expect(pmax()['businessName']).toBe('CNCF');
+  });
+
+  it('leaves the creative empty, with no prefill notice, when the brief has no generated copy', () => {
+    seed(brief(undefined));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(pmax()['businessName']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('lets a restored draft win over the seed', () => {
+    const draft = {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      // The whole group, as `emitDraft` snapshots it: every field is the operator's.
+      googleCreatives: {
+        performanceMaxCreative: {
+          headlines: 'Operator headline',
+          longHeadlines: 'Operator long headline',
+          descriptions: 'Operator description',
+          businessName: 'Operator Co',
+        },
+      },
+    } as unknown as CampaignImplementationDraft;
+    seed(brief(generated), draft);
+
+    expect(pmax()['headlines']).toBe('Operator headline');
+    expect(pmax()['businessName']).toBe('Operator Co');
+    // The operator's copy is not the brief's, so the notice must not claim it is.
+    expect(prefilled()).toBe(false);
+  });
+
+  /** A draft as the parent holds it, with the given Performance Max fields. */
+  function draftWith(performanceMaxCreative: Record<string, string>): CampaignImplementationDraft {
+    return {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon',
+      headlines: [''],
+      descriptions: [''],
+      googleCreatives: { performanceMaxCreative },
+    } as unknown as CampaignImplementationDraft;
+  }
+
+  it('drops the notice when a restored draft cleared the copy, as the notice invites', () => {
+    seed(brief(generated), draftWith({ headlines: '', longHeadlines: '', descriptions: '', businessName: '' }));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('keeps the notice across a round trip that restores the seeded copy unchanged', () => {
+    seed(brief(generated));
+    const seeded = { ...pmax() };
+    fixture.componentRef.setInput('briefData', null);
+    fixture.detectChanges();
+
+    seed(brief(generated), draftWith(seeded));
+
+    expect(prefilled()).toBe(true);
+  });
+
+  it('drops the notice once the operator rewrites the seeded copy', () => {
+    seed(brief(generated));
+    const group = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['performanceMaxCreative'];
+    group.patchValue({ headlines: 'Mine', longHeadlines: 'Mine too', descriptions: 'Mine as well', businessName: 'Mine Co' });
+
+    expect(prefilled()).toBe(false);
+  });
+
+  it('folds a line break inside one generated value into a space', () => {
+    seed(brief({ google_search: { headlines: ['Join\nKubeCon EU'], descriptions: [] } }));
+
+    expect(lines(pmax()['headlines'])).toEqual(['Join KubeCon EU']);
+  });
+
+  it('reads copy nested under platforms, for Search and Performance Max alike', () => {
+    seed(
+      brief({
+        platforms: { google_search: { headlines: ['Nested headline'], descriptions: ['Nested description'] }, google_display: { business_name: 'CNCF' } },
+      })
+    );
+
+    const searchHeadlines = (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].controls['headlines'].getRawValue();
+    expect(searchHeadlines).toEqual(['Nested headline']);
+    expect(lines(pmax()['headlines'])).toEqual(['Nested headline']);
+    expect(pmax()['businessName']).toBe('CNCF');
+  });
+
+  it('clears the prefill when a brief without copy replaces one with it', () => {
+    seed(brief(generated));
+    seed(brief(undefined));
+
+    expect(pmax()['headlines']).toBe('');
+    expect(prefilled()).toBe(false);
+  });
+
+  it('shows the prefill notice on the Performance Max section when the copy came from the brief', () => {
+    fixture.componentRef.setInput('googleChannelsEnabled', true);
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    seed(brief(generated));
+    (fixture.componentInstance as unknown as Record<string, any>)['campaignForm'].patchValue({ includeSearch: false, includePerformanceMax: true });
+    fixture.detectChanges();
+
+    const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
+    expect(notice?.textContent).toContain('filled in from the brief');
   });
 });
