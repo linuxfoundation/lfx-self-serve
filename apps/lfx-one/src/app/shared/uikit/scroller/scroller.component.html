@@ -1,0 +1,43 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (showButtons()) {
+  <button
+    #prevBtn
+    type="button"
+    [class]="buttonClasses() + ' -left-[14px]'"
+    [attr.aria-disabled]="!canScrollStart() || null"
+    [attr.aria-label]="'Previous ' + label()"
+    (click)="scrollByItem(-1)"
+    data-testid="ui-scroller-prev">
+    <i class="fa-light fa-chevron-left text-[16px] leading-none" aria-hidden="true"></i>
+  </button>
+}
+<!-- The focus ring sits on this wrapper because the viewport's fade mask would clip it. -->
+<div class="[&:has(>[role=region]:focus-visible)]:shadow-focus" data-testid="ui-scroller-frame">
+  <div
+    #viewport
+    [class]="viewportClasses()"
+    [style.--fade-start.px]="fadeStart()"
+    [style.--fade-end.px]="fadeEnd()"
+    [style.max-height.px]="direction() === 'horizontal' ? null : maxHeight()"
+    tabindex="0"
+    role="region"
+    [attr.aria-label]="label()"
+    (scroll)="measure()"
+    data-testid="ui-scroller-viewport">
+    <ng-content />
+  </div>
+</div>
+@if (showButtons()) {
+  <button
+    #nextBtn
+    type="button"
+    [class]="buttonClasses() + ' -right-[14px]'"
+    [attr.aria-disabled]="!canScrollEnd() || null"
+    [attr.aria-label]="'Next ' + label()"
+    (click)="scrollByItem(1)"
+    data-testid="ui-scroller-next">
+    <i class="fa-light fa-chevron-right text-[16px] leading-none" aria-hidden="true"></i>
+  </button>
+}
