@@ -792,8 +792,8 @@ export interface CampaignBriefPersistResult {
    * still refuses.
    *
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
-   * and the caller's next step is a CHOICE (open the existing one, or file under a different
-   * event) rather than a retry.
+   * and the caller's next step is a CHOICE (open the existing one, replace it explicitly — the paid
+   * surface's Replace saved brief, #4731 — or file under a different event) rather than a retry.
    */
   conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
 }
@@ -901,7 +901,9 @@ export interface CampaignBriefPersistenceState {
   approved: boolean;
 
   /**
-   * Why the save was refused, on an `error` that came from a conflict rather than a failure.
+   * Why the save was refused, on an `error` whose refusal still stands — set by a conflict, and kept
+   * by a failed Replace read, which leaves the `unowned-brief-exists` refusal unresolved. Absent on
+   * an ordinary save failure.
    *
    * Read for one case: `unowned-brief-exists` is the refusal the Implementation tab offers
    * "Replace saved brief" for (#4731). Retry cannot clear it — the same save is refused for as long

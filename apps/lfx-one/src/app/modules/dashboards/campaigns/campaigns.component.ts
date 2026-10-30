@@ -376,8 +376,9 @@ export class CampaignsComponent {
     // An earlier revision said "Reload and re-enter the event URL to see their changes" — added
     // while restoring reload advice this branch had dropped, without noticing it contradicts the
     // promotion added on the base. `unowned-brief-exists` above is the conflict that genuinely
-    // needs reload advice: there the session may NOT replace, so the stored brief has to be
-    // loaded before anything can proceed.
+    // needs reload advice: there the session may not replace by proceeding, so the stored brief has
+    // to be loaded first — by a reload and Restore, or by the paid surface's Replace saved brief,
+    // which reads it and then replaces it (#4731).
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     // Names the consequence, like the other two. It did not need to while this conflict granted
@@ -4184,13 +4185,21 @@ export class CampaignsComponent {
    *
    * The ownership EPOCH is bumped like a restore's, so a save already queued for this event cannot
    * pick up an id it was not sent with. `persistBrief` then snapshots the new epoch and sends it.
+   *
+   * The record is stamped `contentChanged` and Planning is refreshed. This read may have seen a
+   * version newer than the Restore offer Planning cached, and if the replacing save then fails, a
+   * Restore would otherwise pair that offer's older content and approval with this newer ETag and
+   * enable Create against content the screen never showed. The stamp makes such an offer read as
+   * superseded, exactly as a conflict promotion does — and, like that promotion, the record carries
+   * no `approved`, so the next Restore takes the re-read row's own answer.
    */
   protected onReplaceSavedBrief(): void {
     const brief = this.briefOutput();
-    if (brief === null) return;
     const projectSlug = this.activeFoundationSlug();
-    const key = this.ownershipKey(projectSlug, brief);
-    if (projectSlug === '' || key === null) return;
+    const key = brief === null ? null : this.ownershipKey(projectSlug, brief);
+    // Unreachable while the button is shown: the refusal it answers needed a brief, a project and
+    // an event slug to happen at all. Guarded rather than asserted, because a click is an event.
+    if (brief === null || projectSlug === '' || key === null) return;
 
     // A discard or a newer save while the read is out makes its answer stale: the brief it would
     // re-save is no longer the one on screen, or a newer outcome already owns the banner.
@@ -4200,10 +4209,14 @@ export class CampaignsComponent {
 
     this.campaignService
       .loadBrief(brief.eventDetails.slug, projectSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '')
-      .pipe(take(1))
+      // Cancelled with the page: a read answered after navigation would reach `persistBrief`, which
+      // reads the foundation selected THEN and could file this brief under another project.
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
+          // Persistence went dark since the refusal: nothing can be saved or replaced, which is what
+          // `persistBrief` reports for `enabled: false` too — the idle state, not an error.
           if (result.status === 'off') {
             this.briefPersistence.set(this.idlePersistence);
             return;
@@ -4220,17 +4233,25 @@ export class CampaignsComponent {
             this.rememberBriefId(key, {
               id: result.briefId,
               etag: validator,
+              contentChanged: true,
               ...(validator === null ? { absence: 'overwrite' as const } : {}),
             });
+            this.savedBriefRefreshToken.update((token) => token + 1);
           }
           this.persistBrief(brief);
         },
-        error: () => {
+        error: (err: unknown) => {
+          console.error('[campaigns] Failed to read the saved brief to replace it', err);
           if (generation !== this.briefPersistenceGeneration || ownershipAtSend !== this.ownershipGeneration) return;
           this.briefPersistence.set({
             status: 'error',
-            briefId: null,
-            message: 'The saved brief could not be read, so it was not replaced. Try Replace saved brief again.',
+            // '' as the refusal carries it, NOT null: `canSubmit` blocks an error only while the id is
+            // non-null, and null would re-enable Create for a brief that is still unsaved.
+            briefId: '',
+            // Names both ways forward, as the refusal it stands in for did: the note under it speaks of
+            // opening the saved brief, which this sentence must not leave unexplained.
+            message:
+              'The saved brief could not be read, so it was not replaced. Try Replace saved brief again, or reload and re-enter the event URL to open the saved brief.',
             approved: false,
             conflict: 'unowned-brief-exists',
           });
