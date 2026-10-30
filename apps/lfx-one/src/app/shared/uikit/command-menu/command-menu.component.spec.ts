@@ -307,6 +307,17 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(labelOf(scrolledTo())).toBe('Kubernetes');
   });
 
+  it('goes back to the first row you can choose when the search is cleared', async () => {
+    await open();
+    await press('ArrowUp');
+    expect(activeLabel()).toBe('Change Theme…');
+
+    await type('theme');
+    await type('');
+
+    expect(activeLabel()).toBe('Kubernetes');
+  });
+
   it('scrolls to the first row you can choose when disabled rows come first', async () => {
     await open({
       groups: [
@@ -444,6 +455,13 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
       const meta = await shortcut({ metaKey: true, key: 'K' });
       expect(meta.defaultPrevented).toBe(true);
       expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
+    });
+
+    it('ignores a key that belongs to an IME composition', async () => {
+      const event = await shortcut({ ctrlKey: true, isComposing: true });
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(container.querySelector('.cdk-dialog-container')).toBeNull();
     });
 
     it('ignores a held key: it neither closes the open palette nor opens a closed one', async () => {
