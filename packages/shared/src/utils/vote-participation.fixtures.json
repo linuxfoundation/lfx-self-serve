@@ -1,0 +1,167 @@
+[
+  {
+    "name": "normal partial",
+    "input": {
+      "num_response_received": 8,
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "8 of 12 responded · 67%",
+      "percent": 67,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "none responded yet",
+    "input": {
+      "num_response_received": 0,
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "0 of 12 responded · 0%",
+      "percent": 0,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "complete is 100",
+    "input": {
+      "num_response_received": 12,
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "12 of 12 responded · 100%",
+      "percent": 100,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "incomplete rounds to 99 not 100",
+    "input": {
+      "num_response_received": 199,
+      "total_voting_request_invitations": 200,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "199 of 200 responded · 99%",
+      "percent": 99,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "excess responses cap at 100",
+    "input": {
+      "num_response_received": 13,
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "13 of 12 responded · 100%",
+      "percent": 100,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "zero electorate never yields a percent",
+    "input": {
+      "num_response_received": 0,
+      "total_voting_request_invitations": 0,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "No one invited",
+      "percent": null,
+      "state": "no_electorate"
+    }
+  },
+  {
+    "name": "null response count is unavailable, not zero",
+    "input": {
+      "num_response_received": null,
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "Unavailable",
+      "percent": null,
+      "state": "unavailable"
+    }
+  },
+  {
+    "name": "NaN response count is unavailable, not zero",
+    "input": {
+      "num_response_received": "NaN",
+      "total_voting_request_invitations": 12,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "Unavailable",
+      "percent": null,
+      "state": "unavailable"
+    }
+  },
+  {
+    "name": "null electorate shows count only",
+    "input": {
+      "num_response_received": 5,
+      "total_voting_request_invitations": null,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "5 responded",
+      "percent": null,
+      "state": "count_only"
+    }
+  },
+  {
+    "name": "ended with results held keeps the participation summary",
+    "input": {
+      "num_response_received": 10,
+      "total_voting_request_invitations": 12,
+      "status": "ended",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": "2026-05-20T10:00:00Z"
+    },
+    "expected": {
+      "label": "10 of 12 responded · 83%",
+      "percent": 83,
+      "state": "progress"
+    }
+  },
+  {
+    "name": "not started shows no counts",
+    "input": {
+      "num_response_received": null,
+      "total_voting_request_invitations": null,
+      "status": "disabled",
+      "end_time": "2026-07-01T00:00:00Z",
+      "early_end_time": null
+    },
+    "expected": {
+      "label": "Not open yet",
+      "percent": null,
+      "state": "not_open"
+    }
+  }
+]
