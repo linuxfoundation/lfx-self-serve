@@ -4,7 +4,7 @@
 import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { SpyLocation } from '@angular/common/testing';
+import { HashAwareSpyLocation } from '@shared/testing/hash-aware-spy-location';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { FormGroup } from '@angular/forms';
 import { provideRouter } from '@angular/router';
@@ -3857,7 +3857,7 @@ describe('PlanningTabComponent — HubSpot UTM states', () => {
  * #4756. The paid planner keeps the event URL in `?event=` so a reload, a second tab or a shared
  * link prefills it and offers the saved brief again, instead of opening blank.
  *
- * `SpyLocation` stands in for the address bar: it is what both `replaceState` and the planner's
+ * `HashAwareSpyLocation` stands in for the address bar: it is what both `replaceState` and the planner's
  * reader go through, so these tests see exactly what the browser would.
  */
 describe('PlanningTabComponent event URL in the page address', () => {
@@ -3875,7 +3875,7 @@ describe('PlanningTabComponent event URL in the page address', () => {
   } as CampaignProgramTypeOption;
 
   let loadBrief: Mock;
-  let location: SpyLocation;
+  let location: HashAwareSpyLocation;
 
   async function mount(address: string, deliveryType: 'paid-marketing' | 'email' = 'paid-marketing'): Promise<ComponentFixture<PlanningTabComponent>> {
     location.replaceState(address);
@@ -3917,7 +3917,7 @@ describe('PlanningTabComponent event URL in the page address', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
-        { provide: Location, useClass: SpyLocation },
+        { provide: Location, useClass: HashAwareSpyLocation },
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -3928,7 +3928,7 @@ describe('PlanningTabComponent event URL in the page address', () => {
     const context = TestBed.inject(ProjectContextService);
     context.setRouteLensKind('foundation');
     context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
-    location = TestBed.inject(Location) as SpyLocation;
+    location = TestBed.inject(Location) as HashAwareSpyLocation;
     vi.useFakeTimers();
   });
 
@@ -3961,6 +3961,16 @@ describe('PlanningTabComponent event URL in the page address', () => {
 
     expect(eventParam()).toBe(EVENT_URL);
     expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-a');
+  });
+
+  it('keeps the #fragment of the address when it writes or removes the parameter', async () => {
+    const fixture = await mount('/campaigns?project=foundation-a#plan');
+
+    type(fixture, EVENT_URL);
+    expect(location.path(true)).toMatch(/#plan$/);
+
+    type(fixture, '');
+    expect(location.path(true)).toBe('/campaigns?project=foundation-a#plan');
   });
 
   it('removes the parameter when the field is cleared or holds no usable URL', async () => {

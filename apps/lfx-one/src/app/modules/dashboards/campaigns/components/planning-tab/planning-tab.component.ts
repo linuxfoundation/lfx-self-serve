@@ -1925,13 +1925,13 @@ export class PlanningTabComponent implements OnInit {
    * The event URL the page address carries, or null when there is none this planner should use.
    *
    * The parameter is caller-supplied, so it is bounded and must parse as an http(s) URL before it
-   * reaches the form; anything else is ignored rather than prefilled. Read from `location.path()`,
+   * reaches the form; anything else is ignored rather than prefilled. Read from `location.path(true)`,
    * not `router.url`, because every writer of this page's query string uses `replaceState`, which
    * the router never sees.
    */
   private eventUrlFromAddress(): string | null {
     if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId)) return null;
-    const raw: unknown = this.router.parseUrl(this.location.path()).queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    const raw: unknown = this.router.parseUrl(this.location.path(true)).queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
     if (typeof raw !== 'string' || raw === '' || raw.length > CAMPAIGN_EVENT_URL_MAX_LENGTH) return null;
     return this.isEventUrl(raw) ? raw : null;
   }
@@ -1948,7 +1948,7 @@ export class PlanningTabComponent implements OnInit {
   private syncEventParam(url: string): void {
     if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
     const next = url.length <= CAMPAIGN_EVENT_URL_MAX_LENGTH && this.isEventUrl(url) && this.extractSlug(url) !== '' ? url : null;
-    const tree = this.router.parseUrl(this.location.path());
+    const tree = this.router.parseUrl(this.location.path(true));
     if ((tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM] ?? null) === next) return;
     if (next === null) {
       delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];

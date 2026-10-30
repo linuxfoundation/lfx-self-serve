@@ -263,6 +263,14 @@ describe('CampaignsComponent brief persistence', () => {
       expect(TestBed.inject(Location).path()).toContain('project=foundation-a');
     });
 
+    it('keeps the #fragment when it drops ?event=', () => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}#plan`);
+
+      switchProgram('education');
+
+      expect(TestBed.inject(Location).path(true)).toBe('/campaigns?project=foundation-a#plan');
+    });
+
     it("keeps ?event= when a restore adopts the brief's own program", () => {
       restore({ ...brief, programType: 'education' } as CampaignBriefOutput, 'b-1', true, 'W/"1"');
 

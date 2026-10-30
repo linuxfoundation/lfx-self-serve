@@ -6602,7 +6602,7 @@ export class CampaignsComponent {
    */
   private clearEventUrlParam(): void {
     if (!isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
-    const tree = this.router.parseUrl(this.location.path());
+    const tree = this.router.parseUrl(this.location.path(true));
     if (!(CAMPAIGN_EVENT_URL_QUERY_PARAM in tree.queryParams)) return;
     delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
     this.location.replaceState(this.router.serializeUrl(tree));

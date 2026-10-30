@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { SpyLocation } from '@angular/common/testing';
+import { HashAwareSpyLocation } from '@shared/testing/hash-aware-spy-location';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -659,12 +659,12 @@ describe('ProjectContextService — menuContext', () => {
  * `?project=` is written with `replaceState`, and so are other parameters on the same page — the
  * campaigns page keeps its event URL in `?event=` (#4756). The router never sees a `replaceState`,
  * so the sync must rebuild from the LIVE address, or it drops (or reverts) those parameters.
- * A real router and `SpyLocation` stand in for the address bar.
+ * A real router and `HashAwareSpyLocation` stand in for the address bar.
  */
 describe('ProjectContextService — project query param sync', () => {
   const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext;
   const foundationB = { uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext;
-  let location: SpyLocation;
+  let location: HashAwareSpyLocation;
   let service: ProjectContextService;
 
   function param(name: string): string | null {
@@ -675,7 +675,7 @@ describe('ProjectContextService — project query param sync', () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: Location, useClass: SpyLocation },
+        { provide: Location, useClass: HashAwareSpyLocation },
         { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
@@ -689,7 +689,7 @@ describe('ProjectContextService — project query param sync', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
     });
-    location = TestBed.inject(Location) as SpyLocation;
+    location = TestBed.inject(Location) as HashAwareSpyLocation;
     service = TestBed.inject(ProjectContextService);
     service.setRouteLensKind('foundation');
   });
@@ -702,6 +702,14 @@ describe('ProjectContextService — project query param sync', () => {
     expect(param('project')).toBe('foundation-b');
     expect(param('event')).toBe('https://events.example.com/kubecon');
     expect(location.path()).toContain('/campaigns');
+  });
+
+  it('keeps the #fragment of the live address', () => {
+    location.replaceState('/campaigns?project=foundation-a#implementation');
+
+    service.setFoundation(foundationB);
+
+    expect(location.path(true)).toBe('/campaigns?project=foundation-b#implementation');
   });
 
   it('keeps the live value, not a stale one, when the active foundation is re-selected', () => {
