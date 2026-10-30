@@ -200,10 +200,10 @@ function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Mock the bare minimum committee-view endpoints so committee-overview renders
- * with `canEdit=true` and the weekly-brief card is reachable. Anything not
- * explicitly mocked here (lens, project context, mailing lists, etc.) is left
- * to the dev backend — the card only reads `committee.uid` and `canEdit`.
+ * Mock the committee-view shell and project-writer lookup so committee-overview renders
+ * with `canEdit=true` and the weekly-brief card is reachable. The `projectWriter` option
+ * controls access to Email Group Members. Endpoints not explicitly mocked here (lens,
+ * mailing lists, etc.) are left to the dev backend.
  */
 async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}, options: { projectWriter?: boolean } = {}): Promise<void> {
   // The email share needs project-writer access (committee-view's projectWriter lookup via
