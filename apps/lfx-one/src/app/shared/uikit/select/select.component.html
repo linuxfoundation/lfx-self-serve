@@ -1,0 +1,87 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px gap between label, field and message. -->
+<div class="flex min-w-0 flex-col gap-[8px]">
+  @if (label()) {
+    <label class="label-13 text-ui-neutral-600" [id]="labelId" (click)="focusTrigger()" data-testid="ui-select-label">{{ label() }}</label>
+  }
+  <div
+    cdkOverlayOrigin
+    role="combobox"
+    aria-haspopup="listbox"
+    [id]="triggerId"
+    [class]="triggerClasses()"
+    [attr.tabindex]="isDisabled() ? -1 : 0"
+    [attr.aria-expanded]="open()"
+    [attr.aria-controls]="open() ? listboxId : null"
+    [attr.aria-activedescendant]="activeDescendant()"
+    [attr.aria-labelledby]="label() ? labelId : null"
+    [attr.aria-label]="label() ? null : ariaLabel() || null"
+    [attr.aria-required]="required() ? 'true' : null"
+    [attr.aria-disabled]="isDisabled() ? 'true' : null"
+    [attr.aria-invalid]="error() ? 'true' : null"
+    [attr.aria-describedby]="describedBy()"
+    (click)="toggle()"
+    (keydown)="onKeydown($event)"
+    (blur)="onBlur()"
+    data-testid="ui-select-trigger">
+    @if (selected()?.icon || prefixIcon()) {
+      <span [class]="valueIconClasses()" data-testid="ui-select-icon"><i [class]="selected()?.icon || prefixIcon()" aria-hidden="true"></i></span>
+    }
+    @if (selected(); as option) {
+      <span class="min-w-0 flex-1 truncate" data-testid="ui-select-value">{{ option.label }}</span>
+    } @else {
+      <span class="min-w-0 flex-1 truncate text-ui-neutral-500" data-testid="ui-select-placeholder">{{ placeholder() }}</span>
+    }
+    <span [class]="chevronClasses()"><i class="fa-light fa-chevron-down" aria-hidden="true"></i></span>
+  </div>
+  @if (error()) {
+    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-select-error">{{ error() }}</lfx-ui-error>
+  } @else if (hint()) {
+    <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-select-hint">{{ hint() }}</p>
+  }
+</div>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin()"
+  [cdkConnectedOverlayOpen]="open()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayMinWidth]="panelWidth()"
+  (detach)="closePanel()">
+  <!-- Exact px, not rem; 14px root. The mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
+  <div
+    role="listbox"
+    class="ui-select-panel flex max-h-[320px] flex-1 flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 p-[6px] shadow-menu"
+    [id]="listboxId"
+    [attr.aria-labelledby]="label() ? labelId : null"
+    [attr.aria-label]="label() ? null : ariaLabel() || null"
+    (mousedown)="$event.preventDefault()"
+    data-testid="ui-select-listbox">
+    @for (option of options(); track option.value; let i = $index) {
+      <div
+        role="option"
+        class="group flex h-ui-menu-item shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50"
+        [id]="optionId(i)"
+        [attr.aria-selected]="i === selectedIndex()"
+        [attr.aria-disabled]="option.disabled ? 'true' : null"
+        [attr.data-highlighted]="i === activeIndex() ? '' : null"
+        (mousemove)="highlight(i)"
+        (click)="select(i)"
+        data-testid="ui-select-option">
+        @if (option.icon) {
+          <span class="inline-flex shrink-0 items-center text-[14px] text-ui-neutral-600 group-aria-disabled:text-ui-neutral-500"
+            ><i [class]="option.icon" aria-hidden="true"></i
+          ></span>
+        }
+        <span class="min-w-0 flex-1 truncate">{{ option.label }}</span>
+        @if (i === selectedIndex()) {
+          <span class="inline-flex shrink-0 items-center text-[12px] text-ui-accent-500" data-testid="ui-select-check"
+            ><i class="fa-light fa-check" aria-hidden="true"></i
+          ></span>
+        }
+      </div>
+    }
+  </div>
+</ng-template>
