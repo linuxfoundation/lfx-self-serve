@@ -50,7 +50,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   public readonly weekStartsOn = input<0 | 1>(0);
   /** Accessible name for the grid when the month title is not enough. Leave empty to use the month title. */
   public readonly ariaLabel = input<string>('');
-  /** The day treated as today, as a local `YYYY-MM-DD` string. Leave `null` to use the live current date; pin it so a server and a client in another timezone agree near midnight. */
+  /** The day treated as today, as a local `YYYY-MM-DD` string. Leave `null` to use the live current date; pin it so a server and a client in another timezone agree near midnight. Any other value that is not a `YYYY-MM-DD` string, including an empty one, throws; an impossible date rolls over as `Date` does. */
   public readonly today = input<string | null>(null);
   /** The selected date, or `null`. Supports two-way binding with `[(value)]`. */
   public readonly value = model<Date | null>(null);
@@ -209,7 +209,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
 
   private startOfToday(): Date {
     const pinned = this.today();
-    return pinned ? parseLocalDateString(pinned) : this.startOfDay(new Date());
+    return pinned === null ? this.startOfDay(new Date()) : parseLocalDateString(pinned);
   }
 
   private startOfDay(date: Date): Date {

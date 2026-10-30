@@ -79,6 +79,12 @@ describe('UiCalendarComponent', () => {
     expect(host.querySelectorAll('[aria-current="date"]').length).toBe(1);
   });
 
+  it('rejects an empty pinned day instead of falling back to the live date', async () => {
+    fixture.componentRef.setInput('today', '');
+
+    await expect(fixture.whenStable()).rejects.toThrow('Invalid date string format');
+  });
+
   it('keeps the selected date month when today is pinned elsewhere', async () => {
     await set('value', new Date(2026, 4, 20));
     await set('today', '2027-01-01');
