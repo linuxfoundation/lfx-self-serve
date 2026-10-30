@@ -122,14 +122,23 @@ describe('InsightsTokensService', () => {
     });
 
     it('forces the insights audience and maps snake_case to camelCase', async () => {
-      proxyRequest.mockResolvedValueOnce({ tokens: [patToken, { ...patToken, uid: 'u2', last_used_at: '2026-09-22T08:30:00Z' }] });
+      proxyRequest.mockResolvedValueOnce({
+        tokens: [patToken, { ...patToken, uid: 'u2', last_used_at: '2026-09-22T08:30:00Z', expires_at: '2026-12-20T12:00:00Z' }],
+      });
 
       const tokens = await service.listTokens(req);
 
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/tokens', 'GET', { v: '1', audience: 'insights' });
       expect(tokens).toEqual([
-        { uid: patToken.uid, name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-21T12:00:00Z', lastUsedAt: null },
-        { uid: 'u2', name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-21T12:00:00Z', lastUsedAt: '2026-09-22T08:30:00Z' },
+        { uid: patToken.uid, name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-21T12:00:00Z', lastUsedAt: null, expiresAt: null },
+        {
+          uid: 'u2',
+          name: 'ci-pipeline',
+          lookupId: 'Ab3kZ9QmT2xL',
+          createdAt: '2026-09-21T12:00:00Z',
+          lastUsedAt: '2026-09-22T08:30:00Z',
+          expiresAt: '2026-12-20T12:00:00Z',
+        },
       ]);
     });
 
@@ -152,6 +161,22 @@ describe('InsightsTokensService', () => {
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/tokens', 'POST', { v: '1' }, { name: 'ci-pipeline', audience: 'insights' });
       expect(created.secret).toBe('lfi_Ab3kZ9QmT2xLsecret');
       expect(created.token.lookupId).toBe('Ab3kZ9QmT2xL');
+    });
+
+    it('forwards the expiration when one is given', async () => {
+      proxyRequest.mockResolvedValueOnce({ secret: 'lfi_Ab3kZ9QmT2xLsecret', token: { ...patToken, expires_at: '2026-12-20T12:00:00Z' } });
+
+      const created = await service.createToken(req, 'ci-pipeline', '90d');
+
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/tokens',
+        'POST',
+        { v: '1' },
+        { name: 'ci-pipeline', audience: 'insights', expiration: '90d' }
+      );
+      expect(created.token.expiresAt).toBe('2026-12-20T12:00:00Z');
     });
 
     it('drops the refusal prose, which repeats the token name, but keeps the upstream code for the UI', async () => {
