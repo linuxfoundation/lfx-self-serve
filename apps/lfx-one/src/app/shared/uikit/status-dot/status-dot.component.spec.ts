@@ -27,6 +27,7 @@ describe('UiStatusDotComponent', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    host.remove();
   });
 
   it('shows a 10px decorative dot and the sentence-case word', () => {
@@ -98,7 +99,6 @@ describe('UiStatusDotComponent', () => {
     await vi.advanceTimersByTimeAsync(400);
 
     expect(tooltip()?.textContent?.trim()).toBe('Ready');
-    host.remove();
   });
 
   it('shows no tooltip when the word is visible', async () => {
@@ -110,6 +110,5 @@ describe('UiStatusDotComponent', () => {
     await vi.advanceTimersByTimeAsync(400);
 
     expect(tooltip()).toBeNull();
-    host.remove();
   });
 });

@@ -7,12 +7,15 @@
     {{ label() }}
     @if (help()) {
       <i
-        class="fa-light fa-circle-question text-[12px] text-ui-neutral-500"
+        class="fa-light fa-circle-question rounded-ui-full text-[12px] text-ui-neutral-500 focus-visible:shadow-focus focus-visible:outline-none"
         role="img"
+        tabindex="0"
         [attr.aria-label]="help()"
         [lfxUiTooltip]="help()"
         data-testid="ui-description-help"></i>
     }
   </dt>
-  <dd [class]="valueClasses()" [lfxUiTooltip]="ellipsis() ? value() : ''" data-testid="ui-description-value">{{ value() }}</dd>
+  <dd [class]="valueClasses()" [attr.tabindex]="ellipsis() ? 0 : null" [lfxUiTooltip]="ellipsis() ? value() : ''" data-testid="ui-description-value">
+    {{ value() }}
+  </dd>
 </dl>

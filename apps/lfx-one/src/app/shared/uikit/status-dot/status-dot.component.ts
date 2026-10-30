@@ -47,7 +47,7 @@ export class UiStatusDotComponent {
   private initDotClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem; 14px root.
-      const base = 'h-[10px] w-[10px] shrink-0 rounded-full';
+      const base = 'h-[10px] w-[10px] shrink-0 rounded-ui-full';
       const states = {
         queued: 'status-dot-pulse bg-ui-neutral-400',
         building: 'status-dot-pulse bg-ui-warning-500',

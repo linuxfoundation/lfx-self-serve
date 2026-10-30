@@ -39,7 +39,13 @@ export class UiDescriptionComponent {
   private initValueClasses(): Signal<string> {
     return computed(() => {
       const base = 'copy-14 min-w-0 text-ui-neutral-900';
-      return [base, this.ellipsis() ? 'max-w-full truncate' : '', this.align() === 'right' ? 'tabular-nums' : ''].filter(Boolean).join(' ');
+      return [
+        base,
+        this.ellipsis() ? 'max-w-full truncate focus-visible:shadow-focus focus-visible:outline-none' : '',
+        this.align() === 'right' ? 'tabular-nums' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
     });
   }
 }

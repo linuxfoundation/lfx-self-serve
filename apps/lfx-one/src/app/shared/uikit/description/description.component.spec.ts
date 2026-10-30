@@ -26,6 +26,16 @@ describe('UiDescriptionComponent', () => {
     await vi.advanceTimersByTimeAsync(400);
   };
 
+  // A Tab keydown first, so the focus counts as keyboard focus and opens the tooltip.
+  const focusByKeyboard = async (target: Element | null): Promise<void> => {
+    document.body.appendChild(host);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    (target as HTMLElement).focus();
+    await vi.advanceTimersByTimeAsync(400);
+  };
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [UiDescriptionComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiDescriptionComponent);
@@ -104,6 +114,45 @@ describe('UiDescriptionComponent', () => {
     expect(help()?.getAttribute('aria-label')).toBe('Your membership tier');
     expect(help()?.getAttribute('title')).toBeNull();
     expect(help()?.className).toContain('fa-circle-question');
+  });
+
+  it('makes the help icon keyboard-focusable with a visible focus ring', async () => {
+    fixture.componentRef.setInput('help', 'Your membership tier');
+    await fixture.whenStable();
+
+    expect(help()?.getAttribute('tabindex')).toBe('0');
+    expect(help()?.className).toContain('focus-visible:shadow-focus');
+    expect(help()?.className).toContain('rounded-ui-full');
+  });
+
+  it('shows the help text in a tooltip on keyboard focus', async () => {
+    fixture.componentRef.setInput('help', 'Your membership tier');
+    await fixture.whenStable();
+
+    await focusByKeyboard(help());
+
+    expect(document.activeElement).toBe(help());
+    expect(tooltip()?.textContent?.trim()).toBe('Your membership tier');
+  });
+
+  it('makes a truncated value keyboard-focusable and leaves a plain value out of the tab order', async () => {
+    expect(value().getAttribute('tabindex')).toBeNull();
+
+    fixture.componentRef.setInput('ellipsis', true);
+    await fixture.whenStable();
+
+    expect(value().getAttribute('tabindex')).toBe('0');
+    expect(value().className).toContain('focus-visible:shadow-focus');
+  });
+
+  it('shows the full value in a tooltip when a truncated value gets keyboard focus', async () => {
+    fixture.componentRef.setInput('ellipsis', true);
+    await fixture.whenStable();
+
+    await focusByKeyboard(value());
+
+    expect(document.activeElement).toBe(value());
+    expect(tooltip()?.textContent?.trim()).toBe('Europe (Lisbon)');
   });
 
   it('shows the help text in a tooltip on hover', async () => {
