@@ -254,7 +254,10 @@ export class SidebarNavService {
       this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
         ? [this.orgInitiativesNavItem()]
         : [];
-    const withInitiatives = this.placeAfterOrgProjects(items, initiativesItems);
+    // Donations (#415) is dark-launched with Initiatives but shown to every org viewer, like the other org pages: CF
+    // lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
+    const donationsItems = this.isCrowdfundingAttributionEnabled() ? [this.orgDonationsNavItem()] : [];
+    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
@@ -895,6 +898,13 @@ export class SidebarNavService {
     icon: 'fa-light fa-box-dollar',
     routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
     testId: 'sidebar-org-initiatives',
+  }));
+
+  private readonly orgDonationsNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Crowdfunding Donations',
+    icon: 'fa-light fa-hand-holding-heart',
+    routerLink: this.orgLensNavigation.orgLensPath('donations'),
+    testId: 'sidebar-org-donations',
   }));
 
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({
