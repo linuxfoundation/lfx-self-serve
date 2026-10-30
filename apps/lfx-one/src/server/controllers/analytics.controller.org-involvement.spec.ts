@@ -27,12 +27,11 @@ vi.mock('../services/user.service', () => ({ UserService: class {} }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// The utils barrel cannot load in this server-only runtime; the real org-scope parser is what runs here.
+// The utils barrel cannot load in this server-only runtime.
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
 }));
 
-import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
 function call(query: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
@@ -41,7 +40,8 @@ function call(query: Record<string, string>): { res: Response; next: NextFunctio
   return { res, next, promise: new AnalyticsController().orgContributorsMonthly({ query } as unknown as Request, res, next) };
 }
 
-describe('AnalyticsController.orgContributorsMonthly — organization scope (lfx-self-serve-ops#1219)', () => {
+// lfx-self-serve-ops#1219: the Overview has no organization scope picker, so its card always reads the default scope.
+describe('AnalyticsController.orgContributorsMonthly — the default organization scope', () => {
   const response = { accountId: ACCOUNT, totalActiveContributors: 5, monthlyData: [], monthlyLabels: [] };
 
   beforeEach(() => {
@@ -49,26 +49,16 @@ describe('AnalyticsController.orgContributorsMonthly — organization scope (lfx
     getContributorsMonthly.mockResolvedValue(response);
   });
 
-  it.each([
-    [{ accountId: ACCOUNT }, 'insights'],
-    [{ accountId: ACCOUNT, orgScope: 'insights' }, 'insights'],
-    [{ accountId: ACCOUNT, orgScope: 'all' }, 'all'],
-  ])('reads %o under the %s scope', async (query, scope) => {
-    const { res, next, promise } = call(query);
-    await promise;
+  it.each<Record<string, string>>([{ accountId: ACCOUNT }, { accountId: ACCOUNT, orgScope: 'all' }, { accountId: ACCOUNT, orgScope: 'everyone' }])(
+    'reads %o for the account alone, taking no organization scope from the request',
+    async (query) => {
+      const { res, next, promise } = call(query);
+      await promise;
 
-    expect(next).not.toHaveBeenCalled();
-    expect(getContributorsMonthly).toHaveBeenCalledWith(ACCOUNT, scope);
-    expect(res.json).toHaveBeenCalledWith(response);
-  });
-
-  it('rejects an unknown scope with a 400 before reading', async () => {
-    const { next, promise } = call({ accountId: ACCOUNT, orgScope: 'everyone' });
-    await promise;
-
-    expect(getContributorsMonthly).not.toHaveBeenCalled();
-    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
-    expect(error).toBeInstanceOf(ServiceValidationError);
-    expect(error.statusCode).toBe(400);
-  });
+      expect(next).not.toHaveBeenCalled();
+      expect(getContributorsMonthly).toHaveBeenCalledWith(ACCOUNT);
+      expect(getContributorsMonthly.mock.calls[0]).toHaveLength(1);
+      expect(res.json).toHaveBeenCalledWith(response);
+    }
+  );
 });

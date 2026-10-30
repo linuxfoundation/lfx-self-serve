@@ -58,7 +58,6 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
-import { parseOrgScope } from '../helpers/org-commit-filters.helper';
 import {
   assertHealthMetricsRange,
   getStringQueryParam,
@@ -1969,7 +1968,8 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/org-involvement-contributors-monthly
    * Get cross-foundation active contributors monthly for an organization
-   * Query params: accountId (required), orgScope (`insights` default | `all`, lfx-self-serve-ops#1219)
+   * Query params: accountId (required). Always the default organization scope, the Overview having no scope picker
+   * (lfx-self-serve-ops#1219).
    */
   public async orgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_involvement_contributors_monthly');
@@ -1977,13 +1977,10 @@ export class AnalyticsController {
     try {
       const accountId = this.parseAccountIdParam(req, 'get_org_involvement_contributors_monthly');
 
-      const orgScope = parseOrgScope(req, 'get_org_involvement_contributors_monthly');
-
-      const response = await this.orgInvolvementService.getContributorsMonthly(accountId, orgScope);
+      const response = await this.orgInvolvementService.getContributorsMonthly(accountId);
 
       logger.success(req, 'get_org_involvement_contributors_monthly', startTime, {
         account_id: accountId,
-        org_scope: orgScope,
         total_active_contributors: response.totalActiveContributors,
         monthly_data_points: response.monthlyData.length,
       });

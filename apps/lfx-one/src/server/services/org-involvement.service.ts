@@ -13,6 +13,7 @@ import {
 } from '@lfx-one/shared';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
@@ -99,10 +100,15 @@ export class OrgInvolvementService {
     );
   }
 
-  public async getContributorsMonthly(accountId: string, orgScope: OrgScopeFilter): Promise<OrgInvolvementContributorsMonthlyResponse> {
+  /**
+   * The Overview's Active Contributors card, always at the default organization scope (lfx-self-serve-ops#1219): the
+   * Overview has no scope picker, so it counts the account's Insights organization, or every related organization for an
+   * account without one ({@link resolveOrgScope}'s fallback).
+   */
+  public async getContributorsMonthly(accountId: string): Promise<OrgInvolvementContributorsMonthlyResponse> {
     // `:{scope}` (lfx-self-serve-ops#1219): the effective organization scope, so an account without an Insights org
     // shares its `all` entry.
-    const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, DEFAULT_ORG_SCOPE);
     // `contributors:v5`: the trend reads lf-dbt's ORG_CONTRIBUTORS_MONTHLY, now every project with team members left out
     // (lf-dbt#3149). (`v4`: the headline counts all projects over the last 2 years, the Org Lens default view
     // (lfx-self-serve#4694), and leaves out CDP team members as the People -> Contributors default does
