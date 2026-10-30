@@ -272,7 +272,7 @@ export class VotePresenterComponent {
     this.exit();
   }
 
-  /** Called a tick after a dialog hides, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
+  /** Called when a dialog hides; the reset it triggers runs a tick later, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
   protected onConfirmHidden(): void {
     this.guardedConfirm.onHidden();
   }
