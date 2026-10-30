@@ -30,17 +30,21 @@ The page opens on the **Overview** tab and has these tabs:
 
 - **Overview** shows the vote's description, a short results summary with a **View full results** link, and recent comments.
 - **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
-- **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment.
-- **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted.
+- **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment. The tab shows a count of the comments once results load. On a pseudo-anonymous vote the count stays hidden until comments are released after the vote closes.
+- **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted. The tab shows a count of the invited voters.
+
+A tab shows no count when there is nothing to count.
 
 Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
 
 The buttons at the top right depend on the vote's status:
 
 - **Send reminder** on active votes. See [Send a reminder](../manage-votes/#send-a-reminder).
+- **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. On the vote page a **Ballots sent** message confirms how many members were emailed. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
 - **Present** and **Copy slide** on active and ended votes. See [Present, Extend, Clone, and Send a Summary](../present-extend-clone/).
-- **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
 - **Cast vote**, if you are also invited and haven't voted yet.
+
+On an active vote the header also shows how long is left, for example **Closes in 4 days**, next to the closing date. Hover or focus the closing date to see the full time zone name. Screen readers also announce the full time zone with the closing date.
 
 ### Ranked questions
 

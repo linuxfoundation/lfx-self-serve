@@ -193,7 +193,8 @@
             <div class="flex flex-col gap-5" data-testid="vote-presenter-count-block">
               <p class="m-0 flex flex-wrap items-baseline gap-x-5" aria-live="polite" data-testid="vote-presenter-count">
                 @if (countParts().value) {
-                  <span class="text-8xl lg:text-[120px] font-extrabold leading-none">{{ countParts().value }}</span>
+                  <!-- Exact 72px/120px projector sizes; the Tailwind scale has no text-8xl (styling.md accepts an arbitrary px size for a design value). -->
+                  <span class="text-[72px] lg:text-[120px] font-extrabold leading-none">{{ countParts().value }}</span>
                   {{ ' ' }}
                 }
                 <span class="text-2xl lg:text-4xl font-semibold text-gray-400">{{ countParts().rest }}</span>

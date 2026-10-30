@@ -321,16 +321,21 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
   if (Number.isNaN(date.getTime())) return '';
 
   try {
-    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   } catch {
-    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   }
+}
+
+/** Zones at a zero offset with no abbreviation (e.g. Europe/Lisbon in winter) format as "GMT+0"; say "UTC" instead. */
+function readableZeroOffset(formatted: string): string {
+  return formatted.replace(/ GMT[+-]0$/, ' UTC');
 }
 
 /**
  * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
  * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
- * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * provides the full zone name for the hover tooltip, even when formatVoteDeadline normalizes a zero-offset label to UTC.
  * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {

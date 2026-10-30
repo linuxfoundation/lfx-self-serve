@@ -23,14 +23,11 @@ export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
  */
 export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
-/** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
-export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
  * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
- * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
- * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
- * milestone-gate precedent. Default false: a missing LaunchDarkly flag keeps the
- * module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
+ * route and sidebar entry. The org-lens prefix keeps it in the lens family; the `m3` suffix
+ * follows the `MY_CLAS_M2_ENABLED_FLAG` milestone-gate precedent. Default false: a missing
+ * LaunchDarkly flag keeps the module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
  *
  * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
  * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
