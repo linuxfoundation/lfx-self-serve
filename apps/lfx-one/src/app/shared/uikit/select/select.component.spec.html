@@ -21,20 +21,21 @@
     </lfx-ui-select>
   }
   @case ('rich') {
+    <!-- Synthetic people, not real users. -->
     <lfx-ui-select ariaLabel="Owner" [(value)]="value">
       <ng-template lfxUiSelectValue let-option>
         <span data-testid="custom-value">Owner: {{ option.label }} ({{ option.value }})</span>
       </ng-template>
       <lfx-ui-option-group label="Team">
-        <lfx-ui-option value="maria" label="Maria Santos">
-          <span class="flex flex-col" data-testid="rich-row"><span>Maria Santos</span><span>Maintainer</span></span>
+        <lfx-ui-option value="riley" label="Riley Example">
+          <span class="flex flex-col" data-testid="rich-row"><span>Riley Example</span><span>Maintainer</span></span>
         </lfx-ui-option>
-        <lfx-ui-option value="joao" label="Joao Pires" disabled />
-        <lfx-ui-option value="nuno" label="Nuno Esteves" />
+        <lfx-ui-option value="jo" label="Jo Placeholder" disabled />
+        <lfx-ui-option value="sam" label="Sam Sample" />
       </lfx-ui-option-group>
       <lfx-ui-option-separator />
       <lfx-ui-option-group label="Guests">
-        <lfx-ui-option value="ana" label="Ana Costa" />
+        <lfx-ui-option value="avery" label="Avery Test" />
       </lfx-ui-option-group>
       <lfx-ui-option-separator />
       <lfx-ui-option value="nobody" label="Nobody" />
@@ -51,6 +52,13 @@
       }
     </lfx-ui-select>
     <button type="button" data-testid="outside">Outside</button>
+  }
+  @case ('skipped-field') {
+    <lfx-ui-select ariaLabel="Project" [(value)]="value">
+      <input lfxUiSelectHeader type="search" aria-label="Disabled search" disabled />
+      <input lfxUiSelectHeader type="search" aria-label="Search" data-testid="search" />
+      <lfx-ui-option value="kubernetes" label="Kubernetes" />
+    </lfx-ui-select>
   }
   @case ('form') {
     <lfx-ui-select label="Foundation" [formControl]="control">

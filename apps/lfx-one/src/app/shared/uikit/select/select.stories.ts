@@ -88,9 +88,9 @@ export const AllSizes: Story = {
   }),
 };
 
-/** Each option's content is its row: an avatar, a second line and a badge. The `lfxUiSelectValue` template shows the picked person in the trigger. */
+/** Each option's content is its row: an avatar, a second line and a badge. The `lfxUiSelectValue` template shows the picked person in the trigger. The people are synthetic, not real users. */
 export const RichOptions: Story = {
-  args: { label: 'Owner', placeholder: 'Pick an owner', value: 'maria' },
+  args: { label: 'Owner', placeholder: 'Pick an owner', value: 'riley' },
   render: (args) => ({
     props: args,
     template: `
@@ -102,23 +102,23 @@ export const RichOptions: Story = {
               <span class="truncate">{{ option.label }}</span>
             </span>
           </ng-template>
-          <lfx-ui-option value="maria" label="Maria Santos">
+          <lfx-ui-option value="riley" label="Riley Example">
             <span class="flex items-center gap-[10px]">
-              <lfx-ui-avatar name="Maria Santos" [size]="28" decorative />
-              <span class="flex min-w-0 flex-col"><span class="truncate">Maria Santos</span><span class="copy-12 truncate text-ui-neutral-600">Maintainer, 214 commits</span></span>
+              <lfx-ui-avatar name="Riley Example" [size]="28" decorative />
+              <span class="flex min-w-0 flex-col"><span class="truncate">Riley Example</span><span class="copy-12 truncate text-ui-neutral-600">Maintainer, 214 commits</span></span>
               <lfx-ui-badge tone="success" size="sm" class="ml-auto">Admin</lfx-ui-badge>
             </span>
           </lfx-ui-option>
-          <lfx-ui-option value="nuno" label="Nuno Esteves">
+          <lfx-ui-option value="sam" label="Sam Sample">
             <span class="flex items-center gap-[10px]">
-              <lfx-ui-avatar name="Nuno Esteves" tone="feature" [size]="28" decorative />
-              <span class="flex min-w-0 flex-col"><span class="truncate">Nuno Esteves</span><span class="copy-12 truncate text-ui-neutral-600">Designer, 38 commits</span></span>
+              <lfx-ui-avatar name="Sam Sample" tone="feature" [size]="28" decorative />
+              <span class="flex min-w-0 flex-col"><span class="truncate">Sam Sample</span><span class="copy-12 truncate text-ui-neutral-600">Designer, 38 commits</span></span>
             </span>
           </lfx-ui-option>
-          <lfx-ui-option value="joao" label="João Pires" disabled>
+          <lfx-ui-option value="jo" label="Jo Placeholder" disabled>
             <span class="flex items-center gap-[10px]">
-              <lfx-ui-avatar name="João Pires" [size]="28" decorative />
-              <span class="flex min-w-0 flex-col"><span class="truncate">João Pires</span><span class="copy-12 truncate">Left the project</span></span>
+              <lfx-ui-avatar name="Jo Placeholder" [size]="28" decorative />
+              <span class="flex min-w-0 flex-col"><span class="truncate">Jo Placeholder</span><span class="copy-12 truncate">Left the project</span></span>
             </span>
           </lfx-ui-option>
         </lfx-ui-select>

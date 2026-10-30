@@ -37,7 +37,7 @@ const OPTIONS: TestOption[] = [
 class SelectHostComponent {
   public readonly select = viewChild.required(UiSelectComponent);
   /** Which composition the template renders. */
-  public readonly mode = input<'basic' | 'rich' | 'slots' | 'form'>('basic');
+  public readonly mode = input<'basic' | 'rich' | 'slots' | 'skipped-field' | 'form'>('basic');
   public readonly options = input<TestOption[]>(OPTIONS);
   public readonly value = model<string | null>(null);
   public readonly ariaLabel = input<string>('');
@@ -69,7 +69,7 @@ const KEY_CODES: Record<string, number> = {
   l: 76,
 };
 
-const create = (mode: 'basic' | 'rich' | 'slots' | 'form'): ComponentFixture<SelectHostComponent> => {
+const create = (mode: 'basic' | 'rich' | 'slots' | 'skipped-field' | 'form'): ComponentFixture<SelectHostComponent> => {
   const created = TestBed.createComponent(SelectHostComponent);
   created.componentRef.setInput('mode', mode);
   return created;
@@ -501,7 +501,7 @@ describe('UiSelectComponent', () => {
       await richFixture.whenStable();
 
       expect(optionEls()[0].querySelector('[data-testid="rich-row"]')?.textContent).toContain('Maintainer');
-      expect(optionEls()[2].textContent?.trim()).toBe('Nuno Esteves');
+      expect(optionEls()[2].textContent?.trim()).toBe('Sam Sample');
     });
 
     it('exposes each group as a role="group" named by its title, and hides separators', async () => {
@@ -518,19 +518,19 @@ describe('UiSelectComponent', () => {
 
     it('keeps one arrow-key order across groups, skipping the disabled option', async () => {
       await richPress('ArrowDown');
-      expect(richActive()).toContain('Maria Santos');
+      expect(richActive()).toContain('Riley Example');
 
       await richPress('ArrowDown');
-      expect(richActive()).toBe('Nuno Esteves');
+      expect(richActive()).toBe('Sam Sample');
 
       await richPress('ArrowDown');
-      expect(richActive()).toBe('Ana Costa');
+      expect(richActive()).toBe('Avery Test');
 
       await richPress('ArrowDown');
       expect(richActive()).toBe('Nobody');
 
       await richPress('Home');
-      expect(richActive()).toContain('Maria Santos');
+      expect(richActive()).toContain('Riley Example');
     });
 
     it('types ahead over projected options by their label, not their content', async () => {
@@ -538,7 +538,7 @@ describe('UiSelectComponent', () => {
       richTrigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'a', keyCode: 65, bubbles: true, cancelable: true }));
       await richFixture.whenStable();
 
-      expect(richActive()).toBe('Ana Costa');
+      expect(richActive()).toBe('Avery Test');
     });
 
     it('picks a projected option and shows the value template for it', async () => {
@@ -546,8 +546,8 @@ describe('UiSelectComponent', () => {
       await richPress('ArrowDown');
       await richPress('Enter');
 
-      expect(richFixture.componentInstance.value()).toBe('nuno');
-      expect((richFixture.nativeElement as HTMLElement).querySelector('[data-testid="custom-value"]')?.textContent).toContain('Owner: Nuno Esteves (nuno)');
+      expect(richFixture.componentInstance.value()).toBe('sam');
+      expect((richFixture.nativeElement as HTMLElement).querySelector('[data-testid="custom-value"]')?.textContent).toContain('Owner: Sam Sample (sam)');
     });
   });
 
@@ -565,6 +565,8 @@ describe('UiSelectComponent', () => {
     };
 
     beforeEach(async () => {
+      // jsdom has no layout, so every element reads as hidden to the CDK's focusable check.
+      vi.spyOn(InteractivityChecker.prototype, 'isVisible').mockReturnValue(true);
       slotsFixture = create('slots');
       await slotsFixture.whenStable();
       slotsTrigger().focus();
@@ -737,6 +739,51 @@ describe('UiSelectComponent', () => {
       await filterPress('ArrowDown');
 
       expect(document.getElementById(filterTrigger().getAttribute('aria-activedescendant') ?? '')?.textContent?.trim()).toBe('Sigstore');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('ignores two different typed characters when every option is disabled', async () => {
+      await set('options', [
+        { value: 'a', label: 'Alpha', disabled: true },
+        { value: 'b', label: 'Beta', disabled: true },
+      ]);
+      await open();
+      vi.useFakeTimers();
+
+      expect(() => {
+        typeSync('a');
+        typeSync('b');
+      }).not.toThrow();
+      expect(activeId()).toBeNull();
+    });
+
+    it('closes the list, and ignores the pending click, when the field is disabled while open', async () => {
+      await open();
+      const row = optionEls()[1];
+      await set('disabled', true);
+      row.click();
+      await fixture.whenStable();
+
+      expect(listbox()).toBeNull();
+      expect(trigger().getAttribute('aria-expanded')).toBe('false');
+      expect(fixture.componentInstance.value()).toBeNull();
+    });
+
+    it('marks the highlighted row with an outline in forced-colors mode', async () => {
+      await open();
+
+      expect(optionEls()[0].className).toContain('forced-colors:data-[highlighted]:outline-[color:Highlight]');
+    });
+
+    it('focuses the first header field that can take focus, skipping a disabled one', async () => {
+      vi.spyOn(InteractivityChecker.prototype, 'isVisible').mockReturnValue(true);
+      const skipped = create('skipped-field');
+      await skipped.whenStable();
+      (skipped.nativeElement as HTMLElement).querySelector<HTMLElement>('[role="combobox"]')?.click();
+      await skipped.whenStable();
+
+      expect(document.activeElement).toBe(document.querySelector('[data-testid="search"]'));
     });
   });
 
