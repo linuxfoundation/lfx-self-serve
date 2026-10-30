@@ -348,6 +348,29 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(result.value?.value).toBe('meeting');
   });
 
+  it('leaves a press on the list scrollbar alone so the thumb can be dragged', async () => {
+    await open();
+    const list = container.querySelector('[data-testid="ui-command-menu-listbox"]')?.parentElement as HTMLElement;
+    // jsdom has no layout, so give the list a width and press to the right of it, where a scrollbar sits.
+    Object.defineProperty(list, 'clientWidth', { value: 300 });
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    Object.defineProperty(press, 'offsetX', { value: 310 });
+    list.dispatchEvent(press);
+
+    const inside = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    Object.defineProperty(inside, 'offsetX', { value: 100 });
+    list.dispatchEvent(inside);
+
+    expect(press.defaultPrevented).toBe(false);
+    expect(inside.defaultPrevented).toBe(true);
+  });
+
+  it('outlines the highlighted row in forced colours, where the fill disappears', async () => {
+    await open();
+
+    expect(rows()[0].className).toContain('forced-colors:data-[highlighted]:outline');
+  });
+
   it('ignores a click on a disabled row and an Enter with nothing to choose', async () => {
     await open();
     expect(rows()[1].getAttribute('aria-disabled')).toBe('true');
