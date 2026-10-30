@@ -33,7 +33,11 @@ The page opens on the **Overview** tab and has these tabs:
 
 A tab shows no count when there is nothing to count.
 
-Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
+Summary cards below the tab strip show participation:
+
+- **Responded** shows how many invited people have responded, with a progress bar that shows abstentions as a separate segment. While results are held, the bar shows overall participation without an abstention breakdown. Select the card to open the **Voters** tab.
+- **Comments** shows how many written comments voters have left. This is a different count from **Responded**, because not every voter writes a comment. Select the card to open the **Comments** tab.
+- **Not voted yet** shows how many people haven't voted. On an active vote it has a **Send reminder** button, which opens the reminder dialog, and a **View voters** button, which opens the **Voters** tab. Once everyone has voted it says **Everyone has voted** and the reminder button is gone. On an ended vote, the card is called **Did not vote** and only has **View voters**.
 
 The buttons at the top right depend on the vote's status:
 

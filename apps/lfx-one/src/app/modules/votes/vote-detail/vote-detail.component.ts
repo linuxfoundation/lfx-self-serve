@@ -18,6 +18,7 @@ import {
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
   VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT,
 } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
@@ -29,7 +30,9 @@ import {
   PollCommentResult,
   RankedQuestionView,
   ServerRequestContext,
+  StatCardCta,
   StatCardItem,
+  StatCardProgress,
   Vote,
   VoteCommentAnonymityReason,
   VoteDetailState,
@@ -47,6 +50,7 @@ import {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   canVoterFetchVoteResults,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   getRecentCommentResponses,
   isRankedPollType,
@@ -732,13 +736,16 @@ export class VoteDetailComponent {
           subLine: loaded ? this.respondedSubLine(stats.participationRate, abstained) : undefined,
           icon: 'fa-light fa-users',
           iconContainerClass: 'bg-blue-100 text-blue-600',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
+          ...(loaded && { progress: this.respondedProgress(stats, abstained) }),
           disabled,
           ...(this.showVotersTab() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES }),
         },
         {
           value: loaded && !held ? this.commentCount() : dash,
           label: 'Comments',
-          subLine: this.commentPromptCount() > 0 ? 'Optional written responses' : 'Comments not enabled',
+          subLine: this.commentPromptCount() > 0 ? 'Written comments left by voters' : 'Comments not enabled',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
           icon: 'fa-light fa-comments',
           iconContainerClass: 'bg-violet-100 text-violet-600',
           disabled,
@@ -746,11 +753,12 @@ export class VoteDetailComponent {
         },
         {
           value: loaded ? this.notVotedCount() : dash,
-          ...this.notVotedCardText(),
+          ...this.notVotedCardText(loaded),
           icon: 'fa-light fa-clock',
           iconContainerClass: 'bg-amber-100 text-amber-600',
+          subLineClass: VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
           disabled,
-          ...(this.isActive() && { action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED }),
+          ...this.notVotedCardCtas(loaded),
         },
       ];
     });
@@ -790,10 +798,49 @@ export class VoteDetailComponent {
   }
 
   /** Open, ended or draft — a draft hasn't opened for voting, so it reads neither as reminder-ready nor as closed. */
-  private notVotedCardText(): Pick<StatCardItem, 'label' | 'subLine'> {
-    if (this.isActive()) return { label: 'Not voted yet', subLine: 'Eligible for a reminder' };
+  private notVotedCardText(loaded: boolean): Pick<StatCardItem, 'label' | 'subLine'> {
+    if (this.isActive()) {
+      return { label: 'Not voted yet', subLine: loaded && this.notVotedCount() === 0 ? 'Everyone has voted' : 'Eligible for a reminder' };
+    }
     if (this.isEnded()) return { label: 'Did not vote', subLine: 'Voting is closed' };
     return { label: 'Not voted yet', subLine: 'Voting not open yet' };
+  }
+
+  /** Visible buttons for the Not voted tile: reminder (active, someone left to remind) and the Voters tab (when reachable). */
+  private notVotedCardCtas(loaded: boolean): Pick<StatCardItem, 'ctas'> {
+    const viewVoters: StatCardCta = { label: 'View voters', action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.RESPONSES, text: true };
+    const showViewVoters = this.showVotersTab();
+    if (this.isActive() && (!loaded || this.notVotedCount() > 0)) {
+      const sendReminder: StatCardCta = {
+        label: 'Send reminder',
+        action: VOTE_DETAIL_SUMMARY_CARD_ACTIONS.NOT_VOTED,
+        icon: 'fa-light fa-envelope',
+      };
+      return { ctas: showViewVoters ? [sendReminder, viewVoters] : [sendReminder] };
+    }
+    if (this.isEnded() && showViewVoters) {
+      return { ctas: [viewVoters] };
+    }
+    return {};
+  }
+
+  /** Released results split substantive ballots from abstentions; held results show only overall participation. */
+  private respondedProgress(stats: VoteParticipationStats, abstained: number): StatCardProgress {
+    const segments = computeParticipationSegments(stats, abstained);
+    const notVoted = Math.max(stats.eligibleVoters - stats.totalResponses, 0);
+    if (this.resultsHeld()) {
+      return {
+        segments: [{ percentage: segments.voted, className: 'bg-blue-600' }],
+        ariaLabel: `${stats.totalResponses} of ${stats.eligibleVoters} eligible voters responded; abstention totals are withheld`,
+      };
+    }
+    return {
+      segments: [
+        { percentage: segments.voted, className: 'bg-blue-600' },
+        { percentage: segments.abstained, className: 'bg-slate-400' },
+      ],
+      ariaLabel: `${stats.totalResponses - Math.min(abstained, stats.totalResponses)} voted, ${abstained} abstained, ${notVoted} not voted yet of ${stats.eligibleVoters} eligible voters`,
+    };
   }
 
   private respondedSubLine(participationRate: number, abstained: number): string {

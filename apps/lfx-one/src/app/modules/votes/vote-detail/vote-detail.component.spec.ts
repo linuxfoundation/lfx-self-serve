@@ -754,16 +754,62 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-summary')).toHaveProperty('columns', 3);
     });
 
-    it('makes every card clickable on an open vote', async () => {
+    const notVotedCard = (fixture: ComponentFixture<VoteDetailComponent>): StatCardItem => read<StatCardItem[]>(fixture, 'summaryCards')[2];
+
+    it('keeps Responded and Comments clickable and moves Not voted to buttons on an open vote', async () => {
       const fixture = await setup();
 
-      expect(cardActions(fixture)).toEqual(['responses', 'comments', 'not-voted']);
+      expect(cardActions(fixture)).toEqual(['responses', 'comments', undefined]);
+      expect(notVotedCard(fixture).ctas).toEqual([
+        { label: 'Send reminder', action: 'not-voted', icon: 'fa-light fa-envelope' },
+        { label: 'View voters', action: 'responses', text: true },
+      ]);
     });
 
-    it('opens the reminder dialog from the Not voted card', async () => {
+    it('uses the darker caption class on every tile', async () => {
       const fixture = await setup();
 
-      clickCard(fixture, 'not-voted');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').map((card) => card.subLineClass)).toEqual(['text-gray-600', 'text-gray-600', 'text-gray-600']);
+    });
+
+    it('states what the Comments figure counts', async () => {
+      const fixture = await setup();
+
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[1].subLine).toBe('Written comments left by voters');
+    });
+
+    it('shows a participation bar that separates abstentions', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_abstained: 1 }));
+      const fixture = await setup();
+
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[0].progress).toEqual({
+        segments: [
+          { percentage: 50, className: 'bg-blue-600' },
+          { percentage: 25, className: 'bg-slate-400' },
+        ],
+        ariaLabel: '2 voted, 1 abstained, 1 not voted yet of 4 eligible voters',
+      });
+    });
+
+    it('offers no reminder once everyone has voted', async () => {
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 4 }));
+      const fixture = await setup();
+
+      expect(notVotedCard(fixture)).toMatchObject({ value: 0, subLine: 'Everyone has voted' });
+      expect(notVotedCard(fixture).ctas).toBeUndefined();
+    });
+
+    it('shows no Not voted buttons on a draft vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.DISABLED })));
+      const fixture = await setup();
+
+      expect(notVotedCard(fixture).ctas).toBeUndefined();
+    });
+
+    it('opens the reminder dialog from the Send reminder button', async () => {
+      const fixture = await setup('browser', [StatCardGridComponent]);
+
+      fixture.nativeElement.querySelector('[data-testid="stat-card-cta-not-voted"] button').click();
 
       expect(dialogService.open).toHaveBeenCalledWith(VoteReminderDialogComponent, expect.objectContaining({ data: { vote: makeVote() } }));
     });
@@ -780,11 +826,24 @@ describe('VoteDetailComponent', () => {
       expect(dialogService.open).not.toHaveBeenCalled();
     });
 
-    it('keeps Not voted display-only once the vote has ended', async () => {
+    it('opens the Voters tab from the View voters button', async () => {
+      const fixture = await setup('browser', [StatCardGridComponent]);
+
+      fixture.nativeElement.querySelector('[data-testid="stat-card-cta-responses"] button').click();
+
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: null } })
+      );
+      expect(dialogService.open).not.toHaveBeenCalled();
+    });
+
+    it('offers only View voters on the Not voted card once the vote has ended', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
       const fixture = await setup();
 
       expect(cardActions(fixture)).toEqual(['responses', 'comments', undefined]);
+      expect(notVotedCard(fixture).ctas).toEqual([{ label: 'View voters', action: 'responses', text: true }]);
     });
 
     it('keeps Comments display-only while totals are held or when the vote has no prompts', async () => {
@@ -811,7 +870,7 @@ describe('VoteDetailComponent', () => {
       const buttons = (): HTMLButtonElement[] =>
         Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-summary"] button'));
 
-      expect(buttons()).toHaveLength(3);
+      expect(buttons()).toHaveLength(4);
       expect(buttons().every((button) => button.disabled)).toBe(phase === 'initial load');
       if (phase === 'ballot refresh') {
         call(fixture, 'onVoteSubmitted', 'vote-1');
@@ -824,7 +883,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read(fixture, 'voteResultsError')).toBe(true);
       expect(read(fixture, 'loadingVoteResults')).toBe(false);
-      expect(buttons()).toHaveLength(3);
+      expect(buttons()).toHaveLength(4);
       expect(buttons().every((button) => button.disabled)).toBe(true);
       router.navigate.mockClear();
       dialogService.open.mockClear();
@@ -1631,7 +1690,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
       expect(previewComments(fixture).map((response) => response.comment_text)).toEqual(['Second synthetic comment', 'First synthetic comment']);
-      expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Optional written responses');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Written comments left by voters');
       expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
       const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
       expect(viewAll.properties['label']).toBe('View all 2 comments');
@@ -2083,6 +2142,21 @@ describe('VoteDetailComponent', () => {
       // Held comments have nowhere to go, but the participation-only Voters tab stays reachable.
       expect(cards[1].action).toBeUndefined();
       expect(cards[2]).toMatchObject({ value: 1 });
+    });
+
+    it.each([PollStatus.ACTIVE, PollStatus.ENDED])('keeps held participation unsplit for %s votes', async (status) => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, allow_abstain: true, status })));
+      const fixture = await setup('browser', [StatCardGridComponent]);
+      const progress = read<StatCardItem[]>(fixture, 'summaryCards')[0].progress;
+
+      expect(progress).toEqual({
+        segments: [{ percentage: 75, className: 'bg-blue-600' }],
+        ariaLabel: '3 of 4 eligible voters responded; abstention totals are withheld',
+      });
+      const bar = fixture.nativeElement.querySelector('[data-testid="vote-detail-summary"] [role="img"]') as HTMLElement;
+      expect(bar.getAttribute('aria-label')).toBe(progress?.ariaLabel);
+      expect(bar.children).toHaveLength(1);
+      expect((bar.firstElementChild as HTMLElement).style.width).toBe('75%');
     });
 
     it('shows the held panel on Results, with the abstention stat held', async () => {

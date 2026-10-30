@@ -73,6 +73,7 @@ export {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   computeResultPercentage,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
   votePermalinkPath,

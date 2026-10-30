@@ -46,6 +46,7 @@ import {
   buildVoteVoterRowView,
   canVoterFetchVoteResults,
   compareVotesByRecency,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   countVoteParticipationByStatus,
@@ -1942,5 +1943,37 @@ describe('buildVoteAnswerSummary', () => {
 
   it('returns no lines for an abstention', () => {
     expect(buildVoteAnswerSummary(questions, { abstain: true })).toEqual([]);
+  });
+});
+
+describe('computeParticipationSegments', () => {
+  const stats = (eligibleVoters: number, totalResponses: number) => ({
+    eligibleVoters,
+    totalResponses,
+    participationRate: 0,
+    abstainedVoters: 0,
+    abstainedRate: 0,
+  });
+
+  it('puts every response in the voted segment when nobody abstained', () => {
+    expect(computeParticipationSegments(stats(10, 4), 0)).toEqual({ voted: 40, abstained: 0 });
+  });
+
+  it('separates abstentions from substantive ballots', () => {
+    expect(computeParticipationSegments(stats(10, 5), 2)).toEqual({ voted: 30, abstained: 20 });
+  });
+
+  it('returns zeros when there are no eligible voters', () => {
+    expect(computeParticipationSegments(stats(0, 0), 0)).toEqual({ voted: 0, abstained: 0 });
+  });
+
+  it('caps combined participation when overcounted responses include abstentions', () => {
+    expect(computeParticipationSegments(stats(5, 9), 2)).toEqual({ voted: 60, abstained: 40 });
+  });
+
+  it('clamps inconsistent counts into 0-100', () => {
+    expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
+    expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
+    expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
   });
 });
