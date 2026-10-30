@@ -231,16 +231,26 @@ export interface UiToastRef {
   /** Removes the toast now. Does nothing if it is already gone. */
   dismiss(): void;
 
-/** One choice of a uikit select. The same shape is meant for the combobox and multi-select, which differ in how they pick, not in what they pick from. */
+/** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled` and `getLabel()`. */
 export interface UiOption {
+  /** DOM id of the option row. The list points `aria-activedescendant` at it. */
+  readonly id: string;
   /** Stable identifier written to the form control and the `value` model. Unique within the list. */
-  value: string;
-  /** Text shown in the row and, once picked, in the trigger. Type-ahead matches it. */
-  label: string;
+  readonly value: string;
+  /** Plain text of the choice: shown in the trigger once picked and matched by type-ahead, whatever rich content the row holds. */
+  readonly label: string;
   /** The option stays visible but cannot be picked, and the keyboard skips it. */
-  disabled?: boolean;
-  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. */
-  icon?: string;
+  readonly disabled: boolean;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. Empty when the option has none. */
+  readonly icon: string;
+  /** Text the CDK key manager matches typed characters against. Same as `label`. */
+  getLabel(): string;
+}
+
+/** What a custom uikit select value template receives: the picked option as the implicit value. */
+export interface UiSelectValueContext {
+  /** The picked option. */
+  $implicit: UiOption;
 }
 
 /** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */

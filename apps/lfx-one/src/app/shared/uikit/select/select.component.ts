@@ -3,13 +3,15 @@
 
 import { _IdGenerator, ListKeyManager } from '@angular/cdk/a11y';
 import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
-import { DOCUMENT } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
   booleanAttribute,
   ChangeDetectionStrategy,
   Component,
   computed,
+  contentChild,
+  contentChildren,
   inject,
   Injector,
   input,
@@ -23,11 +25,29 @@ import { ControlValueAccessor, NgControl } from '@angular/forms';
 import { UiInputSize, UiOption } from '@lfx-one/shared/interfaces';
 
 import { UiErrorComponent } from '../error/error.component';
+import { UiOptionHost } from './option-host';
+import { UiOptionComponent } from './option.component';
+import { UiSelectValueDirective } from './select-value.directive';
 
 /**
- * Picks one value from a list, with an optional label, hint, error and leading icon. Built to the WAI-ARIA select-only combobox pattern:
- * focus stays on the trigger, the list is a `listbox`, and the highlighted row is announced with `aria-activedescendant`.
- * Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`).
+ * Picks one value from a list, with an optional label, hint, error and leading icon. The choices are projected `lfx-ui-option` rows, which can hold
+ * any content, optionally grouped with `lfx-ui-option-group` and divided with `lfx-ui-option-separator`:
+ *
+ * ```html
+ * <lfx-ui-select label="Foundation" [(value)]="foundation">
+ *   <lfx-ui-option-group label="Hosted"><lfx-ui-option value="cncf" label="CNCF"><my-row /></lfx-ui-option></lfx-ui-option-group>
+ *   <lfx-ui-option-separator />
+ *   <lfx-ui-option value="none" label="None" />
+ * </lfx-ui-select>
+ * ```
+ *
+ * Slots, by attribute: `lfxUiSelectPrefix` (content before the value in the trigger, such as an icon or an avatar), `lfxUiSelectHeader` (the top
+ * of the panel, such as a search field; the first focusable element in it takes focus when the panel opens, Escape closes and returns focus to the
+ * trigger, and Arrow Down hands focus back to the list) and `<ng-template lfxUiSelectValue let-option>` (what the trigger shows for the picked
+ * option, instead of its label). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows.
+ *
+ * Built to the WAI-ARIA select-only combobox pattern: focus stays on the trigger, the list is a `listbox`, and the highlighted row is announced
+ * with `aria-activedescendant`. Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`).
  *
  * Keyboard: Arrow Down, Arrow Up, Enter or Space opens the list on the chosen row. Arrows, Home, End, Page Up and Page Down move through
  * it, typing jumps to a row by its label, Enter or Space picks, Escape closes without picking, Tab picks and moves on.
@@ -35,21 +55,25 @@ import { UiErrorComponent } from '../error/error.component';
  */
 @Component({
   selector: 'lfx-ui-select',
-  imports: [CdkConnectedOverlay, CdkOverlayOrigin, UiErrorComponent],
+  imports: [CdkConnectedOverlay, CdkOverlayOrigin, NgTemplateOutlet, UiErrorComponent],
+  providers: [{ provide: UiOptionHost, useExisting: UiSelectComponent }],
   templateUrl: './select.component.html',
   styleUrl: './select.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block min-w-0' },
 })
-export class UiSelectComponent implements ControlValueAccessor {
+export class UiSelectComponent extends UiOptionHost implements ControlValueAccessor {
   private readonly baseId = inject(_IdGenerator).getId('lfx-ui-select-');
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
   protected readonly origin = viewChild.required(CdkOverlayOrigin);
+  protected readonly overlay = viewChild.required(CdkConnectedOverlay);
+  protected readonly valueTemplate = contentChild(UiSelectValueDirective);
+  protected readonly optionComponents = contentChildren(UiOptionComponent, { descendants: true });
+  /** The projected options, in document order, groups included. */
+  protected readonly options: Signal<UiOption[]> = computed(() => this.optionComponents().map((option) => option.item));
 
-  /** The choices, in display order. */
-  public readonly options = input<UiOption[]>([]);
   /** Visible label above the field. Without one, set `ariaLabel`. */
   public readonly label = input<string>('');
   /** Accessible name when there is no visible label. */
@@ -66,8 +90,10 @@ export class UiSelectComponent implements ControlValueAccessor {
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Marks the field as required for assistive technology. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. A picked option's own icon replaces it. */
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. A picked option's own icon replaces it. For other content use the `lfxUiSelectPrefix` slot. */
   public readonly prefixIcon = input<string>('');
+  /** Fully rounded trigger with 16px side padding, like `rounded` on the input. */
+  public readonly pill = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The `value` of the picked option, or `null` for none. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string | null>(null);
 
@@ -87,9 +113,8 @@ export class UiSelectComponent implements ControlValueAccessor {
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
   protected readonly selectedIndex: Signal<number> = computed(() => this.options().findIndex((option) => option.value === this.value()));
   protected readonly selected: Signal<UiOption | null> = computed(() => this.options()[this.selectedIndex()] ?? null);
-  protected readonly activeDescendant: Signal<string | null> = computed(() =>
-    this.open() && this.activeIndex() >= 0 ? this.optionId(this.activeIndex()) : null
-  );
+  protected readonly activeOption: Signal<UiOption | null> = computed(() => (this.open() ? (this.options()[this.activeIndex()] ?? null) : null));
+  protected readonly activeDescendant: Signal<string | null> = computed(() => this.activeOption()?.id ?? null);
   protected readonly describedBy: Signal<string | null> = computed(() => {
     if (this.error()) return this.errorId;
     return this.hint() ? this.hintId : null;
@@ -105,6 +130,7 @@ export class UiSelectComponent implements ControlValueAccessor {
   private typedAt = 0;
 
   public constructor() {
+    super();
     if (this.ngControl) this.ngControl.valueAccessor = this;
     this.keyManager.change.pipe(takeUntilDestroyed()).subscribe((index) => {
       this.activeIndex.set(index);
@@ -129,8 +155,21 @@ export class UiSelectComponent implements ControlValueAccessor {
     if (isDisabled) this.closePanel();
   }
 
-  protected optionId(index: number): string {
-    return `${this.baseId}-option-${index}`;
+  public isSelected(option: UiOption): boolean {
+    return option.value === this.value();
+  }
+
+  public isActive(option: UiOption): boolean {
+    return this.activeOption() === option;
+  }
+
+  public pick(option: UiOption): void {
+    this.select(this.options().findIndex((candidate) => candidate === option));
+  }
+
+  public highlight(option: UiOption): void {
+    const index = this.options().findIndex((candidate) => candidate === option);
+    if (this.activeIndex() !== index && !option.disabled) this.keyManager.setActiveItem(index);
   }
 
   protected focusTrigger(): void {
@@ -171,13 +210,37 @@ export class UiSelectComponent implements ControlValueAccessor {
     }
   }
 
-  protected onBlur(): void {
+  protected onBlur(event: FocusEvent): void {
+    // Focus moving into the panel header (a search field) keeps the list open.
+    if (this.panelHolds(event.relatedTarget)) return;
     this.closePanel();
     this.onTouched?.();
   }
 
-  protected highlight(index: number): void {
-    if (this.activeIndex() !== index && !this.options()[index]?.disabled) this.keyManager.setActiveItem(index);
+  protected onPanelFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next === this.origin().elementRef.nativeElement || this.panelHolds(next)) return;
+    this.closePanel();
+    this.onTouched?.();
+  }
+
+  protected onHeaderMousedown(event: MouseEvent): void {
+    // Only a field in the header may take focus; a click on its padding must not close the list by dropping focus.
+    if (!(event.target as HTMLElement).closest('input, textarea, select, button, a[href], [tabindex]')) event.preventDefault();
+  }
+
+  protected onHeaderKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // A select inside a modal must not close the modal as well.
+      event.stopPropagation();
+      this.closePanel();
+      this.focusTrigger();
+    } else if (event.key === 'ArrowDown') {
+      // The trigger owns `aria-activedescendant`, so list navigation continues from there.
+      event.preventDefault();
+      this.focusTrigger();
+    }
   }
 
   protected select(index: number): void {
@@ -186,6 +249,8 @@ export class UiSelectComponent implements ControlValueAccessor {
     this.value.set(option.value);
     this.onChange?.(option.value);
     this.closePanel();
+    // Focus may sit in the header, which is about to disappear.
+    this.focusTrigger();
   }
 
   protected closePanel(): void {
@@ -197,7 +262,7 @@ export class UiSelectComponent implements ControlValueAccessor {
 
   protected scrollActiveIntoView(): void {
     // Wait for the panel to render when this runs as the list opens.
-    afterNextRender(() => this.document.getElementById(this.optionId(this.activeIndex()))?.scrollIntoView({ block: 'nearest' }), { injector: this.injector });
+    afterNextRender(() => this.document.getElementById(this.activeOption()?.id ?? '')?.scrollIntoView({ block: 'nearest' }), { injector: this.injector });
   }
 
   private openPanel(): void {
@@ -209,6 +274,17 @@ export class UiSelectComponent implements ControlValueAccessor {
     this.keyManager.updateActiveItem(start);
     this.activeIndex.set(start);
     this.scrollActiveIntoView();
+    this.focusHeader();
+  }
+
+  // A search field in the header takes focus on open, so typing filters at once.
+  private focusHeader(): void {
+    const focusable = '[data-testid="ui-select-header"] :is(input, textarea, select, button, a[href], [tabindex]:not([tabindex="-1"]))';
+    afterNextRender(() => this.overlay().overlayRef?.overlayElement.querySelector<HTMLElement>(focusable)?.focus(), { injector: this.injector });
+  }
+
+  private panelHolds(node: EventTarget | null): boolean {
+    return node instanceof Node && !!this.overlay().overlayRef?.overlayElement.contains(node);
   }
 
   private isTyping(): boolean {
@@ -256,12 +332,14 @@ export class UiSelectComponent implements ControlValueAccessor {
       const border = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]';
       const forced = `forced-colors:border ${border} forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 forced-colors:focus-visible:outline-[color:Highlight]`;
       const heights = { tiny: 'h-ui-tiny', small: 'h-ui-small', medium: 'h-ui-medium' };
-      // Exact px (14px root): 8 and 10px radii have no token; side padding and icon gap per size.
+      // Exact px (14px root): 8 and 10px radii have no token; side padding and icon gap per size, 16px side padding when a pill.
       const radii = { tiny: 'rounded-[8px]', small: 'rounded-[10px]', medium: 'rounded-ui-sm' };
       const pads = { tiny: 'px-[8px] gap-[8px]', small: 'px-[10px] gap-[12px]', medium: 'px-[12px] gap-[10px]' };
+      const pillPads = { tiny: 'px-[16px] gap-[8px]', small: 'px-[16px] gap-[12px]', medium: 'px-[16px] gap-[10px]' };
       const text = this.size() === 'tiny' ? 'label-12' : 'label-14';
       const size = this.size();
-      return `flex w-full select-none items-center outline-none transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${heights[size]} ${radii[size]} ${pads[size]} ${text} ${fill} ${ring} ${forced}`;
+      const shape = this.pill() ? `rounded-ui-full ${pillPads[size]}` : `${radii[size]} ${pads[size]}`;
+      return `flex w-full select-none items-center outline-none transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${heights[size]} ${shape} ${text} ${fill} ${ring} ${forced}`;
     });
   }
 
