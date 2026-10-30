@@ -9,8 +9,8 @@ import { ControlValueAccessor, NgControl } from '@angular/forms';
  * Picks one number from a continuous range. Built on a native range input, so the browser supplies the
  * slider role, the value attributes, arrow keys (step), Page Up and Page Down (larger step), Home and End,
  * and pointer drag. The current value is always shown next to the label. Works with `[(value)]` and Angular forms.
- * Pass in-range values that sit on a step: the thumb, fill, output and `aria-valuenow` show the value snapped to the
- * nearest step and clamped to the range, and user input emits that snapped value. Setting a value from code never writes back.
+ * Pass in-range values that sit on a step: the thumb, fill, output and `aria-valuenow` show the value clamped to the
+ * range and snapped to the nearest step, and user input emits that snapped value. Setting a value from code never writes back.
  */
 @Component({
   selector: 'lfx-ui-slider',
@@ -40,7 +40,7 @@ export class UiSliderComponent implements ControlValueAccessor {
 
   protected readonly formDisabled = signal(false);
   protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
-  /** The value as shown: snapped to the nearest step from `min`, then clamped to the range. */
+  /** The value as shown: clamped to the range, then snapped to the nearest step from `min` without passing `max`. */
   protected readonly snapped: Signal<number> = this.initSnapped();
   /** Share of the track to fill, 0 to 100. */
   protected readonly percent: Signal<number> = this.initPercent();
