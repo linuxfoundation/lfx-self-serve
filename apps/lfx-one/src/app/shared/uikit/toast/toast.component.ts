@@ -56,6 +56,9 @@ export class UiToastComponent {
   /** Emits when the toast wants to go away: the countdown ended, the dismiss button or an action was pressed. */
   public readonly dismissed = output<void>();
 
+  // The duration the countdown started with; later changes of `duration` do not restart it, so the dismiss rule follows this value.
+  private readonly startedDuration = signal<number | null>(null);
+
   protected readonly role: Signal<'alert' | 'status'> = this.initRole();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly visibleActions: Signal<{ action: UiToastAction; classes: string }[]> = this.initVisibleActions();
@@ -63,8 +66,6 @@ export class UiToastComponent {
   protected readonly showDismiss: Signal<boolean> = this.initShowDismiss();
 
   private readonly resolvedDuration: Signal<number> = this.initResolvedDuration();
-  // The duration the countdown started with; later changes of `duration` do not restart it, so the dismiss rule follows this value.
-  private readonly startedDuration = signal<number | null>(null);
   private remaining = 0;
   private startedAt = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
