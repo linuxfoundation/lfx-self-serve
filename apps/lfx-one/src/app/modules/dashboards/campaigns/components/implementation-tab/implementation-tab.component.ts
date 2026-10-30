@@ -674,16 +674,18 @@ export class ImplementationTabComponent implements OnInit {
       case 'saving':
         return 'Saving this brief.';
       case 'saved':
-        // Must carry the SAME information as the visible banner, which tells the user to re-enter
-        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
-        // the reassurance without the instruction — and the instruction is the part they cannot
-        // recover on their own, since nothing else on the page says the brief needs a URL to come
-        // back.
+        // Must carry the SAME information as the visible banner, which says where the brief is
+        // after a reload. Announcing only "Brief saved." gives screen-reader users the reassurance
+        // without the instruction.
+        //
+        // A reload keeps the event URL in the page address (`?event=`, #4756), so Planning prefills
+        // it and offers the saved brief; the user no longer has to re-enter it. "Restore saved
+        // brief" is that offer's button label, so the sentence names a control that is there.
         //
         // The unapproved message, when there is one, is appended rather than replacing this: the
         // brief IS saved and the reload instruction still applies, so dropping either half would
         // leave a screen-reader user with less than the visible banner shows.
-        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+        return `Brief saved. After a reload, choose Restore saved brief on the Plan tab to reopen it.${
           this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
         }`;
       default:
@@ -1823,18 +1825,6 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
 
   /**
-   * Why Create waits when more than one Google campaign type is ticked on the campaign-service road
-   * (#4755), or null when it does not.
-   *
-   * That road creates ONE type per create: `canSubmit` returns false for a pair because
-   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
-   * type once that road is known, so two routes remain: a restored draft saved with several, and a
-   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
-   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
-   * nothing on screen saying why. Named rather than
-   * cleared: dropping a restored choice unseen would decide for the operator which campaign to make.
-   */
-  /**
    * Whether the "one type per create" note under the Google type row is shown (#4755): only on the
    * campaign-service road, and only when there is more than one type to choose between.
    *
@@ -1844,6 +1834,18 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleChannelNoteShown = computed(() => this.googleCreativeAvailable() && (this.demandGenAvailable() || this.googleChannelsAvailable()));
 
+  /**
+   * Why Create waits when more than one Google campaign type is ticked on the campaign-service road
+   * (#4755), or null when it does not.
+   *
+   * That road creates ONE type per create: `canSubmit` returns false for a pair because
+   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
+   * type once that road is known, so two routes remain: a restored draft saved with several, and a
+   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
+   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
+   * nothing on screen saying why. Named rather than cleared: dropping a restored choice unseen would
+   * decide for the operator which campaign to make.
+   */
   protected readonly googleChannelConflict = computed<string | null>(() => {
     void this.campaignFormRevision();
     // No `showGoogleSection` test: the one consumer renders inside that section's own `@if`.
