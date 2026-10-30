@@ -177,8 +177,9 @@ export interface OrgAllEmployeesResponse {
   foundations: OrgAllEmployeeFoundationOption[];
   /**
    * Off-roster read only (lfx-self-serve#4730): lowercased LF usernames of the people with code credited to this account
-   * but no employment row in the range and scope, including those the Team members pick removed from `rows`, so the
-   * page never lists their live Org Lens access row as a current employee. Absent when there are none.
+   * but no employment row in the range and scope, including those the Team members pick removed from `rows` and those
+   * listed as a former employee instead, so the page never lists their live Org Lens access row as a current employee.
+   * Absent when there are none.
    */
   unclassifiedUsernames?: string[];
 }

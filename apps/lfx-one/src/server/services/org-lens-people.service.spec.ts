@@ -1000,6 +1000,33 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(response.stats.codeContributors).toBe(2);
       });
 
+      it('lists once, as former, someone whose stale former row lacks the username their unclassified row has, taking it', async () => {
+        // A stale former row without an LF username, and a newer unclassified row for the same CDP member that has one.
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET LF_USERNAME = NULL, CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', 'leftuser', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+
+        const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.isFormer === true, row.lfUsername])).toEqual([
+          [formerKey, true, 'leftuser'],
+          [unclassifiedKey, false, 'noroster'],
+        ]);
+        expect(response.stats.codeContributors).toBe(2);
+      });
+
+      it('gives the kept former row the CDP member only the unclassified row has', async () => {
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', 'leftuser', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+
+        const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.cdpMemberId])).toEqual([
+          [formerKey, 'member-left'],
+          [unclassifiedKey, null],
+        ]);
+      });
+
       it('lists former employees only while the table is not built, and does not remember that answer', async () => {
         database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
         const missing = new Error(

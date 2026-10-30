@@ -213,11 +213,12 @@ export class OrgLensPeopleService {
    * `isUnclassified`, which the page lists only under "All employees". Only this read opts in to them, so the shared
    * people directory — and the reassign pickers that read it — never sees either. Stats are computed over these rows
    * for the request's commit filters. No address is sent for them, and none stands in for a blank name. `exclude`
-   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`); `unclassifiedUsernames` names every
-   * person with no employment record in the range and scope, those it drops included, so their live access row is never taken for a current employee. The two
-   * populations are disjoint within a warehouse build but cached separately, so someone on both (person key, CDP member
-   * or LF username) is listed once, as the former employee. Until lf-dbt builds the unclassified table the response
-   * carries former employees only.
+   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`). The two populations are disjoint within
+   * a warehouse build but cached separately, so someone on both (person key, CDP member or LF username) is listed once,
+   * as the former employee, taking the LF username or CDP member only the unclassified row has. `unclassifiedUsernames`
+   * names every person with no employment record in the range and scope, those `exclude` drops included, so their live
+   * access row is never taken for a current employee. Until lf-dbt builds the unclassified table the response carries
+   * former employees only.
    */
   public async getFormerEmployees(
     req: Request,
@@ -239,11 +240,24 @@ export class OrgLensPeopleService {
       ...(row.cdpMemberId ? [`member:${row.cdpMemberId}`] : []),
       ...(row.lfUsername ? [`username:${row.lfUsername}`] : []),
     ];
-    const formerIdentities = new Set(formerRows.flatMap(identities));
-    const unclassifiedRows = (unclassified?.rowsRaw ?? [])
-      .map((row) => ({ ...offRosterRow(row), isUnclassified: true }))
-      .filter((row) => !identities(row).some((identity) => formerIdentities.has(identity)));
-    const unclassifiedUsernames = [...new Set(unclassifiedRows.flatMap((row) => (row.lfUsername ? [row.lfUsername] : [])))];
+    const formerByIdentity = new Map(formerRows.flatMap((row) => identities(row).map((identity) => [identity, row] as const)));
+    const unclassifiedPeople = (unclassified?.rowsRaw ?? []).map((row) => ({ ...offRosterRow(row), isUnclassified: true }));
+    const unclassifiedUsernames = [...new Set(unclassifiedPeople.flatMap((row) => (row.lfUsername ? [row.lfUsername] : [])))];
+    const unclassifiedRows: OrgAllEmployeeRowInternal[] = [];
+    for (const row of unclassifiedPeople) {
+      const kept = identities(row)
+        .map((identity) => formerByIdentity.get(identity))
+        .find((match) => match !== undefined);
+      if (!kept) {
+        unclassifiedRows.push(row);
+        continue;
+      }
+      // Listed once, as the former employee, which takes the identifiers only the newer row has: the page reconciles
+      // their live rows on the username.
+      kept.lfUsername ??= row.lfUsername;
+      kept.cdpMemberId ??= row.cdpMemberId;
+      for (const identity of identities(kept)) if (!formerByIdentity.has(identity)) formerByIdentity.set(identity, kept);
+    }
     const rows = [...formerRows, ...unclassifiedRows];
     const foundations = new Map<string, string>();
     for (const row of [...former.foundationRaw, ...(unclassified?.foundationRaw ?? [])]) {

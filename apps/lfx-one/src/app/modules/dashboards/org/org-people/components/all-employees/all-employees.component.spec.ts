@@ -471,6 +471,34 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       }
     });
 
+    it('lists once, as former with the access badge, someone the read kept as former in place of their unclassified row', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      // The two warehouse reads came from different builds: the server kept the former row, with the username only the
+      // unclassified row had.
+      former$.next({ ...response([row('p-9', 'Alan Turing', { lfUsername: 'alan', isFormer: true, commitsCount: 4 })], 1), unclassifiedUsernames: ['alan'] });
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
+      expect(formerTags()).toEqual(['org-people-all-employees-row-p-9-former']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+    });
+
     it('lists someone with a live seat and no employment record as one current row keeping their code, under "Current" and "All"', async () => {
       // The merged row's count is checked as commits.
       await mount('browser', '/?employment=current&metric=commits');
