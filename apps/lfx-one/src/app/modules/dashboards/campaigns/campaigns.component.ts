@@ -4204,8 +4204,9 @@ export class CampaignsComponent {
     // A discard or a newer save while the read is out makes its answer stale: the brief it would
     // re-save is no longer the one on screen, or a newer outcome already owns the banner. The slug is
     // checked as well, as `loadCreateCapabilitiesFor` does: a foundation switch bumps the display
-    // counter (and never the ownership one) only once the `activeFoundationSlug` subscription runs, and a read answered in between would
-    // otherwise reach `persistBrief`, which files the brief under the NEW foundation.
+    // counter (and never the ownership one) only once the `activeFoundationSlug` subscription runs,
+    // and a read answered in between would otherwise reach `persistBrief`, which files the brief
+    // under the NEW foundation.
     const generation = this.briefPersistenceGeneration;
     const ownershipAtSend = this.ownershipGeneration;
     const mayAdopt = (): boolean =>
