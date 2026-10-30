@@ -28,8 +28,10 @@ The page opens on the **Overview** tab and has these tabs:
 
 - **Overview** shows the vote's description, a short results summary with a **View full results** link, and recent comments.
 - **Results** shows each question's tallies. The **Overview** tab's status tag reads **Voting in progress** while the vote is active and **Final results** once it has ended. For each question, every option shows its count and share of the votes. A vote with several questions lists each question separately as **Q1**, **Q2**, and so on. **Abstain**, when the vote allowed abstaining or anyone abstained, shows how many people abstained. Abstentions count as ballots cast but not in any option's tally.
-- **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment.
-- **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted.
+- **Comments** appears when the vote has comment questions. It lists each comment question with its responses and the date, paged when the list is long. On a named vote, managers also see who wrote each comment. The tab shows a count of the comments once results load. On a pseudo-anonymous vote the count stays hidden until comments are released after the vote closes.
+- **Voters** appears for active and ended votes, and lists each invited voter with their status. On a named vote it also shows their choices, and you can open a voter's ballot. On a pseudo-anonymous vote it shows only who has responded, never how anyone voted. The tab shows a count of the invited voters.
+
+A tab shows no count when there is nothing to count.
 
 Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
 
