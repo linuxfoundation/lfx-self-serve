@@ -840,6 +840,18 @@ describe('UiSelectComponent', () => {
       expect(document.querySelector('[data-testid="ui-select-listbox"]')).not.toBeNull();
     });
 
+    it('does not pick on the repeats of a held Enter or Space', async () => {
+      await press('Enter');
+      await press('Enter', { repeat: true });
+      await press(' ', { repeat: true });
+
+      expect(listbox()).not.toBeNull();
+      expect(fixture.componentInstance.value()).toBeNull();
+
+      await press('Enter');
+      expect(fixture.componentInstance.value()).toBe('cncf');
+    });
+
     it('marks the highlighted row with an outline in forced-colors mode', async () => {
       await open();
 
