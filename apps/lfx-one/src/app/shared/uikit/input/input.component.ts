@@ -149,6 +149,7 @@ export class UiInputComponent implements ControlValueAccessor {
         '[&:hover:not(:focus-within)]:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
       // A disabled field keeps the resting ring only, so it does not look interactive on hover.
       const rest = this.isDisabled() ? 'edge' : `edge ${interactive}`;
+      // Library keeps one danger look focused or not (bundle.css [aria-invalid] follows :focus-within), so no focus variant here.
       const ring = this.error() ? dangerHalo : rest;
       // forced-colors: shadows vanish, so a real border keeps the field visible and an outline on the wrapper (not clipped by it) marks focus.
       const forced = `forced-colors:border ${this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]'} forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]`;
