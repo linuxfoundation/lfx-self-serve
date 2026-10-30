@@ -4,7 +4,7 @@ description: How to create a vote in LFX Self Serve with the three-step form, in
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, create, questions, abstain, draft, governance, elections]
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
@@ -30,7 +30,7 @@ The form's **Previous**, **Cancel**, **Save as Draft**, and **Next** buttons sta
 | Field                     | What to enter                                                                                                                                                              |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Vote Title**            | Required. At least three characters.                                                                                                                                       |
-| **Description**           | Optional context shown to voters.                                                                                                                                          |
+| **Description**           | Optional context shown to voters. It is a plain-text box: line breaks, blank lines, and indentation you type are kept when voters see it. There is no formatting toolbar.  |
 | **Group**                 | Required. The group whose members can vote. Locked when you start from a group's Votes tab.                                                                                |
 | **Eligible Participants** | Required. Choose **Voting Reps Only**, **Voting Reps and Alternates**, or **All Members of the Group**.                                                                    |
 | **Close Date**            | Required. The day the vote closes, in the timezone you pick below.                                                                                                         |
@@ -60,7 +60,7 @@ Below the questions, **Comment Questions** let you ask voters an open-ended ques
 
 ## Step 3: Review and Open Vote
 
-The review step summarizes the vote's details, questions, and comment questions. Select **Edit** on a card to jump back to that step and change it.
+The review step summarizes the vote's details, questions, and comment questions. The description appears below its label exactly as you typed it, with your line breaks and spacing kept. Select **Edit** on a card to jump back to that step and change it.
 
 When everything looks right, select **Open Vote**. A confirmation asks whether to open it now, and warns that once opened, notifications are sent and voting begins immediately. Select **Yes, open vote** to continue, or **Cancel** to go back.
 

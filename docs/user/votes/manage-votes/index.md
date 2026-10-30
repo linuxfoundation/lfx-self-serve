@@ -59,7 +59,7 @@ See [Create a Vote](../create-vote/) for what each field means.
 
 You vote from the **Me** lens, where **Votes** lists the votes you are invited to. You can also open a vote's page, for example from a reminder email, and select **Cast vote**.
 
-1. Find the active vote. Its button reads **Vote** if you haven't voted yet. Select **Vote**, or select the vote's name. A drawer opens with the vote's details and questions.
+1. Find the active vote. Its button reads **Vote** if you haven't voted yet. Select **Vote**, or select the vote's name. A drawer opens with the vote's details and questions. The description keeps its paragraphs, line breaks, and lists. On a small screen a long description scrolls inside its own box so the ballot stays in view.
 2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
 3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.

@@ -28,9 +28,13 @@
             <span class="text-gray-900 text-right">{{ title() }}</span>
           </div>
           @if (description()) {
-            <div class="flex justify-between gap-4">
+            <div class="flex flex-col gap-1">
               <span class="text-gray-500">Description:</span>
-              <span class="text-gray-900 text-right break-words max-w-[60%]">{{ description() }}</span>
+              <!-- Plain text or sanitized rich HTML; pre-wrap keeps indentation and blank lines. Angular's [innerHTML] sanitizer applies. -->
+              <div
+                class="prose prose-sm max-w-none text-sm text-gray-900 text-left whitespace-pre-wrap break-words"
+                [innerHTML]="description()"
+                data-testid="vote-review-description"></div>
             </div>
           }
           <div class="flex justify-between gap-4">

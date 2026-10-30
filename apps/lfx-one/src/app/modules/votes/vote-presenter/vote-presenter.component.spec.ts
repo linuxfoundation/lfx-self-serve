@@ -239,6 +239,42 @@ describe('VotePresenterComponent', () => {
     expect(text('vote-presenter-status')).toContain('Vote open · closes');
   });
 
+  describe('description formatting (#4727)', () => {
+    const question = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="vote-presenter-question"]');
+
+    it('preserves plain-text whitespace and keeps the presenter sizing and scroll limits', async () => {
+      const raw = '  First\n\n\n    - indented  bullet';
+      fetchVote.mockReturnValue(of(baseVote({ description: raw })));
+      await mount();
+
+      expect(question().textContent).toBe(raw);
+      for (const cls of ['whitespace-pre-wrap', 'prose', 'prose-invert', 'text-[28px]', 'max-h-[calc(3*1.4*28px)]', 'overflow-y-auto', 'max-w-[900px]']) {
+        expect(question().classList.contains(cls)).toBe(true);
+      }
+      expect(question().classList.contains('[&_p]:m-0')).toBe(false);
+      expect(question().classList.contains('max-w-none')).toBe(false);
+    });
+
+    it('renders supported HTML structure and strips unsafe content', async () => {
+      fetchVote.mockReturnValue(
+        of(baseVote({ description: '<p>One</p><p>Two <strong>b</strong></p><ul><li>A</li></ul><script>alert(1)</script><a href="javascript:alert(2)">x</a>' }))
+      );
+      await mount();
+
+      expect(question().querySelectorAll('p')).toHaveLength(2);
+      expect(question().querySelector('ul > li')?.textContent).toBe('A');
+      expect(question().querySelector('script')).toBeNull();
+      expect(question().querySelector('a')?.getAttribute('href')).toMatch(/^unsafe:/);
+    });
+
+    it('renders no description block for an empty description', async () => {
+      fetchVote.mockReturnValue(of(baseVote({ description: '' })));
+      await mount();
+
+      expect(has('vote-presenter-question')).toBe(false);
+    });
+  });
+
   it('Retry from the error state restarts polling', async () => {
     fetchVote.mockReturnValueOnce(throwError(() => new Error('down'))).mockReturnValue(of(baseVote()));
     await mount();

@@ -1,0 +1,81 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { VoteReviewComponent } from './vote-review.component';
+
+describe('VoteReviewComponent — description formatting (#4727)', () => {
+  let fixture: ComponentFixture<VoteReviewComponent>;
+  let form: FormGroup;
+
+  const description = () => fixture.nativeElement.querySelector('[data-testid="vote-review-description"]') as HTMLElement | null;
+
+  async function render(value: string): Promise<void> {
+    form = new FormGroup({
+      title: new FormControl('Charter ratification'),
+      description: new FormControl(value),
+      committee: new FormControl(null),
+      eligible_participants: new FormControl(''),
+      close_date: new FormControl(null),
+      close_time: new FormControl(''),
+      timezone: new FormControl('UTC'),
+      allow_abstain: new FormControl(false),
+      questions: new FormArray([]),
+      commentPrompts: new FormArray([]),
+    });
+    fixture = TestBed.createComponent(VoteReviewComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [VoteReviewComponent], providers: [provideNoopAnimations()] });
+  });
+
+  afterEach(() => fixture?.destroy());
+
+  it('preserves plain-text whitespace in a left-aligned block', async () => {
+    const raw = '  First\n\n\n    - indented  bullet\n1.  numbered';
+    await render(raw);
+
+    expect(description()?.textContent).toBe(raw);
+    expect(description()?.children).toHaveLength(0);
+    expect(description()?.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(description()?.classList.contains('text-left')).toBe(true);
+  });
+
+  it('renders supported HTML as elements, not literal tags', async () => {
+    await render('<p>One <strong>b</strong></p><ul><li>A</li></ul>');
+
+    expect(description()?.querySelector('p')).toBeTruthy();
+    expect(description()?.querySelector('ul > li')?.textContent).toBe('A');
+    expect(description()?.textContent).not.toContain('<p>');
+  });
+
+  it('updates when the form value changes', async () => {
+    await render('Before');
+    form.get('description')?.setValue('After\n\nMore');
+    fixture.detectChanges();
+
+    expect(description()?.textContent).toBe('After\n\nMore');
+  });
+
+  it('strips unsafe content', async () => {
+    await render('<p>ok</p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">l</a>');
+
+    expect(description()?.querySelector('script')).toBeNull();
+    expect(description()?.innerHTML).not.toContain('onerror');
+    expect(description()?.querySelector('a')?.getAttribute('href')).toMatch(/^unsafe:/);
+  });
+
+  it('adds no description row when empty', async () => {
+    await render('');
+
+    expect(description()).toBeNull();
+  });
+});

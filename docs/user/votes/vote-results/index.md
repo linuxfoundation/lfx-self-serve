@@ -22,6 +22,8 @@ Web links in the vote's description are blue and underlined, including plain-tex
 
 If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
 
+The vote's description keeps its paragraphs, line breaks, and lists, the same as in the cast drawer.
+
 ## If you manage the vote
 
 The page opens on the **Overview** tab and has these tabs:
