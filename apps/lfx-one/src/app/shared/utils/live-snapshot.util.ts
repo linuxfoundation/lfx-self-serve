@@ -1,12 +1,41 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, DestroyRef, inject, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import type { LiveSnapshot, LiveSnapshotOptions, LiveSnapshotValue } from '@lfx-one/shared/interfaces';
-import { filter, map, switchMap, tap } from 'rxjs';
+import { filter, map, Observable, switchMap, tap } from 'rxjs';
 
 import { createVisibilityPoll } from './visibility-poll.util';
+
+/** The latest value a live poll returned, stamped with the browser clock when it landed. */
+export interface LiveSnapshotValue<T> {
+  value: T;
+  receivedAtMs: number;
+}
+
+/** Inputs for createLiveSnapshot. */
+export interface LiveSnapshotOptions<T> {
+  /** Identity of the polled resource; a null key pauses polling, a changed key drops the previous snapshot. */
+  key: Signal<string | null>;
+  fetch: (key: string) => Observable<T>;
+  doc: Document;
+  intervalMs: number;
+  backoffBaseMs: number;
+  backoffMaxMs: number;
+  /** False (the server) builds the signals but never subscribes, so nothing touches `document`. Defaults to true. */
+  enabled?: boolean;
+}
+
+/** Result of createLiveSnapshot. */
+export interface LiveSnapshot<T> {
+  snapshot: Signal<LiveSnapshotValue<T> | null>;
+  /** Consecutive failed polls since the last success (0 when healthy). */
+  failures: Signal<number>;
+  /** Restarts the poll loop and returns the new generation; `resetFailures` also clears the failure count. */
+  restart: (resetFailures?: boolean) => number;
+  /** Generation of the poll that last succeeded, -1 before any. A restart settles once `landedGeneration() >= restart()`. */
+  landedGeneration: Signal<number>;
+}
 
 /**
  * Live snapshot of one keyed resource, polled with {@link createVisibilityPoll} (visibility-aware, sequential, backoff on error).

@@ -3,8 +3,28 @@
 
 import { signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import type { HeldResults, HeldResultsOptions } from '@lfx-one/shared/interfaces';
 import { catchError, distinctUntilChanged, EMPTY, expand, Observable, of, switchMap, tap, timer } from 'rxjs';
+
+/** Inputs for createHeldResults. */
+export interface HeldResultsOptions<R> {
+  /** Non-null only while results are wanted (for example while a vote is ended); each new non-null key loads once. */
+  key: Signal<string | null>;
+  load: (key: string) => Observable<R>;
+  /** True when the payload is a placeholder that will be replaced, so it is re-requested after `retryMs`. */
+  isHeld: (results: R) => boolean;
+  retryMs: number;
+  /** Cap on requests for one key, including the first. */
+  maxAttempts: number;
+  /** Logged with the error when a load fails. */
+  errorMessage: string;
+}
+
+/** Result of createHeldResults. */
+export interface HeldResults<R> {
+  results: Signal<R | null>;
+  loading: Signal<boolean>;
+  error: Signal<boolean>;
+}
 
 /**
  * Loads a keyed result once per period the key is non-null, re-requesting a held placeholder a bounded number of times.

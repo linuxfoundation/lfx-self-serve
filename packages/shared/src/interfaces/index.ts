@@ -118,7 +118,6 @@ export * from './server-request-context.interface';
 // Poll interfaces
 export * from './poll.interface';
 export * from './vote-presenter.interface';
-export * from './live-snapshot.interface';
 
 // Survey interfaces
 export * from './survey.interface';
