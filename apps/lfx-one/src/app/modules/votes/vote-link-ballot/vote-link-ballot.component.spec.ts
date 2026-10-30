@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -104,12 +104,19 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-invalid')?.textContent).toContain('This link is invalid or has expired');
   });
 
-  it('shows the LFX mark linking to a plain / on the invalid-link and loading states (#4753)', async () => {
+  it('shows the LFX mark linking to a plain / on the invalid-link state (#4753)', async () => {
     await open(of(BALLOT), '');
 
     expect(testId('vote-link-lfx-mark')).not.toBeNull();
     expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
-    expect(fixture.nativeElement.innerHTML).not.toContain('vote_token');
+  });
+
+  it('shows the LFX mark linking to a plain / while the ballot is loading, with nothing token-derived in the page (#4753)', async () => {
+    await open(NEVER);
+
+    expect(state()).toBe('loading');
+    expect(testId('vote-link-lfx-mark-link')?.getAttribute('href')).toBe('/');
+    expect(fixture.nativeElement.innerHTML).not.toContain(TOKEN);
   });
 
   it('renders the vote and form for an active vote with title and description only, no identity chrome', async () => {
@@ -428,7 +435,7 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     expect(text('vote-link-thank-you-secret')).toBe('Your ballot is secret');
   });
 
-  it('says "Your vote is updated" after an update, with no navigation, sign-in prompt or identity', async () => {
+  it('says "Your vote is updated" after an update, with only the two Self Serve links and no sign-in prompt or identity', async () => {
     await openWith({ ...BALLOT, pseudo_anonymity: false, ballot: { ...BALLOT.ballot, already_voted: true, vote_status: 'responded' } });
     (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
     submit();
