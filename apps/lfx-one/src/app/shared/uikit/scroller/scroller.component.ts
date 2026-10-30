@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
   booleanAttribute,
@@ -12,6 +13,7 @@ import {
   inject,
   Injector,
   input,
+  PLATFORM_ID,
   signal,
   Signal,
   viewChild,
@@ -43,6 +45,7 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
 export class UiScrollerComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   /** Accessible name of the scrollable region, such as "Projects". Also names the scroll buttons: "Previous Projects". */
   public readonly label = input.required<string>();
@@ -76,7 +79,11 @@ export class UiScrollerComponent {
         Array.from(el.children).forEach((child) => resize.observe(child));
         this.measure();
       };
-      const mutation = new MutationObserver(sync);
+      // Only a change to the items themselves needs new observation; deeper edits just need measuring.
+      const mutation = new MutationObserver((records) => {
+        if (records.some((record) => record.target === el)) sync();
+        else this.measure();
+      });
       // Subtree and text changes can widen the content without resizing any observed box.
       mutation.observe(el, { childList: true, subtree: true, characterData: true });
       sync();
@@ -92,7 +99,9 @@ export class UiScrollerComponent {
     // Runs before the template drops a focused scroller button, whatever removed it (overflow, `buttons` or `direction`).
     toObservable(this.showButtons)
       .pipe(takeUntilDestroyed())
-      .subscribe(() => this.keepFocusOnViewport());
+      .subscribe(() => {
+        if (this.isBrowser) this.keepFocusOnViewport();
+      });
   }
 
   protected measure(): void {

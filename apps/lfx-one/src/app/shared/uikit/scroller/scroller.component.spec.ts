@@ -235,12 +235,15 @@ describe('UiScrollerComponent', () => {
     expect(viewport().style.getPropertyValue('--fade-end')).toBe('0px');
 
     setMetrics({ scrollWidth: 800 });
+    const disconnect = vi.spyOn(ResizeObserverStub.instances[0], 'disconnect');
     (viewport().children[0].firstChild as Text).data = 'A much longer label';
     // The mutation callback runs as a microtask.
     await Promise.resolve();
     await fixture.whenStable();
 
     expect(viewport().style.getPropertyValue('--fade-end')).toBe('48px');
+    // A text edit only measures; it does not rebuild the observer wiring.
+    expect(disconnect).not.toHaveBeenCalled();
   });
 
   it('moves one item per click, using the spacing between the first two items', async () => {
