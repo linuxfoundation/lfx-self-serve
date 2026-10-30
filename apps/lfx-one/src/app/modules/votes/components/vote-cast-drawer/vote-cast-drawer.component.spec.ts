@@ -270,6 +270,46 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     expect(description!.querySelector('p')?.textContent).toBe('ok');
     expect(description!.textContent).toContain('link');
   });
+
+  it.each(['<p>Read the <a href="https://example.com/charter"><strong>charter</strong></a>.</p>', 'Read https://example.com/charter.\n\nThen vote.'])(
+    'opens a description link without leaving the drawer or resetting the ballot: %s (#4655)',
+    async (html) => {
+      const submitMyResponse = vi.fn();
+      await setup(vi.fn().mockReturnValue(of({ ...VOTE, description: html })), { submitMyResponse });
+      await openWithoutListVote();
+      const description = el('vote-cast-drawer-description')!;
+      const choice = document.getElementById('vote-cast-choice-c1') as HTMLInputElement;
+      choice.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(choice.checked).toBe(true);
+      expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
+      const locationBefore = window.location.href;
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      try {
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        const link = description.querySelector('a')!;
+        (link.querySelector('strong') ?? link).dispatchEvent(event);
+        fixture.detectChanges();
+
+        expect(opened).toHaveBeenCalledExactlyOnceWith('https://example.com/charter', '_blank', 'noopener,noreferrer');
+        expect(event.defaultPrevented).toBe(true);
+        expect(description.classList.contains('[&_a]:text-blue-600')).toBe(true);
+        expect(description.classList.contains('[&_a]:underline')).toBe(true);
+        expect(window.location.href).toBe(locationBefore);
+        expect(fixture.componentInstance.visible()).toBe(true);
+        expect(el('vote-cast-drawer-description')).toBe(description);
+        expect(document.getElementById('vote-cast-choice-c1')).toBe(choice);
+        expect(choice.checked).toBe(true);
+        expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
+        expect(getVote).toHaveBeenCalledTimes(1);
+        expect(submitMyResponse).not.toHaveBeenCalled();
+      } finally {
+        opened.mockRestore();
+      }
+    }
+  );
 });
 
 /**

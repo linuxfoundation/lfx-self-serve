@@ -128,6 +128,56 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(fixture.nativeElement.querySelector('lfx-header, lfx-navbar, [data-testid="user-menu"]')).toBeNull();
   });
 
+  it('styles description links so emailed ballot voters can recognize them (#4655)', async () => {
+    await open(of({ ...BALLOT, description: '<p>Read the <a href="https://example.com/charter">charter</a>.</p>' }));
+
+    const description = testId('vote-link-description')!;
+    expect(description.querySelector('a')?.textContent).toBe('charter');
+    expect(description.classList.contains('[&_a]:text-blue-600')).toBe(true);
+    expect(description.classList.contains('[&_a]:underline')).toBe(true);
+  });
+
+  it.each([
+    { href: 'https://example.com/charter', plain: false },
+    { href: '//example.com/charter', plain: false },
+    { href: '/docs/charter', plain: false },
+    { href: 'https://example.com/charter', plain: true },
+  ])('opens description link $href (plain: $plain) without replacing or resetting the ballot (#4655)', async ({ href, plain }) => {
+    const html = plain ? `Read ${href}.` : `<p>Read the <a href="${href}"><strong>charter</strong></a>.</p>`;
+    await open(of({ ...BALLOT, description: html }));
+    const description = testId('vote-link-description')!;
+    const link = description.querySelector('a')!;
+    const base = document.createElement('base');
+    base.href = 'https://vote.example/votes/v-1';
+    document.head.prepend(base);
+    const form = testId('vote-link-ballot-form')!;
+    const choice = form.querySelector<HTMLInputElement>('input[type="radio"]')!;
+    choice.click();
+    fixture.detectChanges();
+    expect(choice.checked).toBe(true);
+    const locationBefore = window.location.href;
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    try {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+      (link.querySelector('strong') ?? link).dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(opened).toHaveBeenCalledExactlyOnceWith(new URL(href, base.href).href, '_blank', 'noopener,noreferrer');
+      expect(event.defaultPrevented).toBe(true);
+      expect(window.location.href).toBe(locationBefore);
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-form')).toBe(form);
+      expect(testId('vote-link-description')).toBe(description);
+      expect(choice.checked).toBe(true);
+      expect(submitLinkResponse).not.toHaveBeenCalled();
+      expect(getLinkBallot).toHaveBeenCalledTimes(1);
+    } finally {
+      opened.mockRestore();
+      base.remove();
+    }
+  });
+
   it('renders the loading state before the ballot arrives', async () => {
     window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
     getLinkBallot.mockReturnValue(new Observable<VoteLinkBallot>());

@@ -57,10 +57,12 @@ import {
   votePermalinkPath,
   votePresenterPath,
 } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { exportSlideImage, voteSlideFileName, voteSlideToast } from '@shared/utils/slide-export.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
@@ -113,6 +115,8 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     NgTemplateOutlet,
     ButtonComponent,
     CardComponent,
+    ExternalLinksDirective,
+    LinkifyHtmlPipe,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,
