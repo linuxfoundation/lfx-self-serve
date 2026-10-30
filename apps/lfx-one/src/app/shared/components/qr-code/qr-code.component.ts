@@ -15,11 +15,11 @@ import { catchError, EMPTY, from, map, of, switchMap, tap } from 'rxjs';
  * `innerHTML` and the SVG carries `role="img"` with the link as its label.
  */
 @Component({
-  selector: 'lfx-vote-qr',
-  templateUrl: './vote-qr.component.html',
+  selector: 'lfx-qr-code',
+  templateUrl: './qr-code.component.html',
   host: { class: 'block' },
 })
-export class VoteQrComponent {
+export class QrCodeComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===

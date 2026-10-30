@@ -8,6 +8,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { QrCodeComponent } from '@components/qr-code/qr-code.component';
 import {
   VOTE_CLOSE_CONFIRMATION,
   VOTE_PRESENTER_BACKOFF_BASE_MS,
@@ -45,7 +46,6 @@ import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, distinctUntilChanged, EMPTY, expand, filter, map, Observable, of, switchMap, tap, timer } from 'rxjs';
 
-import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteSendBallotsComponent } from '../components/vote-send-ballots/vote-send-ballots.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 
@@ -71,7 +71,7 @@ function tallyBarClass(option: VoteResultsOption): string {
     DatePipe,
     ConfirmDialogModule,
     NgTemplateOutlet,
-    VoteQrComponent,
+    QrCodeComponent,
     VoteRankedQuestionResultsComponent,
     VoteSendBallotsComponent,
   ],
