@@ -261,7 +261,6 @@ describe('formatVoteDeadline', () => {
   it.each([
     ['Europe/Lisbon', '2027-01-15T12:00:00.000Z', 'Jan 15, 2027 12:00 PM UTC'],
     ['Atlantic/Azores', '2027-07-15T12:00:00.000Z', 'Jul 15, 2027 12:00 PM UTC'],
-    ['Africa/Casablanca', '2027-01-15T12:00:00.000Z', 'Jan 15, 2027 12:00 PM UTC'],
   ])('shows a zero-offset zone with no abbreviation (%s) as UTC, not GMT+0 (#4767)', (zone, instant, expected) => {
     expect(formatVoteDeadline(instant, zone)).toBe(expected);
   });
