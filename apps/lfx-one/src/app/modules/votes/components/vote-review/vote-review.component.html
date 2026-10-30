@@ -32,8 +32,9 @@
               <span class="text-gray-500">Description:</span>
               <!-- Plain text or sanitized rich HTML; pre-wrap keeps indentation and blank lines. Angular's [innerHTML] sanitizer applies. -->
               <div
-                class="prose prose-sm max-w-none text-sm text-gray-900 text-left whitespace-pre-wrap break-words"
-                [innerHTML]="description()"
+                class="prose prose-sm max-w-none text-sm text-gray-900 text-left whitespace-pre-wrap break-words [&_a]:text-blue-600 [&_a]:underline"
+                lfxExternalLinks
+                [innerHTML]="description() | linkifyHtml"
                 data-testid="vote-review-description"></div>
             </div>
           }

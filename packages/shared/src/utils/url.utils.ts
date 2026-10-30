@@ -178,10 +178,37 @@ function trimTrailingPunctuation(url: string): string {
  * @returns Candidate strings and their zero-based offsets in the original text
  */
 export function extractUrlCandidates(text: string): { url: string; index: number }[] {
-  return Array.from(text.matchAll(URL_DETECTION_REGEX), (match) => ({
-    url: trimTrailingPunctuation(match[0]),
-    index: match.index,
-  }));
+  const candidates: { url: string; index: number }[] = [];
+  const nextUrl = /https?:\/\//gi;
+
+  for (const match of text.matchAll(URL_DETECTION_REGEX)) {
+    const raw = match[0];
+    let start = 0;
+    let bracketDepth = 0;
+
+    // Scan each raw match once: an unmatched ] ends a prose label, but balanced
+    // brackets remain part of paths, query parameters, and IPv6 hosts.
+    for (let end = 0; end <= raw.length; end++) {
+      const char = raw.charAt(end);
+      if (char === '[') {
+        bracketDepth++;
+      } else if (char === ']' && bracketDepth > 0) {
+        bracketDepth--;
+      } else if (char === ']' || end === raw.length) {
+        candidates.push({ url: trimTrailingPunctuation(raw.slice(start, end)), index: match.index + start });
+
+        // Only search beyond the label boundary, never inside a rejected URL.
+        nextUrl.lastIndex = end + 1;
+        const next = nextUrl.exec(raw);
+        if (!next) break;
+        start = next.index;
+        end = start - 1;
+        bracketDepth = 0;
+      }
+    }
+  }
+
+  return candidates;
 }
 
 /**

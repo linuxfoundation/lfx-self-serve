@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteReviewComponent } from './vote-review.component';
 
@@ -55,6 +55,40 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
     expect(description()?.querySelector('p')).toBeTruthy();
     expect(description()?.querySelector('ul > li')?.textContent).toBe('A');
     expect(description()?.textContent).not.toContain('<p>');
+  });
+
+  it.each(['<p>Read <a href="https://example.com/charter"><strong>the charter</strong></a>.</p>', 'Read https://example.com/charter.'])(
+    'opens a description link in a safe new tab without leaving the wizard: %s',
+    async (value) => {
+      await render(value);
+      const link = description()?.querySelector('a');
+      expect(link?.getAttribute('href')).toBe('https://example.com/charter');
+      const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+      try {
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+        (link?.querySelector('strong') ?? link)?.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(true);
+        expect(opened).toHaveBeenCalledExactlyOnceWith('https://example.com/charter', '_blank', 'noopener,noreferrer');
+        expect(form.get('description')?.value).toBe(value);
+      } finally {
+        opened.mockRestore();
+      }
+    }
+  );
+
+  it('blocks private-host description links', async () => {
+    await render('<a href="https://localhost/private">Private</a>');
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    try {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+      description()?.querySelector('a')?.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(opened).not.toHaveBeenCalled();
+    } finally {
+      opened.mockRestore();
+    }
   });
 
   it('updates when the form value changes', async () => {

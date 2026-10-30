@@ -6,15 +6,17 @@ import { Component, computed, input, output, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
 import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
 import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-review',
-  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule],
+  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule, ExternalLinksDirective, LinkifyHtmlPipe],
   templateUrl: './vote-review.component.html',
 })
 export class VoteReviewComponent {

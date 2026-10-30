@@ -46,6 +46,28 @@ describe('extractUrlCandidates', () => {
     }
   );
 
+  it.each(['[https://example.com/page](https://example.com/page)', '[https://example.com](https://example.com)'])(
+    'keeps separate URL candidates and offsets in %s',
+    (text) => {
+      const url = text.slice(1, text.indexOf(']'));
+      expect(extractUrlCandidates(text)).toEqual([
+        { url, index: 1 },
+        { url, index: text.indexOf('(') + 1 },
+      ]);
+      expect(extractUrls(text)).toEqual([url, url]);
+    }
+  );
+
+  it('ends a reference-style URL label at the unmatched closing bracket', () => {
+    expect(extractUrlCandidates('[https://example.com/path][1]')).toEqual([{ url: 'https://example.com/path', index: 1 }]);
+  });
+
+  it('does not rescan nested URLs inside a rejected destination', () => {
+    const url = 'https://localhost/path?next=https://example.com';
+    expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+    expect(extractUrls(url)).toEqual([]);
+  });
+
   it.each(['', 'no links here'])('returns no candidates for %j', (text) => {
     expect(extractUrlCandidates(text)).toEqual([]);
   });
