@@ -101,6 +101,7 @@
             tooltipEvent="both"
             tabindex="0"
             role="note"
+            [attr.aria-label]="closeDateText() + ' (' + (closeTime() | longTimezone: viewerTimezone) + ')'"
             data-testid="vote-detail-header-close-date">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
           </span>

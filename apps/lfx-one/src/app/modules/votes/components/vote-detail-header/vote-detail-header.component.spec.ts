@@ -170,6 +170,18 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
   });
 
+  it.each(['creator', 'voter'] as const)('exposes the full closing time zone to screen readers for a %s', (audience) => {
+    render({ audience });
+    const closeDate: HTMLElement = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-close-date"]');
+
+    expect(closeDate.getAttribute('aria-label')).toBe('Closes Oct 30, 2026 4:00 PM UTC (Coordinated Universal Time)');
+
+    fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
+    fixture.detectChanges();
+
+    expect(closeDate.getAttribute('aria-label')).toBe('Closed Oct 20, 2026 12:00 PM UTC (Coordinated Universal Time)');
+  });
+
   describe('time remaining (#4767)', () => {
     beforeEach(() => {
       vi.useFakeTimers({ toFake: ['Date'] });

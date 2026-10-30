@@ -40,7 +40,7 @@ The buttons at the top right depend on the vote's status:
 - **Send ballots now** on active votes. It emails each member who hasn't voted a personal ballot link that doesn't need a login. LFX asks you to confirm how many members will receive it, and the button stays disabled for a couple of minutes afterwards so voters aren't emailed twice. When everyone has already voted, the button is disabled and says **Everyone has voted**. If LFX can't load the list of members who haven't voted, it says so and you can try again.
 - **Cast vote**, if you are also invited and haven't voted yet.
 
-On an active vote the header also shows how long is left, for example **Closes in 4 days**, next to the closing date. Hover the closing date to see the full time zone name.
+On an active vote the header also shows how long is left, for example **Closes in 4 days**, next to the closing date. Hover or focus the closing date to see the full time zone name. Screen readers also announce the full time zone with the closing date.
 
 ### Ranked questions
 
