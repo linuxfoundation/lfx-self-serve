@@ -293,7 +293,12 @@
                line at tablet width and below. -->
           <div class="mt-4 flex flex-wrap items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <input
+                type="checkbox"
+                formControlName="includeSearch"
+                (change)="onGoogleChannelPicked('search', $event)"
+                [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
             <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
@@ -301,7 +306,12 @@
                  create is refused either way. Search stays available, so the section is not empty. -->
             @if (demandGenAvailable()) {
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <input
+                  type="checkbox"
+                  formControlName="includeDemandGen"
+                  (change)="onGoogleChannelPicked('demand-gen', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
               </label>
             }
@@ -315,6 +325,8 @@
                 <input
                   type="checkbox"
                   formControlName="includePerformanceMax"
+                  (change)="onGoogleChannelPicked('performance-max', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-performance-max"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
@@ -349,12 +361,26 @@
                 <input
                   type="checkbox"
                   formControlName="includeDisplay"
+                  (change)="onGoogleChannelPicked('display', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-display"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Display Campaign
               </label>
             }
           </div>
+          <!-- #4755. The campaign-service road creates one Google type per create, so the row above is
+               an exclusive choice there; say so, since checkboxes alone read as "tick several". -->
+          <!-- Only where there is a choice to make: with Search the sole box offered, "choose one" says nothing.
+               The id is each type checkbox's `aria-describedby`, gated on the same signal. -->
+          @if (googleChannelNoteShown()) {
+            <p id="implementation-google-channel-single-note" class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
+              Each Google campaign type is created on its own, so choose one.
+            </p>
+          }
+          @if (googleChannelConflict(); as conflict) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-channel-conflict">{{ conflict }}</p>
+          }
         }
       </div>
 

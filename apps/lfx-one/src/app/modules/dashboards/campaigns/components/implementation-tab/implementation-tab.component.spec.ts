@@ -5040,6 +5040,118 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     expect(c['campaignName']()).toContain('| Search |');
     expect(c['campaignName']()).not.toContain('| Multi |');
   });
+
+  /**
+   * #4755. On the campaign-service road one Google type is created per create, so the type row is an
+   * exclusive choice there: ticking a second type unticks the first instead of leaving Create
+   * disabled with no reason given. The legacy road still creates Search + Demand Gen together.
+   */
+  describe('one Google campaign type per create', () => {
+    const cutover = { demandGen: true, googleChannels: true, googleCreative: true };
+
+    function tick(control: string): void {
+      const box = checkbox(control);
+      expect(box, `${control} is not rendered`).not.toBeNull();
+      box!.click();
+      fixture.detectChanges();
+    }
+
+    function q(testId: string): HTMLElement | null {
+      return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    }
+
+    it('unticks the other types when one is ticked on the campaign-service road', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      tick('includePerformanceMax');
+
+      expect(value('includePerformanceMax')).toBe(true);
+      expect(value('includeSearch')).toBe(false);
+
+      tick('includeDemandGen');
+
+      expect(value('includeDemandGen')).toBe(true);
+      expect(value('includePerformanceMax')).toBe(false);
+    });
+
+    it('leaves the others alone when a type is unticked', () => {
+      const c = seedGoogleForm({ includeSearch: true, includeDisplay: true }, cutover);
+
+      tick('includeDisplay');
+
+      expect(value('includeDisplay')).toBe(false);
+      expect(value('includeSearch')).toBe(true);
+      expect(c['canSubmit']()).toBe(true);
+    });
+
+    it('keeps Search and Demand Gen tickable together, with the split, on the legacy road', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: false, googleCreative: false });
+
+      tick('includeDemandGen');
+
+      expect(value('includeSearch')).toBe(true);
+      expect(value('includeDemandGen')).toBe(true);
+      expect(q('implementation-budget-split')).not.toBeNull();
+      expect(q('implementation-google-channel-single-note')).toBeNull();
+    });
+
+    it('says each type is created on its own, and offers no budget split, on the campaign-service road', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      expect(q('implementation-google-channel-single-note')?.textContent).toContain('created on its own');
+
+      // The pair the split funds, reached by a route this road still allows: a restored selection.
+      seedGoogleForm({ includeSearch: true, includeDemandGen: true }, cutover);
+
+      expect(q('implementation-budget-split')).toBeNull();
+    });
+
+    it('names the conflict a restored multi-type selection leaves, rather than silently disabling Create', () => {
+      const c = seedGoogleForm({ includeSearch: true, includeDemandGen: true, includeDisplay: true }, cutover);
+
+      expect(c['canSubmit']()).toBe(false);
+      const conflict = q('implementation-google-channel-conflict');
+      expect(conflict?.getAttribute('role')).toBe('alert');
+      expect(conflict?.textContent).toContain('Search, Demand Gen and Display cannot be created together');
+      // Named, not cleared: which campaign to make is the operator's call.
+      expect(value('includeSearch')).toBe(true);
+      expect(value('includeDemandGen')).toBe(true);
+    });
+
+    it('omits the note, and the description pointing at it, when Search is the only type offered', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: false, googleChannels: false, googleCreative: true });
+
+      expect(q('implementation-google-channel-single-note')).toBeNull();
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('describes each type checkbox by the note, so ticking one explains unticking the rest', () => {
+      seedGoogleForm({ includeSearch: true }, cutover);
+
+      const note = fixture.nativeElement.querySelector('#implementation-google-channel-single-note');
+      expect(note).not.toBeNull();
+      for (const control of ['includeSearch', 'includeDemandGen', 'includePerformanceMax', 'includeDisplay']) {
+        expect(checkbox(control)?.getAttribute('aria-describedby'), control).toBe('implementation-google-channel-single-note');
+      }
+    });
+
+    it('describes no checkbox by the note on the legacy road', () => {
+      seedGoogleForm({ includeSearch: true }, { demandGen: true, googleChannels: false, googleCreative: false });
+
+      expect(checkbox('includeSearch')?.getAttribute('aria-describedby')).toBeNull();
+      expect(checkbox('includeDemandGen')?.getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('raises the conflict when the capability answer arrives after a multi-type selection', () => {
+      seedGoogleForm({ includeSearch: true, includeDemandGen: true }, { demandGen: true, googleChannels: true, googleCreative: null });
+      expect(q('implementation-google-channel-conflict')).toBeNull();
+
+      fixture.componentRef.setInput('googleCreativeEnabled', true);
+      fixture.detectChanges();
+
+      expect(q('implementation-google-channel-conflict')?.textContent).toContain('Search and Demand Gen cannot be created together');
+    });
+  });
 });
 
 /**

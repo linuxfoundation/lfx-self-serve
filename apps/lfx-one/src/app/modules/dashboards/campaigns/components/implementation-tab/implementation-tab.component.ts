@@ -1822,6 +1822,43 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
 
+  /**
+   * Why Create waits when more than one Google campaign type is ticked on the campaign-service road
+   * (#4755), or null when it does not.
+   *
+   * That road creates ONE type per create: `canSubmit` returns false for a pair because
+   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
+   * type once that road is known, so two routes remain: a restored draft saved with several, and a
+   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
+   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
+   * nothing on screen saying why. Named rather than
+   * cleared: dropping a restored choice unseen would decide for the operator which campaign to make.
+   */
+  /**
+   * Whether the "one type per create" note under the Google type row is shown (#4755): only on the
+   * campaign-service road, and only when there is more than one type to choose between.
+   *
+   * One signal for the note AND for the checkboxes' `aria-describedby`, so a box never points at a
+   * note that is not rendered. The description is what tells a screen-reader user why ticking one
+   * type unticks the others.
+   */
+  protected readonly googleChannelNoteShown = computed(() => this.googleCreativeAvailable() && (this.demandGenAvailable() || this.googleChannelsAvailable()));
+
+  protected readonly googleChannelConflict = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    // No `showGoogleSection` test: the one consumer renders inside that section's own `@if`.
+    if (!this.googleCreativeAvailable()) return null;
+    const channels = this.selectedGoogleChannels();
+    if (channels.length < 2) return null;
+    const labels = channels.map((channel) => GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]);
+    const listed = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+    // The BFF refusal's first sentence (`createCampaigns`), and like that refusal it does NOT promise a
+    // second type can then be added to the same brief: that depends on the campaign-service version
+    // deployed, and a retry into a refusal after the first create has spent budget is worse than
+    // saying nothing.
+    return `${listed} cannot be created together. Keep one selected to create it.`;
+  });
+
   /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
   private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
 
@@ -4254,6 +4291,25 @@ export class ImplementationTabComponent implements OnInit {
   protected removeGoogleProximityTarget(index: number): void {
     this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
+  }
+
+  /**
+   * Keep a Google campaign-type tick exclusive on the campaign-service road (#4755).
+   *
+   * That road creates one type per create and refuses any pair, so ticking a second type unticks the
+   * first instead of silently disabling Create; the note under the row says each type is created on
+   * its own. Only on a tick, never an untick, and never on the legacy road, which still creates
+   * Search and Demand Gen together. Video is constructed disabled and is not part of the choice.
+   */
+  protected onGoogleChannelPicked(channel: GoogleCampaignChannel, event: Event): void {
+    if (!this.googleCreativeAvailable()) return;
+    if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
+    this.campaignForm.patchValue({
+      includeSearch: channel === 'search',
+      includeDemandGen: channel === 'demand-gen',
+      includePerformanceMax: channel === 'performance-max',
+      includeDisplay: channel === 'display',
+    });
   }
 
   /**
@@ -6944,7 +7000,9 @@ export class ImplementationTabComponent implements OnInit {
    * Google create outright (one config, one channel), so no selection reaches a platform with a
    * split applied.
    *
-   * So the slider is shown for Search + Demand Gen and withheld otherwise. Previously it rendered
+   * So the slider is shown for Search + Demand Gen on the LEGACY road only, and withheld otherwise —
+   * including that same pair on the cutover road, where it would offer a split nothing applies
+   * (#4755). Previously it rendered
    * for every Google selection and labelled its second half "Display" — a channel the split has
    * never funded, next to real Display and Performance Max boxes that it does not fund either.
    * The control is left in the form regardless; hiding it must not drop a restored draft's value.
@@ -6952,6 +7010,7 @@ export class ImplementationTabComponent implements OnInit {
   private initBudgetSplitApplies(): Signal<boolean> {
     return computed(() => {
       void this.campaignFormRevision();
+      if (this.googleCreativeAvailable()) return false;
       const channels = this.selectedGoogleChannels();
       return channels.includes('search') && channels.includes('demand-gen');
     });
