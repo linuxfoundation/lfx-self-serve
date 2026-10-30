@@ -23,6 +23,7 @@ import {
   RankedQuestionView,
   VotePresenterCountParts,
   VotePresenterPhase,
+  VotePresenterSnapshot,
   VotePresenterTallyQuestion,
   VoteResultsOption,
   VoteResultsQuestion,
@@ -122,7 +123,7 @@ export class VotePresenterComponent {
     backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
     enabled: this.isBrowser,
   });
-  private readonly snapshot = computed(() => {
+  private readonly snapshot = computed<VotePresenterSnapshot | null>(() => {
     const live = this.live.snapshot();
     return live ? { vote: live.value, receivedAtMs: live.receivedAtMs } : null;
   });

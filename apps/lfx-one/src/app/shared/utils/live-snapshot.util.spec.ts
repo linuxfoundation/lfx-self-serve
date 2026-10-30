@@ -92,8 +92,9 @@ describe('createLiveSnapshot', () => {
     expect(inflight).toHaveLength(1);
     const awaiting = live.restart();
     expect(awaiting).toBe(1);
-    // The pre-restart request resolves after the restart was requested but before the loop switched: it is cancelled by the switchMap.
+    // The pre-restart request resolves after restart() but before the loop switched: it still lands, tagged with the old generation.
     inflight[0].next('stale');
+    expect(live.snapshot()?.value).toBe('stale');
     expect(live.landedGeneration()).toBeLessThan(awaiting);
     flush();
     expect(inflight).toHaveLength(2);
