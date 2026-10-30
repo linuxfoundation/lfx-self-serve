@@ -258,6 +258,18 @@ export const CAMPAIGN_CHAR_LIMITS = {
   sitelinkDescription: 35,
 } as const;
 
+/**
+ * The query parameter the paid campaigns page keeps the event URL in (#4756), so a reload, a second
+ * tab or a shared link can prefill Planning and offer the saved brief again instead of opening blank.
+ */
+export const CAMPAIGN_EVENT_URL_QUERY_PARAM = 'event';
+
+/**
+ * The longest `?event=` value Planning will take from the address. The parameter is caller-supplied
+ * input, so it is bounded before it is parsed or put in the form; real event URLs are far shorter.
+ */
+export const CAMPAIGN_EVENT_URL_MAX_LENGTH = 2048;
+
 export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
   displayBudgetPct: 30,
@@ -4490,6 +4502,21 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'performance-max': 'Performance Max',
   display: 'Display',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * The short-description width Performance Max needs at least one description to fit: Google renders
+ * it in a short slot the other channels do not have (see the `descriptions` hint in
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
+ */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
+ * (#4784). That copy makes the creative a started one, which Google refuses without its required
+ * images, so the note says both ways forward.
+ */
+export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
+  'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.

@@ -30,7 +30,7 @@ import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
-import { voteSlideToast } from '@shared/utils/vote-slide.util';
+import { voteSlideToast } from '@shared/utils/slide-export.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
@@ -701,12 +701,12 @@ describe('VoteDetailComponent', () => {
     it('renders the off-screen slide artboard only for a manager who can present', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       const manager = await setup();
-      expect(manager.nativeElement.querySelector('lfx-vote-slide')).not.toBeNull();
+      expect(manager.nativeElement.querySelector('lfx-share-slide')).not.toBeNull();
       TestBed.resetTestingModule();
 
       projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
       const voter = await setup();
-      expect(voter.nativeElement.querySelector('lfx-vote-slide')).toBeNull();
+      expect(voter.nativeElement.querySelector('lfx-share-slide')).toBeNull();
     });
 
     it('opens the presenter for this vote in a new tab, without an opener', async () => {
@@ -726,7 +726,7 @@ describe('VoteDetailComponent', () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       const fixture = await setup();
 
-      // The off-screen artboard is stubbed here (no real lfx-vote-slide), so the QR never reports ready.
+      // The off-screen artboard is stubbed here (no real lfx-share-slide), so the QR never reports ready.
       await (fixture.componentInstance as unknown as { onCopySlide: () => Promise<void> }).onCopySlide();
 
       expect(messageService.add).toHaveBeenCalledWith(voteSlideToast('failed'));

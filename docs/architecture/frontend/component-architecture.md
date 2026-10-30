@@ -120,7 +120,7 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 
 - Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
 - Standalone, signal inputs, `model()` for two-way values, `OnPush`
-- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while the four first components still use `lfxColors` until they are realigned
+- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while components not yet realigned keep `lfxColors` (listed in `shared/uikit/README.md` § Conventions)
 - Overlays, when needed, build on `@angular/cdk`
 - Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
 

@@ -19,7 +19,8 @@ class HostComponent {
 describe('UiShowMoreComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HTMLElement;
-  const button = (): HTMLButtonElement => host.querySelector('[data-testid="ui-show-more-button"]') as HTMLButtonElement;
+  const wrapper = (): HTMLElement => host.querySelector('[data-testid="ui-show-more-button"]') as HTMLElement;
+  const button = (): HTMLButtonElement => wrapper().querySelector('button') as HTMLButtonElement;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
@@ -43,14 +44,14 @@ describe('UiShowMoreComponent', () => {
     expect(fixture.componentInstance.expanded()).toBe(true);
     expect(button().getAttribute('aria-expanded')).toBe('true');
     expect(button().textContent).toContain('Show Less');
-    expect(host.querySelector('[data-testid="ui-show-more-chevron"]')?.className).toContain('rotate-180');
+    expect(wrapper().className).toContain('[&_button>i]:rotate-180');
 
     button().click();
     await fixture.whenStable();
 
     expect(fixture.componentInstance.expanded()).toBe(false);
     expect(button().textContent).toContain('Show 12 More');
-    expect(host.querySelector('[data-testid="ui-show-more-chevron"]')?.className).not.toContain('rotate-180');
+    expect(wrapper().className).not.toContain('rotate-180');
   });
 
   it('is operable from the keyboard: a native button fires click on Enter and Space', () => {
@@ -73,7 +74,8 @@ describe('UiShowMoreComponent', () => {
     const rules = (): NodeListOf<Element> => host.querySelectorAll('[data-testid="ui-show-more-rule"]');
     expect(rules().length).toBe(2);
     expect(rules()[0].className).toContain('bg-ui-neutral-alpha-200');
-    expect(button().className).toContain('shadow-border');
+    expect(button().classList).toContain('bg-ui-background-100');
+    expect(button().classList).toContain('edge');
 
     const show = TestBed.createComponent(UiShowMoreComponent);
     show.componentRef.setInput('controls', 'x');
@@ -82,7 +84,15 @@ describe('UiShowMoreComponent', () => {
     const el = show.nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="ui-show-more-rule"]')?.className).toContain('bg-transparent');
-    expect(el.querySelector('button')?.className).not.toContain('shadow-border');
+    expect(el.querySelector('button')?.classList).toContain('bg-transparent');
+    expect(el.querySelector('button')?.classList).not.toContain('edge');
+  });
+
+  it('is a small lfx-ui-button with a 12px trailing chevron', () => {
+    expect(wrapper().tagName).toBe('LFX-UI-BUTTON');
+    expect(button().classList).toContain('h-ui-small');
+    expect(wrapper().querySelector('[data-testid="ui-button-trailing-icon"]')?.classList).toContain('fa-chevron-down');
+    expect(wrapper().className).toContain('[&_button>i]:text-[12px]');
   });
 
   it('shows the library focus ring on keyboard focus', () => {

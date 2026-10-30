@@ -21,17 +21,19 @@ import { UiTooltipPanelComponent } from './tooltip-panel.component';
  * opposite side when it does not fit, ignores touch, and does nothing on the server. The text is also registered as the host's
  * accessible description, so screen readers read it on focus; it is skipped when it equals the host's `aria-label`.
  * Put it on the focusable element itself, such as a native `<button>`: on a component that wraps a button the description lands on the
- * wrapper, which screen readers do not read when the inner button is focused. A disabled button gets no pointer events, so wrap it
+ * wrapper, which screen readers do not read when the inner button is focused. `lfx-ui-button` is the exception: the directive never
+ * attaches to it, and the button forwards `lfxUiTooltip` to its inner `<button>`. A disabled button gets no pointer events, so wrap it
  * in an element that carries the directive and `tabindex="0"`.
  */
 @Directive({
-  selector: '[lfxUiTooltip]',
+  selector: '[lfxUiTooltip]:not(lfx-ui-button)',
   host: {
     '(pointerenter)': 'onPointerEnter($event)',
     '(pointerleave)': 'onPointerLeave($event)',
   },
 })
 export class UiTooltipDirective {
+  /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public attribute names; the `:not()` in the selector hides them from the rule's selector match. */
   /** The tooltip text. With `lfxUiTooltipTitle` set it becomes the description line. An empty value shows nothing. */
   public readonly text = input<string>('', { alias: 'lfxUiTooltip' });
   /** Bold first line for the rich layout (metric definitions, short explanations). */
@@ -44,6 +46,7 @@ export class UiTooltipDirective {
   public readonly delay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
   /** Turns the tooltip off without removing the directive. */
   public readonly disabled = input<boolean>(false, { alias: 'lfxUiTooltipDisabled' });
+  /* eslint-enable @angular-eslint/no-input-rename */
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly document = inject(DOCUMENT);

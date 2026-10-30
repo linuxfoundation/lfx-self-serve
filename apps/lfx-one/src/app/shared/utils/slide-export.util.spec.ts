@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { exportVoteSlide, voteSlideFileName, voteSlideToast } from './vote-slide.util';
+import { exportSlideImage, voteSlideFileName, voteSlideToast } from './slide-export.util';
 
 describe('voteSlideFileName', () => {
   it('slugs the vote title and appends -vote-slide', () => {
@@ -17,7 +17,7 @@ describe('voteSlideFileName', () => {
   });
 });
 
-describe('exportVoteSlide', () => {
+describe('exportSlideImage', () => {
   const toBlob = vi.fn();
   const el = document.createElement('div');
   const blob = new Blob(['png'], { type: 'image/png' });
@@ -40,7 +40,7 @@ describe('exportVoteSlide', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('renders the slide and copies the PNG to the clipboard', async () => {
-    expect(await exportVoteSlide(el, 'budget-vote-slide', toBlob)).toBe('copied');
+    expect(await exportSlideImage(el, 'budget-vote-slide', toBlob)).toBe('copied');
     expect(toBlob).toHaveBeenCalledWith(el);
     expect(write).toHaveBeenCalledTimes(1);
   });
@@ -48,7 +48,7 @@ describe('exportVoteSlide', () => {
   it('falls back to a named download when the clipboard write is denied', async () => {
     write.mockRejectedValue(new Error('denied'));
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
-    expect(await exportVoteSlide(el, 'budget-vote-slide', toBlob)).toBe('downloaded');
+    expect(await exportSlideImage(el, 'budget-vote-slide', toBlob)).toBe('downloaded');
     expect(click).toHaveBeenCalled();
     click.mockRestore();
   });
@@ -56,7 +56,7 @@ describe('exportVoteSlide', () => {
   it('reports failure when the render throws', async () => {
     toBlob.mockRejectedValue(new Error('boom'));
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    expect(await exportVoteSlide(el, 'x', toBlob)).toBe('failed');
+    expect(await exportSlideImage(el, 'x', toBlob)).toBe('failed');
   });
 });
 

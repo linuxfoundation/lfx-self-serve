@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
+import { isPlatformBrowser, Location, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_EVENT_URL_MAX_LENGTH, CAMPAIGN_EVENT_URL_QUERY_PARAM, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
 import { coerceCampaignEventDetails, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -71,6 +72,8 @@ export class PlanningTabComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
 
   // === Inputs ===
   public readonly programTypeConfig = input.required<CampaignProgramTypeOption>();
@@ -916,6 +919,15 @@ export class PlanningTabComponent implements OnInit {
         this.savedBriefReadAt = 0;
         this.savedBriefWarning.set(null);
       });
+
+    // Last, so the lookup pipeline above is already listening (#4756). A reload, a second tab or a
+    // shared link carrying `?event=` prefills the field and runs the same lookup a typed URL does,
+    // so the Restore offer is waiting. Nothing is restored or generated: the offer stays a choice.
+    const fromAddress = this.eventUrlFromAddress();
+    if (fromAddress !== null && this.briefForm.controls.url.value === '') {
+      this.briefForm.controls.url.setValue(fromAddress);
+      this.onUrlInput();
+    }
   }
 
   // === Public Methods ===
@@ -1051,6 +1063,7 @@ export class PlanningTabComponent implements OnInit {
       }
       this.slugInput$.next(slug);
     }
+    this.syncEventParam(url);
   }
 
   /** Hand the saved brief straight to the Implementation tab, skipping generation. */
@@ -1893,6 +1906,65 @@ export class PlanningTabComponent implements OnInit {
       return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     } catch {
       return '';
+    }
+  }
+
+  /**
+   * Whether this planner owns the page's `?event=` parameter (#4756): the PAID planner only.
+   *
+   * Both planners stay mounted, so both reading and writing one shared parameter would have the
+   * email planner prefill a paid event and each overwrite the other's URL on every keystroke. The
+   * email surface also resets its stage selector on a reload, so a prefilled URL would look up the
+   * wrong send there anyway.
+   */
+  private ownsEventParam(): boolean {
+    return this.deliveryType() === 'paid-marketing';
+  }
+
+  /**
+   * The event URL the page address carries, or null when there is none this planner should use.
+   *
+   * The parameter is caller-supplied, so it is bounded and must parse as an http(s) URL before it
+   * reaches the form; anything else is ignored rather than prefilled. Read from `location.path(true)`,
+   * not `router.url`, because every writer of this page's query string uses `replaceState`, which
+   * the router never sees.
+   */
+  private eventUrlFromAddress(): string | null {
+    if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId)) return null;
+    const raw: unknown = this.router.parseUrl(this.location.path(true)).queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    if (typeof raw !== 'string' || raw === '' || raw.length > CAMPAIGN_EVENT_URL_MAX_LENGTH) return null;
+    return this.isEventUrl(raw) ? raw : null;
+  }
+
+  /**
+   * Mirror the url field into `?event=` with `Location.replaceState` (#4756): no navigation, no
+   * history entry, guards and resolvers untouched. This is the same mechanism
+   * `ProjectContextService.syncProjectQueryParam` uses for `?project=`, and it likewise skips while a
+   * navigation is in flight.
+   *
+   * Only a URL the lookup can use is written; an empty or unusable field removes the parameter, so
+   * a reload never prefills something the operator already cleared.
+   */
+  private syncEventParam(url: string): void {
+    if (!this.ownsEventParam() || !isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
+    const next = url.length <= CAMPAIGN_EVENT_URL_MAX_LENGTH && this.isEventUrl(url) && this.extractSlug(url) !== '' ? url : null;
+    const tree = this.router.parseUrl(this.location.path(true));
+    if ((tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM] ?? null) === next) return;
+    if (next === null) {
+      delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    } else {
+      tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM] = next;
+    }
+    this.location.replaceState(this.router.serializeUrl(tree));
+  }
+
+  /** An absolute http(s) URL — the only kind the event scrape and the slug lookup can use. */
+  private isEventUrl(url: string): boolean {
+    try {
+      const { protocol } = new URL(url);
+      return protocol === 'https:' || protocol === 'http:';
+    } catch {
+      return false;
     }
   }
 

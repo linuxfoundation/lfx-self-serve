@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span class="min-w-0 flex-1" data-testid="ui-toast-message"><ng-content /></span>
+@if (visibleActions().length) {
+  <div class="flex shrink-0 gap-[8px]" data-testid="ui-toast-actions">
+    @for (item of visibleActions(); track item.action) {
+      <button type="button" [class]="item.classes" (click)="run(item.action)" data-testid="ui-toast-action">
+        <span>{{ item.action.label }}</span>
+      </button>
+    }
+  </div>
+}
+@if (showDismiss()) {
+  <button type="button" [class]="dismissClasses()" aria-label="Dismiss" (click)="dismiss()" data-testid="ui-toast-dismiss">
+    <i class="fa-light fa-xmark text-[16px] leading-none" aria-hidden="true"></i>
+  </button>
+}

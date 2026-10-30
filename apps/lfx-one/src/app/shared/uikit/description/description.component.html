@@ -6,14 +6,21 @@
   <dt class="label-14 inline-flex items-center gap-[6px] font-medium text-ui-neutral-600" data-testid="ui-description-label">
     {{ label() }}
     @if (help()) {
-      <!-- shortcut: native title tooltip, hover only. revisit: when lfx-ui-tooltip lands (#4661) -->
       <i
-        class="fa-light fa-circle-question text-[12px] text-ui-neutral-500"
+        class="fa-light fa-circle-question rounded-ui-full text-[12px] text-ui-neutral-500 focus-visible:shadow-focus focus-visible:outline-none"
         role="img"
+        tabindex="0"
         [attr.aria-label]="help()"
-        [attr.title]="help()"
+        [lfxUiTooltip]="help()"
         data-testid="ui-description-help"></i>
     }
   </dt>
-  <dd [class]="valueClasses()" [attr.title]="ellipsis() ? value() : null" data-testid="ui-description-value">{{ value() }}</dd>
+  <dd
+    [class]="valueClasses()"
+    [attr.tabindex]="ellipsis() ? 0 : null"
+    [attr.aria-label]="ellipsis() ? value() : null"
+    [lfxUiTooltip]="ellipsis() ? value() : ''"
+    data-testid="ui-description-value">
+    {{ value() }}
+  </dd>
 </dl>

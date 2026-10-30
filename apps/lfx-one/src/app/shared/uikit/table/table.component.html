@@ -1,0 +1,67 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<table class="w-full border-collapse" data-testid="ui-table-element">
+  <caption class="sr-only">
+    {{
+      label()
+    }}
+  </caption>
+  <thead>
+    <tr>
+      @for (view of columnViews(); track view.column.key) {
+        <th scope="col" [class]="view.headClasses" [attr.aria-sort]="view.ariaSort" data-testid="ui-table-header">
+          @if (view.column.sortable) {
+            <!-- Exact px: 6px gap and 12px arrow are library steps below the ui spacing and type scale. -->
+            <button
+              type="button"
+              class="inline-flex cursor-pointer items-center gap-[6px] rounded-ui-xs label-13 font-medium text-inherit focus-visible:shadow-focus focus-visible:outline-none"
+              (click)="toggleSort(view.column)"
+              data-testid="ui-table-sort">
+              {{ view.column.header }}
+              <i [class]="view.sortIcon" class="text-[12px]" aria-hidden="true"></i>
+            </button>
+          } @else {
+            {{ view.column.header }}
+          }
+        </th>
+      }
+    </tr>
+  </thead>
+  <tbody>
+    @for (row of rows(); track row[rowKey()]; let last = $last) {
+      <tr
+        [class]="rowClasses()"
+        [attr.tabindex]="interactive() ? 0 : null"
+        (click)="onRowClick($event, row)"
+        (keydown.enter)="onRowKey($event, row)"
+        (keydown.space)="onRowKey($event, row)"
+        data-testid="ui-table-row">
+        @for (view of columnViews(); track view.column.key) {
+          <td [class]="view.bodyClasses" [class.border-b-0]="last" data-testid="ui-table-cell">
+            @if (view.template; as template) {
+              <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="{ $implicit: row, column: view.column }" />
+            } @else {
+              {{ row[view.column.key] ?? '' }}
+            }
+          </td>
+        }
+      </tr>
+    } @empty {
+      <tr>
+        <td [attr.colspan]="columns().length" class="h-ui-row px-[16px] text-center align-middle text-ui-neutral-600" data-testid="ui-table-empty">
+          {{ emptyLabel() }}
+        </td>
+      </tr>
+    }
+  </tbody>
+  @if (footer(); as totals) {
+    <tfoot>
+      <tr>
+        @for (view of columnViews(); track view.column.key) {
+          <td [class]="view.footClasses" data-testid="ui-table-footer-cell">{{ totals[view.column.key] ?? '' }}</td>
+        }
+      </tr>
+    </tfoot>
+  }
+</table>

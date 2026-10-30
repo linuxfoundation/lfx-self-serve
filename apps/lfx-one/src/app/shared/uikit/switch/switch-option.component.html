@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<label class="relative inline-flex" [lfxUiTooltip]="tooltip()" data-testid="ui-switch-option-label">
+  <!-- Visually hidden native radio: Tab, the arrow keys and form behaviour are the browser's. -->
+  <input
+    type="radio"
+    class="peer sr-only"
+    [name]="group.groupName()"
+    [value]="value()"
+    [checked]="isChecked()"
+    [disabled]="isDisabled()"
+    (change)="onChange()"
+    data-testid="ui-switch-option-input" />
+  <span [class]="segmentClasses()" data-testid="ui-switch-option-segment">
+    @if (icon()) {
+      <i [class]="icon()" aria-hidden="true"></i>
+    }
+    <span [class.sr-only]="iconOnly() && icon()" data-testid="ui-switch-option-text">{{ label() }}</span>
+  </span>
+</label>

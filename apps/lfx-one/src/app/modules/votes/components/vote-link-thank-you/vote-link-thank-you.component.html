@@ -1,7 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<section class="flex min-h-[70dvh] flex-col items-center justify-center gap-5 text-center" role="status" data-testid="vote-link-thank-you">
+<lfx-vote-link-mark />
+<section class="flex min-h-[60dvh] flex-col items-center justify-center gap-5 text-center" role="status" data-testid="vote-link-thank-you">
   <span class="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600" aria-hidden="true">
     <i class="fa-light fa-check text-3xl"></i>
   </span>
@@ -34,4 +35,8 @@
       Voting closes {{ end | date: 'MMM d, y, h:mm a (z)' }}. You can change your vote until then from the same link.
     </p>
   }
+
+  <a href="/votes" class="inline-flex min-h-[44px] items-center text-sm font-medium text-blue-700 underline" data-testid="vote-link-thank-you-votes"
+    >See all your votes on LFX</a
+  >
 </section>

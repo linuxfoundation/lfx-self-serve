@@ -9,19 +9,19 @@ import { truncateVoteTitle } from '@lfx-one/shared/utils';
 
 import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
-import { VoteQrComponent } from '../vote-qr/vote-qr.component';
+import { QrCodeComponent } from '@components/qr-code/qr-code.component';
 
 /**
  * Static 16:9 "vote now" slide (#4145, design artboard 4): white ground, LFX mark, title, one-line instruction, large QR,
  * short link and eligibility line. No live data, so it never carries counts, choices or voter names. Rendered off-screen at
- * a fixed 1920×1080 and exported to PNG by exportVoteSlide.
+ * a fixed 1920×1080 and exported to PNG by exportSlideImage.
  */
 @Component({
-  selector: 'lfx-vote-slide',
-  imports: [VoteQrComponent],
-  templateUrl: './vote-slide.component.html',
+  selector: 'lfx-share-slide',
+  imports: [QrCodeComponent],
+  templateUrl: './share-slide.component.html',
 })
-export class VoteSlideComponent {
+export class ShareSlideComponent {
   public readonly title = input.required<string>();
   public readonly link = input.required<string>();
 
@@ -30,7 +30,7 @@ export class VoteSlideComponent {
   protected readonly width = VOTE_SLIDE_WIDTH_PX;
   protected readonly height = VOTE_SLIDE_HEIGHT_PX;
 
-  private readonly qr = viewChild(VoteQrComponent);
+  private readonly qr = viewChild(QrCodeComponent);
   private readonly qrState = computed<VoteQrState>(() => this.qr()?.state() ?? 'pending');
   private readonly qrState$ = toObservable(this.qrState);
 

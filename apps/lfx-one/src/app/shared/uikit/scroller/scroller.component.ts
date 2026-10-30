@@ -157,7 +157,7 @@ export class UiScrollerComponent {
 
   private initButtonClasses(): Signal<string> {
     // Library: small secondary circle with shadow, centred on the edge (14px out).
-    // shortcut: native button styled like the library's circle button. revisit: when lfx-ui-button realigns to the library, swap to it.
+    // shortcut: native circle button, because lfx-ui-button has no focusable aria-disabled state or `shadow` modifier. revisit: when lfx-ui-button gains both, swap to it.
     return computed(
       () =>
         'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-border aria-disabled:focus-visible:shadow-focus motion-reduce:transition-none'

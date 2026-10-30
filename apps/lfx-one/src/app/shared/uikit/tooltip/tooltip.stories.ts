@@ -51,7 +51,7 @@ export const OnDisabledControl: Story = {
     template: `
       <div class="flex justify-center p-[96px]">
         <span class="inline-flex" tabindex="0" lfxUiTooltip="Only owners can delete projects">
-          <lfx-ui-button variant="outline-neutral" icon="fa-light fa-trash-can" [iconOnly]="true" ariaLabel="Delete project" [disabled]="true" />
+          <lfx-ui-button variant="secondary" icon="fa-light fa-trash-can" [iconOnly]="true" ariaLabel="Delete project" [disabled]="true" />
         </span>
       </div>`,
   }),

@@ -4,11 +4,11 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 
-import { VoteQrComponent } from './vote-qr.component';
+import { QrCodeComponent } from './qr-code.component';
 
-describe('VoteQrComponent', () => {
+describe('QrCodeComponent', () => {
   it('renders an accessible SVG with modules once the encoder has loaded', async () => {
-    const fixture = TestBed.createComponent(VoteQrComponent);
+    const fixture = TestBed.createComponent(QrCodeComponent);
     fixture.componentRef.setInput('value', 'https://example.com/votes/abc');
     fixture.componentRef.setInput('label', 'QR code for https://example.com/votes/abc');
     fixture.detectChanges();
@@ -25,7 +25,7 @@ describe('VoteQrComponent', () => {
   });
 
   it('reports pending, then ready, so an exporter can wait for the code', async () => {
-    const fixture = TestBed.createComponent(VoteQrComponent);
+    const fixture = TestBed.createComponent(QrCodeComponent);
     fixture.componentRef.setInput('value', 'https://example.com/votes/abc');
     fixture.detectChanges();
     expect(fixture.componentInstance.state()).toBe('pending');
@@ -34,7 +34,7 @@ describe('VoteQrComponent', () => {
 
   it('reports failed when the value cannot be encoded, rather than staying blank and pending', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const fixture = TestBed.createComponent(VoteQrComponent);
+    const fixture = TestBed.createComponent(QrCodeComponent);
     fixture.componentRef.setInput('value', 'x'.repeat(5000));
     fixture.detectChanges();
     await vi.waitFor(() => expect(fixture.componentInstance.state()).toBe('failed'));

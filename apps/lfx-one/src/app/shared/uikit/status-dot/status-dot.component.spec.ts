@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { OverlayContainer } from '@angular/cdk/overlay';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiStatusDotComponent } from './status-dot.component';
 
@@ -13,12 +14,20 @@ describe('UiStatusDotComponent', () => {
   const marker = () => host.querySelector('[data-testid="ui-status-dot-marker"]') as HTMLElement;
   const label = () => host.querySelector('[data-testid="ui-status-dot-label"]');
 
+  const image = () => host.querySelector('[data-testid="ui-status-dot-image"]') as HTMLElement;
+  const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [UiStatusDotComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiStatusDotComponent);
     host = fixture.nativeElement as HTMLElement;
     fixture.componentRef.setInput('status', 'ready');
     await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    host.remove();
   });
 
   it('shows a 10px decorative dot and the sentence-case word', () => {
@@ -63,16 +72,58 @@ describe('UiStatusDotComponent', () => {
     expect(label()?.textContent?.trim()).toBe('Running');
   });
 
-  it('dot-only drops the word and becomes a named image with a tooltip', async () => {
+  it('dot-only drops the word and becomes a named, focusable image', async () => {
     fixture.componentRef.setInput('dotOnly', true);
     await fixture.whenStable();
 
     expect(label()).toBeNull();
-    expect(host.getAttribute('role')).toBe('img');
-    expect(host.getAttribute('aria-label')).toBe('Ready');
-    expect(host.getAttribute('title')).toBe('Ready');
-    expect(host.getAttribute('tabindex')).toBe('0');
-    expect(host.className).toContain('focus-visible:shadow-focus');
+    expect(host.getAttribute('role')).toBeNull();
+    expect(host.getAttribute('tabindex')).toBeNull();
     expect(host.className).not.toContain('gap-[8px]');
+    expect(image().getAttribute('role')).toBe('img');
+    expect(image().getAttribute('aria-label')).toBe('Ready');
+    expect(image().getAttribute('title')).toBeNull();
+    expect(image().getAttribute('tabindex')).toBe('0');
+    expect(image().className).toContain('focus-visible:shadow-focus');
+    expect(image().contains(marker())).toBe(true);
+  });
+
+  it('dot-only shows the word in a tooltip on hover', async () => {
+    document.body.appendChild(host);
+    fixture.componentRef.setInput('dotOnly', true);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    expect(tooltip()).toBeNull();
+    image().dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(tooltip()?.textContent?.trim()).toBe('Ready');
+  });
+
+  it('dot-only shows the word in a tooltip on keyboard focus', async () => {
+    document.body.appendChild(host);
+    fixture.componentRef.setInput('dotOnly', true);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    // A Tab keydown first, so the focus counts as keyboard focus.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    image().focus();
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(document.activeElement).toBe(image());
+    expect(tooltip()?.textContent?.trim()).toBe('Ready');
+  });
+
+  it('shows no tooltip when the word is visible', async () => {
+    document.body.appendChild(host);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    host.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(tooltip()).toBeNull();
   });
 });

@@ -1,14 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
+import { DecimalPipe, Location, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EVENT_URL_QUERY_PARAM,
   CAMPAIGN_EMAIL_SEGMENT_LABELS,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TABS,
@@ -162,6 +164,8 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
 })
 export class CampaignsComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly campaignService = inject(CampaignService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
@@ -342,10 +346,11 @@ export class CampaignsComponent {
    * content at all, and "Brief saved." is the one thing this banner must never say falsely.
    */
   private readonly conflictMessages: Record<NonNullable<CampaignBriefPersistResult['conflict']>, string> = {
-    // "Reload" alone is not enough and the saved banner already says so: the Planning url control
-    // initializes empty and `loadBrief` runs only once a url is entered, so a reloaded page shows
-    // nothing until the user pastes the event url again. Advice that stops at "reload" leaves
-    // them on a blank Planning tab wondering where the brief went.
+    // "Reload" alone is not enough: the stored brief comes back only as Planning's Restore offer, and
+    // only once Planning has the event URL. The PAID planner keeps that URL in `?event=` and
+    // prefills it after a reload (#4756); the email planner does not, so there it must be entered
+    // again. These messages are shared by both surfaces, so they name the Plan tab and make the
+    // URL conditional rather than telling a paid user to retype a URL that is already there.
     //
     // It no longer PROMISES that re-entering the URL surfaces the stored brief, because the brief
     // this refusal names may not be one this session can open. Under the widened key
@@ -366,7 +371,7 @@ export class CampaignsComponent {
     // users to use a control their surface does not have. The email-only step is appended by
     // `emailSaveFailureMessage`, which is the one caller that knows the stage matters.
     'unowned-brief-exists':
-      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload and re-enter the event URL to open it.',
+      'This event already has a saved brief for this send that was not opened here, so this one was not saved over it. Reload, then open it from the Plan tab (enter the event URL there if it is not already filled in).',
     // Does NOT advise a reload, even though this branch adds the read path that would make one
     // work. Here it would be actively destructive: a stale-brief refusal PROMOTES this session to
     // explicit overwrite permission (see the conflict handler), so the very next Proceed saves
@@ -376,8 +381,9 @@ export class CampaignsComponent {
     // An earlier revision said "Reload and re-enter the event URL to see their changes" — added
     // while restoring reload advice this branch had dropped, without noticing it contradicts the
     // promotion added on the base. `unowned-brief-exists` above is the conflict that genuinely
-    // needs reload advice: there the session may NOT replace, so the stored brief has to be
-    // loaded before anything can proceed.
+    // needs reload advice: there the session may not replace by proceeding, so the stored brief has
+    // to be loaded first — by a reload and Restore, or by the paid surface's Replace saved brief,
+    // which reads it and then replaces it (#4731).
     'stale-brief':
       'Someone else changed this brief while you were working, so this version was not saved over theirs. Proceed again to save your version over theirs.',
     // Names the consequence, like the other two. It did not need to while this conflict granted
@@ -426,7 +432,7 @@ export class CampaignsComponent {
     // and the licence granted here is the same one, so this sentence says the same thing: a
     // permission the user was never told about is not a permission they granted.
     'stale-brief':
-      'This saved brief changed while you were working, so it was not approved. Reload and re-enter the event URL to open the version that is stored now, or proceed again from Planning to save your version over theirs.',
+      'This saved brief changed while you were working, so it was not approved. Reload and open the version that is stored now from the Plan tab (enter the event URL there if it is not already filled in), or proceed again from Planning to save your version over theirs.',
     // The row is gone, so there is nothing to approve and nothing to reload. Proceeding from the
     // Planning tab writes a new brief, which is the remedy — and the one this message names.
     'brief-not-found': 'This saved brief no longer exists, so it could not be approved. Go back to Planning and proceed again to save a new one.',
@@ -441,11 +447,12 @@ export class CampaignsComponent {
     // there: no `absence: 'overwrite'` is granted on this conflict, so there is no second action
     // to disclose and offering one would promise a licence this refusal never hands out.
     'unverified-validator':
-      'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
+      'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and open the version that is stored now from the Plan tab (enter the event URL there if it is not already filled in).',
     // Deliberately says "could not be confirmed", not "failed": the approval may well have
     // landed and only its answer was lost. Re-restoring re-reads the stored status, which is the
     // only way to find out, and costs nothing if it did land.
-    unknown: 'This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.',
+    unknown:
+      'This saved brief could not be confirmed as approved. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).',
   };
 
   /**
@@ -2600,6 +2607,10 @@ export class CampaignsComponent {
       if (this.adoptingRestoredProgram) {
         return;
       }
+      // Before the planner is recreated under the new program: it would otherwise prefill the old
+      // program's event URL from `?event=` and offer that brief here (#4756), the carry-over the
+      // recreation exists to prevent.
+      this.clearEventUrlParam();
       this.resetToPlanning();
     });
 
@@ -4162,6 +4173,106 @@ export class CampaignsComponent {
       return;
     }
     this.onProceedToImplementation(brief, true, approved);
+  }
+
+  /**
+   * Save the brief on screen OVER the stored one, after an `unowned-brief-exists` refusal (#4731).
+   *
+   * That refusal is the LFXV2-3200 guard, and it is right: a generated brief must not silently
+   * replace a row nobody here opened. But its only escape was Restore, which discards the brief on
+   * screen — so a regenerated brief, and the callouts and sitelinks generated with it, could never be
+   * saved, and the extension capability check (which needs a saved id) never ran.
+   *
+   * This is the explicit, warned version of the overwrite the guard withholds. It does not widen the
+   * guard: anyone shown this refusal can already Restore the stored brief and then save over it.
+   *
+   * The id comes from a fresh READ, because the refusal withholds it by design (see
+   * `CampaignBriefPersistResult.conflict`). The read's ETag is recorded as the last-seen validator, so
+   * the save is a real `If-Match`: a writer who moves the row between this read and the save gets
+   * the existing `stale-brief` warning, not a silent overwrite. With no ETag the record takes
+   * `absence: 'overwrite'`, as a restore does — the user chose this replace, which is the decision
+   * that marker records.
+   *
+   * The ownership EPOCH is bumped like a restore's, so a save already queued for this event cannot
+   * pick up an id it was not sent with. `persistBrief` then snapshots the new epoch and sends it.
+   *
+   * The record is stamped `contentChanged` and Planning is refreshed. This read may have seen a
+   * version newer than the Restore offer Planning cached, and if the replacing save then fails, a
+   * Restore would otherwise pair that offer's older content and approval with this newer ETag and
+   * enable Create against content the screen never showed. The stamp makes such an offer read as
+   * superseded, exactly as a conflict promotion does — and, like that promotion, the record carries
+   * no `approved`, so the next Restore takes the re-read row's own answer.
+   */
+  protected onReplaceSavedBrief(): void {
+    const brief = this.briefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    const key = brief === null ? null : this.ownershipKey(projectSlug, brief);
+    // Unreachable while the button is shown: the refusal it answers needed a brief, a project and
+    // an event slug to happen at all. Guarded rather than asserted, because a click is an event.
+    if (brief === null || projectSlug === '' || key === null) return;
+
+    // A discard or a newer save while the read is out makes its answer stale: the brief it would
+    // re-save is no longer the one on screen, or a newer outcome already owns the banner. The slug is
+    // checked as well, as `loadCreateCapabilitiesFor` does: a foundation switch bumps the display
+    // counter (and never the ownership one) only once the `activeFoundationSlug` subscription runs,
+    // and a read answered in between would otherwise reach `persistBrief`, which files the brief
+    // under the NEW foundation.
+    const generation = this.briefPersistenceGeneration;
+    const ownershipAtSend = this.ownershipGeneration;
+    const mayAdopt = (): boolean =>
+      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
+    this.briefPersistence.set({ status: 'saving', briefId: null, message: null, approved: false });
+
+    this.campaignService
+      .loadBrief(brief.eventDetails.slug, projectSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '')
+      // Cancelled with the page: a read answered after navigation would reach `persistBrief`, which
+      // reads the foundation selected THEN and could file this brief under another project.
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (!mayAdopt()) return;
+          // Persistence went dark since the refusal: nothing can be saved or replaced, which is what
+          // `persistBrief` reports for `enabled: false` too — the idle state, not an error.
+          if (result.status === 'off') {
+            this.briefPersistence.set(this.idlePersistence);
+            return;
+          }
+          // `unreadable` is replaceable too: the row exists and was observed, it just cannot be
+          // mapped back — and it can never be restored, so replacing it is the only way forward.
+          // `none` means the row went away since the refusal; the save below then simply creates.
+          if (result.briefId !== null) {
+            // Normalised first, as `onRestoreSavedBrief` does: an older pod mid-rolling-deploy omits
+            // the field, JSON yields `undefined`, and treating that as a validator would withhold
+            // the overwrite licence and refuse this very save as `unverified-validator`.
+            const validator = result.etag ?? null;
+            this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+            this.rememberBriefId(key, {
+              id: result.briefId,
+              etag: validator,
+              contentChanged: true,
+              ...(validator === null ? { absence: 'overwrite' as const } : {}),
+            });
+            this.savedBriefRefreshToken.update((token) => token + 1);
+          }
+          this.persistBrief(brief);
+        },
+        error: (err: unknown) => {
+          console.error('[campaigns] Failed to read the saved brief to replace it', err);
+          if (!mayAdopt()) return;
+          this.briefPersistence.set({
+            status: 'error',
+            // '' as the refusal carries it, NOT null: `canSubmit` blocks an error only while the id is
+            // non-null, and null would re-enable Create for a brief that is still unsaved.
+            briefId: '',
+            // Names both ways forward, as the refusal it stands in for did: the note under it speaks of
+            // opening the saved brief, which this sentence must not leave unexplained.
+            message:
+              'The saved brief could not be read, so it was not replaced. Try Replace saved brief again, or reload and open the saved brief from the Plan tab (enter the event URL there if it is not already filled in).',
+            approved: false,
+            conflict: 'unowned-brief-exists',
+          });
+        },
+      });
   }
 
   /**
@@ -6095,6 +6206,7 @@ export class CampaignsComponent {
               briefId: result.briefId,
               message: this.conflictMessageFor(result.conflict),
               approved: false,
+              conflict: result.conflict,
             });
             return;
           }
@@ -6367,7 +6479,7 @@ export class CampaignsComponent {
             status: 'error',
             briefId: known.id,
             message:
-              'This saved brief could not be approved because the request reached a server that is still being updated. Reload and re-enter the event URL to try again.',
+              'This saved brief could not be approved because the request reached a server that is still being updated. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).',
             approved: false,
           });
           return;
@@ -6481,6 +6593,19 @@ export class CampaignsComponent {
           this.pendingApprovalRequests.delete(ownershipKey);
         }
       });
+  }
+
+  /**
+   * Drop `?event=` from the page address on a program switch (#4756). The paid planner owns the
+   * parameter, but it is destroyed and recreated by that switch, so the page clears it here, before
+   * the new planner reads it. `replaceState` as the planner writes it: no navigation, no history.
+   */
+  private clearEventUrlParam(): void {
+    if (!isPlatformBrowser(this.platformId) || this.router.getCurrentNavigation()) return;
+    const tree = this.router.parseUrl(this.location.path(true));
+    if (!(CAMPAIGN_EVENT_URL_QUERY_PARAM in tree.queryParams)) return;
+    delete tree.queryParams[CAMPAIGN_EVENT_URL_QUERY_PARAM];
+    this.location.replaceState(this.router.serializeUrl(tree));
   }
 
   /**

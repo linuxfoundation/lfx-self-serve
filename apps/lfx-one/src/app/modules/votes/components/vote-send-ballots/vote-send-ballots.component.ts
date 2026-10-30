@@ -32,10 +32,14 @@ export class VoteSendBallotsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly doc = inject(DOCUMENT);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly voteUid = input.required<string>();
   /** True while the parent has another dialog open: a late voter-list answer must not open this one on top of it. */
   public readonly blocked = input<boolean>(false);
+  /** The vote's own counts (`num_response_received`, `total_voting_request_invitations`); an empty voter list disables the button only when they confirm completion. */
+  public readonly responded = input<number | null | undefined>(null);
+  public readonly invited = input<number | null | undefined>(null);
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
@@ -46,6 +50,11 @@ export class VoteSendBallotsComponent {
   /** Members who haven't voted, as last read from the voter list; null until the list is known (or when reading it failed). */
   protected readonly remaining = signal<number | null>(null);
   protected readonly everyoneVoted = computed(() => this.remaining() === 0);
+  /** The index can lag a freshly opened vote, so an empty list alone proves nothing: the counts must agree. */
+  private readonly countsConfirmComplete = computed(() => {
+    const invited = this.invited() ?? 0;
+    return invited > 0 && (this.responded() ?? 0) >= invited;
+  });
   protected readonly busy = computed(() => this.checking() || this.sending());
 
   private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
@@ -58,7 +67,7 @@ export class VoteSendBallotsComponent {
 
   public constructor() {
     // Reads the voter list once per vote so the button can say "Everyone has voted" before it is clicked. Reading sends
-    // nothing, and a failure leaves the button usable: the click reads the list again and reports the error.
+    // nothing, and a failure or an unconfirmed empty list leaves the button usable: the click reads the list again.
     toObservable(this.voteUid)
       .pipe(
         switchMap((uid) => {
@@ -76,10 +85,11 @@ export class VoteSendBallotsComponent {
       )
       // Only while still unknown: a click's own answer is newer than this one and must not be overwritten by it.
       .subscribe((recipients) => {
-        if (this.remaining() === null) this.remaining.set(recipients.length);
+        if (this.remaining() !== null) return;
+        if (recipients.length > 0 || this.countsConfirmComplete()) this.remaining.set(recipients.length);
       });
 
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       this.clearCooldownTimer();
       if (this.focusTimer) clearTimeout(this.focusTimer);
       if (this.confirmingTimer) clearTimeout(this.confirmingTimer);
@@ -112,12 +122,16 @@ export class VoteSendBallotsComponent {
     this.checking.set(true);
     this.pendingRecipients = this.voteService
       .getReminderRecipients(uid)
-      .pipe(finalize(() => this.checking.set(false)))
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.checking.set(false))
+      )
       .subscribe({
         next: (recipients) => {
           if (uid !== this.voteUid() || this.blocked()) return;
           const count = recipients.length;
-          this.remaining.set(count);
+          // An empty answer disables the button only when the counts agree; otherwise the next click reads again.
+          if (count > 0 || this.countsConfirmComplete()) this.remaining.set(count);
           // The list was not known to be empty when the button was clicked, so this is the race (or an unknown list).
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });

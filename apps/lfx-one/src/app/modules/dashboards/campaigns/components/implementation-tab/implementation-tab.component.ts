@@ -128,6 +128,8 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_LINKEDIN_BUDGET_USD,
@@ -633,6 +635,12 @@ export class ImplementationTabComponent implements OnInit {
   public readonly retryCreateCapabilities = output<void>();
 
   /**
+   * Asks the parent to save the brief on screen over the stored one, after an `unowned-brief-exists`
+   * refusal (#4731). Offered only on that refusal — see `canReplaceSavedBrief`.
+   */
+  public readonly replaceSavedBriefRequested = output<void>();
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -642,6 +650,17 @@ export class ImplementationTabComponent implements OnInit {
    * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
    */
   public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
+   * Whether the save banner offers "Replace saved brief".
+   *
+   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
+   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
+   * a second replace behind the first.
+   */
+  protected readonly canReplaceSavedBrief = computed(
+    () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
+  );
 
   /**
    * Text for the always-present live region in the template.
@@ -657,16 +676,18 @@ export class ImplementationTabComponent implements OnInit {
       case 'saving':
         return 'Saving this brief.';
       case 'saved':
-        // Must carry the SAME information as the visible banner, which tells the user to re-enter
-        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
-        // the reassurance without the instruction — and the instruction is the part they cannot
-        // recover on their own, since nothing else on the page says the brief needs a URL to come
-        // back.
+        // Must carry the SAME information as the visible banner, which says where the brief is
+        // after a reload. Announcing only "Brief saved." gives screen-reader users the reassurance
+        // without the instruction.
+        //
+        // A reload keeps the event URL in the page address (`?event=`, #4756), so Planning prefills
+        // it and offers the saved brief; the user no longer has to re-enter it. "Restore saved
+        // brief" is that offer's button label, so the sentence names a control that is there.
         //
         // The unapproved message, when there is one, is appended rather than replacing this: the
         // brief IS saved and the reload instruction still applies, so dropping either half would
         // leave a screen-reader user with less than the visible banner shows.
-        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+        return `Brief saved. After a reload, choose Restore saved brief on the Plan tab to reopen it.${
           this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
         }`;
       default:
@@ -710,6 +731,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
+  protected readonly performanceMaxPrefillNotice = GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly redditObjectiveLabels = REDDIT_OBJECTIVE_LABELS;
   /**
@@ -1449,6 +1471,12 @@ export class ImplementationTabComponent implements OnInit {
    * judgements is mirrored on the add path so a refusal arrives while the text is still in the box.
    */
   protected readonly googleCallouts = signal<string[]>([]);
+  /**
+   * The Performance Max copy the brief seeded (#4784), kept so the section's prefill notice can tell
+   * whether what is on screen is still that copy. Null when nothing was seeded; cleared by
+   * `resetGoogleFields`.
+   */
+  private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -1804,6 +1832,43 @@ export class ImplementationTabComponent implements OnInit {
    * meantime (the add guards cannot see held ids). Create waits rather than letting the BFF refuse it.
    */
   protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
+
+  /**
+   * Whether the "one type per create" note under the Google type row is shown (#4755): only on the
+   * campaign-service road, and only when there is more than one type to choose between.
+   *
+   * One signal for the note AND for the checkboxes' `aria-describedby`, so a box never points at a
+   * note that is not rendered. The description is what tells a screen-reader user why ticking one
+   * type unticks the others.
+   */
+  protected readonly googleChannelNoteShown = computed(() => this.googleCreativeAvailable() && (this.demandGenAvailable() || this.googleChannelsAvailable()));
+
+  /**
+   * Why Create waits when more than one Google campaign type is ticked on the campaign-service road
+   * (#4755), or null when it does not.
+   *
+   * That road creates ONE type per create: `canSubmit` returns false for a pair because
+   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
+   * type once that road is known, so two routes remain: a restored draft saved with several, and a
+   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
+   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
+   * nothing on screen saying why. Named rather than cleared: dropping a restored choice unseen would
+   * decide for the operator which campaign to make.
+   */
+  protected readonly googleChannelConflict = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    // No `showGoogleSection` test: the one consumer renders inside that section's own `@if`.
+    if (!this.googleCreativeAvailable()) return null;
+    const channels = this.selectedGoogleChannels();
+    if (channels.length < 2) return null;
+    const labels = channels.map((channel) => GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]);
+    const listed = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+    // The BFF refusal's first sentence (`createCampaigns`), and like that refusal it does NOT promise a
+    // second type can then be added to the same brief: that depends on the campaign-service version
+    // deployed, and a retry into a refusal after the first create has spent budget is worse than
+    // saying nothing.
+    return `${listed} cannot be created together. Keep one selected to create it.`;
+  });
 
   /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
   private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
@@ -3100,6 +3165,7 @@ export class ImplementationTabComponent implements OnInit {
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
+  protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
   /**
@@ -4237,6 +4303,25 @@ export class ImplementationTabComponent implements OnInit {
   protected removeGoogleProximityTarget(index: number): void {
     this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
+  }
+
+  /**
+   * Keep a Google campaign-type tick exclusive on the campaign-service road (#4755).
+   *
+   * That road creates one type per create and refuses any pair, so ticking a second type unticks the
+   * first instead of silently disabling Create; the note under the row says each type is created on
+   * its own. Only on a tick, never an untick, and never on the legacy road, which still creates
+   * Search and Demand Gen together. Video is constructed disabled and is not part of the choice.
+   */
+  protected onGoogleChannelPicked(channel: GoogleCampaignChannel, event: Event): void {
+    if (!this.googleCreativeAvailable()) return;
+    if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
+    this.campaignForm.patchValue({
+      includeSearch: channel === 'search',
+      includeDemandGen: channel === 'demand-gen',
+      includePerformanceMax: channel === 'performance-max',
+      includeDisplay: channel === 'display',
+    });
   }
 
   /**
@@ -6353,6 +6438,88 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Prefill the Performance Max copy from the brief's generated copy (#4784).
+   *
+   * Performance Max was the one Google channel whose copy a person still had to write, although the
+   * brief already holds copy of the right shape: Search headlines fit its headlines (both 30 wide),
+   * Demand Gen headlines (40) fit its long headlines (90), Search and Demand Gen descriptions fit its
+   * descriptions (90), and Demand Gen's business name is the business name. Images are never
+   * generated, so they stay the operator's.
+   *
+   * Every value is held to its field's own catalogue bounds (`GOOGLE_CREATIVE_FIELD_SPECS`): trimmed,
+   * measured with `codePointLength` as the field validators measure it, de-duplicated and capped at
+   * the field's `max`, so the seed never puts a value on screen its own validator refuses. One
+   * description short enough for Google's short slot is kept in the set whenever the brief has one.
+   *
+   * A brief with none of this copy leaves the group as `resetGoogleFields` left it, empty.
+   */
+  private seedPerformanceMaxCreative(brief: CampaignBriefOutput): void {
+    const search = this.generatedCopy(brief, ['google_search']);
+    // `google_display` is the Demand Gen key the generator writes, and `demand_gen` the older one;
+    // `getDisplayCopy` on the Planning tab reads both, at the top level and under `platforms`.
+    const demandGen = this.generatedCopy(brief, ['google_display', 'demand_gen']);
+    // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
+    // declares `width` or `max`, and the literal tuple type would refuse the lookup.
+    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'];
+    const fitting = (control: string, values: unknown): string[] => {
+      const spec = specs.find((field) => field.control === control);
+      if (spec === undefined || !Array.isArray(values)) return [];
+      // A line break inside one generated value would split it into extra entries of a one-per-line
+      // field, past the width and count it was checked against, so it is folded into a space.
+      const unique = [
+        ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
+      ];
+      return unique.filter((value) => value !== '' && (spec.width === undefined || codePointLength(value) <= spec.width));
+    };
+    const capped = (control: string, values: string[]): string[] => values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
+
+    const headlines = capped('headlines', fitting('headlines', search?.['headlines']));
+    const longHeadlines = capped('longHeadlines', fitting('longHeadlines', demandGen?.['headlines']));
+    const descriptionPool = fitting('descriptions', [...this.asArray(search?.['descriptions']), ...this.asArray(demandGen?.['descriptions'])]);
+    const descriptions = capped('descriptions', descriptionPool);
+    const isShort = (value: string): boolean => codePointLength(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
+    const short = descriptionPool.find(isShort);
+    if (short !== undefined && !descriptions.some(isShort)) {
+      descriptions[descriptions.length - 1] = short;
+    }
+    const businessName = fitting('businessName', [demandGen?.['business_name']])[0] ?? '';
+
+    if (headlines.length === 0 && longHeadlines.length === 0 && descriptions.length === 0 && businessName === '') return;
+    const seeded = {
+      headlines: headlines.join('\n'),
+      longHeadlines: longHeadlines.join('\n'),
+      descriptions: descriptions.join('\n'),
+      businessName,
+    };
+    this.performanceMaxSeed.set(seeded);
+    this.campaignForm.controls.performanceMaxCreative.patchValue(seeded);
+  }
+
+  /**
+   * One platform's generated copy from the brief, by the first key present, at the top level or
+   * nested under `platforms` — the shapes `getSearchCopy` and `getDisplayCopy` on the Planning tab
+   * read. Shared by the Search seed and the Performance Max seed so the two cannot disagree about
+   * where a brief keeps its copy.
+   */
+  private generatedCopy(brief: CampaignBriefOutput, keys: readonly string[]): Record<string, unknown> | undefined {
+    const copy = brief.structuredCopy;
+    if (!copy) return undefined;
+    const nested = copy['platforms'] as Record<string, unknown> | undefined;
+    for (const source of [copy, nested]) {
+      for (const key of keys) {
+        const found = source?.[key];
+        if (found !== null && typeof found === 'object') return found as Record<string, unknown>;
+      }
+    }
+    return undefined;
+  }
+
+  /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
+  private asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  /**
    * Rebuild one copy FormArray from a list, preserving the validators the field carries.
    *
    * Shared by the draft restore and the brief seed so the two cannot drift — an earlier revision
@@ -6640,7 +6807,7 @@ export class ImplementationTabComponent implements OnInit {
       this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
-    const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
+    const searchCopy = this.generatedCopy(brief, ['google_search']);
     if (searchCopy) {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
@@ -6674,6 +6841,10 @@ export class ImplementationTabComponent implements OnInit {
     if (brief.googleSitelinks !== undefined) {
       this.googleSitelinks.set(brief.googleSitelinks.map((s) => ({ ...s })));
     }
+
+    // After `resetGoogleFields` emptied the creative groups, like the Search copy above; the draft
+    // restore runs after this seed, so an operator's own Performance Max copy still wins (#4784).
+    this.seedPerformanceMaxCreative(brief);
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
@@ -6847,6 +7018,7 @@ export class ImplementationTabComponent implements OnInit {
    * sub-forms: they reach neither the draft nor a create until an entry is added.
    */
   private resetGoogleFields(): void {
+    this.performanceMaxSeed.set(null);
     this.campaignForm.patchValue({
       searchBudgetPct: CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
       includeSearch: true,
@@ -6916,6 +7088,25 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Private Initializers ===
   /**
+   * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
+   * copy the brief seeded into it.
+   *
+   * Derived rather than latched. A restored draft overwrites the seed after it runs, and an operator
+   * may clear or rewrite the copy, so a flag set at seed time would go on saying "filled in from the
+   * brief" over empty fields or over copy they wrote. A draft saved straight from the seeded state —
+   * the ordinary tab round trip — restores the same values, so the notice survives that.
+   */
+  private initPerformanceMaxPrefillShown(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const seed = this.performanceMaxSeed();
+      if (seed === null) return false;
+      const raw = this.campaignForm.controls.performanceMaxCreative.getRawValue() as Record<string, string>;
+      return Object.entries(seed).some(([field, value]) => value !== '' && raw[field] === value);
+    });
+  }
+
+  /**
    * Whether the budget-split slider changes anything the user is about to create.
    *
    * It only ever has, for exactly one pair. On the LEGACY in-process road,
@@ -6927,7 +7118,9 @@ export class ImplementationTabComponent implements OnInit {
    * Google create outright (one config, one channel), so no selection reaches a platform with a
    * split applied.
    *
-   * So the slider is shown for Search + Demand Gen and withheld otherwise. Previously it rendered
+   * So the slider is shown for Search + Demand Gen on the LEGACY road only, and withheld otherwise —
+   * including that same pair on the cutover road, where it would offer a split nothing applies
+   * (#4755). Previously it rendered
    * for every Google selection and labelled its second half "Display" — a channel the split has
    * never funded, next to real Display and Performance Max boxes that it does not fund either.
    * The control is left in the form regardless; hiding it must not drop a restored draft's value.
@@ -6935,6 +7128,7 @@ export class ImplementationTabComponent implements OnInit {
   private initBudgetSplitApplies(): Signal<boolean> {
     return computed(() => {
       void this.campaignFormRevision();
+      if (this.googleCreativeAvailable()) return false;
       const channels = this.selectedGoogleChannels();
       return channels.includes('search') && channels.includes('demand-gen');
     });

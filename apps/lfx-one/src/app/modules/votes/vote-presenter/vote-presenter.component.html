@@ -281,10 +281,15 @@
                 }
                 @if (v.status === PollStatus.ACTIVE) {
                   <!-- votePresenterGuard already proved vote#writer for this route; the BFF re-checks it on send. -->
-                  <lfx-vote-send-ballots [voteUid]="v.uid" [blocked]="confirmOpen()" data-testid="vote-presenter-send-ballots" />
+                  <lfx-vote-send-ballots
+                    [voteUid]="v.uid"
+                    [responded]="v.num_response_received"
+                    [invited]="v.total_voting_request_invitations"
+                    [blocked]="confirmOpen()"
+                    data-testid="vote-presenter-send-ballots" />
                 }
                 <p class="m-0 text-base text-gray-400">Didn't get the email? Scan to open your ballot</p>
-                <lfx-vote-qr [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
+                <lfx-qr-code [value]="voteLink()" [label]="'QR code for ' + voteLink()" class="w-full max-w-[360px]" />
                 <p class="m-0 text-center text-base text-gray-400">Sign in with your LF account. Only eligible voters can cast.</p>
               </div>
             </lfx-card>

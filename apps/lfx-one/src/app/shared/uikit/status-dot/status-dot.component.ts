@@ -3,19 +3,17 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
+
 /** The state of something that runs, such as a sync, an import, a deployment or a recording: a 10px dot and a word. */
 @Component({
   selector: 'lfx-ui-status-dot',
+  imports: [UiTooltipDirective],
   templateUrl: './status-dot.component.html',
   styleUrl: './status-dot.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'hostClasses()',
-    '[attr.role]': 'dotOnly() ? "img" : null',
-    '[attr.aria-label]': 'dotOnly() ? text() : null',
-    // shortcut: native title tooltip, hover only, so the tab stop shows a focus ring but no text. revisit: when lfx-ui-tooltip lands (#4661)
-    '[attr.title]': 'dotOnly() ? text() : null',
-    '[attr.tabindex]': 'dotOnly() ? 0 : null',
     'data-testid': 'ui-status-dot',
   },
 })
@@ -24,7 +22,7 @@ export class UiStatusDotComponent {
   public readonly status = input.required<'queued' | 'building' | 'ready' | 'error' | 'canceled' | 'deleted'>();
   /** Overrides the default word for the state, such as "Running" for `building`. Keep it sentence case. */
   public readonly label = input<string>('');
-  /** Shows only the dot. It then gets `role="img"`, an `aria-label` and a native tooltip from the word. */
+  /** Shows only the dot. It then becomes a focusable `role="img"` named by the word, with a tooltip on hover and keyboard focus. */
   public readonly dotOnly = input<boolean>(false);
 
   protected readonly text: Signal<string> = this.initText();
@@ -42,14 +40,14 @@ export class UiStatusDotComponent {
     return computed(() => {
       const base = 'inline-flex items-center text-copy-14 text-ui-neutral-900';
       // Exact px, not rem; 14px root.
-      return this.dotOnly() ? `${base} rounded-full focus-visible:shadow-focus focus-visible:outline-none` : `${base} gap-[8px]`;
+      return this.dotOnly() ? base : `${base} gap-[8px]`;
     });
   }
 
   private initDotClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem; 14px root.
-      const base = 'h-[10px] w-[10px] shrink-0 rounded-full';
+      const base = 'h-[10px] w-[10px] shrink-0 rounded-ui-full';
       const states = {
         queued: 'status-dot-pulse bg-ui-neutral-400',
         building: 'status-dot-pulse bg-ui-warning-500',
