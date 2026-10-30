@@ -340,12 +340,17 @@ export class ProjectContextService {
    * no Angular navigation is triggered, so guards and resolvers are not re-evaluated.
    * Skipped when a navigation is already in flight: the URL already carries the correct
    * param (deep-link) or the caller's own navigation will set the destination URL.
+   *
+   * Built from `location.path()`, the live address, not `router.url`. The router never sees a
+   * `replaceState`, so `router.url` is the URL of the last NAVIGATION: rebuilding from it dropped
+   * any parameter another `replaceState` had written since (the campaigns page's `?event=`, #4756)
+   * or brought back that parameter's stale value — even when re-selecting the same foundation.
    */
   private syncProjectQueryParam(slug: string | null): void {
     if (this.router.getCurrentNavigation()) {
       return;
     }
-    const urlTree = this.router.parseUrl(this.router.url);
+    const urlTree = this.router.parseUrl(this.location.path());
     if (slug === null) {
       delete urlTree.queryParams['project'];
     } else {

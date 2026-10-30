@@ -813,9 +813,6 @@ export class PlanningTabComponent implements OnInit {
       // exactly what a foundation switch needs since (unlike the stage switch) the url itself is
       // still valid but the portal answering it is not.
       this.reset();
-      // `setFoundation` rewrote the address from `router.url`, which never sees a `replaceState`, so
-      // the switch dropped `?event=` while the url field kept it. Put it back (#4756).
-      this.syncEventParam(this.briefForm.controls.url.value.trim());
       this.savedBrief.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;

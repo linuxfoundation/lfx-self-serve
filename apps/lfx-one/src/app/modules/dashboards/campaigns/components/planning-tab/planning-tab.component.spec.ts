@@ -21,7 +21,7 @@ import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { EMPTY, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { PlanningTabComponent } from './planning-tab.component';
 
@@ -3883,11 +3883,17 @@ describe('PlanningTabComponent event URL in the page address', () => {
     fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
     fixture.componentRef.setInput('deliveryType', deliveryType);
     fixture.detectChanges();
-    await fixture.whenStable();
-    // The lookup is debounced by 500ms.
-    await new Promise((resolve) => setTimeout(resolve, 550));
-    await fixture.whenStable();
+    // Past the lookup's 500ms debounce on fake time: no real wait, and no race with the debounce.
+    // `whenStable()` is not used here: the zoneless scheduler runs on the faked `setTimeout`, so
+    // advancing time is what lets it run.
+    await settle(500);
     return fixture;
+  }
+
+  /** Advance fake time (running the debounce and the change-detection scheduler), then render. */
+  async function settle(ms = 0): Promise<void> {
+    await vi.advanceTimersByTimeAsync(ms);
+    TestBed.tick();
   }
 
   function urlField(fixture: ComponentFixture<PlanningTabComponent>): string {
@@ -3923,6 +3929,11 @@ describe('PlanningTabComponent event URL in the page address', () => {
     context.setRouteLensKind('foundation');
     context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
     location = TestBed.inject(Location) as SpyLocation;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('prefills the event URL from the address and looks up its saved brief', async () => {
@@ -3971,14 +3982,13 @@ describe('PlanningTabComponent event URL in the page address', () => {
     expect(eventParam()).toBe(EVENT_URL);
   });
 
-  it('puts the parameter back after a foundation switch rewrites the address', async () => {
+  it('keeps the parameter through a foundation switch that rewrites the address', async () => {
     const fixture = await mount('/campaigns?project=foundation-a');
     type(fixture, EVENT_URL);
-    // `setFoundation` with its URL sync ON, as the sidebar switch calls it: it rebuilds the address
-    // from `router.url`, which never saw the replaceState above, so `?event=` is dropped there.
+    // `setFoundation` with its URL sync ON, as the sidebar switch calls it: it rewrites the address,
+    // and must keep the `?event=` the replaceState above wrote.
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' });
-    fixture.detectChanges();
-    await fixture.whenStable();
+    await settle();
 
     expect(eventParam()).toBe(EVENT_URL);
     expect(new URL(location.path(), 'https://app.example').searchParams.get('project')).toBe('foundation-b');

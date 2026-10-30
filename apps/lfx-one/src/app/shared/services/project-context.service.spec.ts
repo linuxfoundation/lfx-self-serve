@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
+import { SpyLocation } from '@angular/common/testing';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -76,7 +77,7 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -406,7 +407,7 @@ describe('ProjectContextService — canWriteMeetings', () => {
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -540,7 +541,7 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -602,7 +603,7 @@ describe('ProjectContextService — menuContext', () => {
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -651,5 +652,65 @@ describe('ProjectContextService — menuContext', () => {
 
     expect(service.menuContext()).toEqual(FOUNDATION);
     expect(service.activeContext()).toEqual(CONTEXT);
+  });
+});
+
+/**
+ * `?project=` is written with `replaceState`, and so are other parameters on the same page — the
+ * campaigns page keeps its event URL in `?event=` (#4756). The router never sees a `replaceState`,
+ * so the sync must rebuild from the LIVE address, or it drops (or reverts) those parameters.
+ * A real router and `SpyLocation` stand in for the address bar.
+ */
+describe('ProjectContextService — project query param sync', () => {
+  const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext;
+  const foundationB = { uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext;
+  let location: SpyLocation;
+  let service: ProjectContextService;
+
+  function param(name: string): string | null {
+    return new URL(location.path(), 'https://app.example').searchParams.get(name);
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: Location, useClass: SpyLocation },
+        { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
+        { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: LensService, useValue: { activeLens: signal('foundation'), menuLens: signal('foundation'), previewingMenuLens: signal(false) } },
+        {
+          provide: PersonaService,
+          useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
+        },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    location = TestBed.inject(Location) as SpyLocation;
+    service = TestBed.inject(ProjectContextService);
+    service.setRouteLensKind('foundation');
+  });
+
+  it('keeps a parameter another replaceState wrote when the foundation changes', () => {
+    location.replaceState('/campaigns?project=foundation-a&event=https%3A%2F%2Fevents.example.com%2Fkubecon');
+
+    service.setFoundation(foundationB);
+
+    expect(param('project')).toBe('foundation-b');
+    expect(param('event')).toBe('https://events.example.com/kubecon');
+    expect(location.path()).toContain('/campaigns');
+  });
+
+  it('keeps the live value, not a stale one, when the active foundation is re-selected', () => {
+    service.setFoundation(foundationA, false);
+    location.replaceState('/campaigns?project=foundation-a&event=https%3A%2F%2Fevents.example.com%2Fnewer');
+
+    service.setFoundation(foundationA);
+
+    expect(param('project')).toBe('foundation-a');
+    expect(param('event')).toBe('https://events.example.com/newer');
   });
 });
