@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<label [class]="tileClasses()" [lfxUiTooltip]="reason()" data-testid="ui-choicebox-label">
+  <!-- 2px top margin centres the 16px control on the 20px title line. -->
+  <span class="relative mt-[2px] inline-flex shrink-0">
+    <input
+      [type]="group.type()"
+      [class]="controlClasses()"
+      [attr.name]="group.isRadio() ? group.groupName() : null"
+      [value]="value()"
+      [checked]="isChecked()"
+      [disabled]="isDisabled()"
+      [attr.aria-labelledby]="titleId"
+      [attr.aria-describedby]="describedBy()"
+      (change)="onChange($event)"
+      data-testid="ui-choicebox-input" />
+    @if (isChecked() && group.isRadio()) {
+      <span [class]="dotClasses()" data-testid="ui-choicebox-dot"></span>
+    } @else if (isChecked()) {
+      <svg class="pointer-events-none absolute inset-0 h-[16px] w-[16px]" viewBox="0 0 16 16" fill="none" aria-hidden="true" data-testid="ui-choicebox-check">
+        <path d="M4 8.3 6.6 10.9 12 5.2" class="stroke-white forced-colors:stroke-[color:HighlightText]" stroke-width="2" stroke-linecap="square" />
+      </svg>
+    }
+  </span>
+  <span class="flex min-w-0 flex-1 flex-col gap-[4px]">
+    <span [id]="titleId" [class]="titleClasses()" data-testid="ui-choicebox-title">
+      {{ label() }}
+      <ng-content select="lfx-ui-badge" />
+    </span>
+    @if (description()) {
+      <span [id]="descriptionId" class="copy-13 text-ui-neutral-600" data-testid="ui-choicebox-description">{{ description() }}</span>
+    }
+  </span>
+  @if (reason()) {
+    <span [id]="reasonId" class="sr-only" data-testid="ui-choicebox-reason">{{ reason() }}</span>
+  }
+</label>

@@ -184,3 +184,9 @@ export type UiButtonSize = 'tiny' | 'small' | 'medium';
 
 /** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = 'tiny' | 'small' | 'medium';
+
+/** Whether a uikit choicebox group picks one tile (`radio`) or any number of tiles (`checkbox`). A group never mixes the two. */
+export type UiChoiceboxType = 'radio' | 'checkbox';
+
+/** Number of equal columns in a uikit choicebox group. */
+export type UiChoiceboxColumns = 1 | 2 | 3;
