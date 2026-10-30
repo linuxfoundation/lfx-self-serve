@@ -189,13 +189,18 @@ export function extractUrlCandidates(text: string): { url: string; index: number
     let inAuthority = true;
 
     // Keep URL brackets, but stop at hostname citations, unmatched prose closers,
-    // and the boundary between adjacent Markdown-style links. Scan each match once.
+    // and the closing delimiter of a labeled link. Scan each match once.
     for (let end = 0; end <= raw.length; end++) {
       const char = raw.charAt(end);
       const authorityStart = start + (raw.slice(start, start + 8).toLowerCase() === 'https://' ? 8 : 7);
       if (end >= authorityStart && (char === '/' || char === '?' || char === '#')) inAuthority = false;
       const hostnameCitation = char === '[' && inAuthority && end > authorityStart && raw.charAt(end - 1) !== '@';
-      const adjacentLabel = char === ')' && parenthesisDepth === 0 && bracketDepth === 0 && raw.charAt(end + 1) === '[';
+      const labeledLinkEnd =
+        char === ')' &&
+        parenthesisDepth === 0 &&
+        bracketDepth === 0 &&
+        text.charAt(match.index + start - 2) === ']' &&
+        text.charAt(match.index + start - 1) === '(';
 
       if (char === '(') parenthesisDepth++;
       if (char === ')' && parenthesisDepth > 0) parenthesisDepth--;
@@ -204,7 +209,7 @@ export function extractUrlCandidates(text: string): { url: string; index: number
         bracketDepth++;
       } else if (char === ']' && bracketDepth > 0) {
         bracketDepth--;
-      } else if (hostnameCitation || adjacentLabel || char === ']' || end === raw.length) {
+      } else if (hostnameCitation || labeledLinkEnd || char === ']' || end === raw.length) {
         candidates.push({ url: trimTrailingPunctuation(raw.slice(start, end)), index: match.index + start });
 
         // Only search beyond a prose boundary, never inside a rejected URL.

@@ -46,6 +46,25 @@ describe('extractUrlCandidates', () => {
     expect(extractUrls(text)).toEqual(urls);
   });
 
+  it.each([',', ';', '!', '.', ':'])('separates labeled links across %s without changing destinations or offsets', (separator) => {
+    const text = `Read [one](https://one.example/path)${separator}[two](https://two.example/path)`;
+    const urls = ['https://one.example/path', 'https://two.example/path'];
+    expect(extractUrlCandidates(text)).toEqual(urls.map((url) => ({ url, index: text.indexOf(url) })));
+    expect(extractUrls(text)).toEqual(urls);
+  });
+
+  it.each(['https://example.com/?query=release)[2026]', 'https://example.com/releases)[2026]', 'https://example.com/#release)[2026]'])(
+    'retains )[ inside an ordinary URL: %s',
+    (url) => {
+      const text = `Read ${url}, then https://other.example/path`;
+      expect(extractUrlCandidates(text)).toEqual([
+        { url, index: text.indexOf(url) },
+        { url: 'https://other.example/path', index: text.indexOf('https://other.example/path') },
+      ]);
+      expect(extractUrls(text)).toEqual([url, 'https://other.example/path']);
+    }
+  );
+
   it.each([
     'https://example.com/path[1]',
     'https://example.com?items[]=one',
