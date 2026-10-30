@@ -25,7 +25,12 @@ export class ExternalLinksDirective {
 
     const anchor = (event.target as Element | null)?.closest?.('a[href]');
     const href = anchor?.getAttribute('href');
-    if (!anchor || !href) {
+    if (!anchor || href == null) {
+      return;
+    }
+
+    if (href.trim() === '') {
+      event.preventDefault();
       return;
     }
 

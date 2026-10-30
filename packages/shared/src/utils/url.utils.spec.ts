@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   canonicalHttpUrl,
+  extractUrlCandidates,
   extractUrls,
   isHttpsUrl,
   isInviteLandingPath,
@@ -25,6 +26,28 @@ describe('normalizeToUrl', () => {
 
   it.each(['HTTPS://localhost/chat', 'HTTP://127.0.0.1/chat', 'JaVaScRiPt:alert(1)', '#general'])('does not create a destination for %s', (input) => {
     expect(normalizeToUrl(input)).toBeNull();
+  });
+});
+
+describe('extractUrlCandidates', () => {
+  it('preserves offsets and punctuation boundaries without applying a destination policy', () => {
+    const text = 'Read (https://example.com.localhost/guide), then https://example.com.';
+    expect(extractUrlCandidates(text)).toEqual([
+      { url: 'https://example.com.localhost/guide', index: text.indexOf('https://') },
+      { url: 'https://example.com', index: text.lastIndexOf('https://') },
+    ]);
+  });
+
+  it.each(['https://example.com/guide?topic=data:types', 'https://example.com/ftp:/manual', 'https://172.32.0.1/charter'])(
+    'leaves validation to callers while retaining legacy extractUrls behavior: %s',
+    (url) => {
+      expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(url)).toEqual([]);
+    }
+  );
+
+  it.each(['', 'no links here'])('returns no candidates for %j', (text) => {
+    expect(extractUrlCandidates(text)).toEqual([]);
   });
 });
 

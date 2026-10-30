@@ -71,6 +71,22 @@ describe('ExternalLinksDirective', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it.each(['', ' ', '\t\n'])('blocks empty destinations on ordinary, modified, and middle clicks: %j', (href) => {
+    for (const init of [{}, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      const type = init.button === 1 ? 'auxclick' : 'click';
+      const { opened, event } = click('a b', init, type, `<a href="${href}"><b>empty</b></a>`);
+      expect(opened).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('leaves anchors without a destination untouched', () => {
+    const { opened, event } = click('a', {}, 'click', '<a>no destination</a>');
+    expect(opened).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it.each([
     { href: '//example.com/charter', expected: 'https://example.com/charter' },
     { href: '/docs/charter', expected: 'https://vote.example/docs/charter' },

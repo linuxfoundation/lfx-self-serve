@@ -170,6 +170,19 @@ function trimTrailingPunctuation(url: string): string {
 }
 
 /**
+ * Detects HTTP(S) URL candidates with their original text offsets, trimming prose punctuation.
+ * Candidates are not validated: callers must apply their destination policy before using them.
+ * @param text - The text to scan
+ * @returns Candidate strings and their zero-based offsets in the original text
+ */
+export function extractUrlCandidates(text: string): { url: string; index: number }[] {
+  return Array.from(text.matchAll(URL_DETECTION_REGEX), (match) => ({
+    url: trimTrailingPunctuation(match[0]),
+    index: match.index,
+  }));
+}
+
+/**
  * Extracts all valid URLs from a given text string
  * @param text - The text to extract URLs from
  * @returns Array of validated URL strings found in the text
@@ -179,17 +192,9 @@ export function extractUrls(text: string): string[] {
     return [];
   }
 
-  const potentialUrls = [...text.matchAll(URL_DETECTION_REGEX)];
-  const validUrls: string[] = [];
-
-  potentialUrls.forEach((match) => {
-    const url = trimTrailingPunctuation(match[0]);
-    if (isValidUrl(url)) {
-      validUrls.push(url);
-    }
-  });
-
-  return validUrls;
+  return extractUrlCandidates(text)
+    .map(({ url }) => url)
+    .filter(isValidUrl);
 }
 
 /**

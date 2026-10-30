@@ -61,6 +61,35 @@ describe('LinkifyHtmlPipe', () => {
     expect(pipe.transform(result.innerHTML)).toBe(result.innerHTML);
   });
 
+  it.each([
+    {
+      prefix: 'https://example.com.localhost/guide ',
+      url: 'https://example.com',
+    },
+    {
+      prefix: 'http://localhost/?next=https://example.com/charter then ',
+      url: 'https://example.com/charter',
+    },
+  ])('links only the standalone URL after rejected text: $prefix', ({ prefix, url }) => {
+    const text = prefix + url;
+    const result = render(text);
+    expect(result.textContent).toBe(text);
+    expect(result.querySelectorAll('a')).toHaveLength(1);
+    expect(result.firstChild?.textContent).toBe(prefix);
+    expect(result.querySelector('a')?.textContent).toBe(url);
+    expect(result.querySelector('a')?.getAttribute('href')).toBe(url);
+  });
+
+  it.each(['https://example.com/guide?topic=data:types', 'https://example.com/ftp:/manual', 'https://172.32.0.1/charter'])(
+    'links legitimate web destinations using the same policy as existing anchors: %s',
+    (url) => {
+      const result = render(`Read ${url}`);
+      expect(result.querySelectorAll('a')).toHaveLength(1);
+      expect(result.querySelector('a')?.getAttribute('href')).toBe(url);
+      expect(result.textContent).toBe(`Read ${url}`);
+    }
+  );
+
   it('decodes entities once so query parameters and escaped markup stay literal', () => {
     const result = render('<p>https://example.com/doc?a=1&amp;b=2 &lt;img onerror="attack()"&gt;</p>');
     expect(result.querySelector('a')?.getAttribute('href')).toBe('https://example.com/doc?a=1&b=2');

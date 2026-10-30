@@ -4,7 +4,7 @@
 import { DOCUMENT } from '@angular/common';
 import { inject, Pipe, PipeTransform, SecurityContext } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
-import { extractUrls, isPrivateHost } from '@lfx-one/shared/utils';
+import { extractUrlCandidates, isPrivateHost } from '@lfx-one/shared/utils';
 
 /** Linkifies text nodes without escaping rich descriptions or nesting existing anchors. */
 @Pipe({
@@ -37,19 +37,25 @@ export class LinkifyHtmlPipe implements PipeTransform {
 
   private linkifyText(node: Node): void {
     const text = node.textContent || '';
-    const urls = extractUrls(text).filter((url) => !isPrivateHost(new URL(url).hostname));
+    const urls = extractUrlCandidates(text).filter(({ url }) => {
+      try {
+        const destination = new URL(url);
+        return (destination.protocol === 'http:' || destination.protocol === 'https:') && !isPrivateHost(destination.hostname);
+      } catch {
+        return false;
+      }
+    });
     if (!urls.length) return;
 
     const fragment = this.document.createDocumentFragment();
     let offset = 0;
-    for (const url of urls) {
-      const start = text.indexOf(url, offset);
-      fragment.appendChild(this.document.createTextNode(text.slice(offset, start)));
+    for (const { url, index } of urls) {
+      fragment.appendChild(this.document.createTextNode(text.slice(offset, index)));
       const anchor = this.document.createElement('a');
       anchor.setAttribute('href', url);
       anchor.textContent = url;
       fragment.appendChild(anchor);
-      offset = start + url.length;
+      offset = index + url.length;
     }
     fragment.appendChild(this.document.createTextNode(text.slice(offset)));
     node.parentNode?.replaceChild(fragment, node);
