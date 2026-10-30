@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { LINKEDIN_POST_INTAKE, MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import { MKTG_FAMILY_WRITE_REQUIRED } from '../constants/mktg-family-actions.constants';
 import type { MktgFamilyActionContext } from '../interfaces/mktg-family-actions.interface';
 import type { MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
@@ -14,11 +15,13 @@ import {
   mktgRunModeFor,
   resolveMktgFamilyActions,
   resolveMktgFamilyNextStep,
+  resolveMktgFamilyRun,
 } from './mktg-family-actions.utils';
 
 const context: MktgFamilyActionContext = { loaded: true, canWrite: true, approvedFramework: false };
 function family(id = 'positioning-brand'): MktgKitFamilyView {
-  const view = resolveMktgKit({ project: 'synthetic', groups: [] }, new Date('2026-10-23T12:00:00Z')).find((item) => item.family.id === id);
+  // These defensive action-policy cases also exercise hidden/unavailable catalog entries.
+  const view = resolveMktgKit({ project: 'synthetic', groups: [] }, new Date('2026-10-23T12:00:00Z'), true).find((item) => item.family.id === id);
   if (!view) throw new Error('Missing synthetic family');
   return view;
 }
@@ -43,6 +46,115 @@ function built(view: MktgKitFamilyView): MktgKitFamilyView {
 }
 
 describe('One rule for every family action', () => {
+  it('overlays only known active runs, selects the newest and keeps scoped destinations in one place', () => {
+    const run = {
+      agentKey: 'foundation-message' as const,
+      state: 'writing' as const,
+      project: 'synthetic',
+      documentId: 'living',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    expect(resolveMktgFamilyRun(run.agentKey)).toBeNull();
+    expect(resolveMktgFamilyRun(run.agentKey, [{ ...run, state: 'failed' }])).toBeNull();
+    expect(resolveMktgFamilyRun('brand-kit', [run])).toBeNull();
+    expect(
+      resolveMktgFamilyRun(run.agentKey, [run, { ...run, state: 'storing', runId: 'newer', startedAt: '2026-10-28T13:00:00Z' }], ['../../'])
+    ).toMatchObject({
+      caption: 'Writing…',
+      label: 'Open',
+      link: { commands: ['../../', 'documents', run.agentKey, 'living'], queryParams: { run: 'newer' } },
+    });
+    expect(resolveMktgFamilyRun(run.agentKey, [{ ...run, state: 'questions' }])).toMatchObject({
+      caption: 'Waiting for your answers',
+      label: 'Answer the questions',
+      link: { commands: ['foundation-setup'], queryParams: {} },
+    });
+    expect(resolveMktgFamilyRun('member-360', [{ ...run, agentKey: 'member-360', state: 'questions' }])?.caption).toBe('Waiting for your answers');
+  });
+  it.each([
+    ['foundation-message', 'foundation-setup'],
+    ['linkedin-post', 'linkedin-post'],
+    ['member-360', 'member-360'],
+  ] as const)('answers %s questions on its catalog run page', (agentKey, catalogAgentId) => {
+    const run = {
+      agentKey,
+      state: 'questions' as const,
+      project: 'synthetic',
+      documentId: 'one-off-document',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    expect(resolveMktgFamilyRun(agentKey, [run], ['../../'])).toEqual({
+      caption: 'Waiting for your answers',
+      label: 'Answer the questions',
+      link: { commands: ['../../', catalogAgentId], queryParams: {} },
+    });
+  });
+  it('enables the LinkedIn activity feed without changing Member 360’s dedicated receiver flag', () => {
+    expect(LINKEDIN_POST_INTAKE.liveActivity).toBe(true);
+    expect(MKTG_AGENT_INTAKES['member-360'].liveActivity).toBeUndefined();
+  });
+  it.each(MKTG_DOCUMENT_TYPES.filter((type) => type.kind !== 'living' && type.catalogAgentId && isMktgFamilyAgentAvailable(type.catalogAgentId)))(
+    'uses a neutral in-progress caption for $agentKey without changing questions or destinations',
+    (type) => {
+      for (const state of ['writing', 'storing', 'questions'] as const) {
+        const run = {
+          agentKey: type.agentKey,
+          state,
+          project: 'synthetic',
+          documentId: 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        };
+        expect(resolveMktgFamilyRun(type.agentKey, [run])).toMatchObject({
+          caption: state === 'questions' ? 'Waiting for your answers' : 'In progress…',
+          link:
+            state === 'questions'
+              ? { commands: [type.catalogAgentId], queryParams: {} }
+              : { commands: ['documents', type.agentKey, run.documentId], queryParams: { run: run.runId } },
+        });
+      }
+    }
+  );
+  it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
+    const run = {
+      agentKey: 'foundation-message' as const,
+      state,
+      project: 'synthetic',
+      documentId: 'living',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    const document = {
+      agentKey: run.agentKey,
+      documentId: 'living',
+      revisionCount: 2,
+      latestRevisionId: 'approved',
+      approvedCurrent: { revisionId: 'approved', number: 2 },
+      createdAt: null,
+      updatedAt: null,
+    };
+    const result = resolveMktgFamilyRun(run.agentKey, [run], [], document);
+    expect(result?.caption).toBe(state === 'questions' ? 'Waiting for your answers' : 'Approved · new version being written');
+    expect(result?.link).toEqual(resolveMktgFamilyRun(run.agentKey, [run])?.link);
+    expect(document.approvedCurrent).toEqual({ revisionId: 'approved', number: 2 });
+    for (const approvedCurrent of [
+      null,
+      { revisionId: '', number: 2 },
+      { revisionId: ' ', number: 2 },
+      { revisionId: 'approved', number: 0 },
+      { revisionId: 'approved', number: 1.5 },
+    ]) {
+      expect(resolveMktgFamilyRun(run.agentKey, [run], [], { ...document, approvedCurrent })?.caption).toBe(
+        state === 'questions' ? 'Waiting for your answers' : 'Writing…'
+      );
+    }
+    expect(resolveMktgFamilyRun(run.agentKey, [run], [], null)?.caption).toBe(state === 'questions' ? 'Waiting for your answers' : 'Writing…');
+    expect(resolveMktgFamilyRun(run.agentKey, [run], [], { ...document, documentId: 'other' })?.caption).toBe(
+      state === 'questions' ? 'Waiting for your answers' : 'Writing…'
+    );
+  });
   it('every available never-run row has Create X; required approved documents disable it with the reason', () => {
     const result = resolveMktgFamilyActions(family(), context);
     expect(result.rows['messaging-framework'].action).toMatchObject({ kind: 'run', label: 'Create messaging framework', mode: 'new', blockedReason: '' });
@@ -129,7 +241,7 @@ describe('One rule for every family action', () => {
     view.rows[1] = built(view).rows[1];
     expect(resolveMktgFamilyActions(view, context).header?.caption).toBe('Then: FAQ and the brand kit');
   });
-  it('nothing to create means Review drafts, then Export the kit only for approved fresh exportable families', () => {
+  it('nothing to create means Review drafts, then Export the family only for approved fresh exportable families', () => {
     const view = built(family());
     view.rows[0].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header).toMatchObject({
@@ -140,7 +252,7 @@ describe('One rule for every family action', () => {
     view.rows[1].state = 'draft';
     expect(resolveMktgFamilyActions(view, context).header?.label).toBe('Review 2 drafts');
     view.rows.forEach((row) => (row.state = 'approved'));
-    expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the kit', agentId: null, mode: null, link: null });
+    expect(resolveMktgFamilyActions(view, context).header).toEqual({ kind: 'export', label: 'Export the family', agentId: null, mode: null, link: null });
     const unsupported = { ...view, family: { ...view.family, id: 'synthetic-no-exporter' } };
     expect(resolveMktgFamilyActions(unsupported, context).header).toBeNull();
     view.rows[0].state = 'needs-rebuild';
@@ -271,9 +383,9 @@ describe('One rule for every family action', () => {
     const step = resolveMktgFamilyNextStep(view, context);
     expect(step?.header).toEqual(resolveMktgFamilyActions(view, context).header);
     expect(step).toMatchObject({
-      header: { kind: 'export', label: 'Export the kit' },
-      sentence: 'The kit is complete; export it.',
-      hint: 'Opens Positioning & brand, where the kit can be exported.',
+      header: { kind: 'export', label: 'Export the family' },
+      sentence: 'Positioning & brand is complete; export it.',
+      hint: 'Opens Positioning & brand for export.',
       commands: ['families', view.family.id],
       queryParams: {},
     });

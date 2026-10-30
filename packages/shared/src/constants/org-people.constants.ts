@@ -12,7 +12,11 @@ import type {
   OrgAllEmployeeStats,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
   OrgEventAttendeesResponse,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   OrgTraineesResponse,
   PeopleTabConfig,
   PeopleTabId,
@@ -74,11 +78,60 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
 export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploymentOption[] = [
   { label: 'Current employees', value: 'current' },
   { label: 'Former employees', value: 'former' },
-  { label: 'All', value: 'all' },
+  { label: 'All employees', value: 'all' },
 ] as const;
 
-/** Default employment filter — the URL drops `?employment=` when it is active. */
-export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'current';
+/**
+ * Default employment filter on All Employees — everyone credited to the org at the time, as LFX Insights counts
+ * (lfx-self-serve#4694). The URL drops `?employment=` when it is active.
+ */
+export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
+
+/** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
+export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
+
+/** Accessible label of a People tab's employment filter. */
+export const ORG_EMPLOYMENT_LABEL = 'Employment';
+
+/**
+ * Default employment filter on People → Contributors and Org Lens Access (lfx-self-serve#4627) — the URL drops
+ * `?employment=` when it is active. Everyone, former employees included: Contributors keeps matching the Overview's
+ * Active Contributors card, and Access lists every principal. All Employees has the same default.
+ */
+export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
+
+/**
+ * Team members filter on People → Contributors, People → All Employees and the Code Contributions page
+ * (lfx-self-serve#4685): people marked as team members in the Community Data Platform (CDP). Excluded by default,
+ * on LFX Insights' rule, which leaves them out of code-based numbers only: code counts, contributors and maintainer
+ * roles. Seats, events and training are not affected. The Overview's contributors and maintainer roles follow the default.
+ */
+export const ORG_TEAM_MEMBERS_OPTIONS: readonly OrgTeamMembersOption[] = [
+  { label: 'Exclude team members', value: 'exclude' },
+  { label: 'Include team members', value: 'include' },
+] as const;
+
+/** Default team members filter — the URL drops `?teamMembers=` when it is active. */
+export const DEFAULT_ORG_TEAM_MEMBERS: OrgTeamMembersFilter = 'exclude';
+
+/** URL query parameter of the team members filter. */
+export const ORG_TEAM_MEMBERS_QUERY_PARAM = 'teamMembers';
+
+/** Accessible label of the team members filter. */
+export const ORG_TEAM_MEMBERS_LABEL = 'Team members';
+
+/** Tooltip on the team members filter. */
+export const ORG_TEAM_MEMBERS_TOOLTIP =
+  'People marked as team members in the Community Data Platform. LFX Insights leaves them out of code contributions and maintainer roles; Org Lens does too by default. Seats, events and training are not affected.';
+
+/** Note shown when Exclude team members is picked but the team-member data cannot be read (lfx-self-serve#4685). */
+export const ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE = 'Team-member data is unavailable; counts include team members.';
+
+/** Hint on the Contributors empty state at the default view, where team members are excluded and may be the only coders (lfx-self-serve#4685). */
+export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choose Include team members to see them.';
+
+/** The person-level CDP team-member flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
+export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
@@ -116,7 +169,7 @@ export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
-  maintainers: 0,
+  maintainerRoles: 0,
   contributors: 0,
   projects: 0,
   foundations: 0,

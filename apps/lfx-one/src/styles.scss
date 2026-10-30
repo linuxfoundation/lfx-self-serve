@@ -8,6 +8,8 @@
    outside the component's view; see the note in the partial. */
 @use 'styles/navbar';
 @use 'styles/mktg-family-print';
+/* LFX UI Library tokens (generated); see shared/uikit/README.md */
+@use 'styles/ui-tokens.css';
 
 @layer tailwind-base, primeng, tailwind-utilities;
 
@@ -202,6 +204,11 @@
   @tailwind components;
   @tailwind utilities;
 }
+/* shortcut: CDK overlays above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
+.cdk-overlay-container {
+  z-index: 10000;
+}
+
 /* PrimeNG component overrides */
 .p-toggleswitch .p-toggleswitch-handle {
   border-radius: 9999px;

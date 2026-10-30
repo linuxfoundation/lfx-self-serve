@@ -91,12 +91,6 @@ export class UserSearchComponent {
    */
   public readonly waitForSearchableQuery = input<boolean>(false);
   /**
-   * Searches as the signed-in admin rather than the impersonation target. Only the impersonation dialog sets
-   * it: while impersonating, the default directory search runs with the target's token and would only find
-   * people the target can see. The server route behind it requires the admin's `can_impersonate` claim.
-   */
-  public readonly asImpersonator = input<boolean>(false);
-  /**
    * Local mode: a caller-supplied list to search instead of the directory (#2594 — the formation
    * assignee picker offers the people on the project, the only population upstream will accept as
    * an assignee, rather than a global corpus that fails at save). Filtered client-side by name,
@@ -192,7 +186,7 @@ export class UserSearchComponent {
 
         // Use the search type from input, then re-rank so name matches surface
         // first and incidental alias matches (upstream over-match) are demoted.
-        return this.searchService.searchUsers(trimmedTerm, searchType, this.asImpersonator()).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
+        return this.searchService.searchUsers(trimmedTerm, searchType).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
       }),
       map((users: UserSearchOption[]) => {
         // Add the display fields the autocomplete and the item template show

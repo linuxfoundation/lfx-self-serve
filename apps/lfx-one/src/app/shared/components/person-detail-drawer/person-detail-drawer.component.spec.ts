@@ -6,8 +6,15 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
-import type { OrgAllEmployeeDetail, OrgKeyContactAssignment, OrgPersonCompanyEmailsResponse, PersonDrawerContext } from '@lfx-one/shared/interfaces';
+import { ORG_CODE_MEASURE_DEFINITION, ORG_CODE_METRIC_LABEL, ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import type {
+  OrgAllEmployeeDetail,
+  OrgKeyContactAssignment,
+  OrgPersonCodeView,
+  OrgPersonCompanyEmailsResponse,
+  PersonDrawerContext,
+} from '@lfx-one/shared/interfaces';
+import { describeOrgPersonCodeView } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
@@ -484,6 +491,8 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe('Commits');
     const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(ORG_COMMITS_DEFINITION);
+    // Without an opener view the tab keeps today's trailing-year commits and names no view.
+    expect(byTestId('person-detail-drawer-code-view')).toBeNull();
   });
 
   it("shows a mirrored commit in each project's count and once in the Commits total", async () => {
@@ -526,6 +535,30 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
     expect([count('project-1'), count('project-2')]).toEqual(['1 commit', '2 commits']);
+  });
+
+  it.each([
+    { flagged: true, shown: true },
+    { flagged: false, shown: false },
+  ])('notes maintainer roles as unavailable on the Code tab only when the detail flags it (flagged: $flagged)', async ({ flagged, shown }) => {
+    drawer.open(person);
+    await render();
+    const code = [
+      {
+        projectId: 'project-1',
+        projectName: 'project-1',
+        foundationId: 'foundation-1',
+        foundationName: 'Foundation One',
+        commits: 1,
+        lastActivityDate: null,
+        isMaintainer: false,
+      },
+    ];
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), code, totalCommits: 1, ...(flagged ? { maintainerRolesUnavailable: true as const } : {}) });
+    drawer.setTab('code');
+    await render();
+
+    expect(byTestId('person-detail-drawer-code-maintainer-unavailable') !== null).toBe(shown);
   });
 
   it('shows unavailable activity at once for a username that matches no single person, while addresses still load', async () => {
@@ -691,5 +724,87 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     expect(emailState('none')).not.toBeNull();
     expect(emailState('0')).toBeNull();
+  });
+
+  it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({ name: 'First person', personKey: 'first-person', range: '90d' });
+    await render();
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '90d' } });
+    // The address read is keyed on the live directory, not on the pill range, so it is unchanged.
+    expect(optionsFor(`${BY_PERSON_KEY}/company-emails`)).toEqual({ params: undefined });
+
+    httpGet.mockClear();
+    drawer.open({ name: 'First person', username: 'first-person' });
+    await render();
+    expect(optionsFor(`${BY_USERNAME}/detail`)).toEqual({ params: {} });
+  });
+
+  it("sends the opener's code filters with its range on the activity read (lfx-self-serve#4404)", async () => {
+    const optionsFor = (url: string): unknown => (httpGet.mock.calls as unknown[][]).find(([requestedUrl]) => requestedUrl === url)?.[1];
+
+    drawer.open({
+      name: 'First person',
+      personKey: 'first-person',
+      range: '730d',
+      codeFilters: { projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' },
+    });
+    await render();
+
+    expect(optionsFor(`${BY_PERSON_KEY}/detail`)).toEqual({ params: { range: '730d', projectScope: 'non_lf', commitScope: 'merged', metric: 'commits' } });
+  });
+
+  describe("Code tab in the opener's view (lfx-self-serve#4404)", () => {
+    const view: OrgPersonCodeView = { range: '90d', projectScope: 'lf', commitScope: 'all', metric: 'code' };
+    const project = (projectId: string, commits: number): OrgAllEmployeeDetail['code'][number] => ({
+      projectId,
+      projectName: projectId,
+      foundationId: 'foundation-1',
+      foundationName: 'Foundation One',
+      commits,
+      lastActivityDate: null,
+      isMaintainer: false,
+    });
+
+    it('names the range, project type and code count, and labels the total and rows with that count', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 5), project('project-2', 1)], totalCommits: 6, codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+      expect(byTestId('person-detail-drawer-code-commits')?.textContent?.trim()).toBe('6');
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.code);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.code);
+      const count = (projectId: string): string => byTestId(`person-detail-drawer-code-project-${projectId}-commits`)?.textContent?.trim() ?? '';
+      expect([count('project-1'), count('project-2')]).toEqual([`5 ${ORG_CODE_METRIC_UNIT.code.other}`, `1 ${ORG_CODE_METRIC_UNIT.code.one}`]);
+    });
+
+    it('tells main-branch commits apart from all commits in the tooltip', async () => {
+      const merged: OrgPersonCodeView = { ...view, commitScope: 'merged', metric: 'commits' };
+      drawer.open({ ...person, range: merged.range, codeFilters: merged });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), code: [project('project-1', 2)], totalCommits: 2, codeView: merged });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-commits-label')?.textContent?.trim()).toBe(ORG_CODE_METRIC_LABEL.commits);
+      const info = fixture.debugElement.query(By.css('[data-testid="person-detail-drawer-code-commits-info"]'));
+      expect(info.injector.get(Tooltip).content).toBe(ORG_CODE_MEASURE_DEFINITION.merged);
+    });
+
+    it('still names the view when the person has no code in it', async () => {
+      drawer.open({ ...person, range: view.range, codeFilters: view });
+      await render();
+      reply(`${BY_USERNAME}/detail`).next({ ...detail(), codeView: view });
+      drawer.setTab('code');
+      await render();
+
+      expect(byTestId('person-detail-drawer-code-empty')).not.toBeNull();
+      expect(byTestId('person-detail-drawer-code-view')?.textContent?.trim()).toBe(describeOrgPersonCodeView(view));
+    });
   });
 });

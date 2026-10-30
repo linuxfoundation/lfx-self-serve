@@ -43,6 +43,8 @@ import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
+import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
@@ -240,6 +242,23 @@ function orgLensPageRoutes(): Routes {
 }
 
 export const routes: Routes = [
+  // Login-free vote link (`/votes/:id#vote_token=...`, #4363): a chrome-less top-level route mounted before the
+  // authenticated shell so the token holder is never sent through login. The guard matches only in the browser and
+  // only when the fragment carries a token; every other `/votes/*` URL falls through to the shell unchanged.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteTokenMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of `/votes/:id` renders the same chrome-less page (its loading state) rather than the authenticated
+  // shell, which the server-side `authGuard` would otherwise wave through for a logged-out visitor.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteAnonymousSsrMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
   {
     path: '',
     canActivate: [authGuard],
@@ -695,20 +714,20 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
+        data: { preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',

@@ -67,7 +67,7 @@ The last step summarizes the survey before it is sent:
 
 - **Survey Details**: **Survey Type**, **Target Groups**, and **Total Participants**. Check **Target Groups** to confirm who the survey is going to. The **Total Participants** figure currently counts the groups you selected, not the number of people in them.
 
-If you started from a group's **Surveys** tab, the group is locked and this summary can read **Target Groups: None selected** and **Total Participants: 0**. The survey is still sent to that group. Confirm the group in the banner at the top of the form, or in the **Audience & Type** step, instead of relying on this summary.
+  If you started from a group's **Surveys** tab, the group is locked and this summary can read **Target Groups: None selected** and **Total Participants: 0**. The survey is still sent to that group. Confirm the group in the banner at the top of the form, or in the **Audience & Type** step, instead of relying on this summary.
 
 - **Distribution & Reminders**: **Distribution**, **Cutoff Date**, and **Reminders**
 - **Email Preview**: the subject and body as recipients will see them

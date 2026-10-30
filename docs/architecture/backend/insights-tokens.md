@@ -2,7 +2,7 @@
 
 ## Overview
 
-Users create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over `lfx-v2-pat-service` and adds one server-side rule: only a user the `insights-public-api-token-access` flag is on for may list, create or revoke tokens (see [Access flag](#access-flag)). There is no membership check.
+Users create `lfi_…` tokens for the LFX Insights public API, each with an expiration they pick, from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over `lfx-v2-pat-service` and adds one server-side rule: only a user the `insights-public-api-token-access` flag is on for may list, create or revoke tokens (see [Access flag](#access-flag)). There is no membership check.
 
 The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). This flag controls visibility only and grants no access. The flag defaults to `false`, so SSR renders nothing. `AccountSettingsComponent` also holds the flag at `false` until `afterNextRender`, so a non-production localStorage override cannot render the group on the first client pass and mismatch the SSR DOM.
 
@@ -28,12 +28,19 @@ The PAT service is reached through `LFX_V2_SERVICE`, so it needs no env var of i
 `POST` does not trust the UI gate. The controller validates the name, and `InsightsTokensService.createToken` re-runs the flag check before calling the PAT service, so every caller of the service gets the same enforcement:
 
 1. The controller validates `name`: trimmed, 1–`INSIGHTS_TOKEN_NAME_MAX_LENGTH` characters counted as code points (the PAT service counts runes), with no C0 control characters or DEL. A bad name returns `400`.
-2. If `!canCreate`, it returns `403` with `upstreamCode: not_enabled`.
-3. Otherwise it calls PAT service create and returns `201 { token, secret }`.
+2. It validates `expiration`, when present, against `INSIGHTS_TOKEN_EXPIRATIONS` (`30d`, `60d`, `90d`, `1y`, `none`). Any other value returns `400`. A request without it, such as one from a browser still on the previous bundle, is forwarded without it, and the PAT service then issues a token that never expires.
+3. If `!canCreate`, it returns `403` with `upstreamCode: not_enabled`.
+4. Otherwise it calls PAT service create and returns `201 { token, secret }`.
 
 PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The create dialog maps each code in `INSIGHTS_TOKEN_ERROR_CODES` to an inline message. Before rethrowing, the service drops the refusal's prose, keeping only status and code (the `withoutUpstreamBody` approach from `cla.service.ts`), because a `token_name_taken` message repeats the token name and the error handler logs both `message` and `error_body`.
 
-The secret is returned exactly once. It exists only in the reveal dialog's data, and the list displays `lfi_{lookupId}` followed by a mask. Tokens do not expire; they stay valid until revoked.
+The secret is returned exactly once. It exists only in the reveal dialog's data, and the list displays `lfi_{lookupId}` followed by a mask.
+
+## Expiration
+
+The create dialog offers `INSIGHTS_TOKEN_EXPIRATION_OPTIONS` and defaults to 90 days (`INSIGHTS_TOKEN_DEFAULT_EXPIRATION`). Its helper line previews the expiry date from the browser's clock; the PAT service sets the real `expires_at` from its own clock at creation, counting a year as a calendar year. The BFF maps `expires_at` to `expiresAt`, which is `null` for a token that never expires.
+
+An expired token stops working at the PAT service, which rejects it at validation. The public API keeps accepting it for up to 10 minutes after that, the same window as a revoke, because the Worker caches the exchanged token. It stays in the list until the user removes it: the row is greyed out, reads "Created … · Expired …", and offers **Remove** instead of **Revoke**. Remove is the same `DELETE` and needs no confirmation, since the token already does not work. Until it is removed, an expired token keeps its name and counts toward the PAT service's per-user limit, so the limit message suggests removing expired tokens.
 
 ## Access flag
 

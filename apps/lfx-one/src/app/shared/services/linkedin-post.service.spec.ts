@@ -45,6 +45,16 @@ describe('LinkedIn document transport', () => {
     for (const [key, value] of preserved) expect(localStorage.getItem(key)).toBe(value);
   });
 
+  it('adds only the explicit discard id to the dedicated start body', () => {
+    const http = TestBed.inject(HttpTestingController);
+    const answers = { content_source: 'text', content_text: 'Synthetic source' };
+    TestBed.inject(LinkedinPostService).startForDocument(LINKEDIN_POST_INTAKE, 'project-one', answers, undefined, 'b'.repeat(64)).subscribe();
+    const request = http.expectOne(LINKEDIN_POST_INTAKE.endpoints.generate);
+    expect(request.request.body).toEqual({ project: 'project-one', answers, discard: 'b'.repeat(64) });
+    request.flush(run);
+    http.verify();
+  });
+
   it('does not block the live transport when browser storage is unavailable', () => {
     const storage = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
       throw new Error('Synthetic storage denial');

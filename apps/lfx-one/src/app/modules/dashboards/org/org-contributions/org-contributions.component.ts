@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { afterNextRender, Component, computed, inject, type Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -26,6 +26,7 @@ import {
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_TEAM_MEMBERS,
   EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_ANY_PROJECT_LABEL,
@@ -36,6 +37,11 @@ import {
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_PROJECT_SCOPE_LABEL,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_TEAM_MEMBERS_LABEL,
+  ORG_TEAM_MEMBERS_OPTIONS,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
@@ -57,6 +63,8 @@ import type {
   OrgLensTimeRangeOption,
   OrgProjectScope,
   OrgProjectScopeOption,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -65,7 +73,9 @@ import {
   orgCommitFiltersUrlMatches,
   orgCommitFiltersUrlParams,
   orgLensTimeRangeUrlParam,
+  orgTeamMembersUrlParam,
   parseOrgLensTimeRange,
+  parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
 } from '@lfx-one/shared/utils';
@@ -73,7 +83,8 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
 import { ContributionsService } from './services/contributions.service';
 import { decorateCommitFeedRow, decorateRepoRow, describeContributionsCaption, describeContributionsWindow } from './org-contributions.util';
@@ -106,6 +117,7 @@ export class OrgContributionsComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -116,6 +128,10 @@ export class OrgContributionsComponent {
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
   protected readonly anyProjectLabel = ORG_ANY_PROJECT_LABEL;
   protected readonly metricOptions: OrgCodeMeasureOption[] = [...ORG_CODE_MEASURE_OPTIONS];
+  protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
+  protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
+  protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
   private readonly initialCodeFilters = orgCodeFilterValues(readOrgCommitFilters((name) => this.initialParams.get(name)));
@@ -128,6 +144,12 @@ export class OrgContributionsComponent {
     employees: new FormControl<string[]>(this.parseInitialCsv('employees'), { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
+    teamMembers: new FormControl<OrgTeamMembersFilter>(
+      parseOrgTeamMembersFilter(this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS,
+      {
+        nonNullable: true,
+      }
+    ),
   });
 
   protected readonly sort = signal<ContributionsSortColumn>(this.parseInitialSort());
@@ -155,10 +177,16 @@ export class OrgContributionsComponent {
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);
 
+  // The resolved org the Employees selection belongs to (null until the first org resolves); the org-change clear moves it.
+  private readonly employeesOrgUid = signal<string | null>(null);
+  // The org-change clear, which reaches the filter values at once instead of after the debounce.
+  private readonly employeesCleared$ = new Subject<void>();
+
   // Filter form mirrored into a signal; debounce so per-keystroke search doesn't thrash the request graph.
-  private readonly filterValues = toSignal(this.filterForm.valueChanges.pipe(debounceTime(250)), {
-    initialValue: this.filterForm.getRawValue(),
-  });
+  private readonly filterValues = toSignal(
+    merge(this.filterForm.valueChanges.pipe(debounceTime(250)), this.employeesCleared$.pipe(map(() => this.filterForm.getRawValue()))),
+    { initialValue: this.filterForm.getRawValue() }
+  );
 
   // Composed filter + pagination state — the single source of truth fed to both the URL and the BFF.
   protected readonly query: Signal<OrgContributionsQuery> = computed(() => this.initQuery());
@@ -230,7 +258,8 @@ export class OrgContributionsComponent {
       this.isCsvParamNormalized('employees') ||
       (rawFoundation !== null && rawFoundation !== this.filterForm.controls.foundation.value) ||
       this.isRangeParamNormalized() ||
-      this.isCommitFilterParamNormalized()
+      this.isCommitFilterParamNormalized() ||
+      this.isTeamMembersParamNormalized()
     ) {
       afterNextRender(() => this.syncUrl(this.query()));
     }
@@ -280,12 +309,42 @@ export class OrgContributionsComponent {
       .subscribe((foundation) => {
         if (foundation !== this.filterForm.controls.foundation.value) this.filterForm.patchValue({ foundation });
       });
+
+    // `?teamMembers=` follows a query-only navigation too; the guard skips the echo of the page's own URL writes.
+    this.route.queryParamMap
+      .pipe(
+        map((params) => parseOrgTeamMembersFilter(params.get(ORG_TEAM_MEMBERS_QUERY_PARAM)) ?? DEFAULT_ORG_TEAM_MEMBERS),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((teamMembers) => {
+        if (teamMembers !== this.filterForm.controls.teamMembers.value) this.filterForm.patchValue({ teamMembers });
+      });
+
+    // The Employees selection came from the previous org's roster, so a change between two resolved orgs (a switch,
+    // or Back/Forward across one) clears it; the switch navigation strips `?employees=` too. `initQuery` sends no
+    // Employees from the moment the org changes until this runs; the clear then reaches the filter values at once, not
+    // after the debounce, and restarting the debounce drops a pick still pending from the previous org.
+    this.orgUid$
+      .pipe(
+        filter((uid): uid is string => !!uid),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((uid) => {
+        const previous = this.employeesOrgUid();
+        this.employeesOrgUid.set(uid);
+        if (previous === null) return;
+        this.filterForm.controls.employees.setValue([]);
+        this.employeesCleared$.next();
+      });
   }
 
   protected openCommitterPanel(commit: OrgContributionCommitRowVm): void {
     if (!commit.personKey) {
       return;
     }
+    const query = this.query();
     this.drawer.open({
       personKey: commit.personKey,
       name: commit.committerName,
@@ -297,6 +356,10 @@ export class OrgContributionsComponent {
       profileUrl: commit.profileUrl,
       sourceIconClass: commit.sourceIconClass,
       defaultTab: 'code',
+      // The Code tab's Maintainer pills and counts follow the range, project type and code count the page shows.
+      range: query.dateRange,
+      codeFilters: { projectScope: query.projectScope, commitScope: query.commitScope, metric: query.metric },
+      teamMembers: query.teamMembers,
     });
   }
 
@@ -341,6 +404,7 @@ export class OrgContributionsComponent {
       employees: [],
       projectScope: DEFAULT_ORG_COMMIT_FILTERS.projectScope,
       metric: DEFAULT_ORG_CODE_MEASURE,
+      teamMembers: DEFAULT_ORG_TEAM_MEMBERS,
     });
   }
 
@@ -350,6 +414,9 @@ export class OrgContributionsComponent {
 
   private initQuery(): OrgContributionsQuery {
     const values = this.filterValues();
+    const selectionOrgUid = this.employeesOrgUid();
+    // Between an org change and its clear, the selection still holds the previous org's people: send none.
+    const staleEmployees = selectionOrgUid !== null && selectionOrgUid !== this.accountContext.selectedAccount().uid;
     return {
       ...orgCommitFiltersFor({
         projectScope: values.projectScope ?? DEFAULT_ORG_COMMIT_FILTERS.projectScope,
@@ -361,7 +428,8 @@ export class OrgContributionsComponent {
       foundation: values.foundation ?? '',
       // The controls are already trimmed in the constructor; clamp again so the request can never exceed the server's cap.
       projects: (values.projects ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
-      employees: (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      employees: staleEmployees ? [] : (values.employees ?? []).slice(0, CONTRIBUTIONS_MAX_FILTER_VALUES),
+      teamMembers: values.teamMembers ?? DEFAULT_ORG_TEAM_MEMBERS,
       sort: this.sort(),
       dir: this.dir(),
       commitSort: this.commitSort(),
@@ -379,22 +447,24 @@ export class OrgContributionsComponent {
       query.foundation.length > 0 ||
       query.projects.length > 0 ||
       query.employees.length > 0 ||
+      query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS ||
       !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
     );
   }
 
   private initResponse(): Signal<OrgContributionsResponse> {
+    // The org and the query are read together, so an org change and the Employees it drops reach one request.
+    const request = computed(() => ({ orgUid: this.accountContext.selectedAccount().uid, query: this.query() }));
     return toSignal(
       combineLatest([
-        this.orgUid$,
-        toObservable(this.query).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
+        toObservable(request).pipe(distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
         toObservable(this.retryTrigger),
       ]).pipe(
         tap(() => {
           this.loadingState.set(true);
           this.fetchErrorState.set(false);
         }),
-        switchMap(([orgUid, query]) => {
+        switchMap(([{ orgUid, query }]) => {
           if (!orgUid) {
             this.loadingState.set(false);
             return of({ ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE, dateRange: query.dateRange });
@@ -506,8 +576,8 @@ export class OrgContributionsComponent {
    * filters the user has already left.
    */
   private reconcileSelections(res: OrgContributionsResponse, query: OrgContributionsQuery): void {
-    const { dateRange, projectScope, foundation } = this.filterForm.getRawValue();
-    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation) {
+    const { dateRange, projectScope, foundation, teamMembers } = this.filterForm.getRawValue();
+    if (dateRange !== query.dateRange || projectScope !== query.projectScope || foundation !== query.foundation || teamMembers !== query.teamMembers) {
       return;
     }
     const control = this.filterForm.controls.foundation;
@@ -536,7 +606,12 @@ export class OrgContributionsComponent {
     };
   }
 
+  // Deferred while another navigation (an org switch swapping the path) is in flight, so it cannot supersede it.
   private syncUrl(query: OrgContributionsQuery): void {
+    runWhenRouterIdle(this.router, this.destroyRef, () => this.navigateToQuery(query));
+  }
+
+  private navigateToQuery(query: OrgContributionsQuery): void {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
@@ -547,6 +622,7 @@ export class OrgContributionsComponent {
         foundation: query.foundation || null,
         projects: query.projects.length ? query.projects.join(',') : null,
         employees: query.employees.length ? query.employees.join(',') : null,
+        [ORG_TEAM_MEMBERS_QUERY_PARAM]: orgTeamMembersUrlParam(query.teamMembers),
         sort: query.sort === 'commits' && query.dir === -1 ? null : query.sort,
         dir: query.dir === 1 ? 'asc' : null,
         commitSort: query.commitSort === 'date' && query.commitDir === -1 ? null : query.commitSort,
@@ -629,6 +705,11 @@ export class OrgContributionsComponent {
   // A default, unknown or legacy (`commitScope=merged`) commit-filter value in the URL is rewritten to its canonical form.
   private isCommitFilterParamNormalized(): boolean {
     return !orgCommitFiltersUrlMatches(orgCommitFiltersFor(this.initialCodeFilters), (name) => this.initialParams.get(name));
+  }
+
+  private isTeamMembersParamNormalized(): boolean {
+    const raw = this.initialParams.get(ORG_TEAM_MEMBERS_QUERY_PARAM);
+    return raw !== null && raw !== orgTeamMembersUrlParam(this.filterForm.controls.teamMembers.value);
   }
 
   private parseInitialPage(): number {

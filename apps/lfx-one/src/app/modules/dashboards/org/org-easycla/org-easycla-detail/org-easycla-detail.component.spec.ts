@@ -102,6 +102,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const getClaGroups = vi.fn();
   const getPdfUrl = vi.fn();
   const getCclaPreview = vi.fn();
+  const getClaGroupCatalogue = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const checkPermission = vi.fn();
@@ -166,6 +167,7 @@ describe('OrgEasyclaDetailComponent', () => {
             getClaGroups,
             getPdfUrl,
             getCclaPreview,
+            getClaGroupCatalogue,
             getApprovalList,
             updateApprovalList,
             checkPermission,
@@ -290,6 +292,8 @@ describe('OrgEasyclaDetailComponent', () => {
     getClaGroups.mockReset();
     getPdfUrl.mockReset();
     getCclaPreview.mockReset();
+    getClaGroupCatalogue.mockReset();
+    getClaGroupCatalogue.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
     getManagers.mockReset();
     getManagers.mockReturnValue(of({ signatureId: 'signature-uuid-1', managers: [] }));
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
@@ -1244,7 +1248,7 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
 
       expect(opened).toEqual([OrgEasyclaAttestationComponent]);
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).toBeTruthy();
     });
 
     it('hands the confirmations to the signing step for this agreement', async () => {
@@ -1386,6 +1390,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
       expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Not started');
+      expect(getClaGroupCatalogue).not.toHaveBeenCalled();
     });
 
     /**
@@ -1481,18 +1486,181 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * A pasted, bookmarked or linked group address arrives with nothing, and nothing here can
-     * rebuild it — the list read returns signed agreements only, and there is no
-     * fetch-a-group-by-id read to fall back on.
-     *
-     * It now stays on that address rather than redirecting to the list (#2364), because the group
-     * address is the one a named signing overview will claim and the list is not an answer to it.
+     * A pasted, bookmarked or linked group address arrives with no picker choice, so the page names
+     * it from the catalogue read (#2293) instead.
+     */
+    it('names a pasted group from the catalogue and offers Start and the review copy', async () => {
+      getClaGroupCatalogue.mockReturnValue(
+        of({
+          claGroupId: PREVIEW_GROUP_ID,
+          claGroupName: 'Cascade CLA',
+          projectName: 'Cascade',
+          projectSfid: 'a09410000182dD2AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('hides Start when the pasted group has no single project', async () => {
+      getClaGroupCatalogue.mockReturnValue(
+        of({
+          claGroupId: PREVIEW_GROUP_ID,
+          claGroupName: 'Shared CLA',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Shared CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-unsignable')?.textContent).toContain('cannot be signed from here');
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).not.toBeNull();
+    });
+
+    // The CLA service refuses the corporate template for such a group, so the review copy would only fail.
+    it('hides Start and the review copy when the pasted group does not offer a corporate CLA', async () => {
+      getClaGroupCatalogue.mockReturnValue(
+        of({
+          claGroupId: PREVIEW_GROUP_ID,
+          claGroupName: 'ONAP CLA',
+          projectName: 'ONAP',
+          projectSfid: 'a09410000182dD2AAI',
+          cclaEnabled: false,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-start-cla')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-unsignable')?.textContent).toContain(CCLA_SIGN_COPY.picker.cclaDisabledReason);
+      expect(byTestId(fixture, 'org-easycla-detail-review-copy')).toBeNull();
+    });
+
+    // A compact or upper-case address names the same group; the BFF hands upstream the stored spelling.
+    it.each([
+      ['compact', PREVIEW_GROUP_ID.replaceAll('-', '')],
+      ['upper-case', PREVIEW_GROUP_ID.toUpperCase()],
+    ])('names a pasted group from a %s address', async (_label, spelling) => {
+      paramMap.next(convertToParamMap({ claGroupId: spelling }));
+      getClaGroupCatalogue.mockReturnValue(
+        of({
+          claGroupId: PREVIEW_GROUP_ID,
+          claGroupName: 'Cascade CLA',
+          projectName: 'Cascade',
+          projectSfid: 'a09410000182dD2AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+
+      expect(getClaGroupCatalogue).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, spelling);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(startButton(fixture)?.disabled).toBe(false);
+    });
+
+    /**
+     * Picker choice for one group, then a catalogue group on the same instance, then another
+     * organization. The picker choice no longer names the page, so it must not refuse Start either:
+     * an enabled Start that drops the click is the failure.
+     */
+    it('opens the flow from a catalogue group after leaving a picker choice and switching organization', async () => {
+      getClaGroups.mockImplementation((orgUid: string) => of({ orgUid, claGroups: [claGroup()] }));
+      getClaGroupCatalogue.mockImplementation((_org: string, id: string) =>
+        of({
+          claGroupId: id,
+          claGroupName: 'Second CLA',
+          projectName: 'Second',
+          projectSfid: 'a09410000182dD9AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+      const dialogs = recordDialogs();
+
+      const fixture = await render(previewing());
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+
+      paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      selectedAccount.set(OTHER_ORG);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Second CLA');
+      expect(startButton(fixture)?.disabled).toBe(false);
+
+      startButton(fixture)?.click();
+
+      expect(dialogs.length).toBe(1);
+    });
+
+    it('reports an upstream failure as a load error, not as a missing group', async () => {
+      getClaGroupCatalogue.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-error-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).toBeNull();
+    });
+
+    it('follows a second pasted group instead of keeping the first name', async () => {
+      const other = '7c1a9000-0000-4000-8000-000000000009';
+      getClaGroupCatalogue.mockImplementation((_org: string, id: string) =>
+        of({
+          claGroupId: id,
+          claGroupName: id === PREVIEW_GROUP_ID ? 'Cascade CLA' : 'Second CLA',
+          projectName: 'Cascade',
+          projectSfid: 'a09410000182dD2AAI',
+          cclaEnabled: true,
+          matchTypes: [],
+          organizations: [],
+        })
+      );
+
+      const fixture = await render();
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+
+      paramMap.next(convertToParamMap({ claGroupId: other }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Second CLA');
+
+      paramMap.next(convertToParamMap({ claGroupId: PREVIEW_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+    });
+
+    /**
+     * An address the catalogue does not know stays on that address rather than redirecting to the
+     * list (#2364), because the group address is the one the signing overview claims and the list
+     * is not an answer to it.
      */
     it('stays on the address when it carries no selection, rather than leaving for the list', async () => {
       const fixture = await render();
 
       expect(navigate).not.toHaveBeenCalled();
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-header')).toBeNull();
     });
@@ -1509,7 +1677,7 @@ describe('OrgEasyclaDetailComponent', () => {
       async (field) => {
         const fixture = await render(previewing({ [field]: '' }));
 
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-header')).toBeNull();
       }
     );
@@ -1524,7 +1692,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it('refuses a selection that names a different CLA Group than the address', async () => {
       const fixture = await render(previewing({ claGroupId: ELSEWHERE_GROUP_ID }));
 
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       // Nothing of the preview renders, so the refused name cannot have reached the heading.
       expect(byTestId(fixture, 'org-easycla-detail-header')).toBeNull();
       expect(fixture.nativeElement.textContent).not.toContain('Cascade CLA');
@@ -1535,7 +1703,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it('refuses a restored selection that names a different CLA Group', async () => {
       const fixture = await render(undefined, previewing({ claGroupId: ELSEWHERE_GROUP_ID }));
 
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       expect(navigate).not.toHaveBeenCalled();
     });
 
@@ -1617,12 +1785,12 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     /**
-     * The picker preview is captured at construction and is not refreshed when `:claGroupId`
-     * changes. A reused instance that then addresses a group not on the list keeps showing the
-     * emailed agreement. The lock must follow that displayed group, not the route — otherwise it
-     * lifts and Close can send a second copy of the same CCLA.
+     * The picker choice is captured once, and this component is reused when `:claGroupId` changes.
+     * The address wins: moving to another group must not keep the emailed group's name on screen.
+     * Coming back to the emailed group still shows it, and Start stays locked, so Close cannot
+     * send a second copy.
      */
-    it('keeps Start locked when the route moves but the preview still shows the emailed group', async () => {
+    it('drops the emailed group when the address moves, and locks Start again on return', async () => {
       const dialogs = recordDialogs();
 
       const fixture = await render(previewing());
@@ -1630,6 +1798,13 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(startLockedAsEmailed(fixture)).toBe(true);
 
       paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent ?? '').not.toContain('Cascade CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
+
+      paramMap.next(convertToParamMap({ claGroupId: PREVIEW_GROUP_ID }));
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -2319,7 +2494,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
     const fixture = await render();
 
-    expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).toBeTruthy();
     expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
     expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeNull();
     // Stays on the address. Redirecting to the list would contradict the named signing overview
@@ -2843,7 +3018,16 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           {
             provide: OrgLensClaService,
-            useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission, getContributorAcknowledgments, getActivityLog },
+            useValue: {
+              getClaGroups,
+              getPdfUrl,
+              getApprovalList,
+              updateApprovalList,
+              checkPermission,
+              getContributorAcknowledgments,
+              getActivityLog,
+              getClaGroupCatalogue: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 }))),
+            },
           },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
@@ -3273,7 +3457,7 @@ describe('OrgEasyclaDetailComponent', () => {
         await flush(fixture);
 
         expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
-        expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       } finally {
         vi.useRealTimers();
       }
@@ -3519,7 +3703,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it('opens no wait on an ordinary visit that carries no flag', async () => {
       const { fixture } = await renderReturn({ org: null, flag: null, claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
 
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
@@ -3530,7 +3714,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it('ignores a flag value it never writes', async () => {
       const { fixture } = await renderReturn({ org: null, flag: 'maybe', claGroups: [], listOrgUid: SELECTED_ACCOUNT.uid });
 
-      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-group-not-found-state')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
     });
 
@@ -3636,6 +3820,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
             getClaGroups,
             getPdfUrl: vi.fn(),
             getCclaPreview: vi.fn(),
+            getClaGroupCatalogue: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 }))),
             getApprovalList,
             updateApprovalList,
             checkPermission,
@@ -3826,6 +4011,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
             getClaGroups,
             getPdfUrl: vi.fn(),
             getCclaPreview: vi.fn(),
+            getClaGroupCatalogue: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 }))),
             getApprovalList: vi.fn(),
             updateApprovalList: vi.fn(),
             checkPermission,

@@ -706,6 +706,37 @@ describe('AudienceBuilderProxyService custom audiences', () => {
     expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026' });
     expect(out.needsDisambiguation === false && out.checks.currentRegistrants?.verdict).toBe('FAIL');
   });
+
+  // lfx-v2-campaign-service#244.
+  it('forwards the stage as campaign-service spells it, and keeps a NOT APPLICABLE check with its note', async () => {
+    const check = { verdict: 'PASS', findings: [] };
+    const note = 'Not applicable to a Post-Event send: this edition attendees are its intended audience.';
+    proxyRequest.mockResolvedValueOnce({
+      needs_disambiguation: false,
+      list_id: '1',
+      name: 'L',
+      checks: {
+        signal_mapping: check,
+        suppression: { ...check, applied_gdpr: true, applied_opt_out: true },
+        exclusion_completeness: { ...check, exclusion_count: 1 },
+        current_registrants: { verdict: 'NOT APPLICABLE', findings: [], note },
+      },
+      overall: 'PASS',
+    });
+
+    const out = await service.runQa(req, 'tlf', { listRef: '1', eventName: 'KubeCon Japan 2026', stage: 'Post-Event' });
+
+    expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026', stage: 'Post-Event' });
+    expect(out.needsDisambiguation === false && out.checks.currentRegistrants).toEqual({ verdict: 'NOT APPLICABLE', findings: [], note });
+  });
+
+  it('sends no stage when the request has none', async () => {
+    proxyRequest.mockResolvedValueOnce({ needs_disambiguation: true, candidates: [] });
+
+    await service.runQa(req, 'tlf', { listRef: '1' });
+
+    expect(proxyRequest.mock.calls[0][5]).not.toHaveProperty('stage');
+  });
 });
 
 describe('AudienceBuilderProxyService end-to-end test fields', () => {

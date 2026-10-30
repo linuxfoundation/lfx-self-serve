@@ -28,15 +28,19 @@ vi.mock('../utils/persona-helper', () => ({
 }));
 
 vi.mock('../services/access-check.service', () => ({
-  AccessCheckService: vi.fn().mockImplementation(() => ({
-    checkSingleAccess: (...args: unknown[]) => checkSingleAccess(...args),
-  })),
+  AccessCheckService: vi.fn().mockImplementation(function () {
+    return {
+      checkSingleAccess: (...args: unknown[]) => checkSingleAccess(...args),
+    };
+  }),
 }));
 
 vi.mock('../services/project.service', () => ({
-  ProjectService: vi.fn().mockImplementation(() => ({
-    getProjectIdBySlug: (...args: unknown[]) => getProjectIdBySlug(...args),
-  })),
+  ProjectService: vi.fn().mockImplementation(function () {
+    return {
+      getProjectIdBySlug: (...args: unknown[]) => getProjectIdBySlug(...args),
+    };
+  }),
 }));
 
 const { requireMarketingAuditor, requireCampaignManager, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } =

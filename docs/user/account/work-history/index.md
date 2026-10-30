@@ -4,7 +4,7 @@ description: Manage your work history and see how your project affiliations and 
 audience: [all]
 product_area: Account
 tags: [account, work-history, affiliations, project-involvement, attribution, maintainer]
-last_updated: 2026-08-17
+last_updated: 2026-10-29
 intercom_collection: Account
 ---
 
@@ -48,7 +48,7 @@ If you have no entries yet, the section shows _No work experience added_ — use
 
 ## Project Involvement (affiliations)
 
-This section shows your role and organizational affiliation for each open-source project you contribute to. Affiliations are calculated automatically — you don't add projects manually.
+This section shows your role and affiliation for each project you're involved in, whether through code, events, training, or other activity. Affiliations are calculated automatically — you don't add projects manually.
 
 Your contributions are attributed based on three inputs (see the **How affiliations work** dialog on the tab):
 

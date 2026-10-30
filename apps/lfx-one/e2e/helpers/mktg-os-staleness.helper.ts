@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_DOCUMENT_TYPES, MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants';
-import type { MktgDocumentsResponse, MktgRebuildResponse, MktgRevisionRef, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_KIT_POSITIONING_FAMILY_ID } from '@lfx-one/shared/constants/mktg-kit.constants';
+import { BOILERPLATES_LENGTHS } from '@lfx-one/shared/constants/boilerplates.constants';
+import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces/mktg-document-store.interface';
+import type { MktgRebuildResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces/mktg-rebuild.interface';
 import { mktgRebuildDocumentTypes } from '@lfx-one/shared/utils/mktg-rebuild.utils';
 import { expect, Page } from '@playwright/test';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -139,6 +142,7 @@ export async function setupStaleness(
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === key);
     if (path.includes('/documents/') && type) {
       const isFramework = key === 'foundation-message';
+      const isBoilerplates = key === 'boilerplates';
       const openedDraft = path.includes(upstreamRef(2).revisionId);
       const number = isFramework ? 3 : 2;
       const ref = upstreamRef(number);
@@ -151,12 +155,26 @@ export async function setupStaleness(
         intakeMode: 'form' as const,
         status: '',
         contentSha256: ref.contentSha256,
-        format: isFramework ? ('json' as const) : ('markdown' as const),
+        format: isFramework || isBoilerplates ? ('json' as const) : ('markdown' as const),
         commentCount: 0,
         latest: !openedDraft,
         approval: isFramework ? { approvedAt: '2026-10-21T08:01:00Z', approvedBy: null } : null,
       };
       const asset = draftFrameworkAsset();
+      const rebuiltBoilerplates = { bp: BOILERPLATES_LENGTHS.map((length) => ({ ...length, t: 'Synthetic rebuilt draft' })) };
+      let markdown = '# Synthetic rebuilt draft\n\nReady for review.';
+      let sidecar: Record<string, unknown> | null = null;
+      if (isFramework) {
+        markdown = JSON.stringify(asset.content);
+        sidecar = { mode: asset.mode, report: asset.report, checks: asset.checks };
+      } else if (isBoilerplates) {
+        markdown = JSON.stringify(rebuiltBoilerplates);
+        sidecar = {
+          mode: 'draft',
+          report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+          checks: { word_counts: rebuiltBoilerplates.bp.map(() => 3), findings: [] },
+        };
+      }
       const response: MktgRevisionResponse = {
         project: DOCUMENT_PROJECT.uid,
         type,
@@ -165,8 +183,8 @@ export async function setupStaleness(
         approvedCurrent: isFramework ? { revisionId: ref.revisionId, number } : null,
         revision,
         approval: revision.approval,
-        markdown: isFramework ? JSON.stringify(asset.content) : '# Synthetic rebuilt draft\n\nReady for review.',
-        sidecar: isFramework ? { mode: asset.mode, report: asset.report, checks: asset.checks } : null,
+        markdown,
+        sidecar,
       };
       return fulfillDocumentJson(route, response);
     }

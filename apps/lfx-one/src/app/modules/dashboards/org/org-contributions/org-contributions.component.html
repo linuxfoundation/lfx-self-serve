@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-contributions-page">
   <lfx-page-header
     title="Code Contributions"
-    description="Commits, contributors, maintainers, and collaborators across your projects."
+    description="Commits, contributors, and collaborators across your projects."
     titleTestId="org-contributions-title"
     descriptionTestId="org-contributions-subtitle"
     data-testid="org-contributions-header" />
@@ -96,6 +96,18 @@
         <div class="w-full sm:w-52">
           <lfx-select
             [form]="filterForm"
+            control="teamMembers"
+            size="small"
+            [options]="teamMembersOptions"
+            styleClass="w-full"
+            [ariaLabel]="teamMembersLabel"
+            [tooltip]="teamMembersTooltip"
+            tooltipPosition="top"
+            dataTest="org-contributions-team-members-filter" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="filterForm"
             control="foundation"
             size="small"
             [options]="foundationOptions()"
@@ -144,6 +156,10 @@
           </button>
         }
       </div>
+
+      @if (response().teamMembersUnavailable) {
+        <p class="px-5 text-xs text-gray-500" role="status" data-testid="org-contributions-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+      }
 
       @if (fetchError()) {
         <div role="alert" class="p-5" data-testid="org-contributions-error">

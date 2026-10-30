@@ -92,28 +92,60 @@
             class="flex items-center justify-between gap-4 py-3 border-t border-slate-100 first:border-t-0"
             [attr.data-testid]="'insights-tokens-row-' + item.token.uid">
             <div class="flex items-start gap-3 min-w-0">
-              <i class="fa-light fa-key text-slate-600 mt-0.5 shrink-0" aria-hidden="true"></i>
+              <i class="fa-light fa-key mt-0.5 shrink-0" [class.text-slate-600]="!item.expired" [class.text-slate-400]="item.expired" aria-hidden="true"></i>
               <div class="flex flex-col gap-0.5 min-w-0">
-                <h4 class="text-sm font-medium text-slate-900 break-words" data-testid="insights-tokens-name">{{ item.token.name }}</h4>
+                <h4
+                  class="text-sm font-medium break-words"
+                  [class.text-slate-900]="!item.expired"
+                  [class.text-slate-500]="item.expired"
+                  data-testid="insights-tokens-name">
+                  {{ item.token.name }}
+                </h4>
                 <p class="text-xs text-slate-500 font-mono break-all" data-testid="insights-tokens-value">{{ item.maskedValue }}</p>
                 <p class="text-xs text-slate-500" data-testid="insights-tokens-meta">
-                  Created {{ item.token.createdAt | date: 'd MMM y' }} · {{ item.lastUsedLabel }}
+                  Created {{ item.token.createdAt | date: 'd MMM y' }} ·
+                  @if (item.expired) {
+                    <span class="font-medium text-red-700">Expired {{ item.token.expiresAt | date: 'd MMM y' }}</span>
+                  } @else {
+                    {{ item.lastUsedLabel }} · Expires
+                    @if (item.token.expiresAt) {
+                      {{ item.token.expiresAt | date: 'd MMM y' }}
+                    } @else {
+                      never
+                    }
+                  }
                 </p>
               </div>
             </div>
-            <lfx-button
-              type="button"
-              severity="secondary"
-              variant="outlined"
-              size="small"
-              label="Revoke"
-              styleClass="shrink-0"
-              [loading]="revokingUid() === item.token.uid"
-              [disabled]="revokingUid() !== null || impersonating()"
-              [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Revoke ' + item.token.name"
-              (onClick)="confirmRevoke(item.token)"
-              data-testid="insights-tokens-revoke-button">
-            </lfx-button>
+            @if (item.expired) {
+              <lfx-button
+                type="button"
+                severity="secondary"
+                [text]="true"
+                size="small"
+                label="Remove"
+                styleClass="shrink-0"
+                [loading]="revokingUid() === item.token.uid"
+                [disabled]="revokingUid() !== null || impersonating()"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Remove ' + item.token.name"
+                (onClick)="remove(item.token)"
+                data-testid="insights-tokens-remove-button">
+              </lfx-button>
+            } @else {
+              <lfx-button
+                type="button"
+                severity="secondary"
+                variant="outlined"
+                size="small"
+                label="Revoke"
+                styleClass="shrink-0"
+                [loading]="revokingUid() === item.token.uid"
+                [disabled]="revokingUid() !== null || impersonating()"
+                [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Revoke ' + item.token.name"
+                (onClick)="confirmRevoke(item.token)"
+                data-testid="insights-tokens-revoke-button">
+              </lfx-button>
+            }
           </li>
         }
       </ul>

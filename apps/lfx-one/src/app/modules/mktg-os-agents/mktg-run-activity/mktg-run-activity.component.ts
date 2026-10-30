@@ -52,6 +52,10 @@ export class MktgRunActivityComponent {
   public readonly icon = input('fa-light fa-sparkles');
   /** Form-only agents have no questions turn, even before any activity arrives. */
   public readonly showQuestions = input(true);
+  /** Run-page owners supply the single heading/status; other callers retain the full header. */
+  public readonly showHeader = input(true);
+  /** The run is over (it failed, or a caller keeps its feed on screen after it finished): the furthest phase reads done, not under way. */
+  public readonly ended = input(false);
 
   // === Signals ===
   protected readonly showAll = signal(false);
@@ -126,7 +130,7 @@ export class MktgRunActivityComponent {
 
   private initPhases(): Signal<ActivityPhaseView[]> {
     return computed(() =>
-      mktgRunActivityPhases(this.activity())
+      mktgRunActivityPhases(this.activity(), this.ended())
         // A phase the run passed over says nothing; one not reached yet is shown so the user sees what is ahead.
         .filter((phase) => phase.state !== 'skipped' && (this.showQuestions() || phase.id !== 'questions'))
         .map((phase) => ({ ...phase, ...this.phaseClasses[phase.state] }))

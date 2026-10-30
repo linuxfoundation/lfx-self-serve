@@ -12,8 +12,9 @@ import {
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_FAILURE_BYTES,
-  MKTG_RUN_FAILURE_REASON,
+  MEMBER_360_FAILURE_MESSAGES,
   MKTG_ONE_OFF_STOPPED_MESSAGE,
+  MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
 
 const redraft = vi.hoisted(() => ({ forSession: vi.fn(), assertScope: vi.fn(), settle: vi.fn() }));
@@ -32,6 +33,8 @@ const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Recor
 const flows = vi.hoisted(() => ({
   result: vi.fn(),
   events: vi.fn(),
+  author: vi.fn(),
+  interrupt: vi.fn(),
   linkedin: vi.fn(),
   member: vi.fn(),
   attribution: vi.fn(),
@@ -41,14 +44,26 @@ const flows = vi.hoisted(() => ({
   get: vi.fn(),
   head: vi.fn(),
   beforePut: vi.fn(),
+  beforeConditionalPut: vi.fn(),
+  omitEtag: false,
+  beforePredicate: vi.fn(),
+  beforeClaim: vi.fn(),
+  beforeMark: vi.fn(),
+  claim: vi.fn(),
   active: 0,
   max: 0,
+}));
+vi.mock('./mktg-document-author.service', () => ({
+  MktgDocumentAuthorService: class {
+    public resolveAuthor = flows.author;
+  },
 }));
 vi.mock('./guild.service', async (original) => {
   const actual = await original<typeof import('./guild.service')>();
   return {
     GuildService: class extends actual.GuildService {
       public override getRawEventPayloads = flows.events;
+      public override interruptSession = flows.interrupt;
     },
   };
 });
@@ -121,7 +136,27 @@ vi.mock('./object-store.service', () => ({
       flows.max = Math.max(flows.max, flows.active);
       await Promise.resolve();
       flows.active--;
-      return objects.get(key) ?? null;
+      const object = objects.get(key);
+      return object ? { ...object, metadata: { ...object.metadata }, etag: flows.omitEtag ? undefined : hash(object.body) } : null;
+    }
+    public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      await flows.beforeConditionalPut(input.metadata);
+      const previous = objects.get(key);
+      if (
+        previous?.metadata['state'] === 'questions' &&
+        input.metadata?.['state'] === 'writing' &&
+        JSON.parse(Buffer.from(input.body).toString('utf8')).answeredBy
+      ) {
+        flows.claim(input);
+        await flows.beforeClaim(input);
+      } else {
+        await flows.beforeMark(input);
+        await flows.beforePut(input.metadata);
+      }
+      const object = objects.get(key);
+      if (!object || input.ifMatch !== hash(object.body)) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date() });
+      return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
       return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -137,6 +172,7 @@ vi.mock('./object-store.service', () => ({
       options: { refreshMetadataWhen?: (value: Record<string, string>) => boolean }
     ) {
       const old = objects.get(key);
+      if (old) await flows.beforePredicate(old.metadata);
       if (old && !options.refreshMetadataWhen?.(old.metadata)) {
         return false;
       }
@@ -149,11 +185,18 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MktgDocumentRunService } from './mktg-document-run.service';
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
-import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot } from '@lfx-one/shared/interfaces';
+import type {
+  MktgRunResultResponse,
+  MktgDocumentDetailResponse,
+  MktgDocumentRunSnapshot,
+  MktgDocumentRunProgress,
+  ObjectStorePutInput,
+} from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
+const writerRequest = (sub: string): Request => Object.assign({}, req, { oidc: { ...req.oidc, user: { sub } } });
 const project = 'synthetic-project';
 const session = 'synthetic-session';
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -189,8 +232,15 @@ describe('MktgDocumentRunService core', () => {
     objects.clear();
     redraft.forSession.mockResolvedValue(null);
     flows.beforePut.mockReset();
+    flows.beforeConditionalPut.mockReset();
+    flows.omitEtag = false;
+    flows.beforePredicate.mockReset();
+    flows.beforeClaim.mockReset();
+    flows.beforeMark.mockReset();
     flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.events.mockReset().mockResolvedValue([]);
+    flows.interrupt.mockReset().mockResolvedValue(undefined);
+    flows.author.mockReset().mockResolvedValue(null);
     flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
     flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
@@ -201,6 +251,927 @@ describe('MktgDocumentRunService core', () => {
   afterEach(async () => {
     await vi.runAllTimersAsync();
     vi.useRealTimers();
+  });
+
+  const memberOwner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-member-owner' } } });
+  const questionId = 'c'.repeat(64);
+  async function waitingMember() {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    stored().metadata['state'] = 'questions';
+  }
+  it('filters the same public snapshot per viewer without adding identity fields or caching ownership', async () => {
+    await waitingMember();
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
+    await service.startForOneOff(other, 'member-360', project, 'other-session');
+    const snapshot = await service.readProgress(req, project);
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    const theirs = await service.ownProgress(other, project, snapshot);
+    expect(own.runs.map((row) => row.runId)).toEqual([hash(session)]);
+    expect(theirs.runs.map((row) => row.runId)).toEqual([hash('other-session')]);
+    expect(own).toEqual({ runs: snapshot.runs.filter((row) => row.runId === hash(session)) });
+    for (const secret of ['creatorSubject', 'startedBy', 'ownerToken', 'sessionId', 'synthetic-member-owner'])
+      expect(JSON.stringify(own)).not.toContain(secret);
+    flows.get.mockImplementationOnce(() => {
+      throw new Error('Synthetic storage unavailable');
+    });
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it.each(['discarded', 'superseded', 'completed', 'failed'])('excludes a cached writing row whose live state is %s', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    await expect(service.ownProgress(memberOwner, project, snapshot)).resolves.toEqual({ runs: [] });
+  });
+  it.each(['questions', 'storing'])('projects the live %s record instead of the cached writing row', async (state) => {
+    await service.startForOneOff(memberOwner, 'member-360', project, session);
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+    stored().metadata['state'] = state;
+    stored().metadata['started-at'] = '2026-10-19T12:01:00Z';
+    const own = await service.ownProgress(memberOwner, project, snapshot);
+    expect(own.runs).toHaveLength(1);
+    expect(own.runs[0]).toMatchObject({ runId: hash(session), state, startedAt: '2026-10-19T12:01:00Z' });
+    expect(JSON.stringify(own)).not.toMatch(/creatorSubject|sessionId|synthetic-member-owner/);
+    expect(snapshot.runs[0]?.state).toBe('writing');
+  });
+  it('preserves discovery uncertainty when no owned-run candidate was returned', async () => {
+    await expect(service.ownProgress(memberOwner, project, { runs: [], progressUnavailable: true })).resolves.toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('preserves an unavailable snapshot even when its visible rows belong to another agent', async () => {
+    await service.start(req, project, 'brand-kit', 'unrelated-stale-brand');
+    const snapshot = await service.readProgress(req, project);
+    expect(snapshot.runs.some((row) => row.agentKey === 'brand-kit')).toBe(true);
+    expect(await service.ownProgress(memberOwner, project, { ...snapshot, progressUnavailable: true })).toEqual({ runs: [], progressUnavailable: true });
+  });
+  it('looks up only active Member candidates and treats a vanished record as not owned', async () => {
+    await waitingMember();
+    const snapshot = await service.readProgress(req, project);
+    const row = snapshot.runs[0];
+    if (!row) throw new Error('Missing synthetic Member row');
+    objects.delete(key());
+    flows.get.mockClear();
+    expect(
+      await service.ownProgress(memberOwner, project, { runs: [row, { ...row, state: 'failed' }, { ...row, agentKey: 'brand-kit', documentId: 'living' }] })
+    ).toEqual({ runs: [] });
+    expect(flows.get).toHaveBeenCalledOnce();
+    expect(flows.get).toHaveBeenCalledWith(key());
+  });
+  it('resolves a private Member session only for the stored creator after writer authorization', async () => {
+    await waitingMember();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).resolves.toBe(session);
+    const other = { oidc: { user: { sub: 'synthetic-other-owner' } } } as unknown as Request;
+    await expect(service.ownedMember360Session(other, project, hash(session))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(service.ownedMember360Session(other, project, hash('missing'))).rejects.toMatchObject({ statusCode: 404 });
+    flows.project.mockResolvedValueOnce({ uid: project, writer: false });
+    flows.get.mockClear();
+    await expect(service.ownedMember360Session(memberOwner, project, hash(session))).rejects.toMatchObject({ statusCode: 403 });
+    expect(flows.get).not.toHaveBeenCalled();
+  });
+  it('releases only its won Member claim back to questions and accepts a fresh retry', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    expect(await claim.release()).toBe(false);
+    await claim();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(await claim.release()).toBe(true);
+    const restored = await service.readProgress(memberOwner, project, 'member-360');
+    expect(restored.runs[0]?.state).toBe('questions');
+    for (const field of ['answered-questions-id', 'answered-by', 'answered-at']) expect(stored().metadata[field]).toBeUndefined();
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    expect(stored().metadata['state']).toBe('writing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+    expect(await claim.release()).toBe(false); // An old release cannot erase the retry's new claim.
+  });
+  it('makes a competing pre-prepared claim lose its CAS while rollback is in flight', async () => {
+    await waitingMember();
+    const winner = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    const competitor = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await winner();
+    let unblock: () => void = () => undefined;
+    let entered: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      entered();
+      await blocked;
+    });
+    const rollback = winner.release();
+    await started;
+    await expect(competitor()).rejects.toMatchObject({ statusCode: 409 });
+    unblock();
+    expect(await rollback).toBe(true);
+    expect(stored().metadata['state']).toBe('questions');
+  });
+  it('never rolls a newer object version back or loses the claim when release storage is unavailable', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockRejectedValueOnce(new Error('Synthetic store unavailable'));
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('writing');
+    stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'newer-private-version' });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
+  it('loses the release CAS if a newer transition lands after the nonce read', async () => {
+    await waitingMember();
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await claim();
+    flows.beforeConditionalPut.mockImplementationOnce(() => {
+      stored().body = JSON.stringify({ ...JSON.parse(stored().body), storageWriteId: 'concurrent-transition' });
+      stored().metadata['state'] = 'storing';
+    });
+    expect(await claim.release()).toBe(false);
+    expect(stored().metadata['state']).toBe('storing');
+    expect(stored().metadata['answered-questions-id']).toBe(questionId);
+  });
+  it('lets exactly one concurrent Member answer claim win a body-version CAS', async () => {
+    await waitingMember();
+    flows.author.mockResolvedValue({ name: 'Synthetic writer' });
+    const before = stored().body;
+    const claims = await Promise.all([
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+      service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId),
+    ]);
+    const outcomes = await Promise.allSettled(claims.map((claim) => claim()));
+    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    const losses = outcomes.flatMap((outcome) => (outcome.status === 'rejected' ? [outcome.reason] : []));
+    expect(losses[0]).toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00.000Z' },
+    });
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(losses[0].toResponse())).not.toContain(session);
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().body).not.toBe(before); // metadata-only writes cannot fence S3 ETags.
+    const projection = await service.readProgress(memberOwner, project, 'member-360');
+    expect(JSON.stringify(projection)).not.toContain('synthetic-member-owner');
+    expect(JSON.stringify(projection)).not.toContain('answeredBySubject');
+    expect(JSON.stringify(projection)).not.toContain('storageWriteId');
+  });
+  it.each([null, { name: 'owner@example.test' }])('uses a neutral acknowledgement for unavailable/unsafe author %j', async (author) => {
+    await waitingMember();
+    flows.author.mockResolvedValue(author);
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    await expect(service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)).rejects.toMatchObject({
+      code: 'MKTG_RUN_ANSWERED',
+      details: { answeredBy: 'Another writer' },
+    });
+  });
+  it('does not let a stale Member failure write erase the winning answer', async () => {
+    await waitingMember();
+    let release: () => void = () => undefined;
+    let observed: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    flows.beforeConditionalPut.mockImplementationOnce(async () => {
+      observed();
+      await blocked;
+    });
+    flows.member.mockResolvedValue({ status: 'failed', message: 'A stale failure.' });
+    const stale = service.recordResult(memberOwner, session, { status: 'failed' }, project);
+    await entered;
+    await (
+      await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId)
+    )();
+    release();
+    await stale;
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionId });
+    expect(stored().metadata['failure-text']).toBeUndefined();
+  });
+  it('never claims on behalf of another writer or without an object version token', async () => {
+    await waitingMember();
+    const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other-owner' } } });
+    await expect(service.prepareMember360QuestionsClaim(other, project, session, questionId)).rejects.toMatchObject({ statusCode: 403 });
+    flows.omitEtag = true;
+    const claim = await service.prepareMember360QuestionsClaim(memberOwner, project, session, questionId);
+    await expect(claim()).rejects.toMatchObject({ statusCode: 412 });
+    expect(stored().metadata['state']).toBe('questions');
+  });
+
+  describe('durable kit questions and scoped writer answers', () => {
+    const questionsId = 'c'.repeat(64);
+    const questions = [
+      {
+        key: 'goal',
+        label: 'Goal',
+        question: 'Which synthetic goal?',
+        why: 'No selected goal.',
+        suggestedAnswer: 'Synthetic adoption',
+        basis: ['Synthetic framework'],
+      },
+    ];
+    const answers = questions.map((question) => ({ key: question.key, text: 'Synthetic answer.', origin: 'requester' as const }));
+    async function waiting(): Promise<void> {
+      await service.start(req, project, types[0].agentKey, session);
+      const object = stored();
+      object.body = JSON.stringify({ ...JSON.parse(object.body), creatorSubject: 'synthetic-original-writer' });
+      flows.result.mockResolvedValue({ status: 'questions', questionsId, questions });
+      await service.readProgress(req, project);
+    }
+    it('stores the entire turn once, survives a new service instance, and preserves askedAt on repeated polls', async () => {
+      await waiting();
+      const turn = { questionsId, questions, askedAt: new Date().toISOString() };
+      expect(JSON.parse(stored().body).pendingQuestions).toEqual(turn);
+      const originalBody = stored().body;
+      vi.advanceTimersByTime(1000);
+      expect((await new MktgDocumentRunService().readProgress(req, project)).runs[0]?.pendingQuestions).toEqual(turn);
+      expect(stored().body).toBe(originalBody);
+      expect((await service.questionsForAnswers(req, project, hash(session), questionsId)).creatorSubject).toBe('synthetic-original-writer');
+    });
+    it('backfills an absent legacy questions payload without changing the existing schema', async () => {
+      await service.start(req, project, types[0].agentKey, session);
+      const schema = JSON.parse(stored().body).schema;
+      stored().metadata['state'] = 'questions';
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      flows.result.mockResolvedValue({ status: 'questions', questionsId, questions });
+      const progress = await service.readProgress(req, project);
+      expect(progress.runs[0]?.pendingQuestions).toMatchObject({ questionsId, questions });
+      expect(JSON.parse(stored().body).schema).toBe(schema);
+    });
+    it.each(['answered', 'failed', 'completed', 'discarded'] as const)('clears the stored turn when %s', async (exit) => {
+      await waiting();
+      if (exit === 'answered') await service.resumeAfterQuestions(req, project, session, questionsId);
+      else if (exit === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+      else {
+        flows.result.mockResolvedValue(exit === 'failed' ? { status: 'failed', failureText: 'Synthetic stopped run.' } : ready());
+        await service.readProgress(req, project);
+      }
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      if (exit === 'answered') {
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'answered-questions-id': questionsId });
+        expect((await service.readProgress(req, project)).runs[0]?.pendingQuestions).toBeUndefined();
+      }
+    });
+    it('projects only to a currently verified canonical writer, not a viewer or a mismatched project', async () => {
+      await waiting();
+      flows.project.mockResolvedValue({ uid: project, writer: false });
+      expect((await service.readProgress(req, project)).runs[0]).not.toHaveProperty('pendingQuestions');
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      expect((await service.readProgress(req, project)).runs[0]).not.toHaveProperty('pendingQuestions');
+      flows.project.mockResolvedValue({ uid: project, writer: true });
+      expect((await service.readProgress(req, project)).runs[0]?.pendingQuestions).toMatchObject({ questionsId, questions });
+    });
+    it('denies a viewer before fetching the private record', async () => {
+      await waiting();
+      flows.get.mockClear();
+      flows.project.mockResolvedValue({ uid: project, writer: false });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.get).not.toHaveBeenCalled();
+    });
+    it('denies a different canonical project before fetching the private record', async () => {
+      await waiting();
+      flows.get.mockClear();
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.get).not.toHaveBeenCalled();
+    });
+    it('rejects both stale turns and non-waiting records with the answered conflict', async () => {
+      await waiting();
+      await expect(service.questionsForAnswers(req, project, hash(session), 'd'.repeat(64))).rejects.toMatchObject({ statusCode: 409 });
+      stored().metadata['state'] = 'writing';
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_ANSWERED' });
+    });
+    it('conditionally claims the exact turn, persists attribution, and exposes writing without private fields', async () => {
+      await waiting();
+      const writer = writerRequest('synthetic-answer-writer');
+      const etag = hash(stored().body);
+      const result = await service.claimAnswers(writer, project, hash(session), questionsId, answers);
+      expect(flows.claim).toHaveBeenCalledWith(expect.objectContaining({ ifMatch: etag, metadata: expect.objectContaining({ state: 'writing' }) }));
+      expect(result).toMatchObject({
+        state: 'writing',
+        answeredQuestionsId: questionsId,
+        answeredBy: 'synthetic-answer-writer',
+        answeredAt: new Date().toISOString(),
+      });
+      expect(JSON.parse(stored().body)).toEqual(JSON.parse(JSON.stringify(result)));
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+      const progress = (await service.readProgress(writer, project)).runs[0];
+      expect(progress).toMatchObject({ state: 'writing' });
+      expect(progress).not.toHaveProperty('pendingQuestions');
+      expect(progress).not.toHaveProperty('answeredBy');
+      expect(progress).not.toHaveProperty('answeredAt');
+    });
+    it('fences a held questions poll so it cannot overwrite and reopen an accepted answer claim', async () => {
+      await waiting();
+      let release = (): void => undefined;
+      let entered = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      flows.beforeMark.mockImplementationOnce(async () => {
+        entered();
+        await held;
+      });
+      flows.result.mockResolvedValue({ status: 'questions', questionsId: 'd'.repeat(64), questions });
+      const polling = service.readProgress(req, project);
+      await reached;
+      const writer = writerRequest('synthetic-claim-writer');
+      await service.claimAnswers(writer, project, hash(session), questionsId, answers);
+      release();
+      const result = await polling;
+      expect(result.runs[0]?.state).toBe('writing');
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId, answeredBy: 'synthetic-claim-writer' });
+      expect(JSON.parse(stored().body)).not.toHaveProperty('pendingQuestions');
+    });
+    it('allows exactly one of two concurrent writers to claim an observed ETag', async () => {
+      await waiting();
+      let release = (): void => undefined;
+      let arrived = 0;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      flows.beforeClaim.mockImplementation(async () => {
+        if (++arrived === 2) release();
+        await barrier;
+      });
+      flows.author.mockResolvedValue({ name: 'Synthetic Writer' });
+      const writers = ['synthetic-writer-a', 'synthetic-writer-b'].map(writerRequest);
+      const results = await Promise.allSettled(
+        writers.map((writer) => new MktgDocumentRunService().claimAnswers(writer, project, hash(session), questionsId, answers))
+      );
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const loser = results.find((result) => result.status === 'rejected');
+      expect(loser?.status === 'rejected' ? loser.reason : null).toMatchObject({
+        statusCode: 409,
+        code: 'MKTG_RUN_ANSWERED',
+        message: 'Already answered by Synthetic Writer',
+        details: { runId: hash(session), questionsId, answeredBy: 'Synthetic Writer', answeredAt: new Date().toISOString() },
+      });
+      expect(flows.claim).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(stored().body).answeredBy).toMatch(/^synthetic-writer-[ab]$/);
+    });
+    it.each([null, 'synthetic-writer@example.test', 'synthetic-private-subject'])(
+      'uses null fallback for unavailable or non-display claimant name %s',
+      async (name) => {
+        await waiting();
+        const writer = writerRequest('synthetic-private-subject');
+        await service.claimAnswers(writer, project, hash(session), questionsId, answers);
+        flows.author.mockResolvedValue({ name });
+        await expect(service.claimAnswers(writer, project, hash(session), questionsId, answers)).rejects.toMatchObject({
+          statusCode: 409,
+          code: 'MKTG_RUN_ANSWERED',
+          message: 'Already answered',
+          details: { runId: hash(session), questionsId, answeredBy: null, answeredAt: new Date().toISOString() },
+        });
+        expect(flows.claim).toHaveBeenCalledTimes(1);
+        expect(flows.author).toHaveBeenCalledWith(writer, 'synthetic-private-subject');
+      }
+    );
+    it('allows only the recorded one-off creator through the owner transport, never the public writer route', async () => {
+      const owner = writerRequest('synthetic-linkedin-creator');
+      const other = writerRequest('synthetic-other-writer');
+      await service.startForOneOff(owner, 'linkedin-post', project, session);
+      flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
+      await service.readProgress(owner, project);
+      await expect(service.claimSessionAnswers(other, project, session, questionsId, 'linkedin-post', answers)).rejects.toMatchObject({ statusCode: 403 });
+      await expect(service.claimAnswers(owner, project, hash(session), questionsId, answers)).rejects.toMatchObject({ statusCode: 403 });
+      expect(flows.claim).not.toHaveBeenCalled();
+      await service.claimSessionAnswers(owner, project, session, questionsId, 'linkedin-post', answers);
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredBy: 'synthetic-linkedin-creator' });
+    });
+    it('binds creator transports to their catalog agent before using the same conditional claim', async () => {
+      await waiting();
+      const writer = writerRequest('synthetic-original-writer');
+      await expect(service.claimSessionAnswers(writer, project, session, questionsId, 'synthetic-wrong-agent', answers)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(flows.claim).not.toHaveBeenCalled();
+      await service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '', answers);
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+    });
+    it.each([false, true])('rejects missing, extra or duplicate keys before a durable claim (creator=%s)', async (creator) => {
+      await waiting();
+      const writer = writerRequest('synthetic-coverage-writer');
+      const invoke = (value: typeof answers) =>
+        creator
+          ? service.claimSessionAnswers(writer, project, session, questionsId, types[0].catalogAgentId ?? '', value)
+          : service.claimAnswers(writer, project, hash(session), questionsId, value);
+      for (const invalid of [[], [...answers, { ...answers[0], key: 'extra' }], [answers[0], answers[0]], [{ ...answers[0], key: 'unasked' }]]) {
+        await expect(invoke(invalid)).rejects.toMatchObject({
+          statusCode: 400,
+          validationErrors: [{ field: 'answers', code: 'FIELD_VALIDATION_ERROR', message: 'Answer every current question.' }],
+        });
+        expect(flows.claim).not.toHaveBeenCalled();
+        expect(stored().metadata['state']).toBe('questions');
+        expect(JSON.parse(stored().body).pendingQuestions.questionsId).toBe(questionsId);
+      }
+      await invoke(answers);
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      expect(stored().metadata['state']).toBe('writing');
+    });
+
+    it('cannot select a record in another project using a known run id', async () => {
+      await waiting();
+      flows.project.mockResolvedValue({ uid: 'synthetic-other-project', writer: true });
+      await expect(service.questionsForAnswers(req, 'synthetic-other-project', hash(session), questionsId)).rejects.toMatchObject({ statusCode: 404 });
+    });
+    it('stores a one-off turn privately but refuses it with the plain creator-only reason even for a project writer', async () => {
+      await service.startForOneOff(req, 'linkedin-post', project, session);
+      flows.linkedin.mockResolvedValue({ status: 'questions', questionsId, questions });
+      const progress = await service.readProgress(req, project);
+      expect(progress.runs[0]).not.toHaveProperty('pendingQuestions');
+      expect(JSON.parse(stored().body).pendingQuestions).toMatchObject({ questionsId, questions });
+      await expect(service.questionsForAnswers(req, project, hash(session), questionsId)).rejects.toMatchObject({
+        statusCode: 403,
+        message: 'Only the writer who started this run can answer it.',
+      });
+    });
+  });
+
+  it.each(['writing', 'questions', 'storing'] as const)('refuses another start while %s with safe conflict facts', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = state;
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ACTIVE',
+      details: {
+        activeRunId: hash(session),
+        state,
+        agentKey: types[0].agentKey,
+        documentId: 'living',
+        startedByViewer: true,
+        startedAt: JSON.parse(stored().body).startedAt,
+      },
+    });
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(stored().metadata['state']).toBe(state);
+  });
+
+  it('allows a start with no active run, including failed and discarded records', async () => {
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    await service.start(req, project, types[0].agentKey, session);
+    for (const state of ['failed', 'discarded', 'superseded']) {
+      stored().metadata['state'] = state;
+      await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    }
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+  });
+
+  it('discards exactly the confirmed run, interrupts it, hides it from progress, then records a new start', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(flows.interrupt).toHaveBeenCalledWith(req, session);
+    expect(flows.events).not.toHaveBeenCalled();
+    flows.get.mockClear();
+    expect(await service.reconcile(req, project)).toEqual([]);
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    expect(flows.get).not.toHaveBeenCalled();
+    expect(flows.result).not.toHaveBeenCalled();
+    await service.start(req, project, types[0].agentKey, 'replacement-session');
+    expect(stored('replacement-session').metadata['state']).toBe('writing');
+    expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it.each([true, false])('audits a successful discard with subjects only and persists its private actor (self=%s)', async (self) => {
+    const creatorSubject = 'synthetic-creator';
+    const discardedBySubject = self ? creatorSubject : 'synthetic-discarder';
+    const creator = Object.assign({} as Request, { oidc: { user: { sub: creatorSubject, name: 'Synthetic creator display', email: 'creator@example.test' } } });
+    const viewer = Object.assign({} as Request, {
+      oidc: { user: { sub: discardedBySubject, name: 'Synthetic viewer display', email: 'viewer@example.test' } },
+    });
+    await service.start(creator, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    const audits = vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual([
+      viewer,
+      'mktg_run_discard',
+      'Active run discarded before a new start',
+      {
+        project,
+        runId: hash(session),
+        documentId: 'living',
+        agentKey: types[0].agentKey,
+        discardedBySubject,
+        creatorSubject,
+        self,
+        at: '2026-10-19T12:00:00.000Z',
+      },
+    ]);
+    expect(stored().metadata['closed-by']).toBe(discardedBySubject);
+    expect(stored().metadata['closed-at']).toBe('2026-10-19T12:00:00.000Z');
+    const publicRun = await service.readClosedProgress(viewer, project, types[0].agentKey, 'living', hash(session));
+    expect(publicRun).not.toHaveProperty('closedBySubject');
+    expect(publicRun).not.toHaveProperty('creatorSubject');
+    expect(publicRun).not.toHaveProperty('closedBy');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('@');
+    expect(JSON.stringify(audits[0]?.[3])).not.toContain('display');
+    await service.assertSingleActiveRun(viewer, project, types[0].agentKey, { discard: hash(session) });
+    expect(vi.mocked(logger.info).mock.calls.filter((call) => call[1] === 'mktg_run_discard')).toHaveLength(1);
+  });
+
+  it.each(['discarded', 'superseded'] as const)(
+    'refuses follow-ups and fresh turn tracking on a %s session without retiring its replacement',
+    async (state) => {
+      await service.start(req, project, types[0].agentKey, session);
+      Object.assign(stored().metadata, { state });
+      await service.start(req, project, types[0].agentKey, 'replacement-session');
+      const agentId = types[0].catalogAgentId ?? '';
+      await expect(service.assertRunOpen(req, project, agentId, session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+      await expect(service.start(req, project, types[0].agentKey, session, 0, 'follow-up')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+      expect(stored().metadata['state']).toBe(state);
+      expect(stored('replacement-session').metadata['state']).toBe('writing');
+      await expect(service.assertRunOpen(req, project, agentId, 'replacement-session')).resolves.toBeUndefined();
+    }
+  );
+
+  it('refuses a completed older session while another run occupies the slot', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'completed';
+    await service.start(req, project, types[0].agentKey, 'replacement-session');
+    await expect(service.assertRunOpen(req, project, types[0].catalogAgentId ?? '', session)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'MKTG_RUN_ACTIVE',
+      details: { activeRunId: hash('replacement-session') },
+    });
+  });
+
+  it('checks closed metadata again in the turn tracking predicate', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.head.mockImplementationOnce(() => {
+      stored().metadata['state'] = 'discarded';
+    });
+    await expect(service.start(req, project, types[0].agentKey, session, 0, 'follow-up')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(stored().metadata['attempt-id']).toBe('initial');
+  });
+
+  it.each(['discarded', 'superseded'] as const)('returns %s closure only for a matching selected detail and keeps it out of listings', async (state) => {
+    await service.start(req, project, types[0].agentKey, session);
+    if (state === 'discarded') await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    else Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+    expect(stored().metadata['closed-at']).toBe(new Date().toISOString());
+    flows.result.mockClear();
+    flows.author.mockClear();
+    const result = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(result).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state, closedAt: new Date().toISOString() }] });
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+    await expect(service.readClosedProgress(req, project, 'faq', 'other-document', hash(session))).rejects.toBeInstanceOf(ResourceNotFoundError);
+    await expect(service.readClosedProgress(req, project, types[0].agentKey, 'living', '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+    delete stored().metadata['closed-at'];
+    expect(await service.readClosedProgress(req, project, types[0].agentKey, 'living', hash(session))).not.toHaveProperty('closedAt');
+  });
+
+  it('returns a selected completion destination from stored metadata, without Guild reads or identity enrichment', async () => {
+    await service.start(writerRequest('synthetic-original-creator'), project, types[0].agentKey, session);
+    const revisionId = `000002-${'b'.repeat(64)}`;
+    // The durable metadata is authoritative even when the legacy JSON body still says writing/result:null.
+    Object.assign(stored().metadata, { state: 'completed', 'revision-id': revisionId });
+    const viewer = writerRequest('synthetic-public-follower');
+    flows.result.mockClear();
+    flows.author.mockClear();
+    flows.events.mockClear();
+    const marker = await service.readClosedProgress(viewer, project, types[0].agentKey, 'living', hash(session));
+    expect(marker).toEqual({
+      runId: hash(session),
+      project,
+      agentKey: types[0].agentKey,
+      documentId: 'living',
+      startedAt: '2026-10-19T12:00:00.000Z',
+      state: 'completed',
+      producedRevisionId: revisionId,
+    });
+    const detail = await service.detailWithProgress(viewer, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs).toEqual([marker]);
+    expect(await service.readProgress(viewer, project)).toEqual({ runs: [] });
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
+    expect(JSON.stringify(marker)).not.toContain('synthetic-original-creator');
+    expect(JSON.stringify(marker)).not.toContain(session);
+  });
+
+  it.each([
+    { name: 'Synthetic Closer', expected: 'Synthetic Closer' },
+    { name: null, expected: null },
+    { name: 'synthetic-closer@example.test', expected: null },
+    { name: 'synthetic-closer', expected: null },
+  ])('projects only a safe selected closure name ($name)', async ({ name, expected }) => {
+    await service.start(writerRequest('synthetic-original-creator'), project, types[0].agentKey, session);
+    const closer = writerRequest('synthetic-closer');
+    await service.assertSingleActiveRun(closer, project, types[0].agentKey, { discard: hash(session) });
+    expect(stored().metadata['closed-by']).toBe('synthetic-closer');
+    flows.author.mockResolvedValue({ name });
+    const detail = await service.detailWithProgress(closer, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    const result = detail?.runs[0];
+    expect(result).toMatchObject({ state: 'discarded', closedBy: expected, closedAt: new Date().toISOString() });
+    expect(result).not.toHaveProperty('closedBySubject');
+    expect(JSON.stringify(result)).not.toContain('synthetic-closer');
+    expect(JSON.stringify(result)).not.toContain('synthetic-original-creator');
+    expect(await service.readProgress(closer, project)).toEqual({ runs: [] });
+    expect(flows.author).toHaveBeenCalledExactlyOnceWith(closer, 'synthetic-closer');
+  });
+
+  it.each([
+    { label: 'newer matching row', agentKey: types[0].agentKey, documentId: 'living', delta: 1, replaced: true },
+    { label: 'another type', agentKey: types[1].agentKey, documentId: 'living', delta: 1, replaced: false },
+    { label: 'another document', agentKey: types[0].agentKey, documentId: 'synthetic-other', delta: 1, replaced: false },
+    { label: 'older row', agentKey: types[0].agentKey, documentId: 'living', delta: -1, replaced: false },
+  ])('links a closed selection only to a known newer same-document run ($label)', async ({ agentKey, documentId, delta, replaced }) => {
+    await service.start(req, project, types[0].agentKey, session);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    const known: MktgDocumentRunProgress = {
+      runId: 'f'.repeat(64),
+      project,
+      agentKey,
+      documentId,
+      startedAt: new Date(Date.now() + delta).toISOString(),
+      state: 'writing',
+    };
+    const result = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [known] }, false, undefined, hash(session));
+    expect(result?.runs[0]).toMatchObject({ runId: hash(session), state: 'discarded', closedBy: null });
+    if (replaced) expect(result?.runs[0]?.replacedBy).toBe(known.runId);
+    else expect(result?.runs[0]).not.toHaveProperty('replacedBy');
+    expect(result?.runs[1]).toEqual(known);
+    expect(flows.result).not.toHaveBeenCalled();
+  });
+
+  it('settles an active comment redraft before closing its discarded run', async () => {
+    await service.start(req, project, types[0].agentKey, session, 1, 'send-one');
+    const context = { project, agentKey: types[0].agentKey, requestId: 'send-one' };
+    redraft.forSession.mockResolvedValueOnce(context);
+    await service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) });
+    expect(redraft.settle).toHaveBeenCalledWith(req, context, { status: 'failed', failureText: 'This send was discarded.' });
+    expect(redraft.settle.mock.invocationCallOrder[0]).toBeLessThan(flows.beforePut.mock.invocationCallOrder[0]);
+    expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it('does not await an interrupt that never resolves', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.interrupt.mockImplementationOnce(() => new Promise<void>(() => undefined));
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).resolves.toBeUndefined();
+    expect(flows.interrupt).toHaveBeenCalledWith(req, session);
+  });
+
+  it.each([ServiceValidationError.forField('run', 'Synthetic invalid record'), new MicroserviceError('Synthetic transient read', 503, 'TEST')])(
+    'isolates a failed record read and fails open (%s)',
+    async (err) => {
+      objects.set(key('unreadable'), { body: '{}', metadata: { state: 'writing' }, lastModified: new Date() });
+      flows.get.mockImplementationOnce(() => {
+        throw err;
+      });
+      await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+      expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_start', 'Active-run check could not read a record; skipping it', {
+        project,
+        key: key('unreadable'),
+        err,
+      });
+    }
+  );
+
+  it('bounds preflight reads and skips matching closed terminal-cache entries', async () => {
+    for (let i = 0; i < 6; i++)
+      objects.set(key(`cached-closed-${i}`), { body: '{}', metadata: { state: 'discarded' }, lastModified: new Date(Date.now() - 10_000) });
+    flows.active = flows.max = 0;
+    await service.assertSingleActiveRun(req, project, types[0].agentKey);
+    expect(flows.max).toBeGreaterThan(1);
+    expect(flows.max).toBeLessThanOrEqual(MKTG_STARTED_RUN_READ_CONCURRENCY);
+    flows.head.mockClear();
+    await service.assertSingleActiveRun(req, project, types[0].agentKey);
+    expect(flows.head).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
+  });
+
+  it('returns the concurrent open state when discard cannot close the selected record', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    redraft.forSession.mockImplementationOnce(async () => {
+      Object.assign(stored().metadata, { state: 'questions', 'retry-at': '2026-10-19T12:00:00.001Z' });
+      stored().body = JSON.stringify({ ...JSON.parse(stored().body), state: 'questions', retryAt: '2026-10-19T12:00:00.001Z' });
+      return null;
+    });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash(session) })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash(session), state: 'questions', startedByViewer: true, startedAt: JSON.parse(stored().body).startedAt },
+    });
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale discard without mutating or interrupting the current run', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard: hash('stale-session') })).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash(session) },
+    });
+    expect(stored().metadata['state']).toBe('writing');
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
+  it.each(['../bad', '', 42, null, 'a'.repeat(63)])('rejects malformed discard %s before touching tracking', async (discard) => {
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey, { discard })).rejects.toMatchObject({ statusCode: 400 });
+    expect(flows.head).not.toHaveBeenCalled();
+  });
+
+  it('matches one-off runs across document ids, but keeps agent/project boundaries', async () => {
+    const oneOff = MKTG_DOCUMENT_TYPES.find((type) => type.kind === 'run' && type.agentKey === 'member-360');
+    expect(oneOff).toBeDefined();
+    if (!oneOff) return;
+    await service.start(req, project, oneOff.agentKey, session);
+    await expect(service.assertSingleActiveRun(req, project, oneOff.agentKey, { documentId: 'run-000000000000000000000000' })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).resolves.toBeUndefined();
+    await expect(service.assertSingleActiveRun(req, 'other-project', oneOff.agentKey)).resolves.toBeUndefined();
+  });
+
+  it('requires a separate confirmation for each legacy duplicate one-off run', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    await service.startForOneOff(req, 'member-360', project, 'legacy-other-session');
+    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash(session))).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash('legacy-other-session') },
+    });
+    expect(stored().metadata['state']).toBe('discarded');
+    expect(stored('legacy-other-session').metadata['state']).toBe('writing');
+    expect(flows.interrupt).toHaveBeenCalledTimes(1);
+    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash('legacy-other-session'))).resolves.toBeUndefined();
+    expect(stored('legacy-other-session').metadata['state']).toBe('discarded');
+  });
+
+  it('keeps one-off slots private to their creator across project writers', async () => {
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other' } } });
+    await service.startForOneOff(owner, 'member-360', project, session);
+    await expect(service.assertSingleActiveOneOffRun(other, project, 'member-360', hash(session))).resolves.toBeUndefined();
+    expect(flows.author).not.toHaveBeenCalled();
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    expect(stored().metadata['state']).toBe('writing');
+    await expect(service.assertSingleActiveOneOffRun(owner, project, 'member-360')).rejects.toMatchObject({ statusCode: 409 });
+    expect(flows.author).not.toHaveBeenCalled();
+  });
+
+  it.each(['Synthetic writer', null])('names the living-run creator only in the client response (%s)', async (name) => {
+    flows.author.mockResolvedValue(name ? { name } : null);
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    await service.start(owner, project, types[0].agentKey, session);
+    const conflict = await service.assertSingleActiveRun(req, project, types[0].agentKey).catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    const startedBy = name ?? 'Another writer';
+    expect(conflict.toResponse()).toMatchObject({ startedBy, startedByViewer: false, message: `${startedBy}'s ${types[0].itemLabel} run is in progress.` });
+    expect(flows.author).toHaveBeenCalledWith(req, 'synthetic-owner', 'mktg_run_start');
+    expect(conflict.message).not.toContain(startedBy);
+  });
+
+  it('uses Your for the viewer own living run without resolving the author', async () => {
+    const viewer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-viewer' } } });
+    await service.start(viewer, project, types[0].agentKey, session);
+    const conflict = await service.assertSingleActiveRun(viewer, project, types[0].agentKey).catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    expect(conflict.toResponse()).toMatchObject({ startedByViewer: true, message: `Your ${types[0].itemLabel} run is in progress.` });
+    expect(flows.author).not.toHaveBeenCalled();
+  });
+
+  it('uses the caller-facing message for the caller own one-off conflict', async () => {
+    await service.startForOneOff(req, 'member-360', project, session);
+    const conflict = await service.assertSingleActiveOneOffRun(req, project, 'member-360').catch((err: unknown) => err);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    if (!(conflict instanceof ConflictError)) return;
+    expect(conflict.toResponse()).toMatchObject({ startedBy: 'Another writer', startedByViewer: true, message: 'Your Member 360 run is in progress.' });
+  });
+
+  it('refuses retry while the creator has another active one-off and retries when the slot clears', async () => {
+    const actor = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-creator' } } });
+    await service.startForOneOff(actor, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    const documentId = `run-${hash(session).slice(0, 24)}`;
+    await service.startForOneOff(actor, 'member-360', project, 'active-session');
+    await expect(service.retry(actor, project, 'member-360', documentId, hash(session))).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash('active-session') },
+    });
+    expect(stored().metadata['state']).toBe('failed');
+    await service.assertSingleActiveOneOffRun(actor, project, 'member-360', hash('active-session'));
+    await expect(service.retry(actor, project, 'member-360', documentId, hash(session))).resolves.toBeUndefined();
+    expect(stored().metadata['state']).toBe('writing');
+  });
+
+  it.each([true, false])('keeps the unknown creator slot when a legacy run is retried (active is unknown=%s)', async (unknownActive) => {
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-retrying-writer' } } });
+    await service.startForOneOff(req, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    await service.startForOneOff(unknownActive ? req : writer, 'member-360', project, 'legacy-active');
+    const retry = service.retry(writer, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session));
+    if (unknownActive) await expect(retry).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash('legacy-active') } });
+    else await expect(retry).resolves.toBeUndefined();
+    expect(JSON.parse(stored().body).creatorSubject).toBeNull();
+  });
+
+  it.each([null, undefined])('distinguishes an explicit unknown creator from the absent option (%s)', async (creatorSubject) => {
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-retrying-writer' } } });
+    await service.startForOneOff(writer, 'member-360', project, session);
+    const check = service.assertSingleActiveRun(writer, project, 'member-360', { creatorSubject });
+    if (creatorSubject === null) await expect(check).resolves.toBeUndefined();
+    else await expect(check).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash(session) } });
+  });
+
+  it.each([true, false])('checks the selected creator slot when another writer retries (active belongs to creator=%s)', async (creatorActive) => {
+    const creator = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-creator-a' } } });
+    const writer = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-writer-b' } } });
+    await service.startForOneOff(creator, 'member-360', project, session);
+    stored().metadata['state'] = 'failed';
+    await service.startForOneOff(creatorActive ? creator : writer, 'member-360', project, 'other-active-session');
+    const retry = service.retry(writer, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session));
+    if (creatorActive) {
+      await expect(retry).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash('other-active-session') } });
+      expect(stored().metadata['state']).toBe('failed');
+    } else {
+      await expect(retry).resolves.toBeUndefined();
+      expect(stored().metadata['state']).toBe('writing');
+      expect(JSON.parse(stored().body).creatorSubject).toBe('synthetic-creator-a');
+    }
+    expect(stored('other-active-session').metadata['state']).toBe('writing');
+    expect(flows.interrupt).not.toHaveBeenCalled();
+  });
+
+  it('finds an active run beyond the navigation discovery window', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    for (let i = 0; i < 129; i++)
+      objects.set(`document-runs/${project}/${hash(`closed-${i}`)}.json`, {
+        body: '{}',
+        metadata: { state: 'discarded' },
+        lastModified: new Date(Date.now() + i + 1),
+      });
+    await expect(service.assertSingleActiveRun(req, project, types[0].agentKey)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it.each([false, true])('reads and reconciles an uncached selected active run beyond the navigation window (poll=%s)', async (poll) => {
+    await service.start(req, project, types[0].agentKey, session);
+    for (let i = 0; i < 129; i++)
+      objects.set(key(`selected-window-${i}`), {
+        body: '{}',
+        metadata: { state: 'discarded' },
+        lastModified: new Date(Date.now() + i + 1),
+      });
+    const reader = new MktgDocumentRunService();
+    const snapshot = await reader.readProgress(req, project, types[0].agentKey, 'living', poll);
+    expect(snapshot.runs).toEqual([]);
+    expect(flows.result).not.toHaveBeenCalled();
+    const detail = await reader.detailWithProgress(req, project, types[0], 'living', null, snapshot, poll, undefined, hash(session));
+    expect(detail).toMatchObject({ revisions: [], runs: [{ runId: hash(session), state: 'writing' }] });
+    expect(flows.result).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(detail)).not.toContain(session);
+  });
+
+  it.each([
+    ['discarded', 'pending'],
+    ['superseded', 'pending'],
+    ['discarded', 'questions'],
+    ['superseded', 'questions'],
+  ] as const)('preserves a concurrent %s during selected %s reconciliation', async (state, outcome) => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.result.mockImplementationOnce(async () => {
+      Object.assign(stored().metadata, { state, 'closed-at': new Date().toISOString() });
+      return outcome === 'questions' ? { status: 'questions', questionsId: 'a'.repeat(64), questions: [] } : { status: 'pending' };
+    });
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state, closedAt: new Date().toISOString() });
+    expect(stored().metadata['state']).toBe(state);
+  });
+
+  it.each(['discarded', 'superseded'])('refuses a retired LinkedIn session before an answers continuation (%s)', async (state) => {
+    const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
+    await service.startForOneOff(owner, 'linkedin-post', project, session);
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).resolves.toBeUndefined();
+    stored().metadata['state'] = state;
+    await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+  });
+
+  it('keeps selected closed records lightweight even when omitted from discovery', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'discarded';
+    flows.get.mockClear();
+    const detail = await service.detailWithProgress(req, project, types[0], 'living', null, { runs: [] }, false, undefined, hash(session));
+    expect(detail?.runs[0]).toMatchObject({ runId: hash(session), state: 'discarded' });
+    expect(flows.get).toHaveBeenCalledTimes(1);
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(flows.author).not.toHaveBeenCalled();
   });
 
   it.each(['linkedin-post', 'member-360'])('recovers %s from private tracking alone and validates its exact document destination', async (agent) => {
@@ -387,7 +1358,7 @@ describe('MktgDocumentRunService core', () => {
       expect(flows.result).toHaveBeenCalled();
       expect(flows.events).toHaveBeenCalled();
       expect(stored().metadata['state']).toBe('failed');
-      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_RUN_FAILURE_REASON });
+      expect(progress.runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
       expect(JSON.stringify(progress)).not.toContain('PRIVATE PROVIDER DETAILS');
       expect(progress.runs[0]).not.toHaveProperty('persistenceFailed');
       expect(visitor.originalUrl).toBe('/api/mktg-agents/documents/icp/living');
@@ -456,6 +1427,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['writing', 'questions'])('fails Member %s only when its adapter reports a session end, even after two hours', async (state) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     if (state === 'questions') {
       flows.member.mockResolvedValue({ status: 'needs_input', activity: [] });
@@ -486,7 +1458,8 @@ describe('MktgDocumentRunService core', () => {
     expect(paused.runs[0]).toMatchObject({ state: 'questions' });
   });
 
-  it('retains Member failure classification with the redacted details across process-local cache loss', async () => {
+  it('retains Member failure classification but exposes details only to its creator across cache loss', async () => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.startForOneOff(req, 'member-360', project, session);
     flows.member.mockResolvedValue({ status: 'failed', reason: 'no_edit_access', message: 'Synthetic entitled-project refusal.' });
     const progress = await service.readProgress(req, project);
@@ -494,6 +1467,10 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['failure-reason']).toBe('no_edit_access');
     const reread = await new MktgDocumentRunService().readProgress(req, project);
     expect(reread.runs[0]).toMatchObject({ failureReason: 'no_edit_access' });
+    const visitor = { oidc: { user: { sub: 'synthetic-visitor' } } } as unknown as Request;
+    const expected = { failureReason: 'no_edit_access', failureText: MEMBER_360_FAILURE_MESSAGES.no_edit_access };
+    expect((await new MktgDocumentRunService().readProgress(visitor, project)).runs[0]).toMatchObject(expected);
+    expect(await service.refreshFailure(visitor, project, 'member-360', `run-${hash(session).slice(0, 24)}`, hash(session))).toMatchObject(expected);
   });
 
   it('ignores failure reason codes outside the dedicated allow-list on writes and legacy metadata reads', async () => {
@@ -530,8 +1507,15 @@ describe('MktgDocumentRunService core', () => {
     const body = stored().body;
     expect(JSON.parse(body).creatorSubject).toBe('synthetic-creator');
     await service.start(visitor, project, types[0].agentKey, session, 0, 'first-turn');
-    await service.start(visitor, project, types[0].agentKey, session, 0, 'next-turn');
     expect(stored().body).toBe(body);
+    await service.start(visitor, project, types[0].agentKey, session, 0, 'next-turn');
+    expect(stored().body).not.toBe(body);
+    expect(JSON.parse(stored().body)).toMatchObject({
+      creatorSubject: 'synthetic-creator',
+      startedAt: JSON.parse(body).startedAt,
+      sessionId: session,
+      attemptId: 'next-turn',
+    });
     await service.start(req, project, types[0].agentKey, 'unknown-creator');
     expect(JSON.parse(stored('unknown-creator').body).creatorSubject).toBeNull();
   });
@@ -565,6 +1549,20 @@ describe('MktgDocumentRunService core', () => {
     expect(stored()).toBe(before);
   });
 
+  it('fences a held result after its last HEAD across a same-session renewal', async () => {
+    await service.start(req, project, types[0].agentKey, session, 0, 'turn-A');
+    const oldBody = stored().body;
+    flows.result.mockResolvedValue(ready());
+    flows.beforeMark.mockImplementationOnce(async () => {
+      await service.start(req, project, types[0].agentKey, session, 1, 'turn-B');
+    });
+    await service.readProgress(req, project);
+    expect(stored().body).not.toBe(oldBody);
+    expect(stored().metadata).toMatchObject({ state: 'writing', 'attempt-id': 'turn-B', 'attempt-history': 'turn-A,turn-B', 'prior-version': '1' });
+    expect(stored().metadata).not.toHaveProperty('revision-id');
+    expect(JSON.parse(stored().body).attemptId).toBe('turn-B');
+  });
+
   it('seeds legacy ACK history from the current attempt without losing it on renewal', async () => {
     await service.start(req, project, types[0].agentKey, session, 0, 'legacy-turn');
     delete stored().metadata['attempt-history'];
@@ -575,7 +1573,7 @@ describe('MktgDocumentRunService core', () => {
     expect(stored()).toBe(before);
   });
 
-  it.each(['failed', 'storing'] as const)('reproduces the accepted non-atomic limitation: stale %s PUT can replace completion', async (state) => {
+  it.each(['failed', 'storing'] as const)('fences a stale %s transition so it cannot replace a completed record', async (state) => {
     await service.start(req, project, types[0].agentKey, session);
     let release: () => void = () => {
       throw new Error('Missing suspended conditional failure');
@@ -600,16 +1598,14 @@ describe('MktgDocumentRunService core', () => {
     flows.result.mockResolvedValueOnce(stale).mockResolvedValueOnce(ready());
     const failure = service.recordResult(req, session, stale, project);
     await paused;
-    const before = stored().body;
     await service.recordResult(req, session, ready(), project);
     const completed = stored();
-    expect(completed.body).toBe(before);
+    expect(JSON.parse(completed.body).state).toBe('completed');
     expect(completed.metadata).toMatchObject({ state: 'completed', 'revision-id': location().revision_id });
     release();
     await failure;
-    // Known limitation, NOT a claimed atomic guarantee: a separate conditional-store WorkItem must fix it.
-    expect(stored().metadata['state']).toBe(state);
-    expect(stored().metadata['revision-id']).toBeUndefined();
+    expect(stored().body).toBe(completed.body);
+    expect(stored().metadata).toEqual(completed.metadata);
   });
 
   it('rejects ledger overflow instead of evicting an accepted ACK', async () => {
@@ -717,6 +1713,9 @@ describe('MktgDocumentRunService core', () => {
         expect.objectContaining({ status: 'failed', failureText: 'A newer run superseded this send.' })
       );
       expect(stored().metadata['state']).toBe('superseded');
+      const closedAt = Date.parse(stored().metadata['closed-at']);
+      expect(closedAt).toBeGreaterThanOrEqual(Date.parse(stored('synthetic-second-session').metadata['started-at']));
+      expect(closedAt).toBeLessThanOrEqual(Date.now());
     });
   });
   it('releases a bound send when the authoritative Run writing deadline expires without resubmitting', async () => {
@@ -770,9 +1769,17 @@ describe('MktgDocumentRunService core', () => {
     flows.result.mockResolvedValue(ready(type.agentKey));
     await service.recordResult(req, session, ready(type.agentKey), project);
     expect(stored().metadata['state']).toBe('completed');
+    const completedBody = stored().body;
+    expect(JSON.parse(completedBody).startedAt).toBe(JSON.parse(body).startedAt);
     vi.advanceTimersByTime(120_000);
     await service.start(req, project, type.agentKey, session, 0, 'renewed-turn');
-    expect(stored().body).toBe(body);
+    expect(hash(stored().body)).not.toBe(hash(completedBody));
+    expect(JSON.parse(stored().body)).toMatchObject({
+      startedAt: JSON.parse(body).startedAt,
+      creatorSubject: JSON.parse(body).creatorSubject,
+      attemptId: 'renewed-turn',
+      state: 'writing',
+    });
     expect(stored().metadata).toMatchObject({ state: 'writing', 'prior-version': '0', 'started-at': '2026-10-19T12:00:00.000Z', 'attempt-id': 'renewed-turn' });
     await service.recordResult(req, session, ready(type.agentKey), project);
     expect(stored().metadata['state']).toBe('writing');
@@ -858,6 +1865,7 @@ describe('MktgDocumentRunService core', () => {
   });
 
   it.each(['failed', 'refused'])('bounds %s snapshots, refreshes a full scoped reply and retries only the exact recorded run', async (status) => {
+    const req = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic plain reply. '.repeat(300);
     flows.result.mockResolvedValue({ status, failureText: reply, reply });

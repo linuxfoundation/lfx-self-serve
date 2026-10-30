@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Profile identity dialogs — support remains reachable after enumeration-safe sends (#443).
- * A generic send-code 200 advances both dialogs to the OTP step with a static support hint,
- * regardless of whether a code was actually delivered. An unrelated 400 stays on the send
- * step with a plain inline error and no support button.
+ * Profile identity dialogs — support remains reachable after enumeration-safe sends (#443, #4695).
+ * A generic send-code 200 advances both dialogs to the OTP step with a visible, neutral support
+ * hint, regardless of whether a code was actually delivered. After the resend threshold, Resend
+ * is replaced by a Contact support action. An unrelated 400 stays on the send step with a plain
+ * inline error and no support button.
  * Identity reads and send-code writes are mocked; no real email is sent.
  * Requires the dev server and the existing Playwright authentication setup.
  */
@@ -19,7 +20,10 @@ const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your ac
 const IDENTITIES_ROUTE = '**/api/profile/identities';
 const SEND_CODE_ROUTE = '**/api/profile/identities/email/send-code';
 const UNRELATED_ERROR_MESSAGE = 'Invalid or expired verification code. Please try again.';
-const SUPPORT_BUTTON = { name: 'contact support' } as const;
+const SUPPORT_BUTTON = { name: /contact support/i } as const;
+// Mirrors EMAIL_RESEND_SUPPORT_THRESHOLD and the 60s resend cooldown (same Node-loader constraint as above).
+const RESEND_SUPPORT_THRESHOLD = 1;
+const RESEND_COOLDOWN_MS = 60_000;
 
 // The unverified email identity the mocked list exposes; drives the verify dialog's
 // verify-btn-<id> and OTP flow.
@@ -130,8 +134,36 @@ test.describe('Identity dialogs — enumeration-safe OTP support', () => {
       await expect(page.getByTestId('add-account-otp')).toBeVisible();
       const hint = page.getByTestId('add-account-otp-hint');
       await expect(hint).toBeVisible();
+      await expect(hint).toContainText('No code yet?');
+      await expect(hint).toContainText('Check the email address above and your spam or junk folder.');
+      await expect(hint).not.toContainText('already linked');
       await expect(hint.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
       await expect(page.getByTestId('add-account-send-error')).toHaveCount(0);
+    });
+
+    test('replaces Resend with Contact support after the resend threshold', async ({ page }) => {
+      await page.clock.install();
+      await mockSendCode(page, 200, EMAIL_VERIFICATION_SENT_MESSAGE);
+      await openEmailConnectStep(page);
+      await page.getByTestId('add-account-send-code').locator('button').click();
+      await expect(page.getByTestId('add-account-otp')).toBeVisible();
+      await expect(page.getByTestId('add-account-resend-support')).toHaveCount(0);
+
+      for (let resend = 0; resend < RESEND_SUPPORT_THRESHOLD; resend++) {
+        await page.clock.runFor(RESEND_COOLDOWN_MS);
+        await page.getByTestId('add-account-resend').click();
+      }
+
+      await expect(page.getByTestId('add-account-resend')).toHaveCount(0);
+      await expect(page.getByTestId('add-account-resend-support')).toBeVisible();
+      await expect(page.getByTestId('add-account-resend-support-callout')).toContainText('Still waiting for your code?');
+      await expect(page.getByTestId('add-account-resend-support-callout')).toContainText('You can still enter the code here if it arrives later.');
+      await expect(page.getByTestId('add-account-otp-hint')).toHaveCount(0);
+      await expect(page.getByTestId('add-account-otp')).toBeVisible();
+      await page.getByTestId('add-account-change-email').locator('button').click();
+      await expect(page.getByTestId('add-account-email').locator('input')).toBeEnabled();
+      await expect(page.getByTestId('add-account-email').locator('input')).toHaveValue('');
+      await expect(page.getByTestId('add-account-otp')).toHaveCount(0);
     });
 
     test('hides the support link for an unrelated error', async ({ page }) => {
@@ -162,6 +194,9 @@ test.describe('Identity dialogs — enumeration-safe OTP support', () => {
       await expect(page.getByTestId('verify-otp')).toBeVisible();
       const hint = page.getByTestId('verify-otp-hint');
       await expect(hint).toBeVisible();
+      await expect(hint).toContainText('No code yet?');
+      await expect(hint).toContainText('Check the email address above and your spam or junk folder.');
+      await expect(hint).not.toContainText('already linked');
       await expect(hint.getByRole('button', SUPPORT_BUTTON)).toBeVisible();
       await expect(page.getByTestId('verify-email-error')).toHaveCount(0);
     });

@@ -25,6 +25,7 @@ import {
   CommitteeUser,
   getCommitteeCategorySeverity,
   MembershipTagDisplay,
+  PollStatus,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -277,6 +278,9 @@ export class CommitteeViewComponent {
   // every tab switch, which previously dropped the override and let the stale pre-extension deadline
   // reappear once the user returned to the Votes tab (per @audigregorie, GH-3823 review).
   private readonly extendedVoteOverrides = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
+  // Confirmed `ended` status from committee-votes' voteClosed output, held for the same reason as extendedVoteOverrides and
+  // dropped once rawVotes() reports the vote as no longer active.
+  private readonly closedVoteOverrides = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -318,10 +322,12 @@ export class CommitteeViewComponent {
   // destroyed/recreated on tab switches (per @audigregorie, GH-3823 review).
   public votes: Signal<Vote[]> = computed(() => {
     const overrides = this.extendedVoteOverrides();
-    if (overrides.size === 0) return this.rawVotes();
+    const closed = this.closedVoteOverrides();
+    if (overrides.size === 0 && closed.size === 0) return this.rawVotes();
     return this.rawVotes().map((vote) => {
       const override = overrides.get(vote.uid);
-      return override ? { ...vote, ...override } : vote;
+      const closedOverride = closed.get(vote.uid);
+      return override || closedOverride ? { ...vote, ...override, ...closedOverride } : vote;
     });
   });
   public surveys: Signal<Survey[]> = this.initSurveys();
@@ -642,6 +648,14 @@ export class CommitteeViewComponent {
     toObservable(this.rawVotes)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((votes) => {
+        const closed = this.closedVoteOverrides();
+        if (closed.size > 0) {
+          const nextClosed = new Map(closed);
+          for (const vote of votes) {
+            if (vote.status !== PollStatus.ACTIVE) nextClosed.delete(vote.uid);
+          }
+          if (nextClosed.size !== closed.size) this.closedVoteOverrides.set(nextClosed);
+        }
         const overrides = this.extendedVoteOverrides();
         if (overrides.size === 0) return;
         const next = new Map(overrides);
@@ -800,6 +814,10 @@ export class CommitteeViewComponent {
   /** committee-votes' voteExtended output (relayed from votes-table) — held in parent-owned state so the
    *  confirmed deadline survives the Votes tab being destroyed/recreated on tab switches (per
    *  @audigregorie, GH-3823 review). */
+  public onVoteClosed(vote: Vote): void {
+    this.closedVoteOverrides.update((map) => new Map(map).set(vote.uid, { status: PollStatus.ENDED, early_end_time: vote.early_end_time }));
+  }
+
   public onVoteExtended(vote: Vote): void {
     this.extendedVoteOverrides.update((map) => new Map(map).set(vote.uid, { end_time: vote.end_time, end_time_timezone: vote.end_time_timezone }));
   }

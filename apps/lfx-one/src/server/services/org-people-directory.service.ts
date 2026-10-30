@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, ORG_UNRANGED_ROSTER_FILTERS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { DEFAULT_ORG_TEAM_MEMBERS, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, ORG_UNRANGED_ROSTER_FILTERS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -20,6 +20,8 @@ import type {
   OrgLensTimeRange,
   OrgPersonSource,
   OrgProjectScope,
+  OrgTeamMemberKeys,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
@@ -243,31 +245,47 @@ export class OrgPeopleDirectoryService {
    * principals went unclassified, so they are served without address or title, and storing it would
    * list the former ones as current for the whole TTL.
    */
-  public async getLive(req: Request, accountId: string, range: OrgLensTimeRange | null, requestedFilters: OrgCommitFilters): Promise<OrgAllEmployeesResponse> {
+  public async getLive(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    requestedFilters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgAllEmployeesResponse> {
     const filters = range ? requestedFilters : ORG_UNRANGED_ROSTER_FILTERS;
     const username = getEffectiveUsername(req) ?? '';
     const namespace = orgPeopleDirectoryNamespace(range, filters.projectScope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
-    // other caller that arrived without a resolvable identity.
-    const entry = await coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
-      let formerResolved = true;
-      return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
-        namespace,
-        username,
-        accountId,
-        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => {
-          const live = await this.computeLive(req, accountId, range, filters.projectScope);
-          formerResolved = live.formerResolved;
-          return toCompactDirectory(live.directory);
-        },
-        isCompactDirectoryEntry,
-        () => formerResolved && isCurrent()
-      );
-    });
-    return toWireResponse(fromCompactDirectory(entry), filters);
+    // other caller that arrived without a resolvable identity. The Team members filter removes team
+    // members' code after the cached merge, so one directory entry serves both picks; the unranged roster (the
+    // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
+    const [entry, teamMemberKeys] = await Promise.all([
+      coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
+        let formerResolved = true;
+        return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+          namespace,
+          username,
+          accountId,
+          VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+          async () => {
+            const live = await this.computeLive(req, accountId, range, filters.projectScope);
+            formerResolved = live.formerResolved;
+            return toCompactDirectory(live.directory);
+          },
+          isCompactDirectoryEntry,
+          () => formerResolved && isCurrent()
+        );
+      }),
+      // A failed team-member read never takes the live roster down with it (the merge itself degrades source by
+      // source): it serves everyone, says so, and the client does not keep the answer.
+      this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include').catch((error: unknown): OrgTeamMemberKeys => {
+        logger.warning(req, 'get_org_people_directory', 'Team-member read failed; serving team members included', { org_uid: accountId, err: error });
+        return { excluded: null, unavailable: true };
+      }),
+    ]);
+    return toWireResponse(fromCompactDirectory(entry), filters, teamMemberKeys);
   }
 
   private async computeLive(

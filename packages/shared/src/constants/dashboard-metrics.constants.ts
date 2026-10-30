@@ -7,6 +7,7 @@ import { hexToRgba } from '../utils/color.utils';
 import { formatCurrency, formatNumber } from '../utils/number.utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
+import { ORG_MAINTAINER_ROLES_LABEL } from './org-maintainer-roles.constants';
 
 import type {
   BoardMeetingParticipationSummaryResponse,
@@ -16,11 +17,13 @@ import type {
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  FoundationHealthMetricStateCopy,
   HealthMetricsRange,
   HealthMetricsSummaryCard,
   HealthMetricsYearOption,
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
+  OrgLensSectionOutcome,
   OutstandingBalanceSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   RevenueImpactResponse,
@@ -187,6 +190,34 @@ export const MARKETING_SOCIAL_PLATFORM_MAP: Record<BrandReachPlatformType, { ico
 // Foundation Health Metrics
 // ============================================
 
+/** Card-local copy: missing measurements are neither measured zeros nor access decisions. */
+export const FOUNDATION_HEALTH_METRIC_STATE_COPY: Record<Exclude<OrgLensSectionOutcome, 'records'>, FoundationHealthMetricStateCopy> = {
+  empty: {
+    title: 'Data not available yet',
+    description: 'Analytics data for this metric is not available for the selected foundation.',
+    icon: 'fa-light fa-chart-column',
+    retryable: false,
+  },
+  failed: {
+    title: 'This metric could not be loaded',
+    description: 'Other available metrics are unaffected. Try loading this metric again.',
+    icon: 'fa-light fa-triangle-exclamation',
+    retryable: true,
+  },
+  denied: {
+    title: 'You do not have access to this metric',
+    description: 'Contact your administrator if you need access.',
+    icon: 'fa-light fa-lock',
+    retryable: false,
+  },
+  unverifiable: {
+    title: 'Access could not be verified',
+    description: 'We could not confirm access to this metric right now. Your permissions have not changed.',
+    icon: 'fa-light fa-rotate-right',
+    retryable: true,
+  },
+};
+
 /**
  * Primary foundation health metrics configuration
  * NOTE: This contains only UI configuration (icons, categories, test IDs). Data values come from APIs or fallback to mock data.
@@ -348,7 +379,7 @@ export const ORG_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
   },
   {
-    title: 'Maintainers',
+    title: ORG_MAINTAINER_ROLES_LABEL,
     icon: 'fa-light fa-user-check',
     chartType: 'bar',
     category: 'contributors',

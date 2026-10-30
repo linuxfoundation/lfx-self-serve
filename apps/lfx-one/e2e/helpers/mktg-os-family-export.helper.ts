@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS } from '@lfx-one/shared/constants';
 import type { MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { DOCUMENT_PROJECT, setupDocuments } from './mktg-os-documents.helper';
-import { draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
+import { columnAssetRevisionResponse, draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
 
 /** Only the authenticated shell uses harness state. Domain traffic is entirely synthetic. */
 export async function openFamilyExports(
@@ -21,6 +21,9 @@ export async function openFamilyExports(
     lookupStatus?: number;
     result?: 'pending' | 'failed';
     holdList?: boolean;
+    holdPrint?: boolean;
+    approvedFamily?: boolean;
+    allAssets?: boolean;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -49,10 +52,10 @@ export async function openFamilyExports(
     groups: MKTG_DOCUMENT_TYPES.map((entry) => ({
       type: entry,
       documents:
-        entry.agentKey === type.agentKey && !options.empty
+        !options.empty && (entry.agentKey === type.agentKey || (options.approvedFamily && Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)))
           ? [
               {
-                agentKey: type.agentKey,
+                agentKey: entry.agentKey,
                 documentId: 'living',
                 revisionCount: 1,
                 latestRevisionId: revision.id,
@@ -69,7 +72,37 @@ export async function openFamilyExports(
     if (options.holdList) return;
     return route.fulfill({ status: options.writer === false ? 403 : 200, json: options.writer === false ? { code: 'FORBIDDEN' } : listing });
   });
-  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', (route) => route.fulfill({ json: response }));
+  let releasePrint: () => void = () => undefined;
+  const printGate = new Promise<void>((resolve) => {
+    releasePrint = resolve;
+  });
+  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', async (route) => {
+    if (options.holdPrint) await printGate;
+    return route.fulfill({ json: response });
+  });
+  const members = options.allAssets
+    ? MKTG_DOCUMENT_TYPES.filter((entry) => Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)).map((entry) =>
+        familyExportMember({ agentKey: entry.agentKey as keyof typeof MKTG_FAMILY_EXPORT_KINDS })
+      )
+    : [member];
+  if (options.allAssets) {
+    for (const current of members) {
+      const asset = columnAssetRevisionResponse(current.agentKey);
+      const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
+      await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, async (route) => {
+        if (options.holdPrint) await printGate;
+        return route.fulfill({
+          json: {
+            ...asset,
+            project: DOCUMENT_PROJECT.uid,
+            revision,
+            revisions: [revision],
+            approvedCurrent: { revisionId: revision.id, number: revision.number },
+          },
+        });
+      });
+    }
+  }
   let record = options.existing ? familyExportRecord({ project: DOCUMENT_PROJECT.uid }) : null;
   let ready = options.result !== 'pending';
   let started = familyExportStarted(DOCUMENT_PROJECT.uid);
@@ -82,8 +115,8 @@ export async function openFamilyExports(
         status: options.lookupStatus ?? 200,
         json: {
           last: record,
-          currentMembers: options.empty ? [] : [member],
-          skippedMembers: ['brand-kit', 'boilerplates', 'faq'],
+          currentMembers: options.empty ? [] : members,
+          skippedMembers: options.allAssets ? [] : ['brand-kit', 'boilerplates', 'faq'],
           stale: options.stale ?? false,
         },
       });
@@ -121,5 +154,6 @@ export async function openFamilyExports(
       ready = true;
     },
     lookupReads: () => lookupReads,
+    releasePrint,
   };
 }

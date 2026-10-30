@@ -235,8 +235,8 @@ export class SnowflakeService {
               expectedObject !== undefined &&
               expectedObject !== false &&
               SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
-            const expectedIdentifier = options?.expectInvalidIdentifier;
-            const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
+            const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
+            const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
             const invalidRowCount = isInvalidRowCountError(error);
             const valueConversion = isValueConversionError(error);
@@ -507,6 +507,9 @@ export class SnowflakeService {
       database: requiredEnvVars.SNOWFLAKE_DATABASE!,
       warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE!,
       timeout: SNOWFLAKE_CONFIG.CONNECTION_TIMEOUT,
+      // snowflake-sdk 3.4 turned OCSP off by default; CRL validation replaces it. ADVISORY rejects
+      // a revoked certificate but not a CRL fetch or parse error, the same fail-open stance OCSP had.
+      certRevocationCheckMode: 'ADVISORY',
     };
 
     const poolOptions: PoolOptions = {

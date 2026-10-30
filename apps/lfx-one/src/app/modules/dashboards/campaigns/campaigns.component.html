@@ -279,7 +279,7 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             [deliveryType]="sendSurface()"
-            [emailStage]="selectedEmailStage() ?? ''"
+            [emailStage]="audienceQaStage()"
             (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />
@@ -385,6 +385,7 @@
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
           [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
           [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
+          [emailStage]="audienceQaStage()"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
@@ -1833,6 +1834,7 @@
             [savedBriefRefreshToken]="savedBriefRefreshToken()"
             [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
             (proceedToImplementation)="onProceedToImplementation($event)"
+            (briefDiscarded)="onPlanningBriefDiscarded()"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
         }
@@ -1871,11 +1873,13 @@
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
               [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
               [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
+              [twitterDraft]="carriedTwitterDraft()"
               [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
               [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
               [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
+              (replaceSavedBriefRequested)="onReplaceSavedBrief()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

@@ -1,36 +1,46 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_EMPLOYMENT,
+  DEFAULT_ORG_TEAM_MEMBERS,
+  EMPTY_ORG_CONTRIBUTORS_RESPONSE,
+  ORG_CONTRIBUTOR_PROJECT_COLUMNS,
+  ORG_CONTRIBUTOR_ROW_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
   ContributorCountColumn,
   OrgCommitFilters,
   OrgContributorFoundationOption,
+  OrgContributorMaintainerRoleRow,
   OrgContributorProjectOption,
   OrgContributorProjectRow,
   OrgContributorRow,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
+  OrgEmploymentFilter,
   OrgLensTimeRange,
   OrgProjectScope,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import {
-  dedupeByKey,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  orgLensTimeRangeDays,
-  toColumnar,
-  tupleKey,
-} from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { orgContributorCountColumn, orgContributorsActivityPredicate, orgContributorsCommitColumns } from '../helpers/org-contributors-sql.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { readOrgEmploymentPersonKeys } from '../helpers/org-people-employment.helper';
+import {
+  orgTeamMembersPredicate,
+  orgTeamMembersQueryOptions,
+  readOrgTeamMemberPersonKeys,
+  readWithOrgTeamMembersFallback,
+} from '../helpers/org-team-members.helper';
 import { orgProjectScopePredicate } from '../helpers/org-project-scope-sql.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCompactCache } from './valkey.service';
+import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /** Contributors tab data access — single bundled GET, time-window aggregated server-side per Item 2 A1 lock. */
 export class OrgPeopleContributorsService {
@@ -43,38 +53,77 @@ export class OrgPeopleContributorsService {
   /**
    * Aggregates contributors-daily to (account, person, project) for the window and project scope, rolled up to
    * person-grain with argmax-most-active-project. `commits` follows the commit scope; `codeActivities` is always
-   * sent so the tab can switch metric; the most-active project follows the metric.
+   * sent so the tab can switch metric; the most-active project follows the metric. Maintainer badges and the
+   * Maintainer roles tile come from the account's roles overlapping the same window and scope (lfx-self-serve#4482).
+   * `employment` (lfx-self-serve#4627) keeps the people whose ORG_PEOPLE_ALL_RANGES row for the window and scope
+   * classifies them current or former — the list, the Contributors tile and the Projects/Foundations stats and options
+   * follow it; someone with no row is listed only under `all`. The roles are not filtered: on Insights' rule the
+   * Maintainer roles tile is credited to the current employer whatever the employment pick, and badges read the same
+   * roles. `all` (the default) reads no classification and filters nothing. `teamMembers: 'exclude'`
+   * (lfx-self-serve#4685) drops CDP team members from the list, the Contributors tile and the Projects/Foundations
+   * stats and options, by the People team-member key set; and from the roles, by ORG_MAINTAINER_ROLES' own
+   * IS_CDP_TEAM_MEMBER — the Overview headline's source, so a team member holding only a role leaves both. LFX Insights
+   * leaves team members' roles unattributed (no organization), so they never reach a company's Maintainer roles. While
+   * a flag is not in the warehouse, team members stay in, the response says so (`teamMembersUnavailable`) and the
+   * roles are not stored.
    */
-  public async getContributors(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters): Promise<OrgContributorsResponse> {
+  public async getContributors(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    filters: OrgCommitFilters,
+    employment: OrgEmploymentFilter = DEFAULT_ORG_EMPLOYMENT,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgContributorsResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    // `people-contributors:v4:{timeRange}:{projectScope}` (lfx-self-serve#4164): the read is scoped by project and
-    // carries authored and merged commits; a scoped read sums the per-scope commit credit, so a `v3` entry (summed
-    // from the all-projects credit) must miss. The commit scope and metric only pick counts after the read, so they
-    // share the entry.
-    const rows = await withOrgCompactCache(
-      accountId,
-      `people-contributors:v4:${timeRange}:${filters.projectScope}`,
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope),
-      { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
+    // `people-contributors:v5:{timeRange}:{projectScope}` (lfx-self-serve#4482): the rows no longer carry the
+    // declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric, employment and team members
+    // only pick after the read, so they share the entry. The roles filter team members in SQL, so their entry is per
+    // pick: `people-contributors-roles:v2:{timeRange}:{projectScope}:{teamMembers}` (`v1` held every role).
+    let rolesTeamMembersUnavailable = false;
+    const [rows, roles, employmentKeys, teamMemberKeys] = await Promise.all([
+      withOrgCompactCache(
+        accountId,
+        `people-contributors:v5:${timeRange}:${filters.projectScope}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchPersonProjectRows(accountId, timeRange, filters.projectScope),
+        { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
+      ),
+      withOrgCache(
+        accountId,
+        `people-contributors-roles:v2:${timeRange}:${filters.projectScope}:${teamMembers}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        async () => {
+          const fetched = await readWithOrgTeamMembersFallback(teamMembers, 'get_org_people_contributors_roles', (pick) =>
+            this.fetchMaintainerRoles(accountId, timeRange, filters.projectScope, pick)
+          );
+          rolesTeamMembersUnavailable = fetched.teamMembersUnavailable;
+          return fetched.value;
+        },
+        isMaintainerRoleRows,
+        // `null` (roles table missing) is served as unavailable — no badges, no tile count — and never stored; nor
+        // are roles read with team members while the flag is missing.
+        (value) => value !== null && !rolesTeamMembersUnavailable
+      ),
+      readOrgEmploymentPersonKeys(this.snowflakeService, accountId, timeRange, filters.projectScope, employment),
+      readOrgTeamMemberPersonKeys(this.snowflakeService, accountId, teamMembers),
+    ]);
+    const excluded = teamMemberKeys.excluded;
+    const keptRows = rows.filter(
+      (row) => (employmentKeys === null || employmentKeys.has(row.PERSON_KEY)) && (excluded === null || !excluded.has(row.PERSON_KEY))
     );
-    return buildResponse(accountId, timeRange, filters, rows);
+    const response = buildResponse(accountId, timeRange, filters, keptRows, roles);
+    return teamMemberKeys.unavailable || rolesTeamMembersUnavailable ? { ...response, teamMembersUnavailable: true } : response;
   }
 
   /**
    * Single SQL pass; cutoff and scope inlined (allow-listed) so the planner can fold them, only `account_id` is bound. dbt model gates bots.
-   * A commit can be authored on an LF and a non-LF project (a mirror). `daily_commits` credits it once across all
-   * projects, so a scoped read sums `daily_scope_commits`, which credits it once within the row's own scope: the
-   * per-scope count then matches the Code page's distinct commits for that scope.
+   * The commit columns follow the project scope ({@link orgContributorsCommitColumns}).
    */
   private async fetchPersonProjectRows(accountId: string, timeRange: OrgLensTimeRange, projectScope: OrgProjectScope): Promise<ContributorPersonProjectRow[]> {
-    const cutoffSnowflake = timeRangeCutoffSnowflake(timeRange);
-    const datePredicate = cutoffSnowflake ? `AND activity_date >= ${cutoffSnowflake}` : '';
-    const [commitsColumn, mergedCommitsColumn] =
-      projectScope === 'all' ? ['daily_commits', 'daily_merged_commits'] : ['daily_scope_commits', 'daily_scope_merged_commits'];
+    const columns = orgContributorsCommitColumns(projectScope);
 
     const query = `
       SELECT
@@ -90,15 +139,13 @@ export class OrgPeopleContributorsService {
         MAX(foundation_id) AS foundation_id,
         MAX(foundation_name) AS foundation_name,
         MAX(foundation_slug) AS foundation_slug,
-        SUM(${commitsColumn}) AS commits,
-        SUM(${mergedCommitsColumn}) AS merged_commits,
+        SUM(${columns.commits}) AS commits,
+        SUM(${columns.mergedCommits}) AS merged_commits,
         SUM(daily_code_activities) AS code_activities,
-        MAX(activity_date) AS last_active_date,
-        BOOLOR_AGG(is_declared_maintainer_for_project) AS is_declared_maintainer_for_project,
-        BOOLOR_AGG(is_declared_maintainer_for_org) AS is_declared_maintainer_for_org
+        MAX(activity_date) AS last_active_date
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
       WHERE account_id = ?
-        ${datePredicate}
+        ${orgContributorsActivityPredicate(timeRange)}
         ${orgProjectScopePredicate(projectScope)}
       GROUP BY person_key, project_id
     `;
@@ -106,20 +153,53 @@ export class OrgPeopleContributorsService {
     const result = await this.snowflakeService.execute<ContributorPersonProjectRow>(query, [accountId]);
     return result.rows;
   }
-}
 
-/** Snowflake date-cutoff SQL fragment (inline, not bound — the day count comes from the allow-listed range) so the planner can fold it; null for 'all' (all time — the dbt model keeps the full history). */
-function timeRangeCutoffSnowflake(timeRange: OrgLensTimeRange): string | null {
-  return timeRange === 'all' ? null : `DATEADD(day, -${orgLensTimeRangeDays(timeRange)}, CURRENT_DATE())`;
+  /**
+   * The account's maintainer roles overlapping the window in the project scope, whether or not the person has code in
+   * it, CDP team members' roles left out under `exclude`; `null` when the roles table is missing.
+   */
+  private fetchMaintainerRoles(
+    accountId: string,
+    timeRange: OrgLensTimeRange,
+    projectScope: OrgProjectScope,
+    teamMembers: OrgTeamMembersFilter
+  ): Promise<OrgContributorMaintainerRoleRow[] | null> {
+    const overlap = orgMaintainerRoleOverlap(timeRange);
+    const query = `
+      SELECT PERSON_KEY, MEMBER_ID, SEGMENT_ID, PROJECT_ID
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      WHERE ACCOUNT_ID = ?
+        AND ${overlap.sql}
+        ${orgProjectScopePredicate(projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(teamMembers, 'IS_CDP_TEAM_MEMBER')}
+    `;
+    return readMaintainerRoles<OrgContributorMaintainerRoleRow>(
+      this.snowflakeService,
+      'ORG_MAINTAINER_ROLES',
+      query,
+      [accountId, ...overlap.binds],
+      orgTeamMembersQueryOptions(teamMembers)
+    );
+  }
 }
 
 /**
  * Single O(N) pass over (person, project) rows to populate projects[], contributors[] (argmax most-active by the
  * metric), stats, foundationOptions[], projectOptions[]. `commits` is the commit scope's column (authored or merged).
+ * A person is a Maintainer when they hold a role in `roles`; a project row, when they hold one on that project.
+ * `roles` is `null` when the roles table is missing: nobody is badged and the Maintainer roles stat is `null`.
  */
-function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: OrgCommitFilters, raw: ContributorPersonProjectRow[]): OrgContributorsResponse {
+function buildResponse(
+  accountId: string,
+  timeRange: OrgLensTimeRange,
+  filters: OrgCommitFilters,
+  raw: ContributorPersonProjectRow[],
+  roles: OrgContributorMaintainerRoleRow[] | null
+): OrgContributorsResponse {
+  const maintainerPeople = new Set((roles ?? []).map((role) => role.PERSON_KEY));
+  const maintainerPersonProjects = new Set((roles ?? []).map((role) => tupleKey([role.PERSON_KEY, role.PROJECT_ID])));
   const commitsColumn: ContributorCountColumn = filters.commitScope === 'merged' ? 'MERGED_COMMITS' : 'COMMITS';
-  const mostActiveColumn: ContributorCountColumn = filters.metric === 'code' ? 'CODE_ACTIVITIES' : commitsColumn;
+  const mostActiveColumn: ContributorCountColumn = orgContributorCountColumn(filters);
   const projects: OrgContributorProjectRow[] = [];
   const personMap = new Map<string, OrgContributorRow>();
   const personMostActive = new Map<string, ContributorPersonProjectRow>();
@@ -137,7 +217,7 @@ function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: 
       foundationId: row.FOUNDATION_ID,
       foundationName: row.FOUNDATION_NAME,
       foundationSlug: row.FOUNDATION_SLUG,
-      role: row.IS_DECLARED_MAINTAINER_FOR_PROJECT === true ? 'Maintainer' : 'Contributor',
+      role: maintainerPersonProjects.has(tupleKey([row.PERSON_KEY, row.PROJECT_ID])) ? 'Maintainer' : 'Contributor',
       commits: row[commitsColumn] ?? 0,
       codeActivities: row.CODE_ACTIVITIES ?? 0,
       lastActiveTs: toIsoDate(row.LAST_ACTIVE_DATE),
@@ -170,7 +250,7 @@ function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: 
         lfid: row.LFID,
         lfUsername: row.LF_USERNAME,
         cdpMemberId: row.CDP_MEMBER_ID,
-        role: row.IS_DECLARED_MAINTAINER_FOR_ORG === true ? 'Maintainer' : 'Contributor',
+        role: maintainerPeople.has(row.PERSON_KEY) ? 'Maintainer' : 'Contributor',
         commits,
         codeActivities,
         lastActiveTs,
@@ -186,10 +266,6 @@ function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: 
       if (lastActiveTs && (!existing.lastActiveTs || lastActiveTs > existing.lastActiveTs)) {
         existing.lastActiveTs = lastActiveTs;
       }
-      // Maintainer-for-org is denormalized to every (person, *) row but BOOLOR_AGG is paranoid against partial NULLs upstream.
-      if (row.IS_DECLARED_MAINTAINER_FOR_ORG === true && existing.role !== 'Maintainer') {
-        existing.role = 'Maintainer';
-      }
       const currentMost = personMostActive.get(row.PERSON_KEY);
       if (currentMost && compareMostActive(row, currentMost, mostActiveColumn) < 0) {
         personMostActive.set(row.PERSON_KEY, row);
@@ -200,7 +276,7 @@ function buildResponse(accountId: string, timeRange: OrgLensTimeRange, filters: 
   }
 
   const contributors = Array.from(personMap.values());
-  const stats = computeStats(contributors, distinctProjectIds.size, distinctFoundationIds.size);
+  const stats = computeStats(roles, contributors.length, distinctProjectIds.size, distinctFoundationIds.size);
 
   const foundationOptions = Array.from(foundationMap.values()).sort((a, b) => a.foundationName.localeCompare(b.foundationName));
   const projectOptions = Array.from(projectMap.values()).sort((a, b) => a.projectName.localeCompare(b.projectName));
@@ -228,15 +304,20 @@ function compareMostActive(a: ContributorPersonProjectRow, b: ContributorPersonP
   return a.PROJECT_ID.localeCompare(b.PROJECT_ID);
 }
 
-/** Item 3 lock: distinct people by role, distinct projects, distinct (non-null) foundations — all over the BFF response, not the active filter. */
-function computeStats(contributors: OrgContributorRow[], projects: number, foundations: number): OrgContributorStatsBaseline {
-  let maintainers = 0;
-  for (const c of contributors) {
-    if (c.role === 'Maintainer') maintainers++;
-  }
+/**
+ * Item 3 lock: all over the BFF response, not the active filter. Maintainer roles are distinct (member, Insights
+ * project) pairs overlapping the window, with or without code (`null` when the roles are unavailable); Contributors
+ * are everyone with code in it.
+ */
+function computeStats(
+  roles: OrgContributorMaintainerRoleRow[] | null,
+  contributors: number,
+  projects: number,
+  foundations: number
+): OrgContributorStatsBaseline {
   return {
-    maintainers,
-    contributors: contributors.length - maintainers,
+    maintainerRoles: roles === null ? null : new Set(roles.map((role) => tupleKey([role.MEMBER_ID, role.SEGMENT_ID]))).size,
+    contributors,
     projects,
     foundations,
   };
@@ -326,4 +407,14 @@ function isStoredString(cell: unknown): boolean {
 /** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
 function isStoredNullableString(cell: unknown): boolean {
   return cell === null || isStoredString(cell);
+}
+
+/** A stored roles entry is an array of rows whose keys are all strings; anything else is a miss. */
+function isMaintainerRoleRows(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((row: Partial<OrgContributorMaintainerRoleRow> | null) =>
+      (['PERSON_KEY', 'MEMBER_ID', 'SEGMENT_ID', 'PROJECT_ID'] as const).every((column) => typeof row?.[column] === 'string')
+    )
+  );
 }

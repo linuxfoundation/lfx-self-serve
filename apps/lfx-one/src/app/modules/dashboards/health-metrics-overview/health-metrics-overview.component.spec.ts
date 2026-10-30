@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
+import { HealthMetricsBlankCardComponent } from '../components/health-metrics-blank-card/health-metrics-blank-card.component';
 import { OverviewCardComponent } from './components/overview-card/overview-card.component';
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
 
@@ -38,6 +39,7 @@ describe('HealthMetricsOverviewComponent', () => {
             getEventsSponsorship: pending,
             getTrainingEnrollment: pending,
             getOverviewCode: pending,
+            getOverviewNewsletters: pending,
             getOverviewBoard: pending,
           },
         },
@@ -56,6 +58,7 @@ describe('HealthMetricsOverviewComponent', () => {
       'overview-churn-loading',
       'overview-balance-loading',
       'overview-events-loading',
+      'overview-newsletter-loading',
       'overview-training-loading',
       'overview-code-loading',
       'overview-board-loading',
@@ -69,6 +72,7 @@ const CARD_SELECTORS = [
   'lfx-overview-churn-card',
   'lfx-overview-balance-card',
   'lfx-overview-events-card',
+  'lfx-overview-newsletter-card',
   'lfx-overview-training-card',
   'lfx-overview-code-card',
   'lfx-overview-board-card',
@@ -99,7 +103,7 @@ describe('HealthMetricsOverviewComponent blank state', () => {
       imports: [HealthMetricsOverviewComponent],
       providers: [HealthMetricsChromeService, { provide: UserService, useValue: { impersonating: signal(false) } }],
     })
-      .overrideComponent(HealthMetricsOverviewComponent, { set: { imports: STUB_CARDS } })
+      .overrideComponent(HealthMetricsOverviewComponent, { set: { imports: [HealthMetricsBlankCardComponent, ...STUB_CARDS] } })
       .compileComponents();
     const fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
     fixture.detectChanges();

@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, input, output, Signal, signal 
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_DOCUMENT_COMMENT_LIMITS } from '@lfx-one/shared/constants';
 import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
@@ -17,7 +18,7 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
 
 @Component({
   selector: 'lfx-mktg-comments-panel',
-  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent],
+  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent, MktgSkeletonComponent],
   templateUrl: './mktg-comments-panel.component.html',
 })
 export class MktgCommentsPanelComponent {
@@ -37,11 +38,14 @@ export class MktgCommentsPanelComponent {
   public readonly ready = output<MktgRedraftLanding>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
 
+  protected readonly expandedThreads = signal(new Set<string>());
   protected readonly accepted = signal(false);
   protected readonly runPending = signal(false);
   protected readonly retrySend = signal(false);
   protected readonly releaseAvailable = signal(false);
   protected readonly activity = signal<MktgRunActivity[]>([]);
+  /** The redraft ended without landing (a terminal failure): its feed stays on screen, closed. */
+  protected readonly runEnded = signal(false);
   protected readonly startedAt = signal(0);
   protected readonly message = signal('');
 
@@ -66,9 +70,11 @@ export class MktgCommentsPanelComponent {
     toObservable(this.comments.draftScopeKey)
       .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        this.expandedThreads.set(new Set());
         this.work?.unsubscribe();
         this.message.set('');
         this.activity.set([]);
+        this.runEnded.set(false);
         this.runPending.set(false);
         this.landingTab = undefined;
         this.syncRecovery();
@@ -77,6 +83,14 @@ export class MktgCommentsPanelComponent {
     this.destroyRef.onDestroy(() => {
       this.work?.unsubscribe();
       this.comments.select(null);
+    });
+  }
+  protected setExpanded(id: string, expanded: boolean): void {
+    this.expandedThreads.update((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(id);
+      else next.delete(id);
+      return next;
     });
   }
   protected refresh(): void {
@@ -150,6 +164,9 @@ export class MktgCommentsPanelComponent {
     const owner = this.comments.draftScopeKey();
     this.work?.unsubscribe();
     this.runPending.set(true);
+    // A new attempt starts its own feed: the closed feed of a failed one never reopens as under way.
+    this.activity.set([]);
+    this.runEnded.set(false);
     this.accepted.set(this.redrafts.hasAcceptedAttempt(this.scope()));
     this.releaseAvailable.set(false);
     this.startedAt.set(Date.now());
@@ -172,6 +189,7 @@ export class MktgCommentsPanelComponent {
           }
           if (progress.type === 'failed') {
             this.storing = false;
+            this.runEnded.set(true);
             this.message.set(progress.message);
           }
           if (progress.type === 'ready') {
@@ -180,7 +198,10 @@ export class MktgCommentsPanelComponent {
           }
         },
         error: (error: unknown) => {
-          if (owner === this.comments.draftScopeKey()) this.showError(error);
+          if (owner !== this.comments.draftScopeKey()) return;
+          // A poll error after an accepted attempt is reconnectable (the agent may still be working): only an attempt that never took closes the feed.
+          if (!this.redrafts.hasAcceptedAttempt(this.scope())) this.runEnded.set(true);
+          this.showError(error);
         },
         complete: () => {
           if (owner !== this.comments.draftScopeKey()) return;

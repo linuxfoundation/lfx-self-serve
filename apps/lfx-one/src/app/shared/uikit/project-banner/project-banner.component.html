@@ -1,0 +1,7 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Icon is decorative: the message carries the meaning. 16px per library. -->
+<span class="inline-flex text-[16px]" aria-hidden="true" data-testid="ui-project-banner-icon"><i [class]="iconClasses()"></i></span>
+<span data-testid="ui-project-banner-message"><ng-content /></span>
+<ng-content select="[banner-action]" />

@@ -469,14 +469,26 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [
       'people-all:v4:365d:all',
       'people-all:v4:roster',
-      'people-contributors:v4:all:all',
+      'people-contributors:v5:all:all',
       'people-former:v3:all:all',
       'people-event-attendees:v2',
       'people-trainees:v4:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
     }
-    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-all:v3:365d', 'people-contributors:v3:all:all', 'people-trainees:v2', 'people-trainees:v3:all']) {
+    for (const subResource of [
+      UNCAPPED_SUB_RESOURCE,
+      'people-all:v3:365d',
+      'people-contributors:v3:all:all',
+      'people-contributors:v4:all:all',
+      'people-contributors-roles:v2:all:all:exclude',
+      'people-detail-roles:v1:person-one:365d',
+      'maintainer-roles:v1',
+      'foundations:v2',
+      'memberships-projects:v3:cncf',
+      'people-trainees:v2',
+      'people-trainees:v3:all',
+    ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
     for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, ...allOrgPeopleDirectoryNamespaces()]) {

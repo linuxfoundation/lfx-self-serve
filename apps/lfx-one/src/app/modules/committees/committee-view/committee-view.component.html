@@ -517,7 +517,8 @@
               [votes]="votes()"
               [votesLoading]="votesLoading()"
               (refresh)="onVotesRefreshed()"
-              (voteExtended)="onVoteExtended($event)" />
+              (voteExtended)="onVoteExtended($event)"
+              (voteClosed)="onVoteClosed($event)" />
           }
         }
         @case ('meetings') {

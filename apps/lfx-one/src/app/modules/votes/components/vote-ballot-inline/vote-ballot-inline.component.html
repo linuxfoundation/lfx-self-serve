@@ -3,101 +3,105 @@
 
 <!-- Phone touch targets use an exact min-h-[44px] (14px html root; see drawer-pattern.md § Phone sheet and touch targets). -->
 <div class="flex flex-col gap-2 w-full" data-testid="dashboard-pending-actions-vote-ballot">
-  <p class="text-xs font-medium text-gray-700">{{ question()?.prompt }}</p>
+  @if (impersonating()) {
+    <p class="text-sm text-gray-700" role="note" data-testid="dashboard-pending-actions-vote-readonly">{{ impersonationNotice }}</p>
+    <lfx-button label="Close" severity="secondary" (onClick)="cancelled.emit()" data-testid="dashboard-pending-actions-vote-readonly-close" />
+  } @else {
+    <p class="text-xs font-medium text-gray-700">{{ question()?.prompt }}</p>
 
-  <div [formGroup]="form">
-    @if (isMultipleChoice()) {
-      <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
-        @for (choice of question()?.choices ?? []; track choice.choice_id) {
-          <label
-            class="flex items-center gap-1.5 text-sm sm:text-xs break-words"
-            [class]="touchClass()"
-            [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id">
-            <p-checkbox [value]="choice.choice_id" [formControlName]="question()!.question_id" [binary]="false" />
-            <span>{{ choice.choice_text }}</span>
-          </label>
-        }
-      </div>
-    } @else {
-      <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
-        @for (choice of question()?.choices ?? []; track choice.choice_id) {
-          <lfx-radio-button
-            [form]="form"
-            [control]="question()!.question_id"
-            [name]="question()!.question_id"
-            [value]="choice.choice_id"
-            [inputId]="'vote-ballot-inline-choice-' + choice.choice_id"
-            [label]="choice.choice_text"
-            [touchTarget]="isMobile()"
-            [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id" />
-        }
-      </div>
-    }
-  </div>
-
-  @if (commentPromptsData().length > 0) {
-    <div class="flex flex-col gap-2" [formGroup]="commentForm" data-testid="dashboard-pending-actions-vote-comments">
-      @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
-        <div class="flex flex-col gap-1" [attr.data-testid]="'dashboard-pending-actions-vote-comment-' + commentData.prompt.prompt_id">
-          <label [for]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id" class="text-xs font-medium text-gray-700">
-            {{ commentData.prompt.prompt }} <span class="font-normal text-gray-400">(optional)</span>
-          </label>
-          <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
-               the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
-          <lfx-textarea
-            [form]="commentForm"
-            [control]="commentData.prompt.prompt_id"
-            [id]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id"
-            [rows]="2"
-            styleClass="w-full text-xs"
-            [dataTest]="'dashboard-pending-actions-vote-comment-textarea-' + commentData.prompt.prompt_id">
-          </lfx-textarea>
-          <div class="flex justify-between">
-            @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
-              <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
-            } @else {
-              <span></span>
-            }
-            <span class="text-xs text-gray-400" [attr.data-testid]="'dashboard-pending-actions-vote-comment-counter-' + commentData.prompt.prompt_id">
-              {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
-            </span>
-          </div>
+    <div [formGroup]="form">
+      @if (isMultipleChoice()) {
+        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
+          @for (choice of question()?.choices ?? []; track choice.choice_id) {
+            <label
+              class="flex items-center gap-1.5 text-sm sm:text-xs break-words"
+              [class]="touchClass()"
+              [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id">
+              <p-checkbox [value]="choice.choice_id" [formControlName]="question()!.question_id" [binary]="false" />
+              <span>{{ choice.choice_text }}</span>
+            </label>
+          }
+        </div>
+      } @else {
+        <div class="flex flex-col sm:flex-row sm:flex-wrap gap-1 sm:gap-3">
+          @for (choice of question()?.choices ?? []; track choice.choice_id) {
+            <lfx-radio-button
+              [form]="form"
+              [control]="question()!.question_id"
+              [name]="question()!.question_id"
+              [value]="choice.choice_id"
+              [inputId]="'vote-ballot-inline-choice-' + choice.choice_id"
+              [label]="choice.choice_text"
+              [touchTarget]="isMobile()"
+              [attr.data-testid]="'dashboard-pending-actions-vote-choice-' + choice.choice_id" />
+          }
         </div>
       }
     </div>
-  }
 
-  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1" data-testid="dashboard-pending-actions-vote-footer">
-    @if (allowAbstain()) {
-      <label
-        class="flex items-center gap-1.5 text-sm sm:text-xs text-gray-600"
-        [class]="touchClass()"
-        data-testid="dashboard-pending-actions-vote-abstain-label">
-        <p-checkbox [formControl]="abstainControl" [binary]="true" data-testid="dashboard-pending-actions-vote-abstain" />
-        <span>Abstain</span>
-      </label>
+    @if (commentPromptsData().length > 0) {
+      <div class="flex flex-col gap-2" [formGroup]="commentForm" data-testid="dashboard-pending-actions-vote-comments">
+        @for (commentData of commentPromptsData(); track commentData.prompt.prompt_id) {
+          <div class="flex flex-col gap-1" [attr.data-testid]="'dashboard-pending-actions-vote-comment-' + commentData.prompt.prompt_id">
+            <label [for]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id" class="text-xs font-medium text-gray-700">
+              {{ commentData.prompt.prompt }} <span class="font-normal text-gray-400">(optional)</span>
+            </label>
+            <!-- No native [maxlength] — it counts UTF-16 units and would block emoji-heavy comments below
+               the real code-point limit; the maxCodePoints validator + counter enforce the cap instead. -->
+            <lfx-textarea
+              [form]="commentForm"
+              [control]="commentData.prompt.prompt_id"
+              [id]="'dashboard-pending-actions-vote-comment-text-' + commentData.prompt.prompt_id"
+              [rows]="2"
+              styleClass="w-full text-xs"
+              [dataTest]="'dashboard-pending-actions-vote-comment-textarea-' + commentData.prompt.prompt_id">
+            </lfx-textarea>
+            <div class="flex justify-between">
+              @if (commentData.control.touched && commentData.control.errors?.['maxCodePoints']) {
+                <p class="text-red-500 text-xs">Comment must be {{ commentResponseMaxLength }} characters or fewer.</p>
+              } @else {
+                <span></span>
+              }
+              <span class="text-xs text-gray-400" [attr.data-testid]="'dashboard-pending-actions-vote-comment-counter-' + commentData.prompt.prompt_id">
+                {{ commentData.control.value | codePointLength }}/{{ commentResponseMaxLength }}
+              </span>
+            </div>
+          </div>
+        }
+      </div>
     }
-    <!-- Submit is first in the DOM so focus order matches what a phone shows (Submit above Cancel); sm+ reverses the row so Cancel stays on the left. -->
-    <div class="flex flex-col sm:flex-row-reverse gap-2">
-      <lfx-button
-        size="small"
-        severity="primary"
-        label="Submit"
-        [fluid]="isMobile()"
-        [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
-        [disabled]="submitDisabled()"
-        [loading]="submitting()"
-        (onClick)="onSubmit()"
-        data-testid="dashboard-pending-actions-vote-submit" />
-      <lfx-button
-        size="small"
-        severity="secondary"
-        [outlined]="true"
-        label="Cancel"
-        [fluid]="isMobile()"
-        [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
-        (onClick)="cancelled.emit()"
-        data-testid="dashboard-pending-actions-vote-cancel" />
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1" data-testid="dashboard-pending-actions-vote-footer">
+      @if (allowAbstain()) {
+        <label
+          class="flex items-center gap-1.5 text-sm sm:text-xs text-gray-600"
+          [class]="touchClass()"
+          data-testid="dashboard-pending-actions-vote-abstain-label">
+          <p-checkbox [formControl]="abstainControl" [binary]="true" data-testid="dashboard-pending-actions-vote-abstain" />
+          <span>Abstain</span>
+        </label>
+      }
+      <!-- Submit is first in the DOM so focus order matches what a phone shows (Submit above Cancel); sm+ reverses the row so Cancel stays on the left. -->
+      <div class="flex flex-col sm:flex-row-reverse gap-2">
+        <lfx-button
+          size="small"
+          severity="primary"
+          label="Submit"
+          [fluid]="isMobile()"
+          [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
+          [disabled]="submitDisabled()"
+          [loading]="submitting()"
+          (onClick)="onSubmit()"
+          data-testid="dashboard-pending-actions-vote-submit" />
+        <lfx-button
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          label="Cancel"
+          [fluid]="isMobile()"
+          [styleClass]="isMobile() ? 'w-full min-h-[44px]' : ''"
+          (onClick)="cancelled.emit()"
+          data-testid="dashboard-pending-actions-vote-cancel" />
+      </div>
     </div>
-  </div>
+  }
 </div>

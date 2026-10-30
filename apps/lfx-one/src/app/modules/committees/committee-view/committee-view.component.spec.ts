@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import { PollStatus } from '@lfx-one/shared/enums';
 import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { getGroupCommands } from '@lfx-one/shared/utils';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
@@ -186,6 +187,21 @@ describe('CommitteeViewComponent', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('holds a row-menu close in parent state, so the vote stays ended after the Votes tab is rebuilt (#4744)', () => {
+    currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+    const voteService = TestBed.inject(VoteService);
+    vi.mocked(voteService.getVotesByCommittee).mockReturnValue(of([{ uid: 'vote-1', status: PollStatus.ACTIVE } as unknown as Vote]));
+
+    const component = createComponent();
+    flush();
+    expect(component.votes()[0].status).toBe(PollStatus.ACTIVE);
+
+    component.onVoteClosed({ uid: 'vote-1', status: PollStatus.ENDED, early_end_time: '2026-10-29T10:00:00Z' } as unknown as Vote);
+    flush();
+    // committee-votes is destroyed and recreated on a tab switch; it reads votes() again, which must still say ended.
+    expect(component.votes()[0]).toMatchObject({ status: PollStatus.ENDED, early_end_time: '2026-10-29T10:00:00Z' });
   });
 
   it('keeps the votes, badge and silence when a background poll fails, then retries (GH-4078)', () => {

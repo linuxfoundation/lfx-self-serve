@@ -6,10 +6,8 @@ import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsBlankCopy, HealthMetricsBlankTile, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
-  HealthMetricsOverviewBlankCopy,
-  HealthMetricsOverviewBlankTile,
   HealthMetricsOverviewEmptyCopy,
   HealthMetricsOverviewEmptyStateCopy,
   HealthMetricsOverviewExploreLink,
@@ -38,6 +36,9 @@ export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
 
 /** Board members read for the Overview table; one past it flags a truncated read. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;
+
+/** Newsletters read for the Overview chart; one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP = 1000;
 
 /** Each card's title and its tooltip, in the PCC copy. */
 export const HEALTH_METRICS_OVERVIEW_CARDS = {
@@ -68,6 +69,10 @@ export const HEALTH_METRICS_OVERVIEW_CARDS = {
   code: {
     title: 'Code contribution',
     info: 'The data here corresponds to the selected time period at the top right of the page and originates from LFX Insights.\n\nAll percentage comparisons are against previous period’s figures.\n\n(Source: Insights)',
+  },
+  newsletter: {
+    title: 'Newsletter engagement',
+    info: 'Newsletters sent to this foundation’s newsletter audience',
   },
   board: {
     title: 'Board meeting participation',
@@ -195,6 +200,19 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
       reasons: [],
     },
   },
+  newsletter: {
+    icon: 'fa-light fa-paper-plane',
+    ytd: {
+      title: 'No newsletters sent',
+      text: 'Subscribers, opens and clicks are tracked for newsletters sent through LFX. Nothing has gone out this year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No newsletters in {Y}',
+      text: 'No newsletter was sent through LFX this year. Newsletters sent with other email tools aren’t tracked.',
+      reasons: [],
+    },
+  },
   board: {
     icon: 'fa-light fa-users-rectangle',
     ytd: {
@@ -248,10 +266,10 @@ export const HEALTH_METRICS_OVERVIEW_BLANK_COPY = {
       'A later year may have data to compare',
     ],
   },
-} as const satisfies Record<'ytd' | 'past', HealthMetricsOverviewBlankCopy>;
+} as const satisfies Record<'ytd' | 'past', HealthMetricsBlankCopy>;
 
 /** The blank card's icons, left to right: the outer tiles sit lower and tilt outward; the pulse sits centred, a size up. */
-export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsOverviewBlankTile[] = [
+export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsBlankTile[] = [
   { icon: 'fa-light fa-users', transform: 'translateY(22px) rotate(-14deg)', iconSizePx: 20 },
   { icon: 'fa-light fa-ticket', transform: 'translateY(6px) rotate(-7deg)', iconSizePx: 20 },
   { icon: 'fa-light fa-heart-pulse', transform: 'none', iconSizePx: 22 },
@@ -269,6 +287,21 @@ export const HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK: HealthMetricsOverviewEx
   queryParams: {},
   replaceQueryParams: true,
 };
+
+/** The newsletter card's YTD empty-state action; the card adds the foundation. */
+export const HEALTH_METRICS_OVERVIEW_CREATE_NEWSLETTER_LINK: HealthMetricsOverviewExploreLink = {
+  label: 'Create Newsletter',
+  commands: ['/foundation/newsletters/create'],
+  queryParams: {},
+  replaceQueryParams: true,
+};
+
+/** The newsletter card's subscriber engagement levels, in the design's words. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT = {
+  high: { label: 'High', description: 'Opened 7+ newsletters and clicked a link' },
+  medium: { label: 'Medium', description: 'Opened 3–6 newsletters' },
+  low: { label: 'Low', description: 'Opened 2 newsletters or fewer' },
+} as const;
 
 /** The "Explore …" links into each Level 2 section; each clears that section's filters on arrival. */
 export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
@@ -300,6 +333,7 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   pastEvents: { label: 'Explore Past Events', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'past', queryParams: {} },
   speakers: { label: 'Explore Speakers & Proposals', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'spk', queryParams: {} },
   training: { label: 'Explore Enrollment & Revenue', commands: [HEALTH_METRICS_BASE_PATH, 'training'], fragment: 'enroll', queryParams: {} },
+  newsletters: { label: 'Explore Newsletters', commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: 'newsletters', queryParams: { nlMode: null } },
 } as const satisfies Record<string, HealthMetricsOverviewExploreLink>;
 
 /** The design's purple for maintainers and this year's registrations; no `lfxColors` scale carries it. */
@@ -330,8 +364,8 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;
 
-/** The forecast range band behind the predicted line: the progress blue at 10%. */
-export const HEALTH_METRICS_OVERVIEW_TREND_BAND_FILL = `${lfxColors.blue[500]}1A`;
+/** The progress blue at 10%: the trend chart's forecast band and the fill under the newsletter card's open rate. */
+export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {
@@ -383,3 +417,6 @@ export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
 
 /** Board attendance at or above this share draws green; above zero amber, zero red. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE = 0.67;
+
+/** The narrowest a KPI strip item may get before the strip stacks (the design's 170px). */
+export const HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX = 170;

@@ -82,11 +82,15 @@ import {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEventsAtAGlance,
@@ -139,11 +143,10 @@ import {
   HealthMetricsTrainingCoursesQuery,
   HealthMetricsTrainingEnrollment,
   HealthMetricsTrainingEnrollmentQuery,
-  HealthMetricsTrainingPresence,
-  HealthMetricsTrainingPresenceQuery,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewCode,
+  HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
   HealthMetricsOverviewOutstandingBalance,
@@ -1105,6 +1108,40 @@ export class AnalyticsService {
   }
 
   /**
+   * Get the Health Metrics Engagement "Newsletter performance" section
+   * @param query - Foundation scope; the period pill resolves client-side
+   * @returns Observable of every period's newsletter summary and every newsletter sent, latest first
+   */
+  public getEngagementNewsletterPerformance(query: HealthMetricsEngagementNewsletterQuery): Observable<HealthMetricsEngagementNewsletterPerformance> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty section renders "nothing sent", so a swallowed failure would state that as fact.
+    return this.http.get<HealthMetricsEngagementNewsletterPerformance>('/api/analytics/engagement-newsletter-performance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-newsletter-performance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Newsletter recipient engagement" table
+   * @param query - Foundation scope; search and the segment cut resolve client-side
+   * @returns Observable of the latest newsletter and every one of its recipients, most engaged first
+   */
+  public getEngagementNewsletterRecipients(query: HealthMetricsEngagementRecipientQuery): Observable<HealthMetricsEngagementNewsletterRecipients> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table reads as "no newsletter sent", so a swallowed failure would state that as fact.
+    return this.http.get<HealthMetricsEngagementNewsletterRecipients>('/api/analytics/engagement-newsletter-recipients', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-newsletter-recipients failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
    * Get the Health Metrics Engagement "Representatives" table
    * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
    * @returns Observable of every representative with all four periods and the per-period caption counts
@@ -1178,7 +1215,7 @@ export class AnalyticsService {
   public getEventsAtAGlance(query: HealthMetricsEventsAtAGlanceQuery): Observable<HealthMetricsEventsAtAGlance> {
     const params: Record<string, string> = { foundationSlug: query.foundationSlug };
 
-    // Errors propagate: a swallowed failure would read as "No events yet" and blank the whole tab.
+    // Errors propagate: a swallowed failure would read as a foundation with no events measured.
     return this.http.get<HealthMetricsEventsAtAGlance>('/api/analytics/events-at-a-glance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] events-at-a-glance failed', { query, error });
@@ -1482,19 +1519,6 @@ export class AnalyticsService {
     );
   }
 
-  public getTrainingPresence(query: HealthMetricsTrainingPresenceQuery): Observable<HealthMetricsTrainingPresence> {
-    const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
-
-    // Errors propagate so the tab shows its error state rather than claiming the foundation has no programme.
-    return this.http.get<HealthMetricsTrainingPresence>('/api/analytics/training-presence', { params }).pipe(
-      catchError((error: unknown) => {
-        const status = error instanceof HttpErrorResponse ? error.status : undefined;
-        console.error('[analytics] training-presence failed', { foundationSlug: query.foundationSlug, status });
-        return throwError(() => error);
-      })
-    );
-  }
-
   public getTrainingEnrollment(query: HealthMetricsTrainingEnrollmentQuery): Observable<HealthMetricsTrainingEnrollment> {
     const params = strictHttpParams().set('foundationSlug', query.foundationSlug);
 
@@ -1554,6 +1578,10 @@ export class AnalyticsService {
 
   public getOverviewCode(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewCode> {
     return this.getOverviewCard<HealthMetricsOverviewCode>('overview-code', query);
+  }
+
+  public getOverviewNewsletters(query: HealthMetricsOverviewQuery): Observable<HealthMetricsOverviewNewsletters> {
+    return this.getOverviewCard<HealthMetricsOverviewNewsletters>('overview-newsletters', query);
   }
 
   /**

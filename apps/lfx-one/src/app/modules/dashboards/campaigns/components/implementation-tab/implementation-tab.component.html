@@ -153,15 +153,15 @@
   @case ('saved') {
     <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
       <!--
-        Names the ACTION a recovery needs, rather than promising a reload just works. It does
-        not: the read is keyed on the event slug, and after a reload the page holds no URL to
-        derive one from, so the brief comes back only once the user pastes the event URL again.
-        "It will still be here if you reload" would be the same false assurance the 'error' arm
-        below exists to prevent, pointed the other way.
+        Names the ACTION a recovery needs, rather than promising a reload just works. The read is
+        keyed on the event slug: a reload keeps the event URL in `?event=` (#4756), so Planning
+        prefills it and OFFERS the saved brief, but restoring it is still the user's click.
+        "It will still be here if you reload" would skip that step — the same false assurance the
+        'error' arm below exists to prevent, pointed the other way.
       -->
       <!--
         Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
-        separate strings and drifted: the banner gained the re-entry instruction while the live
+        separate strings and drifted: the banner gained the reload instruction while the live
         region still announced only "Brief saved.", so screen-reader users got the reassurance
         without the part they cannot recover on their own. One source cannot drift.
       -->
@@ -174,6 +174,20 @@
       class="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
       data-testid="implementation-brief-save-error">
       <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ briefPersistence().message }}
+      @if (canReplaceSavedBrief()) {
+        <div class="mt-2 flex flex-col gap-2" data-testid="implementation-brief-replace">
+          <p>Opening the saved brief discards this one. To keep this one instead, replace the saved brief with it — the saved brief is overwritten.</p>
+          <div>
+            <lfx-button
+              label="Replace saved brief"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="replaceSavedBriefRequested.emit()"
+              data-testid="implementation-brief-replace-btn" />
+          </div>
+        </div>
+      }
     </div>
   }
 }
@@ -279,7 +293,12 @@
                line at tablet width and below. -->
           <div class="mt-4 flex flex-wrap items-center gap-4">
             <label class="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" formControlName="includeSearch" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <input
+                type="checkbox"
+                formControlName="includeSearch"
+                (change)="onGoogleChannelPicked('search', $event)"
+                [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
               Search Campaign
             </label>
             <!-- Hidden, not disabled, when the deployment cannot create Demand Gen: a disabled
@@ -287,7 +306,12 @@
                  create is refused either way. Search stays available, so the section is not empty. -->
             @if (demandGenAvailable()) {
               <label class="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" formControlName="includeDemandGen" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <input
+                  type="checkbox"
+                  formControlName="includeDemandGen"
+                  (change)="onGoogleChannelPicked('demand-gen', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Demand Gen Campaign
               </label>
             }
@@ -301,6 +325,8 @@
                 <input
                   type="checkbox"
                   formControlName="includePerformanceMax"
+                  (change)="onGoogleChannelPicked('performance-max', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-performance-max"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Performance Max Campaign
@@ -335,12 +361,26 @@
                 <input
                   type="checkbox"
                   formControlName="includeDisplay"
+                  (change)="onGoogleChannelPicked('display', $event)"
+                  [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                   data-testid="implementation-include-display"
                   class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                 Display Campaign
               </label>
             }
           </div>
+          <!-- #4755. The campaign-service road creates one Google type per create, so the row above is
+               an exclusive choice there; say so, since checkboxes alone read as "tick several". -->
+          <!-- Only where there is a choice to make: with Search the sole box offered, "choose one" says nothing.
+               The id is each type checkbox's `aria-describedby`, gated on the same signal. -->
+          @if (googleChannelNoteShown()) {
+            <p id="implementation-google-channel-single-note" class="mt-2 text-xs text-gray-500" data-testid="implementation-google-channel-single-note">
+              Each Google campaign type is created on its own, so choose one.
+            </p>
+          }
+          @if (googleChannelConflict(); as conflict) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-channel-conflict">{{ conflict }}</p>
+          }
         }
       </div>
 
@@ -2111,6 +2151,9 @@
             about whichever section the operator happened to be looking at.
           -->
           <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
+          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
+            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          }
           <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
             @for (field of section.fields; track field.control) {
               <div class="flex flex-col gap-1">
@@ -3641,7 +3684,7 @@
             <!--
               Which X ad account the create uses (LFXV2-3319). Shown, not chosen: `twitterConfig`
               carries no account id, and campaign-service creates under the account bound on the
-              project's X connection. An unbound connection is a certain refusal, so it blocks Create.
+              project's X connection (or, on a deployment forcing it, the LF system one).
             -->
             <div class="mb-4 flex flex-col gap-1 text-xs" data-testid="implementation-twitter-account">
               <span class="font-medium text-gray-700">Ad account</span>
@@ -3878,10 +3921,17 @@
       <!--
         Which stored images cover each platform's image slots. Only rendered once the brief is
         saved: campaign-service plans against a stored brief, and an unsaved one has no library to
-        plan against. The revision token re-reads the plan after an upload in the section above.
+        plan against. The revision token re-reads the plan after an upload in the section above,
+        or in the library upload that sits on top of the grid it feeds.
       -->
       @if (briefPersistence().briefId) {
-        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+        <div class="flex flex-col gap-5 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-slot-coverage-section">
+          <lfx-creative-library-upload
+            [projectSlug]="activeFoundationSlug()"
+            [briefId]="briefPersistence().briefId ?? ''"
+            [available]="libraryUploadAvailable()"
+            [reloadToken]="creativeLibraryRevision()"
+            (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"
             [briefId]="briefPersistence().briefId ?? ''"

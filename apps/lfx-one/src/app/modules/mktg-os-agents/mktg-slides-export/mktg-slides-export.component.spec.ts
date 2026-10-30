@@ -6,7 +6,12 @@ import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_LOGO_NOTES, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
+import {
+  MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
+  MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_LOGO_NOTES,
+  MKTG_SLIDES_EXPORT_START_MESSAGES,
+} from '@lfx-one/shared/constants';
 import {
   MktgSlidesExportLastResponse,
   MktgSlidesExportRecord,
@@ -17,7 +22,7 @@ import {
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { MktgSlidesExportComponent } from './mktg-slides-export.component';
 
@@ -69,9 +74,9 @@ describe('MktgSlidesExportComponent', () => {
   let started: MktgSlidesExportStartResponse;
   let pollResult: Observable<MktgSlidesExportResultResponse>;
   let service: {
-    last: ReturnType<typeof vi.fn>;
-    start: ReturnType<typeof vi.fn>;
-    poll: ReturnType<typeof vi.fn>;
+    last: Mock;
+    start: Mock;
+    poll: Mock;
   };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -501,6 +506,44 @@ describe('MktgSlidesExportComponent', () => {
     expect(service.last).toHaveBeenCalledTimes(4);
     expect(query('mktg-slides-export-lookup-failed')).toBeNull();
     expect(exporter.canExport()).toBe(true);
+  });
+
+  it.each([false, true])('offers Check again after the first document history failure and paint cap (late failure: %s)', async (afterCap) => {
+    await setup();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const lookup = new Subject<MktgSlidesExportLastResponse>();
+      service.last.mockReturnValueOnce(lookup);
+      fixture.componentInstance.lookupTarget.set({ project: TARGET.project, agentKey: TARGET.agentKey, documentId: TARGET.documentId });
+      await fixture.whenStable();
+      const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+      expect(exporter.canExport()).toBe(false);
+      await vi.advanceTimersByTimeAsync(MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS - 1);
+      if (afterCap) await vi.advanceTimersByTimeAsync(1);
+      lookup.error(new HttpErrorResponse({ status: 503 }));
+      await fixture.whenStable();
+      if (!afterCap) {
+        expect(exporter.visible()).toBe(false);
+        expect(query('mktg-slides-export-check-again')).toBeNull();
+        await vi.advanceTimersByTimeAsync(1);
+        await fixture.whenStable();
+      }
+      expect(exporter.visible()).toBe(true);
+      expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+      expect(exporter.disabledReason()).toContain('Use Check again below');
+      expect(exporter.canExport()).toBe(false);
+      exporter.onExport();
+      expect(service.start).not.toHaveBeenCalled();
+      query('mktg-slides-export-check-again')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(service.last).toHaveBeenCalledTimes(3);
+      expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+      expect(exporter.canExport()).toBe(true);
+      expect(service.start).not.toHaveBeenCalled();
+    } finally {
+      fixture.destroy();
+      vi.useRealTimers();
+    }
   });
 
   it('retries an Update the panel came back to as an Update, never as a second deck', async () => {

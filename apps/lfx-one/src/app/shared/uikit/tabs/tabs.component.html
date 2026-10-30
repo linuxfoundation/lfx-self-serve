@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div role="tablist" [attr.aria-label]="ariaLabel() || null" [class]="listClasses()" data-testid="ui-tabs-list">
+  @for (tab of tabs(); track tab.value; let i = $index) {
+    <button
+      #tabButton
+      type="button"
+      role="tab"
+      [class]="tabClasses()"
+      [attr.aria-selected]="value() === tab.value"
+      [attr.aria-disabled]="tab.disabled ? 'true' : null"
+      [attr.aria-label]="tab.countLabel ? tab.label + ', ' + tab.countLabel : null"
+      [attr.tabindex]="tabStopIndex() === i ? 0 : -1"
+      [attr.id]="idPrefix() ? idPrefix() + '-tab-' + tab.value : null"
+      [attr.aria-controls]="idPrefix() ? idPrefix() + '-panel-' + tab.value : null"
+      [lfxUiTooltip]="tab.disabledReason ?? ''"
+      [lfxUiTooltipDisabled]="!tab.disabled"
+      (click)="select(tab)"
+      (focus)="focusedIndex.set(i)"
+      (blur)="focusedIndex.set(null)"
+      (keydown)="onKeydown($event, i)"
+      [attr.data-testid]="'ui-tab-' + tab.value">
+      @if (tab.icon) {
+        <!-- Important width: Font Awesome 7 makes every glyph 1.25em wide, the library keeps it 1em. -->
+        <i class="inline-block h-[1em] !w-[1em] shrink-0" [class]="tab.icon" [style.font-size.px]="iconSize()" aria-hidden="true"></i>
+      }
+      <!-- The hidden 500-weight copy keeps the tab's width steady when the label turns bold. -->
+      <span
+        class="inline-grid after:invisible after:h-0 after:overflow-hidden after:font-medium after:content-[attr(data-label)]"
+        [attr.data-label]="tab.label"
+        >{{ tab.label }}</span
+      >
+      @if (tab.count !== undefined) {
+        <!-- 12px as an exact px value, not rem (14px root), matching the library. -->
+        <span class="text-[12px] font-normal tabular-nums text-ui-neutral-400" [attr.data-testid]="'ui-tab-count-' + tab.value">{{ tab.count }}</span>
+      }
+    </button>
+  }
+</div>

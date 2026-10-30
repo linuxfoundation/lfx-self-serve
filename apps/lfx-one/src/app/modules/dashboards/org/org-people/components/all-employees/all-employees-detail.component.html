@@ -110,12 +110,12 @@
                   <th class="border-b border-gray-200 px-3 py-2">Role</th>
                   <th class="border-b border-gray-200 px-3 py-2">
                     <span class="inline-flex items-center gap-1" data-testid="org-people-all-employees-detail-commits-header">
-                      Commits
+                      {{ codeCount().label }}
                       <button
                         type="button"
                         class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                        aria-label="How commits are counted"
-                        [pTooltip]="commitsDefinition"
+                        [attr.aria-label]="codeCount().ariaLabel"
+                        [pTooltip]="codeCount().definition"
                         tooltipPosition="top"
                         tooltipEvent="both"
                         data-testid="org-people-all-employees-detail-commits-info">
@@ -132,7 +132,18 @@
                     <td class="px-3 py-2 font-medium text-gray-800">{{ row.projectName }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
                     <td class="px-3 py-2">
-                      @if (row.isMaintainer) {
+                      @if (detail()?.maintainerRolesUnavailable) {
+                        <button
+                          type="button"
+                          class="inline-flex items-center rounded bg-transparent p-0 text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          [attr.aria-label]="maintainerRolesUnavailableHint"
+                          [pTooltip]="maintainerRolesUnavailableHint"
+                          tooltipPosition="top"
+                          tooltipEvent="both"
+                          data-testid="org-people-all-employees-detail-role-unavailable">
+                          —
+                        </button>
+                      } @else if (row.isMaintainer) {
                         <span
                           class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                           Maintainer

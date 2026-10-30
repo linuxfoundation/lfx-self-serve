@@ -1,6 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PollType, VoteVoterStatus } from '../enums/poll.enum';
+import type {
+  VoteCommentAnonymityReason,
+  VoteDetailTab,
+  VoteDetailTabOption,
+  VoteParticipationStatusFilter,
+  VoteVoterStatusFilter,
+} from '../interfaces/poll.interface';
+
 /** Rolling deadline window shared by personal and management vote summaries. */
 export const VOTES_STATS_WINDOW_DAYS = 7;
 
@@ -10,20 +19,30 @@ export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
 
-/** Page size for the paginated comment-response lists in the vote results drawer. */
+/** Page size for the paginated comment-response lists in the vote comment results. */
 export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
 
-/** Page-size options for the comment-results paginator in the vote results drawer. Includes the default page size. */
+/** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
 export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
+
+/** Notice above text-only comment results, keyed by why the comments carry no names (#4330). */
+export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, string> = {
+  pseudo_anonymous:
+    "Pseudo-anonymous vote. Comments are shown without names or dates, in alphabetical order. A comment's wording can still reveal who wrote it.",
+  voter_view: 'Comments are shown without names. Only vote managers can see who wrote each comment.',
+};
 
 /**
  * Aggregate bound on comment responses per prompt returned by the BFF results endpoint. The upstream
  * results contract has no pagination, so without a cap the payload grows with electorate size × prompt
- * count × response length (50 prompts × 5,000 code points × N voters). The BFF keeps the most recent N
- * per prompt and reports the pre-cap count via `PollCommentResult.total_responses`. Well above any
- * realistic committee electorate; true cursor pagination is an upstream contract follow-up.
+ * count × response length (50 prompts × 5,000 code points × N voters). Named votes keep the most recent N for vote
+ * managers; pseudo-anonymous votes, and every non-manager read (#4330), keep the first N in comment-text order. The pre-cap count is reported via
+ * `PollCommentResult.total_responses`. Well above any realistic committee electorate; true cursor pagination is an upstream contract follow-up.
  */
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
+
+/** Comments the vote detail Overview previews before linking to the Comments tab (#4448). */
+export const VOTE_OVERVIEW_COMMENT_PREVIEW_LIMIT = 3;
 
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
@@ -42,6 +61,12 @@ export const VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS = 12000;
  */
 export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
 
+/** Additional own-ballot reads while a successfully submitted ballot may still be missing from the index. */
+export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
+
+/** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
+export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
+
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
  * list merges the known-open status over stale index rows while the search index catches up.
@@ -59,9 +84,6 @@ export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
 /** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
 export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
-
-/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
-export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
 
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
@@ -84,6 +106,77 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
 
+/** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
+export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
+
+/**
+ * Tab strip on the vote detail page, in display order. The Comments tab is shown only when the vote has comment prompts;
+ * the Voters tab (#3914, #3916) only to vote managers on a vote that is open or closed. Named votes show ballots;
+ * pseudo-anonymous votes show participation only, without ballot or choice links.
+ */
+export const VOTE_DETAIL_TABS: readonly VoteDetailTabOption[] = [
+  { key: 'overview', label: 'Overview', icon: 'fa-grid-2' },
+  { key: 'results', label: 'Results', icon: 'fa-chart-simple' },
+  { key: 'comments', label: 'Comments', icon: 'fa-comments' },
+  { key: 'voters', label: 'Voters', icon: 'fa-users' },
+];
+
+/** `?tab=` values the vote detail page accepts, derived from {@link VOTE_DETAIL_TABS}; anything else falls back to {@link VOTE_DETAIL_DEFAULT_TAB}. */
+export const VOTE_DETAIL_VALID_TABS: ReadonlySet<string> = new Set<string>(VOTE_DETAIL_TABS.map((tab) => tab.key));
+
+/** Default page size for the Voters tab table on the vote detail page (#3914). */
+export const VOTE_VOTERS_PAGE_SIZE = 25;
+
+/** Page-size options for the Voters tab table. Includes the default page size. */
+export const VOTE_VOTERS_ROWS_PER_PAGE_OPTIONS = [25, 50, 100];
+
+/** Status pill shown when no status filter is applied on the Voters tab. */
+export const VOTE_VOTERS_ALL_STATUS_FILTER: VoteVoterStatusFilter = 'all';
+
+/** Status pill labels on the Voters tab. The not-voted pill reads per vote state — see {@link VOTE_VOTER_NOT_VOTED_LABELS}. */
+export const VOTE_VOTER_STATUS_FILTER_LABELS: Record<VoteVoterStatusFilter, string> = {
+  all: 'All',
+  [VoteVoterStatus.VOTED]: 'Voted',
+  [VoteVoterStatus.ABSTAINED]: 'Abstained',
+  [VoteVoterStatus.NOT_VOTED]: 'Not voted yet',
+};
+
+/** Status pill shown when no participation status filter is applied on the pseudo-anonymous Voters tab (#3916). */
+export const VOTE_PARTICIPATION_ALL_STATUS_FILTER: VoteParticipationStatusFilter = 'all';
+
+/** Status pill and Status column labels on the participation-only Voters tab of a pseudo-anonymous vote (#3916). */
+export const VOTE_PARTICIPATION_STATUS_FILTER_LABELS: Record<VoteParticipationStatusFilter, string> = {
+  all: 'All',
+  responded: 'Responded',
+  pending: 'Not responded',
+};
+
+/** A not-voted voter can still vote while the vote is open; after it closes they did not vote. */
+export const VOTE_VOTER_NOT_VOTED_LABELS = { active: 'Not voted yet', closed: 'Did not vote' } as const;
+
+/** Most chips a Choice cell shows per question before collapsing the rest into `+N`. */
+export const VOTE_VOTER_MAX_CHOICE_CHIPS = 2;
+
+/** `voters_choice` value the results' abstain row links with — it selects the Abstained status pill, not a choice. */
+export const VOTE_VOTERS_ABSTAINED_CHOICE_KEY = 'status:abstained';
+
+/** Action keys on the vote detail page's clickable summary cards (#4447): Voters tab, Comments tab and the reminder dialog. */
+export const VOTE_DETAIL_SUMMARY_CARD_ACTIONS = { RESPONSES: 'responses', COMMENTS: 'comments', NOT_VOTED: 'not-voted' } as const;
+
+/** Display label per voting method — read by the vote detail page's header. A missing `poll_type` reads as {@link PollType.GENERIC}. */
+export const VOTE_METHOD_LABELS: Record<PollType, string> = {
+  [PollType.GENERIC]: 'Plurality vote',
+  [PollType.MAJORITY]: 'Majority vote',
+  [PollType.CONDORCET_IRV]: 'Ranked choice (Condorcet IRV)',
+  [PollType.INSTANT_RUNOFF_VOTE]: 'Instant runoff vote',
+  [PollType.MEEK_STV]: 'Meek STV',
+};
+
+/** Admin Mode ballot policy (#4331): only active impersonation is restricted, never an admin acting as themselves. */
+export const VOTE_IMPERSONATION_READ_ONLY_NOTICE = 'Ballots are read-only while impersonating another user. You cannot cast or change their vote.';
+export const VOTE_IMPERSONATION_PRIVATE_NOTICE =
+  'This ballot is private while impersonating another user. Choices, abstention and ballot comments are hidden unless the vote is explicitly named.';
+
 /** Presenter view (#4140): live-count poll cadence while the tab is visible. */
 export const VOTE_PRESENTER_POLL_INTERVAL_MS = 5_000;
 
@@ -103,6 +196,12 @@ export const VOTE_PRESENTER_TITLE_MAX_CHARS = 80;
 export const VOTE_SLIDE_WIDTH_PX = 1920;
 export const VOTE_SLIDE_HEIGHT_PX = 1080;
 
+/** Presenter view: delay between `/results` re-requests while the BFF still holds an ended pseudo-anonymous vote's results. */
+export const VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS = 5_000;
+
+/** Presenter view: total `/results` requests (first included) before it stops re-requesting a still-held ended vote. */
+export const VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS = 12;
+
 /** Presenter view: how long the "Link copied" confirmation stays before the button label returns. */
 export const VOTE_PRESENTER_COPY_CONFIRMATION_MS = 2_000;
 
@@ -111,3 +210,31 @@ export const VOTE_QR_QUIET_ZONE_MODULES = 2;
 
 /** How long Copy slide waits for the slide's QR to render before reporting a failed export. */
 export const VOTE_SLIDE_QR_READY_TIMEOUT_MS = 5000;
+
+/** After "Send ballots now" succeeds, the action stays disabled this long to avoid re-mailing every non-responder. */
+export const VOTE_SEND_BALLOTS_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** Recipients per bulk_resend call when sending ballots; ITX rejects a whole call if any recipient is invalid, so batches bound the blast radius. */
+export const VOTE_SEND_BALLOTS_BATCH_SIZE = 100;
+
+/** Upper bound on a vote link token's length — matches the voting service's `vote_token` maxLength; anything larger is rejected before it is forwarded. */
+export const VOTE_LINK_TOKEN_MAX_LENGTH = 1024;
+
+/** Fragment parameter that carries the vote link token (`/votes/{uid}#vote_token=...`). */
+export const VOTE_LINK_TOKEN_FRAGMENT_PARAM = 'vote_token';
+
+/** Upstream 400 message (lowercased substring) when a first submission hits a ballot that already has a response: switch to update. */
+export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
+
+/** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
+export const VOTE_LINK_NOT_RESPONDED = 'not responded';
+
+/** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
+export const VOTE_CLOSE_CONFIRMATION = {
+  header: 'Close vote',
+  message: 'Close the vote now? Members can no longer cast or change ballots.',
+  acceptLabel: 'Close vote',
+  rejectLabel: 'Cancel',
+  acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;

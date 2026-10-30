@@ -133,6 +133,86 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.guests()).toHaveLength(0);
     });
   });
+
+  describe('meeting host toggle', () => {
+    const directGuest: MeetingRegistrantWithState = { ...savedGroupGuest, uid: 'registrant-2', email: 'direct@example.com', type: 'direct' };
+
+    it('promotes a saved guest and queues an update for them', () => {
+      formService.setGuests([directGuest, savedGroupGuest]);
+
+      component['onToggleHost'](directGuest);
+
+      const toggled = formService.guests().find((guest) => guest.uid === 'registrant-2');
+      expect(toggled?.host).toBe(true);
+      expect(toggled?.state).toBe('modified');
+      expect(formService.registrantUpdates().toUpdate.map((update) => update.uid)).toEqual(['registrant-2']);
+    });
+
+    it('leaves every other guest untouched', () => {
+      formService.setGuests([directGuest, savedGroupGuest]);
+
+      component['onToggleHost'](directGuest);
+
+      const other = formService.guests().find((guest) => guest.uid === 'registrant-1');
+      expect(other?.host).toBe(false);
+      expect(other?.state).toBe('existing');
+    });
+
+    it('demotes a saved host', () => {
+      const host = { ...directGuest, host: true };
+      formService.setGuests([host]);
+
+      component['onToggleHost'](host);
+
+      expect(formService.guests()[0].host).toBe(false);
+      expect(formService.guests()[0].state).toBe('modified');
+    });
+
+    it('keeps an unsaved guest new so the flag rides along with the create', () => {
+      const pending: MeetingRegistrantWithState = { ...directGuest, uid: '', tempId: 'temp_1', state: 'new' };
+      formService.setGuests([pending]);
+
+      component['onToggleHost'](pending);
+
+      expect(formService.guests()[0].host).toBe(true);
+      expect(formService.guests()[0].state).toBe('new');
+      expect(formService.registrantUpdates().toUpdate).toHaveLength(0);
+      expect(formService.registrantUpdates().toAdd).toHaveLength(1);
+    });
+
+    it('withdraws Undo, which would otherwise take the host change back', () => {
+      formService.setGuests([directGuest]);
+      component['removalBatch'].set({ before: [], suppressedBefore: new Set(), committeeKey: '', labels: [], focusTrackId: null, signature: '' });
+
+      component['onToggleHost'](directGuest);
+
+      expect(component['removalBatch']()).toBeNull();
+    });
+
+    it('keeps a promoted group guest queued for the update when their group is deselected and reselected', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      component['onToggleHost'](saved);
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('modified');
+      expect(formService.guests()[0].host).toBe(true);
+      expect(formService.registrantUpdates().toUpdate.map((update) => update.uid)).toEqual(['registrant-1']);
+    });
+
+    it('restores an unchanged group guest as existing', () => {
+      const saved = { ...savedGroupGuest, originalData: { ...savedGroupGuest } };
+      formService.setGuests([saved]);
+
+      reconcile([]);
+      reconcile([member]);
+
+      expect(formService.guests()[0].state).toBe('existing');
+    });
+  });
+
   /**
    * Covers the two things the projected rows have to get right for the list to behave: a `track` key
    * that never repeats, and a remove button that says which guest it removes. Both only go wrong on
@@ -200,6 +280,16 @@ describe('ComposerGuestsComponent', () => {
       formService.setGuests([savedGroupGuest]);
 
       expect(rows()[0].removeLabel).toBe('Remove Member One');
+    });
+
+    it('names the guest in the host toggle and flips it with the host flag', () => {
+      formService.setGuests([savedGroupGuest]);
+      expect(rows()[0].hostLabel).toBe('Make Member One a meeting host');
+      expect(rows()[0].hostTooltip).toBe('Make host');
+
+      formService.setGuests([{ ...savedGroupGuest, host: true }]);
+      expect(rows()[0].hostLabel).toBe('Remove Member One as meeting host');
+      expect(rows()[0].hostTooltip).toBe('Remove host');
     });
 
     it('falls back to the email when the registrant has no name', () => {

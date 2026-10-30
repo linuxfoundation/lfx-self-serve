@@ -54,6 +54,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [NATS Integration](./nats-integration.md)                             | Inter-service messaging, project slug resolution, lazy connections              |
 | [Snowflake Integration](./snowflake-integration.md)                   | Analytics queries, connection pooling, query deduplication                      |
 | [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                  |
+| [Login-Free Vote Links](./vote-links.md)                              | Token-in-fragment ballots, public proxy routes, send-ballots flow               |
 | [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block  |
 | [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
 | [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |

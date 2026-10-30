@@ -15,6 +15,8 @@
     "e2e:ui": "turbo run e2e:ui",
     "e2e:headed": "turbo run e2e:headed",
     "watch": "turbo run watch",
+    "storybook": "turbo run storybook --log-prefix=none",
+    "build-storybook": "turbo run build-storybook",
     "start:server": "turbo run start:server",
     "start:prod": "pm2 start ecosystem.config.js",
     "stop:prod": "pm2 stop lfx-self-serve",
@@ -29,9 +31,10 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@angular-devkit/build-angular": "^20.3.42",
     "@commitlint/cli": "^20.1.0",
     "@commitlint/config-angular": "^20.0.0",
-    "@linuxfoundation/lfx-ui-core": "^0.2.0",
+    "@linuxfoundation/lfx-ui-core": "^0.3.1",
     "@types/node": "^24.2.1",
     "@typescript-eslint/eslint-plugin": "^8.39.1",
     "@typescript-eslint/parser": "^8.39.1",
@@ -54,7 +57,8 @@
     "packages/*"
   ],
   "resolutions": {
-    "@tailwindcss/typography/postcss-selector-parser": "^6.1.5"
+    "@tailwindcss/typography/postcss-selector-parser": "^6.1.5",
+    "webpack@npm:5": "5.112.0"
   },
   "lint-staged": {
     "**/*.{ts,tsx,js,jsx}": [

@@ -8,6 +8,13 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   IDENTITY_PROVIDER_LABELS,
 } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
@@ -49,6 +56,14 @@ export class VerifyIdentityDialogComponent {
 
   private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
   public readonly resendCooldown = this.resendCooldownUtil.cooldown;
+  // Resends sent for the pending address; once it reaches the threshold, Resend gives way to Contact support.
+  public resendCount = signal(0);
+  public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
+  public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
+  public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
+  public readonly verificationSentMessage = EMAIL_VERIFICATION_SENT_MESSAGE;
+  public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   public onSendCode(): void {
     this.isSendingCode.set(true);
@@ -58,6 +73,7 @@ export class VerifyIdentityDialogComponent {
       next: (response) => {
         if (response.success) {
           this.codeSent.set(true);
+          this.resendCount.set(0);
           this.resendCooldownUtil.start();
         } else {
           this.verificationError.set(response.error || response.message || 'Failed to send verification code');
@@ -105,7 +121,7 @@ export class VerifyIdentityDialogComponent {
   }
 
   public onResendCode(): void {
-    if (this.resendCooldown() > 0) {
+    if (this.resendCooldown() > 0 || this.isSendingCode() || this.showResendSupport()) {
       return;
     }
 
@@ -116,13 +132,15 @@ export class VerifyIdentityDialogComponent {
     this.userService.sendEmailVerificationCode(this.identity.identifier).subscribe({
       next: (response) => {
         if (!response.success) {
-          this.verificationError.set(response.error || response.message || 'Failed to resend code');
+          this.verificationError.set(EMAIL_RESEND_FAILED_MESSAGE);
+        } else {
+          this.resendCount.update((count) => count + 1);
         }
         this.isSendingCode.set(false);
         this.resendCooldownUtil.start();
       },
-      error: (err) => {
-        this.verificationError.set(err.error?.message || err.error?.error || 'Failed to resend code');
+      error: () => {
+        this.verificationError.set(EMAIL_RESEND_FAILED_MESSAGE);
         this.isSendingCode.set(false);
       },
     });
@@ -134,6 +152,7 @@ export class VerifyIdentityDialogComponent {
   }
 
   public onCancel(): void {
+    this.resendCount.set(0);
     this.resendCooldownUtil.clear();
     this.ref.close(null);
   }

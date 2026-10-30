@@ -4,7 +4,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_RUN_ACTIVITY_HIDDEN_TOOLS, MKTG_RUN_ACTIVITY_TOOLS } from '../constants/mktg-run-activity.constants';
+import { MKTG_RUN_ACTIVITY_HIDDEN_TOOLS, MKTG_RUN_ACTIVITY_TOOLS, MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES } from '../constants/mktg-run-activity.constants';
+import { agentActivityReplay } from './__fixtures__/agent-activity.fixture';
+import { MEMBER_360_ACTIVITY_LABELS, MEMBER_360_ACTIVITY_TOOLS } from '../constants/member-360.constants';
+import { member360ActivityReplay } from './__fixtures__/member-360-activity.fixture';
 import { noQuestionsActivityPayloads } from './__fixtures__/mktg-run-activity.no-questions';
 import type { MktgRunActivity } from '../interfaces';
 import { AEO_GEO_FINALIZE_TOOL } from '../constants/aeo-geo.constants';
@@ -35,6 +38,225 @@ it('does not let reasoning MIME create a questions step or leak into the activit
   });
   expect(buildMktgRunActivity([reasoning])).toEqual([]);
   expect(buildMktgRunActivity([...payloads(), reasoning])).toEqual(buildMktgRunActivity(payloads()));
+});
+
+describe('every registered agent advances from event evidence', () => {
+  it.each(Object.keys(MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES))(
+    'replays the synthetic %s real-tool sequence through Checking before root completion',
+    (agentKey) => {
+      const replay = agentActivityReplay(agentKey);
+      const table = MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES[agentKey];
+      const pending = buildMktgRunActivity(replay.slice(0, -1));
+      const kinds = pending.map((step) => step.kind);
+      expect(kinds).toContain('reading');
+      expect(kinds).toContain('lfx');
+      expect(kinds).toContain('search');
+      expect(kinds.indexOf('writing')).toBeLessThan(kinds.indexOf('checking'));
+      expect(pending.filter((step) => step.kind === 'writing')).toHaveLength(1);
+      expect(pending.find((step) => step.kind === 'writing')?.status).toBe('done');
+      expect(pending.at(-1)).toMatchObject({ kind: 'checking', status: 'running' });
+      expect(mktgRunActivityPhases(pending).find((phase) => phase.id === 'checking')?.state).toBe('active');
+      expect(kinds.includes('questions')).toBe(Object.values(table).some((tool) => tool.kind === 'questions'));
+      const complete = buildMktgRunActivity(replay);
+      expect(complete.at(-1)?.status).toBe('done');
+      for (const name of Object.keys(table)) expect(JSON.stringify(complete)).not.toContain(name);
+    }
+  );
+  it.each(Object.keys(MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES))('maps %s finalize from a platform tool_start without reading its arguments', (agentKey) => {
+    const table = MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES[agentKey];
+    const finalize = Object.entries(table).find(([, definition]) => definition.kind === 'checking');
+    if (!finalize) throw new Error('Missing synthetic finalize mapping');
+    const activity = buildMktgRunActivity([
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:00Z' }),
+      JSON.stringify({ type: 'tool_start', name: finalize[0], created_at: '2026-10-29T10:00:02Z', input: { note: 'PRIVATE-FIXTURE-SENTINEL' } }),
+    ]);
+    expect(activity.map((step) => [step.kind, step.status])).toEqual([
+      ['writing', 'done'],
+      ['checking', 'running'],
+    ]);
+    expect(activity.at(-1)?.label).toBe(finalize[1].label);
+    expect(JSON.stringify(activity)).not.toContain('PRIVATE-FIXTURE');
+  });
+  it('keeps prompt-driven ICP writing grounded in its model turn when finalize is its first tool', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:00Z' }),
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-29T10:00:02Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'icp', name: 'finalize_icp_document' }),
+      }),
+    ]);
+    expect(activity).toEqual([
+      { id: 'writing', kind: 'writing', label: 'Writing', status: 'done', startedAt: '2026-10-29T10:00:00Z', endedAt: '2026-10-29T10:00:02Z' },
+      { id: 'step-2', kind: 'checking', label: 'Checking', status: 'running', startedAt: '2026-10-29T10:00:02Z' },
+    ]);
+  });
+  it.each(['experimental_fetch_fetch', 'web_search_jina_web_search', 'lfx_mcp_get_project'])(
+    'advances unknown tool work after %s with a fixed generic label',
+    (researchTool) => {
+      const activity = buildMktgRunActivity([
+        JSON.stringify({
+          type: 'runtime_start',
+          created_at: '2026-10-29T10:00:00Z',
+          task: { id: 'research', entity_type: 'EntTaskTool', tool_name: researchTool, status: 'DONE' },
+        }),
+        JSON.stringify({ type: 'tool_start', created_at: '2026-10-29T10:00:01Z', name: 'unknown_synthetic_work', input: { note: 'PRIVATE-FIXTURE-SENTINEL' } }),
+        JSON.stringify({
+          type: 'llm_done',
+          created_at: '2026-10-29T10:00:02Z',
+          body: JSON.stringify({ type: 'tool_use', id: 'future', name: 'finalize_future_agent', input: { note: 'PRIVATE-FIXTURE-SENTINEL' } }),
+        }),
+      ]);
+      expect(activity.filter((step) => step.kind === 'writing' || step.kind === 'checking').map((step) => [step.label, step.status])).toEqual([
+        ['Writing', 'done'],
+        ['Checking', 'running'],
+      ]);
+      expect(JSON.stringify(activity)).not.toMatch(/PRIVATE-FIXTURE|unknown_synthetic_work|finalize_future_agent/);
+    }
+  );
+  it('does not turn prose or hidden UI tools into generic Writing evidence', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({ type: 'agent_notification_progress', content: { type: 'text', data: 'Writing checking finalize_the_document' } }),
+      JSON.stringify({ type: 'tool_start', name: 'ui_notify', created_at: '2026-10-29T10:00:00Z' }),
+      JSON.stringify({ type: 'tool_start', name: 'unknown_before_research', created_at: '2026-10-29T10:00:01Z' }),
+    ]);
+    expect(activity).toEqual([]);
+  });
+  it.each(['lfx_mcp_search_members', 'lfx_mcp_get_member_membership', 'lfx_mcp_read_lfx_standard_metrics_guidance', 'lfx_mcp_query_lfx_standard_metrics'])(
+    'uses the prefix rule for %s',
+    (name) => {
+      expect(buildMktgRunActivity([JSON.stringify({ type: 'tool_start', name, created_at: '2026-10-29T10:00:00Z', status: 'DONE' })])[0]).toMatchObject({
+        kind: 'lfx',
+      });
+    }
+  );
+  it.each([false, true])('keeps mixed FAQ price lookup/finalize in research (explicit table=%s)', (explicit) => {
+    const table = explicit ? MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES['faq'] : undefined;
+    const mixed = JSON.stringify({
+      type: 'llm_done',
+      created_at: '2026-10-29T10:00:02Z',
+      body: JSON.stringify([
+        { type: 'tool_use', id: 'price', name: 'membership_tier_prices' },
+        { type: 'tool_use', id: 'premature-finalize', name: 'finalize_faq' },
+      ]),
+    });
+    const prefix = [JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:01Z' }), mixed];
+    const researching = buildMktgRunActivity(prefix, table);
+    expect(researching).toEqual([expect.objectContaining({ kind: 'lfx', status: 'running' })]);
+    expect(researching.some((step) => step.kind === 'writing' || step.kind === 'checking')).toBe(false);
+    const finalized = buildMktgRunActivity(
+      [
+        ...prefix,
+        JSON.stringify({ type: 'llm_done', created_at: '2026-10-29T10:00:03Z', body: JSON.stringify({ type: 'tool_use', id: 'final', name: 'finalize_faq' }) }),
+      ],
+      table
+    );
+    expect(finalized.find((step) => step.kind === 'lfx')?.status).toBe('done');
+    expect(finalized.find((step) => step.kind === 'writing')?.status).toBe('done');
+    expect(finalized.at(-1)).toMatchObject({ kind: 'checking', status: 'running' });
+  });
+  it('shows FAQ price lookups as LFX and Jina searches without sending their query', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-29T10:00:00Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'price', name: 'membership_tier_prices' }),
+      }),
+      JSON.stringify({
+        type: 'tool_start',
+        name: 'web_search_jina_web_search',
+        created_at: '2026-10-29T10:00:01Z',
+        content: { query: 'PRIVATE-FIXTURE-SENTINEL' },
+      }),
+    ]);
+    expect(activity.map((step) => step.kind)).toEqual(['lfx', 'search']);
+    expect(JSON.stringify(activity)).not.toContain('PRIVATE-FIXTURE');
+  });
+});
+
+describe('Member 360 event-backed activity', () => {
+  const local = (name: string, second = 1) =>
+    JSON.stringify({
+      type: 'llm_done',
+      created_at: `2026-10-29T10:00:0${second}Z`,
+      body: JSON.stringify({ type: 'tool_use', id: 'synthetic', name, input: { private: 'do-not-display' } }),
+    });
+  it('starts Writing at score_member_360, never earlier model or English prose', () => {
+    const before = [
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:00Z' }),
+      JSON.stringify({ type: 'agent_notification_progress', content: { type: 'text', data: 'Writing and checking the report' } }),
+    ];
+    expect(buildMktgRunActivity(before, MEMBER_360_ACTIVITY_TOOLS)).toEqual([]);
+    expect(buildMktgRunActivity([...before, local('score_member_360')], MEMBER_360_ACTIVITY_TOOLS)).toEqual([
+      { id: 'writing', kind: 'writing', label: MEMBER_360_ACTIVITY_LABELS.writing, status: 'running', startedAt: '2026-10-29T10:00:01Z' },
+    ]);
+  });
+  it('collapses forty record_member_actions calls into one running Writing stretch', () => {
+    const activity = buildMktgRunActivity(
+      Array.from({ length: 40 }, () => local('record_member_actions')),
+      MEMBER_360_ACTIVITY_TOOLS
+    );
+    expect(activity).toHaveLength(1);
+    expect(activity[0]).toMatchObject({ kind: 'writing', label: MEMBER_360_ACTIVITY_LABELS.writing, status: 'running' });
+    expect(JSON.stringify(activity)).not.toMatch(/do-not-display|record_member_actions/);
+  });
+  it('maps judge_member_slice to the same Writing stretch and surfaces slice checking without tool data', () => {
+    const activity = buildMktgRunActivity([local('judge_member_slice'), local('finalize_member_slice', 2)], MEMBER_360_ACTIVITY_TOOLS);
+    expect(activity.map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['writing', MEMBER_360_ACTIVITY_LABELS.writing, 'done'],
+      ['checking', MEMBER_360_ACTIVITY_LABELS.checking, 'running'],
+    ]);
+    expect(JSON.stringify(activity)).not.toMatch(/do-not-display|judge_member_slice|finalize_member_slice/);
+  });
+  it('maps ask_requester to Questions without inventing a Writing step', () => {
+    const activity = buildMktgRunActivity(
+      [local('ask_requester'), JSON.stringify({ type: 'llm_start', created_at: '2026-10-29T10:00:02Z' })],
+      MEMBER_360_ACTIVITY_TOOLS
+    );
+    expect(activity.map((step) => [step.kind, step.label, step.status])).toEqual([['questions', MEMBER_360_ACTIVITY_LABELS.questions, 'done']]);
+  });
+  it('maps finalize_member_360 to Checking and ends Writing at that call', () => {
+    const activity = buildMktgRunActivity([local('score_member_360'), local('finalize_member_360', 2)], MEMBER_360_ACTIVITY_TOOLS);
+    expect(activity.map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['writing', MEMBER_360_ACTIVITY_LABELS.writing, 'done'],
+      ['checking', MEMBER_360_ACTIVITY_LABELS.checking, 'running'],
+    ]);
+    expect(activity[0]?.endedAt).toBe('2026-10-29T10:00:02Z');
+  });
+  it('recognises platform tool fields and the registered Member tools without an explicit table', () => {
+    const start = JSON.stringify({
+      type: 'runtime_start',
+      created_at: '2026-10-29T10:00:01Z',
+      task: { id: 'score', entity_type: 'EntTaskTool', tool_name: 'score_member_360', status: 'DONE' },
+      content: { private: 'do-not-display' },
+    });
+    expect(buildMktgRunActivity([start], MEMBER_360_ACTIVITY_TOOLS)[0]).toMatchObject({ kind: 'writing', status: 'running' });
+    expect(buildMktgRunActivity([start, local('finalize_member_360', 2)]).map((step) => step.kind)).toEqual(['writing', 'checking']);
+    expect(buildMktgRunActivity(payloads())).toEqual(buildMktgRunActivity(payloads(), undefined));
+  });
+  it('replays the synthetic roster/contacts/score/40-actions/finalize order through every stage', () => {
+    const replay = member360ActivityReplay();
+    const beforeScore = replay.findIndex((event) => event.includes('score_member_360'));
+    const finalize = replay.findIndex((event) => event.includes('finalize_member_360'));
+    expect(buildMktgRunActivity(replay.slice(0, beforeScore), MEMBER_360_ACTIVITY_TOOLS).some((step) => step.kind === 'writing')).toBe(false);
+    const scoring = buildMktgRunActivity(replay.slice(0, beforeScore + 1), MEMBER_360_ACTIVITY_TOOLS);
+    expect(mktgRunActivityPhases(scoring).find((phase) => phase.id === 'writing')?.state).toBe('active');
+    const actions = buildMktgRunActivity(replay.slice(0, finalize), MEMBER_360_ACTIVITY_TOOLS);
+    expect(actions.filter((step) => step.kind === 'writing')).toHaveLength(1);
+    expect(actions.find((step) => step.kind === 'writing')?.status).toBe('running');
+    const checking = buildMktgRunActivity(replay.slice(0, finalize + 1), MEMBER_360_ACTIVITY_TOOLS);
+    expect(mktgRunActivityPhases(checking).find((phase) => phase.id === 'checking')?.state).toBe('active');
+    const activity = buildMktgRunActivity(replay, MEMBER_360_ACTIVITY_TOOLS);
+    expect(activity.map((step) => [step.kind, step.status])).toEqual([
+      ['reading', 'done'],
+      ['lfx', 'done'],
+      ['lfx', 'done'],
+      ['writing', 'done'],
+      ['checking', 'done'],
+    ]);
+    expect(activity.slice(-2).map((step) => step.label)).toEqual([MEMBER_360_ACTIVITY_LABELS.writing, MEMBER_360_ACTIVITY_LABELS.checking]);
+    expect(JSON.stringify(activity)).not.toMatch(/never-render|record_member_actions|score_member_360|finalize_member_360/);
+  });
 });
 
 describe('buildMktgRunActivity — the live feed from a real session', () => {
@@ -348,6 +570,55 @@ describe('mktgRunActivityPhases', () => {
       ['Writing', 'pending'],
       ['Checking', 'pending'],
     ]);
+  });
+
+  it('keeps the furthest phase under way between its waves, so a read in batches never flickers done and back', () => {
+    const betweenWaves = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      { id: 'step-2', kind: 'reading', label: 'Reading aaif.io/about', status: 'done', startedAt: '2026-10-29T08:00:01Z', endedAt: '2026-10-29T08:00:04Z' },
+    ]);
+    expect(betweenWaves.map((phase) => phase.state)).toEqual(['active', 'pending', 'pending', 'pending', 'pending']);
+    const nextWave = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      { id: 'step-3', kind: 'reading', label: 'Reading aaif.io/members', status: 'running', startedAt: '2026-10-29T08:00:09Z' },
+    ]);
+    expect(nextWave[0].state).toBe('active');
+    // A later phase starting is what closes it, and a late page read does not reopen it.
+    const later = mktgRunActivityPhases([
+      { id: 'step-1', kind: 'reading', label: 'Reading aaif.io', status: 'done', startedAt: '2026-10-29T08:00:00Z', endedAt: '2026-10-29T08:00:03Z' },
+      {
+        id: 'step-4',
+        kind: 'lfx',
+        label: 'Reading the LFX project record',
+        status: 'done',
+        startedAt: '2026-10-29T08:00:10Z',
+        endedAt: '2026-10-29T08:00:12Z',
+      },
+      { id: 'step-5', kind: 'reading', label: 'Reading aaif.io/events', status: 'running', startedAt: '2026-10-29T08:00:13Z' },
+    ]);
+    expect(later.map((phase) => phase.state)).toEqual(['done', 'active', 'pending', 'pending', 'pending']);
+    // A failed page read is a step, not the end of the run: the phase stays under way between waves.
+    const failedRead = [
+      {
+        id: 'step-1',
+        kind: 'reading' as const,
+        label: 'Reading aaif.io',
+        status: 'done' as const,
+        startedAt: '2026-10-29T08:00:00Z',
+        endedAt: '2026-10-29T08:00:03Z',
+      },
+      {
+        id: 'step-6',
+        kind: 'reading' as const,
+        label: 'Reading aaif.io/old',
+        status: 'failed' as const,
+        startedAt: '2026-10-29T08:00:04Z',
+        endedAt: '2026-10-29T08:00:05Z',
+      },
+    ];
+    expect(mktgRunActivityPhases(failedRead)[0].state).toBe('active');
+    // Only the caller knows the run ended (a terminal failure, say): `ended` closes the furthest phase.
+    expect(mktgRunActivityPhases(failedRead, true)[0].state).toBe('done');
   });
 });
 

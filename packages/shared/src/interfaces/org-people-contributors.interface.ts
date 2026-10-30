@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgAllEmployeeCodeContribution } from './org-people.interface';
 
-/** Role badge — declared-maintainer rule (Item 4 lock); Maintainer > Contributor at the org level on the parent row, per-project on the expansion. */
+/** Role badge — Maintainer when the person holds a maintainer role overlapping the range (lfx-self-serve#4482); on the parent row any project, on the expansion that project. */
 export type OrgContributorRole = 'Maintainer' | 'Contributor';
 
 /** Sortable columns on the Contributors main table. */
@@ -26,7 +27,7 @@ export interface OrgContributorRow {
   lfUsername: string | null;
   /** CDP member_id — always present (row inclusion gate). Representative `MIN` when multiple CDP rows resolve to the same LFX user. */
   cdpMemberId: string;
-  /** Item 4 R4.2 badge — the per-person derivative of `is_declared_maintainer_for_org`. Maintainer if true, Contributor otherwise. */
+  /** Maintainer when the person holds at least one maintainer role overlapping the window in the project scope, Contributor otherwise. */
   role: OrgContributorRole;
   /** Authored commits over the window (distinct SHAs, any branch; merged to the main branch only under `commitScope=merged`). Zero for review/PR-only contributors. */
   commits: number;
@@ -52,7 +53,7 @@ export interface OrgContributorProjectRow {
   foundationId: string | null;
   foundationName: string | null;
   foundationSlug: string | null;
-  /** Per-project derivative of `is_declared_maintainer_for_project`. A person with the Maintainer badge on the parent row can (and often does) show Contributor pills on most of their project sub-rows (Item 5 Simon-Deziel pattern). */
+  /** Maintainer when the person holds a maintainer role on this project overlapping the window. A person with the Maintainer badge on the parent row can (and often does) show Contributor pills on most of their project sub-rows (Item 5 Simon-Deziel pattern). */
   role: OrgContributorRole;
   /** Per-project authored commits over the window. Sums across a person's project rows equal that person's parent-row `commits` value (Item 5 consistency lock). */
   commits: number;
@@ -78,9 +79,12 @@ export interface OrgContributorProjectOption {
 
 /** Stats baseline — anchored to the BFF response per Item 3 lock; filter trio does NOT recompute. Time-window changes do (because the BFF refetches). */
 export interface OrgContributorStatsBaseline {
-  /** Distinct people in the response whose `role === 'Maintainer'`. */
-  maintainers: number;
-  /** Distinct people in the response whose `role === 'Contributor'`. `maintainers + contributors === contributors[].length` by construction. */
+  /**
+   * Distinct maintainer roles — (member, Insights project) pairs — of the account overlapping the window in the project scope, with or without code.
+   * `null` when the roles table is unavailable (never shown as zero).
+   */
+  maintainerRoles: number | null;
+  /** Everyone in the response: people with code in the window, maintainers included. Equals `contributors[].length`. */
   contributors: number;
   /** Distinct `project_id` count over the projects array. */
   projects: number;
@@ -90,6 +94,8 @@ export interface OrgContributorStatsBaseline {
 
 /** Bundled GET response for `/api/orgs/:orgUid/lens/people/contributors?timeRange=…`. */
 export interface OrgContributorsResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   /** Echo of the time window the BFF aggregated over — clients use this to ignore late responses from a previous request when the user clicked through windows quickly. */
   timeRange: OrgLensTimeRange;
@@ -155,9 +161,25 @@ export interface ContributorPersonProjectRow {
   MERGED_COMMITS: number | null;
   CODE_ACTIVITIES: number | null;
   LAST_ACTIVE_DATE: Date | string | null;
-  IS_DECLARED_MAINTAINER_FOR_PROJECT: boolean | null;
-  IS_DECLARED_MAINTAINER_FOR_ORG: boolean | null;
 }
 
 /** The count columns of {@link ContributorPersonProjectRow} the commit filters pick between. */
 export type ContributorCountColumn = 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES';
+
+/**
+ * One project of one person's code in a window and project scope, read for the person drawer (lfx-self-serve#4404):
+ * the columns of that person's {@link ContributorPersonProjectRow}s, so the drawer counts what the row counts.
+ */
+export type OrgPersonCodeProjectRow = Pick<
+  ContributorPersonProjectRow,
+  'PROJECT_ID' | 'PROJECT_NAME' | 'FOUNDATION_ID' | 'FOUNDATION_NAME' | 'COMMITS' | 'MERGED_COMMITS' | 'CODE_ACTIVITIES' | 'LAST_ACTIVE_DATE'
+>;
+
+/** A person's Code project (drawer, All Employees expanded row) before its Maintainer pill is set. */
+export type OrgPersonCodeProjectCount = Omit<OrgAllEmployeeCodeContribution, 'isMaintainer'>;
+
+/** A person's Code projects and the total they are shown with. */
+export interface OrgPersonCodeContributions {
+  projects: OrgPersonCodeProjectCount[];
+  total: number;
+}

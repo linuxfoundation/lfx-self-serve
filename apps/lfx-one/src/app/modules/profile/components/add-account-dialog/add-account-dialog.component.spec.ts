@@ -9,6 +9,12 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
@@ -16,7 +22,7 @@ import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AddAccountDialogComponent } from './add-account-dialog.component';
@@ -276,5 +282,225 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(root.querySelector('[data-testid="add-account-otp-error"]')).toBeNull();
     expect(close).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('resend escalation', () => {
+    const resendButton = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend"]');
+    const supportAction = (root: HTMLElement): Element | null => root.querySelector('[data-testid="add-account-resend-support"]');
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('replaces Resend with Contact support after the first successful resend', () => {
+      vi.useFakeTimers();
+      const { component, root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(component.showResendSupport()).toBe(false);
+      expect(resendButton(root)).not.toBeNull();
+      expect(supportAction(root)).toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+
+      expect(component.resendCount()).toBe(1);
+      expect(component.showResendSupport()).toBe(true);
+      expect(resendButton(root)).toBeNull();
+      expect(normalizedText(supportAction(root))).toBe('Contact support');
+      expect(supportAction(root)?.hasAttribute('lfxOpenIntercom')).toBe(true);
+      const callout = root.querySelector('[data-testid="add-account-resend-support-callout"]');
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_TITLE);
+      expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_MESSAGE);
+      expect(callout?.getAttribute('role')).toBe('status');
+      expect(root.querySelector('[data-testid="add-account-otp-hint"]')).toBeNull();
+      expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).not.toContain('a few minutes');
+    });
+
+    it('blocks overlapping resends and further requests after escalation', () => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+      expect(normalizedText(resendButton(root))).toBe('Resend code in 60s');
+      expect(normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      const button = resendButton(root) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+
+      button.click();
+      component.onResendCode(); // A second event before change detection must also be ignored.
+      fixture.detectChanges();
+      expect(button.disabled).toBe(true);
+      expect(normalizedText(button)).toBe('Requesting code…');
+      expect(root.querySelector<HTMLButtonElement>('[data-testid="add-account-change-email"] button')?.disabled).toBe(true);
+      component.onChangeEmail();
+      expect(component.codeSent()).toBe(true);
+      expect(component.form.getRawValue().email).toBe('owned@example.test');
+      button.click();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+      expect(component.resendCount()).toBe(0);
+
+      response$.next({ success: true });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(1);
+      expect(resendButton(root)).toBeNull();
+      expect(supportAction(root)).not.toBeNull();
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([false, true])('allows retry after a pending resend fails (HTTP error: %s)', (httpError) => {
+      vi.useFakeTimers();
+      const { component, root, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(true);
+
+      if (httpError) {
+        response$.error(new HttpErrorResponse({ status: 500, error: { message: 'Failed to resend code' } }));
+      } else {
+        response$.next({ success: false, message: 'Failed to resend code' });
+        response$.complete();
+      }
+
+      expect(component.isConnecting()).toBe(false);
+      expect(component.resendCount()).toBe(0);
+      fixture.detectChanges();
+      expect(component.verificationError()).toBe(EMAIL_RESEND_FAILED_MESSAGE);
+      expect(normalizedText(root.querySelector('[data-testid="add-account-otp-error"]'))).toBe(EMAIL_RESEND_FAILED_MESSAGE);
+      vi.advanceTimersByTime(60_000);
+      fixture.detectChanges();
+      expect((resendButton(root) as HTMLButtonElement).disabled).toBe(false);
+      expect(supportAction(root)).toBeNull();
+
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: true }));
+      (resendButton(root) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(3);
+      expect(component.resendCount()).toBe(1);
+      expect(supportAction(root)).not.toBeNull();
+    });
+
+    it('does not count a failed resend toward the threshold', () => {
+      vi.useFakeTimers();
+      const { component, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: false, message: 'nope' }));
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('resets the count on cancel', () => {
+      vi.useFakeTimers();
+      const { component } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      expect(component.resendCount()).toBe(1);
+
+      component.onCancel();
+
+      expect(component.resendCount()).toBe(0);
+    });
+
+    it('lets users change the address after escalation without closing the dialog', () => {
+      vi.useFakeTimers();
+      const { component, root, close, userServiceMock } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      component.verificationCode.set('123456');
+      component.verificationError.set('Previous attempt failed');
+      fixture.detectChanges();
+
+      (root.querySelector('[data-testid="add-account-change-email"] button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(component.codeSent()).toBe(false);
+      expect(component.form.controls.email.enabled).toBe(true);
+      expect(component.form.getRawValue().email).toBe('');
+      expect(component.verificationCode()).toBe('');
+      expect(component.verificationError()).toBe('');
+      expect(component.resendCount()).toBe(0);
+      expect(root.querySelector('[data-testid="add-account-otp"]')).toBeNull();
+      expect(root.querySelector('[data-testid="add-account-resend-support-callout"]')).toBeNull();
+      expect(close).not.toHaveBeenCalled();
+
+      component.form.controls.email.setValue('corrected@example.test');
+      component.onSendCode();
+      fixture.detectChanges();
+      expect(userServiceMock.sendEmailVerificationCode).toHaveBeenLastCalledWith('corrected@example.test');
+      expect(component.codeSent()).toBe(true);
+      expect(component.showResendSupport()).toBe(false);
+      expect(component.resendCooldown()).toBe(60);
+    });
+
+    it('keeps the address fixed while verification is pending', () => {
+      const response$ = new Subject<VerifyAndLinkEmailResponse>();
+      const { component, root } = setup(() => response$);
+      component.onVerify();
+      fixture.detectChanges();
+
+      expect(root.querySelector<HTMLButtonElement>('[data-testid="add-account-change-email"] button')?.disabled).toBe(true);
+      component.onChangeEmail();
+      expect(component.codeSent()).toBe(true);
+      expect(component.form.getRawValue().email).toBe('owned@example.test');
+      response$.next({ success: false, message: 'Verification failed' });
+      response$.complete();
+    });
+
+    it('opens support from the secondary initial action and the primary escalation action', () => {
+      vi.useFakeTimers();
+      const { component, root, openMessenger } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      (root.querySelector('[data-testid="add-account-otp-support-button"]') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(60_000);
+      component.onResendCode();
+      fixture.detectChanges();
+      (root.querySelector('[data-testid="add-account-resend-support"] button') as HTMLButtonElement).click();
+      expect(openMessenger).toHaveBeenCalledTimes(2);
+      expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
+    });
+
+    it('words the complete email step conditionally before and after a generic successful send', () => {
+      const response$ = new Subject<SendEmailVerificationResponse>();
+      const { component, root } = setup(
+        () => of<VerifyAndLinkEmailResponse>({ success: true }),
+        () => response$
+      );
+
+      expect(component.codeSent()).toBe(false);
+      expect(normalizedText(root)).toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
+      expect(normalizedText(root)).toContain('Codes are sent only to addresses that can be added to your account.');
+      expect(normalizedText(root)).not.toContain("You'll receive a verification code");
+
+      response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+      response$.complete();
+      fixture.detectChanges();
+
+      expect(component.codeSent()).toBe(true);
+      expect(root.querySelector('[data-testid="add-account-otp"]')).not.toBeNull();
+      expect(normalizedText(root)).toContain(EMAIL_VERIFICATION_SENT_MESSAGE);
+      expect(normalizedText(root)).not.toContain("Enter your email address. If it can be added to your account, we'll send you a verification code.");
+      expect(normalizedText(root)).not.toContain("Enter your email address and we'll send you a verification code.");
+      const hint = normalizedText(root.querySelector('[data-testid="add-account-otp-hint"]'));
+      expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+      expect(hint).not.toContain('already linked');
+    });
   });
 });

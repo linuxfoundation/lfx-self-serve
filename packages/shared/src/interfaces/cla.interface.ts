@@ -233,7 +233,7 @@ export interface ClaGroupOption {
   /**
    * Salesforce id of the project a corporate signature is requested against (#1983).
    *
-   * **Set only by the Organization Lens sign-options route.** The Me-lens search omits it: that
+   * **Set only by the Organization Lens sign-options and CLA Group catalogue routes.** The Me-lens search omits it: that
    * hand-off is keyed on `claGroupId` alone, and a field no template reads still ships to the
    * browser inside the transferred state.
    *
@@ -902,9 +902,9 @@ export interface OrgClaGroupPickerResult {
  * The chosen CLA Group as it travels from the picker to the pre-signing preview page (#1983).
  *
  * A superset of what the signing request needs, because the preview has to *name* the agreement
- * as well as key it. Nothing on the receiving page can look these names up: the CLA service has
- * no fetch-a-CLA-group-by-id endpoint, so a page handed only ids could render a heading for an
- * agreement it cannot describe.
+ * as well as key it. A pasted address with no selection loads the same names from the catalogue
+ * read; this state is only the picker's hand-off, and a card click or this hand-off does not
+ * call that read.
  */
 export interface OrgClaSignSelection extends OrgClaGroupPickerResult {
   /**

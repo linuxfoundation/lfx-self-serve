@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
@@ -28,10 +29,13 @@ router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, 
 // POST /votes/responses - submit a vote response (ballot)
 // Note: literal-segment routes must precede '/:uid' handlers so Express
 // doesn't accidentally match 'responses' as a uid for any future POST /:uid/* route.
-router.post('/responses', (req, res, next) => voteController.createVoteResponse(req, res, next));
+router.post('/responses', blockDuringImpersonation, (req, res, next) => voteController.createVoteResponse(req, res, next));
 
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
+
+// GET /votes/:uid/my-ballot - current user's submitted ballot (read-only Review and "Your ballot", #4331)
+router.get('/:uid/my-ballot', (req, res, next) => voteController.getMyVoteBallot(req, res, next));
 
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
@@ -39,7 +43,7 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
 
-// GET /votes/:uid/voters - invited voters with their current ballot (vote#writer only, named votes)
+// GET /votes/:uid/voters - invited voters with their current ballot, or participation only on pseudo-anonymous votes (vote#writer only)
 router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));
 
 // GET /votes/:uid - get a single vote
@@ -60,8 +64,14 @@ router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteControl
 // POST /votes/:uid/reminders - resend the vote email to selected recipients
 router.post('/:uid/reminders', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteReminders(req, res, next));
 
+// POST /votes/:uid/send-ballots - email a personalized ballot link to every non-responder (vote#writer only)
+router.post('/:uid/send-ballots', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteBallots(req, res, next));
+
 // POST /votes/:uid/extend - extend a vote's deadline
 router.post('/:uid/extend', voteWriteRateLimiter, (req, res, next) => voteController.extendVote(req, res, next));
+
+// POST /votes/:uid/end - end an active vote now (vote#writer only; keeps end_time, sets early_end_time)
+router.post('/:uid/end', voteWriteRateLimiter, (req, res, next) => voteController.endVote(req, res, next));
 
 // POST /votes/:uid/summary - send the on-demand close summary to every invited voter (#3662)
 router.post('/:uid/summary', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteSummary(req, res, next));

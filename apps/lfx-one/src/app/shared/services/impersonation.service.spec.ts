@@ -27,7 +27,7 @@ describe('ImpersonationService transition', () => {
     expect(service.transition()).toBe('starting');
     http.expectOne('/api/impersonate').flush({});
 
-    service.startImpersonation('jdoe', null, true).subscribe();
+    service.startImpersonation('jdoe', true).subscribe();
     expect(service.transition()).toBe('switching');
     http.expectOne('/api/impersonate').flush({});
   });
@@ -42,7 +42,7 @@ describe('ImpersonationService transition', () => {
   });
 
   it('clears the transition when the request fails', () => {
-    service.startImpersonation('jdoe', null, true).subscribe({ error: () => undefined });
+    service.startImpersonation('jdoe', true).subscribe({ error: () => undefined });
 
     http.expectOne('/api/impersonate').flush({}, { status: 404, statusText: 'Not Found' });
 

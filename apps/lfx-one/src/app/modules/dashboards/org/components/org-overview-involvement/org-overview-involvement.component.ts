@@ -10,7 +10,11 @@ import {
   BASE_LINE_CHART_OPTIONS,
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
+  ORG_MAINTAINER_ROLES_LABEL,
+  ORG_DEFAULT_PROJECT_SCOPE_LABEL,
+  ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
+  ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
 } from '@lfx-one/shared/constants';
 import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -97,14 +101,7 @@ export class OrgOverviewInvolvementComponent {
   private initializeMaintainersData(): Signal<OrgInvolvementMaintainersMonthlyResponse> {
     return this.buildOrgDataSignal(
       (id) => this.analyticsService.getMaintainersMonthly(id),
-      (accountId) => ({
-        accountId,
-        accountName: '',
-        totalMaintainersYearly: 0,
-        totalProjectsYearly: 0,
-        monthlyData: [],
-        monthlyLabels: [],
-      }),
+      (accountId) => ({ accountId, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }),
       this.maintainersLoading
     );
   }
@@ -154,7 +151,7 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private initializeMaintainersCard(): Signal<DashboardMetricCard> {
-    return computed(() => this.transformMaintainers(this.maintainersData(), this.getMetricConfig('Maintainers')));
+    return computed(() => this.transformMaintainers(this.maintainersData(), this.getMetricConfig(ORG_MAINTAINER_ROLES_LABEL)));
   }
 
   private initializeEventAttendeesCard(): Signal<DashboardMetricCard> {
@@ -229,9 +226,11 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.contributorsLoading(),
       value: data.totalActiveContributors.toString(),
-      subtitle: 'Current and former employees contributing code',
+      // Everyone credited to the org at the time of the work, with or without an employment record.
+      subtitle: `${ORG_LENS_DEFAULT_VIEW_PHRASE}, credited to ${this.accountName()} at the time of their work`,
       tooltipText: ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
       chartOptions: this.createBarChartOptions('Active contributors'),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -251,13 +250,15 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private transformMaintainers(data: OrgInvolvementMaintainersMonthlyResponse, metric: DashboardMetricCard): DashboardMetricCard {
-    const projectLabel = data.totalProjectsYearly === 1 ? 'project' : 'projects';
     return {
       ...metric,
       loading: this.maintainersLoading(),
-      value: data.totalMaintainersYearly.toString(),
-      subtitle: `Employees stewarding ${data.totalProjectsYearly} ${projectLabel} across foundations`,
-      chartOptions: this.createBarChartOptions('Maintainers'),
+      // `null` means the roles are unavailable (roles table missing or the read failed): a dash, never zero.
+      value: data.maintainerRoles === null ? '—' : String(data.maintainerRoles),
+      subtitle: ORG_LENS_DEFAULT_VIEW_PHRASE,
+      tooltipText: ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+      chartOptions: this.createBarChartOptions(ORG_MAINTAINER_ROLES_LABEL),
+      chartCaption: OrgOverviewInvolvementComponent.monthlyWindowCaption(data.monthlyLabels),
       chartData:
         data.monthlyData.length > 0
           ? {
@@ -390,6 +391,17 @@ export class OrgOverviewInvolvementComponent {
       throw new Error(`ORG_INVOLVEMENT_METRICS is missing card titled '${title}'`);
     }
     return config;
+  }
+
+  /**
+   * The window a monthly trend covers, stated under its chart: "Per month, Nov 2025 – Oct 2026 to date, LF and non-LF projects".
+   * The BFF sends the 12 calendar months ending with this one, which is counted to date.
+   */
+  private static monthlyWindowCaption(labels: string[]): string | undefined {
+    if (labels.length === 0) {
+      return undefined;
+    }
+    return `Per month, ${labels[0]} – ${labels[labels.length - 1]} to date, ${ORG_DEFAULT_PROJECT_SCOPE_LABEL}`;
   }
 
   private createBarChartOptions(label: string): ChartOptions<ChartType> {

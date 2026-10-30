@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_CLA_REVIEW_COPY_FILENAME } from '../constants/cla.constants';
-import type { OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
+import type { ClaGroupOption, OrgClaCoverageChip, OrgClaGroup, OrgClaSendByEmailChoice, OrgClaSignSelection } from '../interfaces/cla.interface';
 import { isSameClaGroup } from './cla-identifier.utils';
 
 export function orgClaCoverageSummary(group: Pick<OrgClaGroup, 'projects'>): string {
@@ -168,6 +168,31 @@ export function orgClaPreviewGroup(selection: OrgClaSignSelection): OrgClaGroup 
     viewerIsClaManager: false,
     // 0, not absent. Absence means the deployment did not report a count; this agreement genuinely
     // has no approval criteria, because it has no signature for them to hang off.
+    approvalCriteriaCount: 0,
+  };
+}
+
+/**
+ * The unsigned overview built from a catalogue read of the address (#2293).
+ *
+ * Same shape as `orgClaPreviewGroup`: one covered project and no foundation SFID, so Start is
+ * requested against the project the catalogue already resolved — the same rule the sign picker
+ * uses. A group with no resolved project carries no project entry, and Start is not offered.
+ */
+export function orgClaCatalogueGroup(option: ClaGroupOption): OrgClaGroup {
+  const projectSfid = option.projectSfid?.trim();
+  const projectName = option.projectName?.trim() || option.claGroupName?.trim() || '';
+  return {
+    id: '',
+    claGroupId: option.claGroupId,
+    // The UUID fallback keeps the heading identifiable if a producer drops both names.
+    claGroupName: option.claGroupName?.trim() || projectName || option.claGroupId,
+    projects: projectSfid ? [{ projectName, projectSfid }] : [],
+    signed: false,
+    status: 'not-started',
+    needsClaManager: false,
+    claManagersCount: 0,
+    viewerIsClaManager: false,
     approvalCriteriaCount: 0,
   };
 }

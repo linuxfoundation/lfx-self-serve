@@ -1360,8 +1360,8 @@ export class ProfileController {
       const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
       // Fetch CDP identities, auth-service identities, and the account's primary email in parallel
-      const [cdpIdentities, auth0Identities, primaryEmail] = await Promise.all([
-        this.cdpService.getIdentitiesForUser(req, lfid),
+      const [{ memberId, identities: cdpIdentities }, auth0Identities, primaryEmail] = await Promise.all([
+        this.cdpService.getMemberIdentitiesForUser(req, lfid),
         auth0Sub ? this.auth0Service.getUserIdentities(req, auth0Sub) : Promise.resolve([]),
         this.resolveIdentitiesPrimaryEmail(req, lfid),
       ]);
@@ -1375,7 +1375,7 @@ export class ProfileController {
       // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
-      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid, primaryEmail);
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, memberId, cdpIdentities, auth0Identities, lfid, primaryEmail);
       const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
 
       logger.success(req, 'get_identities', startTime, {
@@ -1480,7 +1480,9 @@ export class ProfileController {
       // guard above and the decision to take the lock below must never drift apart.
       const isEmailIdentity = typeof email === 'string' && !!email;
 
-      const finishRejectIdentity = async (): Promise<void> => {
+      // Everything the lock protects: the meeting-invite guard, the Auth0 unlink, and the primary-email
+      // read that decides whether CDP is touched. Returns 'responded' once it has sent an error response.
+      const guardAndUnlink = async (): Promise<'responded' | 'reject_in_cdp' | 'unlink_only'> => {
         if (isEmailIdentity) {
           const v1Token = req.apiGatewayToken;
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
@@ -1495,7 +1497,7 @@ export class ProfileController {
                 ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
                 : 'Could not confirm your meeting-invitation email. Please try again.',
             });
-            return;
+            return 'responded';
           }
         }
 
@@ -1528,21 +1530,23 @@ export class ProfileController {
                 error: 'profile_auth_not_configured',
                 message: 'Removing this identity is not available in this environment.',
               });
-              return;
+              return 'responded';
             }
             res.status(403).json({
               error: 'management_token_required',
               message: 'Profile authorization required to remove this identity',
               authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
             });
-            return;
+            return 'responded';
           }
         }
 
         // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
         if (identityId.startsWith('auth0:')) {
           logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
-        } else if (
+          return 'unlink_only';
+        }
+        if (
           isEmailIdentity &&
           (provider === 'email' || provider === 'google') &&
           emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)
@@ -1550,20 +1554,27 @@ export class ProfileController {
           // Only email/Google rows can represent the account's primary address (applyPrimaryEmail).
           // Removing that login only unlinks it; LinkedIn rows must still be rejected in CDP (#4123).
           logger.debug(req, 'reject_identity', 'Primary email address — unlink only, skipping CDP rejection', { identity_id: identityId });
-        } else {
-          await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+          return 'unlink_only';
         }
-
-        logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
-        res.json({ success: true });
+        return 'reject_in_cdp';
       };
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
-      if (isEmailIdentity) {
-        await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
-      } else {
-        await finishRejectIdentity();
+      const outcome = isEmailIdentity
+        ? await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, guardAndUnlink)
+        : await guardAndUnlink();
+      if (outcome === 'responded') {
+        return;
       }
+
+      // The CDP write runs after the lock is released: meeting-invite resolution never reads CDP, and the
+      // reject waits behind the member's queued reconcile writes (#4523), which must not eat the lock's TTL.
+      if (outcome === 'reject_in_cdp') {
+        await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+      }
+
+      logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -2168,7 +2179,6 @@ export class ProfileController {
 
         if (isIdentityAlreadyLinkedError(response.error, response.message)) {
           this.logLinkedEmailConflict(req, 'send_email_verification');
-          logger.success(req, 'send_email_verification', startTime);
           res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
@@ -2657,9 +2667,13 @@ export class ProfileController {
    * username values (e.g. GitHub) match exactly. Values written to CDP keep their original casing.
    * When several CDP rows match one auth-service login (e.g. case variants), only the first is
    * shown; the rest are HIDDEN so each login has a single row and Remove menu.
+   *
+   * CDP writes (rules 2 and 3) are queued and run one at a time against `memberId` after the loop,
+   * never in parallel and never alongside another chain for the same member on this pod (#4523).
    */
   private reconcileIdentities(
     req: Request,
+    memberId: string | null,
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
     lfid: string,
@@ -2668,8 +2682,9 @@ export class ProfileController {
     // Under impersonation, produce the read-only enriched list without any CDP mutation: no
     // auto-verify, no synthetic-identity creation. Derived here (not a caller-supplied flag) so a
     // future call site can't accidentally re-enable CDP writes against the target's records. The
-    // returned identities are unchanged either way.
-    const skipCdpMutations = isImpersonating(req);
+    // returned identities are unchanged either way. Also null when CDP has no member to write to.
+    const writeMemberId = isImpersonating(req) ? null : memberId;
+    const cdpWrites: (() => Promise<void>)[] = [];
 
     // Build a map of "platform:type:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
@@ -2712,27 +2727,31 @@ export class ProfileController {
       // Rule: The logged-in user's own LFID is always verified
       if (cdp.platform === 'lfid' && cdp.value === lfid) {
         // Auto-verify LFID in CDP if not already verified with their LFID (skipped when read-only)
-        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
-          this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
-              identity_id: cdp.id,
-              err,
-            });
-          });
+        if (writeMemberId && !(cdp.verified && cdp.verifiedBy === lfid)) {
+          cdpWrites.push(() =>
+            this.cdpService.verifyIdentity(req, writeMemberId, cdp.id, lfid).catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
+                identity_id: cdp.id,
+                err,
+              });
+            })
+          );
         }
         return { ...cdp, displayState: 'verified', inAuth0: true };
       }
 
       if (inAuthService) {
         // In both auth-service and CDP — auto-verify if needed (skipped when read-only)
-        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
-          this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
-              identity_id: cdp.id,
-              platform: cdp.platform,
-              err,
-            });
-          });
+        if (writeMemberId && !(cdp.verified && cdp.verifiedBy === lfid)) {
+          cdpWrites.push(() =>
+            this.cdpService.verifyIdentity(req, writeMemberId, cdp.id, lfid).catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
+                identity_id: cdp.id,
+                platform: cdp.platform,
+                err,
+              });
+            })
+          );
         }
         const authIdentityKey = `${authIdentity.provider}:${authIdentity.user_id}`;
         if (claimedAuthIdentityKeys.has(authIdentityKey)) {
@@ -2809,27 +2828,28 @@ export class ProfileController {
 
       // Skip the CDP create entirely when read-only (impersonation) — the synthetic display entry
       // below is still produced, so the impersonator sees the identity without any CDP mutation.
-      if (!skipCdpMutations && !wouldDuplicateCustomEmail) {
+      if (writeMemberId && !wouldDuplicateCustomEmail) {
         cdpPostsQueued++;
         if (cdpPostPlatform === 'custom') {
           postedCustomEmails.add(value.trim().toLowerCase());
         }
-        this.cdpService
-          .createIdentityForUser(req, [lfid], {
-            value,
-            platform: cdpPostPlatform,
-            type,
-            source: 'lfxOne',
-            verified: true,
-            verifiedBy: lfid,
-          })
-          .catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
-              platform: cdpPlatform,
+        cdpWrites.push(() =>
+          this.cdpService
+            .createIdentity(req, writeMemberId, {
               value,
-              err,
-            });
-          });
+              platform: cdpPostPlatform,
+              type,
+              source: 'lfxOne',
+              verified: true,
+              verifiedBy: lfid,
+            })
+            .catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
+                platform: cdpPlatform,
+                err,
+              });
+            })
+        );
       }
 
       // Create synthetic EnrichedIdentity for display
@@ -2852,7 +2872,10 @@ export class ProfileController {
 
     this.applyPrimaryEmail(enriched, primaryEmail);
 
-    return { enriched, cdpPostsQueued };
+    // Skipped when this member already has a chain on this pod; the next GET re-queues anything still missing.
+    const cdpWritesStarted = !!writeMemberId && cdpWrites.length > 0 && this.cdpService.runMemberIdentityWrites(req, writeMemberId, cdpWrites);
+
+    return { enriched, cdpPostsQueued: cdpWritesStarted ? cdpPostsQueued : 0 };
   }
 
   /**
