@@ -387,7 +387,7 @@ test.describe('Org and foundation pages — single main landmark (GH-2220)', () 
       await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      // The ROI routes are LF-staff only: skip a confirmed non-staff session, but let a redirected staff session fail.
+      // The ROI routes are LF-staff only: skip a session the personas report as non-staff, but let a redirected staff session fail.
       const staffOnly = route.name.startsWith('org-roi');
       if (staffOnly) {
         await skipUnlessLfStaff(page);

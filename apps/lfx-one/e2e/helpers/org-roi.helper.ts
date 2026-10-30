@@ -425,13 +425,16 @@ export async function stubFeatureFlags(page: Page, flags: Record<string, boolean
 /**
  * Skips the case unless the real e2e session is LF staff. ROI Metrics is open to LF staff only, and the server-side guard and the
  * API read the real persona, which a browser stub cannot change, so any other user is redirected away. Asking before navigating
- * keeps the skip to confirmed non-staff sessions: a staff session that is redirected still fails the case.
+ * keeps a staff session that is redirected from skipping: that still fails the case.
+ *
+ * The personas lookup fails closed, so an outage of the access check answers `isLFStaff: false` too and skips the case; only a
+ * response that is not OK fails here.
  */
 export async function skipUnlessLfStaff(page: Page): Promise<void> {
   const response = await page.request.get('/api/user/personas?enriched=true');
   expect(response.ok(), 'the personas lookup behind the ROI staff gate must answer').toBe(true);
   const persona = (await response.json()) as { isLFStaff?: boolean };
-  test.skip(persona.isLFStaff !== true, 'ROI Metrics is LF-staff only and this e2e user is not');
+  test.skip(persona.isLFStaff !== true, 'ROI Metrics is LF-staff only and the personas lookup reports this e2e user as not LF staff');
 }
 
 export async function gotoOrgRoiPage(page: Page): Promise<void> {

@@ -57,7 +57,7 @@ vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit })
 // Toggled via `impersonatingStub` so the impersonation-blocked scenario can flip it per test.
 let impersonatingStub = false;
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'lguerra', isImpersonating: () => impersonatingStub }));
-// The ROI LF-staff gate (production only) asks `lf-staff#member`; each case sets the answer it needs.
+// The ROI LF-staff gate (in every environment) asks `lf-staff#member`; each case sets the answer it needs.
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkLFStaff: () => checkLFStaff() } }));
 vi.mock('../services/logger.service', () => ({
   logger: {
