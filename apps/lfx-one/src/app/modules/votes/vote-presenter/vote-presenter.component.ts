@@ -4,7 +4,7 @@
 import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -24,7 +24,6 @@ import {
   VotePresenterCountParts,
   VotePresenterPhase,
   VotePresenterTallyQuestion,
-  VotePresenterSnapshot,
   VoteResultsOption,
   VoteResultsQuestion,
   VoteResultsResponse,
@@ -40,10 +39,11 @@ import {
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
-import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
+import { createHeldResults } from '@shared/utils/held-results.util';
+import { createLiveSnapshot } from '@shared/utils/live-snapshot.util';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, distinctUntilChanged, EMPTY, expand, filter, map, Observable, of, switchMap, tap, timer } from 'rxjs';
+import { map, timer } from 'rxjs';
 
 import { VoteQrComponent } from '../components/vote-qr/vote-qr.component';
 import { VoteSendBallotsComponent } from '../components/vote-send-ballots/vote-send-ballots.component';
@@ -97,32 +97,65 @@ export class VotePresenterComponent {
   protected readonly voteId: Signal<string | null> = toSignal(this.route.paramMap.pipe(map((m) => m.get('id'))), { initialValue: null });
 
   // === Writable Signals ===
-  private readonly snapshot = signal<VotePresenterSnapshot | null>(null);
-  private readonly failures = signal(0);
-  protected readonly resultsError = signal(false);
-  protected readonly resultsLoading = signal(false);
   private readonly locale = inject(LOCALE_ID);
   protected readonly nowMs = signal(Date.now());
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
-  private readonly retryTick = signal(0);
-  /** True from the confirmed Close until the request fails or the next poll lands, so the button cannot be double-fired. */
-  protected readonly closing = signal(false);
+  /** True while the end request is in flight. */
+  private readonly endInFlight = signal(false);
+  /** The poll generation the end request's forced restart started; only a result from that generation or later settles the close. */
+  private readonly awaitingGeneration = signal<number | null>(null);
   /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
   protected readonly confirmOpen = signal(false);
   /** The Send ballots child owns its own dialog; its `confirming` flag tells Esc to stay out of the way (undefined once the child is destroyed). */
   private readonly sendBallots = viewChild(VoteSendBallotsComponent);
-  /** The poll generation (`retryTick`) the end request's forced restart started; only a result from that generation or later clears `closing`. */
-  private awaitingTick: number | null = null;
+
+  // === Live Data ===
+  private readonly live = createLiveSnapshot({
+    key: this.voteId,
+    // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick. They also keep running
+    // after `ended`, so a vote another manager reopens flips back to the open state; /results is still requested once per ended period.
+    fetch: (id) => this.voteService.fetchVote(id, { uncached: true }),
+    doc: this.doc,
+    intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
+    backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
+    backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
+    enabled: this.isBrowser,
+  });
+  private readonly snapshot = computed(() => {
+    const live = this.live.snapshot();
+    return live ? { vote: live.value, receivedAtMs: live.receivedAtMs } : null;
+  });
+  private readonly failures = this.live.failures;
 
   // === Computed Signals ===
+  /** True from the confirmed Close until the request fails or the next poll lands, so the button cannot be double-fired. */
+  protected readonly closing = computed(() => {
+    const awaiting = this.awaitingGeneration();
+    return this.endInFlight() || (awaiting !== null && this.live.landedGeneration() < awaiting);
+  });
   protected readonly vote = computed(() => this.snapshot()?.vote ?? null);
   /** Set only while the vote is ended; a reopen drops it to null so `/results` is requested once per ended period. */
   private readonly endedVoteUid = computed(() => {
     const vote = this.vote();
     return vote?.status === PollStatus.ENDED ? vote.uid : null;
   });
-  private readonly results: Signal<VoteResultsResponse | null> = this.initResults();
+  /**
+   * `/results` is requested once per ended period and never while the vote is open (the voting service does not gate it).
+   * A held payload is re-requested every {@link VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS} for at most
+   * {@link VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS} requests, so the released results replace it without a reload.
+   */
+  private readonly heldResults = createHeldResults<VoteResultsResponse>({
+    key: this.endedVoteUid,
+    load: (uid) => this.voteService.getVoteResults(uid),
+    isHeld: (results) => results.results_held === true,
+    retryMs: VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS,
+    maxAttempts: VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS,
+    errorMessage: 'Failed to load vote results for the presenter',
+  });
+  private readonly results: Signal<VoteResultsResponse | null> = this.heldResults.results;
+  protected readonly resultsError = this.heldResults.error;
+  protected readonly resultsLoading = this.heldResults.loading;
   protected readonly phase: Signal<VotePresenterPhase> = this.initPhase();
   protected readonly participation = computed(() => {
     const vote = this.vote();
@@ -187,7 +220,6 @@ export class VotePresenterComponent {
   private confirmHiddenTimer: ReturnType<typeof setTimeout> | null = null;
   /** The element focused when a confirmation opened, so focus returns to the triggering button when it closes. */
   private returnFocusTo: HTMLElement | null = null;
-  private polledVoteId: string | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -195,7 +227,6 @@ export class VotePresenterComponent {
       if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
     });
     if (this.isBrowser) {
-      this.startPolling();
       timer(VOTE_PRESENTER_CLOCK_TICK_MS, VOTE_PRESENTER_CLOCK_TICK_MS)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe(() => this.nowMs.set(Date.now()));
@@ -249,8 +280,7 @@ export class VotePresenterComponent {
 
   /** Restarts the poll loop from the error state without waiting out the backoff. */
   protected retry(): void {
-    this.failures.set(0);
-    this.retryTick.update((n) => n + 1);
+    this.live.restart(true);
   }
 
   protected async copyLink(): Promise<void> {
@@ -267,88 +297,6 @@ export class VotePresenterComponent {
   }
 
   // === Private Initializers ===
-  private startPolling(): void {
-    toObservable(computed(() => ({ id: this.voteId(), retry: this.retryTick() })))
-      .pipe(
-        filter((state): state is { id: string; retry: number } => !!state.id),
-        // A new :id reuses this component: drop the previous vote's snapshot (and with it the ended-vote results) before polling it.
-        tap(({ id }) => {
-          if (id !== this.polledVoteId) {
-            this.snapshot.set(null);
-            this.failures.set(0);
-            this.resultsError.set(false);
-          }
-          this.polledVoteId = id;
-        }),
-        // Polls omit include_writer: the guard read it once for this session, so no FGA lookup per 5s tick. They also keep running
-        // after `ended`, so a vote another manager reopens flips back to the open state; /results is still requested once per ended period.
-        // Each event carries the poll generation it came from, so a result from before an end request's forced restart
-        // (an in-flight GET that resolved just ahead of the restart) never counts as "the poll that follows the close".
-        switchMap(({ id, retry }) =>
-          createVisibilityPoll(this.doc, () => this.voteService.fetchVote(id, { uncached: true }), {
-            intervalMs: VOTE_PRESENTER_POLL_INTERVAL_MS,
-            backoffBaseMs: VOTE_PRESENTER_BACKOFF_BASE_MS,
-            backoffMaxMs: VOTE_PRESENTER_BACKOFF_MAX_MS,
-          }).pipe(map((event) => ({ event, retry })))
-        ),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ event, retry }) => {
-        if (event.kind === 'ok') {
-          this.failures.set(0);
-          this.snapshot.set({ vote: event.value, receivedAtMs: Date.now() });
-          if (this.awaitingTick !== null && retry >= this.awaitingTick) {
-            this.awaitingTick = null;
-            this.closing.set(false);
-          }
-        } else {
-          this.failures.set(event.failures);
-        }
-      });
-  }
-
-  /**
-   * `/results` is requested once per ended period and never while the vote is open (the voting service does not gate it).
-   * A held payload is re-requested every {@link VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS} for at most
-   * {@link VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS} requests, so the released results replace it without a reload.
-   */
-  private initResults(): Signal<VoteResultsResponse | null> {
-    return toSignal(
-      toObservable(this.endedVoteUid).pipe(
-        distinctUntilChanged(),
-        tap((uid) => {
-          this.resultsError.set(false);
-          this.resultsLoading.set(!!uid);
-        }),
-        switchMap((uid) =>
-          uid
-            ? this.loadResults(uid).pipe(
-                expand((results, index) =>
-                  results?.results_held === true && index + 1 < VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS
-                    ? timer(VOTE_PRESENTER_RESULTS_HOLD_RETRY_MS).pipe(switchMap(() => this.loadResults(uid, results)))
-                    : EMPTY
-                ),
-                tap(() => this.resultsLoading.set(false))
-              )
-            : of(null)
-        )
-      ),
-      { initialValue: null }
-    );
-  }
-
-  private loadResults(uid: string, heldResults: VoteResultsResponse | null = null): Observable<VoteResultsResponse | null> {
-    return this.voteService.getVoteResults(uid).pipe(
-      catchError((error) => {
-        console.error('Failed to load vote results for the presenter', error);
-        // A failed retry cannot release the hold or end the bounded finalization loop.
-        if (heldResults?.results_held === true) return of(heldResults);
-        this.resultsError.set(true);
-        return of(null);
-      })
-    );
-  }
-
   private initPhase(): Signal<VotePresenterPhase> {
     return computed(() => {
       const vote = this.vote();
@@ -377,19 +325,19 @@ export class VotePresenterComponent {
   /**
    * Ends the vote through the dedicated end action (never extend). On success the poll loop is restarted so the very next
    * GET decides the state: the presenter moves to the result state only when that GET returns `ended`, and `/results` is
-   * then requested once by `initResults`, exactly as for a vote that ended on its own.
+   * then requested once by `createHeldResults`, exactly as for a vote that ended on its own.
    */
   private endVote(id: string): void {
     if (this.closing()) return;
 
-    this.closing.set(true);
+    this.endInFlight.set(true);
     this.voteService.endVote(id).subscribe({
       next: () => {
-        this.retryTick.update((n) => n + 1);
-        this.awaitingTick = this.retryTick();
+        this.awaitingGeneration.set(this.live.restart());
+        this.endInFlight.set(false);
       },
       error: (error: unknown) => {
-        this.closing.set(false);
+        this.endInFlight.set(false);
         this.messageService.add({ severity: 'error', summary: 'Unable to close the vote', detail: this.endErrorDetail(error), life: 8000 });
       },
     });
