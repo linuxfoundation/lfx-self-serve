@@ -213,8 +213,9 @@ export class OrgLensPeopleService {
    * `isUnclassified`, which the page lists only under "All employees". Only this read opts in to them, so the shared
    * people directory — and the reassign pickers that read it — never sees either. Stats are computed over these rows
    * for the request's commit filters. No address is sent for them, and none stands in for a blank name. `exclude`
-   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`). Until lf-dbt builds the unclassified
-   * table the response carries former employees only.
+   * removes CDP team members' code (lfx-self-serve#4685, see `toWireResponse`). The two populations are disjoint within
+   * a warehouse build but cached separately, so someone on both (person key or LF username) is listed once, as the
+   * former employee. Until lf-dbt builds the unclassified table the response carries former employees only.
    */
   public async getFormerEmployees(
     req: Request,
@@ -230,10 +231,12 @@ export class OrgLensPeopleService {
     ]);
     const offRosterRow = (row: OrgPeopleAllRowRaw): OrgAllEmployeeRowInternal =>
       this.mapEmployeeRow({ ...row, NAME: offRosterDisplayName(row), TITLE: null, EMAIL: null });
-    const rows = [
-      ...former.rowsRaw.map((row) => ({ ...offRosterRow(row), isFormer: true })),
-      ...(unclassified?.rowsRaw ?? []).map((row) => ({ ...offRosterRow(row), isUnclassified: true })),
-    ];
+    const formerRows = former.rowsRaw.map((row) => ({ ...offRosterRow(row), isFormer: true }));
+    const formerIdentities = new Set(formerRows.flatMap((row) => [`key:${row.personKey}`, ...(row.lfUsername ? [`username:${row.lfUsername}`] : [])]));
+    const unclassifiedRows = (unclassified?.rowsRaw ?? [])
+      .map((row) => ({ ...offRosterRow(row), isUnclassified: true }))
+      .filter((row) => !formerIdentities.has(`key:${row.personKey}`) && !(row.lfUsername && formerIdentities.has(`username:${row.lfUsername}`)));
+    const rows = [...formerRows, ...unclassifiedRows];
     const foundations = new Map<string, string>();
     for (const row of [...former.foundationRaw, ...(unclassified?.foundationRaw ?? [])]) {
       foundations.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);

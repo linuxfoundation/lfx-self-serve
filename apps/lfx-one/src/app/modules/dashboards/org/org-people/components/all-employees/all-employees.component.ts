@@ -150,6 +150,8 @@ export class AllEmployeesComponent {
   // The code tile counts Code Contributors whatever the code-count option; only the table's column follows the option.
   protected readonly codeStatLabel = ORG_ALL_EMPLOYEE_CODE_STAT_LABEL;
   protected readonly unclassifiedRowNote = ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE;
+  // The one description element the name buttons of those rows point at, so the note is not repeated per row.
+  protected readonly unclassifiedRowNoteId = 'org-people-all-employees-unclassified-note';
   protected readonly statSkeletonLabels: readonly string[] = [
     'Employees Active in Open Source',
     'In Governance',
@@ -469,6 +471,8 @@ export class AllEmployeesComponent {
       range: this.selectedRange(),
       codeFilters: this.selectedFilters(),
       teamMembers: this.selectedTeamMembers(),
+      // Someone with no employment record (`isUnclassified`) opens as People → Contributors opens them: never badged
+      // former, and their address lookup finds none, as code alone never puts a person on the address model's roster.
       isFormer: row.isFormer === true,
     });
   }
@@ -589,8 +593,8 @@ export class AllEmployeesComponent {
 
   /**
    * Current and off-roster rows for the selected view, reconciled by LF username in every view. The off-roster read
-   * carries former employees and, only joined under "All", people with code but no employment row (`isUnclassified`,
-   * lfx-self-serve#4730), who are reconciled like former employees. Someone in the former roster can
+   * carries former employees and people with code but no employment row (`isUnclassified`, lfx-self-serve#4730), who
+   * are reconciled like former employees in every view but listed only under "All". Someone in the former roster can
    * also arrive from the live roster before the next warehouse build. A live row's username is only verified when
    * the row was created by a seat or an Org Lens access principal. The server merges seats, then key contacts,
    * then access, so the first source is the creating one. A row created by a key contact carries member-service's
@@ -600,8 +604,9 @@ export class AllEmployeesComponent {
    * - With a live seat or key-contact role, they are current again: one row with the former row's warehouse
    *   activity plus the live sources, seats and access badge, untagged. A former name the warehouse could not
    *   supply (blank or the placeholder) and a missing title or photo are taken from the live row; an address never is.
-   * - With only Org Lens access, they are still former: the former row, carrying the access badge. The server tags
-   *   such a live row `isFormer`, so it is never listed as current, whichever view is selected.
+   * - With only Org Lens access, they are still former (or unclassified): the off-roster row, carrying the access badge.
+   *   The server tags such a live former row `isFormer`; an unclassified one is folded into its warehouse row, so
+   *   neither is ever listed as current, whichever view is selected.
    * The two warehouse rosters are disjoint within a build but cached separately, so right after a build one can
    * be stale. Someone on both is treated as current (matched on person key or the stored username): under "All"
    * they are shown once, as the stored current row, and the Former view leaves them out.
@@ -612,7 +617,7 @@ export class AllEmployeesComponent {
     const accountId = this.currentAccountId();
     const current = this.response();
     const showUnclassified = this.showUnclassified();
-    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows.filter((row) => showUnclassified || !row.isUnclassified) : [];
+    const formerRows = this.formerResponse().accountId === accountId ? this.formerResponse().rows : [];
     const liveRows = current.accountId === accountId ? current.rows : [];
     // Usernames are matched case-insensitively, as the server merge does.
     const formerUsernames = new Set(formerRows.map((row) => AllEmployeesComponent.usernameKey(row.lfUsername)).filter((username) => !!username));
@@ -645,7 +650,7 @@ export class AllEmployeesComponent {
       const role = formerUsername ? liveRoles.get(formerUsername) : undefined;
       const accessBadge = (formerUsername ? liveAccess.get(formerUsername) : undefined) ?? row.accessBadge;
       if (!role) {
-        shownFormerRows.push({ ...row, accessBadge });
+        if (showUnclassified || !row.isUnclassified) shownFormerRows.push({ ...row, accessBadge });
         continue;
       }
       rejoinedRows.push({

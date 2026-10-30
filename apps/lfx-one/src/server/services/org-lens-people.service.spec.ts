@@ -980,6 +980,20 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(excluded.rows.map((row) => row.personKey)).toEqual([formerKey, unclassifiedKey]);
       });
 
+      it('lists someone on both populations once, as the former employee, when the two reads come from different builds', async () => {
+        // The two reads are cached separately, so right after a build one can still hold someone who has since moved.
+        addUnclassifiedRow(ACCOUNT, formerKey, '365d', 'leftuser', 'Left User', 6);
+        addUnclassifiedRow(ACCOUNT, 'cdp:left-user', '365d', ' LeftUser ', 'Left User', 6);
+
+        const response = await service.getFormerEmployees(REQ, ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.isFormer === true, row.isUnclassified === true])).toEqual([
+          [formerKey, true, false],
+          [unclassifiedKey, false, true],
+        ]);
+        expect(response.stats.codeContributors).toBe(2);
+      });
+
       it('lists former employees only while the table is not built, and does not remember that answer', async () => {
         database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
         const missing = new Error(

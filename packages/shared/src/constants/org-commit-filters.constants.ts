@@ -103,12 +103,12 @@ export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL = 'Code Contributors';
  * leaves out people who have left; under "All employees" it matches People → Contributors, people with code but no
  * employment record included; the Former view needs none.
  */
-export const ORG_ALL_EMPLOYEE_CODE_NOTE: Readonly<Record<OrgAllEmployeeEmploymentFilter, string | null>> = {
+export const ORG_ALL_EMPLOYEE_CODE_NOTE = {
   current:
     'Counts current employees only, unlike People → Contributors and Code Contributions. Set the employment filter to "All employees" to include people who have since left.',
   former: null,
   all: 'Matches People → Contributors. Includes people with code credited to this company but no employment record, who are counted and listed only under "All employees", not under current or former employees.',
-};
+} as const satisfies Readonly<Record<OrgAllEmployeeEmploymentFilter, string | null>>;
 
 /**
  * Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). The headline is the

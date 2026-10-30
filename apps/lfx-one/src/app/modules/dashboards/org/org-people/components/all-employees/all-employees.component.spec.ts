@@ -10,6 +10,7 @@ import {
   DEFAULT_ORG_COMMIT_FILTERS,
   EMPTY_ORG_ALL_EMPLOYEE_STATS,
   ORG_ALL_EMPLOYEE_CODE_NOTE,
+  ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE,
   ORG_CODE_CONTRIBUTIONS_DEFINITION,
   ORG_COMMITS_DEFINITION,
   ORG_MAIN_BRANCH_COMMITS_DEFINITION,
@@ -90,6 +91,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       .map((r) => r.dataset['testid'] ?? '')
       .filter((id) => !id.endsWith('-name') && !id.endsWith('-detail-row') && !id.endsWith('-former') && !id.endsWith('-unclassified'));
   const formerTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-former"]')].map((tag) => tag.dataset['testid'] ?? '');
+  const unclassifiedTags = (): string[] => [...el().querySelectorAll<HTMLElement>('[data-testid$="-unclassified"]')].map((tag) => tag.dataset['testid'] ?? '');
   const activeStat = (): string => el().querySelector('[data-testid="org-people-all-employees-stat-active"]')?.textContent ?? '';
 
   async function settle(): Promise<void> {
@@ -384,8 +386,6 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     // lfx-self-serve#4730 — people with code but no employment row ride on the off-roster read, tagged `isUnclassified`.
     it('lists people with code but no employment record only under "All employees", with a hint, in the code tile', async () => {
-      const unclassifiedTags = (): string[] =>
-        [...el().querySelectorAll<HTMLElement>('[data-testid$="-unclassified"]')].map((tag) => tag.dataset['testid'] ?? '');
       await mount('browser', '/?employment=all');
       await answerCurrent();
       former$.next(
@@ -412,6 +412,86 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
       expect(unclassifiedTags()).toEqual([]);
+    });
+
+    it('lists someone with only Org Lens access and no employment record once, with the badge, only under "All employees"', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'Alan', sources: ['access'], accessBadge: 'viewer' }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { lfUsername: 'alan', isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1']);
+      expect(unclassifiedTags()).toEqual(['org-people-all-employees-row-cdp:p-7-unclassified']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-access-cdp:p-7"]')?.textContent).toContain('Viewer');
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      component.filterForm.controls.employment.setValue('current');
+      await settle();
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-1']);
+
+      component.filterForm.controls.employment.setValue('former');
+      await settle();
+      expect(rowKeys()).toEqual([]);
+    });
+
+    it('lists someone with a live seat and no employment record as one current row keeping their code, under "Current" and "All"', async () => {
+      // The merged row's count is checked as commits.
+      await mount('browser', '/?employment=current&metric=commits');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace', { commitsCount: 1 }),
+            row('live-alan', 'Alan Turing', { lfUsername: 'alan', sources: ['committee'], seatsCount: 1, committeeSeatsCount: 1 }),
+          ],
+          2
+        )
+      );
+      live$.complete();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { lfUsername: 'alan', isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ employment: FormControl<OrgAllEmployeeEmploymentFilter> }> };
+      for (const view of ['current', 'all'] as const) {
+        component.filterForm.controls.employment.setValue(view);
+        await settle();
+        expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-cdp:p-7', 'org-people-all-employees-row-p-1']);
+        expect(unclassifiedTags()).toEqual([]);
+        expect(el().querySelector('[data-testid="org-people-all-employees-row-cdp:p-7"]')?.textContent).toContain('3 commits');
+        expect(el().querySelector('[data-testid="org-people-all-employees-stat-code"]')?.textContent).toContain('2');
+        expect(el().querySelector('[data-testid="org-people-all-employees-stat-governance"]')?.textContent).toContain('1');
+      }
+    });
+
+    it("opens the no-employment-record note on keyboard focus of that row's name, which it describes", async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      former$.next(response([row('cdp:p-7', 'Alan Turing', { isUnclassified: true, commitsCount: 3 })], 1));
+      former$.complete();
+      await settle();
+
+      const name = (key: string) => fixture.debugElement.query(By.css(`[data-testid="org-people-all-employees-row-${key}-name"]`));
+      const tooltip = name('cdp:p-7').injector.get(Tooltip);
+      expect(tooltip.content).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+      expect(tooltip.tooltipEvent).toBe('focus');
+      expect(tooltip.disabled).toBe(false);
+      const describedBy = (name('cdp:p-7').nativeElement as HTMLElement).getAttribute('aria-describedby');
+      expect(el().querySelector(`#${describedBy}`)?.textContent?.trim()).toBe(ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE);
+
+      expect(name('p-1').injector.get(Tooltip).disabled).toBe(true);
+      expect((name('p-1').nativeElement as HTMLElement).hasAttribute('aria-describedby')).toBe(false);
     });
 
     it('shows only former employees, tagged, with their own tiles, under "Former employees"', async () => {
