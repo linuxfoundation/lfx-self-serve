@@ -258,6 +258,18 @@ export const CAMPAIGN_CHAR_LIMITS = {
   sitelinkDescription: 35,
 } as const;
 
+/**
+ * The query parameter the paid campaigns page keeps the event URL in (#4756), so a reload, a second
+ * tab or a shared link can prefill Planning and offer the saved brief again instead of opening blank.
+ */
+export const CAMPAIGN_EVENT_URL_QUERY_PARAM = 'event';
+
+/**
+ * The longest `?event=` value Planning will take from the address. The parameter is caller-supplied
+ * input, so it is bounded before it is parsed or put in the form; real event URLs are far shorter.
+ */
+export const CAMPAIGN_EVENT_URL_MAX_LENGTH = 2048;
+
 export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
   displayBudgetPct: 30,

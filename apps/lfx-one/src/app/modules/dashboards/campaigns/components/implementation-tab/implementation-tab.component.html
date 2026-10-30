@@ -153,15 +153,15 @@
   @case ('saved') {
     <div class="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800" data-testid="implementation-brief-saved">
       <!--
-        Names the ACTION a recovery needs, rather than promising a reload just works. It does
-        not: the read is keyed on the event slug, and after a reload the page holds no URL to
-        derive one from, so the brief comes back only once the user pastes the event URL again.
-        "It will still be here if you reload" would be the same false assurance the 'error' arm
-        below exists to prevent, pointed the other way.
+        Names the ACTION a recovery needs, rather than promising a reload just works. The read is
+        keyed on the event slug: a reload keeps the event URL in `?event=` (#4756), so Planning
+        prefills it and OFFERS the saved brief, but restoring it is still the user's click.
+        "It will still be here if you reload" would skip that step — the same false assurance the
+        'error' arm below exists to prevent, pointed the other way.
       -->
       <!--
         Rendered from `briefPersistenceAnnouncement`, not repeated here. The two used to be
-        separate strings and drifted: the banner gained the re-entry instruction while the live
+        separate strings and drifted: the banner gained the reload instruction while the live
         region still announced only "Brief saved.", so screen-reader users got the reassurance
         without the part they cannot recover on their own. One source cannot drift.
       -->

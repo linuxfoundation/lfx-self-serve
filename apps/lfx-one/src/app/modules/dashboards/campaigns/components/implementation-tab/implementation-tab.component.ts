@@ -674,16 +674,18 @@ export class ImplementationTabComponent implements OnInit {
       case 'saving':
         return 'Saving this brief.';
       case 'saved':
-        // Must carry the SAME information as the visible banner, which tells the user to re-enter
-        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
-        // the reassurance without the instruction — and the instruction is the part they cannot
-        // recover on their own, since nothing else on the page says the brief needs a URL to come
-        // back.
+        // Must carry the SAME information as the visible banner, which says where the brief is
+        // after a reload. Announcing only "Brief saved." gives screen-reader users the reassurance
+        // without the instruction.
+        //
+        // A reload keeps the event URL in the page address (`?event=`, #4756), so Planning prefills
+        // it and offers the saved brief; the user no longer has to re-enter it. "Restore saved
+        // brief" is that offer's button label, so the sentence names a control that is there.
         //
         // The unapproved message, when there is one, is appended rather than replacing this: the
         // brief IS saved and the reload instruction still applies, so dropping either half would
         // leave a screen-reader user with less than the visible banner shows.
-        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+        return `Brief saved. After a reload, choose Restore saved brief on the Plan tab to reopen it.${
           this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
         }`;
       default:
