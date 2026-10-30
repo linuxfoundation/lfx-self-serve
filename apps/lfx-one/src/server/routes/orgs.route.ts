@@ -228,6 +228,8 @@ function buildOrgsRouter(): Router {
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));
+  // lfx-self-serve-ops#1219 — the account's Insights organization for the Organization scope picker.
+  router.get('/:orgUid/lens/org-scope', (req, res, next) => orgLensContributionsController.getOrgScope(req, res, next));
 
   // The literal /projects/search route MUST be registered before the /projects/:projectSlug matcher
   // below, so 'search' isn't consumed as a project slug.

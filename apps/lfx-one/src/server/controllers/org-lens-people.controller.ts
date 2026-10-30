@@ -23,7 +23,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
-import { parseOptionalOrgCommitFilters, parseOrgCommitFilters, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
+import { parseOptionalOrgCommitFilters, parseOrgCommitFilters, parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensPeopleService } from '../services/org-lens-people.service';
@@ -57,7 +57,7 @@ export class OrgLensPeopleController {
     this.boardMembersService = new OrgPeopleBoardMembersService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources, matching people on their verified LF username and on email only for records without one (key contacts always match on email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. `teamMembers=exclude` (the default) removes CDP team members' code; people with other engagement stay listed (lfx-self-serve#4685). */
+  /** GET /api/orgs/:orgUid/lens/people/all[?live][&range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude][&orgScope=insights|all] — `live` merges the stored Snowflake roster with live committee/key-contact/access sources, matching people on their verified LF username and on email only for records without one (key contacts always match on email); omitted ⇒ Snowflake-only. `range` windows the stored roster, and the commit filters scope it and pick the code count; omitted ⇒ the unranged roster (the reassign pickers' read, and any caller that predates the range), which the commit filters do not apply to. `teamMembers=exclude` (the default) removes CDP team members' code; people with other engagement stay listed (lfx-self-serve#4685). `orgScope=insights` (the default) counts only the Insights organization's code (lfx-self-serve-ops#1219); the unranged roster is not scoped. */
   public async getAllEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_all';
@@ -69,6 +69,7 @@ export class OrgLensPeopleController {
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation);
       const filters = parseOrgCommitFilters(req, operation);
       const teamMembers = parseOrgTeamMembers(req, operation);
+      const orgScope = parseOrgScope(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         live,
@@ -77,11 +78,12 @@ export class OrgLensPeopleController {
         commit_scope: filters.commitScope,
         metric: filters.metric,
         team_members: teamMembers,
+        org_scope: orgScope,
       });
 
       const response = live
-        ? await this.directoryService.getLive(req, orgUid, range, filters, teamMembers)
-        : await this.service.getAllEmployees(orgUid, range, filters, teamMembers);
+        ? await this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
+        : await this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -99,7 +101,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude] — former employees active at the account in the range and project scope (lfx-self-serve#4311, default: the Org Lens default range). Never merged into the live directory. */
+  /** GET /api/orgs/:orgUid/lens/people/former[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers=include|exclude][&orgScope=insights|all] — the people off the current roster active at the account in the range and project scope (default: the Org Lens default range): former employees (`isFormer`, lfx-self-serve#4311) and people with code credited to the account but no employment row (`isUnclassified`, lfx-self-serve#4730). Never merged into the live directory. */
   public async getFormerEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_former';
@@ -109,6 +111,7 @@ export class OrgLensPeopleController {
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_LENS_DEFAULT_TIME_RANGE;
       const filters = parseOrgCommitFilters(req, operation);
       const teamMembers = parseOrgTeamMembers(req, operation);
+      const orgScope = parseOrgScope(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: range,
@@ -116,9 +119,10 @@ export class OrgLensPeopleController {
         commit_scope: filters.commitScope,
         metric: filters.metric,
         team_members: teamMembers,
+        org_scope: orgScope,
       });
 
-      const response = await this.service.getFormerEmployees(req, orgUid, range, filters, teamMembers);
+      const response = await this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -135,12 +139,13 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers] —
+   * GET /api/orgs/:orgUid/lens/people/:personKey/detail[?range=30d|90d|365d|730d|all][&projectScope][&commitScope][&metric][&teamMembers][&orgScope] —
    * `range` is the window the Maintainer pills follow (default: the Org Lens default range). The commit filters are the calling page's (the
    * drawer's opener or the All Employees expanded row; lfx-self-serve#4404): with any of them the Code projects and total count that page's row in `range`; with none,
    * every commit of the trailing 12 months. With them, `teamMembers` (default exclude) is that page's pick: under
-   * `exclude` a CDP team member's code view is empty (lfx-self-serve#4685). With them, an unknown `teamMembers` value is a 400;
-   * without them it is ignored.
+   * `exclude` a CDP team member's code view is empty (lfx-self-serve#4685), and `orgScope` (default insights) is that page's
+   * organization scope (lfx-self-serve-ops#1219). With them, an unknown `teamMembers` or `orgScope` value is a 400;
+   * without them both are ignored.
    */
   public async getEmployeeDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -157,8 +162,10 @@ export class OrgLensPeopleController {
       const codeFilters = parseOptionalOrgCommitFilters(req, 'get_org_lens_people_detail');
       // The opener's Team members pick rides with its code filters (lfx-self-serve#4685); a code-free open counts everyone.
       const teamMembers = codeFilters ? parseOrgTeamMembers(req, 'get_org_lens_people_detail') : 'include';
+      // The organization scope rides with them too (lfx-self-serve-ops#1219); a code-free open counts every organization.
+      const orgScope = codeFilters ? parseOrgScope(req, 'get_org_lens_people_detail') : 'all';
 
-      const response = await this.service.getEmployeeDetail(req, orgUid, personKey, range, codeFilters, teamMembers);
+      const response = await this.service.getEmployeeDetail(req, orgUid, personKey, range, codeFilters, teamMembers, orgScope);
 
       logger.success(req, 'get_org_lens_people_detail', startTime, {
         org_uid: orgUid,
@@ -243,7 +250,7 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail[?range=][&projectScope][&commitScope][&metric][&teamMembers] — activity for
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail[?range=][&projectScope][&commitScope][&metric][&teamMembers][&orgScope] — activity for
    * openers that carry only an LF username; `range` and the commit filters as for the person-key detail. A username with no single roster person is answered `null` (200),
    * not 404: the miss is routine, and the error handler would log the username-bearing path at WARN on every such drawer open.
    */
@@ -258,9 +265,10 @@ export class OrgLensPeopleController {
       const range = parsePeopleTimeRange(getStringQueryParam(req, 'range'), 'range', operation) ?? ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE;
       const codeFilters = parseOptionalOrgCommitFilters(req, operation);
       const teamMembers = codeFilters ? parseOrgTeamMembers(req, operation) : 'include';
+      const orgScope = codeFilters ? parseOrgScope(req, operation) : 'all';
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
-      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username, range, codeFilters, teamMembers);
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username, range, codeFilters, teamMembers, orgScope);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -555,7 +563,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|730d|all[&projectScope][&commitScope][&metric][&employment=current|former|all][&teamMembers=include|exclude] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874); `employment` omitted ⇒ everyone (lfx-self-serve#4627); `teamMembers` omitted ⇒ CDP team members excluded, the default (lfx-self-serve#4685). */
+  /** GET /api/orgs/:orgUid/lens/people/contributors?timeRange=30d|90d|365d|730d|all[&projectScope][&commitScope][&metric][&employment=current|former|all][&teamMembers=include|exclude][&orgScope=insights|all] — bundled rows + projects + stats + dropdown options for the Contributors tab (LFXV2-1874); `employment` omitted ⇒ everyone (lfx-self-serve#4627); `teamMembers` omitted ⇒ CDP team members excluded, the default (lfx-self-serve#4685); `orgScope` omitted ⇒ the Insights organization only (lfx-self-serve-ops#1219). */
   public async getContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_people_contributors';
@@ -566,6 +574,7 @@ export class OrgLensPeopleController {
       const filters = parseOrgCommitFilters(req, operation);
       const employment = parseContributorsEmployment(getStringQueryParam(req, 'employment'), operation);
       const teamMembers = parseOrgTeamMembers(req, operation);
+      const orgScope = parseOrgScope(req, operation);
       const startTime = logger.startOperation(req, operation, {
         org_uid: orgUid,
         time_range: timeRange,
@@ -574,9 +583,10 @@ export class OrgLensPeopleController {
         metric: filters.metric,
         employment,
         team_members: teamMembers,
+        org_scope: orgScope,
       });
 
-      const response = await this.contributorsService.getContributors(orgUid, timeRange, filters, employment, teamMembers);
+      const response = await this.contributorsService.getContributors(orgUid, timeRange, filters, employment, teamMembers, orgScope);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

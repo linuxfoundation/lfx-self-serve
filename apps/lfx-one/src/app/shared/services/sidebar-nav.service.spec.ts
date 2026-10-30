@@ -602,6 +602,20 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
   });
 
+  // lfx-self-serve-ops#1219: only the pages with an organization scope picker carry it; the Dashboard always shows the default.
+  it('carries the organization scope to Projects, People and Code Contributions, and not to the Dashboard', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagement = sectionItems(items, 'Organization Engagement');
+
+    expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
+    expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope']);
+    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'orgScope']);
+    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope']);
+  });
+
   it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization with the flag on', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');

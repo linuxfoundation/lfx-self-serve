@@ -21,6 +21,7 @@ import {
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_SCOPE_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -920,6 +921,9 @@ export class SidebarNavService {
   private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
     const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
     return [
+      // The organization scope carries between the pages with a scope picker — Projects, People, Code Contributions, and
+      // Project Detail through Projects (lfx-self-serve-ops#1219) — so a pick of All related organizations survives the
+      // sidebar. The Dashboard always counts the default scope, so its link carries none.
       {
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
@@ -934,6 +938,7 @@ export class SidebarNavService {
         label: 'Projects',
         icon: 'fa-light fa-folders',
         routerLink: org('projects'),
+        carryQueryParams: [ORG_SCOPE_QUERY_PARAM],
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
@@ -946,15 +951,15 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range,
-            // not page-specific params.
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range and the
+            // organization scope, not page-specific params.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
           },
           {
             label: 'Events',
