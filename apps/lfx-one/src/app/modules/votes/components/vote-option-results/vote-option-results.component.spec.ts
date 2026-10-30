@@ -19,7 +19,7 @@ describe('VoteOptionResultsComponent', () => {
     fixture = TestBed.createComponent(VoteOptionResultsComponent);
   });
 
-  function render(options: VoteResultsOption[], variant?: 'live' | 'final' | 'voter-final', testIdPrefix?: string): void {
+  function render(options: VoteResultsOption[], variant?: 'live' | 'final' | 'voter-final' | 'compact', testIdPrefix?: string): void {
     fixture.componentRef.setInput('options', options);
     if (variant) fixture.componentRef.setInput('variant', variant);
     if (testIdPrefix) fixture.componentRef.setInput('testIdPrefix', testIdPrefix);
@@ -50,6 +50,53 @@ describe('VoteOptionResultsComponent', () => {
       render([option({ isWinner: true, isTied: true, voteCount: 2 })], 'live');
       expect(text('vote-results-option-c1')).not.toContain('Winner');
       expect(text('vote-results-option-c1')).not.toContain('Tied');
+    });
+  });
+
+  describe('compact', () => {
+    it('highlights the leader in blue and mutes the rest on an open vote', () => {
+      render([option({ choiceId: 'c1', voteCount: 3, percentage: 75, isLeading: true }), option({ choiceId: 'c2', voteCount: 1, percentage: 25 })], 'compact');
+
+      expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('width: 75%');
+      expect(row('vote-results-option-c2')?.querySelector('.bg-slate-300')).toBeTruthy();
+      expect(text('vote-results-option-c1')).not.toContain('Winner');
+      expect(text('vote-results-option-c1')).not.toContain('Tied');
+    });
+
+    it('shows the count and percentage with pluralization', () => {
+      render([option({ choiceId: 'c1', voteCount: 1, percentage: 50 }), option({ choiceId: 'c2', voteCount: 2, percentage: 100 })], 'compact');
+
+      expect(text('vote-results-option-c1')).toContain('1 vote · 50%');
+      expect(text('vote-results-option-c2')).toContain('2 votes · 100%');
+    });
+
+    it('marks a closed winner with a green bar and Winner tag', () => {
+      render(
+        [option({ choiceId: 'c1', voteCount: 3, percentage: 75, isWinner: true, isLeading: true }), option({ choiceId: 'c2', voteCount: 1, percentage: 25 })],
+        'compact'
+      );
+
+      expect(text('vote-results-option-c1')).toContain('Winner');
+      expect(row('vote-results-option-c1')?.querySelector('.bg-green-500')).toBeTruthy();
+      expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')).toBeNull();
+      expect(text('vote-results-option-c2')).not.toContain('Winner');
+    });
+
+    it('marks closed ties with amber bars and Tied tags', () => {
+      render(
+        [option({ choiceId: 'c1', voteCount: 2, isTied: true, isLeading: true }), option({ choiceId: 'c2', voteCount: 2, isTied: true, isLeading: true })],
+        'compact'
+      );
+
+      expect(text('vote-results-option-c1')).toContain('Tied');
+      expect(text('vote-results-option-c2')).toContain('Tied');
+      expect(row('vote-results-option-c1')?.querySelector('.bg-amber-500')).toBeTruthy();
+    });
+
+    it('keeps long labels wrappable', () => {
+      render([option({ text: 'LongLabel'.repeat(30) })], 'compact');
+
+      expect(row('vote-results-option-c1')?.querySelector('span')?.classList).toContain('break-words');
     });
   });
 

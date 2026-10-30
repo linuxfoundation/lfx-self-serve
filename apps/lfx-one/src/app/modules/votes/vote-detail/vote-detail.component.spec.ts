@@ -37,9 +37,11 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
+import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
 import { VoteDetailComponent } from './vote-detail.component';
 
@@ -2144,22 +2146,50 @@ describe('VoteDetailComponent', () => {
   });
 
   describe('overview results summary (#4450)', () => {
+    // Render the real option and abstain rows so the bars are asserted, not stubbed.
+    const setupOverview = (): Promise<ComponentFixture<VoteDetailComponent>> => setup('browser', [VoteOptionResultsComponent, VoteAbstainResultComponent]);
     const summary = (fixture: ComponentFixture<VoteDetailComponent>): string =>
       testId(fixture, 'vote-detail-overview-summary-question-1')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const optionRow = (fixture: ComponentFixture<VoteDetailComponent>, choiceId: string): string =>
+      testId(fixture, `vote-detail-overview-option-${choiceId}`)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
     beforeEach(() => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
     });
 
-    it('shows the leading choice and its share instead of the full breakdown', async () => {
-      const fixture = await setup();
+    it('shows a bar per option with count and percentage for a single generic question', async () => {
+      const fixture = await setupOverview();
+      const overview = testId(fixture, 'vote-detail-overview-bars') as HTMLElement;
 
-      expect(summary(fixture)).toMatch(/^Yes leads with \d+%$/);
       expect(testId(fixture, 'vote-detail-overview-results')?.textContent).toContain('Approve the roadmap?');
-      expect(fixture.nativeElement.querySelector('lfx-vote-option-results')).toBeNull();
-      expect(fixture.nativeElement.querySelector('lfx-vote-abstain-result')).toBeNull();
+      expect(overview.querySelector('lfx-vote-option-results')).not.toBeNull();
+      expect(optionRow(fixture, 'choice-yes')).toMatch(/Yes \d+ votes? · \d+%/);
+      expect(optionRow(fixture, 'choice-no')).toMatch(/No \d+ votes? · \d+%/);
+      expect(summary(fixture)).toBe('');
       expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
+    });
+
+    it('shows the abstain row alongside the options when abstentions are allowed', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_abstain: true })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), num_abstained: 1 }));
+      const fixture = await setupOverview();
+
+      expect(testId(fixture, 'vote-detail-overview-abstain')).not.toBeNull();
+    });
+
+    it('omits the abstain row when abstentions are not allowed and none were cast', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_abstain: false })));
+      const fixture = await setupOverview();
+
+      expect(testId(fixture, 'vote-detail-overview-abstain')).toBeNull();
+    });
+
+    it('highlights the leader without Winner or Tied tags on an active vote', async () => {
+      const fixture = await setupOverview();
+
+      expect(optionRow(fixture, 'choice-yes')).not.toMatch(/Winner|Tied/);
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.querySelector('.bg-blue-500')).toBeTruthy();
     });
 
     it('preserves long leading-choice text with word-breaking protection', async () => {
@@ -2167,10 +2197,10 @@ describe('VoteDetailComponent', () => {
       const label = 'SyntheticPackageIdentifier'.repeat(20);
       results.poll_results[0].question.choices[0].choice_text = label;
       voteService.getVoteResults.mockReturnValue(of(results));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
-      expect(summary(fixture)).toContain(label);
-      expect(testId(fixture, 'vote-detail-overview-summary-question-1')?.classList).toContain('break-words');
+      expect(optionRow(fixture, 'choice-yes')).toContain(label);
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.querySelector('span')?.classList).toContain('break-words');
     });
 
     it.each([
@@ -2179,7 +2209,7 @@ describe('VoteDetailComponent', () => {
     ])('shows the empty state for $status votes without per-question results', async ({ status, message }) => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status })));
       voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 0 }));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
       expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
     });
@@ -2203,10 +2233,11 @@ describe('VoteDetailComponent', () => {
           })),
         })
       );
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
       expect(testId(fixture, 'vote-detail-results-empty')?.textContent?.trim()).toBe(message);
       expect(summary(fixture)).toBe('');
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
     });
 
     it.each([
@@ -2228,21 +2259,39 @@ describe('VoteDetailComponent', () => {
           })),
         })
       );
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
-      expect(summary(fixture)).toBe('No choices selected');
+      expect(optionRow(fixture, 'choice-yes')).toMatch(/Yes 0 votes · 0%/);
+      expect(testId(fixture, 'vote-detail-overview-abstain')?.textContent).toContain('2');
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[0]).toMatchObject({ value: '2 / 4', subLine: '50% participation · 2 abstentions' });
     });
 
-    it.each([PollType.GENERIC, PollType.MAJORITY])('names the closed %s leader without declaring an elected winner', async (pollType) => {
+    it.each([PollType.GENERIC, PollType.MAJORITY])('shows the closed %s winner with a green bar and Winner tag', async (pollType) => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
-      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
+      expect(optionRow(fixture, 'choice-yes')).toContain('Winner');
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.querySelector('.bg-green-500')).toBeTruthy();
+      expect(optionRow(fixture, 'choice-no')).not.toContain('Winner');
     });
 
-    it.each([PollType.GENERIC, PollType.MAJORITY])('does not declare a 40-percent %s leader the winner', async (pollType) => {
+    it('shows tied options with amber bars and Tied tags on a closed vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      const results = makeMethodResults();
+      results.poll_results[0].generic_choice_votes = [
+        { choice_id: 'choice-yes', vote_count: 2, percentage: 50 },
+        { choice_id: 'choice-no', vote_count: 2, percentage: 50 },
+      ];
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setupOverview();
+
+      expect(optionRow(fixture, 'choice-yes')).toContain('Tied');
+      expect(optionRow(fixture, 'choice-no')).toContain('Tied');
+      expect(testId(fixture, 'vote-detail-overview-option-choice-no')?.querySelector('.bg-amber-500')).toBeTruthy();
+    });
+
+    it.each([PollType.GENERIC, PollType.MAJORITY])('shows the 40-percent %s leader with its share and the other options', async (pollType) => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED, poll_type: pollType })));
       const results = makeMethodResults();
       results.num_recipients = 10;
@@ -2254,26 +2303,44 @@ describe('VoteDetailComponent', () => {
         { choice_id: 'choice-later', vote_count: 3, percentage: 30 },
       ];
       voteService.getVoteResults.mockReturnValue(of(results));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
-      expect(summary(fixture)).toBe('Yes received the most votes with 40%');
+      expect(optionRow(fixture, 'choice-yes')).toContain('4 votes · 40%');
+      expect(optionRow(fixture, 'choice-no')).toContain('3 votes · 30%');
+      expect(optionRow(fixture, 'choice-later')).toContain('3 votes · 30%');
+    });
+
+    it('keeps the text summary and no bars for a multi-question vote', async () => {
+      const results = makeMethodResults();
+      results.poll_results = [
+        results.poll_results[0],
+        { ...results.poll_results[0], question: { ...results.poll_results[0].question, question_id: 'question-2', prompt: 'Second?' } },
+      ];
+      voteService.getVoteResults.mockReturnValue(of(results));
+      const fixture = await setupOverview();
+
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-summary-question-2')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-full-results')).not.toBeNull();
     });
 
     it('summarizes a ranked vote by first choices', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
       expect(summary(fixture)).toBe('Most first choices: Yes (2 voters)');
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
       expect(fixture.nativeElement.querySelector('lfx-vote-ranked-question-results')).toBeNull();
     });
 
     it('shows only the held panel on a held pseudo-anonymous vote', async () => {
       voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
       voteService.getVoteResults.mockReturnValue(of({ ...makeMethodResults(), results_held: true }));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
       expect(testId(fixture, 'vote-detail-results-held')).not.toBeNull();
       expect(summary(fixture)).toBe('');
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
       expect(testId(fixture, 'vote-detail-overview-results')?.textContent).not.toContain('Approve the roadmap?');
     });
 
@@ -2281,14 +2348,14 @@ describe('VoteDetailComponent', () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: false } as Project));
       voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-      const fixture = await setup();
+      const fixture = await setupOverview();
 
       expect(testId(fixture, 'vote-detail-you-voted')?.textContent?.trim()).toBe('Your vote is included in these results.');
-      expect(summary(fixture)).toMatch(/^Yes received the most votes with \d+%$/);
+      expect(optionRow(fixture, 'choice-yes')).toContain('Winner');
     });
 
     it('opens the Results tab from "View full results"', async () => {
-      const fixture = await setup();
+      const fixture = await setupOverview();
       const button = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-full-results"]'));
 
       expect(button.nativeElement.getAttribute('label')).toBe('View full results');

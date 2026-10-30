@@ -276,6 +276,11 @@ export class VoteDetailComponent {
   protected readonly overviewSummary: Signal<VoteResultsSummaryLine[]> = computed(() =>
     buildVoteResultsSummary(this.questionsWithResults(), this.rankedQuestions(), this.isGenericPoll(), this.isVoteClosed())
   );
+  /** The lone generic question that renders as bars on the Overview results card; null for ranked and multi-question votes (#4769). */
+  protected readonly overviewQuestion: Signal<VoteResultsQuestion | null> = computed(() => {
+    const questions = this.questionsWithResults();
+    return this.isGenericPoll() && questions.length === 1 ? questions[0] : null;
+  });
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly commentPrompts: Signal<PollCommentPrompt[]> = computed(() => this.commentResults().map((result) => result.prompt));
   protected readonly commentPromptCount: Signal<number> = computed(() =>

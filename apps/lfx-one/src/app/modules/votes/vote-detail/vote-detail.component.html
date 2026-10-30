@@ -272,7 +272,7 @@
       }
     </ng-template>
 
-    <!-- Compact Overview results: one leader/winner line per question, with the full breakdown on the Results tab (#4450). -->
+    <!-- Compact Overview results: bars for a single generic question, else one leader/winner line per question; the full breakdown stays on the Results tab (#4450, #4769). -->
     <ng-template #overviewResultsSummary>
       @if (loadingVoteResults()) {
         <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
@@ -290,6 +290,14 @@
           <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
             {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
           </p>
+        } @else if (overviewQuestion(); as q) {
+          <div class="flex flex-col gap-3" data-testid="vote-detail-overview-bars">
+            <h3 class="text-sm font-semibold text-gray-900">{{ q.question }}</h3>
+            <lfx-vote-option-results [options]="q.options" variant="compact" testIdPrefix="vote-detail-overview-option-" />
+            @if (showAbstain()) {
+              <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
+            }
+          </div>
         } @else {
           @for (line of overviewSummary(); track line.questionId; let idx = $index) {
             <div class="flex flex-col gap-1">
