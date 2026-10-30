@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, programs, request, withdraw, status]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -18,7 +18,7 @@ Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentor 
 ## See the programs you mentor
 
 1. Open [app.lfx.dev/mentorship/mentor/programs](https://app.lfx.dev/mentorship/mentor/programs).
-2. Select a program card to open its detail page, with **Applicants**, **Mentees** and **Tasks** tabs.
+2. Select a program card to open its detail page, with **Tasks**, **Mentees** and **Applicants** tabs. **Tasks** is selected first.
 
 Only approved programs appear here. A request still waiting on a Program Admin does not, which is why the tab can look empty just after you ask: "Request to join a program from your mentor profile to get started."
 
@@ -49,7 +49,7 @@ An invitation a Program Admin sent you appears in the same table, with **Accept*
 
 ## After completing
 
-An approved program opens on its detail page, with **Applicants**, **Mentees** and **Tasks** tabs.
+An approved program opens on its detail page, with **Tasks**, **Mentees** and **Applicants** tabs. **Tasks** is selected first.
 
 ## Related
 

@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, applicants, tasks, review, notes]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -20,16 +20,18 @@ A program's detail page is where a mentor does their day-to-day work: reading ap
 
 ## The tabs
 
-| Tab            | What it holds                                                                       |
-| -------------- | ----------------------------------------------------------------------------------- |
-| **Applicants** | People who applied, with a status filter, their other active applications and notes |
-| **Mentees**    | The mentees accepted onto the program, with task progress — where tasks are created |
-| **Tasks**      | Submitted tasks waiting on your review                                              |
+The page opens on **Tasks**. Each tab shows a count.
+
+| Tab            | What it holds                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------- |
+| **Tasks**      | Tasks your mentees submitted for review, and the ones you approved                              |
+| **Mentees**    | The **Current Mentees** accepted onto the program, with task progress — where tasks are created |
+| **Applicants** | People who applied, with search, a status filter, their other active applications and notes     |
 
 ## Review an applicant
 
 1. Open [app.lfx.dev/mentorship/mentor/programs](https://app.lfx.dev/mentorship/mentor/programs) and select a program.
-2. On **Applicants**, filter with the status pills — **Pending**, **Accepted**, **Declined** or **All**.
+2. On **Applicants**, search by name or email, or filter with the status pills — **Pending** (the default), **Accepted**, **Declined** or **All**.
 3. Select **View Tasks** on the row to expand their prerequisite tasks and download anything they submitted.
 4. Select **Add note**, or the existing note on the row, to record context for the other reviewers. See [Leave a Reviewer Note](../reviewer-notes/).
 
@@ -37,7 +39,7 @@ The applicant's row and name do not open a profile page, and there is no cover l
 
 ## Create a task
 
-Tasks are created from the **Mentees** tab, not the Tasks tab, and only for an accepted mentee:
+Tasks are created from the **Mentees** tab, under **Current Mentees**, not the Tasks tab, and only for an accepted mentee:
 
 - **One mentee** — use the **+** on their row. The task is assigned to them, with no assignee to choose.
 - **Several mentees** — use **Create Group Task** above the table, then pick the assignees, with **Select all** and **Clear** to hand.
@@ -46,9 +48,15 @@ To change a task, expand the mentee's row with **View Tasks** and use **Edit Tas
 
 ## Review a submitted task
 
-On the **Tasks** tab, each submitted task offers **Approve** or **Request Changes**. This tab is for reviewing only — you cannot create or edit a task here.
+1. Open the **Tasks** tab.
+2. Filter with the pills — **Awaiting Review** (the default), **Approved** or **All**.
+3. Read the task card: who submitted or completed which task, the term, when it was last updated, and the task description.
+4. If the mentee uploaded a file, select **Download Submission** to save it.
+5. On a submitted task, select **Approve** or **Request Changes**.
 
-Approving a task locks it for the mentee: from then on only a mentor can change it.
+This tab is for reviewing only — you cannot create or edit a task here.
+
+Approving a task locks it for the mentee: from then on only a mentor can change it. It moves under **Approved**.
 
 **Request Changes** sends the task back to the mentee as **To Do**. The mentee is not emailed and sees no reason, so tell them directly what to change.
 
@@ -63,10 +71,12 @@ Approving a task locks it for the mentee: from then on only a mentor can change 
 
 ## Troubleshooting
 
-| What you see                                    | What it means                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------- |
-| "You can no longer edit tasks on this program." | You are no longer an approved mentor on it. Refresh the page. |
-| "This application no longer exists."            | The applicant withdrew, or the application was removed.       |
+| What you see                                      | What it means                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| "You can no longer edit tasks on this program."   | You are no longer an approved mentor on it. Refresh the page. |
+| "This application no longer exists."              | The applicant withdrew, or the application was removed.       |
+| "This task is no longer awaiting review."         | It was already reviewed or changed. The tab reloads.          |
+| "You can no longer review tasks on this program." | You are no longer an approved mentor on it.                   |
 
 ## Related
 
