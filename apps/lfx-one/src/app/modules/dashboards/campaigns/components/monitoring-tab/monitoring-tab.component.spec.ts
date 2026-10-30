@@ -321,7 +321,7 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       });
       fixture.detectChanges();
 
-      expect(totalsNote()).toBe('Totals cover 2 of 3 campaigns; conversions cover 1 of 3 campaigns.');
+      expect(totalsNote()).toBe('Totals may understate: 1 of 3 campaigns could not be fully read; conversions are measured for 1 of 3 campaigns.');
     });
 
     it('shows no totals note when every row was read and measured', () => {
@@ -570,7 +570,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
     expect(text(`${platform}-campaign-fetch-failed`)).toBe("Couldn't read");
     expect(text(`${platform}-campaign-conversions`)).toBe('—');
     expect(text(`${platform}-campaign-pacing`)).toBe('—');
-    expect(text(`${platform}-totals-note`)).toBe('Totals cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Totals may understate: 1 of 2 campaigns could not be fully read.');
   });
 
   it('notes a conversions total that covers only some campaigns', () => {
@@ -578,7 +578,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
       conversionsMeasured: true,
     });
 
-    expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Conversions are measured for 1 of 2 campaigns.');
   });
 });
 
@@ -1329,7 +1329,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-freshness')).toContain('The first report for this account is building');
       expect(text('microsoft-campaign-fetch-failed')).toBe("Couldn't read");
       expect(text('microsoft-campaign-pacing')).toBe('—');
-      expect(text('microsoft-totals-note')).toBe('Totals cover 0 of 1 campaigns.');
+      expect(text('microsoft-totals-note')).toBe('Totals may understate: 1 of 1 campaigns could not be fully read.');
     });
 
     it("shows a dash, not 0.00, for a failed row's unreadable budget", async () => {
@@ -1709,7 +1709,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
       select('microsoft');
 
-      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals may understate: 1 of 2 campaigns could not be fully read.');
     });
 
     it('says when the account has no campaigns', async () => {

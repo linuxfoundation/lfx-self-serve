@@ -1456,27 +1456,31 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /**
-   * What the LinkedIn/Reddit/Meta totals strip leaves out, or null when it covers every campaign.
+   * What a campaign-service panel's totals strip cannot vouch for, or null when every campaign was
+   * fully read and measured conversions.
    *
    * Only the campaign-service monitor path sets `fetchFailed` / `conversionsMeasured`; on the
    * legacy path both are undefined, so this returns null and the strip renders exactly as before.
-   * A row whose metrics could not be read contributes zeros to the totals, and a row whose
-   * conversions were not measured contributes a 0 to the conversions total, so the strip says so
-   * rather than presenting a partial sum as the account's.
+   * campaign-service sums an unread row into the totals at whatever it carries (`unmeasured_campaigns`
+   * in its design): zeros where its metrics could not be read, real figures where only its budget or
+   * flight could not. So the strip says the totals MAY understate, never that it left rows out — an
+   * exact "covers N of M" would be false for a budget-only failure whose delivery is in the sum.
    */
   private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics | CampaignMetrics)[]): string | null {
     const total = rows.length;
-    const read = rows.filter((r) => !r.fetchFailed);
-    const measured = read.filter((r) => r.conversionsMeasured !== false).length;
+    const unread = rows.filter((r) => r.fetchFailed === true).length;
+    const measured = rows.filter((r) => r.conversionsMeasured !== false).length;
     const parts: string[] = [];
-    if (read.length < total) {
-      parts.push(`Totals cover ${read.length} of ${total} campaigns`);
+    if (unread > 0) {
+      parts.push(`Totals may understate: ${unread} of ${total} campaigns could not be fully read`);
     }
     // All-unmeasured is already stated by the "Not measured" conversions tile; only a PARTIAL sum needs saying.
-    if (measured > 0 && measured < read.length) {
-      parts.push(`conversions cover ${measured} of ${total} campaigns`);
+    if (measured > 0 && measured < total) {
+      parts.push(`conversions are measured for ${measured} of ${total} campaigns`);
     }
-    return parts.length > 0 ? `${parts.join('; ')}.` : null;
+    if (parts.length === 0) return null;
+    const sentence = parts.join('; ');
+    return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
   }
 
   private loadForActiveFoundation(): void {
