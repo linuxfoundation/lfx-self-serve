@@ -1,0 +1,239 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { OverlayContainer } from '@angular/cdk/overlay';
+import { Component, signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UiMenuItemComponent } from '../menu/menu-item.component';
+import { UiMenuComponent } from '../menu/menu.component';
+import { UiContextMenuDirective } from './context-menu.directive';
+
+const HOST_TEMPLATE = `
+    <div
+      id="outer"
+      tabindex="0"
+      [lfxUiContextMenu]="outerMenu"
+      [lfxUiContextMenuDisabled]="outerDisabled()"
+      (lfxUiContextMenuOpened)="log('opened')"
+      (lfxUiContextMenuClosed)="log('closed')">
+      <button id="inner" type="button">Inner button</button>
+      <div id="nested" tabindex="0" [lfxUiContextMenu]="nestedMenu" [lfxUiContextMenuDisabled]="nestedDisabled()">Nested</div>
+    </div>
+    <ng-template #outerMenu>
+      <lfx-ui-menu ariaLabel="Project actions">
+        <lfx-ui-menu-item id="edit" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="duplicate">Duplicate</lfx-ui-menu-item>
+      </lfx-ui-menu>
+    </ng-template>
+    <ng-template #nestedMenu>
+      <lfx-ui-menu ariaLabel="Nested actions">
+        <lfx-ui-menu-item id="nested-item">Nested action</lfx-ui-menu-item>
+      </lfx-ui-menu>
+    </ng-template>
+  `;
+
+@Component({ selector: 'lfx-ui-test-host', template: '' })
+class TestHostComponent {
+  public readonly outerDisabled = signal(false);
+  public readonly nestedDisabled = signal(false);
+  public readonly events = signal<string[]>([]);
+
+  public log(name: string): void {
+    this.events.update((e) => [...e, name]);
+  }
+}
+
+describe('UiContextMenuDirective', () => {
+  let fixture: ComponentFixture<TestHostComponent>;
+  let container: HTMLElement;
+
+  const el = (id: string): HTMLElement => fixture.nativeElement.querySelector(`#${id}`) as HTMLElement;
+  const menus = (): HTMLElement[] => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="ui-menu"]'));
+  const item = (id: string): HTMLElement => container.querySelector(`#${id}`) as HTMLElement;
+  // CDK menu reads `keyCode`, so the synthetic events carry it.
+  const keyCodes: Record<string, number> = { ArrowDown: 40, Escape: 27, F10: 121, ContextMenu: 93, Enter: 13 };
+  const key = async (target: Element, k: string, init: KeyboardEventInit = {}): Promise<KeyboardEvent> => {
+    const event = new KeyboardEvent('keydown', { key: k, keyCode: keyCodes[k], bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    await fixture.whenStable();
+    return event;
+  };
+  const rightClick = async (target: Element): Promise<MouseEvent> => {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 120, clientY: 80 });
+    target.dispatchEvent(event);
+    await fixture.whenStable();
+    return event;
+  };
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({ imports: [TestHostComponent] });
+    // Set here because an inline template this long trips component-max-inline-declarations.
+    TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiContextMenuDirective, UiMenuComponent, UiMenuItemComponent], template: HOST_TEMPLATE } });
+    fixture = TestBed.createComponent(TestHostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    container = TestBed.inject(OverlayContainer).getContainerElement();
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fixture.destroy();
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+  });
+
+  it('opens a named menu on right-click and replaces the browser menu', async () => {
+    expect(menus().length).toBe(0);
+
+    const event = await rightClick(el('outer'));
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(menus().length).toBe(1);
+    expect(menus()[0].getAttribute('role')).toBe('menu');
+    expect(menus()[0].getAttribute('aria-label')).toBe('Project actions');
+    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(2);
+  });
+
+  it('opens from a right-click on something inside the host', async () => {
+    await rightClick(el('inner'));
+
+    expect(menus().length).toBe(1);
+  });
+
+  it('opens with Shift+F10 on the focused host and focuses the first item', async () => {
+    el('outer').focus();
+    const event = await key(el('outer'), 'F10', { shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(menus().length).toBe(1);
+    expect(document.activeElement).toBe(item('edit'));
+  });
+
+  it('opens with the context menu key', async () => {
+    el('outer').focus();
+    await key(el('outer'), 'ContextMenu');
+
+    expect(menus().length).toBe(1);
+    expect(document.activeElement).toBe(item('edit'));
+  });
+
+  it('opens from the keyboard when the focus is on something inside the host', async () => {
+    el('inner').focus();
+    await key(el('inner'), 'ContextMenu');
+
+    expect(menus().length).toBe(1);
+  });
+
+  it('opens at the focused element, below its start edge', async () => {
+    vi.spyOn(el('outer'), 'getBoundingClientRect').mockReturnValue({ left: 40, bottom: 96 } as DOMRect);
+    const seen: MouseEvent[] = [];
+    el('outer').addEventListener('contextmenu', (e) => seen.push(e), { capture: true });
+
+    await key(el('outer'), 'ContextMenu');
+
+    expect(seen.length).toBe(1);
+    expect(seen[0].clientX).toBe(40);
+    expect(seen[0].clientY).toBe(96);
+    expect(seen[0].button).toBe(0);
+  });
+
+  it('ignores F10 without Shift and other keys', async () => {
+    const f10 = await key(el('outer'), 'F10');
+    const enter = await key(el('outer'), 'Enter');
+
+    expect(menus().length).toBe(0);
+    expect(f10.defaultPrevented).toBe(false);
+    expect(enter.defaultPrevented).toBe(false);
+  });
+
+  it('moves between items with the arrow keys and closes with Escape', async () => {
+    el('outer').focus();
+    await key(el('outer'), 'ContextMenu');
+
+    await key(item('edit'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('duplicate'));
+
+    await key(item('duplicate'), 'Escape');
+    expect(menus().length).toBe(0);
+    expect(document.activeElement).toBe(el('outer'));
+  });
+
+  it('returns focus to where it was when an item is chosen', async () => {
+    el('inner').focus();
+    await key(el('inner'), 'ContextMenu');
+    item('edit').click();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(el('inner'));
+  });
+
+  it('does not take focus back from a control clicked outside the menu', async () => {
+    el('outer').focus();
+    await key(el('outer'), 'ContextMenu');
+    el('inner').focus();
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await fixture.whenStable();
+
+    expect(menus().length).toBe(0);
+    expect(document.activeElement).toBe(el('inner'));
+  });
+
+  it('emits triggered and closes when an item is chosen', async () => {
+    await rightClick(el('outer'));
+    item('edit').click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.events()).toEqual(['opened', 'edit', 'closed']);
+    expect(menus().length).toBe(0);
+  });
+
+  it('closes on a click outside', async () => {
+    await rightClick(el('outer'));
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await fixture.whenStable();
+
+    expect(menus().length).toBe(0);
+  });
+
+  it('moves the open menu on a second right-click instead of stacking another', async () => {
+    await rightClick(el('outer'));
+    await rightClick(el('outer'));
+
+    expect(menus().length).toBe(1);
+  });
+
+  it('leaves the browser menu and the keyboard alone while disabled', async () => {
+    fixture.componentInstance.outerDisabled.set(true);
+    await fixture.whenStable();
+
+    const click = await rightClick(el('outer'));
+    const shortcut = await key(el('outer'), 'F10', { shiftKey: true });
+
+    expect(click.defaultPrevented).toBe(false);
+    expect(shortcut.defaultPrevented).toBe(false);
+    expect(menus().length).toBe(0);
+  });
+
+  it('opens only the innermost context menu, for the mouse and the keyboard', async () => {
+    await rightClick(el('nested'));
+    expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Nested actions']);
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await fixture.whenStable();
+
+    el('nested').focus();
+    await key(el('nested'), 'ContextMenu');
+    expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Nested actions']);
+  });
+
+  it('lets the outer menu open when the inner one is disabled', async () => {
+    fixture.componentInstance.nestedDisabled.set(true);
+    await fixture.whenStable();
+
+    el('nested').focus();
+    await key(el('nested'), 'ContextMenu');
+
+    // The inner directive steps aside and the outer host takes the key from its bubbled event.
+    expect(menus().map((m) => m.getAttribute('aria-label'))).toEqual(['Project actions']);
+  });
+});
