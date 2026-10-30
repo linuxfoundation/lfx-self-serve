@@ -335,7 +335,7 @@ function readableZeroOffset(formatted: string): string {
 /**
  * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
  * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
- * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * provides the full zone name for the hover tooltip, even when formatVoteDeadline normalizes a zero-offset label to UTC.
  * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {
