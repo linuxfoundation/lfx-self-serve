@@ -40,6 +40,7 @@ import {
   signOption,
   signOptionsResponse,
   skipWithoutCredentials,
+  stubCatalogueNotFound,
   stubHandoff,
   STUB_CLA_GROUP_ID,
   STUB_SIGN_URL,
@@ -194,11 +195,12 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
       await stubHandoff(p);
+      await stubCatalogueNotFound(p);
     });
 
     await page.goto(`${EASYCLA_URL}/${CASCADE.claGroupId}`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-group-not-found-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
     await expect(page.getByTestId('org-easycla-detail-start-cla')).toHaveCount(0);
   });
@@ -209,11 +211,12 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
       await stubHandoff(p);
+      await stubCatalogueNotFound(p);
     });
 
     await page.goto(`${EASYCLA_URL}/new`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-group-not-found-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-not-started')).toHaveCount(0);
   });
 

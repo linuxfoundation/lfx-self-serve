@@ -66,6 +66,9 @@ router.post('/:orgUid/lens/cla-groups/designee/nominations', blockDuringImperson
 
 router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensClaAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensClaAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
+router.get('/:orgUid/lens/cla-groups/:claGroupId/catalogue', requireOrgLensClaAccess, (req, res, next) =>
+  orgClasController.getClaGroupCatalogue(req, res, next)
+);
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensClaAccess, (req, res, next) =>
   orgClasController.getApprovalList(req, res, next)
 );
