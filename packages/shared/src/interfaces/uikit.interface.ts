@@ -190,3 +190,6 @@ export type UiChoiceboxType = 'radio' | 'checkbox';
 
 /** Number of equal columns in a uikit choicebox group. */
 export type UiChoiceboxColumns = 1 | 2 | 3;
+
+/** Heading level (`aria-level`) of the title in a uikit empty state. */
+export type UiEmptyStateHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
