@@ -2860,9 +2860,12 @@ export class CampaignController {
   }
 
   /**
-   * Google Ads account monitor. That customer is shared by every foundation, so the read is
-   * root-only on both arms (lfx-self-serve-ops#54), as Meta's is; the project is still required, so
-   * a request naming none is a 400 for every caller.
+   * Google Ads account monitor. Root-only on both arms (lfx-self-serve-ops#54); the project is still
+   * required, so a request naming none is a 400 for every caller. The legacy arm needs the gate: it
+   * reads the shared customer account-wide, every foundation's campaigns at once. The campaign-service
+   * arm is project-scoped upstream (only the campaigns recorded for the project), so the gate is kept
+   * there only until opening it to project campaign managers is decided (#4526), not because it would
+   * leak another foundation's data.
    *
    * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, it is read from campaign-service through the
    * project's OWN Google Ads connection (#4526): the account is the one that connection is bound to,

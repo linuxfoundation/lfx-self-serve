@@ -3417,6 +3417,11 @@ export interface CampaignActionItem {
     impressions: number;
     clicks: number;
     conversions: number;
+    /**
+     * Campaign-service path only: true when `pacingPct` is a 0 placeholder — the item's campaign could not
+     * be read or paced, or the item names no campaign at all.
+     */
+    pacingUnknown?: boolean;
   };
 }
 

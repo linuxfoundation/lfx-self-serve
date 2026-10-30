@@ -254,6 +254,8 @@ export class MonitoringTabComponent implements OnInit {
 
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly accountTotals = computed(() => this.monitorData()?.accountTotals ?? null);
+  /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
+  protected readonly googleTotalsNote = computed(() => this.totalsCoverageNote(this.campaigns()));
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
 
@@ -1451,7 +1453,7 @@ export class MonitoringTabComponent implements OnInit {
    * conversions were not measured contributes a 0 to the conversions total, so the strip says so
    * rather than presenting a partial sum as the account's.
    */
-  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics)[]): string | null {
+  private totalsCoverageNote(rows: readonly (LinkedInCampaignMetrics | RedditCampaignMetrics | MetaCampaignMetrics | CampaignMetrics)[]): string | null {
     const total = rows.length;
     const read = rows.filter((r) => !r.fetchFailed);
     const measured = read.filter((r) => r.conversionsMeasured !== false).length;

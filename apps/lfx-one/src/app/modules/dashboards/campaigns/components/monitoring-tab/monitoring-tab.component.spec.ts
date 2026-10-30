@@ -303,6 +303,34 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       expect(bar.style.width).toBe('0%');
     });
 
+    const totalsNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-totals-note"]')?.textContent?.trim() ?? null;
+
+    it('says what the totals leave out when a row was not read or did not measure conversions, as the other panels do', () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          { ...base, campaignId: '1', fetchFailed: false, conversionsMeasured: true },
+          { ...base, campaignId: '2', fetchFailed: false, conversionsMeasured: false },
+          { ...base, campaignId: '3', fetchFailed: true, conversionsMeasured: false },
+        ],
+        accountTotals: { budgetDay: 300, impressions: 2000, clicks: 80, spend: 50, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+
+      expect(totalsNote()).toBe('Totals cover 2 of 3 campaigns; conversions cover 1 of 3 campaigns.');
+    });
+
+    it('shows no totals note when every row was read and measured', () => {
+      renderRow({ fetchFailed: false, conversionsMeasured: true });
+      expect(totalsNote()).toBeNull();
+      // Paired positive: the strip itself rendered, so the absent note is not an absent panel.
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
     it('renders unmeasured conversions as Not measured on the row and in the KPI strip', () => {
       const cells = renderRow({ conversionsMeasured: false, conversions: 0 }, { conversions: 0, conversionsMeasured: false });
       expect(cells[cells.length - 2]).toBe('Not measured');

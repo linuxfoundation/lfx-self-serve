@@ -2275,6 +2275,29 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     ]);
   });
 
+  /** An item whose campaign campaign-service could not pace carries a 0 placeholder; it must not read as a red 0%. */
+  it('shows an action item with unknown pacing as Unknown, and a measured one as its percentage', () => {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    const item = (pacingPct: number, pacingUnknown?: boolean): Record<string, unknown> => ({
+      eventName: 'KubeCon',
+      campaigns: ['KubeCon'],
+      campaignUrls: {},
+      priority: 'HIGH',
+      issue: 'Budget is $0.00/day',
+      action: 'Set a real daily budget',
+      metrics: { spend: 0, budget: 0, pacingPct, impressions: 0, clicks: 0, conversions: 0, ...(pacingUnknown === undefined ? {} : { pacingUnknown }) },
+    });
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), actionItems: [item(0, true), item(42)] });
+    fixture.detectChanges();
+
+    const pacingCell = (i: number): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="action-item-row-${i}"] td:last-child span`);
+    expect(pacingCell(0)?.textContent?.trim()).toBe('Unknown');
+    expect(pacingCell(0)?.className).not.toContain('text-red-600');
+    expect(pacingCell(1)?.textContent?.trim()).toBe('42%');
+    expect(pacingCell(1)?.className).toContain('text-red-600');
+  });
+
   it('does not claim ALL keywords are clean when the set was capped', () => {
     renderKeywords(true);
 

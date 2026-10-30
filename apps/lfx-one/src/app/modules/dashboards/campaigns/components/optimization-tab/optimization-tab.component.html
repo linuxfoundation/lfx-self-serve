@@ -712,11 +712,15 @@
                     <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
                     <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
                     <td class="px-4 py-3 text-right">
-                      <span
-                        class="text-sm font-medium"
-                        [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
-                        {{ item.metrics.pacingPct }}%
-                      </span>
+                      @if (item.metrics.pacingUnknown) {
+                        <span class="text-sm font-medium text-gray-500">Unknown</span>
+                      } @else {
+                        <span
+                          class="text-sm font-medium"
+                          [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
+                          {{ item.metrics.pacingPct }}%
+                        </span>
+                      }
                     </td>
                   </tr>
                 }

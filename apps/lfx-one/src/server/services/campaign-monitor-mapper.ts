@@ -187,7 +187,9 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  *
  * Action items are campaign-service's own, one per finding. The legacy shape groups by event and
  * carries the campaign's figures, so each item takes them from the campaign it names; an
- * account-wide finding names none and carries zeros.
+ * account-wide finding names none and carries zeros. Upstream still raises items for a campaign it
+ * could not pace (a $0 daily budget, for one), so an item's `pacingUnknown` marks a pacing figure
+ * that is a placeholder, as the row's own flags do.
  */
 export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
   const days = payload.days;
@@ -249,6 +251,7 @@ export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, 
           impressions: campaign.impressions,
           clicks: campaign.clicks,
           conversions: campaign.conversions,
+          pacingUnknown: campaign.pacingUnknown === true || campaign.fetchFailed === true,
         },
       };
     }
@@ -260,7 +263,7 @@ export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, 
       priority: item.priority,
       issue: item.issue,
       action: item.action,
-      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0 },
+      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0, pacingUnknown: true },
     };
   });
 

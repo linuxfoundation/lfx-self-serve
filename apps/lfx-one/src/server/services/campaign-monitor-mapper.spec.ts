@@ -422,8 +422,18 @@ describe('toGoogleMonitorResponse', () => {
       priority: 'MED',
       issue: 'Only spending 42%',
       action: 'Broaden targeting',
-      metrics: { spend: 1890, budget: 150, pacingPct: 42, impressions: 48_200, clicks: 3110, conversions: 12.5 },
+      metrics: { spend: 1890, budget: 150, pacingPct: 42, impressions: 48_200, clicks: 3110, conversions: 12.5, pacingUnknown: false },
     });
+  });
+
+  /** Upstream still raises items for a campaign it could not pace (a $0 daily budget), so the item says its pacing is a placeholder. */
+  it.each([
+    ['could not pace', { pacing_unknown: true }],
+    ['could not read', { fetch_failed: true }],
+  ] as const)('marks the pacing of an item whose campaign campaign-service %s as unknown', (_label, overrides) => {
+    const [item] = toGoogleMonitorResponse(googlePayload({ campaigns: [googleRow({ ...overrides, budget_day: 0 })] }), PULLED_AT).actionItems;
+    expect(item.metrics.pacingPct).toBe(0);
+    expect(item.metrics.pacingUnknown).toBe(true);
   });
 
   it('gives an account-wide action item no campaign and zero figures, and tolerates absent arrays', () => {
@@ -438,7 +448,7 @@ describe('toGoogleMonitorResponse', () => {
       priority: 'LOW',
       issue: 'No conversions tracked',
       action: 'Add a conversion action',
-      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0 },
+      metrics: { spend: 0, budget: 0, pacingPct: 0, impressions: 0, clicks: 0, conversions: 0, pacingUnknown: true },
     });
 
     const empty = toGoogleMonitorResponse(
