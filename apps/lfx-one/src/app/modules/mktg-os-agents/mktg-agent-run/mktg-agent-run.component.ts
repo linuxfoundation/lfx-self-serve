@@ -3,7 +3,7 @@
 
 import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -12,25 +12,42 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 
 import { MessageComponent } from '@components/message/message.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
+import { ConfirmationService, ConfirmEventType, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  AEO_GEO_INTAKE,
   LINKEDIN_POST_INTAKE,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_DRIVE_SHARING_HINT,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
+  MKTG_RUN_NEW_MODE,
+  MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_RUN_FAILURE_REASON,
+  MKTG_REVISION_ID_REGEX,
+  MKTG_RUN_POLL,
+  MKTG_STARTED_RUN_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
   MktgAgent,
   MktgAgentAccent,
   MktgAgentIntake,
+  MktgActiveRunConflict,
+  MktgLastIntake,
+  MktgRunSourceField,
   MktgAttachmentChip,
   MktgDependencyDocument,
+  MktgDocumentRunProgress,
+  MktgDocumentReadCycle,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgPendingGeneration,
   MktgRunNavigation,
   MktgIntakeAttachment,
   MktgIntakeDocument,
@@ -42,41 +59,60 @@ import {
   MktgMissingDependencyLink,
   MktgResolvedFieldGroup,
   MktgRunAnswer,
+  MktgRunAnsweredNotice,
   MktgRunActivity,
   MktgRunPhase,
   MktgRunQuestionsPending,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
-import { mktgKitCrumbsFor, mktgKitRootPath, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import {
+  mktgKitRootPath,
+  mktgAgentDocumentName,
+  mktgJsonAttachmentUsable,
+  mktgSentenceCaseLabel,
+  mktgKitAssetLabel,
+  mktgRunAnsweredBy,
+  mktgRunRouteFor,
+  readMktgRetiredRunHint,
+  mktgLinkWarnings,
+} from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 
 import type { FileSelectEvent } from 'primeng/fileupload';
-import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take, tap, timeout } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
+import { AeoGeoRunComponent } from '../components/aeo-geo-run/aeo-geo-run.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
+import { MktgRunProgressComponent } from '../components/mktg-run-progress/mktg-run-progress.component';
 import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 
-// Catalog-driven intake, research/writing feed and questions. Accepted answers
-// transfer this owned attempt at their ACK. Without an agent writing marker,
-// only checking/finalize (or an earlier ready result) safely transfers a no-
-// questions run. Direct no-answers intakes still open before their first POST.
+// Catalog-driven intake, research/writing feed and questions. Living runs stay
+// on this feed until their exact stored revision is known, with or without a
+// questions round. A recorded terminal failure opens the document's run card.
 // Failed navigation retries only navigation, never generation.
 // Asset rendering, revisions and exports belong to the one document view.
+// Registered one-off intakes delegate to their dedicated run component;
+// each audit hands off to a separate immutable report in the Document view.
 @Component({
   selector: 'lfx-mktg-agent-run',
+  providers: [ConfirmationService],
   imports: [
+    ConfirmDialogModule,
     LinkedinPostRunComponent,
     NgClass,
     MktgBreadcrumbComponent,
@@ -87,10 +123,13 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     InputTextComponent,
     TextareaComponent,
     MessageComponent,
+    MktgSkeletonComponent,
+    AeoGeoRunComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
     MktgRunActivityComponent,
     MktgRunQuestionsComponent,
+    MktgRunProgressComponent,
   ],
   templateUrl: './mktg-agent-run.component.html',
 })
@@ -98,7 +137,10 @@ export class MktgAgentRunComponent {
   // === Injections ===
   private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
+  private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -107,13 +149,31 @@ export class MktgAgentRunComponent {
   private readonly runService = inject(MktgAgentRunService);
   private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
 
   // toObservable needs the injection context — created here, subscribed (browser
   // only) in the constructor.
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
   private readonly effectiveUser$ = toObservable(this.userService.user);
+  private readonly freshMode$ = this.route.queryParamMap.pipe(
+    map((params) => params.get('mode') === MKTG_RUN_NEW_MODE),
+    distinctUntilChanged()
+  );
+  /** Per-visit Sources/submission state, independent of the consumed entry URL. */
+  protected readonly freshMode = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
+  private consumedFreshProject: string | null = null;
+  private consumedFreshSubject: string | null = null;
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  private readonly concurrentAnswers = inject(MktgRunAnswersService);
+  private guardReadSub: Subscription | null = null;
+  private privateReceiptRunId = '';
+  private receiptRecoveryRunId = '';
+  private completedRun: MktgDocumentRunProgress | null = null;
+  protected readonly checkingGuard = signal(false);
+  protected readonly answeredNotice = signal<MktgRunAnsweredNotice | null>(null);
   /**
    * In-flight "Try again" dependency check. Only one may run, and it is
    * cancelled when the active project changes: a late result (or a late
@@ -125,6 +185,7 @@ export class MktgAgentRunComponent {
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
   /** The logo-files section, when the intake has one and the form is on screen: its file reads are cancelled the same way. */
   private readonly logoFilesSection = viewChild(MktgIntakeLogoFilesComponent);
+  private readonly publicProgressView = viewChild(MktgRunProgressComponent);
   /** The generate request of the run in flight — what an answers round continues. */
   private activeRequest: MktgGenerateRequest | null = null;
 
@@ -132,6 +193,11 @@ export class MktgAgentRunComponent {
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
   protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
+  private readonly assetType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id);
+  protected readonly assetName = mktgKitAssetLabel(this.assetType?.agentKey ?? '') ?? this.assetType?.itemLabel ?? this.intake?.documentName ?? 'Document';
+  protected readonly sourcesHint = this.intakeSourcesHint();
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
+  protected readonly dedicatedAudit = !!this.intake?.oneOffDocument && this.intake.agentId === AEO_GEO_INTAKE.agentId;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
    * dependency ids PLUS the intake's REQUIRED attachments (the Brand Kit's
@@ -176,7 +242,45 @@ export class MktgAgentRunComponent {
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
+  protected readonly checkingRun = signal(true);
+  protected readonly publicRefreshKey = signal('');
+  protected readonly publicReceiver = signal(!!this.route.snapshot.queryParamMap.get('run'));
+  private readonly discoveredRunId = signal('');
+  private publicReadFailed = false;
+  private readonly routeRunId = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), {
+    initialValue: this.route.snapshot.queryParamMap.get('run') ?? '',
+  });
+  protected readonly publicRunId = computed(() => this.routeRunId() || this.discoveredRunId());
+  protected readonly publicAgentKey = computed(() => MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? '');
+  protected readonly publicProject = computed(() => this.projectContext.activeContextUid());
+  protected readonly publicDocumentLink = computed(() => [mktgKitRootPath(this.router.url), 'documents', this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID]);
+  protected readonly publicIdentityPending = computed(
+    () => this.publicReceiver() && (!this.userService.user()?.sub || (this.navigation() !== null && !this.navigation()?.subject))
+  );
+  private pendingPublicRunId = '';
+  protected readonly livingDocumentId = MKTG_LIVING_DOCUMENT_ID;
+  protected readonly waitingQuestions = signal(false);
+  protected readonly waitingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
+  private readonly existingRun = signal<Pick<MktgDocumentRunProgress, 'runId' | 'state' | 'startedAt'> | null>(null);
+  private readonly waitingSince = signal('');
+  private readonly staleWaitingMs = 24 * 60 * 60 * 1000;
+  private discardConfirmed = false;
+  private discardedRunId: string | null = null;
+  private discardEpoch = 0;
+  private conflictDiscardId: string | null = null;
+  protected readonly startedOverWaiting = signal(false);
+  protected readonly hasAcknowledgement = signal(false);
+  private readonly hasVersion = signal(false);
+  protected readonly sourcesEditing = signal(false);
+  protected readonly sourcesLoading = signal(this.route.snapshot.queryParamMap.get('mode') === MKTG_RUN_NEW_MODE);
+  protected readonly sourcesDenied = signal(false);
+  protected readonly sourceNote = signal('');
+  private readonly lastSourceValues = signal<Record<string, string>>({});
+  private readonly lastSourceOrigins = signal<Record<string, string>>({});
+  private readonly priorDocumentCount = signal(0);
+  private readonly priorLogoCount = signal(0);
   protected readonly errorText = signal('');
+  protected readonly runFailed = signal(false);
   protected readonly navigation = signal<MktgRunNavigation | null>(null);
   protected readonly navigating = signal(false);
   /** Field keys pre-filled from LFX data this session — the raw record behind the "From LFX" chips. */
@@ -269,14 +373,54 @@ export class MktgAgentRunComponent {
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.agent?.id ?? '', this.projectName(), mktgKitRootPath(this.router.url), this.agent?.name ?? 'Agent')
-  );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
-  protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
+  protected readonly hasWaitingNotice = computed(() => this.waitingQuestions() || !!this.waitingRun());
+  protected readonly waitingRunMessage = this.initWaitingRunMessage();
+  protected readonly waitingRunLink = computed(() => [mktgKitRootPath(this.router.url), this.agent?.id ?? '']);
+  protected readonly waitingRunParams = computed(() => ({ project: this.projectSlug() ?? '', run: this.waitingRun()?.runId ?? '' }));
+  protected readonly showIntakeForm = computed(
+    () => !this.hasWaitingNotice() && (!this.freshMode() || (!this.sourcesLoading() && !this.sourcesDenied() && this.sourcesEditing()))
+  );
+  protected readonly submitLabel = computed(() => (this.hasVersion() ? 'Create a new version' : `Create ${mktgSentenceCaseLabel(this.assetName)}`));
+  protected readonly submitReason = computed(() => {
+    if (this.sourcesLoading()) return 'Wait for your sources to load.';
+    if (this.sourcesDenied()) return this.sourceNote() || 'You need write access to create this document.';
+    if (this.navigation()) return 'Open the accepted document before creating another version.';
+    if (this.documentsBusy() || this.logoFilesBusy()) return 'Wait for the attached files to finish loading.';
+    if (!this.dependenciesSatisfied()) return this.missingDependencyNote() || 'Wait while the required documents are checked.';
+    if (this.freshMode() && (this.missingDocuments() || this.missingLogos())) return 'Re-attach the missing files, or choose to continue without them.';
+    if (!this.intakeValid()) return 'Complete the required fields and correct any highlighted sources.';
+    return '';
+  });
+  protected readonly linkValues = computed(() =>
+    Object.fromEntries(
+      (this.intake?.fields ?? [])
+        .filter((field) => field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url')
+        .map((field) => [field.key, this.intakeValue()[field.key] ?? ''])
+    )
+  );
+  protected readonly linkUrls = computed(() => Object.values(this.linkValues()).flatMap((value) => value.split(/\r?\n/)));
+  protected readonly linkWarnings = computed(() => mktgLinkWarnings(this.linkValues()));
+  protected readonly missingDocuments = computed(() => Math.max(0, this.priorDocumentCount() - this.documents().length));
+  protected readonly missingLogos = computed(() => Math.max(0, this.priorLogoCount() - this.logoFiles().length));
+  protected readonly missingFiles = computed(() => this.missingDocuments() + this.missingLogos());
+  protected readonly missingFilesNote = computed(() => {
+    const count = this.missingFiles();
+    return count === 1
+      ? '1 file from last time is not kept here. Re-attach it, or carry on without it.'
+      : `${count} files from last time are not kept here. Re-attach them, or carry on without them.`;
+  });
+  protected readonly sourceFields: Signal<MktgRunSourceField[]> = this.initSourceFields();
   protected readonly submitDisabled = computed(
     () =>
-      !this.intakeValid() || this.phase() === 'running' || !!this.navigation() || this.documentsBusy() || this.logoFilesBusy() || !this.dependenciesSatisfied()
+      !this.intakeValid() ||
+      this.hasWaitingNotice() ||
+      this.phase() === 'running' ||
+      !!this.navigation() ||
+      this.documentsBusy() ||
+      this.logoFilesBusy() ||
+      !this.dependenciesSatisfied() ||
+      (this.freshMode() && (this.sourcesLoading() || this.sourcesDenied() || !!this.missingDocuments() || !!this.missingLogos()))
   );
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
@@ -437,11 +581,15 @@ export class MktgAgentRunComponent {
   protected readonly trailingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => group.afterDocuments);
 
   public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.discardEpoch++;
+      this.confirmation.close();
+    });
     // One empty row per list field from the start, so the form never shows a list with no box.
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { project: this.projectSlug() }, replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -460,25 +608,112 @@ export class MktgAgentRunComponent {
     // Browser-only so SSR output stays stable; the first emission lands
     // post-hydration.
     if (isPlatformBrowser(this.platformId)) {
-      combineLatest([this.activeContext$, this.effectiveUser$])
+      toObservable(
+        computed(() => ({
+          ack: this.runService.acknowledgementVersion(),
+          project: this.projectContext.activeContextUid(),
+          fresh: this.freshMode(),
+          phase: this.phase(),
+          over: this.startedOverWaiting(),
+        }))
+      )
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(({ project, fresh, phase, over }) => {
+          if (project && fresh && phase === 'form' && !over) this.readWaitingDraft(project);
+        });
+      combineLatest([
+        this.activeContext$,
+        this.effectiveUser$,
+        this.freshMode$,
+        this.route.queryParamMap.pipe(
+          map((params) => params.get('run') ?? ''),
+          distinctUntilChanged()
+        ),
+      ])
         .pipe(
-          distinctUntilChanged(([previousContext, previousUser], [context, user]) => previousContext?.uid === context?.uid && previousUser?.sub === user?.sub),
-          switchMap(([context]) => {
-            this.resetForContext(context);
-            if (!context) return EMPTY;
+          distinctUntilChanged(
+            ([previousContext, previousUser, previousMode, previousRun], [context, user, mode, run]) =>
+              previousContext?.uid === context?.uid && previousUser?.sub === user?.sub && previousMode === mode && previousRun === run
+          ),
+          switchMap(([context, user, freshEntry, runId]) => {
+            const fresh = freshEntry && !runId;
+            if (!fresh && context?.uid === this.consumedFreshProject && user?.sub === this.consumedFreshSubject) {
+              // Our accepted-attempt URL replacement is not a new intake/context.
+              this.consumedFreshProject = null;
+              this.consumedFreshSubject = null;
+              return EMPTY;
+            }
+            const destination = this.navigation();
+            let identityOwned: MktgPendingGeneration | null = null;
+            if (
+              context &&
+              this.publicReceiver() &&
+              user?.sub &&
+              runId &&
+              runId === this.pendingPublicRunId &&
+              destination &&
+              destination.projectUid === context?.uid &&
+              destination.agentKey === this.publicAgentKey() &&
+              !destination.subject
+            ) {
+              this.pendingPublicRunId = '';
+              const owned = this.runAttempts.load(context.uid, this.agent?.id ?? '');
+              if (owned?.attempt?.runId === runId && (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions))) {
+                // 144-A/#4636: late identity may reveal this browser's accepted private run.
+                // Do not resume a revision-less public destination instead of its exact receipt.
+                identityOwned = owned;
+              } else {
+                this.navigation.set({ ...destination, subject: user.sub });
+                this.onRetryHandoff();
+                return EMPTY;
+              }
+            }
+            this.resetForContext(context, fresh);
+            if (!context || !user?.sub) return EMPTY;
+            if (identityOwned) this.resumeAcceptedAttempt(identityOwned, context.uid);
+            if (this.publicReceiver()) {
+              this.publicProgressView()?.reobserve(context.uid);
+              return EMPTY;
+            }
+            const history =
+              fresh && user?.sub
+                ? this.runService.lastIntake(context.uid, this.agent?.id ?? '').pipe(
+                    catchError((error: unknown) => {
+                      this.sourcesDenied.set(error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403));
+                      this.sourceNote.set(
+                        this.sourcesDenied()
+                          ? 'You need write access to run this project’s agents.'
+                          : 'Last run inputs could not be loaded. Available device inputs or suggested defaults are shown.'
+                      );
+                      return of(null);
+                    })
+                  )
+                : of(null);
+            if (fresh && !user?.sub) this.sourcesDenied.set(true);
             // getProject memoizes per slug and maps errors to null, and
             // switchMap drops stale in-flight lookups on project change. The
             // dependency resolution rides the same stream so the attachment
             // chips / gating always reflect the ACTIVE project's stored
             // documents (dec-agent-dependency-gating).
-            return combineLatest([this.projectService.getProject(context.slug, false), this.resolveDependenciesForGate(context.uid)]).pipe(
-              map(([project, dependencies]) => ({ context, project, dependencies }))
-            );
+            return combineLatest([
+              this.projectService.getProject(context.slug, false),
+              this.resolveDependenciesForGate(context.uid),
+              history,
+              user?.sub ? this.readHasVersion(context.uid, fresh) : of(false),
+            ]).pipe(map(([project, dependencies, lastIntake, versionExists]) => ({ context, project, dependencies, lastIntake, versionExists, fresh })));
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(({ context, project, dependencies }) => {
+        .subscribe(({ context, project, dependencies, lastIntake, versionExists, fresh }) => {
+          this.checkingRun.set(false);
+          this.hasVersion.set(versionExists ?? !!lastIntake);
           this.dependencyDocs.set(dependencies);
+          if (fresh) {
+            this.sourcesLoading.set(false);
+            if (this.sourcesDenied()) return;
+            this.restoreFreshInputs(context.uid, lastIntake);
+            this.applyPrefill('project-name', context.name);
+          }
           if (project) {
             this.applyPrefill('repository-url', project.repository_url);
             this.applyPrefill('website-url', project.website_url);
@@ -489,18 +724,191 @@ export class MktgAgentRunComponent {
           // Order is the precedence — LFX project data > an answer given to
           // another agent > empty.
           this.applyRememberedAnswers(context.uid);
+          if (
+            fresh &&
+            !this.sourceNote() &&
+            !Object.keys(this.lastSourceValues()).length &&
+            !Object.keys(this.filledFromMemoryApplied()).length &&
+            !this.priorDocumentCount() &&
+            !this.priorLogoCount()
+          ) {
+            this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
+          }
           // A remembered list answer lands in the field's control; the rows follow it.
           this.seedLinkRows();
         });
     }
   }
 
+  protected onPublicLanding(failed = false): void {
+    const projectUid = this.projectContext.activeContextUid();
+    const agentKey = this.publicAgentKey();
+    if (!this.publicReceiver() || !projectUid || !agentKey) return;
+    this.checkingRun.set(false);
+    const destination = this.navigation();
+    if (!failed && destination?.projectUid === projectUid && destination.agentKey === agentKey && destination.revisionId) return;
+    const runId = this.publicRunId();
+    const owned = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+    const ownsRun =
+      !!runId &&
+      owned?.attempt?.runId === runId &&
+      owned.request.projectUid === projectUid &&
+      owned.request.agentId === this.agent?.id &&
+      (owned.state === 'writing' || (owned.state === 'questions' && !!owned.pendingQuestions));
+    const privateReceiptPending =
+      !!runId && this.privateReceiptRunId === runId && this.activeRequest?.projectUid === projectUid && this.activeRequest.agentId === this.agent?.id;
+    if (!failed && (ownsRun || privateReceiptPending)) {
+      // 144-A: a metadata completion can arrive before the creator's document_location.
+      // Keep that private read alive; an approved/current revision is never its substitute.
+      this.writingStretch.set(true);
+      if (owned && ownsRun && (!this.generationSub || this.generationSub.closed) && this.receiptRecoveryRunId !== runId) {
+        this.receiptRecoveryRunId = runId;
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, projectUid);
+      } else if ((!this.generationSub || this.generationSub.closed) && !this.navigation()?.revisionId) {
+        this.errorText.set('The produced revision is not confirmed yet. Refresh this run before opening its saved output.');
+      }
+      return;
+    }
+    const completed = this.publicProgressView()?.selectedRun() ?? this.completedRun;
+    const produced =
+      !failed &&
+      completed?.state === 'completed' &&
+      completed.project === projectUid &&
+      completed.agentKey === agentKey &&
+      completed.runId === runId &&
+      completed.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      completed.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(completed.producedRevisionId)
+        ? completed.producedRevisionId
+        : undefined;
+    // Missing public pointers retain the legacy document route; never substitute latest/current for an exact receipt.
+    const subject = this.userService.user()?.sub ?? '';
+    this.navigation.set({ projectUid, subject, agentKey, ...(produced && { revisionId: produced }), ...(failed && { runId: this.publicRunId() }) });
+    this.pendingPublicRunId = subject ? '' : this.publicRunId();
+    // The conflict notice stays with writing progress; stored runs still land normally (144-E).
+    if (subject) this.onRetryHandoff();
+  }
+
+  protected onAlreadyAnswered(notice: MktgRunAnsweredNotice): void {
+    if (notice.runId !== this.publicRunId()) return;
+    this.answeredNotice.set(notice);
+  }
+
+  protected onRetryPublicLanding(): void {
+    const destination = this.navigation();
+    if (destination?.subject && destination.subject === this.userService.user()?.sub && destination.projectUid === this.publicProject()) this.onRetryHandoff();
+    else this.onPublicLanding(!!destination?.runId);
+  }
+
+  protected onPublicObserved(cycle: MktgDocumentReadCycle): void {
+    if (cycle.detail.project !== this.publicProject() || this.publicIdentityPending()) return;
+    if (cycle.detail.progressUnavailable) {
+      if (this.checkingRun()) this.onPublicReadError();
+      return;
+    }
+    this.checkingRun.set(false);
+    if (this.publicReadFailed) {
+      this.publicReadFailed = false;
+      this.errorText.set('');
+    }
+    const run = cycle.detail.runs?.find((entry) => entry.runId === this.publicRunId());
+    if (
+      run?.state === 'completed' &&
+      run.project === this.publicProject() &&
+      run.agentKey === this.publicAgentKey() &&
+      run.documentId === MKTG_LIVING_DOCUMENT_ID &&
+      run.producedRevisionId &&
+      MKTG_REVISION_ID_REGEX.test(run.producedRevisionId)
+    )
+      this.completedRun = run;
+    const notice = this.answeredNotice();
+    if (
+      notice &&
+      (readMktgRetiredRunHint(run) || run?.state === 'failed' || (run?.pendingQuestions && run.pendingQuestions.questionsId !== notice.questionsId))
+    )
+      this.answeredNotice.set(null);
+    const pending = this.runAttempts.load(this.publicProject(), this.agent?.id ?? '');
+    const owned = (pending?.attempt?.runId ?? pending?.pendingQuestions?.attempt.runId) === this.publicRunId() ? pending : null;
+    if (readMktgRetiredRunHint(run)) {
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      this.errorText.set('');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
+    if (run?.state === 'failed') {
+      this.waitingRun.set(null);
+      this.waitingQuestions.set(false);
+      this.generationSub?.unsubscribe();
+      this.generationSub = null;
+      this.answersSending.set(false);
+      this.clearQuestions();
+      this.phase.set('running');
+      if (owned) this.runAttempts.save({ ...owned, state: 'failed', pendingQuestions: undefined });
+      return;
+    }
+    if (owned?.pendingQuestions && !this.answersSending()) {
+      if (!run) {
+        // Completion retires the question block, not the creator capability needed for its exact receipt.
+        this.runAttempts.save({ ...owned, state: 'writing', pendingQuestions: undefined });
+      } else if (run && (run.state !== 'questions' || owned.pendingQuestions.questionsId !== run.pendingQuestions?.questionsId)) {
+        this.runAttempts.save({ ...owned, pendingQuestions: undefined, state: 'writing' });
+      }
+    }
+    if (this.answersSending() && run?.state === 'questions') return;
+    if (run?.state === 'questions') {
+      const privateQuestions = owned?.pendingQuestions;
+      if (owned && privateQuestions && (!run || privateQuestions.questionsId === run.pendingQuestions?.questionsId)) {
+        if (this.questionsPending()?.questionsId !== privateQuestions.questionsId || this.phase() !== 'questions') {
+          const token = this.route.snapshot.queryParamMap.get('questions');
+          if (token && !this.freshMode()) this.runAttempts.consume(token, this.publicProject(), this.agent?.id ?? '');
+          this.activeRequest = owned.request;
+          this.restoreInputs(owned.request, 'returned');
+          this.hasAcknowledgement.set(true);
+          this.showQuestions(privateQuestions, true);
+        }
+        return;
+      }
+    }
+    // Server writing/storing/landed (or a new questions block) beats a stale local questions draft.
+    if (this.phase() === 'questions' || this.questionsPending()) {
+      if (!this.answersSending()) {
+        this.generationSub?.unsubscribe();
+        this.generationSub = null;
+      }
+      this.clearQuestions();
+      this.phase.set('running');
+    }
+    if ((run?.state === 'writing' || run?.state === 'storing') && owned?.attempt && !this.answersSending()) {
+      if (!this.generationSub || this.generationSub.closed) {
+        this.resumeAcceptedAttempt({ ...owned, state: 'writing', pendingQuestions: undefined }, this.publicProject());
+      }
+      this.phase.set('running');
+    }
+  }
+
+  protected onPublicReadError(error?: HttpErrorResponse): void {
+    this.checkingRun.set(false);
+    this.publicReadFailed = true;
+    this.clearQuestions();
+    this.phase.set('running');
+    if (error?.status === 401) this.errorText.set('Sign in before checking this run.');
+    else if (error?.status === 403) this.errorText.set('You need write access to this project to check its run.');
+    else this.errorText.set('The recorded run could not be checked. Open the document to check its current state.');
+  }
+
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
   protected onRetryHandoff(): void {
     const destination = this.navigation();
     if (!destination) return;
+    if (this.publicIdentityPending() && !destination.subject) return;
     if (destination.projectUid !== this.projectContext.activeContextUid() || !destination.subject || destination.subject !== this.userService.user()?.sub) {
-      this.discardPendingNavigation();
+      // The public receiver can retry this public destination after signing in;
+      // it has no private generation capability to restore or submit.
+      if (!this.publicReceiver()) this.discardPendingNavigation();
       this.navigating.set(false);
       this.writingStretch.set(false);
       this.phase.set('form');
@@ -520,8 +928,14 @@ export class MktgAgentRunComponent {
     void this.router
       .navigate(['..', 'documents', destination.agentKey, destination.documentId ?? MKTG_LIVING_DOCUMENT_ID], {
         relativeTo: this.route,
-        queryParams: { generation: destination.generation ?? null, revision: destination.revisionId ?? null, run: destination.runId ?? null, questions: null },
-        queryParamsHandling: 'merge',
+        queryParams: {
+          project: this.projectSlug(),
+          ...MKTG_RUN_RESUME_QUERY_CLEAR,
+          generation: destination.generation ?? null,
+          revision: destination.revisionId ?? null,
+          run: destination.runId ?? null,
+        },
+        replaceUrl: true,
       })
       .then((opened) => {
         if (!current()) {
@@ -546,13 +960,9 @@ export class MktgAgentRunComponent {
   }
 
   // === Protected methods ===
-  protected onBack(): void {
-    this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
-    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { project: this.projectSlug() } });
   }
 
   /** Re-runs the dependency check that failed, for the active project. */
@@ -567,11 +977,64 @@ export class MktgAgentRunComponent {
       .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
   }
 
-  protected onSubmit(): void {
-    if (this.submitDisabled()) {
+  protected onEditSources(section?: string): void {
+    if (this.phase() !== 'form' || this.sourcesLoading() || this.sourcesDenied()) return;
+    if (!section && this.sourcesEditing()) {
+      this.onDoneSources();
       return;
     }
-    this.startGeneration();
+    this.sourcesEditing.set(true);
+    this.focusSourceControl(section ?? '#mktg-run-intake-form');
+  }
+
+  protected onDoneSources(): void {
+    this.sourcesEditing.set(false);
+    this.focusSourceControl('[data-testid="mktg-run-sources-edit"]');
+  }
+
+  /** PROVISIONAL board-silent affordance: explicit omission instead of silently losing sources after reload. */
+  protected onDropPriorFiles(): void {
+    this.priorDocumentCount.set(0);
+    this.priorLogoCount.set(0);
+  }
+
+  protected onContinueWaiting(): void {
+    const runId = this.existingRun()?.runId ?? this.waitingRun()?.runId;
+    const agentKey = this.assetType?.agentKey;
+    if (agentKey && runId && MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.openActiveRun(agentKey, runId, this.waitingQuestions());
+      return;
+    }
+    if (this.waitingQuestions()) {
+      // Removing entry-only mode uses the same restoration path as a plain run URL.
+      this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      return;
+    }
+    this.router.navigate(this.waitingRunLink(), { queryParams: this.waitingRunParams() });
+  }
+
+  protected onStartOverWaiting(): void {
+    this.confirmDiscard(() => {
+      this.waitingQuestions.set(false);
+      this.waitingRun.set(null);
+      this.startedOverWaiting.set(true); // Sources first; no POST or draft mutation until explicit Create.
+    });
+  }
+
+  protected onSubmit(): void {
+    if (this.checkingGuard()) return;
+    if (this.submitDisabled()) {
+      this.intakeForm.markAllAsTouched();
+      this.errorText.set(this.submitReason());
+      return;
+    }
+    this.confirmDiscard(() => this.startGeneration());
+  }
+
+  protected onRetryRun(): void {
+    const request = this.activeRequest;
+    if (!this.runFailed() || !request || this.phase() === 'running') return;
+    this.startGeneration(request);
   }
 
   /** Another empty row on a `url-list` field, up to its `maxItems`. */
@@ -592,6 +1055,18 @@ export class MktgAgentRunComponent {
     this.syncLinkField(key);
   }
 
+  /** Link controls are described by their format; single URLs use the text control. */
+  protected isLinkField(field: MktgIntakeField): boolean {
+    return field.kind === 'url-list' || field.format === 'source-url' || field.format === 'source-url-list' || field.format === 'https-url';
+  }
+
+  protected fieldDescribedBy(field: MktgIntakeField): string {
+    const ids: string[] = [];
+    if (this.isLinkField(field)) ids.push('mktg-intake-' + field.key + '-hint');
+    if (this.fieldFormatErrors()[field.key]) ids.push('mktg-intake-' + field.key + '-error');
+    return ids.join(' ');
+  }
+
   /**
    * A file picked on a field that offers an upload (the deck, the plan): it
    * joins the documents section, read to text there, already tagged with the
@@ -602,37 +1077,475 @@ export class MktgAgentRunComponent {
     this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
-  /** Sends answers once; the accepted ACK transfers this owned attempt to the asset page. */
+  /** Sends answers once, keeps the run-page feed, and lands only after the exact revision is stored. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
-    if (!pending || !request || this.answersSending()) {
+    if (!pending || !request || this.answersSending() || this.checkingRun() || this.phase() !== 'questions') {
       return;
     }
+    const owner = this.userService.user()?.sub;
     this.lastAnswers.set(Object.fromEntries(answers.map((answer) => [answer.key, answer.text])));
     this.errorText.set('');
     this.answersSending.set(true);
+    this.hasAcknowledgement.set(false);
     this.writingStretch.set(true);
     this.activityStartedAt.set(Date.now());
-    this.phase.set('running');
     this.generationSub?.unsubscribe();
+    let accepted = false;
     this.generationSub = this.runService
       .answerQuestions(request, pending, answers)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: () => {
-          this.answersSending.set(false);
-          // The accepted answers were saved before this ACK. The asset resumes polling, not another POST.
-          this.openPrepared(request, true);
+        next: (progress) => {
+          if (progress.type === 'submitted') {
+            accepted = true;
+            this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            this.publicProgressView()?.acknowledgeAnswers(pending.questionsId, '', pending.attempt.runId || this.publicRunId());
+          }
+          this.onProgress(progress, request.projectUid);
         },
-        error: () => {
-          // The answers come back on the questions step, as given: not square one.
+        error: (error: unknown) => {
+          if (request.projectUid !== this.projectContext.activeContextUid() || owner !== this.userService.user()?.sub) return;
+          const runId = pending.attempt.runId || this.publicRunId();
+          const answeredBy = error instanceof HttpErrorResponse && error.status === 409 ? mktgRunAnsweredBy(error.error, runId, pending.questionsId) : null;
+          if (answeredBy) {
+            this.answersSending.set(false);
+            this.hasAcknowledgement.set(true);
+            this.clearQuestions();
+            this.phase.set('running');
+            this.checkingRun.set(false);
+            this.writingStretch.set(true);
+            this.errorText.set('');
+            const saved = this.runAttempts.load(request.projectUid, request.agentId);
+            if (saved?.attempt?.runId === runId)
+              this.runAttempts.save({ ...saved, state: 'writing', pendingQuestions: undefined, answeredQuestionsId: pending.questionsId });
+            const notice = `${answeredBy} already answered these — the agent is writing.`;
+            const scopedNotice = { runId, questionsId: pending.questionsId, message: notice };
+            this.answeredNotice.set(scopedNotice);
+            this.concurrentAnswers.remember(request.projectUid, this.publicAgentKey(), MKTG_LIVING_DOCUMENT_ID, scopedNotice);
+            this.discoveredRunId.set(runId);
+            this.publicReceiver.set(true);
+            const observer = this.publicProgressView();
+            if (observer && observer.runId() === runId) observer.acknowledgeAnswers(pending.questionsId, notice, runId);
+            else this.publicRefreshKey.update((value) => value + '1');
+            return;
+          }
+          if (error instanceof HttpErrorResponse && (error.status === 409 || error.status === 412) && this.publicProgressView()) {
+            this.answersSending.set(false);
+            this.phase.set('running');
+            this.checkingRun.set(true);
+            this.errorText.set('');
+            this.publicProgressView()?.recheck();
+            return;
+          }
+          if (accepted) {
+            // No Retry here: the accepted run may still finish server-side; a Generate would duplicate it.
+            this.discardPendingNavigation();
+            this.navigating.set(false);
+            this.recheckingAttempt.set(false);
+            this.answersSending.set(false);
+            this.writingStretch.set(false);
+            this.clearQuestions();
+            this.runFailed.set(false);
+            this.phase.set('form');
+            this.errorText.set('The recorded run could not be confirmed. Your intake is kept — check Documents before trying again.');
+            return;
+          }
+          const recorded = this.publicProgressView();
+          if (recorded && (recorded.selectedRun()?.state !== 'questions' || recorded.selectedRun()?.pendingQuestions?.questionsId !== pending.questionsId)) {
+            this.answersSending.set(false);
+            this.clearQuestions();
+            this.phase.set('running');
+            return;
+          }
+          // Before the ACK, retry only the same still-paused server questions block.
           this.answersSending.set(false);
           this.writingStretch.set(false);
           this.errorText.set('The agent could not take your answers. They are kept — try again.');
           this.phase.set('questions');
         },
+        complete: () => {
+          if (accepted && this.phase() === 'running' && !this.navigation()) {
+            this.writingStretch.set(false);
+            this.clearQuestions();
+            this.phase.set('form');
+            this.errorText.set('The saved revision could not be confirmed. Your inputs are kept — check Documents before starting another run.');
+          }
+        },
       });
+  }
+
+  /** 144-D: cached activity can request a check, never authorize a discard dialog. */
+  private confirmDiscard(action: () => void): void {
+    if (this.checkingGuard()) return;
+    const project = this.projectContext.activeContextUid();
+    const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+    const cached = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId;
+    if (!this.assetType || (!this.hasWaitingNotice() && !this.existingRun() && !saved?.attempt)) {
+      this.confirmFreshDiscard(action);
+      return;
+    }
+    this.readRunAtClick(cached, (active) => {
+      this.waitingQuestions.set(false);
+      this.waitingRun.set(active);
+      this.existingRun.set(active);
+      if (active && cached && active.runId !== cached) this.runAttempts.clear(project, this.agent?.id ?? '');
+      if (!active) {
+        this.runAttempts.clear(project, this.agent?.id ?? '');
+        this.discardConfirmed = false;
+        this.discardedRunId = null;
+        this.conflictDiscardId = null;
+        action();
+        return;
+      }
+      this.confirmFreshDiscard(action);
+    });
+  }
+
+  /** A fresh selected-run read bypasses listing/reader caches and includes recorded closure metadata. */
+  private readRunAtClick(runId: string | undefined, onRead: (active: MktgDocumentRunProgress | null) => void): void {
+    const type = this.assetType;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    if (!type || !project || !subject || this.checkingGuard()) return;
+    const selector = runId && MKTG_STARTED_RUN_ID_REGEX.test(runId) ? runId : undefined;
+    const watch = new Subscription();
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = watch;
+    this.checkingGuard.set(true);
+    const current = () => !this.destroyRef.destroyed && project === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub;
+    const finish = () => {
+      if (this.guardReadSub === watch) {
+        this.guardReadSub = null;
+        this.checkingGuard.set(false);
+      }
+    };
+    const unavailable = () => {
+      finish();
+      if (current()) {
+        this.phase.set('form');
+        this.writingStretch.set(false);
+        this.errorText.set('The latest run could not be checked. Your inputs are kept — try again before starting over.');
+      }
+    };
+    watch.add(
+      this.documentStore
+        .getDocument(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID, false, selector, false, selector)
+        .pipe(take(1), timeout(MKTG_RUN_POLL.timeoutMs), takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (detail) => {
+            if (!current()) return;
+            if (detail.progressUnavailable || detail.project !== project) {
+              unavailable();
+              return;
+            }
+            const active = detail.runs?.find(
+              (row) =>
+                row.project === project &&
+                row.agentKey === type.agentKey &&
+                row.documentId === MKTG_LIVING_DOCUMENT_ID &&
+                (row.state === 'writing' || row.state === 'questions' || row.state === 'storing')
+            );
+            finish();
+            onRead(active ?? null);
+          },
+          error: unavailable,
+        })
+    );
+  }
+
+  private confirmFreshDiscard(action: () => void): void {
+    const project = this.projectContext.activeContextUid();
+    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
+    const activeDraft = !!draft?.attempt && (draft.state === 'writing' || draft.state === 'questions');
+    const runId = this.waitingRun()?.runId ?? this.existingRun()?.runId ?? draft?.attempt?.runId ?? draft?.pendingQuestions?.attempt.runId ?? null;
+    if ((this.discardConfirmed && this.discardedRunId === runId) || (!this.hasWaitingNotice() && !this.existingRun() && !activeDraft)) {
+      action();
+      return;
+    }
+    this.confirmation.confirm({
+      header: `Discard the ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} run?`,
+      message: 'Its questions and progress will be lost.',
+      acceptLabel: 'Discard and start over',
+      rejectLabel: 'Keep it',
+      rejectButtonProps: { text: true },
+      ...this.confirmActions(
+        () => {
+          this.discardConfirmed = true;
+          this.discardedRunId = runId;
+          action();
+        },
+        (reason) => {
+          this.keepExistingRun();
+          if (reason === ConfirmEventType.REJECT) this.onContinueWaiting();
+        }
+      ),
+    });
+  }
+
+  private confirmActions(accept: () => void, reject: (reason: ConfirmEventType) => void) {
+    const epoch = this.discardEpoch;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.userService.user()?.sub;
+    let settled = false;
+    const current = () =>
+      !settled &&
+      !this.destroyRef.destroyed &&
+      epoch === this.discardEpoch &&
+      project === this.projectContext.activeContextUid() &&
+      subject === this.userService.user()?.sub;
+    return {
+      accept: () => {
+        if (current()) {
+          settled = true;
+          accept();
+        }
+      },
+      reject: (reason: ConfirmEventType) => {
+        if (current()) {
+          settled = true;
+          reject(reason);
+        }
+      },
+    };
+  }
+
+  private keepExistingRun(): void {
+    this.startedOverWaiting.set(false);
+    this.readWaitingDraft(this.projectContext.activeContextUid());
+    if (!this.hasWaitingNotice() && this.existingRun()) this.waitingRun.set(this.existingRun());
+  }
+
+  /** Never open a modal from a stale POST conflict without a fresh run-record read. */
+  private showActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false, replayed = false): void {
+    const subject = this.userService.user()?.sub;
+    this.activeRequest = request; // A returned conflict handoff must bind its request before the asynchronous live read/replay.
+    this.readRunAtClick(conflict.activeRunId, (active) => {
+      if (active?.runId === conflict.activeRunId && (active.state === 'writing' || active.state === 'questions' || active.state === 'storing')) {
+        this.showConfirmedActiveConflict({ ...conflict, state: active.state, startedAt: active.startedAt }, request, rejectedDiscard);
+        return;
+      }
+      if (replayed || !this.runService.canRetryActiveConflict(request)) {
+        this.phase.set('form');
+        this.errorText.set('The start response disagrees with the latest run record. Your inputs are kept — check again before starting over.');
+        return;
+      }
+      this.waitingRun.set(null);
+      this.existingRun.set(null);
+      this.phase.set('running');
+      this.generationSub = this.runService
+        .recheckActiveConflict(request)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: (progress) => {
+            if (request.projectUid === this.projectContext.activeContextUid() && subject === this.userService.user()?.sub)
+              this.onProgress(progress, request.projectUid);
+          },
+          error: (error: unknown) => {
+            if (request.projectUid !== this.projectContext.activeContextUid() || subject !== this.userService.user()?.sub) return;
+            const fresh = this.runService.activeRunConflict(error, request);
+            if (fresh) this.showActiveConflict(fresh, request, rejectedDiscard, true);
+            else {
+              this.phase.set('form');
+              this.errorText.set('The run could not be started. Your inputs are kept — try again.');
+            }
+          },
+        });
+    });
+  }
+
+  private showConfirmedActiveConflict(conflict: MktgActiveRunConflict, request: MktgGenerateRequest, rejectedDiscard = false): void {
+    if (conflict.state !== 'writing' && conflict.state !== 'storing' && conflict.state !== 'questions') return;
+    if (request.projectUid !== this.projectContext.activeContextUid() || request.agentId !== this.agent?.id) return;
+    this.activeRequest = request;
+    this.phase.set('form');
+    this.runFailed.set(false);
+    this.errorText.set('');
+    this.waitingQuestions.set(false);
+    const activeRun = { runId: conflict.activeRunId, state: conflict.state, startedAt: conflict.startedAt };
+    this.waitingRun.set(activeRun);
+    this.existingRun.set(activeRun);
+    const discard = () => {
+      this.discardConfirmed = true;
+      this.discardedRunId = conflict.activeRunId;
+      this.conflictDiscardId = conflict.activeRunId;
+      this.waitingRun.set(null);
+      this.startedOverWaiting.set(true);
+      if (this.runService.canRetryActiveConflict(request)) this.startGeneration(request, conflict.activeRunId);
+      else {
+        this.restoreInputs(request, 'returned');
+        this.errorText.set('The original start cannot be replayed safely. Review your sources, re-attach any files, then Create explicitly.');
+      }
+    };
+    if (!rejectedDiscard && this.discardConfirmed && this.discardedRunId === conflict.activeRunId) {
+      discard();
+      return;
+    }
+    const epoch = this.discardEpoch;
+    const subject = this.userService.user()?.sub;
+    this.activeRunGuard.open(
+      this.confirmation,
+      {
+        conflict,
+        current: () =>
+          !this.destroyRef.destroyed &&
+          epoch === this.discardEpoch &&
+          subject === this.userService.user()?.sub &&
+          request.projectUid === this.projectContext.activeContextUid(),
+        recheck: () => this.runService.recheckActiveConflict(request),
+        classify: (error) => this.runService.activeRunConflict(error, request),
+        onValue: (progress) => {
+          this.phase.set('running');
+          this.onProgress(progress, request.projectUid);
+        },
+        onDiscard: (fresh) => {
+          conflict = fresh;
+          discard();
+        },
+        onOpen: (fresh) => this.openActiveRun(fresh.agentKey, fresh.activeRunId),
+        onError: () => {
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.recheckingAttempt.set(false);
+          this.writingStretch.set(false);
+          this.clearQuestions();
+          this.waitingRun.set(null);
+          this.existingRun.set(null);
+          this.hasAcknowledgement.set(false);
+          this.runFailed.set(false);
+          this.phase.set('form');
+          this.restoreInputs(request, 'returned');
+          this.errorText.set('The original start could not be confirmed or replayed safely. Check Documents, then review your sources before trying again.');
+        },
+      },
+      this.destroyRef
+    );
+  }
+
+  /** 146-G: Keep/Open targets the server's active run, never the reader's current document. */
+  private openActiveRun(agentKey: MktgDocumentRunProgress['agentKey'], runId: string, replaceUrl = false): void {
+    const commands = mktgRunRouteFor(agentKey, mktgKitRootPath(this.router.url));
+    if (!commands || !MKTG_STARTED_RUN_ID_REGEX.test(runId)) {
+      this.errorText.set('The active run could not be opened. Check its entry in Documents.');
+      return;
+    }
+    void this.router.navigate(commands, {
+      queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: runId },
+      ...(replaceUrl && { replaceUrl: true }),
+    });
+  }
+
+  /** The same persisted revision summary used by Kit/family and Documents, not browser run history. */
+  private readHasVersion(project: string, fresh: boolean): Observable<boolean | null> {
+    return this.documentStore.listDocuments(project).pipe(
+      tap((documents) => {
+        if (documents.progressUnavailable) return;
+        const run = documents.runs?.find(
+          (entry) =>
+            entry.project === project &&
+            entry.agentKey === this.assetType?.agentKey &&
+            entry.documentId === MKTG_LIVING_DOCUMENT_ID &&
+            (entry.state === 'writing' || entry.state === 'storing' || entry.state === 'questions')
+        );
+        this.existingRun.set(run ?? null);
+        if (!fresh && run && !this.startedOverWaiting()) {
+          this.discoveredRunId.set(run.runId);
+          this.publicReceiver.set(true);
+        }
+        const saved = this.runAttempts.load(project, this.agent?.id ?? '');
+        const sameQuestions =
+          run?.state === 'questions' &&
+          run.runId === (saved?.attempt?.runId ?? saved?.pendingQuestions?.attempt.runId) &&
+          run.pendingQuestions?.questionsId === saved?.pendingQuestions?.questionsId;
+        const hasStoredDocument = documents.groups.some(
+          (group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0)
+        );
+        if (saved?.pendingQuestions && !sameQuestions && (this.assetType || run || hasStoredDocument || saved.attempt?.runId)) {
+          this.waitingQuestions.set(false);
+          this.clearQuestions();
+          if (this.phase() === 'questions') this.phase.set(run ? 'running' : 'form');
+          if (!run) this.runAttempts.clear(project, this.agent?.id ?? '');
+          else this.runAttempts.save({ ...saved, pendingQuestions: undefined, state: run.state === 'questions' ? 'questions' : 'writing' });
+        }
+        if (fresh && !this.startedOverWaiting()) {
+          this.waitingRun.set(run ?? null);
+          if (!run && hasStoredDocument) this.waitingQuestions.set(false);
+        }
+        if (
+          !fresh &&
+          run?.state === 'questions' &&
+          !saved?.pendingQuestions &&
+          saved?.state !== 'writing' &&
+          !this.route.snapshot.queryParamMap.get('questions')
+        ) {
+          void this.router.navigate([], { relativeTo: this.route, queryParams: { run: run.runId }, queryParamsHandling: 'merge', replaceUrl: true });
+        }
+        if (!fresh || this.startedOverWaiting() || saved) return;
+        if (run) this.waitingRun.set(run);
+      }),
+      map((documents) =>
+        documents.groups.some((group) => group.type.catalogAgentId === this.agent?.id && group.documents.some((item) => item.revisionCount > 0))
+      ),
+      catchError(() => {
+        // Sources already loads last intake; the full form reads it only as a label fallback.
+        if (fresh) return of(null);
+        return this.runService.lastIntake(project, this.agent?.id ?? '').pipe(
+          map((intake) => !!intake),
+          catchError(() => of(false))
+        );
+      })
+    );
+  }
+
+  private initWaitingRunMessage(): Signal<string> {
+    return computed(() => {
+      if (!this.waitingQuestions() && this.waitingRun()?.state !== 'questions')
+        return `This ${mktgSentenceCaseLabel(this.assetType?.itemLabel ?? this.assetName)} is being written.`;
+      const started = Date.parse(this.waitingRun()?.startedAt ?? this.waitingSince());
+      if (Number.isFinite(started) && Date.now() - started > this.staleWaitingMs) {
+        return `Waiting for your answers since ${formatDate(started, 'd MMM', 'en-US')}. Continue to answer them — if the agent no longer responds, start over.`;
+      }
+      return 'This run is waiting for your answers.';
+    });
+  }
+
+  /** Browser proof is a fast path only; the summary read supplies the any-browser equivalent. */
+  private readWaitingDraft(project: string): void {
+    const draft = this.runAttempts.load(project, this.agent?.id ?? '');
+    if (!draft) return;
+    if (draft.state === 'questions' && draft.pendingQuestions) {
+      this.waitingQuestions.set(true);
+      this.waitingSince.set(draft.updatedAt);
+    } else if (draft.attempt?.runId && (draft.state === 'writing' || draft.state === 'questions'))
+      this.waitingRun.set({ runId: draft.attempt.runId, state: draft.state, startedAt: draft.updatedAt });
+  }
+
+  private intakeSourcesHint(): string {
+    const required = (this.intake?.fields ?? []).filter((field) => !field.optional).map((field) => field.question);
+    const intro = 'The agent reads these, searches the web and LFX for the rest, and may ask you a few questions.';
+    if (!required.length) return `${intro} All sources are optional.`;
+    const last = required.at(-1);
+    const names = required.length > 1 ? `${required.slice(0, -1).join(', ')} and ${last}` : last;
+    return `${intro} Only the ${names} ${required.length === 1 ? 'is' : 'are'} required.`;
+  }
+
+  private initSourceFields(): Signal<MktgRunSourceField[]> {
+    return computed(() => {
+      const values = this.intakeValue();
+      return (this.intake?.fields ?? []).map((field) => {
+        const value = values[field.key] ?? '';
+        let origin = 'Suggested';
+        if (this.filledFromMemoryApplied()[field.key] && this.prefillIntact()[field.key]) {
+          origin = this.fromPriorRun()[field.key] ?? 'Remembered on this device';
+        }
+        if (Object.hasOwn(this.lastSourceValues(), field.key)) origin = this.lastSourceOrigins()[field.key] ?? origin;
+        if (this.intakeForm.controls[field.key]?.dirty) origin = 'Changed just now';
+        return { key: field.key, label: field.question, value, origin };
+      });
+    });
   }
 
   private initAttachmentChips(): Signal<MktgAttachmentChip[]> {
@@ -766,12 +1679,12 @@ export class MktgAgentRunComponent {
     return new FormGroup(controls);
   }
 
-  /** Assembles the submitted answers from the form: blank optional fields are omitted. */
+  /** Fresh snapshots keep intentional blanks; ordinary submissions omit blank optionals. */
   private buildAnswers(): Record<string, string> {
     const answers: Record<string, string> = {};
     for (const field of this.intake?.fields ?? []) {
       const value = this.intakeForm.controls[field.key].value.trim();
-      if (field.optional && !value) {
+      if (field.optional && !value && !this.freshMode()) {
         continue;
       }
       answers[field.key] = value;
@@ -782,7 +1695,7 @@ export class MktgAgentRunComponent {
   /**
    * Every intake field with its trimmed value, BLANKS INCLUDED — the answer
    * memory needs the full submitted state to erase a field the user cleared,
-   * which the submit payload (`buildAnswers`) deliberately omits. Without it
+   * which ordinary submit payloads omit (fresh snapshots retain them). Without it
    * the memory would keep re-offering an optional answer the user removed.
    */
   private buildIntakeState(): Record<string, string> {
@@ -965,6 +1878,54 @@ export class MktgAgentRunComponent {
     return doc?.document || null;
   }
 
+  private focusSourceControl(selector: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    const project = this.projectContext.activeContextUid();
+    const subject = this.runAttempts.subject();
+    afterNextRender(
+      () => {
+        if (this.phase() !== 'form' || project !== this.projectContext.activeContextUid() || subject !== this.runAttempts.subject()) return;
+        this.host.nativeElement
+          .querySelector<HTMLElement>(selector)
+          ?.querySelector<HTMLElement>('input:not([type="file"]):not([type="hidden"]):not([disabled]), textarea:not([disabled]), button:not([disabled])')
+          ?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  private restoreFreshInputs(project: string, history: MktgLastIntake | null): void {
+    if (!this.agent || !this.intake) return;
+    const memory = this.runAttempts.lastInputs(project, this.agent.id);
+    const local = this.runService.loadRun(project, this.agent.id);
+    const answers: Record<string, string> = {};
+    const origins: Record<string, string> = {};
+    for (const field of this.intake.fields) {
+      if (history && Object.hasOwn(history.answers, field.key)) {
+        answers[field.key] = history.answers[field.key];
+        origins[field.key] = 'From last time';
+      } else if (memory && Object.hasOwn(memory.answers, field.key)) {
+        answers[field.key] = memory.answers[field.key];
+        origins[field.key] = 'Saved in this visit';
+      } else if (local && Object.hasOwn(local.answers, field.key)) {
+        answers[field.key] = local.answers[field.key];
+        origins[field.key] = 'Saved on this device';
+      }
+    }
+    this.lastSourceValues.set(answers);
+    this.lastSourceOrigins.set(origins);
+    this.intakeForm.patchValue(answers);
+    // Shared history has no run binding for local bytes. Equal scalars/counts
+    // cannot prove ownership, so never reuse uploads alongside a durable snapshot.
+    // A same-visit draft with no shared snapshot can still retain its own inputs.
+    if (!history && memory) this.restoreInputs({ ...memory, answers }, 'last-visit');
+    const memoryDocuments = !history ? (memory?.documents?.length ?? 0) : 0;
+    const memoryLogos = !history ? (memory?.logoFiles?.length ?? 0) : 0;
+    this.priorDocumentCount.set(history?.documentCount ?? memoryDocuments);
+    this.priorLogoCount.set(history?.logoCount ?? memoryLogos);
+    this.seedLinkRows();
+  }
+
   private restoreInputs(request: MktgGenerateRequest, prefix: string): void {
     this.intakeForm.patchValue(request.answers);
     this.documents.set(
@@ -999,11 +1960,33 @@ export class MktgAgentRunComponent {
    * context change so one project's session, answers and versions can never
    * bleed into another's.
    */
-  private resetForContext(context: ProjectContext | null): void {
+  private resetForContext(context: ProjectContext | null, fresh: boolean): void {
     if (!this.agent || !this.intake) {
       return;
     }
 
+    this.consumedFreshProject = null;
+    this.consumedFreshSubject = null;
+    this.freshMode.set(fresh);
+    this.waitingQuestions.set(false);
+    this.waitingRun.set(null);
+    this.existingRun.set(null);
+    this.discardConfirmed = false;
+    this.discardedRunId = null;
+    this.discardEpoch++;
+    this.conflictDiscardId = null;
+    this.privateReceiptRunId = '';
+    this.receiptRecoveryRunId = '';
+    this.completedRun = null;
+    this.guardReadSub?.unsubscribe();
+    this.guardReadSub = null;
+    this.checkingGuard.set(false);
+    this.answeredNotice.set(null);
+    this.confirmation.close();
+    this.waitingSince.set('');
+    this.startedOverWaiting.set(false);
+    this.hasAcknowledgement.set(false);
+    this.hasVersion.set(false);
     this.generationSub?.unsubscribe();
     this.generationSub = null;
     this.discardPendingNavigation();
@@ -1016,7 +1999,9 @@ export class MktgAgentRunComponent {
     this.activity.set([]);
     this.activityStartedAt.set(0);
     this.phase.set('form');
+    this.checkingRun.set(true);
     this.recheckingAttempt.set(false);
+    this.runFailed.set(false);
     this.errorText.set('');
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
@@ -1037,7 +2022,33 @@ export class MktgAgentRunComponent {
     // submission stays disabled meanwhile).
     this.dependencyDocs.set(null);
     this.dependencyCheckFailed.set(false);
+    this.sourcesEditing.set(false);
+    this.sourcesLoading.set(fresh);
+    this.sourcesDenied.set(false);
+    this.sourceNote.set('');
+    this.lastSourceValues.set({});
+    this.lastSourceOrigins.set({});
+    this.priorDocumentCount.set(0);
+    this.priorLogoCount.set(0);
+    const publicId = this.route.snapshot.queryParamMap.get('run') ?? '';
+    this.discoveredRunId.set('');
+    this.publicRefreshKey.set('');
+    this.publicReadFailed = false;
+    this.publicReceiver.set(!!publicId);
+    this.pendingPublicRunId = '';
     if (!context) return;
+    const recorded = this.runAttempts.load(context.uid, this.agent.id);
+    const recordedId =
+      !fresh && (recorded?.state === 'writing' || recorded?.state === 'questions') ? (recorded.attempt?.runId ?? recorded.pendingQuestions?.attempt.runId) : '';
+    if (publicId || recordedId) {
+      this.discoveredRunId.set(recordedId ?? '');
+      this.publicReceiver.set(true);
+      return; // Always measure the server before restoring a private questions draft.
+    }
+    if (fresh) {
+      this.readWaitingDraft(context.uid);
+      return; // Offer recovery without consuming a token or starting/resuming a run.
+    }
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
@@ -1049,10 +2060,10 @@ export class MktgAgentRunComponent {
     const draft = this.runAttempts.load(context.uid, this.agent.id);
     if (draft) {
       this.restoreInputs(draft.request, 'restored');
-      if (draft.pendingQuestions) {
+      if (draft.pendingQuestions && draft.state !== 'failed') {
         this.activeRequest = draft.request;
-        this.showQuestions(draft.pendingQuestions);
-      } else if (draft.requiresReattachment) {
+        if (!this.assetType) this.showQuestions(draft.pendingQuestions);
+      } else if (draft.requiresReattachment && draft.state !== 'writing') {
         this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
       }
     }
@@ -1060,36 +2071,39 @@ export class MktgAgentRunComponent {
     // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
     const token = this.route.snapshot.queryParamMap?.get('questions');
     const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
-    if (returned?.pending.requiresReattachment && !returned.pending.pendingQuestions) {
+    if (returned?.pending.activeRunConflict) {
+      this.runAttempts.save({ ...returned.pending, activeRunConflict: undefined });
+      this.restoreInputs(returned.pending.request, 'returned');
+      this.showActiveConflict(
+        returned.pending.activeRunConflict,
+        returned.pending.request,
+        returned.pending.request.discard === returned.pending.activeRunConflict.activeRunId
+      );
+    } else if (returned?.pending.requiresReattachment && (returned.pending.state === 'failed' || !returned.pending.pendingQuestions)) {
       this.restoreInputs(returned.pending.request, 'returned');
       this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
+    } else if (returned?.pending.state === 'failed' || (!returned && draft?.state === 'failed' && !draft.requiresReattachment)) {
+      const failed = returned?.pending ?? draft;
+      if (failed) {
+        this.activeRequest = failed.request;
+        this.restoreInputs(failed.request, 'returned');
+        this.clearQuestions();
+        this.runFailed.set(true);
+        this.errorText.set(MKTG_RUN_FAILURE_REASON);
+      }
     } else if (returned?.pending.pendingQuestions) {
       this.activeRequest = returned.pending.request;
       this.restoreInputs(returned.pending.request, 'returned');
-      this.showQuestions(returned.pending.pendingQuestions);
+      if (!this.assetType || returned.pending.pendingQuestions.attempt.runId) this.showQuestions(returned.pending.pendingQuestions);
     } else if (returned?.pending.attempt) {
-      this.activeRequest = returned.pending.request;
-      this.restoreInputs(returned.pending.request, 'returned');
-      this.phase.set('running');
-      this.recheckingAttempt.set(true);
-      this.writingStretch.set(!!returned.pending.answered);
-      this.activityStartedAt.set(Date.now());
-      this.generationSub = this.runService
-        .resume(returned.pending)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: (progress) => this.onProgress(progress, context.uid),
-          error: (error: unknown) => {
-            const errorType = error instanceof Error ? error.name : typeof error;
-            console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
-            this.discardPendingNavigation();
-            this.navigating.set(false);
-            this.writingStretch.set(false);
-            this.recheckingAttempt.set(false);
-            this.phase.set('form');
-            this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
-          },
-        });
+      if (!this.assetType) this.resumeAcceptedAttempt(returned.pending, context.uid);
+      else if (returned.pending.attempt.runId) {
+        this.discoveredRunId.set(returned.pending.attempt.runId);
+        this.publicReceiver.set(true);
+      }
+    } else if (draft?.state === 'writing' && draft.attempt && !this.assetType) {
+      // Capability-only generic agents have no document-run contract; registered documents use public state.
+      this.resumeAcceptedAttempt(draft, context.uid);
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
@@ -1098,6 +2112,33 @@ export class MktgAgentRunComponent {
     this.applyPrefill('project-name', context.name);
     // The reset and a restored run both wrote the list fields' controls; the rows follow them.
     this.seedLinkRows();
+  }
+
+  private resumeAcceptedAttempt(pending: MktgPendingGeneration, projectUid: string): void {
+    this.privateReceiptRunId = pending.attempt?.runId ?? '';
+    this.activeRequest = pending.request;
+    this.restoreInputs(pending.request, 'returned');
+    this.hasAcknowledgement.set(true);
+    this.phase.set('running');
+    this.recheckingAttempt.set(true);
+    this.writingStretch.set(!!pending.answered);
+    this.activityStartedAt.set(Date.now());
+    this.generationSub = this.runService
+      .resume(pending)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (progress) => this.onProgress(progress, projectUid),
+        error: (error: unknown) => {
+          const errorType = error instanceof Error ? error.name : typeof error;
+          console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.writingStretch.set(false);
+          this.recheckingAttempt.set(false);
+          this.phase.set('form');
+          this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
+        },
+      });
   }
 
   /**
@@ -1121,6 +2162,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       const control = this.intakeForm.controls[field.key];
+      if (this.freshMode() && Object.hasOwn(this.lastSourceValues(), field.key)) continue;
       if (control && !control.value.trim()) {
         // A one-line field takes a one-line value: an LFX description with
         // paragraph breaks is collapsed to single spaces, since the input
@@ -1165,7 +2207,7 @@ export class MktgAgentRunComponent {
         continue;
       }
       const control = this.intakeForm.controls[field.key];
-      if (!control || control.value.trim()) {
+      if (!control || control.value.trim() || (this.freshMode() && Object.hasOwn(this.lastSourceValues(), field.key))) {
         continue;
       }
       control.setValue(entry.value);
@@ -1188,7 +2230,8 @@ export class MktgAgentRunComponent {
     return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
-  private startGeneration(): void {
+  private startGeneration(retryRequest?: MktgGenerateRequest, discard?: string): void {
+    const owner = this.userService.user()?.sub;
     const projectUid = this.projectContext.activeContextUid();
     const agent = this.agent;
     const intake = this.intake;
@@ -1200,7 +2243,12 @@ export class MktgAgentRunComponent {
       return;
     }
 
-    const answers = this.buildAnswers();
+    if (!this.userService.user()?.sub) {
+      this.errorText.set('Sign in before starting this run. Your intake is kept.');
+      return;
+    }
+    if (retryRequest && (retryRequest.projectUid !== projectUid || retryRequest.agentId !== agent.id)) return;
+    const answers = retryRequest?.answers ?? this.buildAnswers();
     // Remember what the user typed, keyed by intake field key, so the NEXT
     // agent's form on this project can offer it back instead of asking again.
     // Only the intake's own answers — the auto-attached dependency documents
@@ -1208,26 +2256,33 @@ export class MktgAgentRunComponent {
     // FULL state goes in, not the payload: a cleared optional field has to
     // erase its remembered answer rather than leave the old one to be
     // re-offered once this run's 24h record expires.
-    this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
+    if (!retryRequest) this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
+    this.runFailed.set(false);
     this.errorText.set('');
+    // Consent/start supersedes the old UI snapshot, not the retained accepted capability.
+    // An explicit retry still performs the live-record check through confirmDiscard.
+    this.waitingRun.set(null);
+    this.existingRun.set(null);
+    this.waitingQuestions.set(false);
     this.clearQuestions();
     this.activity.set([]);
     this.recheckingAttempt.set(false);
     this.activityStartedAt.set(Date.now());
     this.writingStretch.set(false);
     this.lastAnswers.set({});
+    this.hasAcknowledgement.set(false);
     this.phase.set('running');
 
     // Re-resolve dependencies at submit time (server-persisted preferred,
     // browser fallback) and overlay the current stored attachments onto the
     // answers. The retired Request changes form sends no feedback here.
     this.generationSub?.unsubscribe();
-    this.generationSub = this.resolveDependenciesForGate(projectUid)
+    this.generationSub = (retryRequest ? of(this.dependencyDocs()) : this.resolveDependenciesForGate(projectUid))
       .pipe(
         switchMap((docs) => {
           this.dependencyDocs.set(docs);
-          const attached = docs ? this.applyAttachments(answers, docs) : null;
+          const attached = retryRequest?.answers ?? (docs ? this.applyAttachments(answers, docs) : null);
           if (!attached) {
             // The stored dependency disappeared between page load and submit,
             // or the check itself failed — surface the honest gate note
@@ -1236,38 +2291,75 @@ export class MktgAgentRunComponent {
             this.phase.set('form');
             return EMPTY;
           }
-          const request: MktgGenerateRequest = {
+          const request: MktgGenerateRequest = retryRequest ?? {
             agentId: agent.id,
             projectUid,
             intake,
+            ...((this.freshMode() || this.discardConfirmed) && { newRun: true }),
+            ...(this.conflictDiscardId && { discard: this.conflictDiscardId }),
             answers: attached,
             documents: this.submittedDocuments(),
             logoFiles: this.submittedLogoFiles(),
           };
           this.activeRequest = request;
-          if (!intake.endpoints.answers) {
-            this.openPrepared(request);
-            return EMPTY;
-          }
+          if (discard) return this.runService.generate(request, discard);
           return this.runService.generate(request);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
         next: (progress) => this.onProgress(progress, projectUid),
-        error: () => {
+        error: (error: unknown) => {
+          if (owner !== this.userService.user()?.sub || projectUid !== this.projectContext.activeContextUid()) return;
           this.discardPendingNavigation();
           this.navigating.set(false);
           this.recheckingAttempt.set(false);
           this.writingStretch.set(false);
+          const request = this.activeRequest;
+          const conflict = request && error instanceof HttpErrorResponse && error.status === 409 ? this.runService.activeRunConflict(error, request) : null;
+          if (request && conflict) {
+            this.showActiveConflict(conflict, request, discard === conflict.activeRunId || request.discard === conflict.activeRunId);
+            return;
+          }
+          this.runFailed.set(!!retryRequest);
           this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
           this.phase.set('form');
         },
       });
   }
 
+  /** Consume entry intent only after acceptance, without changing this visit's Sources state. */
+  private consumeFreshEntry(projectUid: string): void {
+    const subject = this.userService.user()?.sub;
+    if (
+      !this.freshMode() ||
+      !subject ||
+      this.activeRequest?.projectUid !== projectUid ||
+      this.projectContext.activeContextUid() !== projectUid ||
+      this.route.snapshot.queryParamMap.get('mode') !== MKTG_RUN_NEW_MODE
+    )
+      return;
+    this.consumedFreshProject = projectUid;
+    this.consumedFreshSubject = subject;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
+    if (progress.type === 'submitted') {
+      const accepted = this.runAttempts.load(projectUid, this.agent?.id ?? '');
+      if (accepted?.attempt?.runId) {
+        this.privateReceiptRunId = accepted.attempt.runId;
+        this.concurrentAnswers.observeRun(projectUid, this.assetType?.agentKey ?? '', MKTG_LIVING_DOCUMENT_ID, accepted.attempt.runId);
+      }
+      this.conflictDiscardId = null;
+      this.hasAcknowledgement.set(true);
+      this.consumeFreshEntry(projectUid);
+      if (this.route.snapshot.queryParamMap.get('questions')) {
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { questions: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      }
+      return;
+    }
     if (progress.type === 'restored') {
       if (
         this.projectContext.activeContextUid() !== projectUid ||
@@ -1287,7 +2379,7 @@ export class MktgAgentRunComponent {
       // The whole feed so far, every time it changed.
       this.activity.set(progress.activity);
       this.recheckingAttempt.set(false);
-      if (progress.activity.some((step) => step.kind === 'checking')) this.handoffPostResearch();
+      if (progress.activity.some((step) => step.kind === 'checking')) this.writingStretch.set(true);
       return;
     }
     if (progress.type === 'questions') {
@@ -1298,16 +2390,33 @@ export class MktgAgentRunComponent {
       return;
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
+      this.privateReceiptRunId = '';
+      this.receiptRecoveryRunId = '';
       this.discardPendingNavigation();
       this.navigating.set(false);
       this.recheckingAttempt.set(false);
-      this.activeRequest = null;
       this.writingStretch.set(false);
       this.clearQuestions();
-      this.errorText.set(
-        progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
-      );
+      this.runFailed.set(progress.type === 'failed');
+      this.errorText.set(progress.type === 'failed' ? (progress.failure?.reason ?? MKTG_RUN_FAILURE_REASON) : progress.reply);
       this.phase.set('form');
+      const request = this.activeRequest;
+      const runId = request && this.runAttempts.load(projectUid, request.agentId)?.attempt?.runId;
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request?.agentId);
+      if (
+        request?.projectUid === projectUid &&
+        request.agentId === this.agent?.id &&
+        projectUid === this.projectContext.activeContextUid() &&
+        type &&
+        runId &&
+        MKTG_STARTED_RUN_ID_REGEX.test(runId)
+      ) {
+        this.runFailed.set(false); // Recorded failures offer navigation recovery, never a new Generate retry.
+        this.navigation.set({ projectUid, subject: this.userService.user()?.sub ?? '', agentKey: type.agentKey, runId });
+        this.onRetryHandoff();
+      } else if (progress.type === 'refused') {
+        this.activeRequest = null;
+      }
       return;
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
@@ -1315,7 +2424,7 @@ export class MktgAgentRunComponent {
       if (projectUid !== this.projectContext.activeContextUid() || (request && (request.projectUid !== projectUid || request.agentId !== this.agent?.id)))
         return;
       this.dependencyService.notifyDocumentsChanged(projectUid);
-      if (this.navigation()) return;
+      if (this.navigation()?.revisionId) return;
       const run = progress.run;
       const attempt = progress.attempt;
       if (!request || !run || !attempt) {
@@ -1346,14 +2455,13 @@ export class MktgAgentRunComponent {
         });
         this.onRetryHandoff();
       } else {
-        // It was generated but its write has not landed. Transfer polling of this accepted session, not a fresh submission.
+        // Keep polling this accepted session here until its exact stored-revision receipt arrives.
         this.runAttempts.save({
           request,
           attempt,
           state: 'writing',
           updatedAt: new Date().toISOString(),
         });
-        this.openPrepared(request, true);
       }
     }
   }
@@ -1362,40 +2470,22 @@ export class MktgAgentRunComponent {
     return this.writingStretch() ? `Writing your ${this.intake?.documentName ?? 'document'}…` : `Researching ${this.projectName()}…`;
   }
 
-  /** Transfer only confirmed post-research progress on this owned attempt, never Generate. */
-  private handoffPostResearch(): void {
-    const request = this.activeRequest;
-    if (!request || this.navigation()) return;
-    const pending = this.runAttempts.load(request.projectUid, request.agentId);
-    // Terminal failure is tracked before the service emits its last activity.
-    if (!pending?.attempt || pending.state === 'failed') return;
-    this.writingStretch.set(true);
-    this.openPrepared(request, true);
-  }
-
-  private openPrepared(request: MktgGenerateRequest, resume = false): void {
-    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request.agentId);
-    if (!type) {
-      this.phase.set('form');
-      this.errorText.set('This agent has no registered asset view.');
-      return;
-    }
-    const subject = this.userService.user()?.sub;
-    if (!subject) {
-      this.phase.set('form');
-      this.errorText.set('Sign in before opening this run. Your intake is kept.');
-      return;
-    }
-    const generation = this.runAttempts.prepare(request, resume);
-    const runId = this.runAttempts.load(request.projectUid, request.agentId)?.attempt?.runId;
-    this.navigation.set({ projectUid: request.projectUid, subject, agentKey: type.agentKey, generation, runId });
-    this.onRetryHandoff();
-  }
-
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
-  private showQuestions(pending: MktgRunQuestionsPending): void {
+  private showQuestions(pending: MktgRunQuestionsPending, confirmed = false): void {
+    if (pending.attempt.runId) {
+      this.privateReceiptRunId = pending.attempt.runId;
+      this.discoveredRunId.set(pending.attempt.runId);
+      this.publicReceiver.set(true);
+      if (!confirmed) {
+        this.checkingRun.set(true);
+        this.questionsPending.set(pending);
+        this.phase.set('running');
+        this.publicRefreshKey.update((value) => value + '1');
+        return;
+      }
+    }
     this.recheckingAttempt.set(false);
-    this.lastAnswers.set({});
+    if (this.questionsPending()?.questionsId !== pending.questionsId) this.lastAnswers.set({});
     this.questionsPending.set(pending);
     this.phase.set('questions');
   }

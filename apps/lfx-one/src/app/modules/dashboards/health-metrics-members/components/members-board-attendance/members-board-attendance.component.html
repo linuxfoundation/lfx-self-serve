@@ -21,14 +21,18 @@
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Attendance unavailable"
       subtitle="We could not load this foundation's meeting attendance. Refresh the page to try again."
       data-testid="members-board-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-board-loading" aria-hidden="true" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else if (!loading() && noMeetings()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-calendar"
       [title]="'No ' + meetingNoun() + 's in this period'"
       subtitle="Attendance appears here once a meeting in the selected period is recorded."
@@ -36,25 +40,29 @@
   } @else {
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-board-hero">
       <div class="flex flex-col gap-2">
-        <span class="text-3xl font-semibold tabular-nums" [ngClass]="summary().latestTextClass" data-testid="members-board-latest">{{
+        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums" [ngClass]="summary().latestTextClass" data-testid="members-board-latest">{{
           summary().latestPctLabel
         }}</span>
-        <span class="text-[12.5px] text-gray-500" data-testid="members-board-caption">{{ summary().latestCaption }}</span>
+        <span class="text-[12px] text-gray-500" data-testid="members-board-caption">{{ summary().latestCaption }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-board-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">{{ summary().otherCohortLabel }}</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-other">{{ summary().otherCohortPctLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">{{ summary().otherCohortLabel }}</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-board-other">
+            {{ summary().otherCohortPctLabel }}
+          </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Attended / invited</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-attended">{{ summary().attendedInvitedLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Attended / invited</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-board-attended">
+            {{ summary().attendedInvitedLabel }}
+          </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Never attended</dt>
+          <dt class="text-[12px] text-gray-500">Never attended</dt>
           <dd
-            class="text-[17px] font-semibold tabular-nums"
+            class="text-[24px] font-semibold leading-[1.2] tabular-nums"
             [class.text-red-600]="summary().neverAttendedCount > 0"
             [class.text-gray-900]="summary().neverAttendedCount === 0"
             data-testid="members-board-never">
@@ -66,7 +74,7 @@
 
     @if (trend().length > 0) {
       <div class="flex flex-col gap-2" data-testid="members-board-trend">
-        <h4 class="text-sm font-medium text-gray-900">Attendance by meeting</h4>
+        <h4 class="text-[13px] font-medium text-gray-900">Attendance by meeting</h4>
         <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="members-board-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
         </div>
@@ -96,6 +104,7 @@
     }
 
     <lfx-table
+      styleClass="hm-table"
       [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
@@ -114,25 +123,27 @@
       data-testid="members-board-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Meeting</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Date</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Attended</span></th>
-          <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Rate</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meeting</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Date</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Attended</span></th>
+          <th scope="col" class="w-[150px]"><span class="text-[12px] font-normal text-gray-500">Rate</span></th>
         </tr>
       </ng-template>
 
       <ng-template #body let-view>
         <tr [attr.data-testid]="'members-board-row-' + view.meetingId">
           <td>
-            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-board-row-' + view.meetingId + '-name'">{{
+            <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'members-board-row-' + view.meetingId + '-name'">{{
               view.committeeName
             }}</span>
           </td>
           <td class="text-right">
-            <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-date'">{{ view.dateLabel }}</span>
+            <span class="text-[13px] tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-date'">{{
+              view.dateLabel
+            }}</span>
           </td>
           <td class="text-right">
-            <span class="text-sm tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-attended'">{{
+            <span class="text-[13px] tabular-nums text-gray-700" [attr.data-testid]="'members-board-row-' + view.meetingId + '-attended'">{{
               view.attendedLabel
             }}</span>
           </td>

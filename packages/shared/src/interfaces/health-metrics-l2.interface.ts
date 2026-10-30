@@ -25,22 +25,62 @@ export interface HealthMetricsL2Section {
   footnoteCaution: boolean;
   /** A pill beside the heading, e.g. for figures still pending validation. */
   headingBadge?: string;
+  /** What the section shows once it settles with nothing for the period. */
+  empty: HealthMetricsL2SectionEmpty;
+}
+
+/** A section's empty state: its icon, and where its data comes from, finishing "This fills in …". */
+export interface HealthMetricsL2SectionEmpty {
+  icon: string;
+  source: string;
+  /** The section shows today's figures whatever the period, so its empty state never names a past year. */
+  snapshot?: boolean;
+}
+
+/** A section's empty state as shown, worded for YTD or the selected past year. */
+export interface HealthMetricsL2EmptyCopy {
+  icon: string;
+  title: string;
+  text: string;
+}
+
+/** The single card that replaces a Health Metrics page when it has no data for the period. */
+export interface HealthMetricsBlankCopy {
+  title: string;
+  lead: string;
+  reasons: readonly string[];
+}
+
+/** One icon tile on a blank card; the Overview curves five of them, a tab shows one. */
+export interface HealthMetricsBlankTile {
+  icon: string;
+  /** The tile's drop and tilt, which lay the Overview's row out as a gentle upward curve. */
+  transform: string;
+  iconSizePx: number;
+}
+
+/**
+ * A tab's blank card: its icon, the noun in "No {noun} data yet", the YTD lead and reasons, and the
+ * activity a past year's lead names ("No {pastActivity} was recorded…").
+ */
+export interface HealthMetricsL2Blank {
+  icon: string;
+  noun: string;
+  lead: string;
+  reasons: readonly string[];
+  pastActivity: string;
+}
+
+/** A tab's blank card as shown for the period. */
+export interface HealthMetricsL2BlankView {
+  tile: HealthMetricsBlankTile;
+  copy: HealthMetricsBlankCopy;
 }
 
 /** A section with its DOM ids resolved once, so the template never calls a builder per render. */
 export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   id: string;
   headingId: string;
-}
-
-/** Note under the sub-nav whose trailing tab name links to a section of that tab. */
-export interface HealthMetricsL2CrossReference {
-  text: string;
-  linkLabel: string;
-  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`. */
-  route: string;
-  /** Section key on the target tab, so the link lands on it. */
-  fragment: string;
 }
 
 /** Sub-nav badge for one section: a count plus an optional qualifier note. */
@@ -51,21 +91,4 @@ export interface HealthMetricsL2SubNavItem {
   count: number | null;
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
-}
-
-/** One project in the Health Metrics header's project selector. */
-export interface HealthMetricsProjectOption {
-  slug: string;
-  name: string;
-  initials: string;
-  /** Avatar palette class hashed from the slug, so a project keeps its color. */
-  colorClass: string;
-}
-
-/** One step of the header's project-list load: `projects` is `null` while loading or after a failure. */
-export interface HealthMetricsProjectListState {
-  projects: readonly HealthMetricsProjectOption[] | null;
-  /** False when the server dropped part of the hierarchy, so a missing slug may still be valid. */
-  complete: boolean;
-  failed: boolean;
 }

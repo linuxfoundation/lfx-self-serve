@@ -13,6 +13,10 @@
 import type { MktgSlidesExportAgentKey } from '../interfaces/mktg-slides-export.interface';
 import { BRAND_KIT_HEX_REGEX, BRAND_KIT_PROJECT_SLUG_REGEX } from './brand-kit.constants';
 import { MKTG_ARTIFACT_SHA256_REGEX } from './mktg-artifact.constants';
+import { MKTG_RUN_ERROR_SETTLE_MS, MKTG_RUN_ERROR_TEARDOWN_MS } from './mktg-run.constants';
+
+/** Maximum first-paint wait for a document's secondary export-history read. */
+export const MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS = 3000;
 
 /** The BFF routes of the export. */
 export const MKTG_SLIDES_EXPORT_API_PATH = '/api/mktg-agents/slides-export';
@@ -103,9 +107,9 @@ export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
  * recover from one (a dropped connection retried), so an error counts when
  * nothing came after it beyond the run's own teardown and it is this old.
  */
-export const MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS = 30_000;
-/** Events this soon after an error are the run's teardown, not a recovery. */
-export const MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS = 5_000;
+export const MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS = MKTG_RUN_ERROR_SETTLE_MS;
+/** Compatibility alias; the shared reader now requires explicit work or agent text for recovery. */
+export const MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS = MKTG_RUN_ERROR_TEARDOWN_MS;
 
 /**
  * How an export is polled: every few seconds, for as long as a slow Drive

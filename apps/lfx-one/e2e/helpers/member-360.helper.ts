@@ -10,11 +10,11 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import { createHash } from 'node:crypto';
+import type { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRunFailureReason } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { member360Fixture, member360Revision, MEMBER_360_PROJECT, MEMBER_360_STORED_DOCUMENT } from '../fixtures/mock-data/member-360.mock';
 export { MEMBER_360_DOCUMENT_ID } from '../fixtures/mock-data/member-360.mock';
-import { SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { buildMember360Workbook } from '../../src/server/utils/member-360-workbook.util';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -33,9 +33,17 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
     expect(route.request().headers()['content-type']).toBe('application/octet-stream');
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
     return json(route, {
-      filename: decodeURIComponent(route.request().headers()['x-file-name']),
-      rows: [{ company: SYNTHETIC_ORG_NAME, speaker: 'Sample speaker', session: 'Sample session' }],
+      trackerId: 'a'.repeat(64),
+      rowCount: 1,
+      columnCount: 3,
+      byteCount: 100,
     });
+  });
+  await page.route('**/api/mktg-agents/member-360/tracker/*?*', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
+    expect(route.request().postData()).toBeNull();
+    await route.fulfill({ status: 204 });
   });
   await page.route('**/api/mktg-agents/member-360/documents/*/workbook?*', async (route) => {
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
@@ -133,6 +141,48 @@ export async function setupMember360(page: Page, options: { writer?: boolean; st
   await expect(page.getByTestId('docs-shell-authed')).toBeAttached({ timeout: 20000 });
   await expect(page.getByTestId('docs-content')).toBeVisible({ timeout: 20000 });
 }
+/** Server-recorded progress; fixtures deliberately contain no creator/session capability or question text. */
+export function member360Progress(
+  state: MktgDocumentRunProgress['state'],
+  failureReason?: MktgRunFailureReason,
+  failureText?: string
+): MktgDocumentDetailResponse {
+  const view = member360Revision();
+  return {
+    project: view.project,
+    type: view.type,
+    documentId: view.documentId,
+    revisions: [],
+    current: null,
+    approvedCurrent: null,
+    runs: [
+      {
+        project: view.project,
+        agentKey: view.type.agentKey,
+        documentId: view.documentId,
+        runId: 'b'.repeat(64),
+        state,
+        startedAt: '2026-10-19T10:00:00Z',
+        failureReason,
+        failureText,
+        activity: Array.from({ length: 10 }, (_, index) => ({
+          id: `step-${index + 1}`,
+          kind: index % 2 ? 'search' : 'lfx',
+          label: index % 2 ? 'Searching the web' : 'Checking LFX',
+          status: index === 9 ? 'running' : 'done',
+          startedAt: '2026-10-19T10:00:00Z',
+        })),
+      },
+    ],
+  };
+}
+
+export async function stubMember360Progress(page: Page, read: () => MktgDocumentDetailResponse): Promise<void> {
+  await page.route('**/api/mktg-agents/documents/member-360/**', (route) =>
+    json(route, new URL(route.request().url()).pathname.includes('/revisions/') ? member360Revision() : read())
+  );
+}
+
 export async function selectMember360Option(page: Page, testId: string, label: string): Promise<void> {
   await page.getByTestId(testId).getByRole('combobox').click();
   await page.getByRole('option', { name: label, exact: true }).click();

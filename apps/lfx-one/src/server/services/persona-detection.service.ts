@@ -8,7 +8,6 @@ import {
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
@@ -160,13 +159,6 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, 'executive-director');
     }
 
-    // Only honor the impersonation override when the target user actually has the forced persona.
-    // Root-writer promotion above is the only path that may inject a persona the user doesn't natively hold.
-    const forcedPersona = req.appSession?.['impersonationPersonaContext'];
-    if (typeof forcedPersona === 'string' && VALID_PERSONAS.has(forcedPersona) && personas.includes(forcedPersona as PersonaType)) {
-      personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
-    }
-
     // A `true` grant is verified by the check that granted it; only a `false` alongside a failed check is unverified.
     const marketingAuditorUnverified = !isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor');
     const campaignManagerUnverified = !isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager');
@@ -221,13 +213,18 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Whether the caller is a member of `team:lf-staff`. Its consumers sit outside Org Lens and gate
+   * Whether the caller is a member of `team:lf-staff`. Most consumers sit outside Org Lens and gate
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
    * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
    * `OrgRoleGrantsService` (`ORG_WIDE_READ_TEAM_IDS`), which is a separate list with separate
-   * consumers — widening either does not widen the other. Neither is a read gate; that is the
-   * authorizer-backed `assertOrgLensRead`.
+   * consumers — widening either does not widen the other. Neither of those is a read gate; that is
+   * the authorizer-backed `assertOrgLensRead`.
+   *
+   * ONE consumer uses this as a FIELD-LEVEL DISCLOSURE gate: `OrgLensEventsService` withholds the
+   * event-wide registration goal (#4432) from everyone this returns `false` for, on every org's
+   * Events page. It is the only caller where `true` discloses data rather than admitting access, so
+   * widening `lf-staff#member` here — re-adding `lf-contractor`, say — widens that disclosure too.
    * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {

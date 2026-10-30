@@ -3,13 +3,14 @@
 
 import { USER_SEARCH_TYPES } from '@lfx-one/shared/constants';
 import { CommitteeOrganizationReference, UserSearchParams, UserSearchType } from '@lfx-one/shared/interfaces';
-import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils';
+import { currentEmployerFromWorkExperiences, excludeUserSearchIdentities } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CdpService } from '../services/cdp.service';
 import { SearchService } from '../services/search.service';
+import { decodeJwtPayload } from '../utils/auth-helper';
 import { resolveImpersonatorToken } from '../utils/impersonator-token';
 
 /**
@@ -156,8 +157,20 @@ export class SearchController {
       };
 
       // Perform the search
-      const options = asImpersonator ? { bearerToken: await resolveImpersonatorToken(req, 'search_users') } : undefined;
+      const impersonatorToken = asImpersonator ? await resolveImpersonatorToken(req, 'search_users') : undefined;
+      const options = impersonatorToken ? { bearerToken: impersonatorToken } : undefined;
       const results = await this.searchService.searchUsers(req, searchParams, options);
+
+      // Impersonating yourself, or the person you already are, is never the goal of this search.
+      if (impersonatorToken) {
+        const adminClaims = decodeJwtPayload(impersonatorToken);
+        const currentTarget = req.appSession?.['impersonationUser'];
+        results.results = excludeUserSearchIdentities(results.results, [
+          { username: adminClaims?.['http://lfx.dev/claims/username'], email: adminClaims?.['http://lfx.dev/claims/email'] },
+          { username: currentTarget?.username, email: currentTarget?.email },
+        ]);
+        results.total = results.results.length;
+      }
 
       logger.success(req, 'search_users', startTime, {
         result_count: results.results.length,

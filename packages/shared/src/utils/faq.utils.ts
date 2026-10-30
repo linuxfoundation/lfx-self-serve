@@ -76,6 +76,8 @@ import {
   validateFoundationMessageAnswers,
 } from './foundation-message.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>(FAQ_ANSWER_KEYS);
@@ -142,7 +144,10 @@ export function validateFaqIntakeAnswers(answers: unknown): FaqValidationResult 
   if (!isObject(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(answers, MKTG_INTAKE_ANSWER_LIMITS.faq);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = answers['project_name'];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
@@ -308,7 +313,7 @@ export function buildFaqFormPayload(answers: Record<string, string>, inputs: Faq
 /**
  * Render the intake form into the one text message the agent receives — a
  * mirror of the agent's own `renderFormMessage` (marketing-os-agents
- * `agents/faq/src/form.ts`) for a draft, byte-identical for the same payload;
+ * `agents/faq/src/form.ts`) for drafts and comment redrafts, byte-identical for the same payload;
  * faq.utils.spec.ts pins renderings produced by that renderer. The marker
  * lines are load-bearing: the agent's finalize tool and its framework gate
  * parse the project, the sources, the documents and the framework back from
@@ -320,7 +325,7 @@ export function renderFaqFormText(payload: FaqFormPayload, now: Date = new Date(
   const links = payload.links ?? [];
 
   const lines: string[] = [
-    FAQ_INTAKE_HEADERS.draft,
+    FAQ_INTAKE_HEADERS[payload.revision?.mode ?? 'draft'],
     `PROJECT NAME: ${payload.project_name}`,
     `RUN DATE: ${runDate}`,
     `LFX PROJECT UID: ${payload.project_uid ?? 'not supplied'}`,
@@ -366,7 +371,24 @@ export function renderFaqFormText(payload: FaqFormPayload, now: Date = new Date(
   }
   lines.push('');
 
-  lines.push('REVISION: none — a new draft');
+  const revision = payload.revision;
+  if (!revision) {
+    lines.push('REVISION: none — a new draft');
+  } else {
+    lines.push(
+      `REVISION: redraft — stored version ${revision.prior_version}; finalize as version ${revision.prior_version + 1}; apply every comment below and keep everything else as it is`,
+      `COMMENTS: ${revision.comments.length} — apply every one`
+    );
+    revision.comments.forEach((row, index) => {
+      const n = index + 1;
+      lines.push(`--- COMMENT ${n} ---`, `FIELD: ${row.field}`, 'COMMENT:', guardFoundationMessageText(row.comment), `--- END COMMENT ${n} ---`);
+    });
+    lines.push(
+      `--- PREVIOUS (JSON, stored version ${revision.prior_version}) ---`,
+      guardFoundationMessageText(JSON.stringify(revision.previous, null, 2)),
+      '--- END PREVIOUS ---'
+    );
+  }
   return lines.join('\n');
 }
 

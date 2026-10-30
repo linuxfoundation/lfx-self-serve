@@ -2,32 +2,36 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
   CONTRIBUTIONS_MAX_FILTER_VALUES,
   CONTRIBUTIONS_MAX_PAGE_SIZE,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
+  ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_TIME_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
   ContributionsCommitSortColumn,
-  ContributionsDateRange,
   ContributionsSortColumn,
   ContributionsView,
   OrgContributionsQuery,
+  OrgLensTimeRange,
 } from '@lfx-one/shared/interfaces';
+import { isOrgLensTimeRange, normalizeLegacyOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseOrgCommitFilters, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgContributionsService } from '../services/org-contributions.service';
 
-const VALID_DATE_RANGES: ReadonlySet<ContributionsDateRange> = new Set(['30d', '90d', '12mo', 'all']);
 const VALID_SORT_COLUMNS: ReadonlySet<ContributionsSortColumn> = new Set(['commits', 'firstCommit', 'lastCommit']);
 const VALID_VIEWS: ReadonlySet<ContributionsView> = new Set(['repositories', 'commits']);
 const VALID_COMMIT_SORT_COLUMNS: ReadonlySet<ContributionsCommitSortColumn> = new Set(['project', 'committer', 'username', 'date']);
+/** A foundation id is a short project id; anything longer is not one and would only bloat the bind and the cache key. */
+const MAX_FOUNDATION_LENGTH = 255;
 
 /** HTTP boundary for the OrgContributionsService (LFXV2-1894) — validation, lifecycle logging, error propagation. */
 export class OrgLensContributionsController {
@@ -37,7 +41,7 @@ export class OrgLensContributionsController {
     this.service = new OrgContributionsService();
   }
 
-  /** GET /api/orgs/:orgUid/lens/contributions — KPI strip + repositories table + filter options, server-paginated. */
+  /** GET /api/orgs/:orgUid/lens/contributions[?...&teamMembers=include|exclude] — KPI strip + repositories table + filter options, server-paginated. */
   public async getContributions(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const operation = 'get_org_lens_contributions';
@@ -49,8 +53,13 @@ export class OrgLensContributionsController {
         org_uid: orgUid,
         view: query.view,
         date_range: query.dateRange,
+        project_scope: query.projectScope,
+        commit_scope: query.commitScope,
+        metric: query.metric,
+        foundation_id: query.foundation || null,
         project_count: query.projects.length,
         employee_count: query.employees.length,
+        team_members: query.teamMembers,
         page: query.page,
         size: query.size,
       });
@@ -72,7 +81,7 @@ export class OrgLensContributionsController {
   }
 }
 
-/** Parse + validate the composed filter/pagination query: invalid range/sort or oversized filter lists → 400; missing values fall back to defaults. */
+/** Parse + validate the composed filter/pagination query: invalid range/sort/commit filters or oversized filter lists → 400; missing values fall back to defaults. */
 function parseContributionsQuery(req: Request, operation: string): OrgContributionsQuery {
   const rawRange = getStringQueryParam(req, 'range');
   const dateRange = parseDateRange(rawRange, operation);
@@ -87,11 +96,14 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
   const commitDir = getStringQueryParam(req, 'commitDir') === 'asc' ? 1 : -1;
 
   return {
+    ...parseOrgCommitFilters(req, operation),
     view: parseView(getStringQueryParam(req, 'view'), operation),
     dateRange,
     search: getStringQueryParam(req, 'q')?.trim() ?? '',
+    foundation: parseFoundation(getStringQueryParam(req, 'foundation'), operation),
     projects: parseCsvParam(getStringQueryParam(req, 'projects'), 'projects', operation),
     employees: parseCsvParam(getStringQueryParam(req, 'employees'), 'employees', operation),
+    teamMembers: parseOrgTeamMembers(req, operation),
     sort,
     dir,
     commitSort,
@@ -99,6 +111,15 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     page: clampInteger(Number.parseInt(getStringQueryParam(req, 'page') ?? '', 10), 1, MAX_SNOWFLAKE_PAGINATION_PAGE, 1),
     size: parsePageSize(getStringQueryParam(req, 'size')),
   };
+}
+
+/** One foundation id, matched exactly like People → Contributors; missing or blank is any foundation, over 255 chars → 400. */
+function parseFoundation(raw: string | undefined, operation: string): string {
+  const foundation = raw?.trim() ?? '';
+  if (foundation.length > MAX_FOUNDATION_LENGTH) {
+    throw ServiceValidationError.forField('foundation', `Invalid foundation value. Maximum length: ${MAX_FOUNDATION_LENGTH}`, { operation });
+  }
+  return foundation;
 }
 
 function parseView(raw: string | undefined, operation: string): ContributionsView {
@@ -121,14 +142,16 @@ function parseCommitSortColumn(raw: string | undefined, operation: string): Cont
   return raw as ContributionsCommitSortColumn;
 }
 
-function parseDateRange(raw: string | undefined, operation: string): ContributionsDateRange {
+/** Missing → the default; the legacy `12mo` → `365d`; any other unknown value → 400. */
+function parseDateRange(raw: string | undefined, operation: string): OrgLensTimeRange {
   if (!raw) {
-    return CONTRIBUTIONS_DEFAULT_DATE_RANGE;
+    return ORG_LENS_DEFAULT_TIME_RANGE;
   }
-  if (!VALID_DATE_RANGES.has(raw as ContributionsDateRange)) {
-    throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${[...VALID_DATE_RANGES].join(', ')}`, { operation });
+  const range = normalizeLegacyOrgLensTimeRange(raw);
+  if (!isOrgLensTimeRange(range)) {
+    throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${ORG_LENS_TIME_RANGES.join(', ')}`, { operation });
   }
-  return raw as ContributionsDateRange;
+  return range;
 }
 
 function parseSortColumn(raw: string | undefined, operation: string): ContributionsSortColumn {

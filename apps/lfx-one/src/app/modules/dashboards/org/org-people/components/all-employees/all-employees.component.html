@@ -3,42 +3,104 @@
 
 <div class="flex flex-col gap-6" data-testid="org-people-all-employees">
   <!-- Filter bar -->
-  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
-    <div class="flex-1">
-      <div class="relative">
-        <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true"></i>
-        <input
-          pInputText
-          type="text"
-          class="w-full pl-9"
-          placeholder="Search all employees..."
-          aria-label="Search all employees"
-          data-testid="org-people-all-employees-search-input"
-          [ngModel]="searchTerm()"
-          (ngModelChange)="searchTerm.set($event)" />
-      </div>
+  <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
+    <div class="flex-1 md:min-w-56">
+      <lfx-input-text
+        [form]="filterForm"
+        control="search"
+        placeholder="Search all employees..."
+        ariaLabel="Search all employees"
+        icon="fa-light fa-magnifying-glass"
+        styleClass="w-full"
+        size="small"
+        dataTest="org-people-all-employees-search-input" />
     </div>
     <div class="w-full md:w-56" data-testid="org-people-all-employees-foundation-filter">
-      <p-select
+      <lfx-select
+        [form]="filterForm"
+        control="foundation"
+        size="small"
         [options]="foundationOptions()"
-        [ngModel]="selectedFoundationId()"
-        (ngModelChange)="selectedFoundationId.set($event)"
-        optionLabel="label"
-        optionValue="value"
         styleClass="w-full"
-        ariaLabel="Filter by foundation" />
+        ariaLabel="Filter by foundation"
+        dataTest="org-people-all-employees-foundation-select" />
     </div>
     <div class="w-full md:w-48" data-testid="org-people-all-employees-activity-filter">
-      <p-select
-        [options]="activityOptions"
-        [ngModel]="selectedActivity()"
-        (ngModelChange)="selectedActivity.set($event)"
-        optionLabel="label"
-        optionValue="value"
+      <lfx-select
+        [form]="filterForm"
+        control="activity"
+        size="small"
+        [options]="activityOptions()"
         styleClass="w-full"
-        ariaLabel="Filter by activity" />
+        ariaLabel="Filter by activity"
+        dataTest="org-people-all-employees-activity-select" />
     </div>
+    <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="employment"
+        size="small"
+        [options]="employmentOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by employment"
+        dataTest="org-people-all-employees-employment-select" />
+    </div>
+    <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="range"
+        size="small"
+        [options]="rangeOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by time range"
+        dataTest="org-people-all-employees-range-select" />
+    </div>
+    <div class="w-full md:w-44" data-testid="org-people-all-employees-project-scope-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="projectScope"
+        size="small"
+        [options]="projectScopeOptions"
+        styleClass="w-full"
+        [ariaLabel]="projectScopeLabel"
+        dataTest="org-people-all-employees-project-scope-select" />
+    </div>
+    <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="metric"
+        size="small"
+        [options]="metricOptions"
+        styleClass="w-full"
+        ariaLabel="Count all commits, only main branch commits or all code contributions"
+        dataTest="org-people-all-employees-metric-select" />
+    </div>
+    <div class="w-full md:w-52" data-testid="org-people-all-employees-team-members-filter">
+      <lfx-select
+        [form]="filterForm"
+        control="teamMembers"
+        size="small"
+        [options]="teamMembersOptions"
+        styleClass="w-full"
+        [ariaLabel]="teamMembersLabel"
+        [tooltip]="teamMembersTooltip"
+        tooltipPosition="top"
+        dataTest="org-people-all-employees-team-members-select" />
+    </div>
+    @if (canClearFilters()) {
+      <button
+        type="button"
+        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+        data-testid="org-people-all-employees-clear-filters"
+        (click)="clearFilters()">
+        Clear filters
+      </button>
+    }
   </div>
+
+  @if (teamMembersUnavailable()) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-all-employees-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
 
   @if (fetchError()) {
     <lfx-empty-state
@@ -51,6 +113,19 @@
       data-testid="org-people-all-employees-error"
       (ctaClick)="retry()" />
   } @else {
+    @if (formerUnavailable()) {
+      <div
+        class="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+        role="status"
+        data-testid="org-people-all-employees-former-error">
+        <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+        @if (selectedEmployment() === 'all') {
+          <span>Former employees couldn't be loaded, so only current employees are shown.</span>
+        } @else {
+          <span>Some activity for returning employees couldn't be loaded.</span>
+        }
+      </div>
+    }
     <!-- 5 stat cards -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5" data-testid="org-people-all-employees-stats">
       @if (isLoading()) {
@@ -71,7 +146,21 @@
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-code">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().codeContributors | number }}</div>
-          <div class="mt-1 text-xs text-gray-500">Code Contributors</div>
+          <div class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+            <span data-testid="org-people-all-employees-stat-code-label">{{ codeStatLabel }}</span>
+            @if (codeStatNote(); as note) {
+              <button
+                type="button"
+                class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                aria-label="Who is counted"
+                [pTooltip]="note"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                data-testid="org-people-all-employees-stat-code-info">
+                <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+              </button>
+            }
+          </div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-events">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().eventAttendees | number }}</div>
@@ -141,8 +230,13 @@
                 <button
                   type="button"
                   class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  [pTooltip]="codeColumnTooltip()"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  data-testid="org-people-all-employees-code-header-info"
                   (click)="onSort('commits')">
-                  Code Contributions
+                  <span data-testid="org-people-all-employees-code-header">{{ codeColumnLabel() }}</span>
+                  <i class="fa-light fa-circle-info text-gray-400" aria-hidden="true"></i>
                   <i [class]="icons.commits" aria-hidden="true"></i>
                 </button>
               </th>
@@ -218,7 +312,16 @@
                       }
                     </span>
                     <span class="flex min-w-0 flex-col">
-                      <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
+                      <span class="flex min-w-0 items-center gap-2">
+                        <span class="truncate font-medium text-gray-900 group-enabled:group-hover:text-blue-600">{{ row.name }}</span>
+                        @if (row.isFormer) {
+                          <span
+                            class="inline-flex flex-shrink-0 items-center rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+                            [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-former'">
+                            Former
+                          </span>
+                        }
+                      </span>
                       @if (row.title) {
                         <span class="truncate text-xs text-gray-500">{{ row.title }}</span>
                       }
@@ -239,7 +342,7 @@
                   @if (row.commitsCount > 0) {
                     <span
                       class="inline-block rounded-full border border-gray-300 bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-600 whitespace-nowrap">
-                      {{ row.commitsCount | number }} {{ row.commitsCount === 1 ? 'commit' : 'commits' }}
+                      {{ row.commitsCount | number }} {{ row.commitsCount === 1 ? codeUnit().one : codeUnit().other }}
                     </span>
                   } @else {
                     <span class="text-xs text-gray-300">&mdash;</span>

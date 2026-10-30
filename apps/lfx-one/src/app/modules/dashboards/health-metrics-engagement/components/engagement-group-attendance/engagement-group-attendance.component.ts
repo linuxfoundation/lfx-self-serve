@@ -66,8 +66,8 @@ export class EngagementGroupAttendanceComponent {
    * renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -75,14 +75,11 @@ export class EngagementGroupAttendanceComponent {
 
   protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(this.parseInitialGroupType());
   /**
-   * Every scope change restarts paging. The period, foundation and project come from the page header, which
+   * Every scope change restarts paging. The period and foundation come from the page header, which
    * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
    */
   protected readonly page = linkedSignal<string, number>({
-    source: computed(
-      () =>
-        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`
-    ),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
   });
   protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
@@ -110,9 +107,11 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  /** `null` means the foundation has no groups at all; a project or chip with zero matches keeps its
+  /** `null` means the foundation has no groups at all; a chip with zero matches keeps its
    * own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
+  /** No group was recorded for the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.counts() === null);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   // Follows the selected chip, as in the design; the sub-nav badge stays scope-wide.
   protected readonly countLabel = computed(() => {
@@ -154,7 +153,6 @@ export class EngagementGroupAttendanceComponent {
   private initQuery(): HealthMetricsEngagementGroupQuery {
     return {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-      projectSlug: this.chrome.selectedProjectSlug(),
       groupType: this.groupType(),
       range: this.chrome.selectedRange(),
       page: this.page(),
@@ -208,7 +206,7 @@ export class EngagementGroupAttendanceComponent {
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.counts === null);
             })
           )
         )

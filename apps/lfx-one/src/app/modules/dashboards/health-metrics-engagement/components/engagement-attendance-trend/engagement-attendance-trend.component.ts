@@ -13,8 +13,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
-
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   HealthMetricsEngagementAttendanceTrend,
@@ -25,7 +23,7 @@ import type {
 
 /**
  * `#trend` — all-meeting attendance over the trailing twelve months, from the view's monthly grain.
- * It follows the project selector but not the period pill: the window always ends with this month.
+ * It ignores the period pill: the window always ends with this month.
  */
 @Component({
   selector: 'lfx-engagement-attendance-trend',
@@ -35,11 +33,10 @@ import type {
 export class EngagementAttendanceTrendComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -52,7 +49,6 @@ export class EngagementAttendanceTrendComponent {
 
   protected readonly query: Signal<HealthMetricsEngagementAttendanceTrendQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-    projectSlug: this.chrome.selectedProjectSlug(),
   }));
   protected readonly response: Signal<HealthMetricsEngagementAttendanceTrend> = this.initResponse();
 
@@ -62,6 +58,8 @@ export class EngagementAttendanceTrendComponent {
   protected readonly summary: Signal<HealthMetricsEngagementAttendanceTrendSummaryView> = computed(() =>
     buildHealthMetricsEngagementAttendanceTrendSummary(this.response().months, this.today())
   );
+  /** No attendance was recorded in the window; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.summary().state === 'empty');
   protected readonly chartData: Signal<ChartData<'line'>> = computed(() => this.buildChart(this.points()));
   protected readonly chartLabel = computed(
     () => `All-meeting attendance over the last ${this.points().length} months, oldest first. The following table lists the same values.`
@@ -103,7 +101,7 @@ export class EngagementAttendanceTrendComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
@@ -120,13 +118,15 @@ export class EngagementAttendanceTrendComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               // The response's window rolls with the run date, so the in-progress month is judged now.
               this.today.set(new Date());
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && buildHealthMetricsEngagementAttendanceTrendSummary(response.months, this.today()).state === 'empty');
+              }
             })
           )
         )

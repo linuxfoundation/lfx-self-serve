@@ -7,6 +7,7 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_LENS_PAGE_SEGMENTS,
+  ORG_LENS_SWITCH_PARAMS_RESET,
   ORG_NOT_FOUND_SEGMENTS,
   ORG_SEGMENT_PARAM,
 } from '@lfx-one/shared/constants';
@@ -55,6 +56,18 @@ export class OrgLensNavigationService {
     return segment ? ['/org', segment, page, ...tail] : ['/org', page, ...tail];
   }
 
+  /**
+   * Router commands for Org Lens's landing page, its overview: addressed like `orgLensLink` — the menu's Dashboard link —
+   * once the selection is known to be readable, i.e. pinned by an address or by the org list, or carrying the index slug.
+   * A uid-only stub restored from the cookie and not yet confirmed lands on the legacy form instead: the org list then
+   * writes it into the address, or re-defaults when the organization is no longer readable, where a resolver miss on the
+   * addressed form would end on `/org/not-found`.
+   */
+  public orgLensLandingLink(): string[] {
+    const confirmed = this.accountContext.isAddressedSelection() || !!this.accountContext.selectedAccount().slug;
+    return confirmed ? this.orgLensLink('overview') : ['/org', 'overview'];
+  }
+
   /** `orgLensLink` as a single path string, for string-typed `routerLink`s (sidebar items). */
   public orgLensPath(page: string, ...rest: (string | number)[]): string {
     return this.orgLensLink(page, ...rest).join('/');
@@ -83,9 +96,12 @@ export class OrgLensNavigationService {
    * rule since lfx-self-serve#2743 ended their DR-004 exemption.
    *
    * The query is preserved across the rewrite — a filter, a `?sig=` picker choice, a `utm_*` all
-   * still describe the page — with one exception: leaving an EasyCLA address, on either mount,
-   * drops the corporate-signing return parameters `?org=` and `?signed=`. Those describe a trip
-   * opened for one organization and never belong to another (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
+   * still describe the page — with two exceptions. A switch drops `?employees=`: the selection came
+   * from the previous organization's roster (`ORG_LENS_SWITCH_PARAMS_RESET`), and Back does not
+   * restore it (the pages that filter by it clear it on an org change). Leaving an EasyCLA
+   * address, on either mount, drops the corporate-signing return parameters `?org=` and
+   * `?signed=`. Those describe a trip opened for one organization and never belong to another
+   * (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -156,10 +172,14 @@ export class OrgLensNavigationService {
     // no organization, is a canonicalizing rewrite of the address the viewer already meant, so it
     // replaces (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen,
     // now showing the new selection.
+    const queryParams = {
+      ...(intent === 'switch' ? ORG_LENS_SWITCH_PARAMS_RESET : {}),
+      ...(leavingEasycla ? ORG_EASYCLA_RETURN_PARAMS_RESET : {}),
+    };
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
       preserveFragment: true,
-      ...(leavingEasycla ? { queryParamsHandling: 'merge', queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET } } : { queryParamsHandling: 'preserve' }),
+      ...(Object.keys(queryParams).length ? { queryParamsHandling: 'merge', queryParams } : { queryParamsHandling: 'preserve' }),
     });
   }
 

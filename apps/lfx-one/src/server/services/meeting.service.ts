@@ -22,6 +22,7 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRegistrantsByVerifiedEmails,
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
   PaginatedResponse,
@@ -61,7 +62,12 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
+import {
+  NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS,
+  RENAMED_REGISTRANT_KEYS,
+  UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS,
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
+} from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -72,6 +78,7 @@ import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
+import { UserVerifiedEmailsService } from './user-verified-emails.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -81,12 +88,14 @@ export class MeetingService {
   private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private userVerifiedEmailsService: UserVerifiedEmailsService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
+    this.userVerifiedEmailsService = new UserVerifiedEmailsService();
   }
 
   /**
@@ -1006,12 +1015,13 @@ export class MeetingService {
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
-    // Registrant records carry email/meeting_id as data fields, not indexed tags — use `filters` (field-level AND).
+    // Registrant records carry email/meeting_id as data fields, not indexed tags — `filters` AND, `filters_or` OR.
     const normalizedEmail = email.toLowerCase();
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: '',
-      filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: this.emailClauses(normalizedEmail),
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
@@ -1038,7 +1048,7 @@ export class MeetingService {
 
   /**
    * Fetches registrants for a meeting that match the caller's email or username in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y, username:Z]` so the
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
    */
   public async getMeetingRegistrantsForUser(
@@ -1050,16 +1060,10 @@ export class MeetingService {
     failOnPartial = false
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
-    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
-    if (orClauses.length === 0) return [];
 
-    const params: Record<string, any> = {
-      type: 'v1_meeting_registrant',
-      parent: '',
-      filters: [`meeting_id:${meetingUid}`],
-      filters_or: orClauses,
-    };
+    if (orClauses.length === 0) return [];
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
@@ -1067,22 +1071,50 @@ export class MeetingService {
       has_username: !!username,
     });
 
-    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+    return this.queryMeetingRegistrants(req, meetingUid, orClauses, m2mToken, failOnPartial);
+  }
 
-    return fetchAllQueryResources<MeetingRegistrant>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          { ...params, ...(pageToken && { page_token: pageToken }) },
-          undefined,
-          headers
-        ),
-      { failOnPartial }
-    );
+  /**
+   * Fetches the signed-in user's registrants for a meeting by their verified emails other than
+   * `triedEmail` in one query. Rows are ordered by email priority (meeting-invite preference first).
+   * `lookupFailed` is set when nothing matched and an email source was unavailable.
+   */
+  public async getMeetingRegistrantsByVerifiedEmails(
+    req: Request,
+    meetingUid: string,
+    triedEmail: string | undefined
+  ): Promise<MeetingRegistrantsByVerifiedEmails> {
+    const { emails, preferenceEmail, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
+    const tried = triedEmail?.trim().toLowerCase();
+    const candidates = emails.filter((candidate) => candidate !== tried);
+
+    const orClauses = candidates.flatMap((candidate) => this.emailClauses(candidate));
+    const registrants = orClauses.length > 0 ? await this.queryMeetingRegistrants(req, meetingUid, orClauses) : [];
+    const rank = (registrant: MeetingRegistrant): number => {
+      const index = candidates.indexOf((registrant.email || '').trim().toLowerCase());
+      return index === -1 ? candidates.length : index;
+    };
+    registrants.sort((a, b) => rank(a) - rank(b));
+
+    const matchedEmail = registrants.length > 0 ? (registrants[0].email || '').trim().toLowerCase() : null;
+    let matchedSource: 'meeting_invite_preference' | 'auth_service' | null = null;
+    if (registrants.length > 0) {
+      matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
+    }
+    const logMeta = {
+      meeting_id: meetingUid,
+      candidate_count: candidates.length,
+      has_preference: !!preferenceEmail,
+      matched_source: matchedSource,
+      incomplete,
+    };
+    if (matchedSource) {
+      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails", logMeta);
+    } else {
+      logger.debug(req, 'get_meeting_registrants_by_verified_emails', "No registrant under the user's other verified emails", logMeta);
+    }
+
+    return { registrants, lookupFailed: registrants.length === 0 && incomplete };
   }
 
   /**
@@ -1132,7 +1164,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
-      this.toUpstreamRegistrantBody(registrantData)
+      this.toUpstreamRegistrantBody(registrantData, 'create')
     );
 
     // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
@@ -1169,7 +1201,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
-      this.toUpstreamRegistrantBody(updateData)
+      this.toUpstreamRegistrantBody(updateData, 'update')
     );
 
     // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
@@ -2410,6 +2442,43 @@ export class MeetingService {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
   }
 
+  // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.
+  private emailClauses(email: string): string[] {
+    return [`email:${email}`, `case_insensitive_email:${email}`];
+  }
+
+  private queryMeetingRegistrants(
+    req: Request,
+    meetingUid: string,
+    orClauses: string[],
+    m2mToken?: string,
+    failOnPartial = false
+  ): Promise<MeetingRegistrant[]> {
+    const params: Record<string, any> = {
+      type: 'v1_meeting_registrant',
+      parent: '',
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: orClauses,
+    };
+
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
+    return fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          headers
+        ),
+      { failOnPartial }
+    );
+  }
+
   /**
    * Chooses which of the caller's own registrant rows to resend an invitation to.
    * A row can be scoped to one occurrence (`occurrence_id`) or cover the whole series (none), and the invitation the
@@ -2688,8 +2757,9 @@ export class MeetingService {
    *
    * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
    * without the rename: `job_title` and `username` are declared upstream under the app's own name and
-   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
-   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * are equally non-nullable. `getChangedFields` nulls `job_title` when it is blank, and sends
+   * `username` back as stored or leaves it out — so a `null` on either is skipped even though the
+   * key itself is allowed through. `linkedin_profile` is left alone: it
    * isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
@@ -2697,7 +2767,7 @@ export class MeetingService {
    * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
-  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest, verb: 'create' | 'update'): Record<string, unknown> {
     // Spread rather than cast: the declared parameter types are interfaces with no index
     // signature, and the runtime object is exactly what a client posted, extra keys included.
     const submitted: Record<string, unknown> = { ...body };
@@ -2709,6 +2779,11 @@ export class MeetingService {
     // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
     // to know exactly which keys survive here to tell an empty update apart from a real one.
     for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
+      // {@link UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS} have no stored value to be checked against on a create.
+      if (verb === 'create' && (UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
+        continue;
+      }
+
       const value = submitted[passthroughKey];
 
       // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,

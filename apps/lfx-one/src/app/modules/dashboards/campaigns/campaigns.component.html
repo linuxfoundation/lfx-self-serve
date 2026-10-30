@@ -322,6 +322,9 @@
           [active]="selectedEmailTab() === 'audience'"
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
+          [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
+          [emailStage]="selectedEmailStage() ?? ''"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
@@ -1436,7 +1439,9 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             [savedBriefRefreshToken]="savedBriefRefreshToken()"
+            [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
             (proceedToImplementation)="onProceedToImplementation($event)"
+            (briefDiscarded)="onPlanningBriefDiscarded()"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
         }
@@ -1466,9 +1471,22 @@
               [googleCreativeEnabled]="briefCampaignsGoogleCreativeEnabled()"
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
               [redditAssetUploadEnabled]="briefCampaignsRedditAssetUploadEnabled()"
+              [metaCreativeEnabled]="briefCampaignsMetaCreativeEnabled()"
+              [redditConversionPixelEnabled]="briefCampaignsRedditConversionPixelEnabled()"
+              [metaAssetUploadEnabled]="briefCampaignsMetaAssetUploadEnabled()"
+              [googleAssetUploadEnabled]="briefCampaignsGoogleAssetUploadEnabled()"
+              [linkedInAssetUploadEnabled]="briefCampaignsLinkedInAssetUploadEnabled()"
+              [microsoftAssetUploadEnabled]="briefCampaignsMicrosoftAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
+              [microsoftScheduleEnabled]="briefCampaignsMicrosoftScheduleEnabled()"
+              [twitterCreateEnabled]="briefCampaignsTwitterCreateEnabled()"
+              [twitterDraft]="carriedTwitterDraft()"
+              [metaInstagramDsaEnabled]="briefCampaignsMetaInstagramDsaEnabled()"
+              [googleAudienceSegmentsEnabled]="briefCampaignsGoogleAudienceSegmentsEnabled()"
+              [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
+              (replaceSavedBriefRequested)="onReplaceSavedBrief()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from './health-metrics-overview.constants';
-
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
@@ -22,7 +21,7 @@ import type {
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -31,6 +30,7 @@ import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference, HealthMe
 export const HEALTH_METRICS_EVENTS_SECTIONS = [
   {
     key: 'forecast',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registration forecast',
     heading: 'Registration forecast',
     description:
@@ -41,6 +41,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'past',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Past events',
     heading: 'Past events',
     description:
@@ -50,6 +51,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'kpi',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'At a glance',
     heading: 'Events at a glance',
     description: 'Reach across every event this period.',
@@ -58,6 +60,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'reg',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event, snapshot: true },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
@@ -66,6 +69,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'rev',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Revenue',
     heading: 'Event revenue',
     description:
@@ -76,6 +80,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'spon',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Sponsorship',
     heading: 'Sponsorship',
     description: 'What companies paid to sponsor events, and what they bought.',
@@ -85,6 +90,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'spk',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Speakers & proposals',
     heading: 'Speakers & proposals',
     description:
@@ -94,6 +100,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Organizations',
     heading: 'Organizations at events',
     description:
@@ -103,13 +110,27 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
   },
   {
     key: 'geo',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
     description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
     footnote: [],
     footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_EVENTS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-ticket',
+  noun: 'event',
+  lead: 'Event results appear once the foundation has events on the calendar.',
+  reasons: [
+    'No event has been scheduled for the foundation yet',
+    'Events run under another foundation are counted there',
+    'Your LF Events contact can help plan one',
+  ],
+  pastActivity: 'event activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
@@ -126,14 +147,6 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
   'orgs',
   'geo',
 ] as const satisfies readonly HealthMetricsEventsSectionKey[];
-
-/** Note under the sub-nav items, linking to the Members list. */
-export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: "An organization's event record also appears in",
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'list',
-};
 
 /** Query params the Events sections read; `event` lets a finding link open one event's forecast. */
 export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
@@ -165,36 +178,36 @@ export const HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE: readonly HealthMetricsFoot
   { text: ' is projected from comparable events, which is why its range is wider.' },
 ];
 
-/** The verdict banner per tone, with the Overview's urgency icons and colours; `none` is the design's untinted grey Summary. */
+/** The verdict banner per tone, with its urgency icon and colours; `none` is the design's untinted grey Summary. */
 export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
   Record<HealthMetricsEventsForecastVerdictTone, HealthMetricsEventsForecastVerdictToneStyle>
 > = {
   ok: {
     label: 'Healthy',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.textClass,
+    icon: 'fa-light fa-circle-check',
+    accentClass: 'border-l-emerald-500',
+    textClass: 'text-emerald-600',
     tintClass: 'bg-emerald-50/50',
   },
   watch: {
     label: 'Needs attention',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.textClass,
+    icon: 'fa-light fa-triangle-exclamation',
+    accentClass: 'border-l-amber-500',
+    textClass: 'text-amber-600',
     tintClass: 'bg-amber-50/50',
   },
   act: {
     label: 'Needs action',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.textClass,
+    icon: 'fa-light fa-circle-exclamation',
+    accentClass: 'border-l-red-500',
+    textClass: 'text-red-600',
     tintClass: 'bg-red-50/50',
   },
   none: {
     label: 'Summary',
-    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.icon,
-    accentClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.accentClass,
-    textClass: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.textClass,
+    icon: 'fa-light fa-circle-info',
+    accentClass: 'border-l-gray-400',
+    textClass: 'text-gray-500',
     tintClass: '',
   },
 };
@@ -238,7 +251,7 @@ export const HEALTH_METRICS_EVENTS_PAST_UNMEASURED: HealthMetricsEventsPast = { 
 /** The periods the at-a-glance view compares with the year before; the two oldest carry no change columns. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
-/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
+/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as a foundation without events. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
 
 /** A year-over-year fall in speakers steeper than this sets the sub-nav note. */

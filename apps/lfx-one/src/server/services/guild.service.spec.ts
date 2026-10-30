@@ -1,19 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// `@lfx-one/shared/interfaces` provides types only here; mock it so the barrel's
-// Angular-tainted transitive imports never load (weekly-brief.service.spec.ts convention).
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', async () => {
-  return vi.importActual('../../../../../packages/shared/src/constants/mktg-run.constants');
-});
 
 import type { Request } from 'express';
+import type { GuildRawEventsPage } from '@lfx-one/shared/interfaces';
+import { MKTG_RAW_EVENTS_MAX_PAGES } from '@lfx-one/shared/constants/mktg-run.constants';
+import {
+  MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS,
+  MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+} from '../../../../../packages/shared/src/constants/mktg-one-off-terminal.fixture';
 
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -21,11 +22,11 @@ import { logger } from './logger.service';
 const req = { path: '/api/mktg-agents/brand-kit/result' } as unknown as Request;
 
 /** Builds an ok JSON Response stand-in returning the given raw-events page. */
-function mockEventsResponse(items: unknown[]): Response {
+function mockEventsResponse(items: unknown[], pagination?: GuildRawEventsPage['pagination']): Response {
   return {
     ok: true,
     status: 200,
-    json: () => Promise.resolve({ items }),
+    json: () => Promise.resolve({ items, ...(pagination ? { pagination } : {}) }),
   } as unknown as Response;
 }
 
@@ -54,6 +55,40 @@ describe('GuildService.getRawEventPayloads', () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('interrupts a discarded Guild session via the documented POST path', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204 });
+    await service.interruptSession(req, 'synthetic/session');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://guild.test/api/sessions/synthetic%2Fsession/interrupt',
+      expect.objectContaining({ method: 'POST', body: '{}' })
+    );
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 404, 503])('keeps discard successful when interrupt returns %s', async (status) => {
+    fetchMock.mockResolvedValue({ ok: false, status });
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      status,
+    });
+  });
+
+  it('keeps discard successful on interrupt transport failure without logging upstream text', async () => {
+    fetchMock.mockRejectedValue(new Error('private upstream body'));
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      err: expect.objectContaining({ code: 'guild_unreachable', operation: 'guild_interrupt_session', service: 'guild' }),
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private upstream body');
+  });
+
+  it('normalizes the raw recorded wrapper fixture to a content-free marker plus 11 public events', async () => {
+    fetchMock.mockResolvedValue(mockEventsResponse(MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS.map((payload) => JSON.parse(payload))));
+    expect(await service.getRawEventPayloads(req, 'synthetic-recorded-session')).toEqual(MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS);
   });
 
   describe('envelope-injection defense (user-event exclusion filter)', () => {
@@ -137,27 +172,156 @@ describe('GuildService.getRawEventPayloads', () => {
     });
   });
 
-  describe('truncation guard', () => {
-    it('warns on a full raw page measured against the UNFILTERED count, so user-event filtering cannot mask truncation', async () => {
-      // 500-item page (the GUILD_RAW_EVENTS_LIMIT cap) where filtering removes items.
-      const items = Array.from({ length: 500 }, (_, i) =>
-        i % 2 === 0 ? { type: 'user_message', created_at: '2026-01-01T00:00:00Z' } : { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }
-      );
-      fetchMock.mockResolvedValue(mockEventsResponse(items));
-
+  describe('bounded raw event pagination', () => {
+    it('reads 500/500/120 newest-first events, sorts all 1120, and reuses the request cache', async () => {
+      const events = Array.from({ length: 1120 }, (_, i) => ({
+        id: `event-${i}`,
+        type: 'llm_done',
+        created_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(),
+      })).reverse();
+      for (let offset = 0; offset < events.length; offset += 500)
+        fetchMock.mockResolvedValueOnce(
+          mockEventsResponse(events.slice(offset, offset + 500), { offset, limit: 500, has_more: offset + 500 < events.length, total_count: events.length })
+        );
       const payloads = await service.getRawEventPayloads(req, 'session-1');
-
-      expect(payloads).toHaveLength(501); // content-free turns plus an explicit incomplete-page marker
+      expect(payloads).toHaveLength(1120);
+      expect(JSON.parse(payloads[0]).id).toBe('event-0');
+      expect(JSON.parse(payloads.at(-1) ?? '{}').id).toBe('event-1119');
+      expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('offset'))).toEqual(['0', '500', '1000']);
+      expect(payloads.some((payload) => payload.includes('mktg_session_events_truncated'))).toBe(false);
+      expect(logger.warning).not.toHaveBeenCalled();
+      expect(await service.resolveRunOutcome(req, 'session-1', { status: 'pending' })).toEqual({ status: 'pending' });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+    it('warns only after four full pages still have more, preserving turn masking', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        return mockEventsResponse(
+          Array.from({ length: 500 }, (_, i) => ({
+            id: `event-${offset + i}`,
+            type: i % 2 ? 'llm_done' : 'user_message',
+            content: i % 2 ? 'agent output' : 'private caller content',
+            created_at: '2026-01-01T00:00:00Z',
+          })),
+          { offset, limit: 500, has_more: true, total_count: 2500 }
+        );
+      });
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(MKTG_RAW_EVENTS_MAX_PAGES);
+      expect(payloads).toHaveLength(2001);
       expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
-      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', expect.stringContaining('truncated'), { count: 500, limit: 500 });
+      expect(JSON.stringify(payloads)).not.toContain('private caller content');
+      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', 'Raw events truncated at 4 pages', { count: 2000, limit: 500, pages: 4 });
+    });
+    it('de-duplicates event ids across page boundaries', async () => {
+      const first = Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' }));
+      fetchMock
+        .mockResolvedValueOnce(mockEventsResponse(first, { has_more: true }))
+        .mockResolvedValueOnce(mockEventsResponse([first[0], { id: 'event-500', type: 'llm_done' }], { has_more: false }));
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(payloads).toHaveLength(501);
+      expect(new Set(payloads.map((payload) => JSON.parse(payload).id)).size).toBe(501);
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('does not truncate a full page whose metadata says it is the last page', async () => {
+      fetchMock.mockResolvedValue(
+        mockEventsResponse(
+          Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' })),
+          { has_more: false }
+        )
+      );
+      expect(await service.getRawEventPayloads(req, 'session-1')).toHaveLength(500);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('keeps a short legacy page unchanged without a marker or another request', async () => {
+      const event = { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' };
+      fetchMock.mockResolvedValue(mockEventsResponse([event]));
+      expect(await service.getRawEventPayloads(req, 'session-1')).toEqual([JSON.stringify(event)]);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * `trigger_message` content is user-authored and unbounded, so the history
+ * parser must keep every legitimate payload shape and run in linear time
+ * (CWE-1333, linuxfoundation/lfx-self-serve-ops#53): the former ```json regex
+ * stalled the event loop for seconds on a few KB of unclosed whitespace.
+ */
+describe('GuildService.getHistory — trigger_message parsing', () => {
+  let service: GuildService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('GUILD_API_KEY', 'test-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    service = new GuildService();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  /** Resolves the user-visible text of a single trigger_message with the given content. */
+  async function triggerText(content: unknown): Promise<string | undefined> {
+    fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'trigger_message', created_at: '2026-01-01T00:00:00Z', content }]));
+    const messages = await service.getHistory(req, 'session-1');
+    return messages[0]?.text;
+  }
+
+  describe('payload shapes', () => {
+    it('reads text from a fenced JSON block', async () => {
+      expect(await triggerText('```json\n{"text":"hi"}\n```')).toBe('hi');
     });
 
-    it('does not warn on a partial page', async () => {
-      fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }]));
+    it('unwraps double-serialized text inside a fenced block', async () => {
+      expect(await triggerText('```json\n{"text":"{\\"text\\":\\"inner\\"}"}\n```')).toBe('inner');
+    });
 
-      await service.getRawEventPayloads(req, 'session-1');
+    it('reads agent_input.text from raw JSON', async () => {
+      expect(await triggerText('{"agent_input":{"text":"ai"}}')).toBe('ai');
+    });
 
-      expect(logger.warning).not.toHaveBeenCalled();
+    it('falls back to plain text', async () => {
+      expect(await triggerText('hello')).toBe('hello');
+    });
+
+    it('reads a fenced block from object-form content', async () => {
+      expect(await triggerText({ data: '```json {"text":"obj"} ```' })).toBe('obj');
+    });
+
+    it('closes the block at the first ``` after the fence, not a later one', async () => {
+      expect(await triggerText('```json {"text":"first"} ``` trailing ```')).toBe('first');
+    });
+
+    it('falls through to the plain-text fallback for an empty fenced block', async () => {
+      expect(await triggerText('```json```')).toBe('```json```');
+    });
+  });
+
+  describe('linear-time fence scan (ReDoS regression)', () => {
+    it('returns an unclosed fence followed by 1 MB of whitespace as plain text without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json' + ' '.repeat(1_000_000));
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('```json');
+      expect(elapsed).toBeLessThan(500);
+    });
+
+    it('parses a closed fence wrapping 1 MB of whitespace without stalling', async () => {
+      const start = performance.now();
+      const text = await triggerText('```json {"text": "' + ' '.repeat(1_000_000) + 'x"} ```');
+      const elapsed = performance.now() - start;
+
+      expect(text).toBe('x');
+      expect(elapsed).toBeLessThan(500);
     });
   });
 });
@@ -197,13 +361,13 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     vi.clearAllMocks();
   });
 
-  it('passes the full owner~name agent_id by default (flag unset) AND keeps the @handle prepend on text messages — belt and braces', async () => {
+  it('passes the full owner~name agent_id by default and keeps the routing mention on its own line', async () => {
     const sessionId = await service.createSession(req, { message: 'hello there', handle: 'foundation-message' });
 
     expect(sessionId).toBe('session-new');
     const body = sentBody();
     expect(body['agent_id']).toBe('owner~foundation-message');
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
   });
 
   it('puts the @handle mention on a line of its own when asked, so a coded agent finds its intake header line intact', async () => {
@@ -214,6 +378,24 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect(body['agent_input']).toEqual({ type: 'text', text: '@slides-export\nBATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X' });
   });
 
+  it('retains explicit same-line opt-out for session creation', async () => {
+    await service.createSession(req, { message: 'INTAKE HEADER\nSynthetic body', handle: 'synthetic-agent', mentionOnOwnLine: false });
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: '@synthetic-agent INTAKE HEADER\nSynthetic body' });
+  });
+
+  it('uses the same own-line default for an answers follow-up, replacing a caller-supplied mention', async () => {
+    await service.sendFollowUp(req, 'session-new', { message: '@untrusted\nANSWERS HEADER\nSynthetic answer', handle: 'synthetic-agent' });
+    expect(sentBody()).toEqual({ mode: 'text', content: '@synthetic-agent\nANSWERS HEADER\nSynthetic answer' });
+  });
+
+  it.each(['createSession', 'sendFollowUp'] as const)('keeps %s mention-only routing free of a trailing separator', async (method) => {
+    if (method === 'createSession') await service.createSession(req, { message: '@untrusted  ', handle: 'synthetic-agent' });
+    else await service.sendFollowUp(req, 'session-new', { message: '@untrusted  ', handle: 'synthetic-agent' });
+    expect(sentBody()).toMatchObject(
+      method === 'createSession' ? { agent_input: { type: 'text', text: '@synthetic-agent' } } : { mode: 'text', content: '@synthetic-agent' }
+    );
+  });
+
   it('drops the agent_id field (only) when GUILD_EXPLICIT_AGENT_ID=false', async () => {
     vi.stubEnv('GUILD_EXPLICIT_AGENT_ID', 'false');
 
@@ -221,7 +403,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
 
     const body = sentBody();
     expect('agent_id' in body).toBe(false);
-    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message\nhello there' });
   });
 
   it('sends a structured agent input verbatim with the owner~name agent_id (no mention can ride a typed form payload)', async () => {
@@ -255,6 +437,7 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     await service.createSession(req, { message: 'hello' });
 
     expect('agent_id' in sentBody()).toBe(false);
+    expect(sentBody()['agent_input']).toEqual({ type: 'text', text: 'hello' });
   });
 });
 
@@ -310,6 +493,8 @@ describe('GuildService — workspace defaults and configuration guard', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
+    expect(() => service.preflight('synthetic_redraft')).toThrow('Guild API is not configured.');
+    expect(fetchMock).not.toHaveBeenCalled();
     await expect(service.createSession(req, { message: 'hi', handle: 'foundation-message' })).rejects.toMatchObject({
       code: 'guild_not_configured',
       message: 'Guild API is not configured. Missing environment variable: GUILD_API_KEY.',

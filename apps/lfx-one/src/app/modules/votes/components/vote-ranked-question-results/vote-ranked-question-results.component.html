@@ -5,25 +5,36 @@
 <div
   class="rounded-lg border border-slate-200 p-4 flex flex-col gap-4"
   [attr.data-testid]="isCreator() ? 'vote-results-ranked-question-' + q.questionId : null">
-  <h4 class="text-sm font-semibold text-slate-900">{{ q.prompt }}</h4>
+  <h4 class="text-base font-semibold text-gray-900 break-words">{{ q.prompt }}</h4>
 
   <div class="flex flex-col gap-3">
     @for (row of q.choiceDistributions; track row.choiceId) {
       <div class="flex flex-col gap-2" [attr.data-testid]="isCreator() ? 'vote-results-ranked-choice-' + row.choiceId : null">
         <div class="flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-slate-800">{{ row.choiceText }}</span>
+          <span class="min-w-0 text-sm font-medium text-slate-800 break-words">{{ row.choiceText }}</span>
           <span class="text-xs text-slate-500">{{ row.totalRanked }} {{ row.totalRanked === 1 ? 'voter' : 'voters' }}</span>
         </div>
 
         @if (row.rankCounts.length > 0) {
-          <div class="flex flex-col gap-1">
+          <div class="flex flex-col gap-1 min-w-0 overflow-x-auto">
             @for (rc of row.rankCounts; track rc.rank) {
               <div class="flex items-center gap-2 text-xs">
                 <span class="w-14 text-slate-600 flex-shrink-0">Rank {{ rc.rank }}</span>
                 <div class="flex-1 bg-slate-100 rounded h-2 overflow-hidden">
                   <div class="bg-blue-500 h-full rounded" [style.width.%]="rc.percentage"></div>
                 </div>
-                <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
+                @if (rc.rank === 1 && showVoterLinks() && rc.count > 0) {
+                  <button
+                    type="button"
+                    class="min-w-8 text-right text-blue-600 hover:underline py-1 flex-shrink-0"
+                    [attr.aria-label]="'View the ' + rc.count + (rc.count === 1 ? ' voter' : ' voters') + ' who ranked ' + row.choiceText + ' first'"
+                    (click)="onViewVoters(row.choiceId)"
+                    [attr.data-testid]="'vote-results-ranked-choice-' + row.choiceId + '-view-voters'">
+                    {{ rc.count }}
+                  </button>
+                } @else {
+                  <span class="w-8 text-right text-slate-700 flex-shrink-0">{{ rc.count }}</span>
+                }
                 <span class="w-12 text-right text-slate-600 flex-shrink-0">{{ rc.percentage }}%</span>
               </div>
             }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
 import { MKTG_REBUILD_DOWNSTREAM_KEYS } from '@lfx-one/shared/constants';
 
@@ -35,7 +35,7 @@ const response = () => ({ json: vi.fn() }) as unknown as Response;
 
 describe('MktgRebuildController', () => {
   let controller: MktgRebuildController;
-  let next: NextFunction & ReturnType<typeof vi.fn>;
+  let next: NextFunction & Mock;
   beforeEach(() => {
     vi.resetAllMocks();
     controller = new MktgRebuildController();
@@ -57,6 +57,14 @@ describe('MktgRebuildController', () => {
     await controller[method](req, response(), next);
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
     expect(deps[method]).toHaveBeenCalledTimes(1);
+  });
+  it('returns the attached chain and caller capability unchanged', async () => {
+    const attached = { chainId: body.chainId, ownerToken: body.ownerToken, attached: true, status: 'running', steps: [] };
+    deps.start.mockResolvedValueOnce(attached);
+    const res = response();
+    await controller.start(request(body), res, next);
+    expect(res.json).toHaveBeenCalledWith(attached);
+    expect(next).not.toHaveBeenCalled();
   });
   it.each(['start', 'advance', 'result'] as const)('blocks %s during impersonation before any lookup', async (method) => {
     await controller[method](request(body, true), response(), next);

@@ -26,15 +26,6 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
- * Rollout gate for Project Lens → Participating Organizations (#2091): the `project/participating-orgs`
- * route, its sidebar entry, and every BFF endpoint under `/api/projects/:slug/participating-orgs`.
- * Default false; the route guard fails closed.
- *
- * **Server-paired** — the BFF evaluates the same key through `LaunchDarklyServerService.isFlagEnabled`
- * and answers 404 while it is off, so the data is not reachable by a direct API call outside the rollout.
- */
-export const PROJECT_LENS_PARTICIPATING_ORGS_FLAG = 'project-lens-participating-orgs';
-/**
  * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
  * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
  * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
@@ -77,16 +68,14 @@ export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Gates Org Lens surfaces still restricted to internal audiences — person-detail-drawer company
- * emails (GH-1655) and the Company Logo Upload control on the Org Profile edit page (LFXV2-3288).
- * Remove each gate as its real-data backend lands; retire this flag once all are unguarded.
+ * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
+ * restricted to internal audiences while their real-data backends were built, and both gates are
+ * gone: Org Profile logo upload was ungated in #1887, and person-detail-drawer company emails in
+ * #4373 once #1705 → #1830 → #2402 had landed the data behind them.
  *
- * For logo upload specifically, default false means a general Org Lens viewer sees the logo preview
- * but not the upload affordance.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or the
- * downstream member-service upload endpoint; server-side authorization (writer/admin) remains the
- * source of truth for whether an upload actually succeeds.
+ * Setting it in LaunchDarkly now changes nothing. The constant is kept only so the retirement is a
+ * deliberate step — deleting the key from LaunchDarkly as well as this line — rather than a silent
+ * drop. Do not add a new gate to it; a new surface should get its own flag with its own rollout.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 
@@ -109,8 +98,9 @@ export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 /**
  * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
  * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
- * flag keeps the module invisible, and the route guard fails closed like `akritesEnabledGuard`
- * rather than open like `myClasEnabledGuard`, because nothing here has shipped to users yet.
+ * flag keeps the module invisible. The route guard fails open like `myClasEnabledGuard` when the
+ * provider is not ready, so a slow or blocked LaunchDarkly never bounces testers away; before
+ * go-live anything a non-tester writes in that window is replaced by the final data import.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
@@ -137,7 +127,7 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
  * GW_EMBED_ROUTE_PREFIXES) that
  * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
  * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
- * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
+ * rather than open, since the embed is not ready for general users.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
  * SDK and never runs server-side, so it cannot gate an Express handler. The BFF routes
@@ -230,6 +220,17 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
+/**
+ * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
+ * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
+ * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
+ * the existing page whatever this reads.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
+ * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means
+ * the existing dashboard. It gates no endpoint: both pages read the same `/api/meetings` surface.
+ */
+export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
 /**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.

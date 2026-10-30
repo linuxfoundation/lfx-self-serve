@@ -156,6 +156,28 @@ describe('MeetingService registrant payload mapping', () => {
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
     });
+
+    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
+    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
+    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    });
+
+    // ITX rejects an update whose `username` differs from the stored one, and a blank counts as different when a
+    // username is stored. It is checked after `user_id`, so it matters once that is sent.
+    it('sends back the username a listed guest has, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', username: 'guest-a' })).username).toBe('guest-a');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('username');
+      expect(service.getChangedFields(registrant({ state: 'modified', username: null }))).not.toHaveProperty('username');
+    });
+
+    // The avatar is derived from the linked user and ITX does not compare it.
+    it('never sends the avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('avatar_url');
+    });
   });
 });
 
@@ -296,11 +318,12 @@ describe('MeetingService attachment scope overrides', () => {
   const OCCURRENCE_ID = '1893456000';
   let service: MeetingService;
   let get: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
 
   const attachment = (uid: string, occurrenceId?: string) => ({
     uid,
     meeting_id: 'mtg-1',
-    type: 'link',
+    type: 'link' as const,
     name: uid,
     created_at: '2030-01-01T00:00:00Z',
     occurrence_id: occurrenceId,
@@ -308,8 +331,9 @@ describe('MeetingService attachment scope overrides', () => {
 
   beforeEach(() => {
     get = vi.fn();
+    del = vi.fn();
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, delete: del } }] });
     service = TestBed.inject(MeetingService);
   });
 
@@ -346,6 +370,74 @@ describe('MeetingService attachment scope overrides', () => {
     service.recordAttachmentScopeChanges([{ uid: 'a' }]);
 
     expect(service.attachmentScopeOverrides().get('a')).toBe('');
+  });
+
+  describe('recording attachments added and removed', () => {
+    it('keeps what was added and removed per meeting', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('b')], deletedUids: ['y'] });
+      service.recordAttachmentChanges('mtg-2', { added: [attachment('c')] });
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a', 'b']);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['x', 'y']);
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-2')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['c']);
+    });
+
+    it('forgets an addition that is deleted afterwards', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      service.recordAttachmentChanges('mtg-1', { deletedUids: ['a'] });
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+    });
+
+    it('records a successful delete from any caller, so an earlier addition is not listed again', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      del.mockReturnValue(of(undefined));
+
+      await firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'));
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['a']);
+    });
+
+    it('does not record a delete that failed', async () => {
+      del.mockReturnValue(throwError(() => new Error('rejected')));
+
+      await expect(firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'))).rejects.toThrow('rejected');
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    it('records nothing for an empty change', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [], deletedUids: [] });
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    // Each card keeps its own fetched list, so a read agreeing with the change must not drop it for the other cards.
+    it('keeps a change after a read that already shows it', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      get.mockReturnValue(of([attachment('a')]));
+
+      await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a']);
+    });
   });
 });
 
@@ -528,6 +620,7 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   // `getMeetingDetail` calls `this.http.get(...)` once and pipes `retryPropagationLag()` directly

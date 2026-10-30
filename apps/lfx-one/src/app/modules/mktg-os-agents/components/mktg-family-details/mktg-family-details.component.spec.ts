@@ -73,14 +73,109 @@ describe('Family-only source details', () => {
     fixture.componentRef.setInput('projectUid', 'synthetic');
     return fixture;
   }
-  it('reads the latest stored revision and renders real read/failed source copy plus the static approval explainer', async () => {
+  it('collapses sources to an honest summary line with accessible Show and Hide', async () => {
     const fixture = create();
     await fixture.whenStable();
     expect(getRevision).toHaveBeenCalledWith('synthetic', 'foundation-message', 'living', revisionId);
-    expect(fixture.nativeElement.textContent).toContain('Sources read on the last run: project.example.');
-    expect(fixture.nativeElement.textContent).toContain('README: Timed out');
-    expect(fixture.nativeElement.textContent).toContain('Any project writer approves an asset in October.');
+    const root: HTMLElement = fixture.nativeElement;
+    const sourceToggle = root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sources-toggle"] button');
+    const list = root.querySelector('#mktg-family-sources-list');
+    expect(root.querySelector('h2')?.textContent?.replace(/\s+/g, ' ')).toContain('Where it comes from · 1 source read · 1 source failed');
+    expect(list?.classList.contains('hidden')).toBe(true);
+    expect(sourceToggle?.getAttribute('aria-controls')).toBe(list?.id);
+    expect(sourceToggle?.getAttribute('aria-expanded')).toBe('false');
+    sourceToggle?.click();
+    await fixture.whenStable();
+    expect(sourceToggle?.textContent).toContain('Hide');
+    expect(sourceToggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(list?.classList.contains('hidden')).toBe(false);
+    expect(list?.textContent).toContain('Sources read on the last run: project.example.');
+    expect(list?.textContent).toContain('README: Timed out');
+    sourceToggle?.click();
+    await fixture.whenStable();
+    expect(list?.classList.contains('hidden')).toBe(true);
   });
+  it('omits the entire roadmap Sign-off section, toggle and dated copy', async () => {
+    const fixture = create();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+    expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
+    expect(root.textContent).not.toContain('Sign-off');
+    expect(root.textContent).not.toContain('October');
+    expect(root.textContent).not.toContain('November');
+  });
+  it('restores the whole roadmap and its accessible toggle when the shared flag projection is true', async () => {
+    const fixture = create();
+    // The Angular runner bundles shared constants: override only their component
+    // projection before first render, without adding a product override API.
+    Object.defineProperty(fixture.componentInstance, 'showComingSoon', { value: true });
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const section = root.querySelector('[data-testid="mktg-family-approve"]');
+    const toggle = section?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sign-off-toggle"] button');
+    const text = section?.querySelector('#mktg-family-sign-off-text');
+    expect(section?.querySelector('h2')?.textContent).toContain('Sign-off');
+    expect(section?.textContent).toContain('two-role sign-off arrives in November');
+    expect(text?.textContent).toContain('Any project writer approves an asset in October.');
+    expect(toggle?.getAttribute('aria-controls')).toBe(text?.id);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(text?.classList.contains('hidden')).toBe(true);
+    toggle?.click();
+    await fixture.whenStable();
+    expect(toggle?.textContent).toContain('Hide');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(text?.classList.contains('hidden')).toBe(false);
+    toggle?.click();
+    await fixture.whenStable();
+    expect(toggle?.textContent).toContain('Show');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(text?.classList.contains('hidden')).toBe(true);
+  });
+  it('keeps Sources expanded and Sign-off absent across two equivalent listing refreshes without refetching or flashing loading', async () => {
+    const fixture = create();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    root.querySelector<HTMLButtonElement>('[data-testid="mktg-family-sources-toggle"] button')?.click();
+    await fixture.whenStable();
+    const sources = root.querySelector('#mktg-family-sources-list');
+    expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+    expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
+    for (let refresh = 0; refresh < 2; refresh++) {
+      fixture.componentRef.setInput('family', family()); // The same server listing produces a new Family view object.
+      await fixture.whenStable();
+      expect(getRevision).toHaveBeenCalledExactlyOnceWith('synthetic', 'foundation-message', 'living', revisionId);
+      expect(root.querySelector('#mktg-family-sources-list')).toBe(sources);
+      expect(sources?.classList.contains('hidden')).toBe(false);
+      expect(root.querySelector('[data-testid="mktg-family-sources-toggle"] button')?.getAttribute('aria-expanded')).toBe('true');
+      expect(root.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
+      expect(root.querySelector('[data-testid="mktg-family-sign-off-toggle"]')).toBeNull();
+      expect(root.querySelector('#mktg-family-sign-off-text')).toBeNull();
+      expect(root.querySelector('[data-testid="mktg-family-sources-loading"]')?.textContent).toBe('');
+      expect(fixture.componentInstance['loading']()).toBe(false);
+      expect(fixture.componentInstance['sources']()).not.toBeNull();
+    }
+  });
+
+  it('still re-reads and resets details when the framework revision changes', async () => {
+    const fixture = create();
+    await fixture.whenStable();
+    fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-toggle"] button').click();
+    await fixture.whenStable();
+    const nextRevisionId = '000004-' + 'b'.repeat(64);
+    const view = family();
+    fixture.componentRef.setInput('family', {
+      ...view,
+      rows: view.rows.map((row) => ({ ...row, document: row.document ? { ...row.document, latestRevisionId: nextRevisionId } : null })),
+    });
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledTimes(2);
+    expect(getRevision).toHaveBeenLastCalledWith('synthetic', 'foundation-message', 'living', nextRevisionId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-toggle"] button')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('omits sources with no document or no report, never faking a source list', async () => {
     getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));
     const fixture = create();
@@ -89,9 +184,9 @@ describe('Family-only source details', () => {
     fixture.componentRef.setInput('family', { ...family(), rows: [] });
     await fixture.whenStable();
     expect(getRevision).toHaveBeenCalledTimes(1);
-    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).toBeNull();
   });
-  it('keeps loading/error separate and retries without losing the static explainer', async () => {
+  it('keeps loading/error separate and retries without revealing roadmap copy', async () => {
     getRevision.mockReturnValue(new Subject<MktgRevisionResponse>());
     const fixture = create();
     await fixture.whenStable();

@@ -3,20 +3,26 @@
 
 import type { LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
 
+/** Provenance belongs to the pushed edit history entry, not the previous route. */
+export const LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY = 'mktgEditPushed';
+export const LINKEDIN_PROFILE_EDIT_ORIGINS = { run: 'run', document: 'document' } as const;
+
 /** Verbatim Step 1/2 copy and defaults from the live agent src/profile.ts. */
 export const LINKEDIN_ABOUT_FIELDS = [
-  { key: 'name', label: 'Name', ask: 'Their name' },
-  { key: 'role', label: 'Role', ask: 'Their role (for personalization)' },
-  { key: 'focus_areas', label: 'Focus areas', ask: 'Their primary focus areas' },
+  { key: 'name', label: 'Name', ask: 'Their name', prompt: 'Your name' },
+  { key: 'role', label: 'Role', ask: 'Their role (for personalization)', prompt: 'Your role' },
+  { key: 'focus_areas', label: 'Focus areas', ask: 'Their primary focus areas', prompt: 'Your main focus areas' },
   {
     key: 'associated_projects',
     label: 'Associated projects',
     ask: 'Any projects they are closely associated with',
+    prompt: 'Projects you are closely associated with',
   },
   {
     key: 'primary_audience',
     label: 'Primary LinkedIn audience',
     ask: 'Their primary LinkedIn audience',
+    prompt: 'Your main LinkedIn audience',
   },
 ] as const;
 
@@ -61,6 +67,8 @@ export const LINKEDIN_LINK_PLACEHOLDER = '[LINK]';
 export const LINKEDIN_SHARE_LINK_HINT = 'Optional. Fills [LINK] in every option and in Copy post. Prefilled when you draft from a link; you can change it.';
 export const LINKEDIN_MISSING_LINK_COPY_NOTICE = 'Copied. This post still contains [LINK] — replace it before posting.';
 export const LINKEDIN_SOURCE_MAX_BYTES = 1024 * 1024;
+/** Bounded reload recovery: never put an upload or a large unpublished source in localStorage. */
+export const LINKEDIN_RETRY_TEXT_MAX_CHARS = 4096;
 /** A byte-bounded text can contain at most this many one-byte, space-separated words. */
 export const LINKEDIN_SOURCE_MAX_WORDS = Math.ceil(LINKEDIN_SOURCE_MAX_BYTES / 2);
 /** Durable at-most-once automatic profile initialization, independent of current.json deletion. */
@@ -70,6 +78,7 @@ export const LINKEDIN_DOCUMENT_TITLE = '# LinkedIn post options';
 /** Mutable LFX presentation state, outside immutable revision records. */
 export const LINKEDIN_PRESENTATION_KEY = 'presentation.json';
 export const LINKEDIN_PAGE_LABEL = 'LinkedIn';
+export const LINKEDIN_INTAKE_LABEL = 'Draft a LinkedIn post';
 /** Default 2 since agent 2.0.0 deployed 20 Oct; renderer 1 remains available. */
 export const LINKEDIN_FORM_RENDER_VERSION: LinkedinFormRenderVersion = 2;
 export const LINKEDIN_SOURCE_LINK_HINT = 'Paste the public link; the agent reads the page.';

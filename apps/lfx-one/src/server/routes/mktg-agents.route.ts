@@ -4,6 +4,7 @@
 import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES, MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
 import express, { NextFunction, raw, Request, RequestHandler, Response, Router } from 'express';
 
+import { AeoGeoController } from '../controllers/aeo-geo.controller';
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
@@ -11,7 +12,8 @@ import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
-import { MicroserviceError } from '../errors';
+import { BaseApiError, MicroserviceError } from '../errors';
+import { logger } from '../services/logger.service';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 /**
@@ -69,10 +71,12 @@ const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
 const member360Controller = new Member360Controller();
 const member360Workbook = new Member360WorkbookController();
+const aeoGeoController = new AeoGeoController();
 
 router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
 router.post(
   '/member-360/tracker',
+  blockDuringImpersonation,
   raw({ type: 'application/octet-stream', limit: MEMBER_360_MAX_BYTES }),
   (err: unknown, req: Request, _res: Response, next: NextFunction) => {
     if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.too.large') {
@@ -84,8 +88,32 @@ router.post(
   (req: Request, res: Response, next: NextFunction) => member360Workbook.parseTracker(req, res, next)
 );
 
+router.delete(
+  '/member-360/tracker/:id',
+  blockDuringImpersonation,
+  (req: Request, res: Response, next: NextFunction) => member360Workbook.deleteTracker(req, res, next),
+  (error: unknown, req: Request, res: Response, next: NextFunction) => {
+    // Express needs four arguments to recognize error middleware.
+    if (res.headersSent) {
+      next(error);
+      return;
+    }
+    // This private erasure endpoint returns status only, including errors.
+    const status = error instanceof BaseApiError ? error.statusCode : 500;
+    logger.warning(req, 'member_360_tracker_delete', 'Private tracker deletion rejected', { status });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(status).end();
+  }
+);
+
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+router.post('/member-360/answers', (req, res, next) => member360Controller.answers(req, res, next));
+// Project-writer answers for a durable kit run; one-offs keep their creator-owned endpoints.
+router.post('/runs/:runId/answers', (req, res, next) => mktgAgentsController.runAnswers(req, res, next));
+router.post('/aeo-geo/generate', (req, res, next) => aeoGeoController.generate(req, res, next));
+router.post('/aeo-geo/result', (req, res, next) => aeoGeoController.result(req, res, next));
+router.post('/aeo-geo/answers', (req, res, next) => aeoGeoController.answers(req, res, next));
 
 let rebuild: MktgRebuildController | undefined;
 function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
@@ -103,6 +131,9 @@ function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
 router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
 router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
 router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
+
+// GET /api/mktg-agents/intakes/:agentKey/last - private scalar history; the service resolves writer access.
+router.get('/intakes/:agentKey/last', (req, res, next) => mktgAgentsController.getLastIntake(req, res, next));
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
@@ -180,6 +211,19 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
   mktgDocumentsController.approveRevision(req, res, next)
 );
 
+// GET revision-scoped field comments; requires project writer access.
+router.get('/documents/:agentKey/:documentId/comments', (req, res, next) => mktgDocumentsController.listComments(req, res, next));
+// POST a field comment; requires project writer access and a stored revision.
+router.post('/documents/:agentKey/:documentId/comments', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.addComment(req, res, next));
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revise - ID-only comments redraft; project writer access; creator-bound ACK.
+router.post('/documents/:agentKey/:documentId/revise', blockDuringImpersonation, (req, res, next) => mktgDocumentsController.revise(req, res, next));
+// GET creator-owned terminal recovery proof; no private ledger/session fields or mutation.
+router.get('/documents/:agentKey/:documentId/revise/:requestId/state', (req, res, next) => mktgDocumentsController.redraftState(req, res, next));
+// POST release an uncertain/expired reservation; requires project writer access AND the original send creator.
+router.post('/documents/:agentKey/:documentId/revise/:requestId/release', blockDuringImpersonation, (req, res, next) =>
+  mktgDocumentsController.releaseRedraft(req, res, next)
+);
+
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
@@ -197,7 +241,7 @@ router.post('/slides-export/start', (req, res, next) => mktgSlidesExportControll
 // POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
 router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
 
-// GET /api/mktg-agents/slides-export/last - last export plus newest identity for freshness, not byte selection.
+// GET /api/mktg-agents/slides-export/last - last export plus approved-current identity for freshness (null when none approved), not byte selection.
 router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

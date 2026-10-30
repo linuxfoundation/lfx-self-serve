@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKEDIN_QUESTIONS_CONTRACT, LINKEDIN_FINALIZE_TOOL } from './linkedin-post.constants';
-import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
+import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition, MktgRunActivityToolDefinition } from '../interfaces';
+import { ICP_FINALIZE_TOOL } from './icp.constants';
+import { AEO_GEO_FINALIZE_TOOL, AEO_GEO_QUESTIONS_CONTRACT } from './aeo-geo.constants';
 import { BOILERPLATES_FINALIZE_TOOL, BOILERPLATES_QUESTIONS_CONTRACT_ID } from './boilerplates.constants';
 import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
 import { FAQ_FINALIZE_TOOL, FAQ_QUESTIONS_CONTRACT_ID } from './faq.constants';
@@ -33,6 +35,7 @@ export const MKTG_RUN_ACTIVITY_PHASES: readonly MktgRunActivityPhaseDefinition[]
 export const MKTG_RUN_ACTIVITY_TOOLS = {
   fetch: 'experimental_fetch_fetch',
   webSearch: 'web_search_web_search',
+  webSearchJina: 'web_search_jina_web_search',
   lfxSearchProjects: 'lfx_mcp_search_projects',
   lfxGetProject: 'lfx_mcp_get_project',
   lfxSemanticLayer: 'lfx_mcp_query_lfx_semantic_layer',
@@ -55,6 +58,7 @@ export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost,
+  AEO_GEO_FINALIZE_TOOL,
 ];
 
 /**
@@ -91,7 +95,70 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   writingFaq: 'Writing the FAQ',
   checkingLinkedinPost: 'Checking the post options',
   writingLinkedinPost: 'Writing three post options',
+  writingGeneric: 'Writing',
+  checkingGeneric: 'Checking',
 } as const;
+
+/** Fixed Member report copy; header phase labels stay shared. */
+export const MEMBER_360_ACTIVITY_LABELS = {
+  reading: 'Reading sources',
+  search: 'Searching the web',
+  lfx: 'Checking LFX',
+  writing: 'Writing the report',
+  checking: 'Checking the report',
+  questions: MKTG_RUN_ACTIVITY_LABELS.questions,
+} as const;
+export const MEMBER_360_ACTIVITY_TOOLS: Readonly<Record<string, MktgRunActivityToolDefinition>> = {
+  score_member_360: { kind: 'writing', label: MEMBER_360_ACTIVITY_LABELS.writing },
+  record_member_actions: { kind: 'writing', label: MEMBER_360_ACTIVITY_LABELS.writing },
+  judge_member_slice: { kind: 'writing', label: MEMBER_360_ACTIVITY_LABELS.writing },
+  ask_requester: { kind: 'questions', label: MEMBER_360_ACTIVITY_LABELS.questions },
+  finalize_member_360: { kind: 'checking', label: MEMBER_360_ACTIVITY_LABELS.checking },
+  finalize_member_slice: { kind: 'checking', label: MEMBER_360_ACTIVITY_LABELS.checking },
+};
+
+/** The shared requester tool has one fixed sentence for every agent that offers it. */
+export const MKTG_RUN_ACTIVITY_QUESTION_TOOLS = { [FOUNDATION_MESSAGE_ASK_TOOL]: { kind: 'questions', label: MKTG_RUN_ACTIVITY_LABELS.questions } } as const;
+
+/** Verified agent-owned tools; shared platform names/prefixes keep one classification path. */
+export const MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES: Readonly<Record<string, Readonly<Record<string, MktgRunActivityToolDefinition>>>> = {
+  'brand-kit': {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    [BRAND_KIT_INSPECT_LOGOS_TOOL]: { kind: 'reading', label: MKTG_RUN_ACTIVITY_LABELS.inspectingLogos },
+    [BRAND_KIT_FINALIZE_TOOL]: { kind: 'checking', label: MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit, writingLabel: MKTG_RUN_ACTIVITY_LABELS.writingBrandKit },
+  },
+  'foundation-message': {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    [FOUNDATION_MESSAGE_FINALIZE_TOOL]: { kind: 'checking', label: MKTG_RUN_ACTIVITY_LABELS.checking, writingLabel: MKTG_RUN_ACTIVITY_LABELS.writing },
+  },
+  boilerplates: {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    [BOILERPLATES_FINALIZE_TOOL]: {
+      kind: 'checking',
+      label: MKTG_RUN_ACTIVITY_LABELS.checkingBoilerplates,
+      writingLabel: MKTG_RUN_ACTIVITY_LABELS.writingBoilerplates,
+    },
+  },
+  faq: {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    membership_tier_prices: { kind: 'lfx', label: MKTG_RUN_ACTIVITY_LABELS.lfxOther },
+    [FAQ_FINALIZE_TOOL]: { kind: 'checking', label: MKTG_RUN_ACTIVITY_LABELS.checkingFaq, writingLabel: MKTG_RUN_ACTIVITY_LABELS.writingFaq },
+  },
+  'linkedin-post': {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    [LINKEDIN_FINALIZE_TOOL]: {
+      kind: 'checking',
+      label: MKTG_RUN_ACTIVITY_LABELS.checkingLinkedinPost,
+      writingLabel: MKTG_RUN_ACTIVITY_LABELS.writingLinkedinPost,
+    },
+  },
+  'aeo-geo': {
+    ...MKTG_RUN_ACTIVITY_QUESTION_TOOLS,
+    [AEO_GEO_FINALIZE_TOOL]: { kind: 'checking', label: MKTG_RUN_ACTIVITY_LABELS.checking, writingLabel: MKTG_RUN_ACTIVITY_LABELS.writing },
+  },
+  icp: { [ICP_FINALIZE_TOOL]: { kind: 'checking', label: MKTG_RUN_ACTIVITY_LABELS.checkingGeneric, writingLabel: MKTG_RUN_ACTIVITY_LABELS.writingGeneric } },
+  'member-360': MEMBER_360_ACTIVITY_TOOLS,
+};
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
 export const MKTG_RUN_ACTIVITY_DONE_STATUSES: readonly string[] = ['DONE', 'COMPLETED', 'SUCCEEDED', 'SUCCESS'];
@@ -127,6 +194,7 @@ export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
   FAQ_QUESTIONS_CONTRACT_ID,
   LINKEDIN_QUESTIONS_CONTRACT,
+  AEO_GEO_QUESTIONS_CONTRACT,
 ];
 
 /**
@@ -166,15 +234,5 @@ export const MKTG_RUN_ACTIVITY_STARTING_LINES = [
   'Warming up the writing muscles',
   'Almost there: the first step is on its way',
 ];
-/** Rotating tips shown under the feed while a run works: what happens next, so a few minutes' wait teaches something. */
-export const MKTG_RUN_ACTIVITY_TIPS = [
-  'The messaging framework comes first: boilerplates, FAQ and the brand kit all read the approved one.',
-  'Approve a revision to put it in the Kit. Exports to PDF and Google Slides use the approved current.',
-  'Change the framework later and the Kit marks what reads it as stale. One click rebuilds it.',
-  'Every run is stored as a revision, so you can compare, restore or approve any of them.',
-  'The agent may stop to ask you a question when the sources disagree or leave a gap.',
-  'A whole family exports as one Google Slides deck on the LF template.',
-];
-/** How long each starting line and tip stays up. */
+/** How long each starting line stays up. */
 export const MKTG_RUN_ACTIVITY_LINE_MS = 3500;
-export const MKTG_RUN_ACTIVITY_TIP_MS = 9000;

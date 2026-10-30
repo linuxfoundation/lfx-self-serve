@@ -68,7 +68,7 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
     await expect(row.getByTestId(`my-formations-blocking-${CASCADE}`)).toBeAttached();
   });
 
-  test('the sidebar entry is the last child of My Engagement and points at /formations', async ({ page }) => {
+  test('the sidebar entry is the last child of Engagement and points at /formations', async ({ page }) => {
     // The test id sits on the router link itself (navbar.component.html's menuItem template).
     const nav = page.getByTestId('sidebar-my-formations');
     await expect(nav).toBeAttached();

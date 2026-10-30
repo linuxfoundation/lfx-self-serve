@@ -5,18 +5,15 @@
 <div class="flex flex-col gap-4" data-testid="members-at-risk">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Members at risk unavailable"
       subtitle="We could not load this foundation's overdue balances. Refresh the page to try again."
       data-testid="members-at-risk-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-at-risk-loading" aria-hidden="true" />
-  } @else if (!loading() && noneAtRisk()) {
-    <lfx-empty-state
-      icon="fa-light fa-circle-check"
-      title="No members at risk"
-      subtitle="No member is 60 or more days overdue on dues. At-risk members appear here as balances age past 60 days."
-      data-testid="members-at-risk-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
       <lfx-filter-pills
@@ -36,22 +33,28 @@
 
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
       <div class="flex flex-col gap-2">
-        <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{ summary().outstandingLabel }}</span>
-        <span class="text-[12.5px] text-gray-500">Outstanding balance</span>
+        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{
+          summary().outstandingLabel
+        }}</span>
+        <span class="text-[12px] text-gray-500">Outstanding balance</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-at-risk-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">High risk</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">High risk</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Medium risk</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-medium">{{ summary().mediumRiskLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Medium risk</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-at-risk-medium">
+            {{ summary().mediumRiskLabel }}
+          </dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-500">Members at risk</dt>
-          <dd class="text-[17px] font-semibold tabular-nums text-red-600" data-testid="members-at-risk-members">{{ summary().memberCountLabel }}</dd>
+          <dt class="text-[12px] text-gray-500">Members at risk</dt>
+          <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-red-600" data-testid="members-at-risk-members">
+            {{ summary().memberCountLabel }}
+          </dd>
         </div>
       </dl>
     </div>
@@ -76,6 +79,7 @@
     }
 
     <lfx-table
+      styleClass="hm-table"
       [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
@@ -94,18 +98,18 @@
       data-testid="members-at-risk-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Overdue</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Age</span></th>
-          <th scope="col" class="text-right"><span class="text-xs font-medium text-gray-500">Last engaged</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Overdue</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Age</span></th>
+          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
         </tr>
       </ng-template>
 
       <ng-template #body let-view>
         <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
           <td>
-            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
+            <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
               view.accountName
             }}</span>
           </td>
@@ -118,15 +122,15 @@
             >
           </td>
           <td class="text-right">
-            <span class="text-sm font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-overdue'">{{
+            <span class="text-[13px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-overdue'">{{
               view.overdueLabel
             }}</span>
           </td>
           <td class="text-right">
-            <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
+            <span class="text-[13px] tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
           </td>
           <td class="text-right">
-            <span class="text-sm tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{
+            <span class="text-[13px] tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{
               view.lastEngagedLabel
             }}</span>
           </td>
@@ -135,7 +139,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="5" class="py-6 text-center text-sm text-gray-500" data-testid="members-at-risk-no-match">
+          <td colspan="5" class="py-6 text-center text-[13px] text-gray-500" data-testid="members-at-risk-no-match">
             @if (!loading()) {
               No member is in this aging bucket.
             }

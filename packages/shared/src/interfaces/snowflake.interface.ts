@@ -30,11 +30,20 @@ export interface SnowflakeQueryOptions {
    */
   fetchAsString?: DataType[];
 
-  /** When true, an "object does not exist" error is expected (e.g. a table not yet created) and is not counted toward the circuit breaker; the query still rejects so the caller can degrade gracefully. */
-  expectMissingObject?: boolean;
+  /**
+   * An "object does not exist" error is expected here (e.g. a table not yet created): it is not counted toward the
+   * circuit breaker, though the query still rejects so the caller can degrade gracefully. Prefer the object's name —
+   * only that object is then exempt, so a missing CORE table in the same statement keeps its normal failure handling.
+   * The name matches the object Snowflake blames, either exactly or as the last segment of its qualified name, and an
+   * error that names no object never matches. `true` exempts any missing object in the statement.
+   */
+  expectMissingObject?: boolean | string;
 
-  /** Identifier that may be absent during a coordinated schema rollout. A matching error is not counted toward the circuit breaker; the query still rejects so the caller can retry a legacy query. */
-  expectInvalidIdentifier?: string;
+  /**
+   * Identifier(s) that may be absent during a coordinated schema rollout. An error blaming one of them is not counted
+   * toward the circuit breaker; the query still rejects so the caller can retry a legacy query.
+   */
+  expectInvalidIdentifier?: string | readonly string[];
 }
 
 /**

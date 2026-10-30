@@ -1,0 +1,410 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="vote-detail">
+  @if (state().notFound) {
+    <!-- Missing or not viewable — identical on purpose, so the page never confirms a vote exists. -->
+    <lfx-not-found />
+  } @else if (state().error) {
+    <!-- Transient failure (non-404) — not rendered as a 404 -->
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="mt-6 rounded-xl border border-gray-200 bg-white" data-testid="vote-detail-error">
+        <div class="flex flex-col items-center gap-3 py-16 text-center">
+          <div class="flex h-24 w-24 items-center justify-center rounded-full bg-red-50">
+            <i class="fa-light fa-triangle-exclamation text-4xl text-red-400" aria-hidden="true"></i>
+          </div>
+          <h1 class="text-gray-900">Something went wrong</h1>
+          <p class="max-w-lg text-gray-600">We couldn't load this vote right now. Please try again.</p>
+          <lfx-button label="Retry" icon="fa-light fa-arrow-rotate-left" size="small" (onClick)="retry()" data-testid="vote-detail-retry" />
+        </div>
+      </div>
+    </div>
+  } @else if (vote(); as voteData) {
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 flex flex-col gap-6" data-testid="vote-detail-page">
+      <lfx-vote-detail-header
+        [vote]="voteData"
+        [audience]="audience()"
+        [activeTab]="activeTab()"
+        [tabs]="tabs()"
+        [canCastVote]="canCastVote()"
+        [canPresent]="canPresent()"
+        [canSendBallots]="canSendBallots()"
+        [slideBusy]="slideBusy()"
+        [limited]="!showVoteDetails()"
+        (tabChange)="switchTab($event)"
+        (sendReminder)="onSendReminder()"
+        (present)="onPresent()"
+        (copySlide)="onCopySlide()"
+        (castVote)="onCastVote()"
+        (viewResults)="onViewResults()"
+        (back)="goBack()" />
+
+      @if (canPresent() && showVoteDetails()) {
+        <!-- Off-screen artboard that Copy slide captures; rendered only for managers, in the browser (the server never loads the vote). -->
+        <div class="fixed -left-[10000px] top-0 pointer-events-none" aria-hidden="true">
+          <div #slide><lfx-share-slide [title]="voteData.name" [link]="slideLink()" /></div>
+        </div>
+      }
+
+      @if (accessLoading()) {
+        <div class="flex flex-col gap-4" data-testid="vote-detail-access-loading">
+          <p-skeleton width="100%" height="6rem" />
+          <p-skeleton width="100%" height="12rem" />
+        </div>
+      } @else {
+        @if (audience() === 'creator') {
+          <lfx-stat-card-grid
+            [cards]="summaryCards()"
+            [loading]="loadingVoteResults()"
+            [columns]="3"
+            (actionClick)="onSummaryCardClick($event)"
+            data-testid="vote-detail-summary" />
+        }
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div
+            class="lg:col-span-2 flex flex-col gap-6 min-w-0"
+            [attr.role]="showVoteDetails() ? 'tabpanel' : null"
+            id="vote-detail-tab-panel"
+            [attr.aria-labelledby]="showVoteDetails() ? 'vote-detail-tab-' + activeTab() : null"
+            [attr.data-testid]="'vote-detail-panel-' + activeTab()">
+            @switch (activeTab()) {
+              @case ('overview') {
+                @if (voteData.description && showVoteDetails()) {
+                  <lfx-card data-testid="vote-detail-description">
+                    <div class="flex flex-col gap-2">
+                      <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
+                      <!-- whitespace-pre-line keeps the line breaks of plain-text descriptions, as the cast drawer does (GH-2326). -->
+                      <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words" [innerHTML]="voteData.description"></div>
+                    </div>
+                  </lfx-card>
+                }
+                @if (showsResults()) {
+                  <!-- Not interactive as a whole, so it opts out of the lfx-card hover border (#4450). -->
+                  <lfx-card styleClass="hover:!border-gray-200" data-testid="vote-detail-overview-results">
+                    <div class="flex flex-col gap-4">
+                      <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-base font-semibold text-gray-900">Results</h2>
+                        <lfx-tag
+                          [value]="resultsStatusTag().value"
+                          [severity]="resultsStatusTag().severity"
+                          data-testid="vote-detail-overview-results-status" />
+                      </div>
+                      <ng-container [ngTemplateOutlet]="overviewResultsSummary" />
+                      <div class="flex justify-end border-t border-gray-100 pt-3">
+                        <lfx-button
+                          label="View full results"
+                          icon="fa-light fa-arrow-right"
+                          iconPos="right"
+                          [text]="true"
+                          size="small"
+                          (onClick)="switchTab('results')"
+                          data-testid="vote-detail-overview-full-results" />
+                      </div>
+                    </div>
+                  </lfx-card>
+                  @if (recentComments().length > 0) {
+                    <lfx-card data-testid="vote-detail-overview-comment">
+                      <div class="flex flex-col gap-3">
+                        <div class="flex items-center justify-between gap-3">
+                          <h2 class="text-base font-semibold text-gray-900">What voters are saying</h2>
+                          <lfx-button
+                            [label]="'View all ' + commentCount() + (commentCount() === 1 ? ' comment' : ' comments')"
+                            [text]="true"
+                            size="small"
+                            (onClick)="switchTab('comments')"
+                            data-testid="vote-detail-overview-all-comments" />
+                        </div>
+                        <!-- Same row, anonymity rules and ballot links as the Comments tab (#4448). -->
+                        <div class="flex flex-col gap-3">
+                          @for (response of recentComments(); track response.previewKey) {
+                            <div class="flex flex-col gap-2">
+                              @if (commentPromptCount() > 1) {
+                                <p class="text-sm font-medium text-slate-700" data-testid="vote-detail-overview-comment-question">{{ response.promptText }}</p>
+                              }
+                              <lfx-vote-comment-item
+                                [response]="response"
+                                [anonymous]="commentsAnonymous()"
+                                [showBallotLink]="showNamedBallotLinks()"
+                                (viewBallot)="onViewBallot($event)" />
+                            </div>
+                          }
+                        </div>
+                      </div>
+                    </lfx-card>
+                  }
+                } @else {
+                  <ng-container [ngTemplateOutlet]="voterStatePanel" />
+                }
+              }
+              @case ('results') {
+                @if (showsResults()) {
+                  <lfx-card styleClass="hover:!border-gray-200" data-testid="vote-detail-results">
+                    <div class="flex flex-col gap-6">
+                      @if (!isGenericPoll()) {
+                        <div class="rounded-lg bg-gray-50 border border-gray-200 p-4 flex items-start gap-3" data-testid="vote-detail-results-ranked-method">
+                          <i class="fa-light fa-list-ol text-2xl text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true"></i>
+                          <p class="text-sm text-gray-700">Voters ranked the choices in order of preference.</p>
+                        </div>
+                      }
+                      <!-- Before results load (or if they fail) the totals would read as zero; resultsBody shows the loading/error state. -->
+                      @if (audience() === 'creator' && hasLoadedResults()) {
+                        <lfx-vote-participation-card
+                          [stats]="participationStats()"
+                          [showAbstained]="showAbstain()"
+                          [abstainedHeld]="resultsHeld()"
+                          testId="vote-detail-participation" />
+                      }
+                      <ng-container [ngTemplateOutlet]="resultsBody" />
+                    </div>
+                  </lfx-card>
+                } @else {
+                  <ng-container [ngTemplateOutlet]="voterStatePanel" />
+                }
+              }
+              @case ('comments') {
+                @if (showsResults()) {
+                  <lfx-card data-testid="vote-detail-comments">
+                    @if (loadingVoteResults()) {
+                      <div class="flex flex-col gap-3" data-testid="vote-detail-comments-loading">
+                        <p-skeleton width="40%" height="1rem" />
+                        <p-skeleton width="100%" height="4rem" />
+                      </div>
+                    } @else if (voteResultsError()) {
+                      <p class="text-sm text-red-700" data-testid="vote-detail-comments-error">Couldn't load comments. Try reloading this page.</p>
+                    } @else if (resultsHeld()) {
+                      <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-comments-held' }" />
+                    } @else {
+                      <lfx-vote-comment-results
+                        [commentResults]="commentResults()"
+                        [(pageState)]="commentPaginatorState"
+                        [showBallotLinks]="showNamedBallotLinks()"
+                        [anonymous]="commentsAnonymous()"
+                        [anonymousReason]="commentAnonymityReason()"
+                        (viewBallot)="onViewBallot($event)" />
+                    }
+                  </lfx-card>
+                } @else {
+                  <ng-container [ngTemplateOutlet]="voterStatePanel" />
+                }
+              }
+              @case ('voters') {
+                <!-- activeTab only resolves to voters while showVotersTab() holds; the guard keeps it explicit. Pseudo-anonymous votes get a participation-only tab. -->
+                @if (showVotersTab()) {
+                  <lfx-card data-testid="vote-detail-voters">
+                    <lfx-vote-voters
+                      [vote]="voteData"
+                      [commentPrompts]="commentPrompts()"
+                      [initialChoice]="votersChoice()"
+                      [initialBallotUid]="votersBallot()" />
+                  </lfx-card>
+                }
+              }
+            }
+          </div>
+
+          @if (showVoteDetails()) {
+            <lfx-vote-detail-facts [vote]="voteData" [audience]="audience()" [commentPromptCount]="commentPromptCount()" [resultsHeld]="resultsHeld()" />
+          }
+        </div>
+      }
+    </div>
+
+    <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted($event)" />
+
+    <!-- Full Results tab breakdown: generic option bars or ranked distributions, plus the vote-level abstain row. -->
+    <ng-template #resultsBody>
+      @if (loadingVoteResults()) {
+        <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
+          @for (i of [1, 2, 3]; track i) {
+            <p-skeleton width="100%" height="2.5rem" />
+          }
+        </div>
+      } @else if (voteResultsError()) {
+        <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Try reloading this page.</p>
+      } @else if (resultsHeld()) {
+        <!-- Pseudo-anonymous totals and the abstain row are held until the vote ends (#3916). -->
+        <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
+      } @else {
+        <ng-container [ngTemplateOutlet]="youVotedNote" />
+        @if (isGenericPoll()) {
+          @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
+            <div class="flex flex-col gap-3">
+              <h3 class="text-base font-semibold text-gray-900">
+                @if (questionsWithResults().length > 1) {
+                  Q{{ idx + 1 }}.
+                }
+                {{ question.question }}
+              </h3>
+              <lfx-vote-option-results
+                [options]="question.options"
+                [variant]="optionVariant()"
+                testIdPrefix="vote-detail-option-"
+                [showVoterLinks]="showNamedBallotLinks()"
+                (viewVoters)="onViewOptionVoters(question.questionId, $event)" />
+            </div>
+          }
+        } @else {
+          @for (question of rankedQuestions(); track question.questionId) {
+            <lfx-vote-ranked-question-results
+              [question]="question"
+              [variant]="audience()"
+              [showVoterLinks]="showNamedBallotLinks()"
+              (viewVoters)="onViewVoters($event)" />
+          }
+        }
+        @if (showAbstain()) {
+          <lfx-vote-abstain-result
+            [stats]="participationStats()"
+            [variant]="isVoteClosed() ? 'final' : 'live'"
+            testId="vote-detail-option-abstain"
+            [showVoterLinks]="showNamedBallotLinks()"
+            (viewVoters)="onViewAbstainedVoters()" />
+        }
+        @if (hasZeroVotes()) {
+          <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
+            {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
+          </p>
+        }
+      }
+    </ng-template>
+
+    <!-- Compact Overview results: one leader/winner line per question, with the full breakdown on the Results tab (#4450). -->
+    <ng-template #overviewResultsSummary>
+      @if (loadingVoteResults()) {
+        <div class="flex flex-col gap-3" data-testid="vote-detail-results-loading">
+          @for (i of [1, 2]; track i) {
+            <p-skeleton width="100%" height="2.5rem" />
+          }
+        </div>
+      } @else if (voteResultsError()) {
+        <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Try reloading this page.</p>
+      } @else if (resultsHeld()) {
+        <ng-container [ngTemplateOutlet]="heldPanel" [ngTemplateOutletContext]="{ $implicit: 'vote-detail-results-held' }" />
+      } @else {
+        <ng-container [ngTemplateOutlet]="youVotedNote" />
+        @if (hasZeroVotes()) {
+          <p class="text-sm text-gray-500" data-testid="vote-detail-results-empty">
+            {{ isVoteClosed() ? 'No votes were submitted.' : 'No votes recorded yet.' }}
+          </p>
+        } @else {
+          @for (line of overviewSummary(); track line.questionId; let idx = $index) {
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">
+                @if (overviewSummary().length > 1) {
+                  Q{{ idx + 1 }}.
+                }
+                {{ line.question }}
+              </h3>
+              <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
+            </div>
+          }
+        }
+      }
+    </ng-template>
+
+    <ng-template #youVotedNote>
+      @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
+        <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">Your vote is included in these results.</p>
+      }
+    </ng-template>
+
+    <!-- Held pseudo-anonymous totals, abstentions and comments (#3916); the context is the panel's data-testid. -->
+    <ng-template #heldPanel let-testId>
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 flex items-start gap-3" [attr.data-testid]="testId">
+        <i class="fa-light fa-lock text-gray-500 mt-0.5" aria-hidden="true"></i>
+        <div class="flex flex-col gap-1">
+          <p class="text-sm font-semibold text-gray-900">{{ isEnded() ? 'Totals are being finalized' : 'Totals appear when voting closes' }}</p>
+          @if (isEnded()) {
+            <p class="text-sm text-gray-700">Voting has closed. Totals, abstentions and comments will appear here once they are finalized.</p>
+          } @else {
+            <p class="text-sm text-gray-700">Totals, abstentions and comments stay hidden until voting closes.</p>
+          }
+        </div>
+      </div>
+    </ng-template>
+
+    <!-- Voter panels when results aren't shown. -->
+    <ng-template #voterStatePanel>
+      @if (impersonating()) {
+        <p class="text-sm text-gray-700" role="note" data-testid="vote-detail-impersonation-notice">
+          {{ voterState() === 'submitted' && ballotPrivacyRestricted() ? impersonationPrivateNotice : impersonationReadOnlyNotice }}
+        </p>
+      }
+      @if (myResponseError()) {
+        <lfx-card data-testid="vote-detail-voter-my-response-error">
+          <div class="flex flex-col items-center gap-2 py-8 text-center">
+            <i class="fa-light fa-triangle-exclamation text-2xl text-gray-500" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">We couldn't verify your participation</h2>
+            <p class="text-sm text-gray-600 max-w-sm">Something went wrong while checking your access to this vote. Try reloading this page.</p>
+          </div>
+        </lfx-card>
+      } @else if (voterState() === 'access_denied') {
+        <lfx-card data-testid="vote-detail-voter-access-denied">
+          <div class="flex flex-col items-center gap-2 py-8 text-center">
+            <i class="fa-light fa-lock text-2xl text-gray-500" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">You don't have access to this vote</h2>
+            <p class="text-sm text-gray-600 max-w-sm">You're not listed as a participant, or you've been removed from this vote.</p>
+          </div>
+        </lfx-card>
+      } @else if (voterState() === 'not_participant') {
+        <lfx-card data-testid="vote-detail-voter-not-participant">
+          <div class="flex flex-col items-center gap-2 py-8 text-center">
+            <i class="fa-light fa-eye text-2xl text-gray-500" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">You're not a voter on this vote</h2>
+            <p class="text-sm text-gray-600 max-w-sm">Only invited voters can cast a ballot. Results are shared with voters after the vote closes.</p>
+          </div>
+        </lfx-card>
+      } @else {
+        <lfx-card data-testid="vote-detail-voter-locked">
+          <div class="flex flex-col items-center gap-3 py-8 text-center">
+            <i class="fa-light fa-lock text-2xl text-gray-500" aria-hidden="true"></i>
+            <h2 class="text-base font-semibold text-gray-900">Results available after voting closes</h2>
+            @if (voterState() === 'submitted') {
+              <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-2" data-testid="vote-detail-voter-confirmation">
+                <i class="fa-solid fa-circle-check text-emerald-600" aria-hidden="true"></i>
+                @if ((voteData.poll_questions?.length ?? 0) > 1) {
+                  <span class="text-sm font-semibold text-emerald-900"
+                    >Your responses to {{ voteData.poll_questions?.length }} questions have been recorded</span
+                  >
+                } @else {
+                  <span class="text-sm font-semibold text-emerald-900">Your vote has been recorded</span>
+                }
+              </div>
+              @if (ballotPrivacyRestricted()) {
+                <!-- No ballot read, and no fabricated empty ballot, during private Admin Mode inspection. -->
+              } @else if (myBallotLoading()) {
+                <div class="w-full" role="status" aria-label="Loading your ballot" data-testid="vote-detail-my-ballot-loading">
+                  <p-skeleton width="100%" height="8rem" />
+                </div>
+              } @else if (myBallot(); as ballot) {
+                <lfx-vote-my-ballot [vote]="voteData" [ballot]="ballot" data-testid="vote-detail-my-ballot" class="w-full text-left" />
+              } @else if (myBallotError()) {
+                <p class="text-sm text-red-600" data-testid="vote-detail-my-ballot-error">Couldn't load your ballot.</p>
+              }
+            } @else {
+              <p class="text-sm text-gray-600 max-w-sm" data-testid="vote-detail-voter-not-voted">
+                You haven't responded to this vote yet. Totals and comments stay hidden until the vote closes.
+              </p>
+              @if (canCastVote()) {
+                <lfx-button
+                  label="Cast vote"
+                  icon="fa-light fa-check-to-slot"
+                  size="small"
+                  (onClick)="onCastVote()"
+                  data-testid="vote-detail-voter-cast-vote" />
+              }
+            }
+          </div>
+        </lfx-card>
+      }
+    </ng-template>
+  } @else {
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="mt-3 flex flex-col gap-4" data-testid="vote-detail-loading">
+        <p-skeleton width="12rem" height="2rem" />
+        <p-skeleton width="min(28rem, 100%)" height="1rem" />
+      </div>
+    </div>
+  }
+</div>

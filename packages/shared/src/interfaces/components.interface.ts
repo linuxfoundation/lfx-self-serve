@@ -309,6 +309,8 @@ export interface ButtonProps {
   badgeSeverity?: BadgeSeverityOptions['severity'];
   /** Accessibility label */
   ariaLabel?: string;
+  /** Native description idrefs. */
+  ariaDescribedBy?: string;
 }
 
 /** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
@@ -316,7 +318,7 @@ export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dia
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup; 'aria-controls'?: string; 'aria-describedby'?: string | null };
 }
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */
@@ -473,6 +475,11 @@ export interface SidebarMenuItem {
   activeOnSubpaths?: boolean;
   /** Further paths that also highlight this item, matched with the same options as `routerLink` */
   activeAliases?: string[];
+  /**
+   * Query parameters this link copies from the current address, only while the current page is an item that carries the
+   * same parameter — e.g. the Org Lens range between People and Code Contributions. Absent ones are not added.
+   */
+  carryQueryParams?: readonly string[];
   /** External URL */
   url?: string;
   /** Target for external links */
@@ -584,6 +591,8 @@ export interface PendingActionItem {
   buttonLink?: string;
   /** Optional date string for display (e.g., "Jan 15, 2025 at 10:00 AM") */
   date?: string;
+  /** ISO start time of the meeting occurrence (set on RSVP action types). Lets the client format the time in the viewer's timezone — `date` is formatted on the server, in the server's timezone. */
+  startTime?: string;
   /** Meeting UID (set on RSVP action types today; Agenda may populate this in a follow-up). Used by the dashboard to lazy-load the Meeting and render the RSVP button group inline without leaving the page. */
   meetingUid?: string;
   /** Occurrence ID for recurring meetings (set on RSVP action types today). Passed to RsvpButtonGroupComponent so the scope picker (single / this_and_following / all) can scope the response correctly. */
@@ -896,3 +905,6 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/** Neutral Marketing OS loading shapes; never a guessed domain state. */
+export type MktgSkeletonVariant = 'run-page' | 'header' | 'card' | 'rows';

@@ -247,10 +247,11 @@ describe('the export record', () => {
     expect(readMktgSlidesExportRecord('not a record')).toBeNull();
   });
 
-  it('is stale when the latest revision holds other content than the one exported', () => {
+  it('is stale when approved current holds other content than the one exported', () => {
     expect(isMktgSlidesExportStale(record(), { id: `000003-${'c'.repeat(64)}`, number: 3, contentSha256: 'c'.repeat(64) })).toBe(true);
-    // A restore of the exported revision is a newer revision with the same content: not stale.
+    // Selecting approved content identical to the export is not stale.
     expect(isMktgSlidesExportStale(record(), { id: `000003-${'d'.repeat(64)}`, number: 3, contentSha256: SHA })).toBe(false);
+    expect(isMktgSlidesExportStale(record(), null)).toBe(false);
     expect(isMktgSlidesExportStale(null, null)).toBe(false);
   });
 });

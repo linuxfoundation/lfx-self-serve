@@ -17,6 +17,7 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -43,12 +44,13 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
+import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -61,11 +63,11 @@ import { ImplementationTabComponent } from './components/implementation-tab/impl
 describe('CampaignsComponent brief persistence', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
 
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   // Restoring an unapproved brief approves the stored row. Mocked like `persistBrief` so every
   // restore test keeps a stub instead of leaving a real request pending, and defaulted to a
   // successful approval so the tests written before the approve existed still read as before.
-  let approveBrief: ReturnType<typeof vi.fn>;
+  let approveBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
@@ -1555,6 +1557,251 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
+     * #4731. A regenerated brief for an event that already has a saved one is refused as
+     * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
+     * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
+     * and ETag and re-saves the brief on screen as its owner, with the ETag as `If-Match`.
+     */
+    describe('Replace saved brief', () => {
+      let loadBrief: Mock;
+
+      function replace(): void {
+        (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
+      }
+
+      /**
+       * Saves run on a promise chain, so a save a guard failed to stop reaches the service only
+       * once that chain drains. Every "no save was sent" assertion waits for it, or it passes
+       * whether the guard exists or not.
+       */
+      async function drainSaves(): Promise<void> {
+        await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      }
+
+      function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
+        return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
+      }
+
+      beforeEach(async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+        TestBed.tick();
+        await fixture.whenStable();
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('unowned-brief-exists');
+      });
+
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        // A validator was read, so no overwrite licence is granted: the save is a real If-Match.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+        expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+        expect(state().conflict).toBeUndefined();
+      });
+
+      it('replaces with fallback permission when the read returned no ETag', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', null)));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+
+      it('replaces a stored brief this build cannot open', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('creates when the stored brief has gone since the refusal', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
+      });
+
+      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('stale-brief');
+        expect(state().message).toContain('Someone else changed this brief');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+        loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const savesBefore = persistBrief.mock.calls.length;
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(logged).toHaveBeenCalledWith('[campaigns] Failed to read the saved brief to replace it', expect.any(HttpErrorResponse));
+        logged.mockRestore();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        // '' as the refusal carries it: a null id would re-open Create for a brief still unsaved.
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('was not replaced');
+      });
+
+      it('marks an older Restore offer superseded when the replacing save fails', async () => {
+        // The read may see a version newer than the offer Planning cached. If the replace then
+        // fails, restoring that offer must not pair its older content and approval with the newer
+        // ETag this read recorded -- that would enable Create against content never shown.
+        loadBrief.mockReturnValue(of({ ...loaded('stored-1', 'W/"5"'), approved: true }));
+        persistBrief.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const tokenBefore = refreshToken();
+
+        replace();
+        await fixture.whenStable();
+        expect(refreshToken(), 'Planning was not told to re-read the row').toBeGreaterThan(tokenBefore);
+
+        const approvalsBefore = approveBrief.mock.calls.length;
+        // Read under the SAME token the replace's record took: the case a plain stamp waves through.
+        restoreAt(tokenBefore, brief, 'stored-1', true, 'W/"4"');
+        await fixture.whenStable();
+
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('changed after the copy shown here was read');
+        expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
+      });
+
+      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+        // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
+        // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        TestBed.tick();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the foundation changes while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        TestBed.tick();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('does not hand the adopted id to a save queued before the replace', async () => {
+        // Saves are serialized and read ownership when they START. A save queued before the replace
+        // adopted the stored row must not inherit that id: it was never sent with it. The epoch bump
+        // is what refuses it, as a restore's does.
+        const first = new Subject<CampaignBriefPersistResult>();
+        persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(NEVER).mockReturnValueOnce(NEVER);
+        proceed();
+        proceed();
+        await fixture.whenStable();
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        const callsBefore = persistBrief.mock.calls.length;
+
+        // Driven directly: the button is hidden while a save is in flight, so this is the guard
+        // behind that, not a path a click reaches.
+        replace();
+        first.next({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' });
+        first.complete();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls[callsBefore]).toEqual([brief, 'foundation-a', null, null, false]);
+      });
+
+      it('cancels the read when the page is destroyed', () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        fixture.destroy();
+
+        expect(read.observed).toBe(false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the brief is discarded while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        switchProgram();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('returns to idle when brief persistence turns out to be off', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'off', briefId: null });
+      });
+
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+        // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
+        // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
+        // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
+        loadBrief.mockReturnValue(of({ status: 'loaded', briefId: 'stored-1', brief: null, approved: false } as unknown as CampaignBriefLoadResult));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+    });
+
+    /**
      * A superseded save still created a row, and the next save of that event must be able to
      * name it.
      *
@@ -1943,7 +2190,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -1978,7 +2236,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2024,7 +2293,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2055,7 +2335,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2065,6 +2356,138 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
         expect(c.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * The Microsoft flight-date capability rides on the same read, asserted the same way: every
+       * other capability set the opposite way, so a component that read the wrong key would fail.
+       */
+      it('loads the microsoft schedule capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: true,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: true,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+        };
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingEnabled()).toBe(false);
+        // Per caller, read from the same answer: a root caller's yes reaches the Implement tab.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBe(true);
+      });
+
+      /** The LinkedIn upload capability, read from its own key on the same terms as the one above. */
+      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: true,
+            microsoftAssetUploadEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBeNull();
+      });
+
+      /** The Microsoft upload capability, read from its own key on the same terms as the one above. */
+      it('loads the microsoft upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: true,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBeNull();
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
@@ -2085,8 +2508,17 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // Unknown too, which the tab treats as off: no Microsoft dates, and the warning stays.
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Unknown, so the tab hides the audience section and blocks a draft that holds segments.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
         expect(c.briefCampaignsCapabilityRead()).toBe('failed');
@@ -2137,7 +2569,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2182,7 +2625,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2198,7 +2652,18 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
+          googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2230,7 +2695,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2263,7 +2739,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2291,7 +2778,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2332,7 +2830,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2374,7 +2883,18 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
+          googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2416,7 +2936,18 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
+          googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2442,7 +2973,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2470,7 +3012,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2488,7 +3041,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2515,7 +3079,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2528,6 +3103,9 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect((c as unknown as { briefCampaignsMicrosoftScheduleEnabled(): boolean | null }).briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Per caller AND per foundation: a root answer for one foundation must not carry to the next.
+        expect((c as unknown as { briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null }).briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
@@ -2551,7 +3129,18 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
+          googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2584,7 +3173,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2617,7 +3217,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2653,7 +3264,18 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
+          googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2720,7 +3342,18 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2736,7 +3369,7 @@ describe('CampaignsComponent brief persistence', () => {
 describe('CampaignsComponent brief persistence — queue state', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
   const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   beforeEach(async () => {
@@ -3410,7 +4043,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register', ctaUrl: '' };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4392,7 +5025,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       version: 1,
     };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -5672,7 +6305,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   describe('email staging trigger (LFXV2-3201)', () => {
     // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
     // not in scope here.
-    let persistBrief: ReturnType<typeof vi.fn>;
+    let persistBrief: Mock;
 
     beforeEach(() => {
       persistBrief = vi.fn();
@@ -11074,7 +11707,14 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+  const capability = (
+    biddingEnabled: boolean,
+    microsoftScheduleEnabled = false,
+    googleAudienceSegmentsEnabled = false,
+    googleGeoSearchEnabled = false,
+    metaInstagramDsaEnabled = false,
+    twitterCreateEnabled = false
+  ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11084,7 +11724,18 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       googleCreativeEnabled: false,
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
+      redditConversionPixelEnabled: false,
+      googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      microsoftAssetUploadEnabled: false,
       biddingEnabled,
+      microsoftScheduleEnabled,
+      twitterCreateEnabled,
+      metaInstagramDsaEnabled,
+      googleAudienceSegmentsEnabled,
+      googleGeoSearchEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11155,6 +11806,253 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     selectFoundation('tlf');
     await settle();
+  });
+
+  /**
+   * The Microsoft flight-date capability travels the same path into the tab: the real page reads
+   * it, binds it to `microsoftScheduleEnabled`, and the tab swaps its warning for the applied note.
+   */
+  it.each([
+    [true, 'implementation-microsoft-flight', 'implementation-microsoft-no-flight'],
+    [false, 'implementation-microsoft-no-flight', 'implementation-microsoft-flight'],
+  ])('hands a microsoft schedule capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, enabled));
+    const withMicrosoft = { ...brief, selectedPlatforms: ['microsoft-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withMicrosoft);
+    await settle();
+
+    expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /**
+   * The X create capability travels the same path into the tab: the real page reads it and binds
+   * it to `twitterCreateEnabled`, and the tab either renders the X fields or holds X behind its block.
+   */
+  it.each([
+    [true, 'implementation-twitter-budget', 'implementation-twitter-create-block-unsupported'],
+    [false, 'implementation-twitter-create-block-unsupported', 'implementation-twitter-budget'],
+  ])('hands an X create capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, enabled));
+    const withTwitter = { ...brief, selectedPlatforms: ['twitter-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withTwitter);
+    await settle();
+
+    expect(tab()['twitterCreateEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
+  it.each([[true], [false]])('hands a meta instagram/dsa capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, enabled));
+
+    page().onProceedToImplementation(brief as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['metaInstagramDsaEnabled']()).toBe(enabled);
+    expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
+  });
+
+  // === X fields across a refine ===
+
+  const withTwitter = { ...brief, selectedPlatforms: ['google-ads', 'twitter-ads'] } as unknown as CampaignBriefOutput;
+  const tweetAsset = { id: 'asset-x', mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true };
+
+  function chooseTweetImage(): void {
+    const input = q('implementation-twitter-image-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File([new Uint8Array(16)], 'tweet.png', { type: 'image/png' })] });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  /** Proceed, then type the two X fields as the operator would. */
+  async function proceedAndTypeX(b: CampaignBriefOutput = withTwitter): Promise<void> {
+    page().onProceedToImplementation(b);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+  }
+
+  /** Back to Planning, which tears the Implementation tab down: the refine round trip. */
+  async function leaveForPlanning(): Promise<void> {
+    (fixture.componentInstance as unknown as { selectTab(t: string, owner: string): void }).selectTab('planning', 'paid-marketing');
+    await settle();
+  }
+
+  /**
+   * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
+   * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
+   * generator produces replaces them. A different event's X fields must not follow. Implement is
+   * torn down between proceeds, as a refine from Planning does, so the image is restored from the
+   * carry rather than left standing on a live mount.
+   */
+  it('keeps the typed X fields and image across a same-event proceed, and drops them for another event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    await leaveForPlanning();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('42');
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    expect(tab()['twitterImageAssetName']()).toBe('tweet.png');
+    expect(tab()['twitterImageAssetBriefId']()).toBe('brief-1');
+    await leaveForPlanning();
+
+    const otherEvent = { ...withTwitter, eventDetails: { ...withTwitter.eventDetails, slug: 'other-event-2026', name: 'Other Event' } } as CampaignBriefOutput;
+    page().onProceedToImplementation(otherEvent);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['twitterImageAssetId']()).toBe('');
+  });
+
+  /**
+   * Start Over discards the brief, so a carry made by an earlier refine must go with it: the carry
+   * is what the next proceed reads once Start Over has cleared the draft.
+   */
+  it('drops a carried X draft on Start Over, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+
+    (fixture.componentInstance as unknown as { resetToPlanning(): void }).resetToPlanning();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /** New Brief discards the generated brief too, so the brief generated next is not a refine of it. */
+  it('drops the typed X fields after New Brief, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+
+    // The paid planner, not the email one: both are mounted.
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email');
+    expect(paid).toBeDefined();
+    (paid as PlanningTabComponent).reset();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
+   * A restore leaves Planning on its input step without going through `reset()`, so Scrape &
+   * Generate for the same event is the only signal that the next proceed is a new generation. The
+   * X fields typed over the restored brief must not follow onto it.
+   */
+  it('drops the typed X fields when a new brief is generated after a restore, even for the same event', async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(NEVER as never);
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null, approved: boolean, readAt: number): void;
+      }
+    ).onRestoreSavedBrief({ ...withTwitter } as CampaignBriefOutput, 'brief-1', null, true, 0);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+    await leaveForPlanning();
+
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email') as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      selectedPlatforms: { set(v: Set<string>): void };
+      canGenerate(): boolean;
+      generate(): void;
+    };
+    expect(paid).toBeDefined();
+    paid.briefForm.controls.url.setValue('https://events.example/kubecon');
+    paid.selectedPlatforms.set(new Set(['google-ads', 'twitter-ads']));
+    await settle();
+    expect(paid.canGenerate()).toBe(true);
+    paid.generate();
+    await settle();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
+   * A refine re-saves the brief, and the save clears the brief id until it answers, so the carried
+   * pending upload is parked on mount. When the save hands the same id back, the upload must be
+   * resumed, holding Create, rather than left parked with Create free to send no image.
+   */
+  it("resumes a pending X upload once a refine's delayed save returns the same brief id", async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    const service = TestBed.inject(CampaignService);
+    const upload = new Subject<typeof tweetAsset>();
+    vi.spyOn(service, 'uploadCreativeAsset').mockReturnValue(upload as never);
+    const resume = vi
+      .spyOn(service, 'resumeCreativeAssetUpload')
+      .mockImplementation(((owner: string, id: string) => (owner === 'twitter' && id === 'brief-1' ? upload : null)) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    await leaveForPlanning();
+
+    const save = new Subject<unknown>();
+    vi.spyOn(service, 'persistBrief').mockReturnValue(save as never);
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['twitterImageUploadPendingName']()).toBe('tweet.png');
+    expect(resume).not.toHaveBeenCalled();
+
+    save.next({ enabled: true, briefId: 'brief-1', etag: '"2"', created: false, approved: true });
+    save.complete();
+    await settle();
+    expect(resume).toHaveBeenCalledWith('twitter', 'brief-1');
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    expect(tab()['canSubmit']()).toBe(false);
+
+    upload.next(tweetAsset);
+    upload.complete();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+  });
+
+  /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
+  it.each([[true], [false]])('hands a google audience segments capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, enabled));
+
+    page().onProceedToImplementation({ ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
+  });
+
+  /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */
+  it.each([[true], [false]])('hands a google geo search capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+
+    expect(tab()['googleGeoSearchEnabled']()).toBe(enabled);
   });
 
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {

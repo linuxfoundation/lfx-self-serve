@@ -15,5 +15,7 @@ export class VoteParticipationCardComponent {
   public readonly stats = input.required<VoteParticipationStats>();
   /** Shows the 4th "Abstained" stat — callers pass true when the vote allows abstain or results report abstentions. */
   public readonly showAbstained = input<boolean>(false);
+  /** Pseudo-anonymous results are held (#3916): the abstention count is withheld, so the stat reads "—" rather than a false 0. */
+  public readonly abstainedHeld = input<boolean>(false);
   public readonly testId = input<string>('vote-results-participation');
 }

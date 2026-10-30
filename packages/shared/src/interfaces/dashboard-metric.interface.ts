@@ -95,6 +95,9 @@ export interface DashboardMetricCard {
   /** Color for bar chart */
   chartColor?: string;
 
+  /** Line under the chart stating its window (e.g. which months the bars cover) */
+  chartCaption?: string;
+
   // ============================================
   // Filtering & Organization
   // ============================================
@@ -166,6 +169,22 @@ export interface DashboardMetricCard {
 
   /** Flag indicating this is a membership tier metric */
   isMembershipTier?: boolean;
+}
+
+/** Availability copy displayed when a Foundation Health source has no usable measurement. */
+export interface FoundationHealthMetricStateCopy {
+  title: string;
+  description: string;
+  icon: string;
+  retryable: boolean;
+}
+
+/** Foundation Health card presentation, including headline and supporting-source availability. */
+export interface FoundationHealthMetricCard extends DashboardMetricCard {
+  unavailable: FoundationHealthMetricStateCopy | null;
+  detailsUnavailable: FoundationHealthMetricStateCopy | null;
+  /** Source to retry; it can differ from the card's drawer when only supporting data fails. */
+  retryType?: DashboardDrawerType;
 }
 
 /**

@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { NO_ERRORS_SCHEMA, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { Component, input, model, NO_ERRORS_SCHEMA, output, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -17,12 +18,21 @@ import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
-import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 import { VotesDashboardComponent } from './votes-dashboard.component';
+
+// The real drawer fetches the vote when opened; these specs only assert what the dashboard hands it.
+@Component({ selector: 'lfx-vote-cast-drawer', standalone: true, template: '' })
+class StubVoteCastDrawerComponent {
+  public readonly voteId = input<string | null>(null);
+  public readonly listVote = input<Vote | null>(null);
+  public readonly readOnly = input<boolean>(false);
+  public readonly visible = model<boolean>(false);
+  public readonly voteSubmitted = output<string>();
+}
 
 const NOW = Date.parse('2026-01-10T12:00:00Z');
 const vote = (uid: string, days: number, overrides: Partial<Vote> = {}): Vote => ({
@@ -54,6 +64,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let activeContext: WritableSignal<ProjectContext | null>;
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
+  let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -81,6 +92,7 @@ describe('VotesDashboardComponent personal summary', () => {
     activeContext = signal<ProjectContext | null>(null);
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
+    hasVotesAwaitingInvitationCount = vi.fn(() => false);
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -93,6 +105,8 @@ describe('VotesDashboardComponent personal summary', () => {
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
+            isAwaitingInvitationCount: () => false,
+            hasVotesAwaitingInvitationCount,
             getVotesCountByProject: vi.fn(() => of(20)),
             getVotesSummaryByProject: vi.fn(() => of({ active_votes: 20, closing_soon: 3, as_of: new Date(NOW).toISOString() })),
             getVoteStatusCountsByProject: vi.fn(() => of({ all: 9, active: 4, disabled: 2, ended: 3 })),
@@ -114,10 +128,10 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: MailingListService, useValue: {} },
       ],
     });
-    // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
+    // Keep the real dashboard, summary and table; only the cast drawer is stubbed.
     TestBed.overrideComponent(VotesDashboardComponent, {
-      remove: { imports: [VoteCastDrawerComponent, VoteResultsDrawerComponent] },
-      add: { schemas: [NO_ERRORS_SCHEMA] },
+      remove: { imports: [VoteCastDrawerComponent] },
+      add: { schemas: [NO_ERRORS_SCHEMA], imports: [StubVoteCastDrawerComponent] },
     });
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(VotesDashboardComponent);
@@ -141,6 +155,148 @@ describe('VotesDashboardComponent personal summary', () => {
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);
     expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const fetchPage = list.getMockImplementation()!;
+    // The first fetched page is still counting; the next one (the catch-up refetch) has converged.
+    let fetches = 0;
+    hasVotesAwaitingInvitationCount.mockImplementation((votes: Vote[]) => fetches === 1 && votes.length > 0);
+    list.mockImplementation((...args: Parameters<typeof fetchPage>) => {
+      fetches++;
+      return fetchPage(...args);
+    });
+    dashboard['fetch$'].next();
+    await settle();
+    list.mockClear();
+    counts.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).toHaveBeenCalledTimes(1);
+
+    list.mockClear();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+    await settle();
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it('re-reads the page, tab counts and total after a row-menu close, which an extend does not (#4744)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const total = vi.mocked(service.getVotesCountByProject);
+    list.mockClear();
+    counts.mockClear();
+    total.mockClear();
+
+    dashboard['onVoteExtended']();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).not.toHaveBeenCalled();
+    expect(total).not.toHaveBeenCalled();
+
+    list.mockClear();
+    dashboard['onVoteClosed']();
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).toHaveBeenCalledTimes(1);
+    expect(total).toHaveBeenCalledTimes(1);
+    expect(dashboard['currentFirst']()).toBe(0);
+  });
+
+  it('polls silently, and a failed poll keeps the rows and retries (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+    expect(rows()).toEqual(['first-page']);
+
+    const setLoading = vi.spyOn(dashboard['loading'], 'set');
+    const setSummaryLoading = vi.spyOn(dashboard['managementSummaryLoading'], 'set');
+    const setCountsLoading = vi.spyOn(dashboard['managementStatusCountsLoading'], 'set');
+    const setTotalReady = vi.spyOn(dashboard['totalCountReady'], 'set');
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    list.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(setLoading).not.toHaveBeenCalledWith(true);
+    expect(setSummaryLoading).not.toHaveBeenCalledWith(true);
+    expect(setCountsLoading).not.toHaveBeenCalledWith(true);
+    expect(setTotalReady).not.toHaveBeenCalledWith(false);
+
+    list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(rows()).toEqual(['first-page']);
+
+    // The kept rows re-arm the poll, so it retries on the next tick.
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it('clears earlier summary/count errors on a successful poll and keeps the total when a polled count fails (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const summary = vi.mocked(service.getVotesSummaryByProject);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const total = vi.mocked(service.getVotesCountByProject);
+    const succeedSummary = summary.getMockImplementation()!;
+    const succeedCounts = counts.getMockImplementation()!;
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    summary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    counts.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    dashboard['fetch$'].next();
+    dashboard['refresh$'].next();
+    await settle();
+    expect(dashboard['managementSummaryError']()).toBe(true);
+    expect(dashboard['managementStatusCountsError']()).toBe(true);
+    expect(dashboard['totalRecords']()).toBe(20);
+
+    summary.mockImplementation(succeedSummary);
+    counts.mockImplementation(succeedCounts);
+    total.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(dashboard['managementSummaryError']()).toBe(false);
+    expect(dashboard['managementStatusCountsError']()).toBe(false);
+    expect(dashboard['totalRecords']()).toBe(20);
+    expect(dashboard['totalCountReady']()).toBe(true);
+  });
+
+  it('skips a poll tick while a foreground fetch is loading, so it cannot cancel it (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+
+    // A foreground fetch (e.g. a scope or page change) is still in flight when the armed timer fires.
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const pending = new Subject<VoteListResponse>();
+    list.mockClear();
+    list.mockReturnValue(pending);
+    dashboard['fetch$'].next();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(pending.observed).toBe(true);
+    expect(dashboard['loading']()).toBe(true);
   });
 
   it('shows personal voting status in the Me lens', () => {
@@ -497,7 +653,7 @@ describe('VotesDashboardComponent personal summary', () => {
     getMyVotes.mockReturnValueOnce(
       of({ votes: feed.map((item) => (item.uid === 'soon' ? { ...item, response_status: VoteResponseStatus.RESPONDED } : item)), complete: true })
     );
-    dashboard['onVoteSubmitted']();
+    dashboard['refresh$'].next();
     await settle();
     expect(cards()[1].value).toBe(1);
     expect(rows()).toEqual(['later']);
@@ -905,98 +1061,162 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(fixture.nativeElement.textContent).toContain("Votes you've been invited to participate in will appear here.");
   });
 
-  describe('permalink target', () => {
-    const openTarget = async (target: VotePermalinkTarget | null) => {
-      fixture.componentRef.setInput('permalinkTarget', target);
-      await settle();
-    };
-    const drawers = () => ({ cast: dashboard['castDrawerVisible'](), results: dashboard['resultsDrawerVisible']() });
+  describe('opening a vote', () => {
+    let navigate: MockInstance<Router['navigate']>;
+    const drawer = (): StubVoteCastDrawerComponent | null => fixture.debugElement.query(By.directive(StubVoteCastDrawerComponent))?.componentInstance ?? null;
 
-    it('opens the cast drawer for a cast target', async () => {
-      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
-
-      expect(dashboard['selectedVoteId']()).toBe('soon');
-      expect(drawers()).toEqual({ cast: true, results: false });
+    beforeEach(() => {
+      navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     });
 
-    it('opens an initial target without reporting a close before the first render', () => {
-      const initialFixture = TestBed.createComponent(VotesDashboardComponent);
-      const closed = vi.fn();
-      initialFixture.componentInstance.permalinkClosed.subscribe(closed);
-      initialFixture.componentRef.setInput('permalinkTarget', { uid: 'soon', drawer: 'cast', audience: 'voter' });
-      try {
-        initialFixture.detectChanges();
-        TestBed.tick();
+    it("opens the cast drawer in place for an active vote awaiting the viewer's ballot (#4330)", async () => {
+      table.viewVote.emit('soon');
+      await settle();
 
-        expect(initialFixture.componentInstance['castDrawerVisible']()).toBe(true);
-        expect(initialFixture.componentInstance['resultsDrawerVisible']()).toBe(false);
-        expect(closed).not.toHaveBeenCalled();
-      } finally {
-        initialFixture.destroy();
-      }
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('soon');
+      expect(drawer()?.listVote()?.uid).toBe('soon');
+      expect(drawer()?.readOnly()).toBe(false);
     });
 
-    it('tears down permalink visibility subscriptions when the dashboard is destroyed', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget({ uid: 'soon', drawer: 'cast', audience: 'voter' });
+    it('opens the cast drawer in read-only review mode for an active vote the viewer already voted on (#4331)', async () => {
+      table.viewVote.emit('responded');
+      await settle();
 
-      fixture.destroy();
-      dashboard['castDrawerVisible'].set(false);
-      TestBed.tick();
-
-      expect(closed).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.readOnly()).toBe(true);
     });
 
-    it('opens the results drawer as creator for a results/creator target, in the Me lens', async () => {
-      await openTarget({ uid: 'not-in-feed', drawer: 'results', audience: 'creator' });
+    it.each(['missing row', 'failed refresh'])('keeps review locked after a %s', async (scenario) => {
+      table.viewVote.emit('responded');
+      await settle();
+      getMyVotes.mockReturnValueOnce(
+        scenario === 'missing row' ? of({ votes: feed.filter((item) => item.uid !== 'responded'), complete: true }) : throwError(() => new Error('503'))
+      );
+      dashboard['refreshVotes']();
+      await settle();
 
-      expect(drawers()).toEqual({ cast: false, results: true });
-      expect(dashboard['resultsAudience']()).toBe('creator');
-
-      // Another vote opened from the list falls back to the lens audience.
-      dashboard['onViewResults']('later');
-      expect(dashboard['resultsAudience']()).toBe('voter');
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('responded');
+      expect(drawer()?.listVote()).toBeNull();
+      expect(drawer()?.readOnly()).toBe(true);
     });
 
-    it('emits permalinkClosed once when the drawer closes, not when switching results → cast', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
-
-      dashboard['onCastFromResults']('soon');
+    it('clears review mode on close and opens a first ballot editable', async () => {
+      table.viewVote.emit('responded');
       await settle();
-      expect(closed).not.toHaveBeenCalled();
-      expect(drawers()).toEqual({ cast: true, results: false });
-
-      dashboard['castDrawerVisible'].set(false);
+      drawer()!.visible.set(false);
       await settle();
-      expect(closed).toHaveBeenCalledTimes(1);
+      expect(dashboard['castDrawerReadOnly']()).toBe(false);
 
-      // Re-emitting the same target never reopens the drawer, and later closes don't re-emit.
-      await openTarget({ uid: 'soon', drawer: 'results', audience: 'voter' });
-      expect(drawers()).toEqual({ cast: false, results: false });
-      dashboard['onViewResults']('later');
-      dashboard['resultsDrawerVisible'].set(false);
+      table.viewVote.emit('soon');
       await settle();
-      expect(closed).toHaveBeenCalledTimes(1);
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.voteId()).toBe('soon');
+      expect(drawer()?.readOnly()).toBe(false);
     });
 
-    it('leaves the routed dashboard unchanged without a target', async () => {
-      const closed = vi.fn();
-      dashboard.permalinkClosed.subscribe(closed);
-      await openTarget(null);
-
-      expect(drawers()).toEqual({ cast: false, results: false });
-      expect(dashboard['resultsAudience']()).toBe('voter');
-      dashboard['onViewResults']('later');
-      dashboard['resultsDrawerVisible'].set(false);
+    it('keeps a submitted ballot voted when reviewed (#4331)', async () => {
+      const loadsBeforeReview = getMyVotes.mock.calls.length;
+      table.viewVote.emit('responded');
       await settle();
-      expect(closed).not.toHaveBeenCalled();
+      expect(getMyVotes).toHaveBeenCalledTimes(loadsBeforeReview);
+      expect(drawer()?.readOnly()).toBe(true);
 
-      activeLens.set('project');
+      expect(element('votes-your-vote-responded')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-responded')?.textContent).toContain('Review');
+    });
+
+    it('opens the vote page for an ended vote from a row, and its Results on the results tab', async () => {
+      table.viewVote.emit('ended');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'ended']);
+
+      table.viewResults.emit('ended');
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'ended'], { queryParams: { tab: 'results' } });
       await settle();
-      expect(dashboard['resultsAudience']()).toBe('creator');
+      expect(drawer()?.visible()).toBe(false);
+    });
+
+    it('shows a successful ballot as voted even when the refreshed feed still awaits it', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      const callsBeforeSubmit = getMyVotes.mock.calls.length;
+      const neededBefore = cards()[1].value as number;
+
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBeforeSubmit + 1);
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(cards()[1].value).toBe(neededBefore - 1);
+      await selectSummary('needs-vote');
+      expect(rows()).not.toContain('soon');
+      await selectSummary('needs-vote');
+      // The real drawer closes itself on submit; the stub doesn't, so close it before Review.
+      drawer()!.visible.set(false);
+      await settle();
+      element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
+      await settle();
+      // Review on the just-voted row reopens the drawer to review the locked ballot (#4331), rather than navigating.
+      expect(navigate).not.toHaveBeenCalled();
+      expect(drawer()?.visible()).toBe(true);
+      expect(drawer()?.readOnly()).toBe(true);
+      expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
+    });
+
+    it('keeps accepted ballot state through a failed refresh and a stale retry', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      getMyVotes.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-load-error')).not.toBeNull();
+
+      element('votes-retry')!.querySelector<HTMLButtonElement>('button')!.click();
+      await settle();
+      expect(element('votes-load-error')).toBeNull();
+      expect(element('votes-your-vote-soon')?.getAttribute('aria-label')).toBe('Voted');
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+    });
+
+    it('marks the emitted vote UID, never another selected ballot, and retains multiple submissions', async () => {
+      table.viewVote.emit('soon');
+      await settle();
+      table.viewVote.emit('later');
+      await settle();
+      drawer()!.voteSubmitted.emit('soon');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent?.trim()).toBe('Vote');
+
+      drawer()!.voteSubmitted.emit('later');
+      await settle();
+      expect(element('votes-cast-soon')?.textContent).toContain('Review');
+      expect(element('votes-cast-later')?.textContent).toContain('Review');
+    });
+
+    it("navigates in the Project lens even for a row awaiting the viewer's ballot", async () => {
+      await management();
+      table.viewVote.emit('first-page');
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'first-page']);
+      expect(drawer()).toBeNull();
+    });
+
+    it.each(['later', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {
+      dashboard['onViewResults'](uid);
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', uid], { queryParams: { tab: 'results' } });
+    });
+
+    it.each(['vote/invalid', 'vote?invalid', 'vote#invalid'])('opens a row with %s as one vote-id segment', (uid) => {
+      table.viewVote.emit(uid);
+
+      expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
     });
   });
 });

@@ -90,4 +90,61 @@ describe('VoteRankedQuestionResultsComponent', () => {
       expect(text(el)).toBe(squash('Rank the candidates'));
     });
   });
+
+  describe('voter links (#3914, #4450)', () => {
+    const viewLink = (choiceId: string): HTMLButtonElement | null =>
+      fixture.nativeElement.querySelector(`button[data-testid="vote-results-ranked-choice-${choiceId}-view-voters"]`);
+
+    it('renders no links by default', () => {
+      render(question());
+
+      expect(viewLink('c1')).toBeNull();
+    });
+
+    it('updates the Rank 1 link when the question changes', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(question());
+      expect(viewLink('c1')?.textContent?.trim()).toBe('3');
+
+      render(
+        question({
+          choiceDistributions: [
+            {
+              choiceId: 'c3',
+              choiceText: 'Candidate Three',
+              totalRanked: 3,
+              rankCounts: [
+                { rank: 2, count: 2, percentage: 67 },
+                { rank: 1, count: 1, percentage: 33 },
+              ],
+            },
+          ],
+        })
+      );
+
+      expect(viewLink('c1')).toBeNull();
+      expect(viewLink('c3')?.textContent?.trim()).toBe('1');
+      expect(viewLink('c3')?.getAttribute('aria-label')).toBe('View the 1 voter who ranked Candidate Three first');
+    });
+
+    it('makes the Rank 1 count the link and emits the question and choice key', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(question());
+      const emitted: string[] = [];
+      fixture.componentInstance.viewVoters.subscribe((key) => emitted.push(key));
+
+      expect(viewLink('c1')?.getAttribute('aria-label')).toBe('View the 3 voters who ranked Candidate One first');
+      expect(viewLink('c2')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('[data-testid$="-view-voters"]').length).toBe(1);
+      viewLink('c1')!.click();
+      expect(emitted).toEqual(['q1:c1']);
+    });
+
+    it('keeps the Rank 2 count as plain text', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render(question());
+
+      expect(fixture.nativeElement.querySelectorAll('button').length).toBe(1);
+    });
+  });
 });

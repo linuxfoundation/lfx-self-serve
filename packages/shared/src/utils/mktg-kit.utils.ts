@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatInTimeZone } from 'date-fns-tz';
+import { enGB } from 'date-fns/locale';
 import type { FoundationMessageReport } from '../interfaces/foundation-message.interface';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_SHOW_COMING_SOON,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_KIT_STATE_LABELS,
   MKTG_KIT_EXCLUDED_DOCUMENT_KEYS,
@@ -14,10 +17,25 @@ import {
 import type { MktgDocumentListItem, MktgDocumentsResponse } from '../interfaces/mktg-document-store.interface';
 import type { MktgKitAsset, MktgKitAssetRow, MktgKitFamily, MktgKitFamilyView, MktgKitSummary, MktgKitSourcesView } from '../interfaces/mktg-kit.interface';
 
+import { isMktgFamilyAgentAvailable } from './mktg-family-actions.utils';
+
+/** The Kit catalogue owns common asset display labels. */
+export function mktgKitAssetLabel(agentKey: string): string | undefined {
+  return MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((asset) => asset.agentKey === agentKey)?.label;
+}
+
+/** Stable UTC day/month for one-off history; invalid or absent timestamps remain unknown. */
+export function mktgKitRunDate(createdAt: string | null | undefined): string {
+  const date = new Date(createdAt ?? '');
+  return Number.isFinite(date.getTime()) ? formatInTimeZone(date, 'UTC', 'd MMM', { locale: enGB }) : '—';
+}
+
 /** Render workflow states independently of their provenance (including future producer states). */
-export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'version' | 'monthlyCount'>): string {
+export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'version' | 'monthlyCount'> & Partial<Pick<MktgKitAssetRow, 'document'>>): string {
+  if (row.state === 'coming-soon') return MKTG_KIT_STATE_LABELS['coming-soon'];
   if (row.monthlyCount !== null) {
-    return row.monthlyCount > 0 ? `${row.monthlyCount} this month` : 'None yet';
+    if (row.monthlyCount > 0) return `${row.monthlyCount} this month`;
+    return row.document ? `Last run ${mktgKitRunDate(row.document.createdAt)}` : MKTG_KIT_STATE_LABELS.missing;
   }
   if (!row.state) return '';
   const label = MKTG_KIT_STATE_LABELS[row.state];
@@ -64,14 +82,22 @@ export function resolveMktgKitAsset(asset: MktgKitAsset, listing: MktgDocumentsR
     monthlyCount: null,
     badge: '',
   };
-  if (type?.kind === 'run') {
-    row.state = null;
+  if (!type?.catalogAgentId || !isMktgFamilyAgentAvailable(type.catalogAgentId)) {
+    row.state = 'coming-soon';
+  } else if (type.kind === 'run') {
+    // Listing order is not a createdAt guarantee: select the newest run without mutating it.
+    row.document = documents.reduce<MktgDocumentListItem | null>((latest, entry) => {
+      const created = Date.parse(entry.createdAt ?? '');
+      const previous = Date.parse(latest?.createdAt ?? '');
+      return !latest || (Number.isFinite(created) && (!Number.isFinite(previous) || created > previous)) ? entry : latest;
+    }, null);
+    row.state = row.document ? null : 'missing';
     row.monthlyCount = documents.filter((entry) => {
       if (!entry.createdAt) return false;
       const date = new Date(entry.createdAt);
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+      return date.getUTCFullYear() === now.getUTCFullYear() && date.getUTCMonth() === now.getUTCMonth();
     }).length;
-  } else if (type) {
+  } else {
     const living = resolveMktgKitLivingState(document);
     row.state = living.state;
     row.version = living.version;
@@ -85,14 +111,17 @@ export function isMktgKitFamilyLive(family: MktgKitFamily): boolean {
   return family.assets.some((asset) => !!kitDocumentType(asset));
 }
 
-export function resolveMktgKit(listing: MktgDocumentsResponse, now = new Date()): MktgKitFamilyView[] {
-  return MKTG_KIT_FAMILIES.map((family) => ({
+export function resolveMktgKit(listing: MktgDocumentsResponse, now = new Date(), showComingSoon: boolean = MKTG_KIT_SHOW_COMING_SOON): MktgKitFamilyView[] {
+  return MKTG_KIT_FAMILIES.filter((family) => showComingSoon || isMktgKitFamilyLive(family)).map((family) => ({
     family,
     live: isMktgKitFamilyLive(family),
     rows: family.assets
       .filter((asset) => !asset.agentKey || !MKTG_KIT_EXCLUDED_DOCUMENT_KEYS.includes(asset.agentKey))
-      .map((asset) => resolveMktgKitAsset(asset, listing, now)),
-    agents: family.agentIds.filter((id) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(id)).flatMap((id) => MKTG_AGENTS.filter((agent) => agent.id === id)),
+      .map((asset) => resolveMktgKitAsset(asset, listing, now))
+      .filter((row) => showComingSoon || row.state !== 'coming-soon'),
+    agents: family.agentIds
+      .filter((id) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(id))
+      .flatMap((id) => MKTG_AGENTS.filter((agent) => agent.id === id && (showComingSoon || agent.status === 'active'))),
   }));
 }
 
@@ -127,6 +156,8 @@ export function mktgKitSources(sidecar: Record<string, unknown> | null): MktgKit
   if (!read.length && !failed.length) return null;
   const sourceLabel = failed.length === 1 ? 'source' : 'sources';
   return {
+    readCount: read.length,
+    failedCount: failed.length,
     readText: read.length ? `Sources read on the last run: ${read.join(', ')}.` : '',
     failedText: failed.length ? `${failed.length} ${sourceLabel} failed: ${failed.map((source) => `${source.name}: ${source.reason}`).join('; ')}.` : '',
   };

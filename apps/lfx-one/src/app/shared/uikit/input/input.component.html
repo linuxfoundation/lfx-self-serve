@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px gap between label, field and message. -->
+<div class="flex min-w-0 flex-col gap-[8px]">
+  @if (label()) {
+    <label class="label-13 text-ui-neutral-600" [for]="inputId" data-testid="ui-input-label">{{ label() }}</label>
+  }
+  <div [class]="wrapperClasses()" data-testid="ui-input-wrapper">
+    @if (hasPrefix()) {
+      <span [id]="prefixId" [class]="prefixClasses()" data-testid="ui-input-prefix">
+        @if (prefixIcon()) {
+          <i [class]="prefixIcon()" aria-hidden="true"></i>
+        }
+        {{ prefixText() }}
+      </span>
+    }
+    <input
+      [id]="inputId"
+      [class]="inputClasses()"
+      [type]="type()"
+      [value]="value()"
+      [placeholder]="placeholder()"
+      [disabled]="isDisabled()"
+      [required]="required()"
+      [attr.autocomplete]="autocomplete() || null"
+      [attr.inputmode]="inputmode() || null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      [attr.aria-invalid]="error() ? 'true' : null"
+      [attr.aria-describedby]="describedBy()"
+      (input)="onInput($event)"
+      (compositionstart)="onCompositionStart()"
+      (compositionend)="onCompositionEnd($event)"
+      (blur)="onBlur()"
+      data-testid="ui-input" />
+    @if (hasSuffix()) {
+      <span [id]="suffixId" [class]="suffixClasses()" data-testid="ui-input-suffix">
+        {{ suffixText() }}
+        @if (suffixIcon()) {
+          <i [class]="suffixIcon()" aria-hidden="true"></i>
+        }
+      </span>
+    }
+  </div>
+  @if (error()) {
+    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>
+  } @else if (hint()) {
+    <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-input-hint">{{ hint() }}</p>
+  }
+</div>

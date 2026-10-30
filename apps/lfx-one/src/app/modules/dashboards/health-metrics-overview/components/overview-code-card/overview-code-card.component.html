@@ -1,0 +1,46 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-code">
+  <div overviewEmptyAction class="mt-[8px]">
+    <lfx-overview-explore-link
+      [href]="insightsUrl()"
+      label="LFX Insights"
+      leadingIcon="fa-light fa-arrow-up-right-from-square"
+      testId="overview-code-empty-insights" />
+  </div>
+
+  @if (view(); as view) {
+    <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-code-kpis" />
+
+    <div class="flex flex-col gap-[10px]" data-testid="overview-code-roles">
+      <span class="text-[13px] font-medium text-gray-700">All-time contributors</span>
+      <div class="flex h-[8px] gap-[2px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+        @for (role of view.roles; track role.key) {
+          @if (role.widthPct > 0) {
+            <span [class]="role.colorClass" [style.flex]="'0 0 ' + role.widthPct + '%'"></span>
+          }
+        }
+      </div>
+      <div class="flex flex-wrap gap-x-[16px] gap-y-[6px]">
+        @for (role of view.roles; track role.key) {
+          <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500" [attr.data-testid]="'overview-code-role-' + role.key"
+            ><span class="h-[8px] w-[8px] rounded-full" [class]="role.colorClass" aria-hidden="true"></span>{{ role.label }}
+            <span class="font-medium text-gray-900">{{ role.valueLabel }}</span></span
+          >
+        }
+      </div>
+    </div>
+
+    <div class="mt-auto flex">
+      <lfx-overview-explore-link [href]="insightsUrl()" label="Open in LFX Insights" testId="overview-code-insights" />
+    </div>
+  }
+</lfx-overview-card>

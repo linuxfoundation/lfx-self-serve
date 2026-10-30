@@ -5,6 +5,7 @@
 <div class="flex flex-col gap-4" data-testid="events-registration-forecast">
   @if (closedPeriod()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-calendar-check"
       [title]="closedTitle()"
       subtitle="There is nothing left to forecast for a period that has already ended."
@@ -19,19 +20,14 @@
     </lfx-empty-state>
   } @else if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Registration forecast unavailable"
       subtitle="We could not load the registration forecast for this foundation. Refresh the page to try again."
       data-testid="events-registration-forecast-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-registration-forecast-loading" aria-hidden="true" />
-  } @else if (response().events.length === 0) {
-    <lfx-empty-state
-      icon="fa-light fa-chart-line"
-      title="No upcoming events to forecast"
-      subtitle="There are no upcoming events to forecast. Once an event is scheduled, its projection appears here."
-      data-testid="events-registration-forecast-empty" />
-  } @else {
+  } @else if (!empty()) {
     @if (selectedEvent()) {
       <!-- Pills carry the name only; the selected event's date sits at the row's end. -->
       <div class="flex flex-wrap items-center gap-[10px]">
@@ -49,31 +45,41 @@
         <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
           <div class="flex flex-col gap-2" data-testid="events-registration-forecast-headline">
             <div class="flex items-baseline gap-2">
-              <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-value">{{ forecastLabel() }}</span>
+              <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-registration-forecast-value">{{
+                forecastLabel()
+              }}</span>
               @if (rangeLabel()) {
-                <span class="text-[11.5px] font-medium tabular-nums text-gray-500" data-testid="events-registration-forecast-range"
+                <span class="text-[12px] font-medium tabular-nums text-gray-500" data-testid="events-registration-forecast-range"
                   >{{ rangeLabel() }}<span class="sr-only"> likely range</span></span
                 >
               }
             </div>
-            <span class="text-[12.5px] text-gray-500">Forecast final registrations</span>
+            <span class="text-[12px] text-gray-500">Forecast final registrations</span>
           </div>
           <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-registration-forecast-stats">
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-500">Now</dt>
-              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-now">{{ nowLabel() }}</dd>
+              <dt class="text-[12px] text-gray-500">Now</dt>
+              <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-registration-forecast-now">
+                {{ nowLabel() }}
+              </dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-500">Same point last year</dt>
-              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-last-year">{{ lastYearLabel() }}</dd>
+              <dt class="text-[12px] text-gray-500">Same point last year</dt>
+              <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-registration-forecast-last-year">
+                {{ lastYearLabel() }}
+              </dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-500">Goal</dt>
-              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-goal">{{ goalLabel() }}</dd>
+              <dt class="text-[12px] text-gray-500">Goal</dt>
+              <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-registration-forecast-goal">
+                {{ goalLabel() }}
+              </dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-500">Days left</dt>
-              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-days-left">{{ daysLeftLabel() }}</dd>
+              <dt class="text-[12px] text-gray-500">Days left</dt>
+              <dd class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-registration-forecast-days-left">
+                {{ daysLeftLabel() }}
+              </dd>
             </div>
           </dl>
         </div>
@@ -146,7 +152,7 @@
                 (filterChange)="onFormatChange($event)"
                 data-testid="events-registration-forecast-format-toggle" />
             }
-            <span class="text-xs text-gray-500" data-testid="events-registration-forecast-today">
+            <span class="text-[12px] text-gray-500" data-testid="events-registration-forecast-today">
               today
               @if (selectedEvent()?.daysLeft !== null) {
                 &middot; {{ daysLeftPhrase() }}
@@ -161,7 +167,7 @@
             @if (curveLoading()) {
               <p-skeleton height="100%" borderRadius="0.5rem" aria-hidden="true" />
             } @else if (curveFailed() || !series()) {
-              <div class="flex h-full items-center justify-center text-sm text-gray-500" data-testid="events-registration-forecast-chart-empty">
+              <div class="flex h-full items-center justify-center text-[13px] text-gray-500" data-testid="events-registration-forecast-chart-empty">
                 @if (curveFailed()) {
                   We could not load the registration curve for this event.
                 } @else {
@@ -176,6 +182,7 @@
       </div>
     } @else {
       <lfx-empty-state
+        variant="compact"
         icon="fa-light fa-chart-line"
         title="No forecast yet"
         subtitle="None of the upcoming events has enough registration history to forecast. They are listed below until one does."
@@ -184,16 +191,16 @@
 
     <div class="flex flex-col gap-2" data-testid="events-registration-forecast-pace">
       <div class="flex items-baseline gap-2">
-        <h4 class="text-sm font-medium text-gray-900">Every upcoming event &middot; pace against goal</h4>
-        <span class="text-xs text-gray-500">worst first</span>
+        <h4 class="text-[13px] font-medium text-gray-900">Every upcoming event &middot; pace against goal</h4>
+        <span class="text-[12px] text-gray-500">worst first</span>
       </div>
-      <lfx-table [rowHover]="false" [value]="rowViews()" data-testid="events-registration-forecast-table">
+      <lfx-table styleClass="hm-table" [rowHover]="false" [value]="rowViews()" data-testid="events-registration-forecast-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Date</span></th>
-            <th scope="col" class="w-[220px]"><span class="text-xs font-medium text-gray-500">Registrations vs goal</span></th>
-            <th scope="col"><span class="text-xs font-medium text-gray-500">Status</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Event</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Date</span></th>
+            <th scope="col" class="w-[220px]"><span class="text-[12px] font-normal text-gray-500">Registrations vs goal</span></th>
+            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Status</span></th>
           </tr>
         </ng-template>
 
@@ -201,34 +208,34 @@
           <tr [attr.data-testid]="'events-registration-forecast-row-' + view.event.eventId">
             <td>
               <div class="flex flex-col gap-[2px]">
-                <span class="text-sm font-medium text-gray-900">{{ view.event.eventName }}</span>
+                <span class="text-[13px] font-medium text-gray-900">{{ view.event.eventName }}</span>
                 @if (view.event.forecastAvg !== null) {
-                  <span class="text-[11.5px] font-medium text-blue-500" [attr.data-testid]="'events-registration-forecast-available-' + view.event.eventId"
+                  <span class="text-[12px] font-medium text-blue-500" [attr.data-testid]="'events-registration-forecast-available-' + view.event.eventId"
                     >forecast available</span
                   >
                 }
               </div>
             </td>
             <td>
-              <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
+              <span class="text-[13px] tabular-nums text-gray-900">{{ view.dateLabel }}</span>
             </td>
             <td class="w-[220px]">
               <!-- The design's goal cell: the value in bold, then a small grey "/ goal", or "no goal set" under it; no bar. -->
               <div class="flex flex-col" [attr.data-testid]="'events-registration-forecast-goal-' + view.event.eventId">
-                <span class="text-sm tabular-nums">
+                <span class="text-[13px] tabular-nums">
                   <b class="font-semibold text-gray-900">{{ view.registrationsLabel }}</b>
                   @if (view.hasGoal) {
-                    <span class="text-[10px] text-gray-500"> / {{ view.goalLabel }}</span>
+                    <span class="text-[12px] text-gray-400"> / {{ view.goalLabel }}</span>
                   }
                 </span>
                 @if (!view.hasGoal) {
-                  <span class="text-[10px] text-gray-500">no goal set</span>
+                  <span class="text-[12px] text-gray-400">no goal set</span>
                 }
               </div>
             </td>
             <td>
               <span
-                class="rounded-full px-2 py-0.5 text-xs font-medium"
+                class="inline-flex h-[20px] items-center rounded-full px-[8px] text-[11px] font-medium"
                 [class]="view.statusClass"
                 [attr.data-testid]="'events-registration-forecast-status-' + view.event.eventId"
                 >{{ view.statusLabel }}</span

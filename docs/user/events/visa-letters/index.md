@@ -8,7 +8,7 @@ last_updated: 2026-10-02
 intercom_collection: Events
 ---
 
-A visa support letter helps international attendees obtain the travel documentation they need to enter the event's host country. You request a visa support letter from the **Visa Letters** tab on the My Events page.
+A visa support letter helps international attendees obtain the travel documentation they need to enter the event's host country. You request a visa support letter from the **Visa Letters** tab on the Events page.
 
 > **Note:** You can request a visa support letter only for an event you are registered for. If you have not registered yet, register for the event first, then return to request your letter.
 

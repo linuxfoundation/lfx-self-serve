@@ -9,6 +9,9 @@ import {
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
@@ -17,9 +20,11 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
-  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NEWSLETTER_VIEWS,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementAttendanceMonth,
@@ -31,6 +36,13 @@ import type {
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNewsletter,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterPeriod,
+  HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
@@ -67,6 +79,18 @@ const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTIC
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
 
+/** The summary's per-period columns this section reads, each suffixed by period. */
+const NEWSLETTER_SUMMARY_COLUMNS = [
+  'subscribers_count',
+  'subscribers_growth_pct',
+  'subscribers_growth_baseline_date',
+  'newsletters_sent_count',
+  'avg_open_rate',
+  'avg_click_rate',
+  'avg_click_to_open_rate',
+  'avg_delivery_rate',
+] as const;
+
 /** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
 
@@ -82,8 +106,8 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
 };
 
 /**
- * The project selector's scope on views that denormalize an all-projects roll-up row: a null slug
- * reads the roll-up, since summing per-project rows would double-count shared meetings and people.
+ * The optional project scope on views that denormalize an all-projects roll-up row (the page no longer sends one):
+ * a null slug reads the roll-up, since summing per-project rows would double-count shared meetings and people.
  */
 const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)';
 
@@ -146,6 +170,30 @@ interface RepresentativesRow {
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
   [periodColumn: string]: unknown;
+}
+
+interface NewsletterRow {
+  NEWSLETTER_KEY: string | null;
+  NEWSLETTER_NAME: string | null;
+  SENT_DATE: Date | string | null;
+  HAS_ENGAGEMENT_DATA: boolean | null;
+  [figureColumn: string]: unknown;
+}
+
+interface NewsletterRecipientRow {
+  NEWSLETTER_KEY: string | null;
+  NEWSLETTER_NAME: string | null;
+  SENT_AT: string | null;
+  ENGAGEMENT_RANK: number | string | null;
+  RECIPIENT_NAME: string | null;
+  ORGANIZATION_NAME: string | null;
+  DELIVERY_STATUS: string | null;
+  ENGAGEMENT_SEGMENT: string | null;
+  IS_CLICKED: boolean | null;
+  OPEN_COUNT: number | string | null;
+  LAST_OPENED_AT: string | null;
+  CLICK_COUNT: number | string | null;
+  LAST_CLICKED_AT: string | null;
 }
 
 interface MeetingParticipationRow {
@@ -342,7 +390,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug, ...levels],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null, ...levels],
       {
         view: MEETING_PARTICIPATION_VIEW,
         operation: 'get_engagement_meeting_participation',
@@ -389,7 +437,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null],
       {
         view: ATTENDANCE_MONTHLY_VIEW,
         operation: 'get_engagement_attendance_trend',
@@ -442,7 +490,7 @@ export class HealthMetricsEngagementService {
       this.snowflakeService,
       req,
       sql,
-      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null],
       {
         view: ORG_PARTICIPATION_VIEW,
         operation: 'get_engagement_org_participation',
@@ -546,7 +594,7 @@ export class HealthMetricsEngagementService {
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
     `;
 
-    const binds = [query.foundationSlug, query.projectSlug, query.projectSlug];
+    const binds = [query.foundationSlug, query.projectSlug ?? null, query.projectSlug ?? null];
     const result = await executeSnowflakeViewRead<RepresentativesRow>(this.snowflakeService, req, sql, binds, {
       view: REPRESENTATIVES_VIEW,
       operation: 'get_engagement_representatives',
@@ -567,6 +615,134 @@ export class HealthMetricsEngagementService {
     return {
       rows: rows.map(mapRepRow),
       counts: mapRepCounts(first),
+    };
+  }
+
+  /**
+   * Every period's newsletter summary and every newsletter the foundation sent, latest first by the view's rank; the
+   * period pill picks a summary and the newsletters sent in its year client-side.
+   */
+  public async getNewsletterPerformance(req: Request, query: HealthMetricsEngagementNewsletterQuery): Promise<HealthMetricsEngagementNewsletterPerformance> {
+    const summaryColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.flatMap((range) =>
+      NEWSLETTER_SUMMARY_COLUMNS.map((column) => `${column}_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]} AS ${column}_${range}`)
+    );
+    const summarySql = `
+      SELECT
+        ${summaryColumns.join(',\n        ')}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.summary}
+      WHERE foundation_slug = ?
+      -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
+      LIMIT 1
+    `;
+    const newslettersSql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        sent_date,
+        has_engagement_data,
+        audience_count,
+        failed_count,
+        unique_opens_count,
+        total_opens_count,
+        unique_clicks_count,
+        total_clicks_count,
+        open_rate,
+        click_rate,
+        click_to_open_rate
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter}
+      WHERE foundation_slug = ?
+      -- sort_rank 1 is the latest send, so a capped read keeps the newest.
+      ORDER BY sort_rank ASC NULLS LAST, newsletter_key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP + 1}
+    `;
+    const read = { operation: 'get_engagement_newsletter_performance', clientMessage: 'Newsletter performance is unavailable right now.' };
+
+    const [summary, newsletters] = await Promise.all([
+      executeSnowflakeViewRead<Record<string, unknown>>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
+        ...read,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.summary,
+      }),
+      executeSnowflakeViewRead<NewsletterRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
+        ...read,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter,
+      }),
+    ]);
+
+    const row = summary.rows[0];
+    if (!row) return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED;
+
+    const rows = this.capRows(req, newsletters.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
+      operation: 'get_engagement_newsletter_performance',
+      subject: 'newsletters',
+      noun: 'Newsletter',
+      foundationSlug: query.foundationSlug,
+    });
+
+    return {
+      measured: true,
+      periods: {
+        YTD: mapNewsletterPeriod(row, 'YTD'),
+        COMPLETED_YEAR: mapNewsletterPeriod(row, 'COMPLETED_YEAR'),
+        COMPLETED_YEAR_2: mapNewsletterPeriod(row, 'COMPLETED_YEAR_2'),
+        COMPLETED_YEAR_3: mapNewsletterPeriod(row, 'COMPLETED_YEAR_3'),
+      },
+      newsletters: rows.map(mapNewsletter).filter((newsletter): newsletter is HealthMetricsEngagementNewsletter => newsletter !== null),
+    };
+  }
+
+  /**
+   * Every recipient of the foundation's latest newsletter, most engaged first. The view ranks newsletters and
+   * recipients itself, so search and the segment cut resolve client-side. The recipient's email is never read.
+   */
+  public async getNewsletterRecipients(req: Request, query: HealthMetricsEngagementRecipientQuery): Promise<HealthMetricsEngagementNewsletterRecipients> {
+    // NTZ times are stored in UTC, so they leave as UTC ISO strings rather than through the driver's local-time Date.
+    const sql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        TO_VARCHAR(sent_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS sent_at,
+        engagement_rank,
+        recipient_name,
+        organization_name,
+        delivery_status,
+        engagement_segment,
+        is_clicked,
+        open_count,
+        TO_VARCHAR(last_opened_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_opened_at,
+        click_count,
+        TO_VARCHAR(last_clicked_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_clicked_at
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.recipients}
+      WHERE foundation_slug = ?
+        AND newsletter_sort_rank = 1
+      -- _key only breaks ties, so a capped read keeps the same people; it is never selected.
+      ORDER BY engagement_rank ASC NULLS LAST, _key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<NewsletterRecipientRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: HEALTH_METRICS_NEWSLETTER_VIEWS.recipients,
+      operation: 'get_engagement_newsletter_recipients',
+      clientMessage: 'Newsletter recipient engagement is unavailable right now.',
+    });
+
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+      operation: 'get_engagement_newsletter_recipients',
+      subject: 'newsletter recipients',
+      noun: 'Newsletter recipient',
+      foundationSlug: query.foundationSlug,
+    });
+
+    const first = rows[0];
+    const key = first?.NEWSLETTER_KEY?.trim();
+    if (!first || !key) return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED;
+
+    return {
+      newsletter: { key, name: first.NEWSLETTER_NAME?.trim() || 'Untitled newsletter', sentDate: first.SENT_AT?.slice(0, 10) ?? null },
+      recipients: rows.map(mapRecipient).filter((recipient): recipient is HealthMetricsEngagementRecipient => recipient !== null),
+      // Read one past the cap, so a longer list is told apart from one of exactly the cap.
+      truncated: result.rows.length > HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
     };
   }
 
@@ -849,6 +1025,62 @@ function mapAttendanceMonth(row: HealthMetricsEngagementAttendanceMonthRow): Hea
     attended: toNullableNumber(row.ATTENDED_COUNT),
     attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
     attendanceChangePp: toNullableNumber(row.ATTENDANCE_PCT_CHANGE_PP),
+  };
+}
+
+function mapNewsletterPeriod(row: Record<string, unknown>, range: SupportedEngagementRange): HealthMetricsEngagementNewsletterPeriod {
+  const column = (name: (typeof NEWSLETTER_SUMMARY_COLUMNS)[number]): unknown => row[`${name}_${range}`.toUpperCase()];
+
+  return {
+    subscribers: toNullableNumber(column('subscribers_count')),
+    subscribersGrowth: toNullableNumber(column('subscribers_growth_pct')),
+    growthBaselineDate: toIsoDate(column('subscribers_growth_baseline_date') as Date | string | null),
+    newslettersSent: toNullableNumber(column('newsletters_sent_count')),
+    avgOpenRate: toNullableNumber(column('avg_open_rate')),
+    avgClickRate: toNullableNumber(column('avg_click_rate')),
+    avgClickToOpenRate: toNullableNumber(column('avg_click_to_open_rate')),
+    avgDeliveryRate: toNullableNumber(column('avg_delivery_rate')),
+  };
+}
+
+/** A row without a key cannot be told apart from another, so it is dropped; an unnamed one still shows. */
+function mapNewsletter(row: NewsletterRow): HealthMetricsEngagementNewsletter | null {
+  const key = row.NEWSLETTER_KEY?.trim() ?? '';
+  if (!key) return null;
+
+  return {
+    key,
+    name: row.NEWSLETTER_NAME?.trim() || 'Untitled newsletter',
+    sentDate: toIsoDate(row.SENT_DATE),
+    hasEngagementData: row.HAS_ENGAGEMENT_DATA === true,
+    recipients: toNullableNumber(row['AUDIENCE_COUNT']),
+    failed: toNullableNumber(row['FAILED_COUNT']),
+    uniqueOpens: toNullableNumber(row['UNIQUE_OPENS_COUNT']),
+    totalOpens: toNullableNumber(row['TOTAL_OPENS_COUNT']),
+    uniqueClicks: toNullableNumber(row['UNIQUE_CLICKS_COUNT']),
+    totalClicks: toNullableNumber(row['TOTAL_CLICKS_COUNT']),
+    openRate: toNullableNumber(row['OPEN_RATE']),
+    clickRate: toNullableNumber(row['CLICK_RATE']),
+    clickToOpenRate: toNullableNumber(row['CLICK_TO_OPEN_RATE']),
+  };
+}
+
+/** A row without a rank has no place in the order and nothing to key it by, so it is dropped. */
+function mapRecipient(row: NewsletterRecipientRow): HealthMetricsEngagementRecipient | null {
+  const rank = toNullableNumber(row.ENGAGEMENT_RANK);
+  if (rank === null) return null;
+
+  return {
+    rank,
+    name: row.RECIPIENT_NAME?.trim() || null,
+    organization: row.ORGANIZATION_NAME?.trim() || null,
+    deliveryStatus: row.DELIVERY_STATUS,
+    segment: row.ENGAGEMENT_SEGMENT,
+    clicked: row.IS_CLICKED === true,
+    opens: toNullableNumber(row.OPEN_COUNT),
+    lastOpenedAt: row.LAST_OPENED_AT,
+    clicks: toNullableNumber(row.CLICK_COUNT),
+    lastClickedAt: row.LAST_CLICKED_AT,
   };
 }
 

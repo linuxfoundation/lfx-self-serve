@@ -34,6 +34,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
   const resultPayloads: (string | null)[] = [];
   await page.route('**/api/mktg-agents/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/comments')) return fulfillDocumentJson(route, { revisionId: fixture.revision.revision.id, threads: [] });
     if (path.endsWith('/stored'))
       return fulfillDocumentJson(route, {
         receipt: { project: DOCUMENT_PROJECT.uid, s3_key: 'synthetic-framework.json', version: 1, content_sha256: 'a'.repeat(64) },
@@ -58,7 +59,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
     if (path.endsWith('/documents'))
       return fulfillDocumentJson(route, {
         project: DOCUMENT_PROJECT.uid,
-        runs: ready ? [] : [run],
+        runs: generates > 0 && !ready ? [run] : [],
         groups: MKTG_DOCUMENT_TYPES.map((candidate) => ({ type: candidate, documents: [] })),
       });
     if (path.endsWith(`/documents/${type.agentKey}/living`))
@@ -71,7 +72,7 @@ export async function leaveAndReturnToAsset(page: Page, type: MktgDocumentType, 
               type,
               documentId: 'living',
               revisions: [],
-              runs: [run],
+              runs: generates > 0 ? [run] : [],
             }
       );
     if (path.endsWith(`/revisions/${fixture.revision.revision.id}`)) return fulfillDocumentJson(route, fixture.revision);

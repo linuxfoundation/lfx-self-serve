@@ -5,19 +5,14 @@
 <div class="flex flex-col gap-4" data-testid="members-tiers">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Membership by tier unavailable"
       subtitle="We could not load membership by tier for this foundation. Refresh the page to try again."
       data-testid="members-tiers-error" />
   } @else if (loading()) {
     <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-tiers-loading" aria-hidden="true" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      icon="fa-light fa-layer-group"
-      title="No membership tiers recorded yet"
-      subtitle="Once this foundation has members, each tier's members and revenue by year appear here."
-      data-testid="members-tiers-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-tiers-controls">
       <lfx-filter-pills
         variant="track"
@@ -32,7 +27,9 @@
       <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-tiers-hero">
         <div class="flex flex-col gap-2" data-testid="members-tiers-headline">
           <div class="flex items-baseline gap-2">
-            <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="members-tiers-headline-value">{{ view().headline.value }}</span>
+            <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="members-tiers-headline-value">{{
+              view().headline.value
+            }}</span>
             @if (view().headline.delta !== null) {
               <span
                 class="text-[13px] font-medium tabular-nums"
@@ -47,15 +44,15 @@
               <span class="text-[12px] text-gray-400" data-testid="members-tiers-headline-baseline">{{ view().headline.baseline }}</span>
             }
           </div>
-          <span class="text-[12.5px] text-gray-500" data-testid="members-tiers-headline-label">{{ view().headline.label }}</span>
+          <span class="text-[12px] text-gray-500" data-testid="members-tiers-headline-label">{{ view().headline.label }}</span>
         </div>
 
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-tiers-side">
           @for (stat of view().side; track stat.key) {
             <div class="flex flex-col gap-0.5" [attr.data-testid]="'members-tiers-side-' + stat.key">
-              <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
+              <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
               <dd
-                class="text-[17px] font-semibold tabular-nums"
+                class="text-[24px] font-semibold leading-[1.2] tabular-nums"
                 [class.text-emerald-600]="stat.positive"
                 [class.text-gray-900]="!stat.positive"
                 [attr.data-testid]="'members-tiers-side-' + stat.key + '-value'">
@@ -66,7 +63,7 @@
         </dl>
       </div>
     } @else {
-      <p class="text-sm text-gray-500" data-testid="members-tiers-year-unmeasured">
+      <p class="text-[13px] text-gray-500" data-testid="members-tiers-year-unmeasured">
         No tier figures are recorded for the selected period. Pick another period to see them.
       </p>
     }
@@ -77,7 +74,7 @@
         <span class="text-[12px] text-gray-400" data-testid="members-tiers-matrix-unit">{{ matrixCaption() }}</span>
       </div>
       <div class="overflow-x-auto">
-        <table class="w-full text-sm" data-testid="members-tiers-table">
+        <table class="w-full text-[13px]" data-testid="members-tiers-table">
           <caption class="sr-only">
             {{
               mode() === 'members' ? 'Members' : 'Revenue'
@@ -86,11 +83,11 @@
           </caption>
           <thead>
             <tr class="border-b border-gray-100">
-              <th scope="col" class="py-2 pr-4 text-left text-xs font-medium text-gray-500">Tier</th>
+              <th scope="col" class="py-2 pr-4 text-left text-[12px] font-normal text-gray-500">Tier</th>
               @for (year of view().years; track year.year) {
                 <th
                   scope="col"
-                  class="px-3 py-2 text-right text-xs font-medium tabular-nums text-gray-500"
+                  class="px-3 py-2 text-right text-[12px] font-medium tabular-nums text-gray-500"
                   [class.bg-gray-50]="year.isCurrent"
                   [class.font-semibold]="year.isCurrent"
                   [attr.data-testid]="'members-tiers-year-' + year.year">
@@ -109,7 +106,7 @@
                     [class.bg-gray-50]="view().years[yearIndex].isCurrent"
                     [class.font-semibold]="view().years[yearIndex].isCurrent"
                     [class.text-gray-300]="!cell.value"
-                    [class.text-gray-800]="!!cell.value"
+                    [class.text-gray-900]="!!cell.value"
                     [attr.data-testid]="'members-tiers-cell-' + tierIndex + '-' + cell.year">
                     {{ cell.label }}
                   </td>
@@ -142,7 +139,7 @@
       <div class="h-72" aria-hidden="true" data-testid="members-tiers-chart">
         <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
       </div>
-      <ul class="flex flex-wrap gap-3.5 text-[11.5px] text-gray-600" data-testid="members-tiers-legend">
+      <ul class="flex flex-wrap gap-3.5 text-[12px] text-gray-600" data-testid="members-tiers-legend">
         @for (tier of view().tiers; track tier.tier) {
           <li class="inline-flex items-center gap-1.5">
             <span class="inline-block h-2.5 w-2.5 rounded-full" [style.background-color]="tier.color" aria-hidden="true"></span>

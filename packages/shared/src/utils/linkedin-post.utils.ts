@@ -7,8 +7,14 @@ import {
   LINKEDIN_PROFILE_GAP_LABELS,
   LINKEDIN_FORM_RENDER_VERSION,
   LINKEDIN_MAX_QUESTIONS,
+  LINKEDIN_CONTENT_SOURCES,
 } from '../constants/linkedin-post.constants';
-import type { LinkedinForm, LinkedinProfile, LinkedinSetup, LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
+import type { LinkedinContentSource, LinkedinForm, LinkedinProfile, LinkedinSetup, LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
+
+/** Public navigation context only; never accept a source URL, filename or raw source as an enum. */
+export function parseLinkedinContentSource(value: unknown): LinkedinContentSource {
+  return LINKEDIN_CONTENT_SOURCES.find((source) => source.value === value)?.value ?? 'text';
+}
 
 /** Collapse line terminators and trim a single profile field. */
 export function singleLine(text: string): string {
@@ -121,7 +127,7 @@ export function renderLinkedinFormText(form: LinkedinForm, renderVersion: Linked
   ];
   if (renderVersion === 2) {
     lines.push(
-      `PROJECT SCOPE: ${quoteValue(JSON.stringify({ name: '', uid: null }))}`,
+      `PROJECT SCOPE: ${quoteValue(JSON.stringify({ name: form.project_name ?? '', uid: form.project_uid ?? null }))}`,
       renderLinkedinProfileGaps(form),
       'Read the content yourself. Ask one round only for the profile gaps listed above; no questions on feedback.',
       'A draft with non-empty PROFILE GAPS MUST return the questions before any options; the defaults below are provisional until the requester replies.'

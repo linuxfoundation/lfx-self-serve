@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -17,6 +18,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -41,6 +43,7 @@ import {
   matchesMyVotesQuickFilter,
   toAbsoluteUrl,
   votePermalinkPath,
+  votePresenterPath,
 } from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
@@ -51,6 +54,7 @@ import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -81,6 +85,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     TooltipModule,
     ConfirmDialogModule,
     EmptyStateComponent,
+    NgTemplateOutlet,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -150,11 +155,12 @@ export class VotesTableComponent {
   /**
    * Fires immediately with the confirmed vote once extendVote() succeeds (GH-3823 review, @greptile-apps) —
    * refresh.emit()'s search-index refetch can echo back a not-yet-reindexed (stale) deadline, which would
-   * otherwise leave an already-open results drawer showing the pre-extension deadline indefinitely, since its
-   * listVote input would see no change. A host feeding this table's votes into that drawer's listVote should
-   * apply this override until its own votes/refresh source catches up.
+   * otherwise leave the row showing the pre-extension deadline. A host feeding this table's votes should apply
+   * this override until its own votes/refresh source catches up.
    */
   public readonly voteExtended = output<Vote>();
+  /** Fires with the confirmed vote once a row-menu Close succeeds, so the host can refresh its status counters. */
+  public readonly voteClosed = output<Vote>();
 
   // === Forms ===
   public searchForm = new FormGroup({
@@ -168,12 +174,19 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
+  protected readonly isSendingSummary = signal(false);
   /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
   protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /**
+   * Overlays a just-closed vote onto its row as `ended`, for the same reason as `extendedDeadlines`: the index refetch can
+   * still report `active`. Evicted once the incoming `votes()` row reports a non-active status.
+   */
+  private readonly closingUids = signal<Set<string>>(new Set());
+  private readonly closedVotes = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   /**
    * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
    * here immediately rather than waiting on `refresh.emit()`'s possibly-stale search-index refetch.
@@ -184,6 +197,11 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
+  protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
+  // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
+  protected readonly actionButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'whitespace-nowrap min-h-[44px]' : 'whitespace-nowrap'));
+  protected readonly moreButtonClass: Signal<string> = computed(() => (this.isMobile() ? 'min-w-[44px] min-h-[44px]' : ''));
   protected readonly isFiltered = computed(() => {
     if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();
@@ -218,6 +236,7 @@ export class VotesTableComponent {
     toObservable(this.votes)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((votes) => {
+        this.evictClosedOverrides(votes);
         const overrides = this.extendedDeadlines();
         if (overrides.size === 0) return;
         const next = new Map(overrides);
@@ -290,6 +309,10 @@ export class VotesTableComponent {
     // other status. Gated on the vote's own writer flag, not project-level hasPMOAccess() — a
     // committee writer without project write access can still extend their own vote's deadline
     // (per @copilot-pull-request-reviewer).
+    // Present: chrome-less presenter in a new tab (#4140). Open votes show the live count, ended votes land on the result state.
+    if (vote.writer === true && (vote.status === PollStatus.ACTIVE || vote.status === PollStatus.ENDED)) {
+      items.push({ label: 'Present', icon: 'fa-light fa-presentation-screen', command: () => this.openPresenter(vote.uid) });
+    }
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Extend', icon: 'fa-light fa-calendar', command: () => this.onExtendDeadline(vote) });
       items.push({
@@ -304,12 +327,28 @@ export class VotesTableComponent {
         tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
         command: () => this.sendMailingListReminder(vote),
       });
+      items.push({ label: 'Close vote', icon: 'fa-light fa-lock', command: () => this.onCloseVote(vote) });
+    }
+    // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
+    if (vote.writer === true && vote.status === PollStatus.ENDED) {
+      items.push({
+        label: 'Send summary',
+        icon: 'fa-light fa-chart-simple',
+        disabled: this.isSendingSummary(),
+        tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
+        command: () => this.onSendSummary(vote),
+      });
     }
     if (this.hasPMOAccess()) {
       items.push({ label: 'Clone', icon: 'fa-light fa-copy', command: () => this.cloneVote(vote) });
     }
     this.rowActionMenuItems.set(items);
     menu.toggle(event);
+  }
+
+  /** Opens the presenter view in a new tab; browser-only (menu commands only run from a click). */
+  protected openPresenter(voteUid: string): void {
+    this.document.defaultView?.open(votePresenterPath(voteUid), '_blank', 'noopener,noreferrer');
   }
 
   /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */
@@ -411,6 +450,44 @@ export class VotesTableComponent {
     });
   }
 
+  /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
+  protected onSendSummary(vote: VoteTableRow): void {
+    this.confirmationService.confirm({
+      message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
+      header: 'Send summary',
+      acceptLabel: 'Send',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-info p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        this.isSendingSummary.set(true);
+        this.voteService
+          .sendVoteSummary(vote.uid)
+          .pipe(
+            take(1),
+            finalize(() => this.isSendingSummary.set(false))
+          )
+          .subscribe({
+            next: (result) => {
+              const detail =
+                result.failed_count > 0
+                  ? `Summary sent to ${result.recipient_count} voter(s); ${result.failed_count} failed.`
+                  : `Summary sent to ${result.recipient_count} voter(s).`;
+              this.messageService.add({ severity: result.failed_count > 0 ? 'warn' : 'success', summary: 'Summary sent', detail });
+            },
+            error: (error: unknown) => {
+              const isNotEnded = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === VOTE_SUMMARY_NOT_ENDED;
+              this.messageService.add({
+                severity: 'error',
+                summary: "Couldn't send summary",
+                detail: isNotEnded ? 'This vote has not closed yet.' : "We couldn't send the summary. Please try again.",
+              });
+            },
+          });
+      },
+    });
+  }
+
   protected onExtendDeadline(vote: Vote): void {
     const ref = this.dialogService.open(ExtendVoteDeadlineDialogComponent, {
       header: 'Extend Deadline',
@@ -453,6 +530,20 @@ export class VotesTableComponent {
             });
           },
         });
+    });
+  }
+
+  /** Close from the row menu: asks first, and an accept for a row that has left the list is ignored. */
+  protected onCloseVote(vote: Vote): void {
+    const uid = vote.uid;
+    this.confirmationService.confirm({
+      ...VOTE_CLOSE_CONFIRMATION,
+      accept: () => {
+        // Still listed, still open, and not already being closed: a second accept would only earn an upstream rejection.
+        const row = this.displayedVotes().find((r) => r.uid === uid);
+        if (row?.status !== PollStatus.ACTIVE || this.closingUids().has(uid)) return;
+        this.endVote(uid);
+      },
     });
   }
 
@@ -526,7 +617,11 @@ export class VotesTableComponent {
   private initDisplayedVotes(): Signal<VoteTableRow[]> {
     return computed(() => {
       const overrides = this.extendedDeadlines();
-      const allVotes = overrides.size === 0 ? this.votes() : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid) }));
+      const closed = this.closedVotes();
+      const allVotes =
+        overrides.size === 0 && closed.size === 0
+          ? this.votes()
+          : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid), ...closed.get(vote.uid) }));
 
       // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
       if (this.lazy()) {
@@ -564,6 +659,55 @@ export class VotesTableComponent {
   /** Copies the vote's lens-independent permalink; access is checked when the link is opened, so anyone who sees the row may share it. */
   private copyVoteLink(uid: string): void {
     this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
+  }
+
+  /** Ends the vote, flips its row to `ended` locally and lets the host refresh its counters; a failure leaves the row alone. */
+  private endVote(uid: string): void {
+    this.closingUids.update((ids) => new Set(ids).add(uid));
+    this.voteService
+      .endVote(uid)
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.closingUids.update((ids) => {
+            const next = new Set(ids);
+            next.delete(uid);
+            return next;
+          })
+        )
+      )
+      .subscribe({
+        next: (updatedVote) => {
+          this.closedVotes.update((map) => new Map(map).set(uid, { status: PollStatus.ENDED, early_end_time: updatedVote.early_end_time }));
+          this.voteClosed.emit(updatedVote);
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Vote closed' });
+        },
+        error: (error: unknown) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to close the vote',
+            detail: this.endErrorDetail(error),
+            life: 8000,
+          });
+        },
+      });
+  }
+
+  /** The upstream message when the BFF passed one through (409 not started, 400 past its end time), else a plain fallback. */
+  private endErrorDetail(error: unknown): string {
+    const body = error instanceof HttpErrorResponse ? (error.error as { error?: unknown } | null) : null;
+    return typeof body?.error === 'string' && body.error ? body.error : "We couldn't confirm the vote was closed. Please try again.";
+  }
+
+  /** Drops a closed overlay once the incoming row has caught up, so a vote reopened elsewhere shows its real status again. */
+  private evictClosedOverrides(votes: Vote[]): void {
+    const closed = this.closedVotes();
+    if (closed.size === 0) return;
+    const next = new Map(closed);
+    for (const vote of votes) {
+      if (next.has(vote.uid) && vote.status !== PollStatus.ACTIVE) next.delete(vote.uid);
+    }
+    if (next.size !== closed.size) this.closedVotes.set(next);
   }
 
   /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
@@ -642,7 +786,7 @@ export class VotesTableComponent {
     return {
       ...vote,
       endedEarlyTooltip,
-      participation: computeVoteRowParticipation(vote),
+      participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,
     };

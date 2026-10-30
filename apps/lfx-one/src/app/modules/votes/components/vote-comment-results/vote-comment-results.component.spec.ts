@@ -4,6 +4,9 @@
 import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
+import { VOTE_COMMENT_ANONYMOUS_NOTICES } from '@lfx-one/shared/constants';
 import { PollCommentResponse, PollCommentResult } from '@lfx-one/shared/interfaces';
 import { PaginatorState } from 'primeng/paginator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -54,7 +57,7 @@ describe('VoteCommentResultsComponent', () => {
     expect(text).toContain('Synthetic p1 comment 01');
     expect(text).toContain('Synthetic Voter 1');
     // DatePipe formats in local time; derive the expectation the same way so the spec passes in any timezone.
-    expect(text).toContain(formatDate(first.vote_creation_time, 'MMM d, y', 'en-US'));
+    expect(text).toContain(formatDate(first.vote_creation_time!, 'MMM d, y', 'en-US'));
     expect(text).toContain('(Abstained)');
     expect(el.querySelector('lfx-expandable-text.comment-text')).toBeTruthy();
   });
@@ -116,5 +119,104 @@ describe('VoteCommentResultsComponent', () => {
     expect(squash(el.textContent)).toContain(squash('Synthetic p1 comment 26'));
     expect(squash(el.textContent)).toContain(squash('Synthetic p1 comment 30'));
     expect(squash(el.textContent)).not.toContain(squash('Synthetic p1 comment 25'));
+  });
+
+  describe('pseudo-anonymous votes (#3916)', () => {
+    /** Text-only responses, as the BFF returns them for a pseudo-anonymous vote. */
+    const textOnly = (...texts: string[]): PollCommentResponse[] => texts.map((text) => ({ comment_text: text }));
+
+    it('renders text only, with no author, date, abstained label or ballot link, plus the lock notice', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      fixture.componentRef.setInput('showBallotLinks', true);
+      const el = render([result('p1', [{ ...responses('p1', 1)[0], abstained: true }])]);
+
+      expect(el.textContent).toContain('Synthetic p1 comment 01');
+      expect(el.textContent).not.toContain('Synthetic Voter 1');
+      expect(el.textContent).not.toContain('Anonymous');
+      expect(el.textContent).not.toContain('(Abstained)');
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeNull();
+      expect(el.querySelector('[data-testid^="vote-results-comment-view-ballot-"]')).toBeNull();
+      expect(byTestId(el, 'vote-results-comments-anonymous-notice')?.textContent).toContain('Pseudo-anonymous vote.');
+    });
+
+    it('keys responses with no vote_id by position, keeping duplicates and server order', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      const el = render([result('p1', textOnly('alpha', 'alpha', 'bravo'))]);
+
+      const texts = [...el.querySelectorAll('lfx-expandable-text')].map((node) => node.textContent?.trim());
+      expect(texts).toEqual(['alpha', 'alpha', 'bravo']);
+    });
+
+    it.each([
+      ['page', { first: 10, rows: 5 }, '11'],
+      ['page size', { first: 0, rows: 10 }, '01'],
+    ] as const)('resets anonymous comment expansion when the %s changes', async (_label, nextPage, expectedComment) => {
+      fixture.componentRef.setInput('anonymous', true);
+      const items = textOnly(...Array.from({ length: 20 }, (_, i) => `Synthetic comment ${String(i + 1).padStart(2, '0')}`));
+      const el = render([result('p1', items)], new Map([['p1', { first: 5, rows: 5 }]]));
+      await fixture.whenStable();
+
+      const previous = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+      previous.needsExpansion.set(true);
+      previous.isExpanded.set(true);
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('pageState', new Map([['p1', nextPage]]));
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const current = fixture.debugElement.query(By.directive(ExpandableTextComponent)).componentInstance as ExpandableTextComponent;
+      expect(current).not.toBe(previous);
+      expect(current.isExpanded()).toBe(false);
+      expect(el.querySelector('lfx-expandable-text')?.textContent).toContain(`Synthetic comment ${expectedComment}`);
+    });
+
+    it('discloses truncation without claiming recency', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      const el = render([result('p1', textOnly('alpha', 'bravo'), 5)]);
+
+      expect(byTestId(el, 'vote-results-comments-truncated-p1')?.textContent?.trim()).toBe('Showing 2 of 5 responses.');
+    });
+
+    it('shows no lock notice on a named vote', () => {
+      const el = render([result('p1', responses('p1', 1))]);
+
+      expect(byTestId(el, 'vote-results-comments-anonymous-notice')).toBeNull();
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeTruthy();
+    });
+  });
+
+  describe('voter view of a named vote (#4330)', () => {
+    it('renders text only with the voter-view notice instead of the pseudo-anonymous one', () => {
+      fixture.componentRef.setInput('anonymous', true);
+      fixture.componentRef.setInput('anonymousReason', 'voter_view');
+      const el = render([result('p1', [{ comment_text: 'Synthetic p1 comment 01' }])]);
+
+      const notice = byTestId(el, 'vote-results-comments-anonymous-notice')?.textContent?.trim();
+      expect(notice).toBe(VOTE_COMMENT_ANONYMOUS_NOTICES.voter_view);
+      expect(notice).not.toContain('Pseudo-anonymous vote.');
+      expect(el.textContent).toContain('Synthetic p1 comment 01');
+      expect(byTestId(el, 'vote-results-comment-meta')).toBeNull();
+    });
+  });
+
+  describe('ballot links (#3914)', () => {
+    it('renders no links by default', () => {
+      const el = render([result('p1', responses('p1', 2))]);
+
+      expect(byTestId(el, 'vote-results-comment-view-ballot-p1-response-1')).toBeNull();
+    });
+
+    it("links each response and emits the response's vote id", () => {
+      fixture.componentRef.setInput('showBallotLinks', true);
+      const el = render([result('p1', responses('p1', 2))]);
+      const emitted: string[] = [];
+      fixture.componentInstance.viewBallot.subscribe((voteId) => emitted.push(voteId));
+
+      const link = byTestId(el, 'vote-results-comment-view-ballot-p1-response-2')!.querySelector('button')!;
+      expect(link.getAttribute('aria-label')).toBe('View ballot of Synthetic Voter 2');
+      link.click();
+      expect(emitted).toEqual(['p1-response-2']);
+    });
   });
 });

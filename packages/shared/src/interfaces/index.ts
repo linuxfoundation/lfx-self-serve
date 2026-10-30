@@ -117,6 +117,7 @@ export * from './server-request-context.interface';
 
 // Poll interfaces
 export * from './poll.interface';
+export * from './vote-presenter.interface';
 
 // Survey interfaces
 export * from './survey.interface';
@@ -262,6 +263,8 @@ export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-document-store.interface';
+export * from './mktg-document-comments.interface';
+export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
 export * from './mktg-run.interface';
@@ -275,8 +278,13 @@ export * from './org-memberships.interface';
 export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
+export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+export * from './org-maintainer-roles.internal.interface';
+
+// Org Lens commit filters (lfx-self-serve#4164, #4322)
+export * from './org-commit-filters.interface';
 
 // Org Lens per-caller cache stored shapes (GH-1906)
 export * from './org-lens-cache.interface';
@@ -309,6 +317,7 @@ export * from './person-detail-drawer.interface';
 
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
+export * from './org-contributions.internal.interface';
 
 // Project Lens — Participating Organizations (#2091)
 export * from './project-participating-orgs.interface';
@@ -436,8 +445,13 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './mktg-family-actions.interface';
 export * from './mktg-rebuild.interface';
 export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './aeo-geo.interface';
+export * from './mktg-last-intake.interface';
+export * from './mktg-project-roles.interface';
+export * from './uikit.interface';

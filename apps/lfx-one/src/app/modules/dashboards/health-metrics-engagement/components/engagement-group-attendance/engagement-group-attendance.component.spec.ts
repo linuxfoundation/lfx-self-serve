@@ -55,6 +55,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   let fixture: ComponentFixture<EngagementGroupAttendanceComponent>;
   let getEngagementGroupAttendance: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
 
   async function render(
     payload: HealthMetricsEngagementGroupAttendance = response(),
@@ -87,6 +88,7 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     fixture = TestBed.createComponent(EngagementGroupAttendanceComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -100,6 +102,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, and renders the returned page', async () => {
@@ -107,7 +110,6 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith({
       foundationSlug: 'acme',
-      projectSlug: null,
       groupType: 'all',
       range: 'YTD',
       page: 1,
@@ -115,6 +117,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     });
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
+    expect(verdicts).toEqual([false]);
   });
 
   // The counts cover the whole filtered set, so they must come from the response, not the page rows.
@@ -161,20 +164,6 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
   });
 
-  it('re-reads the selected project from page 1, since its page came from the wider scope', async () => {
-    await render(response({ totalRecords: 80 }));
-    fixture.componentInstance['page'].set(3);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    getEngagementGroupAttendance.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ projectSlug: 'acme-core', page: 1 }));
-  });
-
   // The chips carry labels only, as the design draws them; the caption follows the selected chip.
   it('labels each chip without a count, and captions the chip-filtered total', async () => {
     const typeCounts = [
@@ -216,14 +205,6 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(emitted.at(-1)).toEqual(counts);
   });
 
-  it('says the project has no groups, rather than blaming the type chip', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }));
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
-      'No groups recorded for this project'
-    );
-  });
-
   // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is
   // precomputed against a UTC-anchored parse instead.
   it('renders the last-met date on its own calendar day, and an em dash when a group never met', async () => {
@@ -245,7 +226,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(noMeetings.textContent.trim()).toBe('No meetings this period');
     expect(noMeetings.className).toContain('text-gray-400');
     expect(noMeetings.className).toContain('font-medium');
-    expect(noMeetings.className).toContain('text-[11.5px]');
+    expect(noMeetings.className).toContain('text-[12px]');
     // The design's `.badge.b-act`: red, not the amber of a low rate.
     const badge = row.querySelector('[data-testid="engagement-group-attendance-dormant"]');
     expect(badge.textContent.trim()).toBe('Dormant');
@@ -311,13 +292,14 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
   });
 
-  it('captions an unmeasured scope with an em dash beside the empty-scope state, not "0 groups"', async () => {
+  it('settles an unmeasured scope empty, with no body, and captions it with an em dash, not "0 groups"', async () => {
     await render(response({ rows: [], totalRecords: 0, counts: null }));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain(
-      'No groups recorded for this foundation'
-    );
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).toBeNull();
+    // The filter-miss card is not the scope's empty state.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
   });
 
   // A failed read must not render the copy that asserts the foundation has no matching groups.

@@ -1,0 +1,69 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-orgs">
+  @if (view(); as view) {
+    <!-- The halves stack at 900px or narrower, as the design's viewport rule does, with no divider between them. -->
+    <div class="grid flex-1 grid-cols-1 gap-y-[32px] min-[901px]:grid-cols-2" data-testid="overview-orgs-halves">
+      @for (half of view.halves; track half.key; let first = $first) {
+        <div
+          class="flex min-w-0 flex-col gap-[14px]"
+          [class]="first ? 'min-[901px]:pr-[24px]' : 'min-[901px]:border-l min-[901px]:border-gray-200 min-[901px]:pl-[24px]'"
+          [attr.data-testid]="'overview-orgs-' + half.key">
+          <lfx-overview-kpi-strip [kpis]="half.kpis" [testId]="'overview-orgs-' + half.key + '-kpis'" />
+
+          <div class="flex flex-col gap-[12px]">
+            <span class="text-[12px] font-medium text-gray-500">{{ half.engagementLabel }}</span>
+            <div class="flex items-center gap-[20px]">
+              <svg
+                width="88"
+                height="88"
+                viewBox="0 0 88 88"
+                class="block flex-none -rotate-90"
+                aria-hidden="true"
+                [attr.data-testid]="'overview-orgs-' + half.key + '-donut'">
+                <circle cx="44" cy="44" r="36" fill="none" stroke-width="8" [attr.stroke]="strokes.track"></circle>
+                @for (segment of half.donut; track segment.key) {
+                  <circle
+                    cx="44"
+                    cy="44"
+                    r="36"
+                    fill="none"
+                    stroke-width="8"
+                    [attr.stroke]="segment.stroke"
+                    [attr.stroke-dasharray]="segment.dashArray"
+                    [attr.stroke-dashoffset]="segment.dashOffset"></circle>
+                }
+              </svg>
+              <div class="flex min-w-0 flex-1 flex-col">
+                @for (row of half.rows; track row.key; let last = $last) {
+                  <div
+                    class="grid grid-cols-[1fr_auto_40px] items-center gap-[10px] py-[7px] text-[13px]"
+                    [class]="last ? '' : 'border-b border-gray-100'"
+                    [attr.data-testid]="'overview-orgs-' + half.key + '-' + row.key">
+                    <span class="inline-flex items-center gap-[8px] font-medium text-gray-900"
+                      ><span class="h-[8px] w-[8px] rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}</span
+                    >
+                    <span class="text-right text-gray-900">{{ row.countLabel }}</span>
+                    <span class="text-right text-[12px] text-gray-400">{{ row.pctLabel }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-auto flex">
+            <lfx-overview-explore-link [link]="half.link" [testId]="'overview-orgs-' + half.key + '-explore'" />
+          </div>
+        </div>
+      }
+    </div>
+  }
+</lfx-overview-card>

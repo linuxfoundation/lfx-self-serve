@@ -67,8 +67,8 @@ export class EngagementOrgParticipationComponent {
    * read, or no foundation selected — and renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -98,10 +98,7 @@ export class EngagementOrgParticipationComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(
-      () =>
-        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`
-    ),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
@@ -140,6 +137,8 @@ export class EngagementOrgParticipationComponent {
   protected readonly counts = computed(() => this.response().counts);
   /** No rows at all means an empty scope; rows with null caption counts still render. */
   protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
+  /** The foundation has no participating organization; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.scopeEmpty());
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
     const counts = this.counts();
@@ -174,7 +173,7 @@ export class EngagementOrgParticipationComponent {
   }
 
   private initQuery(): HealthMetricsEngagementOrgQuery {
-    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', projectSlug: this.chrome.selectedProjectSlug() };
+    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '' };
   }
 
   private initResponse(): Signal<HealthMetricsEngagementOrgParticipation> {
@@ -189,7 +188,7 @@ export class EngagementOrgParticipationComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
@@ -215,7 +214,7 @@ export class EngagementOrgParticipationComponent {
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.rows.length === 0);
             })
           )
         )

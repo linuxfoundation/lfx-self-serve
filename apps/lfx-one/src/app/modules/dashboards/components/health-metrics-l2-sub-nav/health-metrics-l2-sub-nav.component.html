@@ -1,59 +1,54 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The design's `.subnav2`. Pixel sizes follow it; the 14px root makes the rem scale undershoot them. Its blues sit one
-     step lighter than ours, so its blue-50 / blue-100 / blue-800 are our blue-100 / blue-200 / blue-900. -->
-<!-- Capped to the viewport left below the sticky host's offset, so a long sub-nav scrolls itself. -->
-<nav
-  class="flex flex-col gap-[4px] lg:max-h-[calc(100vh_-_var(--l2-sub-nav-top)_-_40px)] lg:overflow-y-auto"
-  [attr.aria-label]="ariaLabel()"
-  [attr.data-testid]="testIdPrefix() + '-sub-nav'">
+<!-- The design's `.hmn`. Pixel sizes follow it; the 14px root makes the rem scale undershoot them. The rail and the
+     panel's pop-over behaviour only apply while the page is narrow — see the stylesheet. -->
+<div class="hmn-rail" aria-hidden="true" [attr.data-testid]="testIdPrefix() + '-sub-nav-rail'">
   @for (item of items(); track item.key) {
-    @let active = item.key === activeKey();
-    <button
-      type="button"
-      class="flex items-center justify-between gap-2 rounded-[8px] px-[12px] py-[10px] text-left text-[13px] leading-[1.35] transition-colors"
-      [ngClass]="active ? 'bg-blue-100 font-semibold text-gray-900' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'"
-      [attr.aria-current]="active ? 'true' : null"
-      [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key"
-      (click)="sectionPicked.emit(item.key)">
-      <span class="flex min-w-0 flex-col gap-px">
-        <span>{{ item.label }}</span>
-        @if (item.note) {
-          <span
-            class="flex items-center gap-[5px] text-[11px] font-normal leading-[1.3]"
-            [ngClass]="active ? 'text-gray-600' : 'text-gray-500'"
-            [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-note'">
-            <span class="h-[5px] w-[5px] shrink-0 rounded-full bg-red-500" aria-hidden="true"></span>
-            <span>{{ item.note }}</span>
-          </span>
-        }
-      </span>
-      @if (item.count !== null) {
-        <span
-          class="shrink-0 rounded-full px-[8px] py-px text-[11px] font-medium tabular-nums"
-          [ngClass]="active ? 'bg-blue-200 text-blue-900' : 'bg-gray-100 text-gray-500'"
-          [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
-          >{{ item.count }}</span
-        >
-      }
-    </button>
+    <span class="hmn-tick" [class.hmn-tick-active]="item.key === activeKey()"></span>
   }
+</div>
 
-  @if (crossReference(); as crossReference) {
-    <!-- Preserves query params, matching the tab bar's links. -->
-    <p
-      class="mt-[14px] border-t border-gray-200 px-[10px] pt-[12px] text-[12px] leading-[1.55] text-gray-400"
-      [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-note'">
-      {{ crossReference.text }}
-      <a
-        class="font-medium text-gray-700 underline-offset-2 hover:underline"
-        [routerLink]="[basePath, crossReference.route]"
-        [fragment]="crossReference.fragment"
-        queryParamsHandling="preserve"
-        [attr.data-testid]="testIdPrefix() + '-sub-nav-cross-reference-link'"
-        >{{ crossReference.linkLabel }}</a
-      >
-    </p>
-  }
-</nav>
+<div class="hmn-panel">
+  <div class="flex flex-col gap-[4px] border-l border-gray-200">
+    @for (item of items(); track item.key; let index = $index) {
+      @let active = item.key === activeKey();
+      <button
+        type="button"
+        class="hmn-item -ml-px flex items-center justify-between gap-[10px] border-0 border-l-2 bg-transparent py-[6px] pl-[16px] pr-0 text-left"
+        [ngClass]="active ? 'border-blue-500' : 'border-transparent'"
+        [style.--hmn-index]="index"
+        [attr.aria-current]="active ? 'true' : null"
+        [attr.aria-describedby]="item.note ? testIdPrefix() + '-sub-nav-' + item.key + '-note-text' : null"
+        [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key"
+        (click)="pick(item.key, $event)">
+        <span class="flex min-w-0 items-center gap-[6px]">
+          <!-- A hidden medium-weight copy reserves the label's width, so the active weight never shifts the row. -->
+          <span class="hmn-label inline-grid text-[13px] leading-[20px]" [ngClass]="active ? 'text-gray-900' : 'text-gray-500'">
+            <span class="[grid-area:1/1]" [ngClass]="active ? 'font-medium' : 'font-normal'">{{ item.label }}</span>
+            <span class="invisible font-medium [grid-area:1/1]" aria-hidden="true">{{ item.label }}</span>
+          </span>
+          @if (item.note) {
+            <span class="hmn-tip relative inline-flex items-center" [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-note'">
+              <i class="fa-light fa-circle-exclamation text-[13px] text-red-400" aria-hidden="true"></i>
+              <span
+                [id]="testIdPrefix() + '-sub-nav-' + item.key + '-note-text'"
+                role="tooltip"
+                class="hmn-tipbox pointer-events-none absolute bottom-[calc(100%_+_8px)] left-1/2 z-50 w-max max-w-[260px] rounded-[8px] bg-gray-900 px-[10px] py-[8px] text-left text-[12px] font-normal leading-[16px] text-white"
+                >{{ item.note }}</span
+              >
+            </span>
+          }
+        </span>
+        @if (item.count !== null) {
+          <!-- The app's single en-US locale groups thousands the same on the server and in the browser. -->
+          <span
+            class="shrink-0 rounded-full border border-gray-200 px-[7px] text-[11px] font-medium tabular-nums text-gray-600"
+            [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
+            >{{ item.count | number }}</span
+          >
+        }
+      </button>
+    }
+  </div>
+</div>

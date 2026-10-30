@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
+
 // Pure Brand Kit helpers (brand-kit-output/v2 and the questions/answers
 // turns): request validation, the draft form payload and its rendering into
 // the one text message the agent receives, the questions block the agent
@@ -25,6 +28,8 @@ import {
   BRAND_KIT_CONTRAST_GRADES,
   BRAND_KIT_DEFAULT_WEIGHTS,
   BRAND_KIT_DRAFT_HEADER,
+  BRAND_KIT_REDRAFT_HEADER,
+  BRAND_KIT_REDRAFT_INSTRUCTIONS,
   BRAND_KIT_FIELD_KEYS,
   BRAND_KIT_FORM_LINES,
   BRAND_KIT_FORM_TYPE,
@@ -56,11 +61,7 @@ import {
   BRAND_KIT_SHA256_REGEX,
   BRAND_KIT_TYPE_STEPS,
 } from '../constants/brand-kit.constants';
-import {
-  FOUNDATION_MESSAGE_ANSWER_ORIGINS,
-  FOUNDATION_MESSAGE_NONE_ANSWER,
-  FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
-} from '../constants/foundation-message.constants';
+import { FOUNDATION_MESSAGE_ANSWER_ORIGINS, FOUNDATION_MESSAGE_CONTRACT_ID, FOUNDATION_MESSAGE_NONE_ANSWER } from '../constants/foundation-message.constants';
 import { MKTG_ARTIFACT_SPECS } from '../constants/mktg-artifact.constants';
 import {
   BrandKitBookPage,
@@ -68,6 +69,7 @@ import {
   BrandKitEnvelope,
   BrandKitFormInputs,
   BrandKitFormPayload,
+  BrandKitRedraftFormPayload,
   BrandKitLogoFile,
   BrandKitLogoFileKind,
   BrandKitLogoImage,
@@ -81,6 +83,8 @@ import {
 import { MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>([...Object.values(BRAND_KIT_FIELD_KEYS), BRAND_KIT_FRAMEWORK_ANSWER_KEY]);
@@ -157,7 +161,10 @@ export function validateBrandKitIntakeAnswers(answers: unknown): BrandKitValidat
   if (!isRecord(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(answers, MKTG_INTAKE_ANSWER_LIMITS['brand-kit']);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = answers[BRAND_KIT_FIELD_KEYS.projectName];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
@@ -452,8 +459,8 @@ function renderBrandKitLogoFiles(files: BrandKitLogoFile[]): string[] {
 }
 
 /**
- * Render the draft form into the one text message the agent receives — a
- * mirror of the agent's own `renderDraft` (marketing-os-agents
+ * Render the draft or comments-only redraft into the one text message the agent receives — a
+ * mirror of the agent's own `renderDraft` / `renderRevise` (marketing-os-agents
  * `agents/brand-kit/src/form.ts`), byte-identical for the same payload;
  * brand-kit.utils.spec.ts pins renderings produced by that renderer. The
  * marker lines are load-bearing: the agent's finalize tool parses the
@@ -462,7 +469,8 @@ function renderBrandKitLogoFiles(files: BrandKitLogoFile[]): string[] {
  * fail. The BFF renders because Guild coerces a structured `agent_input` to
  * JSON text before the agent's preprocess runs.
  */
-export function renderBrandKitFormText(payload: BrandKitFormPayload, now: Date = new Date()): string {
+export function renderBrandKitFormText(payload: BrandKitFormPayload | BrandKitRedraftFormPayload, now: Date = new Date()): string {
+  if (payload.type === 'brand_kit_revise_form') return renderBrandKitRedraftText(payload, now);
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
   const lines: string[] = [
     BRAND_KIT_DRAFT_HEADER,
@@ -490,6 +498,58 @@ export function renderBrandKitFormText(payload: BrandKitFormPayload, now: Date =
   }
   lines.push('');
   lines.push(...renderBrandKitLogoFiles(payload.logo_files ?? []));
+  return lines.join('\n');
+}
+
+/** Mirror of the agent's renderRevise redraft branch; no manual-edit/check surface. */
+function renderBrandKitRedraftText(payload: BrandKitRedraftFormPayload, now: Date): string {
+  let framework = payload.messaging_framework;
+  if (
+    !isRecord(framework['mf']) &&
+    !isRecord(framework['mh']) &&
+    framework['contract'] === FOUNDATION_MESSAGE_CONTRACT_ID &&
+    isRecord(framework['content']) &&
+    (isRecord(framework['content']['mf']) || isRecord(framework['content']['mh']))
+  ) {
+    framework = framework['content'];
+  }
+  const lines: string[] = [
+    BRAND_KIT_REDRAFT_HEADER,
+    ...BRAND_KIT_REDRAFT_INSTRUCTIONS,
+    '',
+    `PROJECT NAME: ${payload.project_name}`,
+    `RUN DATE: ${payload.run_date ?? now.toISOString().slice(0, 10)}`,
+    `LFX PROJECT UID: ${payload.project_uid ?? BRAND_KIT_FORM_LINES.uidNotSupplied}`,
+    `STORED REVISION: version ${payload.prior_version}; finalize as version ${payload.prior_version + 1}`,
+    `WEBSITE: ${payload.website_url ?? BRAND_KIT_FORM_LINES.none}`,
+    `BRAND PAGE: ${payload.brand_page_url ?? BRAND_KIT_FORM_LINES.none}`,
+    '',
+    BRAND_KIT_FORM_LINES.frameworkSupplied,
+    BRAND_KIT_FORM_LINES.frameworkStart,
+    guardBrandKitText(JSON.stringify(framework, null, 2)),
+    BRAND_KIT_FORM_LINES.frameworkEnd,
+    '',
+    ...renderBrandKitLogoFiles(payload.logo_files ?? []),
+    '',
+    `REVIEW COMMENTS: ${payload.comments.length} — apply every one`,
+  ];
+  payload.comments.forEach((comment, index) => {
+    const number = index + 1;
+    lines.push(
+      `--- COMMENT ${number} ---`,
+      'PASSAGE:',
+      guardBrandKitText(comment.passage),
+      'COMMENT:',
+      guardBrandKitText(comment.comment),
+      `--- END COMMENT ${number} ---`
+    );
+  });
+  lines.push('', '--- STORED KIT (JSON) ---', guardBrandKitText(JSON.stringify(payload.kit, null, 2)), '--- END STORED KIT ---');
+  if (payload.chapters === undefined) {
+    lines.push('--- STORED CHAPTERS: none (the kit was stored as tokens only) ---');
+  } else {
+    lines.push('--- STORED CHAPTERS (JSON) ---', guardBrandKitText(JSON.stringify(payload.chapters, null, 2)), '--- END STORED CHAPTERS ---');
+  }
   return lines.join('\n');
 }
 
@@ -595,7 +655,7 @@ export function validateBrandKitAnswers(answers: unknown): BrandKitValidationRes
   }
   const errors: string[] = [];
   if (answers.length === 0 || answers.length > BRAND_KIT_ANSWER_KEYS.length) {
-    errors.push(`answers takes 1 to ${BRAND_KIT_ANSWER_KEYS.length} entries`);
+    errors.push(answers.length === 0 ? MKTG_ANSWERS_INCOMPLETE_MESSAGE : `answers takes 1 to ${BRAND_KIT_ANSWER_KEYS.length} entries`);
   }
   const seen = new Set<string>();
   answers.forEach((entry: unknown, index) => {
@@ -617,9 +677,10 @@ export function validateBrandKitAnswers(answers: unknown): BrandKitValidationRes
       seen.add(key);
     }
     const text = entry['text'];
-    if (typeof text !== 'string' || !text.trim() || FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(text.trim())) {
-      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
-    } else if (text.length > BRAND_KIT_ANSWER_MAX_CHARS) {
+    const problem = mktgAnswerProblem(text);
+    if (problem) {
+      errors.push(`${problem}: ${typeof key === 'string' ? key : at}`);
+    } else if (typeof text === 'string' && text.length > BRAND_KIT_ANSWER_MAX_CHARS) {
       errors.push(`${at}.text must be at most ${BRAND_KIT_ANSWER_MAX_CHARS} characters`);
     }
     if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(entry['origin'] as string)) {

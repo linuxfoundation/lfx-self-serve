@@ -7,6 +7,55 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Intake size boundary
+
+The Brand Kit, Messaging Framework, Boilerplates, FAQ and ICP generate endpoints
+validate intake answer lengths in the shared validators before parsing attached
+framework JSON or calling a generation service. Oversized answers return HTTP 400
+through the existing `ServiceValidationError` path; no Guild session is created.
+The policy lives in `packages/shared/src/constants/mktg-intake.constants.ts`.
+
+Limits count submitted UTF-16 code units **before trimming**, including whitespace:
+project names take up to 200 characters, individual URLs 2,048, and descriptions,
+notes and short ICP answers 4,000. The Messaging Framework's `links` answer keeps
+its existing link-count limit, with a per-URL cap and an aggregate budget allowing
+CRLF separators. Whole ICP sibling documents take up to 400,000 characters each;
+attached messaging-framework JSON keeps the existing 400,000-character limit.
+Uploaded document text and logo payloads retain their separate existing budgets.
+These intake limits do not change the chat-message or ICP-feedback size gates.
+
+## Run outcomes
+
+Catalog result controllers, except Member 360, await `GuildService.resolveRunOutcome`
+after authorization and before logging or recording their response. It only adds failure to pending/questions;
+validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
+The existing idle-runtime completion path uses failed/failureText for a final plain
+reply without an asset. Provider error events add failed/failure when no output
+arrives; both fields are additive, and terminal outcomes are never replaced.
+An error outside a tool task must settle for 30 seconds without recovery. Only
+explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
+agent text, including progress/questions, proves recovery. Status, heartbeat,
+unknown and lifecycle/completion events leave the error standing at any age.
+Tool-task errors are excluded using the `isMktgToolTaskEvent` metadata predicate.
+Queued-turn boundaries discard prior-turn errors; capped pages
+remain inconclusive rather than proving a terminal outcome.
+Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
+the five-second constant remains exported for compatibility, not recovery evidence.
+The recorded healthy stream supports immediate new-work recovery and long silent
+model turns; a recorded failed stream is still unavailable. No unverified session
+metadata probe is used. Lookup failures log a warning and preserve the result.
+Generic browser history retains versions/answers/Q&A on failure, marks session reuse
+invalid, and retries the exact failed request including feedback on a new session.
+
+Member 360's result controller is excluded from `GuildService.resolveRunOutcome`.
+Without a valid result, its terminal classifier uses root `runtime_done` or an ended
+session status; error events alone remain pending. A questions turn stays
+`needs_input` through its own root `runtime_done`; only a later reply, a newer turn's
+completion or a session end recognized by the shared questions-precedence helper
+supersedes it. A status-only ended event does not currently supersede unanswered
+questions under that helper. See the
+[Member 360 lifecycle](../frontend/marketing-os-member-360.md) for polling and recovery.
+
 ## Current is not newest
 
 Revision bundles remain immutable JSON at
@@ -20,9 +69,12 @@ only `current.json`. It does not copy a bundle or add history. One-off run
 documents refuse this action. New runs append through `recordRevision`, which
 records their current base. When current is approved, a new Draft extends the
 manifest without moving the pointer or its selection attribution. Otherwise the
-newest generation becomes current. The future comment-and-revise
-writer uses that same method with its actual `basedOnId` and comments; this
-change does not introduce a Revise endpoint or UI.
+newest generation becomes the preview selection. A comment redraft uses that
+same writer with its actual selected `basedOnId`, origin `revised`, and no automatic
+approval. Host revision `comments` stays `[]`: frozen comment IDs and resolutions
+are joined through the private descriptor and the validated agent sidecar, not
+copied into new hashed host fields. Optional `redraft-run-id` and `comment-count`
+object metadata do not change the revision's content hash.
 
 ## Conditional publication
 
@@ -82,9 +134,11 @@ plain and sidecar `readLatest` return null when none is approved. Read failures
 propagate rather than being mislabeled as missing approval. Only the server's
 true pre-revision plain fallback remains; browser runs never supply attachments.
 Explicit export selectors must match approved current or fail instead of
-silently changing bytes. `readNewestRevisionRef` deliberately retains newest
-identity for export freshness comparison, so an approved export can be out of
-date when a newer Draft exists.
+silently changing bytes. Asset export freshness compares the last deck's content
+hash with approved current via `readApprovedCurrentSummary`, not the newest Draft.
+The existing `latestRevision` response field carries that approved identity, or
+null when none is approved (no stale badge). Selecting older approved content can
+also mark a deck out of date; revision number alone never determines freshness.
 
 ### Family exports
 
@@ -110,17 +164,20 @@ separate from document records, with the deck id/link, mode/date and each member
 revision id, number and content hash. Update uses only the stored family's last deck
 id; Create makes a new deck. Polling keeps the originally selected revisions even
 if approval moves, and the server finishes polling when the browser leaves.
+Recording a finished document or family export integrity-checks its start revision without requiring today's approved current to be readable; last-family freshness still fails closed if approved current is unreadable.
 Freshness compares exact approved member/ref sets, including lost or newly gained
 approvals and restored older revisions. A new Draft alone does not stale a family
 export. No personal identity is written into export records.
 
 The Family page eagerly checks last export independently of its document-list read.
 A failed check disables export rather than guessing Create. Download PDF composes
-the existing approved framework print and kit book, in exporter order, using the
-family print body class and each rendering's named page size. Boilerplates and FAQ
-are provisionally omitted from PDF because no print layouts exist; the UI says so.
-Slides still exports those approved assets. Neither export changes the on-screen
-asset rendering or grants Google Drive access.
+the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
+with one family cover and contents. The family print body class selects a shared
+portrait layout. Family and standalone kit PDFs use the same five-chapter native
+portrait component, not scaled landscape artwork; the existing kit JSON/book view
+model supplies its text and embedded logo assets without new API fields.
+Slides exports the same supported approved assets.
+Neither export changes the on-screen asset rendering or grants Google Drive access.
 
 ### Asset approval UI
 
@@ -205,6 +262,56 @@ The pre-revision artifact compatibility write carries `revision-managed`
 metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
 their leftover artifact.
 
+## Last scalar intake
+
+A separate private snapshot remembers the registered scalar fields of the latest accepted
+Generate. Active living agents keep the shared per-project key
+`document-last-intake/{project}/{agentKey}.json`: another writer of the same project
+can restore those inputs, including existing records, with no migration or extra subject
+check beyond the project-writer grant. LinkedIn instead uses
+`document-last-intake/{project}/linkedin-post/{sha256(effectiveSub)}.json`: only that writer's
+record is read, the subject is hashed (never raw in the key), and a missing subject cannot
+read a snapshot. Older per-project LinkedIn records are ignored, never read, shown or
+migrated. LinkedIn's explicit `lastIntakeFields` allowlist contains source kind, selected
+pasted text or URL, and share link; see [LinkedIn](./mktg-linkedin-post.md).
+Both schemes use the existing `marketing-os-artifacts` purpose and server-resolved project partition.
+Per-writer last intake is kept 30 days; expired siblings are deleted on every LinkedIn read or write of the project, using listing timestamps without reading their bodies. All of a writer's snapshots are deleted when the writer deletes their LinkedIn profile. Cleanup is best-effort with count-only warnings. The existing `startedAt` expiry on read remains for every supported agent, including shared per-project records.
+The BFF starts this best-effort write only after sending the Generate acknowledgement;
+a stalled or rejected snapshot never delays that acknowledgement. Explicitly submitted
+blank fields are retained; absent fields are not invented as last-run answers.
+Dependency attachment answer keys are excluded and dependencies must be resolved afresh,
+not replayed from this snapshot. If LinkedIn's projected record exceeds
+`MKTG_LAST_INTAKE_MAX_BYTES`, the service writes the current metadata without
+`content_text` (never truncated text), replacing older inputs rather than restoring run N-1.
+The source page asks the writer to paste that omitted text again; uploads are never retained.
+
+This mutable key is deliberately last-PUT-wins, without CAS, LIST or chronological
+conflict resolution. It holds run ID and start time, scalar answers, and document/logo
+counts only; the body does not retain an author identifier because there is no audit consumer.
+Existing living-agent snapshots with the former author field remain readable, but that field is ignored
+and never projected in the response; this does not permit reading old per-project LinkedIn records. It never stores uploaded bytes,
+extracted source text, source filenames, Guild sessions or capability tokens.
+`GET /api/mktg-agents/intakes/:agentKey/last?project=<uid>` is writer-gated and
+`private, no-store`; its explicit DTO exposes answers and counts only. Confirmed
+absence returns `{ intake: null }`; failed or malformed reads return an error,
+not absence. A failed post-start snapshot write warns without rejecting the
+already accepted Generate, avoiding a retry that could create a second session.
+There is no historical backfill, new source-file store or attachment-reuse claim.
+
+## Answers validation
+
+The shared `mktgAnswerProblem` guard rejects blank text and the existing non-answer tokens for
+kit and LinkedIn answer transports. Only LinkedIn's stable `avoid` question accepts literal
+`none`; its client applies the exemption to that question, not the whole route. Validators
+retain their origin/id/uniqueness and length limits; invalid answers return a plain 400 before
+sending or resuming a session. AEO/GEO retains its explicitly approved non-empty compatibility
+policy until the agent supplies a stable exclusion-question id; empty/whitespace HTTP submissions fail.
+The HTTP guard `isAeoGeoSubmittedAnswers` is separate from the agent-protocol shape guard
+`isAeoGeoAnswers`: empty frames/text remain valid for byte-exact rendering and internal retry handling.
+Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.
+The current main run record does not store asked questions, so complete-turn coverage for kit,
+LinkedIn and AEO/GEO is a follow-on once that server-side evidence is available, not inferred here.
+
 ## Durable started runs
 
 Starts use the same private purpose, at
@@ -213,18 +320,91 @@ project, registered agent, document, private Guild session and opaque `creatorSu
 Owner tokens are never written; legacy missing subjects mean unattributed writes.
 Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
 retry/answers budget origin, answered questions id, prior revision, persist retry count,
-`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
-concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
-This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
-conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
-The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+`failure-text`, optional `failure-reason` (an allow-listed server-classified code, never agent prose),
+`revision-id` and state. Result transitions now use the ETag captured with the record GET and a
+conditional replacement of both body and metadata. The transition predicate is rechecked against current metadata before the ETag write, so a closure observed during a result read cannot be overwritten by its stale snapshot. State/budget changes also change the JSON bytes,
+so a metadata-only S3 update cannot leave a stale claim token valid. A losing result poll re-reads the
+winner instead of replacing its completion or reopening answered questions. Existing-session ACK renewals also conditionally replace the observed body/ETag, advancing attempt/budget bytes so a held older result cannot overwrite the renewed attempt or ledger after its last metadata check. Initial session admission retains its separate reservation limitation; this does not make the one-active-run guard atomic.
+The record's identity stays bound; the optional `pendingQuestions` body field captures the private run's
+current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including each question's
+`suggestedAnswer` and `basis`, and is cleared when leaving questions. Absent-field legacy records retain
+the existing schema and acquire the field on their next observed question turn. Question-body writes
+retain the existing transition predicate and use the same conditional record replacement as result transitions.
+Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
+with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,
-Started, state and plain-text failure text (agent reply or server-authored deadline /
-storage-exhaustion reason); no session capability or starter identity is exposed.
+Started, state, optional filtered public activity, optional `failureReason` on failed runs only,
+and plain-text failure text (agent reply or server-authored deadline / storage-exhaustion reason);
+no session capability, starter identity or private completion context is exposed.
+Activity is read from the domain result's existing sanitized feed, not retained raw events or reasoning,
+and is projected only when the effective reader is the stored original creator. Other project writers
+see the same progress card without activity. Member 360 also applies its stored-envelope contact/email
+redactor to activity labels/details before returning them, including to the creator.
 
-States are `writing`, `questions`, `storing`, `failed`, `completed` and
-`superseded`. Questions pause the writing deadline until accepted answers renew
+`POST /api/mktg-agents/runs/:runId/answers` accepts `{ project, questionsId, answers: MktgRunAnswer[] }`.
+A canonical project writer may answer another writer's **living kit-document** run: the BFF resolves the
+private session from the project-scoped record and validates the answers through the registered intake.
+Before sending to Guild it checks the canonical active slot, then conditionally claims the exact `questions` state and matching questions id. On that same claim snapshot, answers must cover every stored question key exactly once with no extras; a bad set returns a field validation error without writing or consuming the turn. The claim is committed by
+writing `state: 'writing'`, `answeredQuestionsId`, private effective-subject `answeredBy` and ISO `answeredAt`.
+Only one observed ETag wins. A lost/stale claim is 409 `MKTG_RUN_ANSWERED`, with response-only
+`{ runId, questionsId, answeredBy, answeredAt }`: `answeredBy` is a resolved display name or null, never
+the stored subject, and `answeredAt` is ISO or null for unknown legacy attribution. The message is
+“Already answered by <name>”, or “Already answered” when no name is available. Public progress immediately
+reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
+back the claim because delivery may be uncertain; it must not invite a second answers message.
+The four kit creator-token answer endpoints require project and questions id and use this same claim
+before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
+No client owner token or session id is trusted or returned by the public route; the ACK is
+only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
+creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
+question turn only after a current canonical writer grant, never for a viewer or a one-off; creator
+identity alone is not a grant. Unknown access omits the payload rather than disclosing it.
+
+The server `start` method's trailing argument is a typed `MktgDocumentRunStartOptions`
+object, with DISTINCT optional `oneOff` and `basedOnId` fields. `startForOneOff` passes
+`{ oneOff: context }`; the comments redraft service passes `{ basedOnId: revisionId }`
+on both initial submission and ACK replay. A revision ID is never parsed as one-off
+completion data. The captured one-off body and the existing redraft
+`prior-revision-id` semantics stay separate; neither field populates the other.
+
+Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
+LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
+then call `startForOneOff` before returning an opaque `runId` alongside their existing response.
+The destination is the exact session-derived `run-…` document ID, never `living`;
+separate one-off sessions cannot supersede each other's progress. Plain writer-entitled
+Documents reads dispatch to the existing domain result service and persist the same revision
+without any browser cache or owner token. Completion checks the exact receipt's project,
+agent and document. The domain writer receives the original opaque creator attribution,
+not the reading visitor's identity.
+
+LinkedIn's immutable private start also retains validated link answers, source word count and
+whether profile initialization was allowed at Generate. Reconciliation initializes only the
+original creator's profile, never a visitor's; impersonation still disables initialization.
+No profile inputs are stored in tracking or projected with progress. Answers ACK renews the same
+tracked session. Member 360 maps `needs_input` to questions without failure text: its question text is
+never exposed and it has no answers endpoint. A Member 360 pause never expires by the clock;
+writing also stays open until Guild reports a session end. Only that session end fails the run,
+not the local writing deadline. The automatic poll window still stops checks without marking
+failure; a plain refresh/reopen read checks Guild again, so the run remains readable.
+Its ready result carries the shared exact persistence receipt as well as the existing `stored`
+flag; existing clients remain compatible.
+
+Every Generate or new catalog chat checks stored `writing`/`questions`/`storing` records: living slots use project + type + documentId; one-off slots use creator + type within the project, never another creator's run. A 409 `MKTG_RUN_ACTIVE` returns `activeRunId`, `state`, `agentKey`, `documentId`, `message`, `startedBy` (resolved only on conflict, fallback 'Another writer', response-only); stale discard ids get the same conflict.
+Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Each successful discard writes an INFO `mktg_run_discard` audit with the project/run/document/agent IDs, opaque actor and creator subjects, a self-discard flag and closure time; names, emails and session capabilities are excluded. The known actor is persisted as private `closed-by` metadata with `closed-at`, never copied into the public display-name field. A refused/replayed metadata transition does not emit a new discard audit. No replacement ID is known at this pre-create step. Discarded runs are excluded from listing progress and skipped before body/Guild reads during reconciliation.
+The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids. An explicitly selected active run is read and reconciled independently of the 128-entry navigation window, so Open it can reach an older uncached active record. A row already reconciled in the current snapshot avoids a duplicate Guild call; selected closed markers retain the lightweight metadata-only result path. After a selected run's result reconciliation, a newly observed discarded/superseded state wins over the old active snapshot, including when a pending result did not need a metadata write.
+Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
+Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Explicit null creators remain in the unknown-creator slot, never the retrying writer's slot. Catalog chat follow-ups check the stored session before sending: discarded/superseded sessions return `MKTG_RUN_CLOSED` (409), and a different active run in the slot returns `MKTG_RUN_ACTIVE`. Only the verified continuing session is exempt from its own slot check. The same pre-send check now protects Brand Kit, Framework, Boilerplates, FAQ and LinkedIn answers in this PR alone, with required project authorization; omitting project cannot skip it. The shared check recognizes creator-scoped tracked one-offs as well as living documents. The companion #4592 exact-turn answer claim remains the stronger conditional-write belt. Turn tracking also rejects retired records and excludes retired metadata from its write predicate, so a late follow-up cannot reopen them. This does not add a cross-writer atomic reservation to the existing HEAD/check/PUT store. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
+
+A validated Generate 409 opens a scoped confirmation: living intakes name the starter; dedicated LinkedIn and Member 360 intakes say "Your … run is in progress". "Open it" navigates to the returned document/run; "Discard and start over" resends the exact submitted body with only `discard: activeRunId` added. Catalog bodies and conflict handoffs are same-visit memory only, never persisted as future discard permission or uploaded bytes. If that body cannot be replayed safely after reload, the intake asks for review/reattachment and another explicit Create. Context or identity changes invalidate the old dialog's actions. The shared guard re-sends the retained start without `discard` on open, visible timer checks and focus: a fresh 409 updates the same dialog's ownership/time and choices; an accepted start closes it, announces “The earlier run has finished — yours started.” and follows the normal start flow. Choices stay disabled while checking; focus never overlaps or cancels an in-flight start POST, and an uncertain non-409 ACK stops automatic retries rather than risking a second start.
+
+Document and run-page detail reads forward the optional validated `run` selector to read that record's closed marker without a Guild lookup, on navigation and timer reads. Only selected details project `discarded`/`superseded`, with `closedAt` from closure metadata when recorded. A selected `completed` run with a valid matching stored receipt instead projects `producedRevisionId`, taken from the tracker's `revision-id` metadata, so a public follower can identify the exact produced revision rather than infer it from the document's current selection. Completion markers contain no identity enrichment, activity, questions or failure prose; ordinary listings still omit them. No destination is projected before completion or without a matching stored receipt. Both surfaces use one closure-message component. `closedBy` is a cheaply resolved display name or null, never the private subject/email; legacy unknown actors remain null. The raw scoped closure-marker helper remains attribution-free; only selected HTTP progress enriches its display-name field. `replacedBy` is supplied only when the already-read progress contains a newer run of the same type and document, without extra listing/Guild work or a guessed replacement. The document link opens that exact replacement when supplied; otherwise it says “View started runs” and opens the project's Documents/Started runs list. Closed views have no polling, feed, stepper or retry; the run page does not infer completion from a discarded row. Listings continue to omit closed records. A selected closed marker also cancels the document receiver's matching prepared/recovery stream and prevents late questions or result events from navigating away from that closed view. Both the shared living reader and the direct one-off receiver process closure metadata before attempting a revision-body read, so a body 503 cannot restore the previous active snapshot.
+
+The revision write and the later tracker-completed transition are separate, non-atomic writes (an observed hand-test interval was approximately 0.56 seconds). `producedRevisionId` is available only after the tracker records completion; it does not close that interval or add a cross-object reservation. Receipt-aware admission/atomicity hardening remains a follow-up.
+
+States are `writing`, `questions`, `storing`, `failed`, `completed`, `superseded` and
+`discarded`. Answerable questions pause the writing deadline until accepted answers renew
 the same attempt, preserving Started. Only a successful Guild lookup can spend
 the writing deadline. A ready receipt equal to the prior attempt's revision is
 not fresh completion evidence: it follows the pending path and can exhaust the
@@ -234,17 +414,21 @@ matching late receipt can finish a failed attempt on a creator poll or explicit
 detail refresh. Effective start/run-id order retires older same-document runs.
 Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
 Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
-creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+creator attribution (legacy unknown), never the visitor. It also uses the shared Guild outcome
+resolver with an internal catalog-resolved result endpoint; the visiting Documents Request is
+not mutated. A settled runtime failure becomes failed before the writing deadline, projecting
+only the classifier's fixed safe reason as failureText, never provider payloads. Controller calls
+without that optional endpoint keep their existing registered-route behaviour. Retry checks the exact stored session;
 it creates no generation and does not change the document's current pointer.
 
 The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
 the newest-mtime **128-record discovery window**, with concurrency four per operation for both
 navigation reconciliation and Generate's supersede scan. Both paths HEAD first
-and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
+and skip completed/superseded/discarded bodies; Generate GETs unfinished/failed candidates
 only. A per-process **256-entry LRU terminal key/mtime cache** skips repeated terminal reads;
 it is disposable, invalidated on writes/mtime changes and never an authority.
 Fresh write timestamps are not memoized within S3's current write second. Failed,
-completed and superseded runs are not automatically queried against Guild.
+completed, superseded and discarded runs are not automatically queried against Guild.
 Failures keep a UTF-8/base64 snapshot capped at 768 source bytes, within object
 metadata's size budget; one scoped detail-navigation refresh can return the full
 reply. Errors are isolated per record. Terminal-record pruning/TTL is a follow-up;
@@ -292,9 +476,7 @@ Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,
 CAS publication, current selection and attribution stay on the shared writer.
-`getRawEventPayloads` replaces user/trigger content with
-`mktg_session_turn_started`; a full unfiltered page appends
-`mktg_session_events_truncated`. These content-free markers prevent an old
+`getRawEventPayloads` reads up to four offset pages of 500 raw events, stopping on a short page or `has_more=false`. It de-duplicates event IDs and sorts chronologically, then replaces user/trigger content with `mktg_session_turn_started`. Only a four-page read that still has more events appends `mktg_session_events_truncated`; a full final page does not. These content-free markers prevent an old
 completion or finalize replay from ending a queued/truncated turn. Reasoning
 MIME is filtered before any text, questions, envelope or reply extraction.
 
@@ -303,3 +485,111 @@ ACKs. Shipping intake submissions use fresh sessions and serialize their UI
 handoff; arbitrary concurrent chat callers can still reorder start ACKs. A
 monotonic admission token for that uncommon API path is a follow-up, not an
 ordering guarantee supplied by this metadata refresh predicate.
+
+## Field comments
+
+Field comments use the existing private `marketing-os-artifacts` purpose at
+`document-comments/{project}/{agentKey}/{documentId}.json`. Including the agent
+prevents the living-document ID from colliding across asset types. Both reads
+and writes use the existing Documents project's writer authorization and
+server-resolved partition; this is not a broader reader entitlement.
+
+`GET …/documents/:agentKey/:documentId/comments?project=<uid>&revision=<id>`
+lists one revision's comments, including comments whose redraft result names
+that revision. `POST` to the same path takes `project`, `revisionId`,
+`anchor: { kind, key }`, `text` and an opaque `clientRequestId`. It verifies
+revision membership and the source JSON's own field paths. The Brand Kit uses
+a stable JSON field key internally and captures its verbatim stored string as
+the agent's passage; caller-supplied passages, authors and timestamps are
+rejected. Framework and Boilerplates use their contract's field paths. FAQ uses
+only answer paths `faq[g][1][q][1]`, resolved against the stored grouped tuples;
+a null answer is a valid target, but missing indexes, group names, questions and
+source labels are not. FAQ allows at most 30 comments per send, matching its agent
+form. The server renders them as `revision: { mode: 'redraft', prior_version,
+previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
+stored approved framework. The agent publishes a supplied answer with source
+label Notes; the host never edits the answer or its source itself.
+
+Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
+same request preserves the original comment ID/time; reusing it for different
+content or an effective author conflicts. Concurrent adds preserve both entries.
+Missing objects mean known-empty; unreadable, wrong-scope, oversized, missing-ETag
+or malformed records fail closed and are never overwritten. The whole-object
+store is bounded to 500 comments and 2 MB without deleting history; exceeding
+a write bound requires operator follow-up rather than silently losing comments.
+
+Only the effective opaque subject is stored for authorship; an impersonated
+target without a subject remains unattributed. Display names are resolved on
+reads through `MktgDocumentAuthorService`, which also owns revision attribution.
+The comments service shares that helper instance with its revision reader, so
+both use one per-request name cache, with bounded fan-out. Lookup failures resolve
+to `{ name: null }` without failing the comments read; thrown errors retain
+structured `err` metadata, and unsuccessful directory responses warn without
+inventing an error. Explicit public projection excludes subjects, request IDs
+and the private send ledger. Bodies
+and attribution are not logged. Direct asset editing and revision overwrite are
+never allowed; redrafts append ordinary Drafts through the existing writer.
+
+## Reserved comment sends and release
+
+The lifecycle support alone registers no route; its additive producer exposes
+writer-gated `POST /documents/:agentKey/:documentId/revise` with ID-only
+`project`, `revisionId`, ordered `commentIds`, and `clientRequestId`.
+`POST /documents/:agentKey/:documentId/revise/:requestId/release` is gated on
+both the writer grant and the original send creator; its body carries only project. No caller previous JSON or routing is
+accepted. The existing private comment ledger holds opaque `requestedBy`,
+creation time, base/selected IDs, state, and an optional run hash; never a raw
+session ID or owner token. Only a fresh committed reservation can call Guild.
+The start ACK includes `priorVersion` from the immutable sidecar/context used to
+start the Run, including on same-request replay; display revision metadata is
+not its version authority. Unknown requests and existing requests owned by someone
+else both release as `{ state: 'unknown' }` without creating or rewriting a ledger;
+the distinction is logged only at DEBUG. Writer and effective-subject checks still
+run, and only the creator may change an existing reservation.
+
+Known window (a tracked follow-up): unknown releases write no tombstone. After a transport
+failure, an original revise request still in flight can reserve after its unknown
+release returns and the browser clears recovery intent. A creator-owned failed
+tombstone would close that window; this round does not add one or auto-resubmit.
+
+States are `reserved`, `started`, `uncertain`, `failed`, and `completed`.
+Conclusive non-acceptance before a session exists marks the reservation failed
+and reopens its threads in one CAS. Same-ID replay reports that recorded failure;
+only an explicit new send uses a new ID. Unknown transport or a partial start
+records uncertain and leaves threads sent. A successful but unusable Guild ACK,
+HTTP 408, and HTTP 429 are also unknown acceptance, never proof of rejection.
+An already-confirmed `started` row remains started on replay failure (including
+concurrent confirmation); a 503 does not make that live run releasable.
+Once a session may exist, fresh and replayed starts convert context/tracking/bind validation, conflict and authorization
+failures to `503 MKTG_REDRAFT_START_UNCERTAIN`, never a definitive primary 4xx.
+A failed uncertainty write is logged and still returns 503 to preserve recovery.
+The creator can explicitly release
+uncertainty to failed/open, retaining the old hash without rebinding it. Any expired
+reserved send can also be released by its creator.
+Uncertain/failed and unbound reserved sends older than the existing Run timeout
+are not busy. Late bind/release/result work cannot touch a newer reservation.
+No recovery path automatically resubmits to Guild.
+
+The bounded immutable per-send descriptor is
+`document-redrafts/{sha256(sessionId)}.json` in the same private artifact purpose.
+It contains scope, base/version and frozen ID/anchor/text/time snapshots only;
+no identity, capability, lifecycle index, LIST or worker. The descriptor precedes
+public run tracking; raw session recovery comes only from the existing private
+`document-runs` record after creator/scope/nonce checks.
+
+Existing Run deadlines/retries remain authoritative. Conclusive refusal/failure,
+invalid redraft echo, supersession, and an expired recorded run settle their own
+send to failed/open. Bound questions (including an existing pause) and exhausted
+persistence budgets also fail/reopen; a failed send stays failed on a late ready.
+Ready settlement requires a scoped new revision receipt and
+the exact guarded, ordered prior-version/comment echoes with resolutions.
+History reads join each result's immutable descriptor and sidecar, so later sends
+never overwrite an earlier result's resolutions. Names still resolve at read time.
+
+Producer refusal guards keep redraft-bound sessions out of ICP result persistence,
+generic chat and typed free-text answer turns. Ordinary sessions are unchanged.
+Descriptor reads fail closed. One ready domain result pass performs up to three
+private descriptor GETs for Markdown or two for JSON. Documents reconciliation
+adds one settlement lookup (four/three total). A public result endpoint also
+rechecks through the trusted Run reader, so it can perform seven/five respectively.
+This bounded read cost is explicit; no second cache or lifecycle authority is added.

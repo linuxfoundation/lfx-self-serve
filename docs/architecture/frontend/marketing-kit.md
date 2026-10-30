@@ -46,12 +46,19 @@ count alone is never approval or staleness. See [downstream rebuild](../backend/
 Current prefers the store's valid `currentRevisionNumber`; older listings fall back to the
 sequence in the selected `latestRevisionId`, **never `revisionCount`**. Its date is `updatedAt`. Non-sequence legacy ids show no invented
 version. A valid approved-current seam supplies the approved revision number; the only
-listing date remains `updatedAt` until an approved-current date is exposed. Run assets instead show current-local-calendar-month counts from `createdAt`, and
-the Family Current cell shows the run date, not a revision version.
+listing date remains `updatedAt` until an approved-current date is exposed. One-off assets use
+`createdAt`: never run means **Not run yet** (`missing`); a run in the current UTC calendar month
+shows **N this month**; an earlier run shows **Last run d MMM**. The newest run is selected by
+`createdAt` without mutating listing order. Counts, the en-GB last-run label and the Family
+Current cell all use UTC, including month boundaries; Current shows the run date, never a
+revision version. Unknown historical dates remain unknown (**Last run —**). A registered
+type with an unavailable agent reads **Coming soon**, not Not run yet.
 
 State filters read `?state=` (All by default), retaining all family cards. A user filter click
-pushes a history entry, so browser Back restores the previous filter. Count-only
-runs appear under All, not workflow-state chips. `summarizeMktgKit` centralizes provisional
+pushes a history entry, so browser Back restores the previous filter. Never-run one-offs join
+Not run yet. Already-run one-offs appear under All only (decided by the operator, 23 Oct:
+they have no approval workflow), never Approved/Draft/Needs rebuild. Kit cards consume the shared Family rule's
+row states and labels without adding buttons or changing the board's card layout. `summarizeMktgKit` centralizes provisional
 formulas: In the kit counts **Approved only**, Core floor counts families with at least one
 approved asset out of the catalog length, and Kit level is Core only once every store-backed
 Positioning asset is approved; otherwise an em dash. With no approvals the tiles show 0 assets,
@@ -79,34 +86,72 @@ disabled; design examples never override the catalog.
 ## Family and exports
 
 The Family page links the real asset view `documents/:agentKey/:documentId`, preserving
-lens/project context. The first declared agent is runnable only with an active catalog entry;
-unregistered agents keep a disabled button with catalog-independent pending copy from the
-family constants. Member 360 explains that its page is on its way, without a disabled tooltip;
-its button automatically enables once an active catalog entry lands.
-Missing rows offer a Run link only for an active, non-excluded catalog agent, keeping query
-params and leaving the header Run button unchanged.
+lens/project context. `resolveMktgFamilyActions` is the pure shared policy for Family header,
+row actions and Kit card row data. Availability requires an active, non-excluded catalog
+agent with a registered intake; unavailable rows read Coming soon and offer no Run action.
+`mktgFamilyRowAction(row, ctx)` is the **one place to flip** the row rule. Available,
+not-built rows offer a quiet **Create X** link in the same place; copy comes from `runName`
+or the asset label. Required non-optional approved JSON dependencies and missing write
+access disable that row action with its reason in plain inline text, not tooltip-only.
+Optional dependencies never block. Existing living and one-off assets have no row action:
+open the document, where Run again or Draft another remains the natural entry.
+
+One solid, never-disabled header names the next step: **Update <n> assets** (singular
+**Update <runName>**) for stale Positioning assets; otherwise the first available not-built
+asset gives **Review and approve the <document>** linking to its missing approval, or
+**Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
+(singular **Review the draft**) links to the first draft in family order. One-off families
+always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
+No header renders while loading, after a failed read, without write access (including
+403), or for an unavailable agent. The service still distinguishes access denial from
+read failure; loading status remains mounted. Accessible names equal the primary label.
+
+All enabled header and row Create/review actions are real anchors; rebuild and Export the kit are local buttons. Native Cmd/Ctrl-click opens a new
+tab without navigating the original family. Replacement query params preserve the selected
+project and drop stale questions/generation/revision/run selectors. Living actions use
+`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
+null: its run page's window/compare/tracker inputs are not registered as a last-intake
+allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
+follow-up. Document Run again retains `mode=new` through the shared
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. LinkedIn's Document's
+**Draft another post** unconditionally chooses that fresh mode to restore previous source
+inputs; it never inherits entry intent from the current URL. The dedicated source form restores
+writer-gated last text/URL and share-link scalars before any run navigation, preserving
+explicit blanks; files require reattachment and oversized pasted text requires re-entry.
+The source form does not resume a run on load: the Document receiver owns accepted-run
+progress and cross-browser recovery. Immediately before accepted-start navigation pushes
+the Document, entry-only `mode=new` is consumed with a replacement URL update so Back
+does not restore fresh mode; Document completion/redraft navigations also explicitly clear mode. New generation still requires explicit Draft.
+Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
+scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
 supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
 `lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
-questions answered in place on the same session. Other families retain Coming soon.
+questions answered in place on the same session. Other families do not mount a rebuild panel.
 The framework Asset view's Downstream action enters that flow through one-shot router
 navigation state, never a URL write command. See [the API and sequencing contract](../backend/mktg-rebuild.md).
 
 `lfx-mktg-family-export-actions` uses the required `familyId` and stable
 `family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
-PDF composes the approved framework print and kit book; boilerplates/FAQ are
-provisionally omitted with an explicit note because they have no print rendering.
+PDF composes all four approved-current assets — framework, brand kit, boilerplates
+and FAQ — in exporter order, with one family cover and contents. All share one
+portrait layout. Family and standalone kit PDFs share `lfx-mktg-brand-kit-print`:
+five native text chapters (logo, colour, type, visual/usage, voice), not scaled
+landscape plates. The on-screen kit view stays unchanged.
 Slides exports the supported approved family assets and branding, offers Update or
 Create for an existing deck, shows progress and a dated revision-linked last export,
-and marks changed approved member sets stale. Readers see disabled actions and the
-write-access note. A failed last-export lookup blocks creation until retried rather
+and marks changed approved member sets stale. Families without an export target render only
+the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
+Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
+Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
 than guessing that no deck exists. Lookup starts independently of document-list loading;
 the slot stays available after a listing error/403. Browser family and document clients
 share one polling deadline/attempt/error policy. The family BFF and record model are
 documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
 
-`lfx-mktg-family-details` adds the board's static Approve explainer and Family-only source
-read. It reads only the framework row's latest document revision via the existing endpoint,
+`lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
+read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
 then renders the validated `sidecar.report.sources_read` / `sources_failed`
 (name/reason) as the board's sentences. Missing documents/reports omit the source block;
 loading and failure/retry are explicit, never a fabricated list. Project/family switches
@@ -120,28 +165,75 @@ exact matching so it is not active everywhere; named tabs use subset matching wi
 Family titles follow the family name.
 
 Up is a fixed-parent `lfx-mktg-breadcrumb`, independent of the entry route. The pure shared
-`mktgKitRootCrumb` builds the `<Project> kit` label once; `mktgKitCrumbsFor` derives a document or
-agent's family from the shared catalog/family registries. Every crumb except the last is a link;
+`buildMktgBreadcrumbs(page, kitRootPath, projectName)` takes a typed kit/tab/family/asset/run page
+and derives labels and fixed parents from the shared catalog/family registries. Pages pass only
+that identity to the component, which reads name and slug from `ProjectContextService` and tracks
+`NavigationEnd` URLs for the absolute lens root (matched on a full path segment). Until the project
+resolves, every page uses the neutral `Marketing kit` label. The shared Node unit suite guards
+against breadcrumb nav markup outside `components/mktg-breadcrumb/mktg-breadcrumb.component.html`. Every crumb except the last is a link;
 the last has `aria-current="page"`. Kit home is the root and has no breadcrumb. Tab pages show
 `<Project> kit › <Tab>`; a family shows `<Project> kit › <Family>`; generic run and shared document
 views show `<Project> kit › <Family> › <Agent or asset>`. Unmapped legacy documents use Documents
 as their middle parent. Parent links use the active project slug and do not inherit asset-only query state;
 an absent project is omitted, not serialized as `?project=`. Separate run/document/Marketing OS back
-arrows are removed. Run again targets the catalog run route via `mktgRunRouteFor`.
+arrows are removed. The Member 360 and LinkedIn run pages use the same component and fixed family parents.
+Living run pages use the built asset's item label; one-off run pages retain the catalog agent name.
+Run again, including Member 360's New run,
+targets the catalog run route via `mktgRunRouteFor` and drops document-only state.
+Stored AEO/GEO report crumbs add the revision's UTC date and never carry the list's `type` filter.
+Downstream and Rebuild links derive their lens root with `mktgKitRootPath` and use the active
+project slug. Export actions stay on the asset or Family page; external deck links still open in a new tab.
 
 Back is the browser's history. A user tab or filter click **pushes** one history entry:
 Kit uses `state=`, Documents uses `type=`, and Framework/Brand Kit/Boilerplates/FAQ views use `tab=`
 through `createMktgAssetTab`. Asset tab switches merge unrelated query parameters so project,
 revision and `profile=edit` survive. Missing or unknown tab ids render the view's default panel;
 selecting that default clears `tab=`. Back then restores the preceding tab/filter rather than
-skipping it.
-Only automatic hops replace history: the generic unknown/coming-soon/intake-less agent redirect
-uses `replaceUrl: true`. Main's generic run renders result and questions inline.
+skipping it. Member 360 ranking filters use `tier=`, `owner=`, `search=` and its ordering uses
+`sort=` / `direction=`. Tier/owner selections and sort clicks push once per change. Free-text search
+filters locally as typed but pushes only once per settled term, after a 300 ms debounce and a current-URL
+equality check; Back restores the previous settled term, not individual keystrokes. URL echoes do not
+rewrite the search input while typing.
+
+### LinkedIn entry observation
+
+Before choosing intake or an existing run, the LinkedIn entry reads the creator-scoped
+`GET /api/mktg-agents/documents?project=<uid>&poll=1&ownRuns=1` projection (the #4591 contract),
+then the personal profile. The BFF filters by its authenticated effective subject and
+advertises `creatorScoped: true` when that filter was applied (#4591 push 2); the safe DTO
+gains no identity, private session or capability fields. Auto-landing requires that marker
+or a matching local scoped private attempt for the exact run/document pair. An older,
+unadvertised server cannot redirect the viewer to another writer's run: inputs remain
+available with an inline unavailable note. The client never infers ownership from activity
+or a display name. Private questions remain creator-only.
+
+The header and body share the first-observation loading boundary. Fixed identity and note
+slots keep profile resolution and input-provenance messages from shifting layout. A seeded
+visibility-aware observer rechecks idle entry on timers and focus without repeating profile
+reads or resetting unsent inputs; the document observer owns an already selected run.
+Transport failures expose retry actions rather than claiming no run exists. An initially
+unavailable progress response settles to available inputs with an inline notice and keeps
+checking; it never claims that no run exists. Background failures retain the last observed
+state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO discovery needs backend run
+recording before this mechanism applies to it.
+
+LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
+Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
+Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`
+in place, including after Family → Back. Setup-only Continue keeps its answers and returns through
+history only for run origin; document origin stays on intake with `replaceUrl: true` to avoid losing
+unpersisted answers. Legacy boolean markers conservatively retain document-origin behavior.
+Browser Back/Forward restores these query-backed views without starting a run or repeating a write.
+Automatic run-to-document, post-research, questions and selected-revision landings replace history,
+including navigation retries; the exact receipt revision is preserved. Unknown-agent redirects replace.
+Run again/New run push with the active project and the owned `mode=new` entry intent for living assets.
+Draft another and dependency-agent links push with active-project-only params. Automatic landings clear entry-only mode.
+Manual Open intake remains a user push and may carry its owned questions continuation token.
 
 No-project branches are defensive and unit-covered, not stable route-level e2e states:
 `projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`
 selects an available project or sends an empty lens to Me through `handleEmptyLensResponse`.
-A no-cookie/empty-nav e2e therefore reaches My Dashboard, not an unselected kit.
+A no-cookie/empty-nav e2e therefore reaches the Me lens Dashboard, not an unselected kit.
 
 Content/robust Playwright pairs stub synthetic listing and revision data, including a
 Boilerplates document and framework source report. They pin the local flag and project grants,

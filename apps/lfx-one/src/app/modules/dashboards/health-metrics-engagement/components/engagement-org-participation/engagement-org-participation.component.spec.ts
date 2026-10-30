@@ -44,6 +44,7 @@ describe('EngagementOrgParticipationComponent', () => {
   let fixture: ComponentFixture<EngagementOrgParticipationComponent>;
   let getEngagementOrgParticipation: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
 
   async function render(
     payload: HealthMetricsEngagementOrgParticipation | Error = response(),
@@ -68,6 +69,7 @@ describe('EngagementOrgParticipationComponent', () => {
 
     fixture = TestBed.createComponent(EngagementOrgParticipationComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -81,6 +83,7 @@ describe('EngagementOrgParticipationComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   afterEach(() => {
@@ -98,12 +101,13 @@ describe('EngagementOrgParticipationComponent', () => {
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
 
-    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
+    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]');
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('21 / 27');
     expect(row.textContent).toContain('1.8');
     expect(row.textContent).toContain('Aug 14, 2026');
+    expect(verdicts).toEqual([false]);
   });
 
   // The placeholder and the icon give the box no accessible name, so the label has to.
@@ -113,17 +117,6 @@ describe('EngagementOrgParticipationComponent', () => {
     const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
     expect(label?.textContent?.trim()).toBe('Search organization');
     expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
-  });
-
-  it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
-    await render();
-    getEngagementOrgParticipation.mockClear();
-
-    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(getEngagementOrgParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   // The period pill projects the loaded rows, so switching it must not cost another request.
@@ -198,12 +191,13 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
   });
 
-  it('shows the not-available state when the view returns no rows for the scope', async () => {
+  it('settles empty, with no body, when the view returns no rows for the scope', async () => {
     await render(response({ rows: [], counts: null }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
-      'No organizations recorded for this scope'
-    );
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-table"]')).toBeNull();
+    // The filter-miss card is not the scope's empty state.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
   });
 
   // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.
@@ -298,7 +292,7 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(new Error('snowflake down'), (counts) => emitted.push(counts));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(emitted).toEqual([null, null]);
   });
 
@@ -339,6 +333,7 @@ describe('EngagementOrgParticipationComponent', () => {
     // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
     // the section loading forever with nothing left to resolve it.
     expect(fixture.componentInstance['loading']()).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-table"]')).toBeNull();
   });
 });

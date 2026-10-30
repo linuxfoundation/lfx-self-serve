@@ -1,11 +1,6 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p class="mb-4 flex items-center gap-2 text-[12px] text-gray-500" data-testid="members-scope-note">
-  <i class="fa-light fa-circle-info" aria-hidden="true"></i>
-  {{ scopeNote }}
-</p>
-
 <!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
 <lfx-health-metrics-l2-shell
   #shell
@@ -13,34 +8,40 @@
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
   [subNavItems]="subNavItems()"
+  [blank]="blank"
   navLabel="Members sections"
-  testIdPrefix="members"
-  [crossReference]="crossReference">
+  testIdPrefix="members">
   <ng-template lfxHealthMetricsL2Section="tiers">
     <div class="flex flex-col gap-6">
-      <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers')" />
+      <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers', $event)" />
       <lfx-members-bridge
         (reading)="shell.sectionReading('bridge', 'tiers')"
-        (settled)="shell.sectionSettled('bridge', 'tiers')"
+        (settled)="shell.sectionSettled('bridge', $event, 'tiers')"
         (sectionPicked)="shell.scrollToSection($event)" />
     </div>
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="list">
-    <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list')" />
+    <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="risk">
-    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk')" />
+    <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="renewals">
-    <lfx-members-renewals (countChange)="renewalsCount.set($event)" (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals')" />
+    <lfx-members-renewals
+      (countChange)="renewalsCount.set($event)"
+      (reading)="shell.sectionReading('renewals')"
+      (settled)="shell.sectionSettled('renewals', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="board">
-    <lfx-members-board-attendance (noteChange)="boardNote.set($event)" (reading)="shell.sectionReading('board')" (settled)="shell.sectionSettled('board')" />
+    <lfx-members-board-attendance
+      (noteChange)="boardNote.set($event)"
+      (reading)="shell.sectionReading('board')"
+      (settled)="shell.sectionSettled('board', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="nps">
-    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps')" />
+    <lfx-members-nps (reading)="shell.sectionReading('nps')" (settled)="shell.sectionSettled('nps', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="churn">
-    <lfx-members-churn (reading)="shell.sectionReading('churn')" (settled)="shell.sectionSettled('churn')" />
+    <lfx-members-churn (reading)="shell.sectionReading('churn')" (settled)="shell.sectionSettled('churn', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

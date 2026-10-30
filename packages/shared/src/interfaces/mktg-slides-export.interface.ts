@@ -196,7 +196,7 @@ export type MktgSlidesExportPollResponse<TRecord extends MktgSlidesExportDeckRec
   | { status: 'ready'; record: TRecord }
   | { status: 'failed'; failure: MktgSlidesExportFailure; message: string; deckLink: string | null };
 
-/** Last export and newest revision identity for freshness comparison, not exported-byte selection. */
+/** Last export and approved-current identity for freshness comparison, not exported-byte selection. */
 export interface MktgSlidesExportLastResponse {
   last: MktgSlidesExportRecord | null;
   latestRevision: MktgSlidesExportRevisionRef | null;

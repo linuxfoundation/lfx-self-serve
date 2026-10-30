@@ -10,6 +10,10 @@ export type MktgKitFilter = 'all' | Exclude<MktgKitAssetState, 'coming-soon'>;
 export interface MktgKitAsset {
   id: string;
   label: string;
+  /** Board action wording when its sentence case differs from the row heading. */
+  runName?: string;
+  /** Sentence noun phrase for the Family's next-steps caption. */
+  captionName?: string;
   description: string;
   agentKey?: MktgDocumentAgentKey;
 }
@@ -25,11 +29,12 @@ export interface MktgKitFamily {
   assets: MktgKitAsset[];
   /**
    * Agent ids in run order: catalog ids, plus ids declared ahead of their catalog entry.
-   * Names and availability always come from MKTG_AGENTS; an unregistered id renders
-   * no tile; the Family header keeps a disabled Run action with the pending label.
+   * Availability and routing come from MKTG_AGENTS; Family Run action wording comes
+   * from the matching asset/pending copy. An unregistered id renders no agent tile
+   * and keeps the Family header's Run action disabled.
    */
   agentIds: string[];
-  /** Header-only copy for a declared first agent whose catalog entry has not landed. */
+  /** Header-only copy for a declared first agent that is unavailable or not yet registered. */
   pendingAgentName?: string;
   pendingAgentReason?: string;
   /** Only a family with board-provided guidance displays a run-order sentence. */
@@ -38,7 +43,7 @@ export interface MktgKitFamily {
 
 export interface MktgKitAssetRow {
   asset: MktgKitAsset;
-  /** Run assets have a count instead of a living-document workflow state. */
+  /** Already-run one-offs have no approval state; never-run and unavailable ones still have states. */
   state: MktgKitAssetState | null;
   version: number | null;
   monthlyCount: number | null;
@@ -71,6 +76,8 @@ export interface MktgKitAgentGroup {
 }
 
 export interface MktgKitSourcesView {
+  readCount: number;
+  failedCount: number;
   readText: string;
   failedText: string;
 }

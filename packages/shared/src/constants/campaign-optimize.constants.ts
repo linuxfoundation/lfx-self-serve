@@ -813,6 +813,25 @@ export const META_AD_CREATIVE_NOT_REPORTED = 'Creative not reported';
 /** The platforms whose campaigns have keyword targeting the Optimize tab can read and remove from. */
 export const KEYWORD_TARGETING_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<KeywordTargetingPlatform>(['reddit-ads', 'twitter-ads']);
 
+/**
+ * The keyword-targeting platforms whose read carries a `revision` fingerprinting the WHOLE targeting
+ * (excluded keywords included), which a removal must send back: Reddit. A negative-keyword add there
+ * rewrites the same object, so it makes a read stale and the two levers are serialized. X keeps each
+ * keyword as its own criterion with no revision, so its negatives neither invalidate nor hold a removal.
+ */
+export const KEYWORD_TARGETING_REVISION_PLATFORMS: ReadonlySet<KeywordTargetingPlatform> = new Set<KeywordTargetingPlatform>(['reddit-ads']);
+
+/** Why Remove is held: a removal of the same campaign, sent under another brief id, is still running. */
+export const KEYWORD_TARGETING_REMOVAL_IN_PROGRESS_REASON = 'Another removal for this campaign is already running. Wait for it to finish.';
+
+/** Why a removal the operator CONFIRMED was not sent, stated on the panel rather than dropped silently. */
+export const KEYWORD_TARGETING_REMOVAL_NOT_SENT_MESSAGES: Readonly<Record<'busy' | 'held' | 'reread' | 'noRevision', string>> = {
+  busy: 'Another removal for this campaign is already running. Nothing was sent.',
+  held: 'Negative keywords started being added to this campaign while you were confirming. Nothing was sent; try again once that finishes.',
+  reread: 'The keyword targeting was read again while you were confirming. Nothing was sent; check the list and try again.',
+  noRevision: 'The read did not include the version Reddit needs. Nothing was sent; reload the keyword targeting and try again.',
+};
+
 /** Each keyword-targeting platform's name in the panel's text. */
 export const KEYWORD_TARGETING_PLATFORM_LABELS: Readonly<Record<KeywordTargetingPlatform, string>> = {
   'reddit-ads': 'Reddit',
@@ -905,6 +924,34 @@ export const REDDIT_KEYWORDS_ERROR_MESSAGES: Readonly<Record<'notConnected' | 'd
     "Reddit keyword metrics can't be read for this foundation: it has more Reddit campaigns than one report can cover, or a campaign belongs to a different ad account.",
   other: 'Reddit keyword metrics are unavailable right now. Try again.',
 };
+
+/**
+ * What a Reddit keyword row says when its "Add as negative" could not read the `revision` Reddit
+ * requires (the read failed, or answered none): nothing was sent. The negative-keyword editor's own wording.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR =
+  "The ad group's targeting couldn't be read, and Reddit needs it before keywords can be excluded. Nothing was sent.";
+
+/**
+ * What a Reddit keyword row says when, by the time its revision read answered, another change to the
+ * campaign's keywords (a negative-keyword request or a keyword-targeting removal) had started: the
+ * add was not sent, and the operator tries again once that one settles.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SUPERSEDED_MESSAGE = 'Another keyword change for this campaign started first. Nothing was sent.';
+
+/**
+ * What a Reddit keyword row says when, by the time its revision read answered, the page had moved
+ * to another project or brief or the campaign had stopped taking negative keywords: nothing was sent.
+ */
+export const REDDIT_KEYWORD_NEGATIVE_SCOPE_CHANGED_MESSAGE =
+  "This campaign can't take negative keywords from here any more (the page changed project or brief, or the campaign changed). Nothing was sent.";
+
+/**
+ * The `read` of a Reddit keyword "Not sent" note recorded after the page LEFT the note's project (an
+ * add abandoned by that move). No read of that project is current, so the note takes the first read
+ * of the next visit instead. A real read id always contains `|`, so this never matches one.
+ */
+export const REDDIT_KEYWORD_NOTE_NEXT_VISIT_READ = 'next-visit';
 
 /**
  * The statuses a keyword lever (keyword-targeting removal, negative-keyword add) may report as a

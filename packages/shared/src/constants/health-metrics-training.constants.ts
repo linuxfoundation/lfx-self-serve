@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
+import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsTrainingCourses,
   HealthMetricsTrainingCoursesTypeOption,
@@ -20,6 +21,7 @@ import type {
 export const HEALTH_METRICS_TRAINING_SECTIONS = [
   {
     key: 'enroll',
+    empty: { icon: 'fa-light fa-graduation-cap', source: HEALTH_METRICS_L2_EMPTY_SOURCES.courses },
     label: 'Enrollment & revenue',
     heading: 'Enrollment & revenue',
     description: 'Training is the third revenue stream and the widest top-of-funnel the foundation has — most enrollments are people who are not members yet.',
@@ -33,6 +35,7 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
   },
   {
     key: 'courses',
+    empty: { icon: 'fa-light fa-graduation-cap', source: HEALTH_METRICS_L2_EMPTY_SOURCES.courses },
     label: 'Courses',
     heading: 'Courses',
     description: 'Individual courses and certifications by enrollment. Free courses show no revenue — that is reach, not a gap.',
@@ -44,31 +47,22 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_TRAINING_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-graduation-cap',
+  noun: 'training',
+  lead: 'Enrollments and revenue appear once the foundation has courses on LF Education.',
+  reasons: ['No courses or certifications are published yet', 'No one has enrolled so far this year', 'Your LF Education contact can help plan a course'],
+  pastActivity: 'training activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_TRAINING_SECTION_ID_PREFIX = 'sec-trn-';
 
 /** Sections whose body reads data, so a deep link waits for them. Each section's issue adds its key. */
 export const HEALTH_METRICS_TRAINING_DATA_SECTIONS = ['enroll', 'courses'] as const satisfies readonly HealthMetricsTrainingSectionKey[];
-
-/** Note under the sub-nav items, linking to the Members directory's per-organization training. */
-export const HEALTH_METRICS_TRAINING_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: 'Corporate training purchases appear per organization in',
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'list',
-};
-
-/** The project selector does not narrow Training, so the page says so above its sections. */
-export const HEALTH_METRICS_TRAINING_SCOPE_NOTE = 'Training figures are foundation-wide. The project selector does not narrow them.';
-
-/** The state that replaces the shell when the foundation has no training programme. */
-export const HEALTH_METRICS_TRAINING_NO_PROGRAMME = {
-  title: 'No training activity yet',
-  body: 'Enrollments and certifications appear here once this foundation offers training through LF Education.',
-  hint: 'Set up a training programme with LF Education to start tracking enrollment and revenue.',
-} as const;
 
 /** Rendered for a figure or a change that is not measured, so a gap never reads as zero. */
 export const HEALTH_METRICS_TRAINING_NOT_AVAILABLE = 'not available';
@@ -93,6 +87,7 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
     COMPLETED_YEAR_3: HEALTH_METRICS_TRAINING_ENROLLMENT_PERIOD_UNMEASURED,
   },
   trend: [],
+  goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
 };
 
 /** The toggle above the by-type list. */

@@ -10,13 +10,17 @@ import {
   HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX,
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { MONTH_NAMES } from '../constants/calendar.constants';
+import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -27,12 +31,21 @@ import type {
   HealthMetricsEngagementAttendanceTrendSummaryView,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementNewsletter,
+  HealthMetricsEngagementNewsletterKpiView,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterPointView,
+  HealthMetricsEngagementNewsletterRowView,
+  HealthMetricsEngagementNewsletterView,
   HealthMetricsEngagementNonMemberPeriod,
   HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientFilter,
+  HealthMetricsEngagementRecipientRowView,
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
@@ -45,6 +58,7 @@ import type {
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
+import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
@@ -157,6 +171,8 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     orgs: counts.orgs,
     reps: counts.reps,
     nonmem: counts.nonMemberOrgs,
+    newsletters: counts.newsletters,
+    recipients: counts.recipients,
   };
 
   return HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => ({
@@ -408,6 +424,108 @@ function accountNameOf(row: { accountName: string }): string {
   return row.accountName;
 }
 
+/**
+ * Newsletter performance for the period: the summary's KPIs, and each newsletter sent in the period's year. The table
+ * keeps the view's latest-first rank; the chart runs oldest first, plotting rates only for newsletters with engagement data.
+ */
+export function buildHealthMetricsEngagementNewsletterView(
+  performance: HealthMetricsEngagementNewsletterPerformance,
+  range: HealthMetricsRange
+): HealthMetricsEngagementNewsletterView {
+  const l2 = (HEALTH_METRICS_L2_RANGES as readonly HealthMetricsRange[]).includes(range) ? (range as HealthMetricsL2Range) : null;
+  const period = l2 ? performance.periods[l2] : null;
+  const year = getYearForRange(range);
+  const newsletters = l2 ? performance.newsletters.filter((newsletter) => newsletter.sentDate?.startsWith(`${year}-`)) : [];
+  const chronological = [...newsletters].sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
+  const growth = period?.subscribersGrowth ?? null;
+  const growthPct = growth === null ? 0 : Math.round(growth * 100);
+
+  return {
+    isEmpty: !performance.measured || !period?.newslettersSent,
+    newslettersSent: performance.measured && period ? (period.newslettersSent ?? 0) : null,
+    headline: {
+      ...newsletterKpi('subscribers', 'Subscribers', formatHealthMetricsEngagementCount(period?.subscribers ?? null)),
+      delta:
+        growthPct === 0
+          ? null
+          : `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%${formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year)}`,
+      deltaDirection: newsletterDirection(growthPct),
+    },
+    side: [
+      newsletterKpi('sent', 'Newsletters sent', formatHealthMetricsEngagementCount(period?.newslettersSent ?? null)),
+      newsletterKpi('open', 'Avg. open rate', formatNewsletterRate(period?.avgOpenRate ?? null)),
+      newsletterKpi('click', 'Avg. click rate', formatNewsletterRate(period?.avgClickRate ?? null, 1)),
+      newsletterKpi('cto', 'Click-to-open rate', formatNewsletterRate(period?.avgClickToOpenRate ?? null)),
+      newsletterKpi('delivery', 'Delivery rate', formatNewsletterRate(period?.avgDeliveryRate ?? null)),
+    ],
+    rows: newsletters.map(buildNewsletterRow),
+    audiencePoints: chronological.map(buildNewsletterPoint),
+    ratePoints: chronological.filter((newsletter) => newsletter.hasEngagementData).map(buildNewsletterPoint),
+  };
+}
+
+/** The recipients a cut keeps, narrowed by a name or organization search; the view's engagement order is kept. */
+export function filterHealthMetricsEngagementRecipients(
+  recipients: readonly HealthMetricsEngagementRecipient[],
+  filter: HealthMetricsEngagementRecipientFilter,
+  search: string
+): HealthMetricsEngagementRecipient[] {
+  const term = search.trim().toLowerCase();
+  return recipients.filter(
+    (recipient) =>
+      matchesRecipientFilter(recipient, filter) && (!term || `${recipient.name ?? ''} ${recipient.organization ?? ''}`.toLowerCase().includes(term))
+  );
+}
+
+/** How many recipients each cut holds, for the filter labels. */
+export function countHealthMetricsEngagementRecipients(
+  recipients: readonly HealthMetricsEngagementRecipient[]
+): Record<HealthMetricsEngagementRecipientFilter, number> {
+  const counts: Record<HealthMetricsEngagementRecipientFilter, number> = { all: 0, opened: 0, clicked: 0, 'not-opened': 0, failed: 0 };
+  for (const recipient of recipients) {
+    for (const filter of Object.keys(counts) as HealthMetricsEngagementRecipientFilter[]) {
+      if (matchesRecipientFilter(recipient, filter)) counts[filter] += 1;
+    }
+  }
+  return counts;
+}
+
+/** One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a stray open time. */
+export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
+  const failed = isFailedRecipient(recipient);
+  const opened = recipient.segment === 'opened';
+  const tags = HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS;
+
+  return {
+    rank: recipient.rank,
+    nameLabel: recipient.name?.trim() || '—',
+    organizationLabel: recipient.organization?.trim() || '—',
+    deliveryLabel: failed ? 'Failed' : 'Delivered',
+    deliveryClass: failed ? tags.failed : tags.delivered,
+    engagementLabel: recipientEngagementLabel(failed, opened),
+    engagementClass: opened ? tags.opened : tags.notOpened,
+    opensLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.opens),
+    lastOpenedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastOpenedAt, now),
+    clicksLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.clicks),
+    lastClickedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastClickedAt, now),
+  };
+}
+
+/** "12 hr ago" for a recent ISO time, as the design words it; the date itself past 30 days, and "—" for none. */
+export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): string {
+  const time = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(time)) return '—';
+
+  const minutes = Math.max(0, Math.floor((now.getTime() - time) / 60_000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  if (days <= 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  return formatIsoDateLabel(new Date(time).toISOString().slice(0, 10));
+}
+
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
 function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
   return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
@@ -435,4 +553,75 @@ function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): str
 /** A rated month's rate on the section's one display rule; "—" when the range holds none. */
 function formatRatedMonth(month: HealthMetricsEngagementAttendanceMonth | undefined): string {
   return month ? formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld) : '—';
+}
+
+function newsletterKpi(key: string, label: string, value: string): HealthMetricsEngagementNewsletterKpiView {
+  return { key, label, value, delta: null, deltaDirection: 'neutral' };
+}
+
+function newsletterDirection(value: number): HealthMetricsEngagementNewsletterKpiView['deltaDirection'] {
+  if (value === 0) return 'neutral';
+  return value > 0 ? 'up' : 'down';
+}
+
+/** A 0–1 rate as a percentage, whole unless `digits` asks for more. */
+function formatNewsletterRate(value: number | null, digits = 0): string {
+  return value === null || !Number.isFinite(value) ? '—' : `${(value * 100).toFixed(digits)}%`;
+}
+
+function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): HealthMetricsEngagementNewsletterRowView {
+  // Without engagement data the view carries recipients only, so every other cell reads "—" with no sub-line.
+  const engaged = newsletter.hasEngagementData;
+  const total = (value: number | null): string => (engaged && value !== null ? `${formatHealthMetricsEngagementCount(value)} total` : '');
+
+  return {
+    key: newsletter.key,
+    name: newsletter.name,
+    sentLabel: newsletter.sentDate ? `Sent ${formatIsoDateLabel(newsletter.sentDate)}` : '',
+    recipientsLabel: formatHealthMetricsEngagementCount(newsletter.recipients),
+    failedLabel: engaged && newsletter.failed !== null ? `${formatHealthMetricsEngagementCount(newsletter.failed)} failed` : '',
+    uniqueOpensLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueOpens : null),
+    totalOpensLabel: total(newsletter.totalOpens),
+    openRateLabel: formatNewsletterRate(engaged ? newsletter.openRate : null),
+    openRateWidthPct: engaged && newsletter.openRate !== null ? Math.min(100, Math.max(0, newsletter.openRate * 100)) : 0,
+    uniqueClicksLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueClicks : null),
+    totalClicksLabel: total(newsletter.totalClicks),
+    clickRateLabel: formatNewsletterRate(engaged ? newsletter.clickRate : null),
+    clickToOpenLabel: formatNewsletterRate(engaged ? newsletter.clickToOpenRate : null),
+  };
+}
+
+function buildNewsletterPoint(newsletter: HealthMetricsEngagementNewsletter): HealthMetricsEngagementNewsletterPointView {
+  const month = Number(newsletter.sentDate?.slice(5, 7));
+  const pct = (value: number | null): number | null => (newsletter.hasEngagementData && value !== null ? value * 100 : null);
+
+  return {
+    key: newsletter.key,
+    tick: month >= 1 && month <= 12 ? MONTH_NAMES[month - 1].slice(0, 3) : '',
+    title: [newsletter.name, newsletter.sentDate ? formatIsoDateLabel(newsletter.sentDate) : ''].filter(Boolean).join(' · '),
+    openPct: pct(newsletter.openRate),
+    clickPct: pct(newsletter.clickRate),
+    clickToOpenPct: pct(newsletter.clickToOpenRate),
+    recipients: newsletter.recipients,
+    uniqueOpens: newsletter.hasEngagementData ? newsletter.uniqueOpens : null,
+  };
+}
+
+function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, filter: HealthMetricsEngagementRecipientFilter): boolean {
+  if (filter === 'all') return true;
+  // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
+  if (filter === 'failed') return isFailedRecipient(recipient);
+  if (isFailedRecipient(recipient)) return false;
+  return filter === 'clicked' ? recipient.clicked : recipient.segment === filter;
+}
+
+/** Failed by either the view's segment or its delivery status. */
+function isFailedRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
+  return recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
+}
+
+/** No tag for a failed delivery, which the row shows as "—". */
+function recipientEngagementLabel(failed: boolean, opened: boolean): string {
+  if (failed) return '';
+  return opened ? 'Opened' : 'Not opened';
 }

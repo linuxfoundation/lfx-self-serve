@@ -33,6 +33,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectDocumentMetadata: vi.fn(),
     getProjectDocumentStream: vi.fn(),
     deleteProjectDocument: vi.fn(),
+    uploadProjectDocument: vi.fn(),
   },
 }));
 
@@ -1343,5 +1344,136 @@ describe('ProjectController.deleteProjectDocument uid/documentId validation', ()
     expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
     expect(res.status).toHaveBeenCalledWith(204);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('ProjectController.uploadProjectDocument body type', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const controller = new ProjectController();
+    const req = {
+      params: { uid: PROJECT_UID },
+      body,
+      query: { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' },
+      headers: {},
+      path: `/api/projects/${PROJECT_UID}/documents`,
+    } as any;
+    const next = vi.fn();
+
+    await controller.uploadProjectDocument(req, { json: vi.fn(), status: vi.fn().mockReturnThis() } as any, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(projectSvc.uploadProjectDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectController.getPublicProjectSummary', () => {
+  let controller: ProjectController;
+
+  const summaryReqRes = (identifier: string) => {
+    const req = { params: { identifier }, query: {}, headers: {}, bearerToken: undefined, path: `/public/api/projects/${identifier}/summary` } as any;
+    const res = { json: vi.fn(), setHeader: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+    computeIsFoundationMock.mockReturnValue(true);
+  });
+
+  it('returns exactly the branding fields for a public project, cacheable, using the M2M token', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(
+      buildProject({
+        name: 'Cloud Native',
+        slug: SLUG,
+        logo_url: 'https://cdn.example/cncf.svg',
+        description: 'private-ish',
+        parent_uid: 'parent-1',
+      } as Partial<Project>)
+    );
+    const { req, res, next } = summaryReqRes(PROJECT_UID);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.bearerToken).toBe('m2m-token');
+    // Exact key set: nothing else the project record carries (or the caller) can reach an anonymous response.
+    expect(res.json).toHaveBeenCalledWith({ name: 'Cloud Native', slug: SLUG, logo_url: 'https://cdn.example/cncf.svg', is_foundation: true });
+    expect(res.setHeader).toHaveBeenLastCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('resolves a slug and reports a missing logo as null', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ name: 'Cloud Native', slug: SLUG, logo_url: '' } as Partial<Project>));
+    computeIsFoundationMock.mockReturnValue(false);
+    const { req, res, next } = summaryReqRes(SLUG);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ name: 'Cloud Native', slug: SLUG, logo_url: null, is_foundation: false });
+  });
+
+  it('answers a non-public project with a non-cacheable 404 and no body', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = summaryReqRes(PROJECT_UID);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('answers an unknown slug exactly like a hidden project', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: '', slug: 'nope', exists: false });
+    const unknown = summaryReqRes('nope');
+    await controller.getPublicProjectSummary(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: 'hidden', exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const hidden = summaryReqRes('hidden');
+    await controller.getPublicProjectSummary(hidden.req, hidden.res, hidden.next);
+
+    const unknownError = unknown.next.mock.calls[0][0];
+    const hiddenError = hidden.next.mock.calls[0][0];
+    expect(unknownError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError.statusCode).toBe(unknownError.statusCode);
+    expect(unknown.res.json).not.toHaveBeenCalled();
+    expect(hidden.res.json).not.toHaveBeenCalled();
+  });
+
+  it('answers a slug whose metadata lookup fails like an unknown slug', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(new Error('upstream down'));
+    const { req, res, next } = summaryReqRes(SLUG);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed identifier without any upstream call', async () => {
+    const { req, res, next } = summaryReqRes('bad id/..');
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(generateM2MTokenMock).not.toHaveBeenCalled();
   });
 });

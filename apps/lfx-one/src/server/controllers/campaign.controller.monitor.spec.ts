@@ -6,7 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CampaignMonitorConnections, CampaignServiceAccountMonitor } from '@lfx-one/shared/interfaces';
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE, MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE } from '@lfx-one/shared/constants';
+
+import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // The account-monitor routes (#2519): Meta and Reddit switch backend on LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR,
@@ -21,8 +23,17 @@ const {
   svcTwitter,
   svcHubSpot,
   svcConnection,
+  svcGoogleAccounts,
+  svcTwitterAccounts,
   legacyMeta,
   legacyReddit,
+  legacyGoogle,
+  legacyKeywords,
+  legacyAudience,
+  svcKeywords,
+  svcAudience,
+  checkRootWriter,
+  checkRootCampaignManager,
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
@@ -34,8 +45,17 @@ const {
   svcTwitter: vi.fn(),
   svcHubSpot: vi.fn(),
   svcConnection: vi.fn(),
+  svcGoogleAccounts: vi.fn(),
+  svcTwitterAccounts: vi.fn(),
   legacyMeta: vi.fn(),
   legacyReddit: vi.fn(),
+  legacyGoogle: vi.fn(),
+  legacyKeywords: vi.fn(),
+  legacyAudience: vi.fn(),
+  svcKeywords: vi.fn(),
+  svcAudience: vi.fn(),
+  checkRootWriter: vi.fn<(req: unknown) => Promise<boolean>>(),
+  checkRootCampaignManager: vi.fn<(req: unknown) => Promise<boolean>>(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -52,6 +72,10 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getTwitterAdsAccountMonitor = svcTwitter;
       public getHubSpotAccountMonitor = svcHubSpot;
       public getConnection = svcConnection;
+      public listGoogleAdsAccounts = svcGoogleAccounts;
+      public listTwitterAdsAccounts = svcTwitterAccounts;
+      public getGoogleAdsKeywords = svcKeywords;
+      public getGoogleAdsAudience = svcAudience;
     },
   };
 });
@@ -61,7 +85,11 @@ vi.mock('../helpers/server-feature-flag.helper', async (importOriginal) => {
 });
 vi.mock('../services/campaign-proxy.service', () => ({ CampaignProxyService: class {} }));
 vi.mock('../services/campaign-metrics.service', () => ({
-  CampaignMetricsService: class {},
+  CampaignMetricsService: class {
+    public getMonitorData = legacyGoogle;
+    public getKeywords = legacyKeywords;
+    public getAudience = legacyAudience;
+  },
   LinkedInMetricsService: class {
     public getLinkedInMonitorData = legacyLinkedIn;
   },
@@ -76,6 +104,7 @@ vi.mock('../services/linkedin-ads.service', () => ({
   getLinkedInConfig: () => ({ accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }], targetingProfiles: [] }),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
+vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkRootWriter, checkRootCampaignManager } }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
 
 import { CampaignController } from './campaign.controller';
@@ -129,9 +158,18 @@ function nextError(next: NextFunction): unknown {
   return vi.mocked(next).mock.calls[0][0];
 }
 
+/** A caller authorised for the one project it names, but neither a ROOT writer nor a ROOT `global_marketing_ops` holder. */
+function nonRoot(): void {
+  checkRootWriter.mockResolvedValue(false);
+  checkRootCampaignManager.mockResolvedValue(false);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   flag(false);
+  // Root by default, so the account-monitor specs below exercise the arms the gate lets through.
+  checkRootWriter.mockResolvedValue(true);
+  checkRootCampaignManager.mockResolvedValue(true);
 });
 
 describe.each([
@@ -456,6 +494,201 @@ describe('CampaignController.getHubSpotMonitor', () => {
   });
 });
 
+describe('CampaignController.getGoogleAdsAccounts', () => {
+  it('answers 404 while the flag is off, reading nothing', async () => {
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(404);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it("maps campaign-service's accounts onto the Meta/Reddit option shape, labelling an unlabelled one by its id", async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({
+      accounts: [{ id: '1000000001', label: 'CNCF Search' }, { id: '1000000002', label: '' }, { id: '1000000003' }],
+    });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: ' tlf ' }), res, vi.fn());
+
+    expect(svcGoogleAccounts).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(res.json).toHaveBeenCalledWith([
+      { key: '1000000001', label: 'CNCF Search' },
+      { key: '1000000002', label: '1000000002' },
+      { key: '1000000003', label: '1000000003' },
+    ]);
+  });
+
+  it('answers an empty list as an empty list', async () => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce({ accounts: [] });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('requires a project', async () => {
+    flag(true);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({}), buildRes(), next);
+
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-root caller before any upstream call, whatever the flag says', async () => {
+    flag(true);
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.toResponse()['code']).toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(svcGoogleAccounts).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['absent', {}],
+    ['not an array', { accounts: null }],
+  ])('fails the read with a 502 when accounts is %s, never an empty list', async (_case, payload) => {
+    flag(true);
+    svcGoogleAccounts.mockResolvedValueOnce(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+  });
+
+  it("passes campaign-service's own failure through with its status", async () => {
+    flag(true);
+    const upstream = MicroserviceError.fromMicroserviceResponse(
+      404,
+      'Not Found',
+      { name: 'NotFound', message: 'no Google Ads connection configured for this project' },
+      'LFX_V2_CAMPAIGN_SERVICE',
+      '/p'
+    );
+    svcGoogleAccounts.mockRejectedValueOnce(upstream);
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect(nextError(next)).toBe(upstream);
+  });
+});
+
+/**
+ * Which X ad account an X create uses (LFXV2-3319): the account list beside the project's own X
+ * connection. Gated on X creation (cutover + TWITTER_CREATE), and root-only because a project with
+ * no X connection of its own is answered from the LF system credential.
+ */
+describe('CampaignController.getTwitterCreateCapability', () => {
+  it.each([
+    ['off', () => false, false],
+    ['on with the create cutover', () => true, true],
+    ['on without the create cutover', (f: unknown) => f === ServerFeatureFlag.CampaignServiceTwitterCreate, false],
+  ])('answers X creation %s as the deployment-wide capability', (_label, flags, enabled) => {
+    isServerFeatureEnabled.mockImplementation(flags);
+    const res = buildRes();
+
+    new CampaignController().getTwitterCreateCapability(buildReq({}), res);
+
+    expect(res.json).toHaveBeenCalledWith({ enabled });
+  });
+});
+
+describe('CampaignController.getTwitterAdsAccounts', () => {
+  const twitterOn = (): void => {
+    isServerFeatureEnabled.mockImplementation((f) => f !== ServerFeatureFlag.CampaignServiceMonitor);
+  };
+
+  it('answers 404 while X creation is off, reading nothing', async () => {
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(404);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
+    expect(svcConnection).not.toHaveBeenCalled();
+  });
+
+  it('answers the accounts and the bound account of the project connection', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }, { id: '8r7gb' }] });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: ' tlf ' }), res, vi.fn());
+
+    expect(svcTwitterAccounts).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'twitter-ads');
+    expect(res.json).toHaveBeenCalledWith({
+      accounts: [
+        { key: '18ce54d4x5t', label: 'Linux Foundation' },
+        { key: '8r7gb', label: '8r7gb' },
+      ],
+      connection: { state: 'connected', accountId: '18ce54d4x5t', label: 'LF X' },
+    });
+  });
+
+  it('reports a connection with no account bound, which the create would be refused for', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '', has_credentials: true, status: 'active' });
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ connection: { state: 'no_account', accountId: null } });
+  });
+
+  it('refuses a non-root caller before any upstream call', async () => {
+    twitterOn();
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.toResponse()['code']).toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
+  });
+
+  it('fails the read with a 502 when accounts is not an array, never an empty list', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce({ accounts: null });
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: 'a', has_credentials: true, status: 'active' });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+  });
+
+  it('requires a project', async () => {
+    twitterOn();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({}), buildRes(), next);
+
+    expect(nextError(next)).toBeInstanceOf(ServiceValidationError);
+    expect(svcTwitterAccounts).not.toHaveBeenCalled();
+  });
+});
+
 // Upstream declares these arrays required, but the success log must not be what turns a malformed
 // body into a 500: the mapper already tolerates an absent array, so the log has to as well.
 describe('CampaignController monitor success logs tolerate null upstream arrays', () => {
@@ -704,5 +937,189 @@ describe('CampaignController monitor reads during a mixed rollout', () => {
     await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: 'nope', project: 'tlf' }), buildRes(), vi.fn());
 
     expect(legacyLinkedIn).toHaveBeenCalledWith(expect.anything(), '512345678', 30);
+  });
+});
+
+/**
+ * lfx-self-serve-ops#54: the Google Ads, Meta, Reddit and X accounts are shared by every foundation,
+ * as is LinkedIn's legacy allowlist account, so their account monitors would hand one foundation's
+ * campaign manager every foundation's campaigns. They are root-only on every arm, refused before
+ * any upstream call and before the cutover's own 409/404 answers.
+ */
+describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
+  function expectRestricted(next: NextFunction): void {
+    const error = nextError(next) as AuthorizationError;
+    expect(error).toBeInstanceOf(AuthorizationError);
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()).toMatchObject({ code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE, error: MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE });
+  }
+
+  it.each([
+    { name: 'getMonitorData', legacy: legacyGoogle, svc: null, account: '' },
+    { name: 'getRedditMonitor', legacy: legacyReddit, svc: svcReddit, account: REDDIT_ACCOUNT },
+    { name: 'getMetaMonitor', legacy: legacyMeta, svc: svcMeta, account: META_ACCOUNT },
+  ] as const)('$name refuses a non-root caller with the flag on and off, reading nothing', async ({ name, legacy, svc, account }) => {
+    nonRoot();
+    for (const on of [false, true]) {
+      flag(on);
+      const next = vi.fn();
+      const res = buildRes();
+
+      await new CampaignController()[name](buildReq({ accountKey: account, project: 'tlf' }), res, next);
+
+      expectRestricted(next);
+      expect(res.json).not.toHaveBeenCalled();
+    }
+    expect(legacy).not.toHaveBeenCalled();
+    if (svc) expect(svc).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('getTwitterMonitor refuses a non-root caller with the flag %s, not with the flag-off 404', async (on) => {
+    nonRoot();
+    flag(on);
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), buildRes(), next);
+
+    expectRestricted(next);
+    expect(svcTwitter).not.toHaveBeenCalled();
+  });
+
+  it("refuses LinkedIn's legacy allowlist arm to a non-root caller", async () => {
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf' }), buildRes(), next);
+
+    expectRestricted(next);
+    expect(legacyLinkedIn).not.toHaveBeenCalled();
+  });
+
+  it("serves LinkedIn's campaign-service arm, the project's own account, to a non-root caller", async () => {
+    nonRoot();
+    flag(true);
+    svcLinkedIn.mockResolvedValueOnce(monitorPayload({ account_id: '512345678' }));
+    const res = buildRes();
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf' }), res, vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30);
+    expect(res.json).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { who: 'a ROOT writer', rootWriter: true, rootCampaignManager: false },
+    { who: 'a ROOT global_marketing_ops holder', rootWriter: false, rootCampaignManager: true },
+  ])('serves the Google monitor to $who', async ({ rootWriter, rootCampaignManager }) => {
+    checkRootWriter.mockResolvedValue(rootWriter);
+    checkRootCampaignManager.mockResolvedValue(rootCampaignManager);
+    const data = { campaigns: [] };
+    legacyGoogle.mockResolvedValueOnce(data);
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', days: '7' }), res, vi.fn());
+
+    expect(legacyGoogle).toHaveBeenCalledWith(expect.anything(), 7);
+    expect(res.json).toHaveBeenCalledWith(data);
+    expect(checkRootCampaignManager).toHaveBeenCalledTimes(rootWriter ? 0 : 1);
+  });
+
+  it.each([true, false])('getMonitorData answers a missing project with a 400 before the gate (root: %s)', async (root) => {
+    checkRootWriter.mockResolvedValue(root);
+    checkRootCampaignManager.mockResolvedValue(root);
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: '  ' }), buildRes(), next);
+
+    const error = nextError(next) as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors[0].field).toBe('project');
+    expect(checkRootWriter).not.toHaveBeenCalled();
+    expect(legacyGoogle).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-root connection-marked Reddit read on a flag-OFF pod with the 403, not the retryable 409', async () => {
+    nonRoot();
+    const next = vi.fn();
+
+    await new CampaignController().getRedditMonitor(buildReq({ accountKey: REDDIT_ACCOUNT, project: 'tlf', accountSource: 'connection' }), buildRes(), next);
+
+    expectRestricted(next);
+    expect(legacyReddit).not.toHaveBeenCalled();
+  });
+
+  it('leaves the Microsoft and HubSpot monitors open to a non-root caller', async () => {
+    nonRoot();
+    flag(true);
+    svcMicrosoft.mockResolvedValueOnce(monitorPayload({ account_id: '187654321' }));
+    svcHubSpot.mockResolvedValueOnce({
+      days: 30,
+      emails: [],
+      action_items: [],
+      totals: { email_count: 0, sent: 0, delivered: 0, opens: 0, clicks: 0, bounces: 0, unsubscribes: 0, spam_reports: 0 },
+    });
+    const msRes = buildRes();
+    const hsRes = buildRes();
+
+    await new CampaignController().getMicrosoftMonitor(buildReq({ accountKey: '187654321', project: 'tlf' }), msRes, vi.fn());
+    await new CampaignController().getHubSpotMonitor(buildReq({ project: 'tlf' }), hsRes, vi.fn());
+
+    expect(svcMicrosoft).toHaveBeenCalledWith(expect.anything(), 'tlf', '187654321', 30);
+    expect(svcHubSpot).toHaveBeenCalledWith(expect.anything(), 'tlf', 30);
+    expect(msRes.json).toHaveBeenCalledTimes(1);
+    expect(hsRes.json).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe.each([
+  { name: 'getKeywords', legacy: legacyKeywords, svc: svcKeywords, payload: { window: 'last_30_days', row_count: 0, truncated: false, rows: [] } },
+  { name: 'getAudience', legacy: legacyAudience, svc: svcAudience, payload: { window: 'last_30_days', bucket_count: 0, buckets: [] } },
+] as const)('shared-account legacy insights: $name', ({ name, legacy, svc, payload }) => {
+  it.each([false, true])('refuses non-root legacy reads before any upstream call, monitor cutover: %s', async (monitorOn) => {
+    flag(monitorOn);
+    nonRoot();
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '30' }), res, next);
+
+    expect(nextError(next)).toBeInstanceOf(AuthorizationError);
+    expect((nextError(next) as AuthorizationError).toResponse()).toMatchObject({ code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE });
+    expect(legacy).not.toHaveBeenCalled();
+    expect(svc).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('serves legacy insights to a ROOT caller, writer: %s', async (writer) => {
+    checkRootWriter.mockResolvedValue(writer);
+    checkRootCampaignManager.mockResolvedValue(!writer);
+    const data = { legacy: true };
+    legacy.mockResolvedValueOnce(data);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '7' }), res, next);
+
+    expect(legacy).toHaveBeenCalledWith(expect.anything(), 7);
+    expect(res.json).toHaveBeenCalledWith(data);
+    expect(next).not.toHaveBeenCalled();
+    expect(checkRootCampaignManager).toHaveBeenCalledTimes(writer ? 0 : 1);
+  });
+
+  it('keeps campaign-service project-scoped insights available to a non-root caller', async () => {
+    nonRoot();
+    isServerFeatureEnabled.mockImplementation((f) => f === ServerFeatureFlag.CampaignServiceInsights);
+    svc.mockResolvedValueOnce(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController()[name](buildReq({ project: 'acme-foundation', days: '30' }), res, next);
+
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'acme-foundation', 'last_30_days');
+    expect(legacy).not.toHaveBeenCalled();
+    expect(checkRootWriter).not.toHaveBeenCalled();
+    expect(checkRootCampaignManager).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
   });
 });

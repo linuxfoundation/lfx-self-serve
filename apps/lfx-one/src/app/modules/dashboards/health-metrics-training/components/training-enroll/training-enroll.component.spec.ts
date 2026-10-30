@@ -34,8 +34,8 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
   change: { enrollments: 0.2, certifications: 0, revenueUsd: -0.2 },
   byType: [
-    { deliveryType: 'E-Learning', isListed: true, enrollments: 9000, revenueUsd: 30000 },
-    { deliveryType: 'Certification Exam', isListed: true, enrollments: 3000, revenueUsd: 70000 },
+    { deliveryType: 'E-Learning', isListed: true, isListedRevenue: true, enrollments: 9000, revenueUsd: 30000 },
+    { deliveryType: 'Certification Exam', isListed: true, isListedRevenue: true, enrollments: 3000, revenueUsd: 70000 },
   ],
 };
 
@@ -52,6 +52,7 @@ function enrollment(
       { year: currentYear, enrollments: 4000 },
       { year: currentYear - 1, enrollments: 8000 },
     ],
+    goals: { enrollments: null, revenueUsd: null, enrollmentsProgressYtd: null, revenueProgressYtd: null },
     ...overrides,
   };
 }
@@ -61,6 +62,7 @@ describe('TrainingEnrollComponent', () => {
   let getTrainingEnrollment: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsTrainingEnrollment | Error = enrollment()): Promise<void> {
     getTrainingEnrollment = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -79,7 +81,10 @@ describe('TrainingEnrollComponent', () => {
 
     fixture = TestBed.createComponent(TrainingEnrollComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -106,6 +111,7 @@ describe('TrainingEnrollComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads every period for the foundation once and settles', async () => {
@@ -114,6 +120,7 @@ describe('TrainingEnrollComponent', () => {
     expect(getTrainingEnrollment).toHaveBeenCalledTimes(1);
     expect(getTrainingEnrollment).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('training-enroll-loading')).toBeNull();
   });
 
@@ -197,7 +204,7 @@ describe('TrainingEnrollComponent', () => {
     expect(text('training-enroll-baseline')).toBe('no year-over-year comparison for this period');
   });
 
-  it('re-projects a period change from the one read, with no comparison for a completed year', async () => {
+  it('re-projects and re-settles a period change from the one read, with no comparison for a completed year', async () => {
     const payload = enrollment();
     payload.periods.COMPLETED_YEAR = { ...PERIOD, totals: { enrollments: 15000, certifications: 400, revenueUsd: 90000 }, change: null };
     await render(payload);
@@ -207,17 +214,28 @@ describe('TrainingEnrollComponent', () => {
     await settle();
 
     expect(getTrainingEnrollment).toHaveBeenCalledTimes(1);
-    expect(lifecycle).toEqual([]);
+    // Whether the period has anything to show moves with it, so it settles again without a read.
+    expect(lifecycle).toEqual(['settled']);
+    expect(verdicts).toEqual([false, false]);
     expect(text('training-enroll-headline-value')).toBe('15,000');
     expect(text('training-enroll-headline-delta')).toBe('not available');
     expect(text('training-enroll-baseline')).toBe('no year-over-year comparison for this period');
   });
 
-  it('shows the not-measured state when the foundation has no summary row', async () => {
+  it('settles empty, with no body, when the foundation has no summary row', async () => {
     await render(HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED);
 
-    expect(query('training-enroll-unmeasured')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
+    expect(query('training-enroll-hero')).toBeNull();
+  });
+
+  it('keeps the body for a period that only certified, with no enrollment or revenue', async () => {
+    await render(enrollment({}, { totals: { enrollments: 0, certifications: 40, revenueUsd: 0 } }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('training-enroll-hero')).not.toBeNull();
+    expect(text('training-enroll-side-certifications-value')).toBe('40');
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -225,6 +243,7 @@ describe('TrainingEnrollComponent', () => {
 
     expect(query('training-enroll-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton without reading or settling until a foundation is selected', async () => {

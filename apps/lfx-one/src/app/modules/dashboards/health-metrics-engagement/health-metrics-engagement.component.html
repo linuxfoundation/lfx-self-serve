@@ -8,42 +8,59 @@
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
   [subNavItems]="subNavItems()"
+  [blank]="blank"
   navLabel="Engagement sections"
-  testIdPrefix="engagement"
-  [crossReference]="crossReference">
+  testIdPrefix="engagement">
   <ng-template lfxHealthMetricsL2Section="participation">
     <lfx-engagement-meeting-participation
       (sectionPicked)="shell.scrollToSection($event)"
       (reading)="shell.sectionReading('participation')"
-      (settled)="shell.sectionSettled('participation')" />
+      (settled)="shell.sectionSettled('participation', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="committees">
     <lfx-engagement-group-attendance
       (countsChange)="groupCounts.set($event)"
       (reading)="shell.sectionReading('committees')"
-      (settled)="shell.sectionSettled('committees')" />
+      (settled)="shell.sectionSettled('committees', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="trend">
-    <lfx-engagement-attendance-trend (reading)="shell.sectionReading('trend')" (settled)="shell.sectionSettled('trend')" />
+    <lfx-engagement-attendance-trend (reading)="shell.sectionReading('trend')" (settled)="shell.sectionSettled('trend', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="orgs">
     <lfx-engagement-org-participation
       (countsChange)="orgCounts.set($event)"
       (reading)="shell.sectionReading('orgs')"
-      (settled)="shell.sectionSettled('orgs')" />
+      (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="reps">
-    <lfx-engagement-representatives (countsChange)="repCounts.set($event)" (reading)="shell.sectionReading('reps')" (settled)="shell.sectionSettled('reps')" />
+    <lfx-engagement-representatives
+      (countsChange)="repCounts.set($event)"
+      (reading)="shell.sectionReading('reps')"
+      (settled)="shell.sectionSettled('reps', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="nonmem">
     <lfx-engagement-non-member-participation
       (countsChange)="nonMemberCounts.set($event)"
       (reading)="shell.sectionReading('nonmem')"
-      (settled)="shell.sectionSettled('nonmem')" />
+      (settled)="shell.sectionSettled('nonmem', $event)" />
+  </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="newsletters">
+    <lfx-engagement-newsletter-performance
+      (countChange)="newsletterCount.set($event)"
+      (reading)="shell.sectionReading('newsletters')"
+      (settled)="shell.sectionSettled('newsletters', $event)" />
+  </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="recipients">
+    <lfx-engagement-newsletter-recipients
+      (countChange)="recipientCount.set($event)"
+      (reading)="shell.sectionReading('recipients')"
+      (settled)="shell.sectionSettled('recipients', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

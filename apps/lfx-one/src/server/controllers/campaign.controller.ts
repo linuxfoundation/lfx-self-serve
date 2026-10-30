@@ -8,6 +8,13 @@
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
+import {
+  googleAdsToUpperCode,
+  googleCallExtensionRefusal,
+  googlePriceExtensionRefusal,
+  googlePromotionRefusal,
+} from '@lfx-one/shared/utils/campaign-google-assets.utils';
 
 import { NextFunction, Request, Response } from 'express';
 
@@ -28,12 +35,16 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignDeviceBidModifier,
+  CampaignListResult,
   CampaignMetricsWindow,
   CampaignNegativeKeywordInput,
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignProximityTarget,
+  CampaignCallExtension,
+  CampaignPriceExtension,
+  CampaignPromotion,
   CampaignSitelink,
   CampaignStructuredSnippet,
   CampaignSSEEventType,
@@ -44,10 +55,19 @@ import type {
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
   FlushableResponse,
+  GoogleAdsAccountOption,
+  TwitterAdsAccountOption,
+  TwitterAdsAccountsResult,
+  TwitterCreateCapability,
+  GoogleAdsGeoTargetSearchResult,
+  GoogleAdsGeoTargetSuggestion,
   GoogleAdsRadiusUnit,
   GoogleCampaignChannel,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeImageRef,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
+  TwitterCampaignCreateRequest,
   MicrosoftKeywordsWindow,
   MonitorConnectionAccount,
   MonitorConnectionPlatform,
@@ -69,14 +89,19 @@ import {
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN,
   GOOGLE_ADS_DEVICES,
   GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_GEO_SEARCH_BOUNDS,
+  GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN,
+  GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_ID_PATTERN,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_LANGUAGE_ID_PATTERN,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_AD_SCHEDULES,
   GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY,
+  GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS,
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
@@ -95,17 +120,24 @@ import {
   GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
   GOOGLE_ADS_MAX_SNIPPET_VALUES,
   GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
+  GOOGLE_ADS_MAX_CALL_EXTENSIONS,
+  GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+  GOOGLE_ADS_MAX_PROMOTIONS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_ADS_MIN_BID_MODIFIER,
   GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
+  GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN,
+  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+  GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
   GOOGLE_CHANNELS_WITH_AD_SCHEDULES,
+  GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
@@ -113,6 +145,7 @@ import {
   GOOGLE_CHANNELS_WITH_PROXIMITY,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CUTOVER_ONLY_CREATE_FIELDS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   ISO_CALENDAR_DATE_PATTERN,
@@ -147,16 +180,20 @@ import {
   MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_MESSAGE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
   TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  TWITTER_MAX_BUDGET,
   VALID_CAMPAIGN_BID_TYPES,
   VALID_CAMPAIGN_BUDGET_TYPES,
   VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
   googleAdsEchoed,
   googleAdsToLower,
+  googleAdsDecodedText,
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
@@ -167,7 +204,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -188,13 +225,26 @@ import { toUtmCreateResult, toUtmLookupResult } from '../services/campaign-utm-m
 import {
   asResumeRefusal,
   CampaignServiceClient,
+  canCreateMetaInstagramDsa,
+  canCreateMicrosoftSchedule,
+  canCreateTwitter,
+  canCreateWithAudienceSegments,
   canCreateWithBidding,
+  canCreateWithFinerGoogleGeo,
+  canCreateWithGoogleCriteria,
+  canSearchGoogleGeoTargets,
+  canSetRedditConversionPixel,
+  canUseGoogleCreativeAssets,
+  canUseLinkedInCreativeAssets,
+  canUseMetaCreativeAssets,
+  canUseMicrosoftCreativeAssets,
   canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
 } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
+import { personaDetectionService } from '../utils/persona-helper';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
@@ -305,19 +355,28 @@ function googleAdsClockTime(hour: number, minute: number): string {
  * exists. `display.longHeadline` is the live example: a **scalar** where Performance Max's
  * `longHeadlines` is a list.
  *
+ * `images` is the subset of `lists` whose entries may also be a stored-asset ref
+ * (`{ imageAssetId }`) — the fields the catalogue gives an image shape. `youtubeVideoIds` is a list
+ * but not an image slot, so an object there is dropped as before.
+ *
  * `video` has no entry on purpose — see `GOOGLE_VIDEO_CREATE_SUPPORTED`. `search` has none either:
  * its copy rides as top-level `headlines`/`descriptions`/`keywords`, not under a creative key.
  */
-const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; scalars: readonly string[] }> = Object.fromEntries(
-  GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
-    channel,
-    {
-      key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
-      lists: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'list').map((f) => f.control),
-      scalars: GOOGLE_CREATIVE_FIELD_SPECS[channel].filter((f) => f.kind === 'text').map((f) => f.control),
-    },
-  ])
-);
+const GOOGLE_CREATIVE_FIELDS: Record<string, { key: string; lists: readonly string[]; images: readonly string[]; scalars: readonly string[] }> =
+  Object.fromEntries(
+    GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => {
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      return [
+        channel,
+        {
+          key: GOOGLE_CREATIVE_REQUEST_KEYS[channel],
+          lists: fields.filter((f) => f.kind === 'list').map((f) => f.control),
+          images: fields.filter((f) => f.image !== undefined).map((f) => f.control),
+          scalars: fields.filter((f) => f.kind === 'text').map((f) => f.control),
+        },
+      ];
+    })
+  );
 
 export class CampaignController {
   private readonly proxyService = new CampaignProxyService();
@@ -636,6 +695,47 @@ export class CampaignController {
       const body = req.body as CampaignCreateRequest;
       const platforms = Array.isArray(body?.platforms) ? body.platforms : [];
 
+      // Google audience segments are ROOT-ONLY until a user list can be mapped to a project. Every
+      // foundation's Google Ads connection points at one shared LF customer, so a segment is a
+      // resource name on THAT account, and a non-root operator could name another foundation's list
+      // (campaign-service refuses to list user lists on the shared account for the same reason,
+      // linuxfoundation/lfx-v2-campaign-service#411). First of every guard, so nothing is
+      // normalised, judged or created for a caller who may not send the field at all, and on either
+      // path: the legacy creator drops the list, but the request still asked for it.
+      //
+      // A 403 with a code, not a 400 naming the field: the body is well formed and the refusal is
+      // about WHO is asking, which is how `requireSharedAccountMonitorAccess` answers the same
+      // shared-account question for reads. Any present value other than an empty list counts as
+      // carrying segments, so a malformed one cannot slip past to a shape refusal a non-root caller
+      // could probe with.
+      const rawSegments = body?.audienceSegments as unknown;
+      const carriesSegments = rawSegments !== undefined && rawSegments !== null && !(Array.isArray(rawSegments) && rawSegments.length === 0);
+      if (platforms.includes('google-ads') && carriesSegments && !(await this.isRootCampaignPrincipal(req))) {
+        next(
+          new AuthorizationError(GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_MESSAGE, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+            path: req.path,
+            code: GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE,
+          })
+        );
+        return;
+      }
+      // Then, for a caller who MAY send them, refused rather than dropped when the serving create
+      // path cannot carry them — the `bidding` reasoning below. Only campaign-service reads the key;
+      // the legacy creator would create the campaign without the user lists and report success. The
+      // form never sends them in that state (`googleAudienceSegmentsEnabled` is false there), but a
+      // capability read and a create can land on pods with different flags mid-rollout.
+      if (platforms.includes('google-ads') && carriesSegments && !canCreateWithAudienceSegments()) {
+        next(
+          ServiceValidationError.forField('audienceSegments', 'Google audience segments are not enabled on this deployment; omit audienceSegments', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
       // BEFORE `createConfigEnvelope`, which sanitises both HubSpot bodies unconditionally. This
       // route validates the body's SHAPE only — no field schema — so the only other bound on that
       // input is express.json's
@@ -687,6 +787,171 @@ export class CampaignController {
         return;
       }
 
+      // Postal-code ids and radius targets are refused, not dropped, on the same terms as `bidding`
+      // above — and dropping them is worse than dropping a bid. The legacy creator resolves
+      // `geoTargets` through the 30-country map and skips every other entry, and never reads
+      // `proximityTargets`, so a postal-only or radius-only campaign would be created with NO
+      // location limit. The form never sends them in that state (`googleCreativeEnabled` hides both
+      // controls and the create is blocked while any are held); this protects the endpoint.
+      const unservedGoogleGeoField = this.unservedGoogleGeoField(body);
+      if (unservedGoogleGeoField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedGoogleGeoField,
+            'Google postal-code and radius targeting is not enabled on this deployment; target countries instead',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
+      // X is refused, not dropped, while this deployment cannot create there — the same rule as
+      // `bidding` above, applied to a whole platform. The legacy creator has no X path, so with the
+      // cutover dark the X half of a request would vanish while the rest went ahead, and
+      // `CampaignServiceTwitterCreate` off is a product answer that X creation is not open. The form
+      // never sends either in that state (`twitterCreateEnabled` keeps X unselectable and blocks a
+      // held one); this protects the endpoint from a caller that is not the form.
+      const unservedTwitterField = this.unservedTwitterField(body);
+      if (unservedTwitterField !== null) {
+        next(
+          ServiceValidationError.forField(unservedTwitterField, 'X campaign creation is not enabled on this deployment; remove twitter-ads and twitterConfig', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // With X enabled, each `twitterConfig` field is judged here by name, before anything is
+      // queued, for the reason Microsoft's are judged by its builder: campaign-service refuses every
+      // one of these during dispatch, after the job exists, which reaches the operator as a failed
+      // job rather than as an error on the request they just made.
+      const twitterRefusal = this.twitterConfigRefusal(body);
+      if (twitterRefusal !== null) {
+        next(
+          ServiceValidationError.forField(twitterRefusal.field, twitterRefusal.message, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // The rest of the Google criteria and ad extensions, refused, not dropped, on the same terms as
+      // the postal-code ids above (#3692). The legacy creator reads none of them, so a create carrying
+      // `deviceBidModifiers: [{ device: 'MOBILE', bidModifier: 0 }]` would serve on mobile anyway and
+      // report success. Every guard that judges these fields sits behind `cutoverOn` below, so this
+      // is the only check they get with the cutover dark — a supported state during a safe deploy
+      // or a rollback. The form never sends them in that state (`googleCreativeAvailable` hides
+      // every one of these sections); this protects the endpoint.
+      const unservedGoogleCriteria = this.unservedGoogleCriteriaField(body);
+      if (unservedGoogleCriteria !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedGoogleCriteria.field,
+            `Google ${unservedGoogleCriteria.label} cannot be applied while campaign creation is not served by campaign-service on this deployment; omit ${unservedGoogleCriteria.field}`,
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
+      // Microsoft flight dates are refused, not dropped, on the same terms as `bidding` above.
+      // Neither creator that would serve them reads the keys — the legacy one never did, and a
+      // campaign-service without linuxfoundation/lfx-v2-campaign-service#409 ignores them — so
+      // either would create the campaign with no flight while the request set one. The form never
+      // sends them in that state (`microsoftScheduleEnabled` withholds them). Forwarded untouched
+      // otherwise, as Meta's are: campaign-service judges the format and fails the job on a bad one.
+      const unservedMicrosoftScheduleField = this.unservedMicrosoftScheduleField(body);
+      if (unservedMicrosoftScheduleField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedMicrosoftScheduleField,
+            'Microsoft flight dates are not enabled on this deployment; omit startDate and endDate from microsoftConfig',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
+      // The Meta Instagram id and EU DSA disclosures are refused, not dropped, on the same terms.
+      // Off means either the legacy creator serves (it never reads them) or the deployed
+      // campaign-service predates linuxfoundation/lfx-v2-campaign-service#414's EU rule; the form never sends them in that state
+      // (`metaInstagramDsaEnabled` hides the inputs). Forwarded untouched otherwise: campaign-service
+      // judges them, and answers a missing or malformed one with a 400 before any job exists.
+      const unservedMetaInstagramDsaField = this.unservedMetaInstagramDsaField(body);
+      if (unservedMetaInstagramDsaField !== null) {
+        next(
+          ServiceValidationError.forField(
+            unservedMetaInstagramDsaField,
+            'The Meta Instagram account and EU DSA fields are not enabled on this deployment; omit instagramUserId, dsaBeneficiary and dsaPayor from metaConfig',
+            {
+              operation: 'campaign_create',
+              service: 'campaign_controller',
+            }
+          )
+        );
+        return;
+      }
+
+      // A stored Google image is refused, not dropped, on the same terms as the Meta one below: the
+      // normalizer would otherwise forward it to a service that ignores it, or drop it, and either
+      // way the campaign would launch without the image the operator picked.
+      const unservedGoogleAssetField = this.unservedGoogleAssetField(body);
+      if (unservedGoogleAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedGoogleAssetField, 'uploaded Google images are not enabled on this deployment; supply an image URL instead', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Meta image is refused, not dropped, on the same terms as the Reddit one below.
+      const unservedMetaAssetField = this.unservedMetaAssetField(body);
+      if (unservedMetaAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedMetaAssetField, 'uploaded Meta images are not enabled on this deployment; supply an image URL instead', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded LinkedIn image, likewise.
+      const unservedLinkedInAssetField = this.unservedLinkedInAssetField(body);
+      if (unservedLinkedInAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedLinkedInAssetField, 'uploaded LinkedIn images are not enabled on this deployment; remove the image', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Microsoft image, likewise.
+      if (this.unservedMicrosoftAssetField(body)) {
+        next(
+          ServiceValidationError.forField('microsoftConfig.imageAssetId', 'uploaded Microsoft images are not enabled on this deployment; remove the image', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
       // An uploaded Reddit image is refused, not dropped, when this deployment cannot use it — the
       // same reasoning as `bidding` above. The form never sends it in that state
       // (`redditAssetUploadEnabled` hides the upload control).
@@ -701,7 +966,28 @@ export class CampaignController {
         return;
       }
 
+      // A per-campaign Reddit pixel is refused, not dropped, when the legacy creator will serve the
+      // create — it never reads the field, so the campaign would quietly use (or fail for want of)
+      // the connection's pixel instead of the one the operator chose. A non-string pixel is refused
+      // on EITHER arm, since campaign-service decodes the field into a Go string. The form never
+      // sends a pixel on the legacy arm (`redditConversionPixelEnabled` hides the control) (#3484).
+      const redditPixelRefusal = this.redditConversionPixelRefusal(body);
+      if (redditPixelRefusal !== null) {
+        next(
+          ServiceValidationError.forField('redditConfig.conversionPixelId', redditPixelRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
       const configEnvelope = this.createConfigEnvelope(body);
+
+      // The channel the Google config resolved to, read ONCE for every channel fence below rather
+      // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
+      // `buildGoogleAdsConfig` put there, and each fence checks it is a string before using it.
+      const googleChannel: unknown = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
 
       // Validated here, matching the `jobId` and `project` checks in `getJobStatus`, rather than
       // being left to `createCampaigns`.
@@ -816,13 +1102,13 @@ export class CampaignController {
       // `GOOGLE_ADS_GEO_TARGET_MAP` is the same 30 (verified code-for-code), so no COUNTRY CODE this
       // guard rejects is one the dispatcher would accept.
       //
-      // Upstream's `resolveGeoEntry` has since also accepted a raw NUMERIC geo target constant id in
-      // this list — how a caller addresses a city, region, metro or postal code — which this guard
-      // and `buildGoogleAdsConfig`'s `META_GEO_CODE_PATTERN` shape test both still refuse. That is a
-      // real residual over-refusal, and it is unreachable today: the Implementation tab's country
-      // picker is the only producer of this list and emits alpha-2 codes only. Lifting it means
-      // widening the builder's shape test and the picker together, so it is tracked separately
-      // rather than half-done here. The EXCLUSION list below, which is new, takes both spellings.
+      // Upstream's `resolveGeoEntry` also accepts a raw NUMERIC geo target constant id in this list —
+      // how a caller addresses a city, region, metro or postal code — and the Implementation tab now
+      // sends one for every postal-code target the operator adds, after the country chips. Such an
+      // id is judged the way upstream judges it: for its canonical SHAPE only, never against the
+      // country map. Whether 9031945 names a real postal code needs Google, and upstream's own
+      // comment declines that lookup ("a well-formed id naming nothing is refused by Google at the
+      // criteria mutate"), so this guard cannot do better than the shape either.
       //
       // The shape test in `buildGoogleAdsConfig` is not enough on its own. It admits any two-letter
       // code, so `PT` or `ZA` — well-formed, assigned, and offered nowhere in this map — passes the
@@ -830,13 +1116,30 @@ export class CampaignController {
       // creation failed" with the real reason only in the pod log. Naming the code here is the
       // whole point of the guard; the builder stays shape-only so the two judgements do not drift.
       //
-      // The count cap is upstream's too, and is checked BEFORE de-duplication there, so this one is
-      // too: a list that is only over the cap because it repeats a code is still refused, which is
-      // what the dispatcher does.
+      // The count cap is upstream's too, counted across BOTH spellings together because upstream
+      // counts the one list, and is checked BEFORE de-duplication there, so this one is too: a list
+      // that is only over the cap because it repeats an entry is still refused, which is what the
+      // dispatcher does.
       if (cutoverOn && platforms.includes('google-ads')) {
         const googleGeoTargets = (configEnvelope['googleAdsConfig'] as { geoTargets?: unknown } | undefined)?.geoTargets;
         if (Array.isArray(googleGeoTargets)) {
-          const unsupported = googleGeoTargets.filter((g): g is string => typeof g === 'string' && !(g in GOOGLE_ADS_GEO_TARGET_MAP));
+          const entries = googleGeoTargets.filter((g): g is string => typeof g === 'string');
+          // A numeric entry that is not the canonical spelling of a positive id — `02840`, `0`, a
+          // 21-digit run — is refused by upstream before any mutate, with its own message, so it is
+          // named here with that message rather than reported as an unsupported country.
+          const nonCanonical = entries.find((g) => GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g) && !isCanonicalGoogleAdsResourceId(g));
+          if (nonCanonical !== undefined) {
+            next(
+              ServiceValidationError.forField(
+                'geoTargets',
+                `Google Ads location ${googleAdsEchoed(nonCanonical)} is not the canonical spelling of a positive geo target constant id. Use the id with no leading zeros and create again.`,
+                { operation: 'campaign_create', service: 'campaign_controller' }
+              )
+            );
+            return;
+          }
+
+          const unsupported = entries.filter((g) => !GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g) && !(g in GOOGLE_ADS_GEO_TARGET_MAP));
           if (unsupported.length > 0) {
             next(
               ServiceValidationError.forField(
@@ -850,9 +1153,10 @@ export class CampaignController {
 
           if (googleGeoTargets.length > GOOGLE_ADS_MAX_GEO_TARGETS) {
             next(
+              // `geoTargets`, not `countryCode`: the list now holds postal-code ids as well as countries.
               ServiceValidationError.forField(
-                'countryCode',
-                `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
+                'geoTargets',
+                `Google Ads accepts at most ${GOOGLE_ADS_MAX_GEO_TARGETS} countries and postal codes together on one campaign, and this one has ${googleGeoTargets.length}. Remove some and create again.`,
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -935,15 +1239,14 @@ export class CampaignController {
             return;
           }
 
-          const googleProximityChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (rawProximityTargets.length > 0 && typeof googleProximityChannel === 'string') {
+          if (rawProximityTargets.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld, and checked BEFORE the cap because `validateGeoPlan`
             // checks it before it calls `validateProximityTargets`. Demand Gen attaches location
             // criteria at the ad group level, where upstream has not verified that a proximity
             // criterion is accepted, so it refuses rather than creating a paid campaign to find out.
-            if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(googleProximityChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_PROXIMITY as readonly string[]).includes(googleChannel)) {
               refuseProximity(
-                `Google Ads does not accept radius targets on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleProximityChannel as GoogleCampaignChannel] ?? googleProximityChannel} campaigns, which target locations at the ad group level. Remove the radius targets or pick a different channel, then create again.`
+                `Google Ads does not accept radius targets on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns, which target locations at the ad group level. Remove the radius targets or pick a different channel, then create again.`
               );
               return;
             }
@@ -993,7 +1296,6 @@ export class CampaignController {
           }
 
           const languages = this.googleUpperCodeList(rawLanguages);
-          const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
           if (languages.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not dropped: upstream's contract for the field is "refused, never
             // silently dropped", and `validateCriteriaPlan` fails the whole Demand Gen create on it.
@@ -1050,15 +1352,14 @@ export class CampaignController {
             return;
           }
 
-          const googleScheduleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (rawAdSchedules.length > 0 && typeof googleScheduleChannel === 'string') {
+          if (rawAdSchedules.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld: `validateCriteriaPlan` fails the whole Demand Gen
             // create on any non-location criterion, ad schedules included. Performance Max is NOT
             // fenced out — Google documents ad schedules as a Performance Max campaign criterion,
             // and upstream keeps them there alongside languages.
-            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleScheduleChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_AD_SCHEDULES as readonly string[]).includes(googleChannel)) {
               refuseAdSchedules(
-                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleScheduleChannel as GoogleCampaignChannel] ?? googleScheduleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
+                `Google Ads does not accept ad schedules on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the ad schedules or pick a different channel, then create again.`
               );
               return;
             }
@@ -1118,16 +1419,15 @@ export class CampaignController {
             }
           }
 
-          const googleDeviceChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-          if (devices.length > 0 && typeof googleDeviceChannel === 'string') {
+          if (devices.length > 0 && typeof googleChannel === 'string') {
             // REFUSED by name, not withheld, and on one channel FEWER than ad schedules.
             // `validateCriteriaPlan` fails the whole Demand Gen create on any of these criteria, then
             // SPLITS Performance Max in two: it keeps the languages and ad schedules Google documents
             // as Performance Max campaign criteria, and refuses device bid modifiers, because that
             // channel's automated bidding owns the bid and sets no device adjustment.
-            if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleDeviceChannel)) {
+            if (!(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS as readonly string[]).includes(googleChannel)) {
               refuseDevices(
-                `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleDeviceChannel as GoogleCampaignChannel] ?? googleDeviceChannel} campaigns. Remove them or pick a different channel, then create again.`
+                `Google Ads does not accept device bid modifiers on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove them or pick a different channel, then create again.`
               );
               return;
             }
@@ -1158,8 +1458,7 @@ export class CampaignController {
         // asymmetry is upstream's and it is about what a repeat costs: a repeated device carries a
         // second bid modifier, one of which Google would silently drop, while a repeated exclusion
         // asks twice for the one thing it already said.
-        const demographicChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
-
+        //
         // Age ranges first. The channel fence here is the second half of Performance Max's split: it
         // takes demographics as asset-group signals, which this client does not create, so a
         // campaign-level exclusion there is refused rather than created somewhere the operator
@@ -1168,7 +1467,7 @@ export class CampaignController {
           body?.excludedAgeRanges,
           'excluded age ranges',
           'age range names',
-          demographicChannel,
+          googleChannel,
           (entry) => this.googleExcludedAgeRangeRefusal(entry)
         );
         if (ageRangeRefusal) {
@@ -1180,12 +1479,53 @@ export class CampaignController {
         // age ranges: `validateExcludedGenders` checks `maxDemographicExclusions` against its own
         // length, so a request at the cap on BOTH lists is accepted — which is why this is a second
         // call and not a second field folded into the first.
-        const genderRefusal = this.googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', demographicChannel, (entry) =>
+        const genderRefusal = this.googleDemographicExclusionRefusal(body?.excludedGenders, 'excluded genders', 'gender names', googleChannel, (entry) =>
           this.googleExcludedGenderRefusal(entry)
         );
         if (genderRefusal) {
           next(ServiceValidationError.forField('excludedGenders', genderRefusal, { operation: 'campaign_create', service: 'campaign_controller' }));
           return;
+        }
+      }
+
+      // Audience segments, in `validateAudienceSegments`' own order: JSON decode, the cap on the RAW
+      // list, then each entry, first bad one wins — and only THEN the Search-only fence, because
+      // upstream validates the list in `precomputeAdGroupAdInputs` before `preflightCampaignKind`
+      // refuses it off Search. Each would otherwise fail in Go as the opaque "platform campaign
+      // creation failed". A repeat is not refused: upstream collapses it.
+      const rawAudienceSegments = body?.audienceSegments;
+      if (cutoverOn && platforms.includes('google-ads') && rawAudienceSegments !== undefined && rawAudienceSegments !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('audienceSegments', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // Upstream decodes `audienceSegments` into a Go `[]string`, so either fault is refused there
+        // before any validator runs. Reading it as absent would create the campaign untargeted.
+        if (!Array.isArray(rawAudienceSegments) || rawAudienceSegments.some((s) => typeof s !== 'string')) {
+          refuse('Google Ads audience segments must be a list of user list resource names.');
+          return;
+        }
+        const segments = this.googleAudienceSegmentList(rawAudienceSegments);
+        if (segments.length > 0 && typeof googleChannel === 'string') {
+          if (segments.length > GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS} audience segments on one campaign, and this one has ${segments.length}. Remove some and create again.`
+            );
+            return;
+          }
+          for (const [index, segment] of segments.entries()) {
+            const refusal = this.googleAudienceSegmentRefusal(segment, index);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
+          }
+          // REFUSED by name, not withheld: upstream fails the whole create on any channel but
+          // Search. The UI never sends this — its section and payload gate on the same list.
+          if (!(GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts audience segments on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the segments or pick Search, then create again.`
+            );
+            return;
+          }
         }
       }
 
@@ -1202,7 +1542,6 @@ export class CampaignController {
           refuse('Google Ads sitelinks must be a list of objects with text fields.');
           return;
         }
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (rawSitelinks.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search, counting every entry. The UI never sends this.
@@ -1244,7 +1583,6 @@ export class CampaignController {
           return;
         }
         const callouts = this.googleCalloutList(rawCallouts);
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (callouts.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search. The UI never sends this — its section and payload gate on the same list.
@@ -1287,7 +1625,6 @@ export class CampaignController {
           refuse('Google Ads structured snippets must be a list of objects with a header and a list of values.');
           return;
         }
-        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
         if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
           // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
           // but Search, counting every entry. The UI never sends this.
@@ -1311,6 +1648,51 @@ export class CampaignController {
               return;
             }
           }
+        }
+      }
+
+      // Call extensions, promotions and prices, after the snippets and in that order, as
+      // `validateAssetPlan` runs `validateCallExtensions`, `validatePromotionExtensions` and
+      // `validatePriceExtensions` after `validateStructuredSnippets`. Each list takes the same four
+      // steps the three above do — JSON decode, the Search-only fence, the raw-slice cap, then each
+      // entry in upstream's own order, first bad one wins — so they share one walk rather than
+      // three copies of it. The per-entry rules live in `campaign-google-assets.utils`, the one copy
+      // the Implementation tab's add guard also judges by.
+      if (cutoverOn && platforms.includes('google-ads')) {
+        const assetRefusal =
+          this.googleAssetListRefusal(body?.callExtensions, googleChannel, {
+            plural: 'call extensions',
+            singular: 'call extension',
+            max: GOOGLE_ADS_MAX_CALL_EXTENSIONS,
+            shapeMessage: 'Google Ads call extensions must be a list of objects with a country code and a phone number.',
+            isShape: (entry) => this.isCallExtensionShape(entry),
+            entryRefusal: (raw) => {
+              const calls = this.googleCallExtensionList(raw);
+              return this.firstAssetRefusal(calls, (call, i) => googleCallExtensionRefusal(call, calls.slice(0, i)));
+            },
+          }) ??
+          this.googleAssetListRefusal(body?.promotions, googleChannel, {
+            plural: 'promotions',
+            singular: 'promotion',
+            max: GOOGLE_ADS_MAX_PROMOTIONS,
+            shapeMessage: 'Google Ads promotions must be a list of objects whose amounts are numbers and whose other fields are text.',
+            isShape: (entry) => this.isPromotionShape(entry),
+            entryRefusal: (raw) => {
+              const promotions = this.googlePromotionList(raw);
+              return this.firstAssetRefusal(promotions, (promotion, i) => googlePromotionRefusal(promotion, promotions.slice(0, i)));
+            },
+          }) ??
+          this.googleAssetListRefusal(body?.prices, googleChannel, {
+            plural: 'price extensions',
+            singular: 'price extension',
+            max: GOOGLE_ADS_MAX_PRICE_EXTENSIONS,
+            shapeMessage: 'Google Ads price extensions must be a list of objects with text fields and a list of rows whose amounts are numbers.',
+            isShape: (entry) => this.isPriceExtensionShape(entry),
+            entryRefusal: (raw) => this.firstAssetRefusal(this.googlePriceExtensionList(raw), (price) => googlePriceExtensionRefusal(price)),
+          });
+        if (assetRefusal) {
+          next(ServiceValidationError.forField(assetRefusal.field, assetRefusal.message, { operation: 'campaign_create', service: 'campaign_controller' }));
+          return;
         }
       }
 
@@ -1354,10 +1736,10 @@ export class CampaignController {
       // comparison is STRICT on both sides, so a one-day campaign entered as the same date twice
       // is refused, which is the likeliest way an operator trips this.
       //
-      // Only these two are checked. LinkedIn takes no flight window on this path, and
-      // `buildMicrosoftConfig` deliberately DROPS `startDate`/`endDate` because `microsoftConfig`
-      // declares no scheduling fields — so a window that never reaches the wire must not be
-      // judged here.
+      // Only these two are checked. LinkedIn takes no flight window on this path, and Microsoft's
+      // (`microsoftConfig.startDate`/`endDate`, linuxfoundation/lfx-v2-campaign-service#409) is
+      // left to campaign-service: either date may be sent alone, and a bad one fails the platform
+      // job there, so this predicate is not its rule to borrow.
       //
       // Google DOES carry one (`googleFlightWindow`) and is still excluded, because its test is a
       // DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
@@ -2111,7 +2493,10 @@ export class CampaignController {
    *
    * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
    * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
-   * what an operator sees, which is why `brief` is required rather than defaulted.
+   * what an operator sees, which is why `brief` is required rather than defaulted. Because the
+   * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
+   * every foundation, those account monitors are root-only on every arm — see
+   * `requireSharedAccountMonitorAccess` (lfx-self-serve-ops#54).
    *
    * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
    * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
@@ -2186,8 +2571,9 @@ export class CampaignController {
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
    * the image was stored and 200 when an identical one already was (the id is usable either way).
    *
-   * Refused before anything is sent upstream: the capability off (`canUseRedditCreativeAssets` —
-   * nothing could use the asset), a missing `project` or `brief_id`, a type outside
+   * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
+   * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
+   * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
    * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
    * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
    * the length is re-checked here so a direct caller of this method gets the same answer.
@@ -2200,7 +2586,19 @@ export class CampaignController {
       next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
     };
 
-    if (!canUseRedditCreativeAssets()) {
+    // ANY capability admits an upload: the stored library is one library, and a deployment that
+    // can use an image on any platform is reason enough to let it in. Refusing unless Reddit's
+    // flag were on would mean a Google-only deployment could read and delete the library it is not
+    // allowed to add to. On GOOGLE_ASSETS the upload is what the Google image slots name as
+    // `{ imageAssetId }` in a create.
+    if (
+      !canUseRedditCreativeAssets() &&
+      !canUseGoogleCreativeAssets() &&
+      !canUseMetaCreativeAssets() &&
+      !canUseLinkedInCreativeAssets() &&
+      !canUseMicrosoftCreativeAssets() &&
+      !canCreateTwitter()
+    ) {
       fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
       return;
     }
@@ -2253,6 +2651,132 @@ export class CampaignController {
       const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
       logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
       res.status(asset.created ? 201 : 200).json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets?project=&brief_id=` — the brief's stored image
+   * library with the quota the next upload is judged against.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like `getCampaignMetrics`: the route is addressed
+   * by a campaign-service BRIEF, and with the flag off no such brief exists here, so it answers 404
+   * rather than reaching upstream. It is deliberately NOT behind either creative-asset capability
+   * flag — reading and pruning a library a deployment already holds must not depend on whether a
+   * platform may currently consume it, or images uploaded under one flag would become unreachable
+   * the moment it was turned off.
+   *
+   * Query parameters are `project` and `brief_id`, matching the upload sibling above rather than
+   * the camelCase the Optimize metrics reads use.
+   */
+  public async listCreativeAssets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_list_creative_assets';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug });
+    try {
+      const library = await this.campaignServiceClient.listCreativeAssets(req, scope.projectSlug, scope.briefId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, count: library.count, bytesUsed: library.bytesUsed });
+      res.json(library);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/plan?project=&brief_id=&platforms=` — which stored
+   * images fit which platform slots, and what is still missing.
+   *
+   * Registered BEFORE the `:assetId` route, and gated the same way as the list above.
+   *
+   * `platforms` is repeatable (`?platforms=google-ads&platforms=reddit`), which Express surfaces as
+   * a string for one value and an array for several; both are normalized to an array here. Absent
+   * or empty means every platform the service publishes slot rules for, which is what an operator
+   * asking "is my library ready" wants. An unknown platform is IGNORED upstream rather than
+   * refused, so it is passed through rather than validated against a list this tier would have to
+   * keep in step with the service.
+   */
+  public async getCreativeAssetPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_creative_asset_plan';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+
+    const raw = req.query['platforms'];
+    const platforms = (Array.isArray(raw) ? raw : [raw]).filter((value): value is string => typeof value === 'string').map((value) => value.trim());
+    const requested = [...new Set(platforms.filter((value) => value.length > 0))];
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, platforms: requested });
+    try {
+      const plan = await this.campaignServiceClient.getCreativeAssetPlan(req, scope.projectSlug, scope.briefId, requested);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assignments: plan.assignments.length, gaps: plan.gaps.length });
+      res.json(plan);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — one stored image's
+   * metadata. Gated like the list above.
+   *
+   * `assetId` is validated as a UUID here as well as being registered after the literal `plan`
+   * route: the ordering is what keeps `/plan` off this handler, and the shape check is what makes
+   * that safe to rely on, so a later reordering fails loudly rather than reading `plan` as an id.
+   */
+  public async getCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_get_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      const asset = await this.campaignServiceClient.getCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId: asset.id });
+      res.json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `DELETE /api/campaigns/brief/creative-assets/:assetId?project=&brief_id=` — permanently remove
+   * a stored image and free its bytes against the brief's quota. Answers 204.
+   *
+   * Gated like the list above, and for the same reason: pruning a full library must stay possible
+   * on a deployment where no platform may currently consume it.
+   *
+   * Upstream refuses with 409 `reason=creative_asset_in_use` while a live campaign on the brief
+   * could still need the image, and that refusal carries its own remedy text; it passes through
+   * untouched rather than being restated here.
+   */
+  public async deleteCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_delete_creative_asset';
+    const scope = this.creativeAssetScope(req, operation, next);
+    if (!scope) {
+      return;
+    }
+    const assetId = this.creativeAssetId(req, operation, next);
+    if (!assetId) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId: scope.briefId, projectSlug: scope.projectSlug, assetId });
+    try {
+      await this.campaignServiceClient.deleteCreativeAsset(req, scope.projectSlug, scope.briefId, assetId);
+      logger.success(req, operation, startTime, { briefId: scope.briefId, assetId });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -2333,9 +2857,21 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Google Ads account monitor, read account-wide through the BFF's own credentials. That customer
+   * is shared by every foundation, so the read is root-only (lfx-self-serve-ops#54); the project is
+   * still required, so a request naming none is a 400 for every caller.
+   */
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_monitor', { days });
+    const projectSlug = this.requireMonitorProject(req, next, 'campaign_monitor');
+    if (projectSlug === null) {
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
+      return;
+    }
+    const startTime = logger.startOperation(req, 'campaign_monitor', { days, projectSlug });
 
     try {
       const data = await this.metricsService.getMonitorData(req, days);
@@ -2351,13 +2887,12 @@ export class CampaignController {
    *
    * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
    * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
-   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
-   * rows it drops belong to other foundations — see the flag's own docs.
+   * query, restricted to ROOT callers because it cannot isolate one foundation's data.
    *
    * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
    * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
    * so a fallback constant would report one foundation's keywords to another. The legacy arm
-   * ignores the project entirely, which is precisely the leak being closed.
+   * ignores the project entirely and therefore requires the shared-account ROOT gate.
    */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -2402,6 +2937,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_keywords', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getKeywords(req, days);
       logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2450,7 +2988,13 @@ export class CampaignController {
     const startTime = logger.startOperation(req, 'list_brief_campaigns', { projectSlug, briefId });
 
     try {
-      const result = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
+      const listed = await this.campaignServiceClient.listBriefCampaigns(req, projectSlug, briefId);
+      // The one PER-CALLER capability, so it is decided here where the caller is known rather than
+      // in the service. Only on the campaign-service create path (`canCreateWithAudienceSegments`, the
+      // same test the create route refuses on), and that test runs first so a deployment that cannot
+      // send segments asks no persona question at all.
+      const googleAudienceSegmentsEnabled = canCreateWithAudienceSegments() && (await this.isRootCampaignPrincipal(req));
+      const result: CampaignListResult = { ...listed, googleAudienceSegmentsEnabled };
       logger.success(req, 'list_brief_campaigns', startTime, { count: result.campaigns.length, possiblyStale: result.possiblyStale });
       res.json(result);
     } catch (error) {
@@ -2642,6 +3186,11 @@ export class CampaignController {
     if (this.refuseCutoverMismatch(req, next, 'linkedin_monitor')) {
       return;
     }
+    // The legacy allowlist account is LF's own, shared by every foundation; the connection arm above
+    // reads the project's own account and stays open.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'linkedin_monitor', 'LinkedIn Ads'))) {
+      return;
+    }
 
     const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
@@ -2671,7 +3220,7 @@ export class CampaignController {
   /**
    * Age/gender/device breakdowns for the campaigns table.
    *
-   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   * Same flag, project requirement and legacy shared-account ROOT gate as `getKeywords` above.
    *
    * Campaign-service fails the whole read if any one breakdown fails rather than returning
    * the two that loaded, so there is no partial-success arm to handle here: an error is an
@@ -2708,6 +3257,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_audience', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getAudience(req, days);
       logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2856,6 +3408,11 @@ export class CampaignController {
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
 
+    // Reddit's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'reddit_monitor', 'Reddit Ads'))) {
+      return;
+    }
+
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
@@ -2914,11 +3471,242 @@ export class CampaignController {
     res.json(accounts);
   }
 
+  /**
+   * The Google Ads accounts the project's connection can reach, from campaign-service's account
+   * discovery, in the Meta/Reddit option shape. campaign-service only: there is no legacy list to
+   * fall back to, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404 as if it
+   * were not mounted — the HubSpot monitor route's gating.
+   *
+   * Root-only, as the Google Ads monitor is: a project with no connection of its own is answered
+   * from the LF system credential upstream, so the list is then every account the LF can reach.
+   */
+  public async getGoogleAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_accounts';
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'Google Ads'))) {
+      return;
+    }
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const payload = await this.campaignServiceClient.listGoogleAdsAccounts(req, projectSlug);
+      // `accounts` is required upstream; reading its absence as an empty list would say the
+      // connection reaches nothing, so an unreadable body fails the read instead.
+      if (!Array.isArray(payload?.accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads account list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const accounts: GoogleAdsAccountOption[] = payload.accounts
+        .filter((a) => typeof a?.id === 'string' && a.id !== '')
+        .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
+      logger.success(req, operation, startTime, { count: accounts.length });
+      res.json(accounts);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Whether this deployment can create X campaigns at all (`canCreateTwitter`), with no brief.
+   *
+   * The Plan picker needs the answer BEFORE a brief exists: `CampaignListResult.twitterCreateEnabled`
+   * rides on a brief's campaign list, so a fresh Plan page would keep X "Coming soon" until a brief
+   * without X had been saved. The answer is deployment-wide — flags only, no project or brief —
+   * which is why it can be read up front. Answered as `{ enabled }` and never refused.
+   */
+  public getTwitterCreateCapability(_req: Request, res: Response): void {
+    const result: TwitterCreateCapability = { enabled: canCreateTwitter() };
+    res.json(result);
+  }
+
+  /**
+   * Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319):
+   * campaign-service's `list-twitter-ads-accounts` beside the project's own X connection.
+   *
+   * `twitterConfig` names no account — the create runs under the connection's bound `account_id` and
+   * is refused with `ErrAccountNotSelected` when it is empty — so the Implement tab shows this rather
+   * than offering a choice the request could not carry.
+   *
+   * Root-only, as the Google Ads accounts route is and for the same reason: campaign-service resolves
+   * a project with no X connection of its own to the LF system credential, so the list is then every
+   * account the LF can reach. Gated on `canCreateTwitter` (404 while X creation is off, as if it were
+   * not mounted): the read exists for the create flow only.
+   */
+  public async getTwitterAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'twitter_ads_accounts';
+    if (!canCreateTwitter()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, operation, 'X Ads'))) {
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+
+    try {
+      const [payload, connection] = await Promise.all([
+        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug),
+        this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
+      ]);
+      // `accounts` is required upstream; reading its absence as an empty list would say the
+      // credential reaches nothing, so an unreadable body fails the read instead.
+      if (!Array.isArray(payload?.accounts)) {
+        throw new MicroserviceError('campaign-service returned an unreadable X Ads account list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      const accounts: TwitterAdsAccountOption[] = payload.accounts
+        .filter((a) => typeof a?.id === 'string' && a.id !== '')
+        .map((a) => ({ key: a.id, label: typeof a.label === 'string' && a.label.trim() !== '' ? a.label : a.id }));
+      const result: TwitterAdsAccountsResult = { accounts, connection };
+      logger.success(req, operation, startTime, { count: accounts.length, connection: connection.state });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Search Google's geo target table for the Implement tab's location picker, proxied to
+   * campaign-service's `suggest-google-ads-geo-targets` (linuxfoundation/lfx-v2-campaign-service#411)
+   * and answered in this app's camelCase vocabulary.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` and the create cutover
+   * (`canSearchGoogleGeoTargets`): off, the route answers 404 as if it were not mounted, the gating
+   * the Google accounts route uses, because an older campaign-service has no suggest route to call.
+   *
+   * NOT root-only, unlike the accounts route beside it: the geo target table is Google's public
+   * location data, not anything an ad account holds, so the LF system credential upstream falls back
+   * to exposes nothing about any foundation. The router's `requireCampaignManager` still applies.
+   *
+   * Every parameter is checked against upstream's own bounds first, so a malformed search is a named
+   * 400 here rather than a Goa validation error from campaign-service.
+   */
+  public async searchGoogleAdsGeoTargets(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'google_ads_geo_target_search';
+    if (!canSearchGoogleGeoTargets()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const refuse = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller', path: req.path }));
+
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      refuse('project', 'A project is required to search Google Ads locations.');
+      return;
+    }
+    const q = typeof req.query['q'] === 'string' ? googleAdsTrimSpace(req.query['q']) : '';
+    if (q === '' || [...q].length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength) {
+      refuse('q', `Enter a place name or postal code of 1 to ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxQueryLength} characters.`);
+      return;
+    }
+
+    const rawCountry = req.query['countryCode'];
+    let countryCode: string | undefined;
+    if (rawCountry !== undefined && rawCountry !== '') {
+      if (typeof rawCountry !== 'string' || !GOOGLE_ADS_GEO_SEARCH_COUNTRY_PATTERN.test(rawCountry.trim())) {
+        refuse('countryCode', 'A country to search within must be a two-letter ISO country code.');
+        return;
+      }
+      countryCode = rawCountry.trim().toUpperCase();
+    }
+
+    // Repeated `?targetTypes=` arrives as an array and a single one as a string; anything else
+    // (an object from `targetTypes[a]=…`) is refused rather than read as "no filter".
+    const rawTypes = req.query['targetTypes'];
+    let typeList: unknown[] = [];
+    if (Array.isArray(rawTypes)) typeList = rawTypes;
+    else if (rawTypes !== undefined) typeList = [rawTypes];
+    if (!typeList.every((t): t is string => typeof t === 'string')) {
+      refuse('targetTypes', 'Location types must be a list of type names.');
+      return;
+    }
+    const targetTypes = typeList.map((t) => t.trim()).filter((t) => t !== '');
+    if (targetTypes.length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypes) {
+      refuse('targetTypes', `At most ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypes} location types can be searched at once.`);
+      return;
+    }
+    if (targetTypes.some((t) => t.length > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypeLength || !/[A-Za-z0-9]/.test(t))) {
+      refuse(
+        'targetTypes',
+        `Each location type must be a name of at most ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxTargetTypeLength} characters, such as Postal Code.`
+      );
+      return;
+    }
+
+    const rawLimit = req.query['limit'];
+    let limit: number | undefined;
+    if (rawLimit !== undefined && rawLimit !== '') {
+      const parsed = typeof rawLimit === 'string' && /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxLimit) {
+        refuse('limit', `The number of locations to return must be from 1 to ${GOOGLE_ADS_GEO_SEARCH_BOUNDS.maxLimit}.`);
+        return;
+      }
+      limit = parsed;
+    }
+
+    const startTime = logger.startOperation(req, operation, { viaCampaignService: true, hasCountry: countryCode !== undefined, typeCount: targetTypes.length });
+    try {
+      const payload = await this.campaignServiceClient.suggestGoogleAdsGeoTargets(req, projectSlug, {
+        q,
+        ...(countryCode ? { country_code: countryCode } : {}),
+        ...(targetTypes.length > 0 ? { target_types: targetTypes } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
+      // `suggestions` is required upstream; reading its absence as an empty list would say nothing
+      // matched, so an unreadable body fails the search instead — the accounts route's rule.
+      if (!Array.isArray(payload?.suggestions)) {
+        throw new MicroserviceError('campaign-service returned an unreadable Google Ads location list.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      // A row whose id is not the shape `geoTargets` accepts cannot be added to a campaign, so it is
+      // dropped rather than offered. Upstream patterns the field the same way; this is the belt.
+      const suggestions: GoogleAdsGeoTargetSuggestion[] = payload.suggestions
+        .filter((s) => typeof s?.id === 'string' && GOOGLE_ADS_GEO_SUGGESTION_ID_PATTERN.test(s.id) && typeof s.name === 'string')
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          canonicalName: typeof s.canonical_name === 'string' && s.canonical_name.trim() !== '' ? s.canonical_name : s.name,
+          countryCode: typeof s.country_code === 'string' ? s.country_code : '',
+          targetType: typeof s.target_type === 'string' ? s.target_type : '',
+          status: typeof s.status === 'string' ? s.status : '',
+          ...(typeof s.reach === 'number' && Number.isFinite(s.reach) ? { reach: s.reach } : {}),
+        }));
+      const result: GoogleAdsGeoTargetSearchResult = { suggestions, truncated: payload.truncated === true };
+      logger.success(req, operation, startTime, { count: suggestions.length, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getMetaMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rawDays = String(req.query['days'] ?? '30');
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
+
+    // Meta's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'meta_monitor', 'Meta Ads'))) {
+      return;
+    }
 
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
@@ -3035,9 +3823,13 @@ export class CampaignController {
   /**
    * X (Twitter) Ads account monitor, from campaign-service only (#2519). The Microsoft route's
    * sibling; additionally a 409 when the account cannot be monitored as it stands, with the
-   * upstream `reason` forwarded as `upstreamCode`.
+   * upstream `reason` forwarded as `upstreamCode`. Unlike Microsoft's, X's account is shared by
+   * every foundation, so the read is root-only — refused before the flag-off 404 too.
    */
   public async getTwitterMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'twitter_monitor', 'X Ads'))) {
+      return;
+    }
     await this.serveReportBackedMonitor(req, res, next, {
       operation: 'twitter_monitor',
       platformLabel: 'X Ads',
@@ -3957,6 +4749,44 @@ export class CampaignController {
   }
 
   /**
+   * Whether the caller is a cross-foundation principal: a ROOT writer, or a holder of ROOT
+   * `global_marketing_ops`. The one test for every shared-account question — monitor reads and the
+   * root-only Google audience segments. Both checks are request-cached and fail closed, and a ROOT
+   * writer returns without a second lookup.
+   */
+  private async isRootCampaignPrincipal(req: Request): Promise<boolean> {
+    return (await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req));
+  }
+
+  /**
+   * Whether the caller may read shared-account monitor data or legacy Google insights, or `false`
+   * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
+   *
+   * `requireCampaignManager` authorises the caller for the ONE project it names, but an account
+   * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
+   * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
+   * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
+   * are request-cached and fail closed, and the refusal runs before any upstream call. A ROOT writer
+   * returns immediately without a second ROOT marketing lookup.
+   */
+  private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
+    if (await this.isRootCampaignPrincipal(req)) {
+      return true;
+    }
+    // `apiErrorHandler` logs the 403 itself; this only names the platform for tracing.
+    logger.debug(req, operation, 'Refusing a shared-account monitor read for a non-root caller', { platform: platformLabel });
+    next(
+      new AuthorizationError(MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+      })
+    );
+    return false;
+  }
+
+  /**
    * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's
    * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
    * `unavailable`, because only the service's typed 404 says the connection does not exist.
@@ -4138,14 +4968,256 @@ export class CampaignController {
     return null;
   }
 
+  /**
+   * Why `redditConfig.conversionPixelId` cannot be sent, or `null` when it can.
+   *
+   * A value that is not a string is refused on EITHER arm: campaign-service decodes the field into
+   * a Go `string`, so it could only fail there as an opaque decode error, never succeed. Otherwise,
+   * absent, `null` and a blank string all mean "use the connection's pixel" upstream, which is
+   * exactly what the legacy creator does anyway, so only a real pixel is refused, and only while the
+   * legacy creator serves — refusing a blank would fail a create that loses nothing on either arm.
+   */
+  private redditConversionPixelRefusal(body: CampaignCreateRequest): string | null {
+    const config: unknown = body?.redditConfig;
+    if (config === null || typeof config !== 'object' || !('conversionPixelId' in config)) return null;
+    const pixel: unknown = config.conversionPixelId;
+    if (pixel === undefined || pixel === null) return null;
+    if (typeof pixel !== 'string') return 'the Reddit conversion pixel must be text';
+    if (canSetRedditConversionPixel() || pixel.trim() === '') return null;
+    return "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel";
+  }
+
+  /**
+   * The first `metaConfig.variants[i].imageAssetId` when this deployment cannot honour it, else
+   * `null`. `in`, as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   */
+  private unservedMetaAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseMetaCreativeAssets()) return null;
+    const config: unknown = body?.metaConfig;
+    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
+    const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
+    return index === -1 ? null : `metaConfig.variants[${index}].imageAssetId`;
+  }
+
+  /**
+   * The first stored-image entry in a Google creative image field when this deployment cannot
+   * honour it, as `<creative key>.<field>[i].imageAssetId`, else `null`.
+   *
+   * Every channel's creative key is scanned, not only the selected channel's: a stored image the
+   * request carries anywhere is one the operator chose, and naming it is cheaper than reasoning about
+   * which key the normalizer would have read. `in`, as for the Meta field: an explicit
+   * `imageAssetId: null` is still the field.
+   */
+  private unservedGoogleAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseGoogleCreativeAssets()) return null;
+    const raw = body as unknown as Record<string, unknown>;
+    for (const spec of Object.values(GOOGLE_CREATIVE_FIELDS)) {
+      const creative = raw?.[spec.key];
+      if (creative === null || typeof creative !== 'object' || Array.isArray(creative)) continue;
+      for (const field of spec.images) {
+        const value = (creative as Record<string, unknown>)[field];
+        if (!Array.isArray(value)) continue;
+        const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
+        if (index !== -1) return `${spec.key}.${field}[${index}].imageAssetId`;
+      }
+    }
+    return null;
+  }
+
+  /** `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId` this deployment cannot honour. */
+  private unservedLinkedInAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseLinkedInCreativeAssets()) return null;
+    const config: unknown = body?.linkedInConfig;
+    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
+    const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
+    return index === -1 ? null : `linkedInConfig.variants[${index}].imageAssetId`;
+  }
+
+  /**
+   * Whether `microsoftConfig.imageAssetId` is present while this deployment cannot honour it. `in`,
+   * as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   */
+  private unservedMicrosoftAssetField(body: CampaignCreateRequest): boolean {
+    if (canUseMicrosoftCreativeAssets()) return false;
+    const config: unknown = body?.microsoftConfig;
+    return config !== null && typeof config === 'object' && 'imageAssetId' in config;
+  }
+
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
   private unservedBiddingField(body: CampaignCreateRequest): string | null {
     if (canCreateWithBidding()) return null;
-    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const) {
+    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig', 'twitterConfig'] as const) {
       const config: unknown = body?.[key];
       // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
       // campaign-service would refuse it rather than read it as automatic.
       if (config !== null && typeof config === 'object' && 'bidding' in config) return `${key}.bidding`;
+    }
+    return null;
+  }
+
+  /**
+   * `geoTargets` or `proximityTargets` when a Google create carries a postal-code id or a radius target
+   * this deployment cannot honour (see `createCampaign`), else `null`.
+   *
+   * A numeric `geoTargets` entry is judged after Go's trim, as the builder judges it, so a padded id
+   * cannot slip past. An EMPTY `proximityTargets` list carries nothing to drop and is let through.
+   */
+  private unservedGoogleGeoField(body: CampaignCreateRequest): string | null {
+    if (canCreateWithFinerGoogleGeo()) return null;
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('google-ads')) return null;
+    const geoTargets: unknown = body?.geoTargets;
+    if (Array.isArray(geoTargets) && geoTargets.some((g) => typeof g === 'string' && GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(googleAdsTrimSpace(g)))) {
+      return 'geoTargets';
+    }
+    const proximityTargets: unknown = body?.proximityTargets;
+    if (proximityTargets !== undefined && proximityTargets !== null && !(Array.isArray(proximityTargets) && proximityTargets.length === 0)) {
+      return 'proximityTargets';
+    }
+    return null;
+  }
+
+  /**
+   * `twitterConfig` or `platforms` when a request asks for X while this deployment cannot create
+   * there (`canCreateTwitter`), else `null`.
+   *
+   * `in` for the config, as for bidding: an explicit `twitterConfig: null` is still the field. The
+   * config is named first because it is the more specific answer; a bare `twitter-ads` in the
+   * platform list, with no config, is named as `platforms`.
+   */
+  private unservedTwitterField(body: CampaignCreateRequest): string | null {
+    if (canCreateTwitter()) return null;
+    if (body !== null && typeof body === 'object' && 'twitterConfig' in body) return 'twitterConfig';
+    if (Array.isArray(body?.platforms) && body.platforms.includes('twitter-ads')) return 'platforms';
+    return null;
+  }
+
+  /**
+   * The first `twitterConfig` field campaign-service would refuse, by name, or `null`.
+   *
+   * Only for a request that selects X with X enabled; otherwise `unservedTwitterField` has already
+   * answered. Each rule is the X client's own (`CreateCampaign`, `internal/platform/twitter/client.go`)
+   * except the budget floor, which is this app's house floor of 1:
+   *
+   * - `budgetAmount`: a finite number, at least 1 and at most `TWITTER_MAX_BUDGET`.
+   * - `startDate` / `endDate`: real `YYYY-MM-DD` dates, untrimmed as Go reads them, the end strictly
+   *   after the start. That the start is in the future is left to campaign-service, for the
+   *   clock-boundary reason Meta's past-start check is.
+   * - `tweetText`: non-blank, and within X's weighted cap once the destination link is appended
+   *   (copy that carries a link of its own is judged on its own weight, see `twitterTweetTextError`).
+   * - `imageAssetId`: when present, a non-blank string; whether it names an asset is upstream's call.
+   *
+   * A missing `twitterConfig` with `twitter-ads` selected is NOT refused here: `hasPlatformConfig`
+   * already refuses an unconfigured platform by name inside `createCampaigns`.
+   */
+  private twitterConfigRefusal(body: CampaignCreateRequest): { field: string; message: string } | null {
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('twitter-ads')) return null;
+    const config: unknown = body?.twitterConfig;
+    if (config === undefined) return null;
+    if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+      return { field: 'twitterConfig', message: 'twitterConfig must be an object' };
+    }
+    const raw = config as Partial<Record<keyof TwitterCampaignCreateRequest, unknown>>;
+    const budget = raw.budgetAmount;
+    if (typeof budget !== 'number' || !Number.isFinite(budget) || budget < 1 || budget > TWITTER_MAX_BUDGET) {
+      return {
+        field: 'twitterConfig.budgetAmount',
+        message: `the X daily budget must be a number from 1 to ${TWITTER_MAX_BUDGET.toLocaleString('en-US')} in the ad account's currency`,
+      };
+    }
+    for (const key of ['startDate', 'endDate'] as const) {
+      if (!this.isCalendarDate(raw[key])) {
+        return { field: `twitterConfig.${key}`, message: `the X ${key === 'startDate' ? 'start' : 'end'} date must be a real date written YYYY-MM-DD` };
+      }
+    }
+    if ((raw.endDate as string) <= (raw.startDate as string)) {
+      return {
+        field: 'twitterConfig.endDate',
+        message:
+          'the X end date must be after its start date, and X will refuse this flight. Set an end date at least one day after the start date and create again.',
+      };
+    }
+    // Lenient: copy carrying its own link may not get the destination appended upstream, and only
+    // campaign-service knows the tagged link it compares, so that case is left to it.
+    const tweetError = typeof raw.tweetText === 'string' ? twitterTweetTextError(raw.tweetText, true) : 'Enter the tweet text.';
+    if (tweetError !== null) return { field: 'twitterConfig.tweetText', message: tweetError };
+    if ('imageAssetId' in raw && (typeof raw.imageAssetId !== 'string' || raw.imageAssetId.trim() === '')) {
+      return {
+        field: 'twitterConfig.imageAssetId',
+        message: 'the X image must be the id of an image uploaded to this brief; omit imageAssetId for a tweet with no image',
+      };
+    }
+    return null;
+  }
+
+  /** A real `YYYY-MM-DD` date, exactly as written: Go's `validateDate` does not trim, so neither does this. */
+  private isCalendarDate(value: unknown): value is string {
+    if (typeof value !== 'string' || !ISO_CALENDAR_DATE_PATTERN.test(value)) return false;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  }
+
+  /**
+   * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
+   * cannot honour it (see `createCampaign`), else `null`.
+   *
+   * The bidding plan and creative entries (`normalized`) count only when the cutover's own
+   * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
+   * counts: absent, `null` and an empty list ask for nothing, and the legacy creator serves those
+   * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
+   * malformed non-list included — is a request for something the legacy creator cannot do, and is
+   * named rather than dropped, as `unservedGoogleGeoField` treats a radius target.
+   */
+  private unservedGoogleCriteriaField(body: CampaignCreateRequest): (typeof GOOGLE_CUTOVER_ONLY_CREATE_FIELDS)[number] | null {
+    if (canCreateWithGoogleCriteria()) return null;
+    // The legacy creator's own platform default (`campaign-proxy.service.ts`): an omitted or empty
+    // `platforms` list is a Google create there, so it is one here too, or exactly that request
+    // would slip past every refusal below.
+    const platforms = Array.isArray(body?.platforms) && body.platforms.length > 0 ? body.platforms : ['google-ads'];
+    if (!platforms.includes('google-ads')) return null;
+    const raw = body as unknown as Record<string, unknown>;
+    // The keys the cutover would actually send for the `normalized` entries: its own bidding plan,
+    // and every channel's creative, so a creative left behind under an unselected channel is judged
+    // the way `unservedGoogleAssetField` judges it — present in the request, so asked for.
+    const sent: Record<string, unknown> = { ...this.googleBidding(body) };
+    for (const channel of Object.keys(GOOGLE_CREATIVE_REQUEST_KEYS) as GoogleCampaignChannel[]) {
+      Object.assign(sent, this.googleCreative(body, channel));
+    }
+    return (
+      GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
+        if ('normalized' in entry) return entry.field in sent;
+        const value = raw[entry.field];
+        return value !== undefined && value !== null && !(Array.isArray(value) && value.length === 0);
+      }) ?? null
+    );
+  }
+
+  /**
+   * `metaConfig.instagramUserId`, `dsaBeneficiary` or `dsaPayor` when this deployment cannot honour
+   * them, else `null`. `in`, as for the Microsoft dates below: an explicit `null` is still the field.
+   */
+  private unservedMetaInstagramDsaField(body: CampaignCreateRequest): string | null {
+    if (canCreateMetaInstagramDsa()) return null;
+    const config: unknown = body?.metaConfig;
+    if (config === null || typeof config !== 'object') return null;
+    for (const key of ['instagramUserId', 'dsaBeneficiary', 'dsaPayor'] as const) {
+      if (key in config) return `metaConfig.${key}`;
+    }
+    return null;
+  }
+
+  /**
+   * `microsoftConfig.startDate` or `endDate` when this deployment cannot honour them, else `null`.
+   *
+   * `in`, as for bidding: an explicit `startDate: null` is still the field. Off means either the
+   * legacy creator serves (it never reads the dates) or campaign-service predates
+   * linuxfoundation/lfx-v2-campaign-service#409 (it drops them) — a campaign with no flight either way.
+   */
+  private unservedMicrosoftScheduleField(body: CampaignCreateRequest): string | null {
+    if (canCreateMicrosoftSchedule()) return null;
+    const config: unknown = body?.microsoftConfig;
+    if (config === null || typeof config !== 'object') return null;
+    for (const key of ['startDate', 'endDate'] as const) {
+      if (key in config) return `microsoftConfig.${key}`;
     }
     return null;
   }
@@ -4176,6 +5248,9 @@ export class CampaignController {
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
     if (microsoftConfig) envelope['microsoftConfig'] = microsoftConfig;
+
+    const twitterConfig = this.buildTwitterConfig(body);
+    if (twitterConfig) envelope['twitterConfig'] = twitterConfig;
 
     const hubspotConfig = this.buildHubSpotConfig(body);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
@@ -4394,7 +5469,7 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsTrimSpace(fields[name] as string) : '');
+      const field = (name: string): string => (typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '');
       return { text: field('text'), description1: field('description1'), description2: field('description2'), finalUrl: field('finalUrl') };
     });
   }
@@ -4406,10 +5481,8 @@ export class CampaignController {
    * `<platform>Config` object, because the legacy path had a dedicated Google endpoint. Every
    * field below is one the dispatcher reads from `config` and cannot recover from the stored
    * brief: sending nothing creates a campaign with no budget and an ad group with no criteria,
-   * which per `googleAdsConfig.Keywords` "can never serve". The dispatcher's remaining optional
-   * fields are omitted because this request has no source for them — `audienceSegments` expects
-   * pre-built Customer Match resource names the UI never collects, and `adoptExisting` must
-   * default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
+   * which per `googleAdsConfig.Keywords` "can never serve". `adoptExisting` is omitted because it
+   * must default to false so a re-dispatch cannot silently rebind an existing upstream campaign.
    *
    * Budget depends on WHICH channel this config is for, and the two cases differ.
    *
@@ -4501,7 +5574,12 @@ export class CampaignController {
     // A MALFORMED code is refused like the sibling refuses it. Dropping it silently would leave
     // the campaign untargeted while the operator believes they picked a market — the same
     // wrong-market defect, reached by a different road.
-    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g))) return null;
+    //
+    // A numeric entry passes the shape test as well: it is a raw geo target constant id, which is how
+    // the Implementation tab sends a postal-code target, and upstream's `resolveGeoEntry` tells the two
+    // spellings apart by exactly this shape. Whether the id is canonical is `createCampaign`'s call,
+    // made by name before this config is dispatched.
+    if (!cleanGeoTargets.every((g) => META_GEO_CODE_PATTERN.test(g) || GOOGLE_ADS_GEO_TARGET_ID_PATTERN.test(g))) return null;
 
     // A SINGLE NON-SEARCH channel gets the WHOLE budget: there is no Search campaign to fund, so
     // the split does not apply. campaign-service creates the campaign with no ad and no keywords
@@ -4593,8 +5671,13 @@ export class CampaignController {
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
     const sitelinks = this.googleSitelinks(body);
+    // Normalized only, as the extensions are — `createCampaign` names every segment refusal first.
+    const audienceSegments = this.googleAudienceSegments(body);
     // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
     const structuredSnippets = this.googleStructuredSnippets(body);
+    // Normalized only, as the three above are — `createCampaign` names every call, promotion and
+    // price refusal first.
+    const assetExtensions = this.googleAssetExtensions(body);
 
     return {
       budget,
@@ -4627,10 +5710,52 @@ export class CampaignController {
       ...this.googleDeviceBidModifiers(body, 'search'),
       ...this.googleDemographicExclusions(body, 'search'),
       ...searchLanguages,
+      ...audienceSegments,
       ...callouts,
       ...sitelinks,
       ...structuredSnippets,
+      ...assetExtensions,
     };
+  }
+
+  /**
+   * The Search ad group's audience segments, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, so only the Search branch calls it: `createCampaign` refuses segments on any other
+   * channel by name, because upstream fails the whole create there. Omitted rather than sent empty,
+   * the absent-key route every caller predating the field takes.
+   */
+  private googleAudienceSegments(body: CampaignCreateRequest): { audienceSegments?: string[] } {
+    const clean = this.googleAudienceSegmentList(body?.audienceSegments);
+    return clean.length > 0 ? { audienceSegments: clean } : {};
+  }
+
+  /**
+   * The segment list as dispatched: strings only (`createCampaign` refuses anything else first),
+   * each trimmed with Go's rules as `validateAudienceSegments` trims it. Blanks are KEPT so they are
+   * refused by name, and repeats are kept for upstream to collapse.
+   */
+  private googleAudienceSegmentList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((s): s is string => typeof s === 'string').map((s) => googleAdsTrimSpace(s));
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed segment list, or `null` when it would not.
+   *
+   * `validateAudienceSegments`' per-entry branches in order: blank, then a resource name that is not
+   * `customers/{id}/userLists/{id}`, with a well-formed custom audience named for what it is —
+   * upstream parses one and refuses it on Search. The echo is cut short: the text comes from an
+   * unvalidated body.
+   */
+  private googleAudienceSegmentRefusal(segment: string, index: number): string | null {
+    if (segment === '') return `Google Ads audience segments cannot include a blank entry (segment ${index + 1}). Remove it and create again.`;
+    if (GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN.test(segment)) return null;
+    const shown = googleAdsEchoed(segment);
+    if (GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN.test(segment)) {
+      return `Google Ads cannot target the custom audience ${shown} on a Search campaign — only user lists are accepted. Replace it with a user list and create again.`;
+    }
+    return `The Google Ads audience segment ${shown} is not a user list resource name. Use the form customers/{customerId}/userLists/{id}, with the customer id written without dashes, and create again.`;
   }
 
   /**
@@ -4652,7 +5777,7 @@ export class CampaignController {
    */
   private googleCalloutList(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsTrimSpace(c));
+    return raw.filter((c): c is string => typeof c === 'string').map((c) => googleAdsDecodedText(c));
   }
 
   /**
@@ -4740,9 +5865,9 @@ export class CampaignController {
     if (!Array.isArray(raw)) return [];
     return raw.map((entry) => {
       const fields = (entry ?? {}) as Record<string, unknown>;
-      const header = typeof fields['header'] === 'string' ? googleAdsTrimSpace(fields['header']) : '';
+      const header = typeof fields['header'] === 'string' ? googleAdsDecodedText(fields['header']) : '';
       const rawValues = Array.isArray(fields['values']) ? (fields['values'] as unknown[]) : [];
-      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsTrimSpace(v));
+      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsDecodedText(v));
       return { header, values };
     });
   }
@@ -4793,6 +5918,208 @@ export class CampaignController {
   }
 
   /**
+   * Why upstream would refuse one of the call, promotion or price lists, as the field to name and the
+   * message, or `null` when it would not.
+   *
+   * The four steps the sitelink, callout and snippet guards each spell out, in their order: an
+   * absent or null list is "none asked for"; anything the Go decode refuses is refused by shape; a
+   * non-empty list on a channel but Search is refused by name, because `validateAssetPlan` fails the
+   * whole create there; then the raw-slice cap, and only then the entries. `entryRefusal` returns the
+   * first bad entry's sentence already numbered.
+   */
+  private googleAssetListRefusal(
+    raw: unknown,
+    channel: unknown,
+    spec: {
+      plural: 'call extensions' | 'promotions' | 'price extensions';
+      singular: string;
+      max: number;
+      shapeMessage: string;
+      isShape: (entry: unknown) => boolean;
+      entryRefusal: (raw: unknown[]) => { index: number; message: string } | null;
+    }
+  ): { field: string; message: string } | null {
+    if (raw === undefined || raw === null) return null;
+    const field = ({ 'call extensions': 'callExtensions', promotions: 'promotions', 'price extensions': 'prices' } as const)[spec.plural];
+    if (!Array.isArray(raw) || !raw.every((entry) => spec.isShape(entry))) return { field, message: spec.shapeMessage };
+    if (raw.length === 0 || typeof channel !== 'string') return null;
+    if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) {
+      return {
+        field,
+        message: `Google Ads only accepts ${spec.plural} on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel as GoogleCampaignChannel] ?? channel} campaigns. Remove the ${spec.plural} or pick Search, then create again.`,
+      };
+    }
+    if (raw.length > spec.max) {
+      return {
+        field,
+        message: `Google Ads accepts at most ${spec.max} ${spec.plural} on one campaign, and this one has ${raw.length}. Remove some and create again.`,
+      };
+    }
+    const refusal = spec.entryRefusal(raw);
+    if (!refusal) return null;
+    return { field, message: `Google Ads ${spec.singular} ${refusal.index + 1}: ${refusal.message} Fix it and create again.` };
+  }
+
+  /** The first entry `refusalOf` refuses, with its index, or `null` when every entry passes. */
+  private firstAssetRefusal<T>(entries: T[], refusalOf: (entry: T, index: number) => string | null): { index: number; message: string } | null {
+    for (const [index, entry] of entries.entries()) {
+      const message = refusalOf(entry, index);
+      if (message) return { index, message };
+    }
+    return null;
+  }
+
+  /**
+   * The Search campaign's call, promotion and price extensions, spread-ready, each key omitted when
+   * its list is empty — the absent-key route {@link googleCallouts} takes.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses all three on any other channel
+   * by name, and every per-entry refusal, before this is dispatched. The keys are
+   * campaign-service's own (`googleAdsConfig.callExtensions`, `.promotions`, `.prices`), so nothing
+   * is renamed on the way through.
+   */
+  private googleAssetExtensions(body: CampaignCreateRequest): {
+    callExtensions?: CampaignCallExtension[];
+    promotions?: CampaignPromotion[];
+    prices?: CampaignPriceExtension[];
+  } {
+    const callExtensions = this.googleCallExtensionList(body?.callExtensions);
+    const promotions = this.googlePromotionList(body?.promotions);
+    const prices = this.googlePriceExtensionList(body?.prices);
+    return {
+      ...(callExtensions.length > 0 ? { callExtensions } : {}),
+      ...(promotions.length > 0 ? { promotions } : {}),
+      ...(prices.length > 0 ? { prices } : {}),
+    };
+  }
+
+  /**
+   * Whether one raw entry survives the Go decode into its config struct: an object (or null, which
+   * decodes to a blank entry the per-entry checks then refuse by name) whose `text` fields are
+   * absent, null or text and whose `numeric` fields are absent, null or a number. A number sent as a
+   * string is a decode error upstream, so it is a shape refusal here rather than a coercion.
+   */
+  private isAssetEntryShape(entry: unknown, text: readonly string[], numeric: readonly string[] = []): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    const absent = (f: string): boolean => fields[f] === undefined || fields[f] === null;
+    return text.every((f) => absent(f) || typeof fields[f] === 'string') && numeric.every((f) => absent(f) || typeof fields[f] === 'number');
+  }
+
+  private isCallExtensionShape(entry: unknown): boolean {
+    return this.isAssetEntryShape(entry, ['countryCode', 'phoneNumber']);
+  }
+
+  private isPromotionShape(entry: unknown): boolean {
+    return this.isAssetEntryShape(
+      entry,
+      [
+        'promotionTarget',
+        'currencyCode',
+        'promotionCode',
+        'occasion',
+        'languageCode',
+        'startDate',
+        'endDate',
+        'redemptionStartDate',
+        'redemptionEndDate',
+        'finalUrl',
+      ],
+      ['discountPercent', 'discountAmount', 'ordersOverAmount']
+    );
+  }
+
+  /** A price extension's own text fields, plus `offerings` as absent, null or a list of row-shaped entries. */
+  private isPriceExtensionShape(entry: unknown): boolean {
+    if (!this.isAssetEntryShape(entry, ['type', 'priceQualifier', 'languageCode'])) return false;
+    const offerings = (entry as Record<string, unknown> | null)?.['offerings'];
+    if (offerings === undefined || offerings === null) return true;
+    return (
+      Array.isArray(offerings) &&
+      offerings.every((row) => this.isAssetEntryShape(row, ['header', 'description', 'currencyCode', 'unit', 'finalUrl'], ['amount']))
+    );
+  }
+
+  /** One field of a shape-checked raw entry, decoded and trimmed as Go does ({@link googleAdsDecodedText}), or `''` when absent or null. */
+  private assetText(fields: Record<string, unknown>, name: string): string {
+    return typeof fields[name] === 'string' ? googleAdsDecodedText(fields[name] as string) : '';
+  }
+
+  /** One numeric field of a shape-checked raw entry, or `0` — upstream's own "unset" — when absent or null. */
+  private assetNumber(fields: Record<string, unknown>, name: string): number {
+    return typeof fields[name] === 'number' ? (fields[name] as number) : 0;
+  }
+
+  /**
+   * The call-extension list as judged and dispatched: both fields trimmed, the country upper-cased
+   * as `validateCallExtensions` upper-cases it. Nothing is dropped, so a blank entry is refused by
+   * name. Callers have checked the shape with {@link isCallExtensionShape}.
+   */
+  private googleCallExtensionList(raw: unknown): CampaignCallExtension[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      return { countryCode: googleAdsToUpperCode(this.assetText(fields, 'countryCode')), phoneNumber: this.assetText(fields, 'phoneNumber') };
+    });
+  }
+
+  /**
+   * The promotion list as judged and dispatched. Every text field trimmed, the currency upper-cased
+   * as `validateMoney` upper-cases it; an empty optional field and a zero amount are OMITTED — upstream
+   * decodes an absent key to that same zero value, so the wire stays the shape a caller would write.
+   */
+  private googlePromotionList(raw: unknown): CampaignPromotion[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const promotion: CampaignPromotion = { promotionTarget: this.assetText(fields, 'promotionTarget'), finalUrl: this.assetText(fields, 'finalUrl') };
+      for (const name of ['discountPercent', 'discountAmount', 'ordersOverAmount'] as const) {
+        const value = this.assetNumber(fields, name);
+        if (value !== 0) promotion[name] = value;
+      }
+      const currency = googleAdsToUpperCode(this.assetText(fields, 'currencyCode'));
+      if (currency !== '') promotion.currencyCode = currency;
+      for (const name of ['promotionCode', 'occasion', 'languageCode', 'startDate', 'endDate', 'redemptionStartDate', 'redemptionEndDate'] as const) {
+        const value = this.assetText(fields, name);
+        if (value !== '') promotion[name] = value;
+      }
+      return promotion;
+    });
+  }
+
+  /**
+   * The price-extension list as judged and dispatched, on {@link googlePromotionList}'s rules: text
+   * trimmed, currency upper-cased, an empty optional field omitted. Each row keeps its own currency
+   * and destination, which is where the wire carries them.
+   */
+  private googlePriceExtensionList(raw: unknown): CampaignPriceExtension[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const rows = Array.isArray(fields['offerings']) ? (fields['offerings'] as unknown[]) : [];
+      const qualifier = this.assetText(fields, 'priceQualifier');
+      return {
+        type: this.assetText(fields, 'type'),
+        ...(qualifier !== '' ? { priceQualifier: qualifier } : {}),
+        languageCode: this.assetText(fields, 'languageCode'),
+        offerings: rows.map((row) => {
+          const cells = (row ?? {}) as Record<string, unknown>;
+          const unit = this.assetText(cells, 'unit');
+          return {
+            header: this.assetText(cells, 'header'),
+            description: this.assetText(cells, 'description'),
+            amount: this.assetNumber(cells, 'amount'),
+            currencyCode: googleAdsToUpperCode(this.assetText(cells, 'currencyCode')),
+            ...(unit !== '' ? { unit } : {}),
+            finalUrl: this.assetText(cells, 'finalUrl'),
+          };
+        }),
+      };
+    });
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
@@ -4812,6 +6139,7 @@ export class CampaignController {
     const candidates: [string, unknown][] = Object.values(GOOGLE_CREATIVE_REQUEST_KEYS).map((key) => [key, raw[key]]);
     candidates.push(['conversionActions', raw['conversionActions']]);
     candidates.push(['callouts', raw['callouts']]);
+    candidates.push(['audienceSegments', raw['audienceSegments']]);
     // The geo lists, the ad schedules and the three criteria lists are bounded here and not only by
     // their own caps further down, because `createConfigEnvelope` runs BEFORE those caps and
     // normalizes whatever it is handed — `googleProximityList`, `googleAdScheduleList` and
@@ -4835,7 +6163,12 @@ export class CampaignController {
           if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
             return { field, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
           }
-          const long = value.find((entry) => typeof entry === 'string' && this.boundedLength(entry) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH);
+          // A stored-image ref is an object entry, so its id is measured here too: the normalizer
+          // trims and forwards it, and an unbounded id is the same unbounded string a URL would be.
+          const long = value.find((entry) => {
+            const text = typeof entry === 'string' ? entry : this.imageAssetIdOf(entry);
+            return text !== null && this.boundedLength(text) > MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          });
           if (long !== undefined) {
             return { field, message: `an entry exceeds the maximum length of ${MAX_GOOGLE_CREATIVE_FIELD_LENGTH}` };
           }
@@ -4847,7 +6180,7 @@ export class CampaignController {
       }
     }
 
-    // Four request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Seven request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -4855,8 +6188,8 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks` and `structuredSnippets` are the two that are not already `candidates` keys, so
-    // their list lengths are checked here. For the other two the check above has already refused an
+    // `sitelinks`, `structuredSnippets` and the three asset lists are the ones that are not already
+    // `candidates` keys, so their list lengths are checked here. For the other two the check above has already refused an
     // over-long list with the same field and message, which is why this one re-states rather than
     // contradicts.
     //
@@ -4872,6 +6205,23 @@ export class CampaignController {
     const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
       ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
       ['structuredSnippets', ['header', 'values']],
+      ['callExtensions', ['countryCode', 'phoneNumber']],
+      [
+        'promotions',
+        [
+          'promotionTarget',
+          'currencyCode',
+          'promotionCode',
+          'occasion',
+          'languageCode',
+          'startDate',
+          'endDate',
+          'redemptionStartDate',
+          'redemptionEndDate',
+          'finalUrl',
+        ],
+      ],
+      ['prices', ['type', 'priceQualifier', 'languageCode', 'offerings']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
     ];
@@ -4918,6 +6268,28 @@ export class CampaignController {
           }
           if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
+          }
+        }
+      }
+    }
+
+    // `prices.offerings` is the one nested list of OBJECTS, so the walk above bounds its length
+    // (at the shared 100, against upstream's own 3..8) but skips the strings inside each row. They
+    // are bounded here on the same terms, because `googlePriceExtensionList` trims every one of them
+    // during `createConfigEnvelope`, before the caps an operator can act on are reached.
+    const prices = raw['prices'];
+    if (Array.isArray(prices)) {
+      for (const price of prices) {
+        const rows = price && typeof price === 'object' ? (price as Record<string, unknown>)['offerings'] : undefined;
+        if (!Array.isArray(rows)) continue;
+        for (const row of rows) {
+          if (!row || typeof row !== 'object') continue;
+          for (const name of ['header', 'description', 'currencyCode', 'unit', 'finalUrl']) {
+            const value = (row as Record<string, unknown>)[name];
+            const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+            if (typeof value === 'string' && this.boundedLength(value) > max) {
+              return { field: `prices.offerings.${name}`, message: `a value exceeds the maximum length of ${max}` };
+            }
           }
         }
       }
@@ -4995,7 +6367,7 @@ export class CampaignController {
     for (const field of spec.lists) {
       const value = raw[field];
       if (!Array.isArray(value)) continue;
-      const clean = value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+      const clean = spec.images.includes(field) ? this.googleImageRefList(value) : this.googleStringList(value);
       if (clean.length > 0) creative[field] = clean;
     }
     for (const field of spec.scalars) {
@@ -5006,6 +6378,43 @@ export class CampaignController {
     }
 
     return Object.keys(creative).length > 0 ? { [spec.key]: creative } : {};
+  }
+
+  /** A creative list's non-blank strings, trimmed, in order. */
+  private googleStringList(value: unknown[]): string[] {
+    return value.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim());
+  }
+
+  /**
+   * An image slot's entries as campaign-service's `googleAdsImageRef` decodes them: a URL stays a
+   * bare string, and a stored asset is forwarded as `{ imageAssetId }` with the id trimmed — the
+   * object form, never a bare id, because upstream finds an asset only under that key and would
+   * fetch a bare id as a URL.
+   *
+   * Shape-only like the string lists: a blank id, or an object naming no id, is dropped rather than
+   * refused, and a `url` key on the object is never forwarded — this application sends a URL as a
+   * string. Whether the asset exists, belongs to the brief and fits the slot is upstream's preflight
+   * to decide, by name, before the budget mutate. `createCampaign` has already refused every ref
+   * when `canUseGoogleCreativeAssets()` is false, so reaching here means the deployment honours them.
+   */
+  private googleImageRefList(value: unknown[]): GoogleCreativeImageRef[] {
+    const clean: GoogleCreativeImageRef[] = [];
+    for (const entry of value) {
+      if (typeof entry === 'string') {
+        if (entry.trim() !== '') clean.push(entry.trim());
+        continue;
+      }
+      const id = this.imageAssetIdOf(entry);
+      if (id !== null && id.trim() !== '') clean.push({ imageAssetId: id.trim() });
+    }
+    return clean;
+  }
+
+  /** The `imageAssetId` string of an object entry, or `null` for anything else. */
+  private imageAssetIdOf(entry: unknown): string | null {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return null;
+    const id = (entry as Record<string, unknown>)['imageAssetId'];
+    return typeof id === 'string' ? id : null;
   }
 
   /**
@@ -5878,17 +7287,10 @@ export class CampaignController {
   private buildMicrosoftConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.microsoftConfig) return null;
 
-    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, startDate, endDate, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest & {
-      startDate?: string;
-      endDate?: string;
-    };
-    // Dropped, not forwarded. `microsoftConfig` declares NO scheduling fields (unlike `metaConfig`),
-    // so `unmarshalPlatformConfig` would silently discard these — putting keys on the wire that
-    // imply a flight the campaign never gets. Named here rather than left to `...rest` because a
-    // direct caller can still send them: the legacy request shape carries dates for every other
-    // platform, so they arrive by habit.
-    void startDate;
-    void endDate;
+    // `startDate` / `endDate` travel in `rest`, untouched as Meta's are. They reach this point only
+    // when the deployment can honour them: `createCampaign` refuses either key first otherwise
+    // (`unservedMicrosoftScheduleField`), rather than dropping a flight the operator set.
+    const { budgetUsd, cpcBid, timeZone, keywords, geoTargets, ...rest } = body.microsoftConfig as MicrosoftCampaignCreateRequest;
 
     // Finite AND positive. `Number.isFinite` rejects NaN and both infinities; the client applies
     // the same test during dispatch, so failing here reports it as a refusal instead of a job
@@ -5964,6 +7366,39 @@ export class CampaignController {
       geoTargets: cleanGeoTargets,
       ...(Number.isFinite(cpcBid) && (cpcBid as number) >= MICROSOFT_MIN_CPC_BID && (cpcBid as number) <= MICROSOFT_MAX_CPC_BID ? { cpcBid } : {}),
       ...(typeof timeZone === 'string' && timeZone.trim() ? { timeZone: timeZone.trim() } : {}),
+    };
+  }
+
+  /**
+   * X's config, projected from `twitterConfig` on the request — which already carries the
+   * service's own field names, so unlike Meta and Microsoft nothing is renamed.
+   *
+   * A PROJECTION, not a pass-through: only the fields `TwitterCampaignCreateRequest` declares are
+   * sent. `tweetId` and `asUserId` are the two the dispatcher also reads and this app never sends —
+   * a `tweetId` would silently replace the authored tweet (an explicit id wins over `tweetText`
+   * upstream), and the publishing handle belongs to the connection, which campaign-service prefers
+   * over a caller's `asUserId` for exactly that reason.
+   *
+   * Returns null (UNCONFIGURED, refused by `hasPlatformConfig`) for a config that is not an
+   * object; `twitterConfigRefusal` has already named every field it would refuse, so a request
+   * that reaches here with X selected is one the X client will accept on these fields. `bidding`
+   * travels untouched, as on every lane: `unservedBiddingField` has refused it already when the
+   * deployment cannot honour it, and campaign-service judges it otherwise.
+   */
+  private buildTwitterConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+    // Only for a request that selects X. `twitterConfigRefusal` judges the config only then, so a
+    // config riding beside other platforms would otherwise be forwarded unjudged.
+    if (!Array.isArray(body?.platforms) || !body.platforms.includes('twitter-ads')) return null;
+    const config: unknown = body?.twitterConfig;
+    if (config === null || typeof config !== 'object' || Array.isArray(config)) return null;
+    const { budgetAmount, startDate, endDate, tweetText, imageAssetId } = config as Partial<TwitterCampaignCreateRequest>;
+    return {
+      budgetAmount,
+      startDate,
+      endDate,
+      tweetText,
+      ...(typeof imageAssetId === 'string' && imageAssetId.trim() !== '' ? { imageAssetId: imageAssetId.trim() } : {}),
+      ...('bidding' in config ? { bidding: (config as { bidding?: unknown }).bidding } : {}),
     };
   }
 
@@ -6136,5 +7571,67 @@ export class CampaignController {
         ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
         : {}),
     };
+  }
+
+  /**
+   * The flag gate and the `project` + `brief_id` pair every creative-asset READ shares.
+   *
+   * Returns `null` once it has handed the refusal to `next` — the caller returns immediately — so
+   * the four handlers above cannot drift apart on which refusal they give for the same input.
+   */
+  private creativeAssetScope(req: Request, operation: string, next: NextFunction): { projectSlug: string; briefId: string } | null {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return null;
+    }
+
+    // DELIBERATELY stricter than `uploadCreativeAsset`, which takes any non-empty `brief_id`. The
+    // upload is a write the operator just made a brief for, and a wrong id there is upstream's
+    // 404 to give; these four are reads whose only caller is the campaigns page, which always has
+    // the UUID campaign-service minted. Spending the shape check here keeps a malformed id out of
+    // a path segment without an upstream round trip, and the upload stays lenient rather than
+    // being tightened in a PR that does not own it.
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('brief_id', 'the brief UUID is required to read its stored images', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    // Refused, not defaulted, for the reason the upload refuses: a constant here would read
+    // another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+
+    return { projectSlug, briefId };
+  }
+
+  /** The `:assetId` path segment, refused unless it is the UUID campaign-service declares. */
+  private creativeAssetId(req: Request, operation: string, next: NextFunction): string | null {
+    const assetId = req.params['assetId'];
+    if (typeof assetId !== 'string' || !isCampaignServiceJobId(assetId)) {
+      next(
+        ServiceValidationError.forField('assetId', 'assetId must be a creative asset UUID', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    }
+    return assetId;
   }
 }

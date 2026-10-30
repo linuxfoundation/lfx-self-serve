@@ -5,19 +5,14 @@
 <div class="flex flex-col gap-4" data-testid="training-enroll">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Enrollment and revenue unavailable"
       subtitle="We could not load training enrollment for this foundation. Refresh the page to try again."
       data-testid="training-enroll-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="training-enroll-loading" aria-hidden="true" />
-  } @else if (!response().measured) {
-    <lfx-empty-state
-      icon="fa-light fa-circle-question"
-      title="No training enrollment recorded yet"
-      subtitle="Once LF Education records enrollments for this foundation, enrollments, certifications and revenue appear here."
-      data-testid="training-enroll-unmeasured" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="training-enroll-controls">
       <lfx-filter-pills
         variant="track"
@@ -32,7 +27,9 @@
       <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
         <div class="flex flex-col gap-2" data-testid="training-enroll-headline">
           <div class="flex items-baseline gap-2">
-            <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="training-enroll-headline-value">{{ view().headline.value }}</span>
+            <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="training-enroll-headline-value">{{
+              view().headline.value
+            }}</span>
             <span
               class="text-[13px] font-medium tabular-nums"
               [class.text-emerald-600]="view().headline.deltaDirection === 'up'"
@@ -42,14 +39,14 @@
               {{ view().headline.delta }}
             </span>
           </div>
-          <span class="text-[12.5px] text-gray-500">{{ view().headline.label }}</span>
+          <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
         </div>
 
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="training-enroll-side">
           @for (stat of view().side; track stat.key) {
             <div class="flex flex-col gap-0.5" [attr.data-testid]="'training-enroll-side-' + stat.key">
-              <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
-              <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
+              <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
+              <dd class="flex items-baseline gap-1.5 text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">
                 <span [attr.data-testid]="'training-enroll-side-' + stat.key + '-value'">{{ stat.value }}</span>
                 <span
                   class="text-[12px] font-medium"
@@ -73,7 +70,7 @@
         <span class="text-[12px] text-gray-400" data-testid="training-enroll-by-type-note">{{ byTypeNote() }}</span>
       </div>
       @if (view().byType.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="training-enroll-by-type-empty">No delivery type recorded in the selected period.</p>
+        <p class="text-[13px] text-gray-500" data-testid="training-enroll-by-type-empty">No delivery type recorded in the selected period.</p>
       } @else {
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().byType; track row.deliveryType; let index = $index) {
@@ -92,7 +89,7 @@
         <span class="text-[12px] text-gray-400" data-testid="training-enroll-trend-caption">{{ trendCaption() }}</span>
       </div>
       @if (view().trend.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="training-enroll-trend-empty">No yearly enrollment recorded for this foundation.</p>
+        <p class="text-[13px] text-gray-500" data-testid="training-enroll-trend-empty">No yearly enrollment recorded for this foundation.</p>
       } @else {
         <div class="h-56" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="training-enroll-trend-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />

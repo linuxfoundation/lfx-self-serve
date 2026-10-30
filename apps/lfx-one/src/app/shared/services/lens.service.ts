@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
+import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationError, NavigationSkipped, NavigationStart, Router } from '@angular/router';
 import {
   ALL_LENSES,
   DEFAULT_LENS,
@@ -12,13 +12,14 @@ import {
   MARKETING_OPS_FGA_ENABLED_FLAG,
   NAV_LENS_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
+import { Lens, LensGrantInputs, LensOption, MenuLensPick, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { filter, take } from 'rxjs';
+import { filter, of, switchMap, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { PersonaService } from './persona.service';
 import { WriterGrantsService } from './writer-grants.service';
 
@@ -32,6 +33,7 @@ export class LensService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly router = inject(Router);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
 
   /** Client-side counterpart to `ServerFeatureFlag.MarketingOpsFga` (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
@@ -66,10 +68,38 @@ export class LensService {
    */
   public readonly isHybridPersona: Signal<boolean> = computed(() => isHybridLensUser(this.lensGrantInputs()));
   /** Lens to highlight in the switcher UI. Hybrid personas merge foundation + project into the 'project' entry, so a foundation-scoped active lens highlights 'project'. */
-  public readonly displayActiveLens: Signal<Lens> = computed(() => {
-    const active = this.activeLens();
-    return this.isHybridPersona() && active === 'foundation' ? 'project' : active;
+  public readonly displayActiveLens: Signal<Lens> = computed(() => this.toDisplayLens(this.activeLens()));
+
+  /**
+   * The lens the mobile nav drawer's lens tabs are previewing, or `null` when they show the page's own lens. Held apart
+   * from {@link activeLens} on purpose: the page underneath, and everything that renders from `activeLens`, must not
+   * change while the viewer only looks at another lens's menu (#4208).
+   */
+  private readonly menuLensPreview: WritableSignal<Lens | null> = signal(null);
+  /**
+   * Bumped whenever the drawer drops its preview or the viewer picks another lens tab, so a failed pick never re-arms a
+   * preview the drawer has since closed or moved away from.
+   */
+  private menuLensPreviewEpoch = 0;
+  /** The menu pick whose navigation is still pending, so a pick that supersedes it inherits what the page had before both. */
+  private readonly pendingMenuPickState: WritableSignal<MenuLensPick | null> = signal(null);
+  /**
+   * True while a pick from the previewed menu is committed but its navigation hasn't landed: the route still describes
+   * the page being left, so the menu's links follow the picked lens, as they did while it was previewed.
+   */
+  public readonly menuPickPending: Signal<boolean> = computed(() => this.pendingMenuPickState() !== null);
+  /**
+   * The lens the nav menu is built for: the drawer's preview while one stands (and the persona still holds it), otherwise
+   * {@link activeLens}. Only the menu stack reads this — the sidebar items, the context selectors and the lens tabs.
+   */
+  public readonly menuLens: Signal<Lens> = computed(() => {
+    const preview = this.menuLensPreview();
+    return preview && this.getAllowedLensIds().includes(preview) ? preview : this.activeLens();
   });
+  /** True while the menu shows another lens than the page's: a pick from it must commit the lens, and land on that lens's page. */
+  public readonly previewingMenuLens: Signal<boolean> = computed(() => this.menuLens() !== this.activeLens());
+  /** {@link menuLens} as the lens tabs highlight it, merged like {@link displayActiveLens}. */
+  public readonly displayMenuLens: Signal<Lens> = computed(() => this.toDisplayLens(this.menuLens()));
 
   public constructor() {
     const stored = this.loadFromCookie();
@@ -82,12 +112,79 @@ export class LensService {
    * Switch the active lens from a UI control and navigate to its default route.
    * Hybrid personas merge foundation + project into the 'Projects' entry — clicking it returns to the
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
+   *
+   * Org Lens lands on the selected organization's overview, the address its menu links use (`orgLensLandingLink`). The
+   * bare `/org` redirects to the legacy `/org/overview`, which only the first default selection rewrites — so with an
+   * organization already selected the menu's Dashboard item never matched the page.
    */
   public switchLens(lens: Lens): void {
-    const target = this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
+    const target = this.switchTarget(lens);
     if (this.setLens(target)) {
-      this.router.navigate([LENS_DEFAULT_ROUTES[target]]);
+      this.router.navigate(target === 'org' ? this.orgLensNavigation.orgLensLandingLink() : [LENS_DEFAULT_ROUTES[target]]);
     }
+  }
+
+  /**
+   * Show a lens's menu in the mobile drawer without switching the page's lens or navigating. Resolves the hybrid
+   * 'Projects' entry like {@link switchLens}; choosing the page's own lens ends the preview. A lens the persona may not
+   * use is ignored.
+   *
+   * While a pick is still navigating, `activeLens` is that pick's provisional lens, not the page's, so a tab matching it
+   * is kept as an explicit choice: if the pick then fails and the page lens comes back, the drawer still shows the menu
+   * the viewer chose last.
+   */
+  public previewMenuLens(lens: Lens): void {
+    const target = this.switchTarget(lens);
+    if (!this.getAllowedLensIds().includes(target)) {
+      return;
+    }
+    this.menuLensPreviewEpoch += 1;
+    this.menuLensPreview.set(target === this.activeLens() && !this.menuPickPending() ? null : target);
+  }
+
+  /**
+   * Commit a pick from the previewed menu, which is about to navigate: `lens` (by default the previewed one — a hybrid's
+   * foundation row picked in the merged Projects menu commits `foundation`) becomes the active lens. A no-op without a
+   * preview.
+   *
+   * The lens is committed before the navigation starts, because guards read `activeLens`. If that navigation then never
+   * leaves the page — cancelled or failed (a `canDeactivate` the viewer declines, a guard that refuses), or skipped as
+   * the current address — the page's lens and the drawer's preview are put back, unless something else has moved the
+   * lens since, which then owns it. The preview comes back only if the drawer is still showing it, and `onRestore` lets
+   * the caller put back anything else the pick changed (a selector pick's context).
+   */
+  public commitMenuLens(lens: Lens = this.menuLens(), onRestore?: () => void): void {
+    if (!this.previewingMenuLens()) {
+      this.menuLensPreview.set(null);
+      return;
+    }
+    // A pick made while an earlier one's navigation is still pending (it re-previewed and picked again) supersedes it:
+    // neither left the page, so a rollback must return to what the page had before the first, undoing both.
+    const pending = this.pendingMenuPickState();
+    const pick: MenuLensPick = {
+      previous: pending?.previous ?? this.activeLens(),
+      previousNavLens: pending?.previousNavLens ?? this.navLensSelection(),
+      committed: lens,
+      previewed: this.menuLens(),
+      epoch: this.menuLensPreviewEpoch,
+      onRestore: pending?.onRestore
+        ? () => {
+            onRestore?.();
+            pending.onRestore?.();
+          }
+        : onRestore,
+    };
+    this.pendingMenuPickState.set(pick);
+    this.setLens(lens);
+    pick.committed = this.activeLens();
+    this.menuLensPreview.set(null);
+    this.restoreLensIfPickFails(pick);
+  }
+
+  /** Drop the drawer's preview, leaving the page's lens exactly as it is (the drawer closed without a pick). */
+  public clearMenuLensPreview(): void {
+    this.menuLensPreviewEpoch += 1;
+    this.menuLensPreview.set(null);
   }
 
   /** Applies the lens if the current persona is allowed it. Returns whether the lens was allowed (callers gate navigation on this). */
@@ -159,6 +256,73 @@ export class LensService {
    */
   public clearContextLens(): void {
     this.contextLensOverride.set(null);
+  }
+
+  /**
+   * Follows the navigation a {@link commitMenuLens} pick starts — the first one to start or be skipped after it, by id,
+   * so a cancellation of an earlier navigation that the pick superseded is not mistaken for the pick's own. A skipped
+   * pick (its link is the current address) counts as one that never left: no `NavigationEnd` follows it for the route
+   * to re-assert its own lens. A pick redirected by a guard, or superseded by the viewer's next tap, hands over to the
+   * navigation that replaces it, which is followed in turn.
+   */
+  private restoreLensIfPickFails(pick: MenuLensPick): void {
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationStart | NavigationSkipped => event instanceof NavigationStart || event instanceof NavigationSkipped),
+        take(1),
+        switchMap((first) =>
+          first instanceof NavigationSkipped
+            ? of(first)
+            : this.router.events.pipe(
+                filter(
+                  (event): event is NavigationEnd | NavigationCancel | NavigationError =>
+                    (event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError) && event.id === first.id
+                ),
+                take(1)
+              )
+        )
+      )
+      .subscribe((event) => {
+        if (this.isHandedOver(event) && this.activeLens() === pick.committed) {
+          this.restoreLensIfPickFails(pick);
+          return;
+        }
+        if (this.pendingMenuPickState() === pick) {
+          this.pendingMenuPickState.set(null);
+        }
+        if (event instanceof NavigationEnd || this.activeLens() !== pick.committed) {
+          return;
+        }
+        this.setLens(pick.previous);
+        // The pick may have moved the last viewed nav lens too (a foundation or project lens committed from a Me or Org
+        // page), which the merged Projects tab resolves to.
+        if (this.navLensSelection() !== pick.previousNavLens) {
+          this.navLensSelection.set(pick.previousNavLens);
+          this.persistNavLensToCookie(pick.previousNavLens);
+        }
+        if (pick.epoch === this.menuLensPreviewEpoch) {
+          this.menuLensPreview.set(pick.previewed);
+        }
+        pick.onRestore?.();
+      });
+  }
+
+  /** A navigation cancelled only to make way for the next one — a guard's redirect, or a newer navigation superseding it. */
+  private isHandedOver(event: NavigationEnd | NavigationCancel | NavigationError | NavigationSkipped): boolean {
+    return (
+      event instanceof NavigationCancel &&
+      (event.code === NavigationCancellationCode.Redirect || event.code === NavigationCancellationCode.SupersededByNewNavigation)
+    );
+  }
+
+  /** The lens a lens-tab click lands on: hybrid personas' merged 'Projects' entry returns to the last viewed nav lens. */
+  private switchTarget(lens: Lens): Lens {
+    return this.isHybridPersona() && lens === 'project' ? this.lastNavLens() : lens;
+  }
+
+  /** Hybrid personas merge foundation + project into the 'project' tab, so a foundation lens highlights 'project'. */
+  private toDisplayLens(lens: Lens): Lens {
+    return this.isHybridPersona() && lens === 'foundation' ? 'project' : lens;
   }
 
   private applyLensSelection(lens: Lens): void {

@@ -2,6 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-5" data-testid="member-360-result">
+  @if (runSummary(); as text) {
+    <section aria-label="Run summary" data-testid="member-360-run-summary">
+      <lfx-markdown-renderer [content]="text" [restricted]="true" [headingLevelOffset]="1" />
+    </section>
+  }
   <header class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_auto]" data-testid="member-360-result-header">
     <h2 class="text-2xl font-bold">{{ envelope().project_name }} · Member 360</h2>
     <p class="text-sm text-gray-500 xl:col-span-2 xl:row-start-2">
@@ -10,23 +15,6 @@
       {{ envelope().period.focus_quarter }} emphasised ·
       {{ envelope().inputs.prior_run_provided ? 'compared with the previous run' : 'no previous run comparison' }}
     </p>
-    <div class="flex flex-wrap gap-2 xl:col-start-2 xl:row-start-1" data-testid="member-360-result-actions">
-      <lfx-button
-        (onClick)="download()"
-        [loading]="downloading()"
-        label="Download Member360_{{ envelope().project }}_{{ envelope().period.label }}.xlsx"
-        class="min-w-0 max-w-full"
-        styleClass="min-h-12 max-w-full whitespace-normal break-words"
-        data-testid="member-360-download" />
-      <a
-        routerLink="../../../member-360"
-        data-testid="member-360-new-run"
-        [queryParams]="{ revision: null }"
-        queryParamsHandling="merge"
-        class="inline-flex min-h-12 items-center rounded-lg border border-gray-300 bg-white px-4 font-semibold"
-        >New run</a
-      >
-    </div>
   </header>
   @if (notice()) {
     <lfx-message severity="info" [text]="notice()" data-testid="member-360-notice" />
@@ -50,7 +38,7 @@
       }
     </div>
     <div class="flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white p-4">
-      <span class="text-gray-500">Sources</span><span class="text-emerald-700">{{ sourcesUsed() }}</span
+      <span class="text-gray-500">Sources</span><span class="text-gray-700" data-testid="member-360-sources-used">{{ sourcesUsed() }}</span
       ><span class="text-gray-500"
         >unavailable: {{ sourcesUnavailable() }}
         @if (method().reweighted) {
@@ -151,22 +139,17 @@
                 <div class="flex gap-0.5">
                   @for (cell of row.heat; track cell.label) {
                     <span
-                      class="group relative inline-block h-4 w-4 shrink-0 rounded"
+                      class="inline-block h-4 w-4 shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                       tabindex="0"
                       [ngClass]="cell.color"
                       [attr.data-testid]="'member-360-heat-' + row.member.rank + '-' + cell.label"
-                      (focus)="tooltipDismissed.set(false)"
-                      (mouseenter)="tooltipDismissed.set(false)"
-                      (keydown.escape)="tooltipDismissed.set(true)"
+                      [pTooltip]="cell.label + ': ' + (cell.value ?? 'no data')"
+                      tooltipPosition="bottom"
+                      tooltipEvent="both"
+                      [escape]="true"
+                      appendTo="body"
                       [attr.aria-label]="cell.label + ': ' + (cell.value ?? 'no data')"
-                      role="img"
-                      ><span
-                        aria-hidden="true"
-                        [class.invisible]="tooltipDismissed()"
-                        class="absolute left-0 top-full z-10 hidden min-w-32 rounded bg-gray-900 p-2 text-white group-hover:block group-focus:block"
-                        >{{ cell.label }}: {{ cell.value ?? 'no data' }}</span
-                      ></span
-                    >
+                      role="img"></span>
                   }
                 </div>
               </td>
@@ -230,8 +213,8 @@
       </table>
     </div>
     <p class="border-t border-gray-200 p-4 text-sm text-gray-500">
-      Heat strip: the category order (events, speaking, ambassadors, committees, content, marketing), green to red. Gray means no data, not zero. Renewal days:
-      red under 60, amber under 120.
+      Heat strip: the category order (events, speaking, ambassadors, committees, content, marketing), green to red. Gray means no data, not zero.
+      {{ renewalLegend }}
     </p>
   </section>
   <div class="grid items-start gap-5 lg:grid-cols-2">
@@ -302,8 +285,8 @@
           @for (category of method().categories_no_data; track category.category) {
             <p>No data: {{ category.category }} — {{ category.reason }}</p>
           }
-          @for (source of method().data_sources; track source.source) {
-            <p>{{ source.label }}: {{ source.status }} {{ source.note }}</p>
+          @for (source of methodSources(); track source.source) {
+            <p>{{ source.label }}: {{ source.statusText }} {{ source.note }}</p>
           }
           <p>Routing rule version: {{ method().routing_rule_version }}</p>
           @for (note of method().notes; track $index) {
@@ -324,9 +307,8 @@
             } @else {
               <a
                 [routerLink]="['../', run.documentId]"
-                [queryParams]="{ revision: null }"
-                queryParamsHandling="merge"
-                class="text-blue-600"
+                [queryParams]="projectParams()"
+                class="font-medium text-blue-700 hover:text-blue-800 hover:underline"
                 [attr.data-testid]="'member-360-history-open-' + run.documentId"
                 >Open</a
               >

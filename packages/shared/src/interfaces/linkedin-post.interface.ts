@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MktgPendingDocumentRun, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** Per-user posting identity, in the live linkedin-post-output/v1 contract. */
 export interface LinkedinProfile {
@@ -43,6 +43,8 @@ export type LinkedinFormRenderVersion = 1 | 2;
 
 /** Server-composed form; no feedback path in this WorkItem. */
 export interface LinkedinForm {
+  project_name?: string;
+  project_uid?: string;
   today: string;
   saved_profile?: LinkedinProfile;
   setup?: LinkedinSetup;
@@ -52,16 +54,10 @@ export interface LinkedinForm {
   content_file_name?: string;
 }
 export interface LinkedinGeneration extends MktgRunSessionResponse {
-  /** Last answered gap round, retained with a pending capability to avoid asking twice after reload. */
-  answeredQuestionsId?: string;
   documentId: string;
   /** LFX-only run answers, never sent to the agent. */
   answers?: Record<string, string>;
   source: { label: string; words: number; fetched: boolean };
-}
-export interface LinkedinPendingRun extends MktgPendingDocumentRun {
-  answeredQuestionsId?: string;
-  source: LinkedinGeneration['source'];
 }
 export interface LinkedinResult extends MktgRunResultResponse {
   questionsProject?: string;

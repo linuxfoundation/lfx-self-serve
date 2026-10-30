@@ -35,6 +35,7 @@ import {
   BOILERPLATES_MODES,
   BOILERPLATES_PROJECT_SLUG_REGEX,
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
+  BOILERPLATES_REDRAFT_HEADER,
   BOILERPLATES_REFUSAL_CLAUSES,
   BOILERPLATES_REFUSAL_OPENINGS,
   BOILERPLATES_SHA256_REGEX,
@@ -58,8 +59,12 @@ import {
 } from '../interfaces/boilerplates.interface';
 import { FoundationMessageQuestion } from '../interfaces/foundation-message.interface';
 import { MktgBoilerplatesAsset, MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
-import { foundationMessageBasisLinks, foundationMessageQuestionLabel, isFoundationMessageAnswerSubstantive } from './foundation-message.utils';
+import { foundationMessageBasisLinks, foundationMessageQuestionLabel } from './foundation-message.utils';
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>([...Object.values(BOILERPLATES_FIELD_KEYS), BOILERPLATES_FRAMEWORK_ANSWER_KEY]);
@@ -154,7 +159,10 @@ export function validateBoilerplatesIntakeAnswers(answers: unknown): Boilerplate
   if (!isRecord(answers)) {
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(answers, MKTG_INTAKE_ANSWER_LIMITS.boilerplates);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = answers[BOILERPLATES_FIELD_KEYS.projectName];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
@@ -234,6 +242,7 @@ export function buildBoilerplatesFormPayload(answers: Record<string, string>, in
   if (framework !== null) {
     payload.messaging_framework = framework;
   }
+  if (inputs.revision) payload.revision = inputs.revision;
   return payload;
 }
 
@@ -251,8 +260,8 @@ export function guardBoilerplatesText(text: string): string {
 }
 
 /**
- * Render the draft form into the one text message the agent receives — a
- * mirror of the agent's own `renderFormMessage` for a draft (marketing-os-agents
+ * Render the draft or redraft into the one text message the agent receives — a
+ * mirror of the agent's own `renderFormMessage` (marketing-os-agents
  * `agents/boilerplates/src/form.ts`), byte-identical for the same payload;
  * boilerplates.utils.spec.ts pins renderings produced by that renderer. The
  * marker lines are load-bearing: the agent's tools parse the project name,
@@ -264,7 +273,7 @@ export function guardBoilerplatesText(text: string): string {
 export function renderBoilerplatesFormText(payload: BoilerplatesFormPayload, now: Date = new Date()): string {
   const runDate = payload.run_date ?? now.toISOString().slice(0, 10);
   const lines: string[] = [
-    BOILERPLATES_DRAFT_HEADER,
+    payload.revision ? BOILERPLATES_REDRAFT_HEADER : BOILERPLATES_DRAFT_HEADER,
     `PROJECT NAME: ${payload.project_name}`,
     `RUN DATE: ${runDate}`,
     `LFX PROJECT UID: ${payload.project_uid ?? BOILERPLATES_FORM_LINES.uidNotSupplied}`,
@@ -289,7 +298,24 @@ export function renderBoilerplatesFormText(payload: BoilerplatesFormPayload, now
     );
   }
   lines.push('');
-  lines.push(BOILERPLATES_FORM_LINES.revisionNone);
+  const revision = payload.revision;
+  if (!revision) {
+    lines.push(BOILERPLATES_FORM_LINES.revisionNone);
+  } else {
+    lines.push(
+      `REVISION: redraft — stored version ${revision.prior_version}; finalize as version ${revision.prior_version + 1}; apply every comment below and keep every other length exactly as it is`,
+      `COMMENTS: ${revision.comments.length} — apply every one`
+    );
+    revision.comments.forEach((comment, index) => {
+      const number = index + 1;
+      lines.push(`--- COMMENT ${number} ---`, `FIELD: ${comment.field}`, 'COMMENT:', guardBoilerplatesText(comment.comment), `--- END COMMENT ${number} ---`);
+    });
+    lines.push(
+      `--- PREVIOUS (JSON, stored version ${revision.prior_version}) ---`,
+      guardBoilerplatesText(JSON.stringify(revision.previous, null, 2)),
+      '--- END PREVIOUS ---'
+    );
+  }
   return lines.join('\n');
 }
 
@@ -367,7 +393,7 @@ export function validateBoilerplatesAnswers(answers: unknown): BoilerplatesValid
   }
   const errors: string[] = [];
   if (answers.length === 0 || answers.length > BOILERPLATES_MAX_QUESTIONS) {
-    errors.push(`answers takes 1 to ${BOILERPLATES_MAX_QUESTIONS} entries`);
+    errors.push(answers.length === 0 ? MKTG_ANSWERS_INCOMPLETE_MESSAGE : `answers takes 1 to ${BOILERPLATES_MAX_QUESTIONS} entries`);
   }
   const seen = new Set<string>();
   answers.forEach((entry: unknown, index) => {
@@ -389,9 +415,10 @@ export function validateBoilerplatesAnswers(answers: unknown): BoilerplatesValid
       seen.add(key);
     }
     const text = entry['text'];
-    if (typeof text !== 'string' || !isFoundationMessageAnswerSubstantive(text)) {
-      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
-    } else if (text.length > BOILERPLATES_ANSWER_MAX_CHARS) {
+    const problem = mktgAnswerProblem(text);
+    if (problem) {
+      errors.push(`${problem}: ${typeof key === 'string' ? key : at}`);
+    } else if (typeof text === 'string' && text.length > BOILERPLATES_ANSWER_MAX_CHARS) {
       errors.push(`${at}.text must be at most ${BOILERPLATES_ANSWER_MAX_CHARS} characters`);
     }
     if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(entry['origin'] as string)) {

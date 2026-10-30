@@ -18,6 +18,7 @@ import type {
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
+import { toGoogleAdsReadError } from './google-ads-read-error';
 import { getLinkedInAnalytics } from './linkedin-ads.service';
 import { getMetaAnalytics } from './meta-ads.service';
 import { getRedditAnalytics } from './reddit-ads.service';
@@ -69,7 +70,14 @@ export class CampaignMetricsService {
         AND metrics.impressions > 0
       ORDER BY metrics.cost_micros DESC`;
 
-    const rows = await gaqlSearch(query);
+    let rows: unknown[];
+    try {
+      rows = await gaqlSearch(query);
+    } catch (error) {
+      // A plain Google Ads failure would otherwise become a bare 500 the Monitor tab can only show
+      // as "Failed to load campaign data" (#4526).
+      throw toGoogleAdsReadError(error, 'campaign_monitor');
+    }
     const rangeStart = queryRangeStart(effectiveDays);
     const rangeEnd = todayIso();
     const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays, rangeStart, rangeEnd)).filter((c) => !c.name.toLowerCase().startsWith('zz'));

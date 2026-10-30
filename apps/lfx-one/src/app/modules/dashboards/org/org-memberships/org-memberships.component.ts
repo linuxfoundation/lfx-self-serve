@@ -35,6 +35,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { foundationInitials, foundationLogoSquareClasses } from '../components/org-overview-foundations-and-projects/helpers/foundation-logo.helper';
 import { environment } from '@environments/environment';
+import { MembershipProjectsDrawerComponent } from './components/membership-projects-drawer/membership-projects-drawer.component';
 
 /** Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). */
 type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null };
@@ -55,6 +56,7 @@ type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[
     EmptyStateComponent,
     OrgLensEmptyStateComponent,
     OpenIntercomDirective,
+    MembershipProjectsDrawerComponent,
   ],
   templateUrl: './org-memberships.component.html',
 })
@@ -91,6 +93,12 @@ export class OrgMembershipsComponent {
   ];
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
+
+  /** Org Projects side panel: the row whose count was clicked, and the panel's open state. */
+  protected readonly projectsDrawerVisible = signal(false);
+  protected readonly activeProjectsRow = signal<ActiveMembershipLinkedRow | null>(null);
 
   protected readonly searchTerm = signal('');
   protected readonly selectedTier = signal('');
@@ -169,6 +177,11 @@ export class OrgMembershipsComponent {
         if (this.lastOrgUid && this.lastOrgUid !== orgUid) {
           this.expiredData.set(null);
           this.discoverData.set(null);
+          // The Org Projects panel holds a row captured on click, while its orgUid input tracks the
+          // live selection — leaving it open across a switch would refetch the new org's projects
+          // under the previous org's foundation name and count (foundation ids are shared).
+          this.projectsDrawerVisible.set(false);
+          this.activeProjectsRow.set(null);
         }
         this.lastOrgUid = orgUid;
         if (tab === 'expired' && !this.expiredData()) this.fetchExpired(orgUid);
@@ -195,6 +208,11 @@ export class OrgMembershipsComponent {
         (document.getElementById(`memberships-tab-trigger-${ids[next]}`) as HTMLElement | null)?.focus();
       }
     }
+  }
+
+  protected openProjectsDrawer(membership: ActiveMembershipLinkedRow): void {
+    this.activeProjectsRow.set(membership);
+    this.projectsDrawerVisible.set(true);
   }
 
   protected retry(): void {

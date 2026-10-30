@@ -36,7 +36,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -54,6 +54,7 @@ import {
   take,
   takeUntil,
   tap,
+  throwError,
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
@@ -111,6 +112,7 @@ export class UserService {
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
+  private profileNameSaved = false;
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
   private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
@@ -119,10 +121,13 @@ export class UserService {
   // Bumped on every complete removal, so a write submitted before it cannot outlive it.
   private readonly meetingRegistrationGenerations = new Map<string, number>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
-  // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
-  // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
+  // Shared identities refresh trigger — tab and shell re-subscribe to getIdentities() off this (one
+  // shared GET) so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
   private readonly userIdentitiesRefresh$ = new Subject<void>();
   public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
+  // One shared identities GET for every consumer on the page: the endpoint reconciles into CDP, so
+  // each extra concurrent GET re-sends the same CDP identity writes (#4523).
+  private userIdentities$: Observable<EnrichedIdentity[]> | null = null;
   // Per-chain destroy signals so that on user change we can tear down the old shareReplay
   // chain (which stays alive under refCount:false) instead of leaking abandoned subscriptions
   // to the refresh subjects. A fresh Subject is created for each new chain.
@@ -162,6 +167,7 @@ export class UserService {
         this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
         this.userLatestPastMeetings$ = null;
+        this.userIdentities$ = null;
       });
 
     // Client-only, one-time: user_metadata.picture isn't part of the OIDC claims transferred from
@@ -189,8 +195,32 @@ export class UserService {
           if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
             this.uploadedAvatarUrl.set(profile.profile.picture);
           }
+          // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
+          // a saved name change reverts on reload. The profile body carries the stored name — but only
+          // trust it when the stored metadata loaded: on a failed read `/api/profile` still returns 200
+          // with `profile: null` and OIDC-derived names, which would replace the correct SSR name.
+          if (profile.profile && !this.impersonating() && !this.profileNameSaved) {
+            this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
+          }
         });
     });
+  }
+
+  /**
+   * Override the display name (navbar, account menu, initials) that SSR seeded from the OIDC `name`
+   * claim, which is stale after a profile save until the next login. No-op when both parts are empty.
+   */
+  public applyDisplayName(firstName: string | null | undefined, lastName: string | null | undefined, saved = false): void {
+    const name = buildDisplayName(firstName, lastName);
+    const current = this.user();
+    if (!name || !current) {
+      return;
+    }
+    // A name just saved in-session must win over the (eventually consistent) post-hydration fetch.
+    this.profileNameSaved = this.profileNameSaved || saved;
+    if (name !== current.name) {
+      this.user.set({ ...current, name });
+    }
   }
 
   // Create a new user with permissions
@@ -254,7 +284,11 @@ export class UserService {
    * @param email - The email address to make primary
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(
+      take(1),
+      // The Identities tab and profile sidebar both read the current primary from this feed.
+      tap(() => this.refreshUserIdentities())
+    );
   }
 
   /**
@@ -508,6 +542,7 @@ export class UserService {
    * tab in sync (LFXV2-2767).
    */
   public refreshUserIdentities(): void {
+    this.userIdentities$ = null;
     this.userIdentitiesRefresh$.next();
   }
 
@@ -550,10 +585,35 @@ export class UserService {
   }
 
   /**
-   * Get user's enriched identities (CDP cross-referenced with Auth0)
+   * Get user's enriched identities (CDP cross-referenced with Auth0).
+   * Returns a shared, cached request that completes; refreshUserIdentities() invalidates it.
    */
   public getIdentities(): Observable<EnrichedIdentity[]> {
-    return this.http.get<EnrichedIdentity[]>('/api/profile/identities');
+    if (!this.userIdentities$) {
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer request.
+        if (this.userIdentities$ === identities$) {
+          this.userIdentities$ = null;
+        }
+      };
+      const identities$: Observable<EnrichedIdentity[]> = this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(
+        // Synthetic `auth0:` rows get real CDP ids once the server's background create lands, and removal
+        // skips CDP for the synthetic id — so share them with current subscribers only, never later ones.
+        tap((identities) => {
+          if (identities.some((identity) => identity.id.startsWith('auth0:'))) {
+            dropIfCurrent();
+          }
+        }),
+        // Never cache a failure — the next caller re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+      this.userIdentities$ = identities$;
+    }
+    return this.userIdentities$;
   }
 
   /**
@@ -574,7 +634,11 @@ export class UserService {
     }
     // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
     // encode before interpolating so the PATCH route resolves reliably.
-    return this.http.patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body);
+    // Drop the cache on failure too: the Auth0 unlink can succeed before a later step fails, so the
+    // cached list may already be wrong either way.
+    return this.http
+      .patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body)
+      .pipe(tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) }));
   }
 
   /**
@@ -616,7 +680,12 @@ export class UserService {
    * Verify email OTP and link identity
    */
   public verifyAndLinkEmail(email: string, otp: string): Observable<VerifyAndLinkEmailResponse> {
-    return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(take(1));
+    return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(
+      take(1),
+      // Callers outside the Identities tab (account settings) don't emit a refresh; drop the cache. On
+      // failure too — the link may have landed before a later step failed.
+      tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) })
+    );
   }
 
   /**

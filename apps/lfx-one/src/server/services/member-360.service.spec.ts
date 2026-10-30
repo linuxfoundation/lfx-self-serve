@@ -1,23 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEMBER_360_FINALIZE_TOOL, MEMBER_360_REDACTED_SUMMARY, MEMBER_360_INVALID_RESULT } from '@lfx-one/shared/constants';
+import {
+  MEMBER_360_FINALIZE_TOOL,
+  MEMBER_360_FINALIZE_RECEIPT_ID,
+  MEMBER_360_PARTIAL_SUMMARY_PREFIX,
+  MEMBER_360_REDACTED_SUMMARY,
+  MEMBER_360_INVALID_RESULT,
+  MEMBER_360_MAX_BYTES,
+  MEMBER_360_ACTIVITY_LABELS,
+} from '@lfx-one/shared/constants';
 import { envelopeSchema } from '@lfx-one/shared/server';
+import type { Member360FinalizeReceipt } from '@lfx-one/shared/interfaces';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { getMktgSessionOutcome, mktgFailureAfterQuestions } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { isMember360Question } from '@lfx-one/shared/server/member-360.utils';
 import { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 import { Member360Service } from './member-360.service';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { logger } from './logger.service';
+import { member360ActivityReplay } from '@lfx-one/shared/utils/__fixtures__/member-360-activity.fixture';
+import { MicroserviceError } from '../errors';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
+  sendFollowUp: vi.fn(),
   getRawEventPayloads: vi.fn(),
   getProjectById: vi.fn(),
   listDocuments: vi.fn(),
   getRevision: vi.fn(),
   recordGeneration: vi.fn(),
+  loadTrackers: vi.fn(),
+  deleteTrackers: vi.fn(),
+  sweepTrackers: vi.fn(),
   available: true,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -37,9 +56,17 @@ vi.mock('@lfx-one/shared/constants', async () => {
     ),
   };
 });
+vi.mock('./member-360-tracker-store.service', () => ({
+  Member360TrackerStoreService: class {
+    load = mocks.loadTrackers;
+    deleteConsumed = mocks.deleteTrackers;
+    sweepExpired = mocks.sweepTrackers;
+  },
+}));
 vi.mock('./guild.service', () => ({
   GuildService: class {
     createSession = mocks.createSession;
+    sendFollowUp = mocks.sendFollowUp;
     getRawEventPayloads = mocks.getRawEventPayloads;
   },
 }));
@@ -55,7 +82,7 @@ vi.mock('./mktg-document-store.service', () => ({
     recordGeneration = mocks.recordGeneration;
   },
 }));
-vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn() } }));
+vi.mock('./logger.service', () => ({ logger: { debug: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 
 // SDK persisted tool-call/result transcript parts, paired by call id.
 function finalized(envelope: unknown): string {
@@ -69,6 +96,35 @@ function finalized(envelope: unknown): string {
     },
   });
 }
+function projectedFinalize(receipt: unknown, anthropic = false): string {
+  const messages = anthropic
+    ? [
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'final', name: MEMBER_360_FINALIZE_TOOL, input: {} }] },
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'final', content: [{ type: 'text', text: JSON.stringify(receipt) }] }] },
+      ]
+    : [
+        { type: 'tool-call', toolCallId: 'final', toolName: MEMBER_360_FINALIZE_TOOL },
+        { type: 'tool-result', toolCallId: 'final', output: { type: 'json', value: receipt } },
+      ];
+  return JSON.stringify({ type: 'llm_start', payload: { messages } });
+}
+function finalizeReceipt(envelope = member360Fixture()): Member360FinalizeReceipt {
+  return {
+    finalize_receipt: MEMBER_360_FINALIZE_RECEIPT_ID,
+    ok: true,
+    sha256: envelope.content_sha256,
+    rows: { ranking: envelope.tabs.member_ranking.length, evidence: envelope.tabs.evidence.length },
+    partial: false,
+    violations: [],
+  };
+}
+function rootFinal(envelope: unknown): string {
+  return JSON.stringify({
+    type: 'runtime_done',
+    task: { entity_type: 'EntTaskAgent', parent_task_id: null },
+    content: { type: 'text', text: JSON.stringify(envelope) },
+  });
+}
 const req = {} as Request;
 describe('Member 360 entitlement and generation', () => {
   beforeEach(() => {
@@ -77,14 +133,165 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getProjectById.mockResolvedValue({ uid: 'sample-project', name: 'Sample Foundation', slug: 'sample-foundation', writer: true });
     mocks.listDocuments.mockResolvedValue({ groups: [] });
     mocks.createSession.mockResolvedValue('session-1');
-    mocks.recordGeneration.mockResolvedValue({ record: { documentId: 'run-0123456789abcdef01234567' } });
+    mocks.recordGeneration.mockResolvedValue({
+      key: 'synthetic-revision-key',
+      id: `000001-${'a'.repeat(64)}`,
+      record: { documentId: 'run-0123456789abcdef01234567' },
+    });
   });
   afterEach(() => vi.useRealTimers());
+  const questionsText =
+    'MEMBER 360 — QUESTIONS (member-360-questions/v1)\n```json\n' +
+    JSON.stringify({
+      contract: 'member-360-questions/v1',
+      project: 'Sample Foundation',
+      questions: [
+        {
+          id: 'tracker-window',
+          question: 'Which window should this tracker cover?',
+          why: 'The date is missing.',
+          suggested_answer: 'Use the current window.',
+          basis: 'private-evidence-marker',
+        },
+      ],
+    }) +
+    '\n```';
+  const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: questionsText });
+  const questionsId = createHash('sha256').update(questionsText).digest('hex');
+  const answersBody = () => ({
+    project: 'sample-project',
+    sessionId: 'session-1',
+    ownerToken: 'validated-by-controller',
+    questionsId,
+    answers: [{ id: 'tracker-window', text: 'Use the current window.', origin: 'accepted' as const }],
+  });
+  const preparedClaim = (commit: () => Promise<void> = async () => undefined) => Object.assign(vi.fn(commit), { release: vi.fn(async () => true) });
+  const networkFailure = (cause: unknown) =>
+    new MicroserviceError('Synthetic send failed', 502, 'guild_unreachable', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: Object.assign(new TypeError('fetch failed'), { cause }),
+    });
+  it.each([
+    { code: 'ENOTFOUND' },
+    { code: 'EAI_AGAIN' },
+    { code: 'ECONNREFUSED' },
+    { code: 'ECONNRESET', syscall: 'connect' },
+    { code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 0 } },
+    { code: 'UND_ERR_SOCKET', socket: { bytesWritten: 0 } },
+  ])('releases only proven pre-delivery transport failures %j and accepts a retry', async (cause) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(cause);
+    const claim = preparedClaim();
+    mocks.sendFollowUp.mockRejectedValueOnce(error).mockResolvedValueOnce(undefined);
+    const service = new Member360Service();
+    await expect(service.sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+    await service.sendAnswers(req, answersBody(), preparedClaim());
+    expect(mocks.sendFollowUp).toHaveBeenCalledTimes(2);
+  });
+  it('releases aggregate connection failures only when every attempted connection was undelivered', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ENOTFOUND' }], 'Synthetic connect attempts failed'));
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([400, 401, 403, 404, 405, 413, 415, 422, 429])('releases a confirmed pre-accept HTTP %i rejection', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).toHaveBeenCalledOnce();
+  });
+  it.each([408, 409, 500, 502, 503, 504])('keeps an ambiguous HTTP %i send claimed', async (status) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic ambiguity', {}, 'guild', '/synthetic-events', 'guild_send_follow_up');
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
+  it.each([
+    networkFailure({ code: 'ECONNRESET', syscall: 'read', socket: { bytesWritten: 12 } }),
+    networkFailure({ code: 'ECONNRESET', syscall: 'read' }),
+    networkFailure({ code: 'EPIPE' }),
+    networkFailure(new AggregateError([{ code: 'ECONNREFUSED' }, { code: 'ECONNRESET', syscall: 'read' }], 'mixed')),
+    new MicroserviceError('Timeout', 504, 'guild_timeout', { service: 'guild', operation: 'guild_send_follow_up' }),
+    new MicroserviceError('Unparseable acknowledgement', 502, 'guild_invalid_response', {
+      service: 'guild',
+      operation: 'guild_send_follow_up',
+      originalError: new SyntaxError('Synthetic invalid JSON'),
+    }),
+  ])('never releases an ambiguous send %s', async (error) => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    mocks.sendFollowUp.mockRejectedValue(error);
+    const claim = preparedClaim();
+    await expect(new Member360Service().sendAnswers(req, answersBody(), claim)).rejects.toBe(error);
+    expect(claim.release).not.toHaveBeenCalled();
+  });
+  it('projects parsed questions and their exact-text hash without exposing internal basis', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result).toMatchObject({
+      status: 'needs_input',
+      questionsId,
+      questions: [{ key: 'tracker-window', basis: [], suggestedAnswer: 'Use the current window.' }],
+    });
+    expect(Member360Service.toRunResult(result)).toMatchObject({ status: 'questions', questionsId, questions: result.questions });
+    expect(JSON.stringify(result)).not.toContain('private-evidence-marker');
+  });
+  it('sends byte-exact answers with the catalog mention on its own line', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const claim = preparedClaim();
+    await new Member360Service().sendAnswers(req, answersBody(), claim);
+    expect(claim).toHaveBeenCalledOnce();
+    expect(claim.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendFollowUp.mock.invocationCallOrder[0]);
+    expect(mocks.sendFollowUp).toHaveBeenCalledWith(req, 'session-1', {
+      handle: 'member-360',
+      message:
+        'MEMBER 360 — ANSWERS (member-360-answers/v1)\n--- A tracker-window (accepted) ---\nANSWER: follows\nUse the current window.\n--- END A tracker-window ---',
+    });
+    expect(logger.info).toHaveBeenCalledWith(req, 'member_360_answers', expect.any(String), { session_id: 'session-1', questions_id: questionsId, count: 1 });
+  });
+  it('never sends a second Guild turn when the atomic claim loses', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    const conflict = Object.assign(new Error('Already answered'), { code: 'MKTG_RUN_ANSWERED', statusCode: 409 });
+    await expect(
+      new Member360Service().sendAnswers(
+        req,
+        answersBody(),
+        preparedClaim(async () => {
+          throw conflict;
+        })
+      )
+    ).rejects.toBe(conflict);
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
+  it('rejects stale hashes and mismatched question ids before sending', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
+    await expect(new Member360Service().sendAnswers(req, { ...answersBody(), questionsId: '0'.repeat(64) }, preparedClaim())).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    await expect(
+      new Member360Service().sendAnswers(req, { ...answersBody(), answers: [{ id: 'other-gap', text: 'Use this.', origin: 'edited' }] }, preparedClaim())
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+  });
+  it('rejects repeats once the next turn is queued, without replaying questions or old root completion', async () => {
+    const done = JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } });
+    mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done, JSON.stringify({ type: 'mktg_session_turn_started' })]);
+    await expect(new Member360Service().sendAnswers(req, answersBody(), preparedClaim())).rejects.toMatchObject({ statusCode: 409 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+  });
   it.each(['schema', 'hash', 'project', 'raw', 'other-tool', 'unpaired', 'failed'])('never stores a rejected %s candidate', async (mode) => {
     const envelope = member360Fixture();
     if (mode === 'schema') Object.assign(envelope, { kind: 'invalid' });
     if (mode === 'hash') envelope.content_sha256 = '0'.repeat(64);
-    if (mode === 'project') envelope.project_uid = 'other-project';
+    if (mode === 'project') envelope.project_name = 'Other Foundation';
     let payload = finalized(envelope);
     if (mode === 'raw') payload = JSON.stringify(envelope);
     if (mode === 'other-tool') payload = payload.replace(MEMBER_360_FINALIZE_TOOL, 'web_search');
@@ -121,6 +328,44 @@ describe('Member 360 entitlement and generation', () => {
     vi.setSystemTime(new Date(`${end}T12:00:00Z`));
     await new Member360Service().start(req, { project: 'sample-project', window });
     expect(mocks.createSession.mock.calls[0][1].message).toContain(`ANALYSIS WINDOW: ${start} to ${end} (inclusive)`);
+  });
+  it('loads private tracker ids after writer entitlement and renders server rows only', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member', email: 'synthetic@example.test' }] }]);
+    await new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] });
+    expect(mocks.loadTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.getProjectById.mock.invocationCallOrder[0]).toBeLessThan(mocks.loadTrackers.mock.invocationCallOrder[0]);
+    expect(mocks.createSession.mock.calls[0][1].message).toContain('synthetic@example.test');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+    mocks.createSession.mockClear();
+    mocks.loadTrackers.mockRejectedValue(new Error('Expired tracker'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Expired tracker');
+    expect(mocks.createSession).not.toHaveBeenCalled();
+  });
+  it('reuses tracker rows prepared before the discard without loading them twice', async () => {
+    const service = new Member360Service();
+    const body = { project: 'sample-project', trackerIds: ['a'.repeat(64)] };
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    const prepared = await service.prepareTrackers(req, body);
+    await service.start(req, body, prepared);
+    expect(mocks.loadTrackers).toHaveBeenCalledOnce();
+    expect(mocks.createSession).toHaveBeenCalledOnce();
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
+    expect(mocks.sweepTrackers).toHaveBeenCalledOnce();
+  });
+  it('only deletes consumed rows when the durable-registration caller requests cleanup', async () => {
+    await new Member360Service().deleteConsumedTrackers(req, 'sample-project', ['a'.repeat(64)]);
+    expect(mocks.deleteTrackers).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
+  });
+  it('sweeps the project on Generate even when no tracker ids were submitted', async () => {
+    await new Member360Service().start(req, { project: 'sample-project' });
+    expect(mocks.sweepTrackers).toHaveBeenCalledWith(req, 'sample-project');
+  });
+  it('does not consume tracker rows if the Guild start fails', async () => {
+    mocks.loadTrackers.mockResolvedValue([{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }]);
+    mocks.createSession.mockRejectedValue(new Error('Synthetic start unavailable'));
+    await expect(new Member360Service().start(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] })).rejects.toThrow('Synthetic start unavailable');
+    expect(mocks.deleteTrackers).not.toHaveBeenCalled();
   });
   it('loads the previous stored ranking for trends, not caller-supplied scores', async () => {
     mocks.listDocuments.mockResolvedValue({
@@ -164,6 +409,7 @@ describe('Member 360 entitlement and generation', () => {
     const started = await new Member360Service().start(req, { project: 'sample-project' });
     expect(started).toEqual({ sessionId: 'session-1', documentId: buildMktgRunDocumentId('session-1') });
     expect(mocks.getProjectById).toHaveBeenCalledWith(req, 'sample-project', true);
+    expect(mocks.createSession.mock.calls[0][1]).toMatchObject({ mentionOnOwnLine: true });
     const message = mocks.createSession.mock.calls[0][1].message;
     expect(message).toContain('MEMBER 360 RUN REQUEST');
     expect(message).toContain('  LFX project UID: sample-project (authoritative');
@@ -179,13 +425,169 @@ describe('Member 360 entitlement and generation', () => {
     const valid = member360Fixture();
     const tampered = { ...valid, version: 2, content_sha256: '0'.repeat(64) };
     mocks.getRawEventPayloads.mockResolvedValue([finalized(valid), finalized(tampered)]);
-    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({
+      status: 'ready',
+      stored: true,
+      persistence: {
+        project: 'sample-project',
+        s3_key: 'synthetic-revision-key',
+        document_location: { agent_key: 'member-360', document_id: 'run-0123456789abcdef01234567', revision_id: `000001-${'a'.repeat(64)}` },
+      },
+    });
     const stored = mocks.recordGeneration.mock.calls[0][3];
     expect(stored.member360.version).toBe(1);
     expect(stored).not.toHaveProperty('tabs');
     expect(stored).not.toHaveProperty('contract');
     expect(stored.member360.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.member360.tabs)).digest('hex'));
     expect(stored.content_sha256).toBe(createHash('sha256').update(valid.summary_markdown).digest('hex'));
+  });
+  it.each([false, true])('accepts a receipt-bound root final envelope with Anthropic receipt: %s', async (anthropic) => {
+    const envelope = member360Fixture();
+    // Non-schema key order must still hash the original tabs, not zod's reconstruction.
+    envelope.tabs = {
+      method: envelope.tabs.method,
+      evidence: envelope.tabs.evidence,
+      summary: envelope.tabs.summary,
+      member_ranking: envelope.tabs.member_ranking,
+      actions_by_team: envelope.tabs.actions_by_team,
+      category_detail: envelope.tabs.category_detail,
+    };
+    envelope.tabs.member_ranking[0].key_contact = 'opaque-contact-1, owner@example.test';
+    envelope.summary_markdown += '\nContact opaque-contact-1, owner@example.test.';
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    const service = new Member360Service();
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    await service.result(req, 'session-1', 'sample-project');
+    const directBundle = mocks.recordGeneration.mock.calls[0][3];
+    mocks.recordGeneration.mockClear();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope), anthropic), rootFinal(envelope)]);
+    expect(await service.result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    const stored = mocks.recordGeneration.mock.calls[0][3];
+    expect(stored).toEqual(directBundle);
+    expect(stored.member360.version).toBe(1);
+    expect(stored).not.toHaveProperty('tabs');
+    expect(stored).not.toHaveProperty('contract');
+    expect(stored.member360.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.member360.tabs)).digest('hex'));
+    expect(stored.content_sha256).toBe(createHash('sha256').update(stored.document_markdown).digest('hex'));
+    expect(JSON.stringify(stored)).not.toContain('owner@example.test');
+    expect(JSON.stringify(stored)).not.toContain('opaque-contact-1');
+    expect(logger.info).toHaveBeenCalledWith(req, 'member_360_result', 'Accepted the receipt-bound final envelope', {
+      source: 'receipt_bound_final',
+      receipts: 1,
+    });
+  });
+  it.each(['data', 'string'])('accepts a receipt-bound notification %s carrier', async (shape) => {
+    const envelope = member360Fixture();
+    const text = JSON.stringify(envelope);
+    mocks.getRawEventPayloads.mockResolvedValue([
+      projectedFinalize(finalizeReceipt(envelope)),
+      JSON.stringify({ type: 'agent_notification_message', content: shape === 'string' ? text : { type: 'text', data: text } }),
+    ]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+  });
+  it('rejects a root final envelope that does not match the paired receipt hash', async () => {
+    const envelope = member360Fixture();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), sha256: '0'.repeat(64) }), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Rejected envelope receipt binding', { source: 'receipt_bound_final', check: 'hash' });
+  });
+  it('prefers direct finalized output over a newer receipt-bound carrier', async () => {
+    const direct = member360Fixture();
+    const newer = { ...direct, version: 2 };
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(newer)), rootFinal(newer), finalized(direct)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration.mock.calls[0][3].member360.version).toBe(1);
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'member_360_result', 'Accepted the receipt-bound final envelope', expect.anything());
+  });
+  it.each(['schema', 'scope', 'integrity', 'size'])('rejects a receipt-bound candidate failing %s validation', async (check) => {
+    const envelope = member360Fixture();
+    if (check === 'schema') Object.assign(envelope, { kind: 'invalid' });
+    if (check === 'scope') envelope.project_name = 'Other Foundation';
+    // A matching receipt cannot make tampered tabs pass the recomputed integrity check.
+    if (check === 'integrity') envelope.content_sha256 = '0'.repeat(64);
+    if (check === 'size') envelope.summary_markdown = 'x'.repeat(MEMBER_360_MAX_BYTES + 1);
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope)), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      req,
+      'member_360_result',
+      expect.stringContaining('Rejected envelope'),
+      expect.objectContaining({ source: 'receipt_bound_final' })
+    );
+  });
+  it.each([{ ok: false }, { ok: 'true' }, { finalize_receipt: 'other/v1' }, { sha256: 'f'.repeat(63) }, { sha256: 'F'.repeat(64) }, { sha256: null }])(
+    'ignores an invalid finalize receipt %j',
+    async (override) => {
+      const envelope = member360Fixture();
+      mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), ...override }), rootFinal(envelope)]);
+      expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+      expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    }
+  );
+  it.each(['partial', 'ranking', 'evidence'])('rejects a receipt-bound envelope with mismatched %s', async (check) => {
+    const envelope = member360Fixture();
+    const receipt = finalizeReceipt(envelope);
+    if (check === 'partial') receipt.partial = true;
+    if (check === 'ranking') receipt.rows.ranking += 1;
+    if (check === 'evidence') receipt.rows.evidence += 1;
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(receipt), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Rejected envelope receipt binding', {
+      source: 'receipt_bound_final',
+      check: check === 'partial' ? 'partial' : 'rows',
+    });
+  });
+  it.each([
+    { partial: 'false' },
+    { partial: undefined },
+    { rows: { ranking: 0.5, evidence: 0 } },
+    { rows: { ranking: 0, evidence: -1 } },
+    { rows: { ranking: '0', evidence: 0 } },
+    { rows: null },
+  ])('ignores a malformed partial/rows receipt %j', async (override) => {
+    const envelope = member360Fixture();
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), ...override }), rootFinal(envelope)]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('failed');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', expect.anything());
+  });
+  it('accepts a matching partial receipt while keeping receipt discovery at debug', async () => {
+    const envelope = member360Fixture();
+    envelope.summary_markdown = `${MEMBER_360_PARTIAL_SUMMARY_PREFIX} ${envelope.summary_markdown}`;
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize({ ...finalizeReceipt(envelope), partial: true }), rootFinal(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(logger.debug).toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', { receipts: 1 });
+    expect(logger.info).not.toHaveBeenCalledWith(req, 'member_360_result', 'Found finalize receipts', expect.anything());
+  });
+  it('keeps receipt-only sessions pending without surfacing receipts in activity', async () => {
+    const payloads = [projectedFinalize(finalizeReceipt(), true)];
+    expect(getMktgSessionOutcome(payloads)).toEqual({ ended: false, replyText: '' });
+    expect(mktgFailureAfterQuestions(payloads, isMember360Question)).toBeNull();
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result).toEqual({ status: 'pending', activity: [] });
+    expect(JSON.stringify(result.activity)).not.toContain('finalize_receipt');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it.each(['tool', 'child', 'reasoning', 'user', 'transcript', 'nested'])('ignores a receipt-matching envelope carried by %s events', async (carrier) => {
+    const envelope = member360Fixture();
+    const text = JSON.stringify(envelope);
+    const root = JSON.parse(rootFinal(envelope));
+    const events: Record<string, unknown> = {
+      tool: { ...root, task: { entity_type: 'EntTaskTool' } },
+      child: { ...root, task: { entity_type: 'EntTaskAgent', parent_task_id: 'root-task' } },
+      reasoning: { type: 'agent_notification_message', content: { type: 'application/guild-reasoning-progress', data: text } },
+      user: { type: 'user_message', content: { type: 'text', text } },
+      transcript: { type: 'llm_start', payload: { messages: [{ role: 'assistant', content: [{ type: 'text', text }] }] } },
+      nested: { type: 'other', content: root },
+    };
+    mocks.getRawEventPayloads.mockResolvedValue([projectedFinalize(finalizeReceipt(envelope)), JSON.stringify(events[carrier])]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('pending');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
   it.each([false, true])('stores valid contact-free tabs after pending; summary contracts: %s', async (shortSummary) => {
     const envelope = member360Fixture();
@@ -219,31 +621,179 @@ describe('Member 360 entitlement and generation', () => {
     expect(envelope.tabs.member_ranking[0].key_contact).not.toBeNull();
   });
   it('never stores an envelope scoped to a different project', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_uid: 'other-project' })]);
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_name: 'Other Foundation' })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'pending', activity: [] });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
+  it('accepts a different MCP uid by exact name and slug and normalizes the stored uid', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][2]).toBe('sample-project');
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    expect(stored.lfx_project_uid).toBe('mcp-project');
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(stored.content_sha256).toBe(createHash('sha256').update(JSON.stringify(stored.tabs)).digest('hex'));
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(envelope.project_uid).toBe('mcp-project');
+  });
+  it.each(['sample-project', 'mcp-project'])('does not trust agent-supplied uid provenance when the project uid is %s', async (projectUid) => {
+    const envelope = { ...member360Fixture(), project_uid: projectUid, project_slug: 'sample-foundation', lfx_project_uid: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(stored.project_uid).toBe('sample-project');
+    if (projectUid === 'sample-project') {
+      expect(stored).not.toHaveProperty('lfx_project_uid');
+    } else {
+      expect(stored.lfx_project_uid).toBe(projectUid);
+    }
+    expect(stored.content_sha256).toBe(envelope.content_sha256);
+    expect(envelope.lfx_project_uid).toBe('owner@example.test');
+  });
+  it.each(['project_uid', 'project_slug'] as const)('rejects an email-valued %s without logging the identity', async (field) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: 'sample-foundation', [field]: 'owner@example.test' };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalled();
+    const logs = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+    expect(logs).toContain('Rejected envelope scope');
+    expect(logs).not.toContain('owner@example.test');
+    expect(logs).toContain('[contact redacted]');
+  });
+  it.each(['other-foundation', undefined])('rejects a different uid when the slug is %s despite an exact name', async (projectSlug) => {
+    const envelope = { ...member360Fixture(), project_uid: 'mcp-project', project_slug: projectSlug };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('still accepts an exact uid and name without a slug', async () => {
+    const envelope = { ...member360Fixture(), project_uid: 'sample-project', project_slug: undefined };
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    expect(mocks.recordGeneration).toHaveBeenCalledTimes(1);
+    expect(mocks.recordGeneration.mock.calls[0][3].member360).not.toHaveProperty('lfx_project_uid');
+  });
+  it('rejects an exact uid with a conflicting slug', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_slug: 'other-foundation' })]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'pending' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('whitelists structural activity fields and fixed labels, never URL labels/search details/tool inputs', async () => {
+    const search = JSON.stringify({
+      type: 'runtime_start',
+      created_at: '2026-10-29T10:00:06Z',
+      task: { id: 'private-query', entity_type: 'EntTaskTool', tool_name: 'web_search_web_search', status: 'DONE' },
+      content: { query: 'PRIVATE-QUERY-SENTINEL' },
+    });
+    const payloads = member360ActivityReplay().slice(0, -1);
+    payloads.splice(6, 0, search);
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    const fixed = new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS));
+    expect(result.activity?.map((step) => step.kind)).toEqual(expect.arrayContaining(['reading', 'lfx', 'search', 'writing', 'checking']));
+    for (const step of result.activity ?? []) {
+      expect(fixed.has(step.label)).toBe(true);
+      expect(Object.keys(step).every((key) => ['id', 'kind', 'status', 'startedAt', 'endedAt', 'label'].includes(key))).toBe(true);
+      expect(step).not.toHaveProperty('detail');
+    }
+    expect(JSON.stringify(result.activity)).not.toMatch(
+      /PRIVATE-QUERY|synthetic\.example|never-render|record_member_actions|score_member_360|finalize_member_360/
+    );
+  });
+  it('projects Member-specific Writing and Checking labels from its recorded tool sequence', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue(member360ActivityReplay().slice(0, -1));
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.activity?.filter((step) => step.kind === 'writing' || step.kind === 'checking').map((step) => [step.label, step.status])).toEqual([
+      [MEMBER_360_ACTIVITY_LABELS.writing, 'done'],
+      [MEMBER_360_ACTIVITY_LABELS.checking, 'running'],
+    ]);
+    expect(JSON.stringify(result.activity)).not.toMatch(/never-render|record_member_actions|score_member_360|finalize_member_360|Writing the framework/);
+    expect(Member360Service.toRunResult(result).activity).toEqual(result.activity);
+  });
   it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
     mocks.getRawEventPayloads.mockResolvedValue(
-      ['web_search_web_search', 'lfx_mcp_search_members'].map((tool, index) =>
+      ['web_search_web_search', 'lfx_mcp_search_members', 'experimental_fetch_fetch'].map((tool, index) =>
         JSON.stringify({
           type: 'runtime_start',
           created_at: '2026-10-19T10:00:00.000Z',
           task: { id: `tool-${index}`, entity_type: 'EntTaskTool', tool_name: tool, status: 'RUNNING', created_at: '2026-10-19T10:00:00.000Z' },
-          content: { query: 'Sample Foundation speaking', result: 'private-tool-output' },
+          content: { query: 'Sample Foundation speaking', url: 'https://github.com/synthetic-private-user', result: 'private-tool-output' },
         })
       )
     );
     const result = await new Member360Service().result(req, 'session-1', 'sample-project');
     expect(result.status).toBe('pending');
     expect(result.activity).toEqual([
-      expect.objectContaining({ kind: 'search', label: 'Searching the web', detail: '“Sample Foundation speaking”', status: 'running' }),
+      expect.objectContaining({ kind: 'search', label: 'Searching the web', status: 'running' }),
       expect.objectContaining({ kind: 'lfx', label: 'Checking LFX', status: 'running' }),
+      expect.objectContaining({ kind: 'reading', label: 'Reading sources', status: 'running' }),
     ]);
+    expect(JSON.stringify(result)).not.toContain('Sample Foundation speaking');
+    expect(JSON.stringify(result)).not.toContain('synthetic-private-user');
+    expect(result.activity?.every((step) => !('detail' in step))).toBe(true);
     expect(JSON.stringify(result)).not.toContain('private-tool-output');
     expect(JSON.stringify(result)).not.toContain('lfx_mcp_search_members');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
+  it.each([false, true])('redacts contact identity and email from live activity even before persistence (questions=%s)', async (questions) => {
+    const candidate = { contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-contact-3' }] } };
+    const payloads = [
+      JSON.stringify(candidate),
+      JSON.stringify({
+        type: 'runtime_start',
+        created_at: '2026-10-19T10:00:00Z',
+        task: { id: 'public-search', entity_type: 'EntTaskTool', tool_name: 'web_search_web_search', status: 'RUNNING' },
+        content: { query: 'opaque-contact-3 owner@example.test speaking' },
+      }),
+    ];
+    if (questions) payloads.push(JSON.stringify({ type: 'agent_notification_message', content: 'member-360-questions/v1\nWhich outreach should lead?' }));
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.status).toBe(questions ? 'needs_input' : 'pending');
+    expect(result.activity?.every((step) => new Set<string>(Object.values(MEMBER_360_ACTIVITY_LABELS)).has(step.label))).toBe(true);
+    expect(result.activity?.some((step) => Object.hasOwn(step, 'detail'))).toBe(false);
+    expect(JSON.stringify(result.activity)).not.toContain('opaque-contact-3');
+    expect(JSON.stringify(result.activity)).not.toContain('owner@example.test');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+
+  it('redacts known contact identity and email from creator questions', async () => {
+    const privateText = 'opaque-private-contact owner@example.test';
+    const text = questionsText
+      .replace('Which window should this tracker cover?', privateText)
+      .replace('The date is missing.', privateText)
+      .replace('Use the current window.', privateText);
+    mocks.getRawEventPayloads.mockResolvedValue([
+      JSON.stringify({ contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-private-contact' }] } }),
+      JSON.stringify({ type: 'agent_notification_message', content: text }),
+    ]);
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.questions?.[0]).toMatchObject({
+      question: '[contact redacted] [contact redacted]',
+      why: '[contact redacted] [contact redacted]',
+      suggestedAnswer: '[contact redacted] [contact redacted]',
+    });
+    expect(JSON.stringify(result.questions)).not.toContain('opaque-private-contact');
+    expect(JSON.stringify(result.questions)).not.toContain('owner@example.test');
+  });
+
+  it('maps a needs-input result without questions without echoing its message', () => {
+    // This fixture has no structured questions; creator-gated question results
+    // may include questions/questionsId when the questions feature is present.
+    const mapped = Member360Service.toRunResult({ status: 'needs_input', message: 'Private question text', activity: [] });
+    expect(mapped).toMatchObject({ status: 'questions', activity: [] });
+    expect(mapped.questions).toBeUndefined();
+    expect(mapped.questionsId).toBeUndefined();
+    expect(mapped.failureText).toBeUndefined();
+    expect(mapped).not.toHaveProperty('message');
+    expect(JSON.stringify(mapped)).not.toContain('Private question text');
+  });
+
   it('accepts only paired finalize results, never envelopes or finalize-shaped pairs echoed elsewhere', async () => {
     const envelope = member360Fixture();
     const text = JSON.stringify(envelope);
@@ -279,14 +829,16 @@ describe('Member 360 entitlement and generation', () => {
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
-  it('ends an error event without exposing a raw error object or inventing an agent reason', async () => {
-    mocks.getRawEventPayloads.mockResolvedValue([
-      JSON.stringify({
-        type: 'runtime_error',
-        task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
-        content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
-      }),
-    ]);
+  it('keeps an error event pending until session end without exposing its raw details', async () => {
+    const error = JSON.stringify({
+      type: 'runtime_error',
+      task: { entity_type: 'EntTaskAgent', status: 'FAILED' },
+      content: { message: 'The session failed. Contact help@example.test.', stack: 'private-stack' },
+    });
+    mocks.getRawEventPayloads.mockResolvedValue([error]);
+    expect((await new Member360Service().result(req, 'session-1', 'sample-project')).status).toBe('pending');
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    mocks.getRawEventPayloads.mockResolvedValue([error, JSON.stringify({ type: 'session_status', session: { status: 'DONE' } })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
       reason: 'agent_stopped',
@@ -344,7 +896,7 @@ describe('Member 360 entitlement and generation', () => {
     const candidate =
       rejection === 'schema'
         ? { contract: 'member-360-output/v1', tabs: { member_ranking: [{ key_contact: 'opaque-contact-2' }] } }
-        : { ...member360Fixture(), project_uid: 'other-project' };
+        : { ...member360Fixture(), project_name: 'Other Foundation' };
     candidate.tabs.member_ranking[0].key_contact = 'opaque-contact-2';
     if ('content_sha256' in candidate) candidate.content_sha256 = createHash('sha256').update(JSON.stringify(candidate.tabs)).digest('hex');
     const message = 'Cannot complete this run; contact opaque-contact-2 or owner@example.test.';
@@ -389,15 +941,24 @@ describe('Member 360 entitlement and generation', () => {
     mocks.recordGeneration.mockRejectedValue(new Error('temporary storage failure'));
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'ready', stored: false });
   });
-  it('strips additive 2.0 metadata and row keys but requires the 1.0 fields', async () => {
+  it('retains 2.1.1 research while stripping unknown metadata and requiring the original fields', async () => {
     const candidate = { ...member360Fixture(), future_metadata: true };
+    candidate.agent.agent_version = '2.1.1';
     Object.assign(candidate.inputs, {
       research: {
         fetches: [{ url: 'https://sample.example', ok: true, status: 200, final_url: 'https://sample.example' }],
         searches: ['synthetic query'],
         lfx_reads: ['project record'],
-        questions: [],
-        answers: [],
+        questions: [
+          {
+            id: 'window',
+            question: 'Which window should this tracker cover?',
+            why: 'Missing date.',
+            suggested_answer: 'Use the current window.',
+            basis: 'Synthetic tracker',
+          },
+        ],
+        answers: [{ id: 'window', origin: 'accepted', text: 'Use the current window.' }],
       },
     });
     for (const row of [
@@ -415,11 +976,44 @@ describe('Member 360 entitlement and generation', () => {
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
     const stored = mocks.recordGeneration.mock.calls[0][3].member360;
     expect(JSON.stringify(stored)).not.toContain('future_metadata');
-    expect(stored.inputs).not.toHaveProperty('research');
+    expect(stored.inputs.research).toEqual(candidate.inputs.research);
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
   });
+  it('preserves research metadata while redacting contact and email text before storage', async () => {
+    const envelope = member360Fixture();
+    const privateText = 'opaque-research-contact owner@example.test';
+    envelope.agent.agent_version = '2.1.1';
+    envelope.tabs.member_ranking[0].key_contact = 'opaque-research-contact';
+    envelope.inputs.research = {
+      fetches: [
+        {
+          url: 'https://project.example/?owner=opaque-research-contact',
+          ok: true,
+          status: 200,
+          final_url: 'https://project.example/?owner=owner@example.test',
+        },
+        { url: 'https://project.example/unavailable', ok: false, status: null, final_url: null },
+      ],
+      searches: [privateText],
+      lfx_reads: [privateText],
+      questions: [{ id: 'window', question: privateText, why: privateText, suggested_answer: privateText, basis: privateText }],
+      answers: [{ id: 'window', origin: 'requester', text: privateText }],
+    };
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    mocks.getRawEventPayloads.mockResolvedValue([finalized(envelope)]);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'ready', stored: true });
+    const stored = mocks.recordGeneration.mock.calls[0][3].member360;
+    expect(envelopeSchema.safeParse(stored).success).toBe(true);
+    expect(stored.inputs.research.answers[0]).toEqual({ id: 'window', origin: 'requester', text: '[contact redacted] [contact redacted]' });
+    expect(stored.inputs.research.questions[0].basis).toBe('[contact redacted] [contact redacted]');
+    expect(stored.inputs.research.fetches[0]).toMatchObject({ ok: true, status: 200 });
+    expect(stored.inputs.research.fetches[1]).toMatchObject({ ok: false, status: null, final_url: null });
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('opaque-research-contact');
+    expect(JSON.stringify(stored.inputs.research)).not.toContain('owner@example.test');
+    expect(envelope.inputs.research.answers[0].text).toBe(privateText);
+  });
   it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
-    'recognizes %s without exposing question text or persisting',
+    'keeps %s open through its own turn end, then fails after a later final reply',
     async (header) => {
       const questions = {
         project: 'Sample Foundation',
@@ -434,14 +1028,54 @@ describe('Member 360 entitlement and generation', () => {
         ],
       };
       const questionsText = `${header}\n\`\`\`json\n${JSON.stringify(questions)}\n\`\`\``;
-      mocks.getRawEventPayloads.mockResolvedValue([
-        JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` }),
-        JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', status: 'DONE' } }),
-      ]);
+      const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent]);
       expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      const done = JSON.stringify({
+        type: 'runtime_done',
+        task: { id: 'synthetic-root-task', entity_type: 'EntTaskAgent', parent_task_id: null, status: 'DONE' },
+      });
+      mocks.getRawEventPayloads.mockResolvedValue([questionsEvent, done]);
+      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      mocks.getRawEventPayloads.mockResolvedValue([
+        questionsEvent,
+        done,
+        JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'The run could not produce a result.' } }),
+        done,
+      ]);
+      const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+      expect(result).toMatchObject({ status: 'failed', reason: 'agent_stopped', message: 'The run ended without a Member 360 result.' });
+      expect(JSON.stringify(result)).not.toContain(questionsText);
       expect(mocks.recordGeneration).not.toHaveBeenCalled();
     }
   );
+  it('keeps the recorded questions, root completion and resumed runtime sequence pending for input', async () => {
+    const fixture = JSON.parse(
+      readFileSync(new URL('../../../../../packages/shared/src/utils/__fixtures__/mktg-run-activity.session.json', import.meta.url), 'utf8')
+    ) as { events: Record<string, unknown>[] };
+    const questionIndex = fixture.events.findIndex(
+      (event) => event['type'] === 'agent_notification_message' && JSON.stringify(event).includes('messaging-framework-questions/v1')
+    );
+    expect(questionIndex).toBeGreaterThanOrEqual(0);
+    const events = fixture.events.slice(questionIndex, questionIndex + 3);
+    expect(events.map((event) => event['type'])).toEqual(['agent_notification_message', 'runtime_done', 'runtime_start']);
+    const payloads = events.map((event) =>
+      JSON.stringify(event).replace('MESSAGING FRAMEWORK — QUESTIONS (messaging-framework-questions/v1)', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)')
+    );
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('follows shared precedence when a status-only session end follows unanswered questions', async () => {
+    const payloads = [
+      JSON.stringify({ type: 'agent_notification_message', content: 'member-360-questions/v1\nWhich outreach should lead?' }),
+      JSON.stringify({ type: 'session_status', session: { status: 'DONE' } }),
+    ];
+    expect(mktgFailureAfterQuestions(payloads, isMember360Question)).toBeNull();
+    mocks.getRawEventPayloads.mockResolvedValue(payloads);
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toMatchObject({ status: 'needs_input' });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
   it('does not let short or placeholder contact rows damage report prose', async () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[0].key_contact = '—';

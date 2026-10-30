@@ -34,3 +34,6 @@ apps/lfx-one/public/assets/docs/
 !*.scss
 !*.md
 !*.mdx
+
+# LFX UI Library canonical token file, kept one token per line as shipped
+apps/lfx-one/scripts/ui-tokens/tokens.json

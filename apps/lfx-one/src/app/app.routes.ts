@@ -40,10 +40,12 @@ import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
-import { projectParticipatingOrgsEnabledGuard } from './shared/guards/project-participating-orgs-enabled.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
+import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
+import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -240,6 +242,23 @@ function orgLensPageRoutes(): Routes {
 }
 
 export const routes: Routes = [
+  // Login-free vote link (`/votes/:id#vote_token=...`, #4363): a chrome-less top-level route mounted before the
+  // authenticated shell so the token holder is never sent through login. The guard matches only in the browser and
+  // only when the fragment carries a token; every other `/votes/*` URL falls through to the shell unchanged.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteTokenMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of `/votes/:id` renders the same chrome-less page (its loading state) rather than the authenticated
+  // shell, which the server-side `authGuard` would otherwise wave through for a logged-out visitor.
+  {
+    path: 'votes/:id',
+    pathMatch: 'full',
+    canMatch: [voteAnonymousSsrMatchGuard],
+    loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
   {
     path: '',
     canActivate: [authGuard],
@@ -249,7 +268,7 @@ export const routes: Routes = [
       {
         path: '',
         pathMatch: 'full',
-        title: 'My Dashboard',
+        title: 'Dashboard',
         data: { lens: 'me' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
@@ -373,13 +392,12 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES); rolled out behind
-      // `project-lens-participating-orgs` (CanMatch). The BFF checks the same flag and enforces project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
+      // project `viewer` on every read.
       {
         path: 'project/participating-orgs',
         title: 'Participating Organizations',
         data: { lens: 'project' },
-        canMatch: [projectParticipatingOrgsEnabledGuard],
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
@@ -672,54 +690,54 @@ export const routes: Routes = [
       },
       {
         path: 'meetings',
-        title: 'My Meetings',
+        title: 'Meetings',
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
         path: 'meetups',
-        title: 'My Meetups',
+        title: 'Meetups',
         canActivate: [meetupsLensGuard],
         loadChildren: () => import('./modules/meetups/meetups.routes').then((m) => m.MEETUPS_ROUTES),
       },
       {
         path: 'groups',
-        title: `My ${COMMITTEE_LABEL.plural}`,
+        title: COMMITTEE_LABEL.plural,
         canMatch: [authenticatedMatchGuard],
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
       {
         path: 'mailing-lists',
-        title: `My ${MAILING_LIST_LABEL.plural}`,
+        title: MAILING_LIST_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then((m) => m.MAILING_LIST_ROUTES),
       },
       {
-        // Canonical shareable vote permalink (#3659), also the target of vote reminder emails.
-        // Mounted ahead of the lens-redirected `votes` mount below so the URL never rewrites to
-        // /foundation/... or /project/..., where the cast drawer never opens. `data.lens: 'me'`
-        // switches every way in to the Me lens. Access is decided in the component: a vote the
-        // user can't view renders the shared not-found page in place (HTTP 404 under SSR).
-        // `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard does
-        // the same for `votes/create`.
+        // Vote detail page (#3913), the canonical shareable vote permalink (#3659) and the target of
+        // vote reminder emails. Mounted ahead of the lens-redirected `votes` mount below so the URL never
+        // rewrites to /foundation/... or /project/.... No `data.lens` and no `lensRedirectGuard`: opening
+        // a vote keeps the lens the user came from while the URL stays /votes/:id. Access is decided in
+        // the component: a vote the user can't view renders the shared not-found page in place (HTTP 404
+        // under SSR). `pathMatch: 'full'` leaves `votes/:id/edit` on the mount below; the match guard
+        // does the same for `votes/create`.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,
-        data: { lens: 'me', preload: false },
+        data: { preload: false },
         canMatch: [votePermalinkMatchGuard],
         canActivate: [authGuard],
-        loadComponent: () => import('./modules/votes/vote-permalink/vote-permalink.component').then((m) => m.VotePermalinkComponent),
+        loadComponent: () => import('./modules/votes/vote-detail/vote-detail.component').then((m) => m.VoteDetailComponent),
       },
       {
         path: 'votes',
-        title: `My ${VOTE_LABEL.plural}`,
+        title: VOTE_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
       },
       {
         path: 'surveys',
-        title: `My ${SURVEY_LABEL.plural}`,
+        title: SURVEY_LABEL.plural,
         canActivate: [lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
       },
@@ -727,7 +745,7 @@ export const routes: Routes = [
         // Personal reader: route data restores Me on deep links from any lens.
         path: 'newsletters/my',
         pathMatch: 'full',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () =>
@@ -738,7 +756,7 @@ export const routes: Routes = [
         // (`?invite=<group uid>`). Must stay ahead of the `newsletters/:projectSlug/:id`
         // permalink, which would otherwise read `my` as a project slug.
         path: 'newsletters/my/:foundationSlug',
-        title: 'My Newsletters',
+        title: 'Newsletters',
         data: { lens: 'me', preload: false },
         canActivate: [authGuard],
         loadComponent: () => import('./modules/newsletters/my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
@@ -804,7 +822,7 @@ export const routes: Routes = [
       },
       {
         path: 'events',
-        title: 'My Events',
+        title: 'Events',
         canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
@@ -828,9 +846,9 @@ export const routes: Routes = [
         // lensRedirectGuard rewriting it to /foundation/formations (the auditor-only queue) or the
         // non-existent /project/formations. No projectQueryParamGuard either: the page carries no
         // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
-        // to My Dashboard).
+        // to Dashboard).
         path: 'formations',
-        title: 'My Formations',
+        title: 'Formations',
         data: { lens: 'me' },
         canMatch: [formationMeEnabledGuard],
         loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),
@@ -884,6 +902,15 @@ export const routes: Routes = [
     title: 'LFX Documentation',
     loadComponent: () => import('./layouts/docs-layout/docs-layout.component').then((m) => m.DocsLayoutComponent),
     loadChildren: () => import('./modules/docs/docs.routes').then((m) => m.DOCS_ROUTES),
+  },
+  // Chrome-less presenter (#4140): top-level sibling of the MainLayout root so it renders full-viewport with no navbar/sidebar.
+  // A child of votes.routes.ts would inherit the shell. Gated on vote#writer; must precede the in-shell `**` catch-all.
+  {
+    path: 'votes/:id/present',
+    title: 'Present Vote',
+    canActivate: [authGuard, votePresenterGuard],
+    data: { preload: false },
+    loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
   {
     path: 'meetings/not-found',

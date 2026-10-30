@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, inject, model, signal } from '@angular/core';
+import { DOCUMENT, NgClass } from '@angular/common';
+import { afterNextRender, Component, ElementRef, HostListener, inject, Injector, linkedSignal, model, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -13,15 +13,16 @@ import { Lens } from '@lfx-one/shared/interfaces';
 import { isProfileHubPath } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
-import { DrawerModule } from 'primeng/drawer';
-import { distinctUntilChanged, filter, map } from 'rxjs';
+import { FocusTrap } from 'primeng/focustrap';
+import { distinctUntilChanged, filter, map, skip } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, DrawerModule, ImpersonationBannerComponent],
+  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, FocusTrap, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
 })
@@ -32,16 +33,32 @@ export class MainLayoutComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  /** The desktop navbar's docked state: the page gutter is 288px open, 56px on the rail. */
+  protected readonly navbarCollapse = inject(NavbarCollapseService);
+  private readonly document = inject(DOCUMENT);
+  private readonly injector = inject(Injector);
   protected readonly userService = inject(UserService);
 
-  // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
+  private readonly mobileDrawer = viewChild<ElementRef<HTMLElement>>('mobileDrawer');
+  private readonly mobileMenuButton = viewChild<ElementRef<HTMLButtonElement>>('mobileMenuButton');
+
+  // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
+
+  // The drawer's navbar mounts on the first open and then stays, so it is never torn down mid-slide and below `lg`
+  // only — a desktop session never opens the drawer and never builds a second navbar.
+  protected readonly mobileNavbarMounted = linkedSignal<boolean, boolean>({
+    source: this.showMobileSidebar,
+    computation: (open, previous) => open || (previous?.value ?? false),
+  });
 
   // Project/foundation selector panel open state (drives the main-content backdrop)
   protected readonly selectorPanelOpen = model(false);
 
   // Active lens from service
   protected readonly activeLens = this.lensService.activeLens;
+  // The lens the mobile drawer's menu shows — the active lens, or the one its lens tabs preview (#4208)
+  protected readonly menuLens = this.lensService.menuLens;
 
   // Lens-aware sidebar items (built by SidebarNavService; shared with the docs shell).
   protected readonly sidebarItems = this.sidebarNavService.sidebarItems;
@@ -67,6 +84,8 @@ export class MainLayoutComponent {
     // paint / hard load, before the first NavigationEnd fires.
     this.isProfileHub.set(isProfileHubPath(this.router.url));
 
+    this.initDrawerFocus();
+
     // Close mobile sidebar and sync lens from route data on navigation
     this.router.events
       .pipe(
@@ -74,7 +93,15 @@ export class MainLayoutComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => {
-        this.appService.closeMobileSidebar();
+        // Only a navigation the viewer made closes the mobile drawer. A page rewriting its own address in place —
+        // Org Lens writing the default organization into `/org/{page}`, a page syncing its query params — lands with
+        // `replaceUrl` and would snap a just-opened drawer shut, which on a phone reads as the menu not opening at
+        // all. Back/forward (popstate) also lands with `replaceUrl`, and does close it. A viewer action that itself
+        // re-addresses with `replaceUrl` (an organization switch from the drawer) closes the drawer at its source.
+        const navigation = this.router.currentNavigation();
+        if (!navigation?.extras.replaceUrl || navigation.trigger === 'popstate') {
+          this.appService.closeMobileSidebar();
+        }
         this.selectorPanelOpen.set(false);
         this.isProfileHub.set(isProfileHubPath(this.router.url));
         this.syncLensFromRoute();
@@ -103,16 +130,70 @@ export class MainLayoutComponent {
       });
   }
 
-  /** Toggle the mobile sidebar drawer from the header control. */
-  public toggleMobileSidebar(): void {
-    this.appService.toggleMobileSidebar();
+  /**
+   * Open the mobile drawer from the header control. Always opens, never toggles: the open drawer and its
+   * backdrop cover the control, so a toggle could only ever fire as a close when the state had drifted.
+   */
+  public openMobileSidebar(): void {
+    this.appService.openMobileSidebar();
   }
 
-  /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */
-  public onDrawerVisibilityChange(visible: boolean): void {
-    if (!visible) {
-      this.appService.closeMobileSidebar();
+  /** Close the mobile drawer from its backdrop. */
+  public closeMobileSidebar(): void {
+    this.appService.closeMobileSidebar();
+  }
+
+  /**
+   * Escape closes the mobile drawer — unless an overlay opened above it (a navbar
+   * popover or selector panel, a dialog, the What's New drawer, a nav tooltip) is still open: that overlay takes the key.
+   * PrimeNG overlays stay in the DOM through their leave animation, and this listener is bound before any tooltip's.
+   */
+  @HostListener('document:keydown.escape')
+  public onEscape(): void {
+    const overlayAbove = this.document.querySelector('.p-popover, .p-dialog-mask, .p-drawer, .lfxn-tooltip.is-visible');
+    if (!this.showMobileSidebar() || overlayAbove) {
+      return;
     }
+    this.closeMobileSidebar();
+  }
+
+  /**
+   * Focus follows the mobile drawer, as a modal dialog's should: into it once it has rendered open, and back to
+   * the menu button when it closes with focus inside it, inside an overlay opened from it (a popover or selector panel,
+   * an interactive nav tooltip — appended to <body>, outside the panel), or already dropped to <body> by the panel
+   * turning inert. An overlay's own focus return then targets an inert trigger, which is a no-op. The initial closed
+   * state is skipped so a page load never moves focus.
+   */
+  private initDrawerFocus(): void {
+    toObservable(this.showMobileSidebar)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe((open) => {
+        if (open) {
+          afterNextRender(() => this.focusDrawerStart(), { injector: this.injector });
+          return;
+        }
+        const active = this.document.activeElement;
+        const inDrawerOverlay = !!active?.closest('.p-popover, .lfxn-tooltip');
+        if (active === this.document.body || inDrawerOverlay || this.mobileDrawer()?.nativeElement.contains(active)) {
+          this.mobileMenuButton()?.nativeElement.focus({ preventScroll: true });
+        }
+      });
+  }
+
+  /**
+   * Focuses the drawer's first visible control — inside the focus trap's sentinels, so an immediate Shift+Tab wraps within
+   * the drawer instead of stepping back out of it. The panel itself takes focus only while nothing in it is focusable yet.
+   */
+  private focusDrawerStart(): void {
+    const panel = this.mobileDrawer()?.nativeElement;
+    if (!panel) {
+      return;
+    }
+    const focusable = panel.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not(.p-hidden-focusable)'
+    );
+    const first = Array.from(focusable).find((element) => element.getClientRects().length > 0);
+    (first ?? panel).focus({ preventScroll: true });
   }
 
   /**

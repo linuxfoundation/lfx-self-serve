@@ -416,8 +416,8 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(groupToggle.getAttribute('aria-expanded')).toBe('false');
     expect(fixture.nativeElement.querySelector('[data-testid="weekly-brief-card-source-chip-vote-2"]')).toBeNull();
 
-    const voteDrawerRequested = vi.fn();
-    component.voteDrawerRequested.subscribe(voteDrawerRequested);
+    const voteRequested = vi.fn();
+    component.voteRequested.subscribe(voteRequested);
 
     await clickTestId('weekly-brief-card-source-group-toggle-vote-1');
 
@@ -427,7 +427,7 @@ describe('WeeklyBriefCardComponent — Sources disclosure (LFXV2-3335)', () => {
     expect(instanceButton.textContent).toContain('Q1 Budget #2');
 
     instanceButton.click();
-    expect(voteDrawerRequested).toHaveBeenCalledWith('vote-2');
+    expect(voteRequested).toHaveBeenCalledWith('vote-2');
   });
 
   it('clears sourcesExpanded and expandedSourceGroups when navigating to a different committee', async () => {

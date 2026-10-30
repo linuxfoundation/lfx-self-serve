@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
+import { CdpIdentityType, EmailVerificationCallbackStatus, EmailVerificationStatus, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
 
 /**
  * sessionStorage key for a profile-edit form interrupted by a Flow C
@@ -187,14 +187,72 @@ export const IDENTITY_PROVIDER_LABELS: Record<IdentityProvider, string> = {
 export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
 
 /**
- * Generic, non-identifying message returned when an email is already linked to
- * another account. Intentionally never names the owning account — surfacing the
- * owning LFID would enable account enumeration.
+ * Generic, non-identifying message returned when a post-proof link reports the email is already
+ * linked. Intentionally never names the owning account — surfacing the owning LFID would enable
+ * account enumeration — and never asserts "another account", since the upstream conflict alone
+ * does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
+ * (`isIdentityAlreadyLinkedError`) matches.
  */
-export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
+export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an LFX account. Contact support if you need help.';
+
+/** Successful no-op status: the proven address is already connected to the caller's own account. */
+export const EMAIL_ALREADY_CONNECTED_STATUS: EmailVerificationStatus = 'already_connected';
+
+/** Shared toast heading for an address already connected to the caller's account. */
+export const EMAIL_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
+/**
+ * Success copy for an address already connected to the caller's account. Deliberately avoids the
+ * "already linked" markers, so it can never trigger the linked-to-another-account support link.
+ */
+export const EMAIL_ALREADY_CONNECTED_MESSAGE = 'This email is already connected to your account.';
+
+/**
+ * Social callback `success` marker: the reconnected social identity resolved to the caller's own
+ * account (same subject), so the callback returned without linking, verifying, or syncing anything.
+ * A UI notice only — never proof of verification or ownership.
+ */
+export const IDENTITY_ALREADY_CONNECTED_STATUS = 'identity_already_connected';
+
+/** Shared toast heading for a social identity already connected to the caller's account. */
+export const IDENTITY_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
+/**
+ * Success copy for a social identity already connected to the caller's account. Deliberately avoids
+ * the "already linked" markers, so it can never trigger the linked-to-another-account support link.
+ */
+export const IDENTITY_ALREADY_CONNECTED_MESSAGE = 'This identity is already connected to your account.';
+
+/** Query parameter carrying the pending-email outcome on the Flow C authorization-success redirect. */
+export const EMAIL_CALLBACK_STATUS_PARAM = 'email_status';
+
+/** Flow C callback outcome: a replayed pending email verification did not finish. */
+export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStatus = 'retry_required';
+
+/** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
+export const EMAIL_CALLBACK_RETRY_MESSAGE =
+  'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
 
 /** Enumeration-safe response shared by accepted and already-linked send-code requests. */
 export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
+
+/** Resends allowed on the code step before Resend is replaced by a Contact support action. */
+export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
+
+/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
+
+/** Standalone code-step hint shown alongside a secondary Contact support action. */
+export const EMAIL_CODE_NOT_RECEIVED_HINT = 'Check the email address above and your spam or junk folder.';
+
+/** Heading for the support-first state after the allowed successful resend. */
+export const EMAIL_RESEND_SUPPORT_TITLE = 'Still waiting for your code?';
+
+/** Escalation guidance that makes no delivery-time promise and preserves late-code entry. */
+export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact support for help. You can still enter the code here if it arrives later.";
+
+/** Retryable, non-identifying error shown when a resend request fails. */
+export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
 
 /** Generic error code for every non-service-unavailable OTP verification failure. */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';

@@ -5,13 +5,14 @@
 <div class="flex flex-col gap-4" data-testid="non-members-conversion">
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Conversion opportunity unavailable"
       subtitle="We could not load the conversion opportunity for this foundation. Refresh the page to try again."
       data-testid="non-members-conversion-error" />
   } @else if (loading()) {
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading" aria-hidden="true" />
-  } @else {
+  } @else if (!empty()) {
     <span class="self-end rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] text-blue-700" data-testid="non-members-conversion-summary">{{
       view().summary
     }}</span>
@@ -19,20 +20,22 @@
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="non-members-conversion-hero">
       <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
         <span
-          class="text-3xl font-semibold tabular-nums"
+          class="text-[24px] font-semibold leading-[1.2] tabular-nums"
           [class.text-gray-900]="view().hasEstimate"
           [class.text-gray-400]="!view().hasEstimate"
           data-testid="non-members-conversion-pipeline-value"
           >{{ view().pipelineValue }}</span
         >
-        <span class="text-[12.5px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
+        <span class="text-[12px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="non-members-conversion-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'non-members-conversion-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
+            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
+            <dd
+              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
+              [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
               {{ stat.value }}
             </dd>
           </div>
@@ -48,7 +51,7 @@
           <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
         </div>
         @if (view().warmest.length === 0) {
-          <p class="text-sm text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
+          <p class="text-[13px] text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
         } @else {
           <ul class="flex flex-col gap-[8px]">
             @for (row of view().warmest; track row.accountId; let index = $index) {

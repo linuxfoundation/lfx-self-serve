@@ -4,11 +4,11 @@
 import { afterNextRender, computed, DestroyRef, Directive, ElementRef, inject, input, model, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import type { IsActiveMatchOptions } from '@angular/router';
+import type { IsActiveMatchOptions, Params } from '@angular/router';
 import { environment } from '@environments/environment';
-import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
+import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES, ORG_LENS_TIME_RANGE_QUERY_PARAM } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext, orgLensDestinationKey } from '@lfx-one/shared/utils';
+import { lensItemToProjectContext, orgLensDestinationKey, orgLensTimeRangeUrlParam, parseOrgLensTimeRange } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
 import { LensService } from '@services/lens.service';
@@ -60,17 +60,25 @@ export abstract class NavMenuBase {
   /** Final org-selector visibility — `parent input ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
   protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
 
-  protected readonly activeLens = this.lensService.activeLens;
-  protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
+  /**
+   * The lens the menu shows: the page's active lens, or the one the mobile drawer's lens tabs preview (#4208). The page's
+   * own lens changes only when a pick from this menu commits it.
+   */
+  protected readonly menuLens = this.lensService.menuLens;
+  protected readonly isOrgLens = computed(() => this.menuLens() === 'org');
   protected readonly isHybridPersona = this.lensService.isHybridPersona;
-  protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.activeContext());
+  protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.menuContext());
   // Carried on every nav item's routerLink so switching tabs (Meetings, Groups, Mailing Lists, ...)
   // keeps ?project= in the URL instead of silently dropping it (LFXV2-2837). Gated on the route's
   // declared lens rather than just checking selectedProject — activeContext() falls back to the
   // cookie-restored selection on Me/Org lenses too, which would otherwise leak a foundation/project
   // slug into unrelated Me/Org navigation (e.g. /meetings, /org/overview).
+  // A lens the mobile drawer previews (#4208) has no route yet: its own lens decides instead, so a Me or Org menu
+  // previewed over a foundation page carries no slug, and a previewed foundation / project menu carries its selector's.
+  // The same holds while a pick from it is still navigating: the route is still the page being left.
   protected readonly projectQueryParams: Signal<{ project?: string }> = computed(() => {
-    const kind = this.projectContextService.activeRouteLensKind();
+    const lensDecides = this.lensService.previewingMenuLens() || this.lensService.menuPickPending();
+    const kind = lensDecides ? this.navLens() : this.projectContextService.activeRouteLensKind();
     if (kind !== 'foundation' && kind !== 'project') return {};
     const slug = this.selectedProject()?.slug;
     return slug ? { project: slug } : {};
@@ -103,6 +111,13 @@ export abstract class NavMenuBase {
    * left to both, `routerLinkActive` would strip the classes this adds on every navigation.
    */
   protected readonly aliasHighlightedKeys: Signal<Readonly<Record<string, boolean>>> = this.initAliasHighlightedKeys();
+
+  /**
+   * Query params per track key for the links whose `carryQueryParams` apply right now, on top of `projectQueryParams`;
+   * absent keys use `projectQueryParams` alone. A link carries a parameter only from a page that is itself an item
+   * carrying it (e.g. `?range=` between People and Code Contributions), so unrelated pages never leak theirs.
+   */
+  protected readonly carriedQueryParams: Signal<Readonly<Partial<Record<string, Params>>>> = this.initCarriedQueryParams();
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -155,12 +170,19 @@ export abstract class NavMenuBase {
     // for those users — setLens('foundation') would be a no-op and the selection would silently fail.
     const foundationAllowed = this.lensService.availableLenses().some((option) => option.id === 'foundation');
     const asFoundation = item.isFoundation && foundationAllowed;
-    this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    // A pick from a lens the mobile drawer previews has no page of that lens under it to re-target (#4208). It commits
+    // like any pick from that menu, so a navigation that never leaves the page puts the page's lens back.
+    const fromPreview = this.lensService.previewingMenuLens();
+    if (fromPreview) {
+      this.lensService.commitMenuLens(asFoundation ? 'foundation' : 'project', this.contextRestorer(asFoundation, context));
+    } else {
+      this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    }
     // Decide the navigation before the context syncs the URL: a navigation owns the destination, so
     // the switch must not also `replaceState` the current history entry — that rewrote the page the
     // user came from to the new slug, and Back then landed on a URL the landing-page guards bounce
     // forward (Bugbot on #2757). Only a switch that keeps the page syncs `?project=` in place.
-    const target = this.contextSwitchTarget();
+    const target = this.contextSwitchTarget(fromPreview);
     if (asFoundation) {
       this.projectContextService.setFoundation(context, target === null);
     } else {
@@ -175,9 +197,16 @@ export abstract class NavMenuBase {
    * The lens whose overview a context switch must navigate to, or `null` when the switch keeps the
    * current page and only re-targets it. Keeps the URL's lens prefix in sync with the selected
    * context so a hard refresh restores it (syncLensFromRoute + projectQueryParamGuard): navigate on a
-   * lens-type change, off an entity page, or off the Project lens landing/checklist pages.
+   * lens-type change, off an entity page, or off the Project lens landing/checklist pages. A pick made in a previewed
+   * lens always navigates: the page underneath belongs to another lens, so re-targeting it would write `?project=`
+   * onto, say, a Me or Org page.
    */
-  private contextSwitchTarget(): NavLens | null {
+  private contextSwitchTarget(fromPreview: boolean): NavLens | null {
+    // activeLens reflects setLens() synchronously, clamped to what the persona may use.
+    const targetLens: NavLens = this.lensService.activeLens() === 'foundation' ? 'foundation' : 'project';
+    if (fromPreview) {
+      return targetLens;
+    }
     // Primary-outlet segments, not a split of the raw URL: `Router.url` serializes `path?query#fragment`,
     // so a fragment with no query string would otherwise stay glued to the last segment (same
     // approach as `MentorPageComponent.resolveActiveTab`).
@@ -186,8 +215,6 @@ export abstract class NavMenuBase {
     if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
       return null;
     }
-    // activeLens() reflects setLens() synchronously, clamped to what the persona may use.
-    const targetLens: NavLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
     const lensTypeChanged = currentPrefix !== targetLens;
     const onEntityPage = segments.length === 3;
     // The Project lens landing page is decided per project by `formationOverviewRedirectGuard`
@@ -198,6 +225,27 @@ export abstract class NavMenuBase {
     const currentPath = `/${segments.join('/')}`;
     const onLandingDecisionPage = targetLens === 'project' && (currentPath === LENS_DEFAULT_ROUTES.project || currentPath === FORMATION_CHECKLIST_PATH);
     return lensTypeChanged || onEntityPage || onLandingDecisionPage ? targetLens : null;
+  }
+
+  /**
+   * Puts the selector slot a previewed pick is about to overwrite back to its current value — for a pick whose navigation
+   * never leaves the page — unless something has selected another context since. Never touches the address: the page
+   * the viewer stayed on keeps its own `?project=`.
+   */
+  private contextRestorer(asFoundation: boolean, picked: ProjectContext): () => void {
+    const slot = asFoundation ? this.projectContextService.selectedFoundation : this.projectContextService.selectedProject;
+    const previous = slot();
+    return () => {
+      if (slot()?.uid !== picked.uid) return;
+      if (previous) {
+        if (asFoundation) this.projectContextService.setFoundation(previous, false);
+        else this.projectContextService.setProject(previous, false);
+      } else if (asFoundation) {
+        this.projectContextService.clearFoundation(false);
+      } else {
+        this.projectContextService.clearProject(false);
+      }
+    };
   }
 
   private initEffectiveShowOrgSelector(): Signal<boolean> {
@@ -212,7 +260,7 @@ export abstract class NavMenuBase {
 
   private initNavLens(): Signal<NavLens | null> {
     return computed(() => {
-      const lens = this.activeLens();
+      const lens = this.menuLens();
       return lens === 'foundation' || lens === 'project' ? lens : null;
     });
   }
@@ -240,6 +288,39 @@ export abstract class NavMenuBase {
       scan(this.itemsWithTestIds());
       scan(this.footerItemsWithTestIds());
       return keys;
+    });
+  }
+
+  private initCarriedQueryParams(): Signal<Readonly<Partial<Record<string, Params>>>> {
+    return computed(() => {
+      const current = this.router.parseUrl(this.navigatedUrl()).queryParams;
+      const carriers: { trackKey: string; link: string; names: readonly string[]; match: IsActiveMatchOptions }[] = [];
+      const collect = (items: DecoratedSidebarMenuItem[]): void => {
+        for (const item of items) {
+          if (item.routerLink && item.carryQueryParams?.length) {
+            carriers.push({ trackKey: item.trackKey, link: item.routerLink, names: item.carryQueryParams, match: item.activeMatchOptions });
+          }
+          if (item.items) collect(item.items);
+        }
+      };
+      collect(this.itemsWithTestIds());
+      collect(this.footerItemsWithTestIds());
+
+      const source = carriers.find((carrier) => this.router.isActive(carrier.link, carrier.match));
+      if (!source) return {};
+      const project = this.projectQueryParams();
+      const params: Record<string, Params> = {};
+      for (const target of carriers) {
+        const carried: Params = {};
+        for (const name of target.names) {
+          if (!source.names.includes(name) || current[name] === undefined) continue;
+          // A range is carried only as a valid, non-default value, so a legacy `12mo` or a typo never spreads to the next page.
+          const value = name === ORG_LENS_TIME_RANGE_QUERY_PARAM ? orgLensTimeRangeUrlParam(parseOrgLensTimeRange(current[name])) : current[name];
+          if (value !== null) carried[name] = value;
+        }
+        if (Object.keys(carried).length) params[target.trackKey] = { ...project, ...carried };
+      }
+      return params;
     });
   }
 

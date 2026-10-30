@@ -549,6 +549,9 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(rsvpActions).toHaveLength(1);
     expect(rsvpActions[0].meetingUid).toBe('tracked-meeting');
     expect(rsvpActions[0].buttonText).toBe('Set RSVP');
+    expect(rsvpActions[0].text).toBe(trackedMeeting.title);
+    expect(rsvpActions[0].date).toBeTruthy();
+    expect(rsvpActions[0].startTime).toBe(new Date(tomorrow).toISOString());
     expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).toEqual(expect.arrayContaining(['v1_meeting', 'v1_meeting_registrant', 'v1_meeting_rsvp']));
   });
@@ -793,7 +796,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
   });
 });
 
-describe('UserService.getPendingActions Review Agenda lens scoping (GH-2991)', () => {
+describe('UserService.getPendingActions meeting rows (GH-3311)', () => {
   const req = {} as unknown as Request;
   const email = 'invitee@example.com';
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -820,20 +823,14 @@ describe('UserService.getPendingActions Review Agenda lens scoping (GH-2991)', (
     service = new UserService();
   });
 
-  it('omits Review Agenda rows on the Me lens while still fetching meetings for RSVP', async () => {
-    const actions = await service.getPendingActions(req, undefined, email, undefined);
+  it.each([
+    ['the Me lens', undefined, undefined],
+    ['a project/foundation lens', 'proj-uid-1', 'acme-project'],
+  ])('emits no Agenda rows on %s while still fetching meetings for RSVP', async (_label, projectUid, projectSlug) => {
+    const actions = await service.getPendingActions(req, projectUid, email, projectSlug);
 
     expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).toContain('v1_meeting');
-  });
-
-  it('keeps Review Agenda rows on a project/foundation lens', async () => {
-    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
-    const agendaActions = actions.filter((action) => action.type === 'Agenda');
-
-    expect(agendaActions).toHaveLength(1);
-    expect(agendaActions[0].buttonText).toBe('Review Agenda');
-    expect(agendaActions[0].text).toBe('Review Board Agenda and Materials');
   });
 });
 
@@ -1111,7 +1108,10 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
         return Promise.reject(new Error('query service down'));
       }
       if (params?.type === 'v1_meeting') {
-        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true }]);
+      }
+      if (params?.type === 'v1_meeting_registrant') {
+        return queryPage([{ uid: 'reg-1', meeting_id: 'm-1' }]);
       }
       return queryPage([]);
     });
@@ -1119,7 +1119,7 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
     const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
-    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(1);
   });
 
   it('fails closed on a mid-pagination survey_response failure, hiding partial rows but not other sources', async () => {
@@ -1133,7 +1133,10 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
         return surveyCalls === 1 ? Promise.resolve({ ...queryPage([openSurveyRow]), page_token: 'token-2' }) : Promise.reject(new Error('page 2 boom'));
       }
       if (params?.type === 'v1_meeting') {
-        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true }]);
+      }
+      if (params?.type === 'v1_meeting_registrant') {
+        return queryPage([{ uid: 'reg-1', meeting_id: 'm-1' }]);
       }
       return queryPage([]);
     });
@@ -1142,7 +1145,7 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
 
     expect(surveyCalls).toBe(2);
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
-    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(1);
   });
 
   it('pushes project scoping server-side via the project_uid tag when a project lens is active', async () => {
@@ -1217,6 +1220,8 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
 
     expect(voteActions).toHaveLength(1);
     expect(voteActions[0]).toMatchObject({ buttonText: 'Cast Vote', voteUid: 'vote-active', text: 'Cast your vote on Active Ballot' });
+    // The secondary link opens this vote's detail page, not the My Votes list.
+    expect(voteActions[0].buttonLink).toBe('/votes/vote-active');
   });
 
   it('queries vote_response by identity filters_or with no filter_grants (the #2985 fix)', async () => {

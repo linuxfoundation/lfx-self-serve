@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL) wraps inside its card instead of running across the next one. -->
-<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
+<section class="@container/asset flex min-w-0 w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
   <!-- Header: what this is, which version, how big, and what needs the team -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-faq-view-header">
     @if (showMetadata()) {
@@ -18,16 +18,6 @@
       <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-faq-view-mode">{{ modeLabel() }}</span>
     }
     <span class="text-xs text-gray-500" data-testid="mktg-faq-view-size">{{ sizeLabel() }}</span>
-    @if (unanswered().length > 0) {
-      <button
-        type="button"
-        class="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-        data-testid="mktg-faq-view-unanswered-chip"
-        (click)="onGoToTab('unanswered')">
-        <i class="fa-light fa-circle-question" aria-hidden="true"></i>
-        {{ unansweredLabel() }}
-      </button>
-    }
     <div class="grow"></div>
     <ng-content select="[asset-actions]" />
   </div>
@@ -63,25 +53,27 @@
             data-testid="mktg-faq-view-unanswered-callout">
             <span class="flex items-start gap-2 text-sm text-amber-900">
               <i class="fa-light fa-circle-question mt-0.5 shrink-0" aria-hidden="true"></i>
-              <span>{{ unansweredLabel() }}: the sources did not answer them, so they are left open rather than guessed.</span>
+              <span>
+                {{ unansweredLabel() }}.
+                @if (commentsEnabled()) {
+                  @if (unanswered().length === 1) {
+                    Answer it by commenting on it; the agent adds your answer as Notes.
+                  } @else {
+                    Answer them by commenting on them; the agent adds your answers as Notes.
+                  }
+                }
+              </span>
             </span>
-            <button
-              type="button"
-              class="text-sm font-medium text-amber-900 underline underline-offset-2 hover:text-amber-950"
-              data-testid="mktg-faq-view-unanswered-open"
-              (click)="onGoToTab('unanswered')">
-              See them
-            </button>
           </div>
         }
 
-        <div class="grid grid-cols-1 gap-3 xl:grid-cols-2" data-testid="mktg-faq-view-groups">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2" data-testid="mktg-faq-view-groups">
           @for (group of groups(); track group.path; let g = $index) {
             <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'mktg-faq-view-group-' + g">
               <h3 class="text-base font-semibold text-gray-900">{{ group.name }}</h3>
               <dl class="flex flex-col divide-y divide-gray-100">
                 @for (row of group.questions; track row.path; let q = $index) {
-                  <div class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0" [attr.data-testid]="'mktg-faq-view-question-' + g + '-' + q">
+                  <div class="group/commentfield flex flex-col gap-1 py-3 first:pt-0 last:pb-0" [attr.data-testid]="'mktg-faq-view-question-' + g + '-' + q">
                     <dt class="text-sm font-medium text-gray-900">{{ row.question }}</dt>
                     @if (row.answered) {
                       <dd class="flex flex-wrap items-start gap-2">
@@ -94,10 +86,34 @@
                           >
                         }
                       </dd>
-                    } @else {
+                    }
+                    @if (unansweredPaths().has(row.path)) {
                       <dd class="flex items-center gap-1.5 text-sm text-amber-800" [attr.data-testid]="'mktg-faq-view-needs-answer-' + g + '-' + q">
                         <i class="fa-light fa-circle-question" aria-hidden="true"></i>
                         {{ needsAnswerLabel }}
+                      </dd>
+                    } @else if (!row.answered) {
+                      @if (answeredRevisions().get(row.path + '[1]'); as revision) {
+                        <dd class="text-sm">
+                          <a
+                            [routerLink]="[]"
+                            [queryParams]="{ revision: revision.id }"
+                            queryParamsHandling="merge"
+                            class="text-blue-600 hover:text-blue-800"
+                            [attr.data-testid]="'mktg-faq-view-answered-revision-' + g + '-' + q"
+                            >{{ answeredRevisionLabel(revision.number) }}</a
+                          >
+                        </dd>
+                      } @else if (resolvedFields().has(row.path + '[1]')) {
+                        <dd class="text-sm text-gray-600" [attr.data-testid]="'mktg-faq-view-resolved-' + g + '-' + q">{{ resolvedLabel }}</dd>
+                      }
+                    }
+                    @if (commentsEnabled()) {
+                      <dd>
+                        <lfx-mktg-field-comments
+                          [field]="row.path + '[1]'"
+                          [openLabel]="unansweredPaths().has(row.path) ? 'Answer' : 'Comment'"
+                          [alwaysVisible]="unansweredPaths().has(row.path)" />
                       </dd>
                     }
                   </div>
@@ -121,11 +137,14 @@
           <p class="max-w-prose text-sm text-gray-600">
             The sources the agent read do not answer these. They stay in the FAQ, marked as needing an answer, until your team gives one.
           </p>
-          <ul class="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="mktg-faq-view-unanswered-list">
+          <ul class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2" data-testid="mktg-faq-view-unanswered-list">
             @for (item of unanswered(); track item.path) {
-              <li class="flex flex-col gap-1 rounded-xl border border-amber-200 bg-white p-4">
+              <li class="group/commentfield flex flex-col gap-1 rounded-xl border border-amber-200 bg-white p-4">
                 <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">{{ item.group }}</span>
                 <span class="text-sm font-medium text-gray-900">{{ item.question }}</span>
+                @if (commentsEnabled()) {
+                  <lfx-mktg-field-comments [field]="item.path + '[1]'" openLabel="Answer" [alwaysVisible]="true" />
+                }
               </li>
             }
           </ul>
@@ -140,7 +159,7 @@
     <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
     @case ('sources') {
       <div
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2"
         role="tabpanel"
         id="mktg-faq-panel-sources"
         aria-labelledby="mktg-faq-tab-sources"

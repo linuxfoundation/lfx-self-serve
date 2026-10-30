@@ -9,8 +9,8 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
+import { defer, finalize, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
@@ -48,6 +48,27 @@ describe('VoteService', () => {
     });
 
     service = TestBed.inject(VoteService);
+  });
+
+  it('serves an uncached vote read per subscription, never touching the detail cache', () => {
+    http.get.mockImplementation(() => of({ uid: 'v1' }));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+    service.getVoteDetail('v1', { uncached: true }).subscribe();
+
+    expect(http.get).toHaveBeenCalledTimes(2);
+    service.getVoteDetail('v1').subscribe();
+    service.getVoteDetail('v1').subscribe();
+    expect(http.get).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels an uncached vote read when its subscriber leaves', () => {
+    const teardown = vi.fn();
+    http.get.mockImplementation(() => defer(() => new Subject<Vote>().pipe(finalize(teardown))));
+
+    service.getVoteDetail('v1', { uncached: true }).subscribe().unsubscribe();
+
+    expect(teardown).toHaveBeenCalledTimes(1);
   });
 
   it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {
@@ -173,6 +194,16 @@ describe('VoteService', () => {
     expect(error).toHaveBeenCalledWith(failure);
   });
 
+  it('propagates vote-count HTTP failures instead of reporting a zero total (GH-4078)', () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    http.get.mockReturnValue(throwError(() => failure));
+    const next = vi.fn();
+    const error = vi.fn();
+    service.getVotesCountByProject('p1').subscribe({ next, error });
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
   // GH-2730: the carrier overlays a just-opened vote's known-active status over stale index rows
   // while the search index catches up. It must self-heal — evict on convergence, prune at the
   // TTL — or it would pin a stale 'active' over the fetched server value indefinitely.
@@ -197,7 +228,7 @@ describe('VoteService', () => {
     it('evicts the carried uid once a fetched row comes back active — the server value has converged', () => {
       service.markVoteOpened('v1');
 
-      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })]);
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
 
       // After eviction the carrier no longer overlays — a stale row would flow through unchanged.
       const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
@@ -210,7 +241,7 @@ describe('VoteService', () => {
       // A just-opened vote can end early inside the TTL (ITX's EndPollIfAllResponded), so any
       // converged non-disabled status — not just `active` — is the server's truth and must not be
       // overlaid back to active.
-      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED })]);
+      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 4 })]);
       expect(converged[0].status).toBe(PollStatus.ENDED);
 
       // The carry was evicted on convergence — a subsequent stale row flows through unchanged.
@@ -266,6 +297,96 @@ describe('VoteService', () => {
     });
   });
 
+  // GH-4078: a vote inside either carrier window can't be trusted to report its electorate yet.
+  describe('awaiting invitation count (GH-4078)', () => {
+    it('reports nothing awaiting when no vote was marked', () => {
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE })])).toBe(false);
+    });
+
+    it('treats a just-opened vote as awaiting until its carrier expires', () => {
+      vi.useFakeTimers();
+      try {
+        service.markVoteOpened('v1');
+        expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+        expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('treats a just-created open vote as awaiting, but not a just-created draft', () => {
+      service.markVoteCreated(buildVote({ uid: 'opened' }), true);
+      service.markVoteCreated(buildVote({ uid: 'draft' }), false);
+
+      expect(service.isAwaitingInvitationCount('opened')).toBe(true);
+      expect(service.isAwaitingInvitationCount('draft')).toBe(false);
+    });
+
+    it('stops awaiting once a fetched row converges and evicts the carrier', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })]);
+
+      expect(service.isAwaitingInvitationCount('v1')).toBe(false);
+    });
+
+    it('does not reopen a just-opened vote as Active from a stale draft row after it was seen as Ended', () => {
+      service.markVoteOpened('v1');
+      service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
+
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+
+      // Re-opening the vote restarts the carrier, so a stale draft row is overlaid as Active again.
+      service.markVoteOpened('v1');
+      expect(service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the just-opened carrier while the index reports a non-draft status before its electorate', () => {
+      service.markVoteOpened('v1');
+      const merged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED, total_voting_request_invitations: 0 })]);
+
+      // The server status still wins; only eviction waits for the count.
+      expect(merged[0].status).toBe(PollStatus.ENDED);
+      expect(service.isAwaitingInvitationCount('v1')).toBe(true);
+    });
+
+    it('keeps the just-created carrier while the indexed row is open but has no electorate yet', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote' }), true);
+      const serverRow = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE });
+
+      expect(service.mergeRecentlyCreatedVotes([serverRow])).toEqual([serverRow]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+    });
+
+    it('adopts a fetched Ended status so the retained carrier is not re-inserted as Active', () => {
+      service.markVoteCreated(buildVote({ uid: 'new-vote', project_uid: 'p1' }), true);
+
+      // All tab: the index already reports Ended, but no electorate yet — the carrier is retained.
+      const ended = buildVote({ uid: 'new-vote', project_uid: 'p1', status: PollStatus.ENDED, total_voting_request_invitations: 0 });
+      expect(service.mergeRecentlyCreatedVotes([ended], { projectUid: 'p1', statusFilter: null })).toEqual([ended]);
+      expect(service.isAwaitingInvitationCount('new-vote')).toBe(true);
+
+      // Active tab: the server no longer returns the ended vote, and the carrier must not put it back.
+      expect(service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ACTIVE })).toEqual([]);
+      // Ended tab: the carrier now inserts under the status the server reported.
+      const endedTab = service.mergeRecentlyCreatedVotes([], { projectUid: 'p1', statusFilter: PollStatus.ENDED });
+      expect(endedTab.map((vote) => [vote.uid, vote.status])).toEqual([['new-vote', PollStatus.ENDED]]);
+    });
+
+    it('counts a list as awaiting only for open rows still missing a positive electorate', () => {
+      service.markVoteOpened('v1');
+
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 0 })])).toBe(true);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 })])).toBe(false);
+      expect(service.hasVotesAwaitingInvitationCount([buildVote({ uid: 'v1', status: PollStatus.DISABLED })])).toBe(false);
+    });
+  });
+
   // GH-4007: a just-created (including cloned) vote can be missing entirely from a fetched page
   // until the search index catches up — unlike the GH-2730 carrier above, there is no row to patch,
   // so the carrier must insert one. Self-heals the same way: evict on convergence, prune at the TTL.
@@ -290,7 +411,7 @@ describe('VoteService', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
       const merged = service.mergeRecentlyCreatedVotes([serverRow]);
 
       expect(merged).toEqual([serverRow]);
@@ -507,7 +628,7 @@ describe('VoteService', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE, total_voting_request_invitations: 4 });
       const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
 
       expect(merged).toEqual([serverRow]);
@@ -586,6 +707,145 @@ describe('VoteService', () => {
 
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
       expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
+  });
+
+  describe('own ballot (#4331)', () => {
+    const answers = [{ question_id: 'q-1', choice_ids: ['c-yes'] }];
+
+    it('getMyVoteBallot GETs the encoded my-ballot URL', () => {
+      const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote/1', abstained: false, poll_answers: [], comment_responses: [] };
+      http.get.mockReturnValue(of(ballot));
+      const next = vi.fn();
+
+      service.getMyVoteBallot('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/my-ballot');
+      expect(next).toHaveBeenCalledWith(ballot);
+    });
+
+    it('returns the accepted ballot when a bounded 404 retry observes index convergence', async () => {
+      vi.useFakeTimers();
+      try {
+        const ballot = { vote_response_uid: 'vr-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+        const read = vi
+          .fn()
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockImplementationOnce(() => {
+            throw new HttpErrorResponse({ status: 404 });
+          })
+          .mockReturnValue(ballot);
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(999);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(2001);
+        expect(read).toHaveBeenCalledTimes(4);
+        expect(next).toHaveBeenCalledExactlyOnceWith(ballot);
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('maps a persistent 404 to null after exactly three additional attempts', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        service.getMyVoteBallot('vote-1').subscribe(next);
+
+        await vi.advanceTimersByTimeAsync(2999);
+        expect(next).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(next).toHaveBeenCalledExactlyOnceWith(null);
+        expect(read).toHaveBeenCalledTimes(4);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancels pending ballot retries on unsubscribe', async () => {
+      vi.useFakeTimers();
+      try {
+        const read = vi.fn(() => {
+          throw new HttpErrorResponse({ status: 404 });
+        });
+        http.get.mockReturnValue(defer(() => of(read())));
+        const next = vi.fn();
+        const subscription = service.getMyVoteBallot('vote-1').subscribe(next);
+        subscription.unsubscribe();
+        await vi.advanceTimersByTimeAsync(3000);
+
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it.each([0, 401, 403, 500])('getMyVoteBallot immediately rethrows non-404 status %s', (status) => {
+      const failure = new HttpErrorResponse({ status });
+      http.get.mockReturnValue(throwError(() => failure));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const error = vi.fn();
+
+      service.getMyVoteBallot('vote-1').subscribe({ error });
+
+      expect(error).toHaveBeenCalledWith(failure);
+    });
+
+    it('never silently replaces a recorded ballot when submitting from a stale first-vote form', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED }));
+      http.post.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      http.put.mockReturnValue(of(undefined));
+      const error = vi.fn();
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe({ error });
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', expect.objectContaining({ vote_response_uid: 'vr-1' }));
+      expect(http.put).not.toHaveBeenCalled();
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 409 }));
+    });
+
+    it('submitMyResponse creates the ballot for a row still awaiting a response', () => {
+      http.get.mockReturnValue(of({ uid: 'vr-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE }));
+      http.post.mockReturnValue(of(undefined));
+
+      service.submitMyResponse('vote-1', { abstain: false, userVoteContent: answers }).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/responses', {
+        vote_response_uid: 'vr-1',
+        vote_uid: 'vote-1',
+        abstain: false,
+        user_vote_content: answers,
+        comment_responses: undefined,
+      });
+      expect(http.put).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('vote summary (#3662)', () => {
+    it('sendVoteSummary POSTs an empty body to the encoded summary URL and passes through the response', () => {
+      http.post.mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
+      const next = vi.fn();
+
+      service.sendVoteSummary('vote/1').subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/summary', {});
+      expect(next).toHaveBeenCalledWith({ recipient_count: 3, failed_count: 0 });
     });
   });
 
@@ -883,6 +1143,41 @@ describe('VoteService', () => {
       // …and the service-side subscription still ran the enable to completion and marked the vote.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+  });
+
+  describe('getPublicProjectSummary (#4692)', () => {
+    const summary = { name: 'Synthetic Project', slug: 'synthetic', logo_url: null, is_foundation: false };
+
+    it('requests the encoded identifier from the public summary route', () => {
+      http.get.mockReturnValue(of(summary));
+      let result: unknown;
+      service.getPublicProjectSummary('a/b').subscribe((value) => (result = value));
+
+      expect(http.get).toHaveBeenCalledWith('/public/api/projects/a%2Fb/summary');
+      expect(result).toEqual(summary);
+    });
+
+    it('maps a 404 (hidden or unknown project) to null without a warning', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('maps any other failure to null and logs only the status', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      let result: unknown = 'unset';
+      service.getPublicProjectSummary('p-1').subscribe((value) => (result = value));
+
+      expect(result).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.any(String), 503);
+      warn.mockRestore();
     });
   });
 });

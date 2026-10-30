@@ -6,13 +6,12 @@ import { Component, computed, inject, PLATFORM_ID, type Signal, signal } from '@
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_BLANK,
   HEALTH_METRICS_EVENTS_DATA_SECTIONS,
-  HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
   HEALTH_METRICS_EVENTS_SECTIONS,
-  HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE,
+  HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
-import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
@@ -32,13 +31,12 @@ import { EventsSponsorshipComponent } from './components/events-sponsorship/even
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Events (Level 2) — nine anchored sections in the shared Level 2 shell. A foundation with no event held, none upcoming and no
- * event revenue gets one "No events yet" state in place of the shell. Rendered inside HealthMetricsGateComponent's outlet.
+ * Events (Level 2) — nine anchored sections in the shared Level 2 shell, which swaps them for the Events blank card when none
+ * has anything for the period. Rendered inside HealthMetricsGateComponent's outlet.
  */
 @Component({
   selector: 'lfx-health-metrics-events',
   imports: [
-    EmptyStateComponent,
     EventsAtAGlanceComponent,
     EventsGeographyComponent,
     EventsOrganizationsComponent,
@@ -61,7 +59,7 @@ export class HealthMetricsEventsComponent {
   protected readonly sections = HEALTH_METRICS_EVENTS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_EVENTS_DATA_SECTIONS;
-  protected readonly crossReference = HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE;
+  protected readonly blank = HEALTH_METRICS_EVENTS_BLANK;
 
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
@@ -70,7 +68,7 @@ export class HealthMetricsEventsComponent {
   protected readonly pastCount = signal<number | null>(null);
   protected readonly orgsCount = signal<number | null>(null);
   protected readonly geoCount = signal<number | null>(null);
-  // Owned here rather than by the section, since the same read decides whether the tab has any events.
+  // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
@@ -81,8 +79,6 @@ export class HealthMetricsEventsComponent {
   );
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
-  // Only a landed read can say there are none; a pending or failed one keeps the shell.
-  protected readonly noEvents = computed(() => this.glanceStatus() === 'ready' && !this.glance().hasEvents);
 
   private initGlance(): Signal<HealthMetricsEventsAtAGlance> {
     if (!isPlatformBrowser(this.platformId)) {

@@ -37,10 +37,11 @@ import type {
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepQuery,
-  HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementRepRow,
   HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementRepRowView,
+  HealthMetricsEngagementRepresentatives,
+  HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -66,8 +67,8 @@ export class EngagementRepresentativesComponent {
    * the pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -97,10 +98,7 @@ export class EngagementRepresentativesComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(
-      () =>
-        `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedProjectSlug() ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`
-    ),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
@@ -111,7 +109,8 @@ export class EngagementRepresentativesComponent {
   protected readonly countLabel: Signal<string> = this.initCountLabel();
   /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
    * with zero matches over a non-empty scope is a real measured zero. */
-  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
+  /** No representative was invited in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response(), this.chrome.selectedRange()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -212,7 +211,7 @@ export class EngagementRepresentativesComponent {
   }
 
   private initQuery(): HealthMetricsEngagementRepQuery {
-    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', projectSlug: this.chrome.selectedProjectSlug() };
+    return { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '' };
   }
 
   private initResponse(): Signal<HealthMetricsEngagementRepresentatives> {
@@ -227,7 +226,7 @@ export class EngagementRepresentativesComponent {
 
     return toSignal(
       toObservable(this.query).pipe(
-        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.projectSlug === b.projectSlug),
+        distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug),
         tap((query) => {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
@@ -255,7 +254,7 @@ export class EngagementRepresentativesComponent {
               );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response, this.chrome.selectedRange()));
             })
           )
         )
@@ -271,6 +270,8 @@ export class EngagementRepresentativesComponent {
     if (this.loadFailed() || this.loading()) return;
 
     this.countsChange.emit(selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange()));
+    // A period change re-projects the table, moving the section's height.
+    this.settled.emit(isEmptyScope(this.response(), this.chrome.selectedRange()));
   }
 
   private syncUrl(filter: HealthMetricsEngagementRepFilter): void {
@@ -291,4 +292,9 @@ export class EngagementRepresentativesComponent {
     const match = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS.find((filter) => filter.key === key);
     return match ? match.key : 'all';
   }
+}
+
+/** No representative invited in the period, as the unfiltered table shows it; unmeasured counts only caption the rows. */
+function isEmptyScope(response: HealthMetricsEngagementRepresentatives, range: HealthMetricsRange): boolean {
+  return filterHealthMetricsEngagementRepRows(response.rows, 'all', '', range).length === 0;
 }

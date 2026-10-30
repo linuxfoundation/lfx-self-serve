@@ -20,6 +20,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { FilterOption, MentorshipAdminTermOption, MentorshipMenteeStatus, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
 import { mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
@@ -45,6 +46,7 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
     SelectComponent,
     TableComponent,
     TooltipModule,
+    MentorshipPublicUrlPipe,
   ],
   templateUrl: './past-mentees-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -54,6 +56,11 @@ export class PastMenteesTabComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly programId = input.required<string>();
+  /**
+   * True when the program is upstream `published`. Upstream only serves public mentee and mentor pages through a
+   * published program, so names link only then.
+   */
+  public readonly programPublished = input(false);
   /** The program's terms; only the closed ones feed the term filter. */
   public readonly terms = input<MentorshipAdminTermOption[]>([]);
 

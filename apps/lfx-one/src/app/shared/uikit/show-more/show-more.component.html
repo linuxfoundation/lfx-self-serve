@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<span [class]="ruleClasses()" aria-hidden="true" data-testid="ui-show-more-rule"></span>
+<button
+  type="button"
+  [class]="buttonClasses()"
+  [attr.aria-expanded]="expanded()"
+  [attr.aria-controls]="controls()"
+  (click)="toggle()"
+  data-testid="ui-show-more-button">
+  <span data-testid="ui-show-more-label">{{ label() }}</span>
+  <!-- 12px chevron per library; flips when expanded. -->
+  <i
+    class="fa-light fa-chevron-down text-[12px] leading-none transition-transform duration-ui-base motion-reduce:transition-none"
+    [class.rotate-180]="expanded()"
+    aria-hidden="true"
+    data-testid="ui-show-more-chevron"></i>
+</button>
+<span [class]="ruleClasses()" aria-hidden="true" data-testid="ui-show-more-rule"></span>

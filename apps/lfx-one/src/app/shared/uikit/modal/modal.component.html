@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root. Header, body and inset share a 24px gutter. -->
+@if (sticky()) {
+  <div class="flex flex-col gap-[8px] px-[24px] pb-[16px] pt-[24px]" data-testid="ui-modal-header">
+    <ng-container [ngTemplateOutlet]="titleBlock" />
+  </div>
+}
+<div [class]="bodyClasses()" data-testid="ui-modal-body">
+  @if (!sticky()) {
+    <div class="flex flex-col gap-[8px]" data-testid="ui-modal-header">
+      <ng-container [ngTemplateOutlet]="titleBlock" />
+    </div>
+  }
+  <ng-content />
+  <div class="-mx-[24px] border-y border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden -mb-[24px]" data-testid="ui-modal-inset">
+    <ng-content select="[modalInset]" />
+  </div>
+</div>
+<div [class]="actionsClasses()" data-testid="ui-modal-actions">
+  <ng-content select="[modalActions]" />
+</div>
+
+<ng-template #titleBlock>
+  <h2 class="heading-24 text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
+  @if (subtitle()) {
+    <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-modal-subtitle">{{ subtitle() }}</p>
+  }
+</ng-template>

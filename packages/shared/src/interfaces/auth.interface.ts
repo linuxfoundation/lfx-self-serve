@@ -7,6 +7,14 @@ import type { EnrichedPersonaProject, PersonaProject } from './persona-detection
 import type { PersonaType } from './persona.interface';
 
 /**
+ * OIDC name claims used as a per-part fallback when stored profile metadata lacks a first or last name
+ */
+export interface OidcNameParts {
+  given_name?: string | null;
+  family_name?: string | null;
+}
+
+/**
  * User profile information from Auth0/LFX SSO
  * @description Complete user data structure from authentication provider
  */

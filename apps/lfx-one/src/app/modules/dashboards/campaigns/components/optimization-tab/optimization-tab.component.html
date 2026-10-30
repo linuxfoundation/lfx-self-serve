@@ -629,6 +629,16 @@
         Loading optimization data...
       </div>
     </div>
+  } @else if (googleRestricted()) {
+    <!-- The Google Ads customer is shared by every foundation (lfx-self-serve-ops#54): a notice, not an error, with the project's own keywords below. -->
+    <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="optimization-restricted">
+      <i class="fa-light fa-lock text-3xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-gray-700">Google Ads optimization is limited to LF administrators</p>
+      <p class="max-w-lg text-center text-xs text-gray-500">
+        This Google Ads account is shared by every foundation, so its action items and campaigns can't be shown for a single project.
+      </p>
+    </div>
+    <ng-container [ngTemplateOutlet]="googleKeywordSections" />
   } @else if (error()) {
     <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="optimization-error">
       <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
@@ -725,257 +735,7 @@
       </div>
     }
 
-    <!-- Wasted Keyword Spend -->
-    <!--
-      Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. The ring replaces
-      the outline so the operator can see where the lever moved focus.
-    -->
-    <div
-      id="optimization-wasted-keywords"
-      tabindex="-1"
-      class="flex flex-col gap-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-      data-testid="optimization-wasted-keywords">
-      <div class="flex items-center gap-2">
-        <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
-        @if (hasWastedKeywords()) {
-          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
-        }
-      </div>
-      @if (keywordsLoading() && !keywordsData()) {
-        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
-          <div class="flex items-center gap-2 text-sm text-gray-500">
-            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-            Loading keyword data...
-          </div>
-        </div>
-      } @else if (keywordsError()) {
-        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
-          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
-          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
-        </div>
-      } @else if (!hasWastedKeywords()) {
-        <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
-          <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
-          <!--
-            The all-clear is a claim about EVERY keyword, so it must not be made over a capped
-            slice: omitted rows can carry exactly the waste it says is absent. When the set was
-            truncated the same green state reports only what was actually examined.
-          -->
-          @if (keywordsPartial()) {
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
-              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
-            </p>
-          } @else if (keywordsCompletenessUnknown()) {
-            <!--
-              Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
-              no probe for a further row, so it cannot say whether more keywords exist. An
-              unqualified all-clear here would be a claim about every keyword, made over a set
-              nobody established was whole -- hiding the very waste it says is absent.
-            -->
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
-              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
-            </p>
-          } @else {
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
-          }
-        </div>
-      } @else {
-        <div class="flex justify-end">
-          <button
-            type="button"
-            (click)="bulkKeywordAction(wastedKeywords(), 'pause')"
-            class="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-            data-testid="optimization-bulk-pause-wasted">
-            <i class="fa-light fa-pause" aria-hidden="true"></i>
-            Pause All ({{ wastedKeywords().length }})
-          </button>
-        </div>
-        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50">
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
-                    <td class="px-4 py-2.5">
-                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
-                    </td>
-                    <td class="px-4 py-2.5">
-                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                        {{ kw.matchType }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
-                        {{ kw.qualityScore ?? '–' }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
-                    <td class="px-4 py-2.5 text-center">
-                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <!--
-                          THREE states, not two. An unconfirmed change may already have applied,
-                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen.
-
-                          The message is RENDERED rather than hidden behind `title`: a tooltip on
-                          a non-focusable span is unreachable by keyboard and touch, and the text
-                          it carries is the "verify before retrying" guidance — the one thing an
-                          operator must read before acting on an irreversible REMOVE.
-                        -->
-                        <span class="flex flex-col items-center gap-0.5">
-                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
-                          @if (!result.success) {
-                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
-                          }
-                        </span>
-                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
-                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
-                      } @else {
-                        <div class="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'pause')"
-                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                            title="Pause this keyword"
-                            aria-label="Pause this keyword">
-                            <i class="fa-light fa-pause" aria-hidden="true"></i>
-                          </button>
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'remove')"
-                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                            title="Remove this keyword"
-                            aria-label="Remove this keyword">
-                            <i class="fa-light fa-trash" aria-hidden="true"></i>
-                          </button>
-                        </div>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </div>
-      }
-    </div>
-
-    <!-- Low Quality Score Keywords -->
-    @if (hasLowQualityKeywords()) {
-      <div class="flex flex-col gap-3" data-testid="optimization-low-qs">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <h4 class="text-sm font-semibold text-gray-900">Low Quality Score Keywords</h4>
-            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{{ lowQualityKeywords().length }}</span>
-          </div>
-          <button
-            type="button"
-            (click)="bulkKeywordAction(lowQualityKeywords(), 'pause')"
-            class="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
-            data-testid="optimization-bulk-pause-low-qs">
-            <i class="fa-light fa-pause" aria-hidden="true"></i>
-            Pause All ({{ lowQualityKeywords().length }})
-          </button>
-        </div>
-        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50">
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Quality Score</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
-                    <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
-                    <td class="px-4 py-2.5">
-                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                        {{ kw.matchType }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-center">
-                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <!--
-                          THREE states, not two. An unconfirmed change may already have applied,
-                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen.
-
-                          The message is RENDERED rather than hidden behind `title`: a tooltip on
-                          a non-focusable span is unreachable by keyboard and touch, and the text
-                          it carries is the "verify before retrying" guidance — the one thing an
-                          operator must read before acting on an irreversible REMOVE.
-                        -->
-                        <span class="flex flex-col items-center gap-0.5">
-                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
-                          @if (!result.success) {
-                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
-                          }
-                        </span>
-                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
-                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
-                      } @else {
-                        <div class="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'pause')"
-                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                            title="Pause this keyword"
-                            aria-label="Pause this keyword">
-                            <i class="fa-light fa-pause" aria-hidden="true"></i>
-                          </button>
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'remove')"
-                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                            title="Remove this keyword"
-                            aria-label="Remove this keyword">
-                            <i class="fa-light fa-trash" aria-hidden="true"></i>
-                          </button>
-                        </div>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    }
+    <ng-container [ngTemplateOutlet]="googleKeywordSections" />
 
     <!-- Display Campaign Performance -->
     @if (hasDisplayCampaigns()) {
@@ -1051,8 +811,17 @@
       [actionResults]="actionResults()"
       [removedKeywords]="removedKeywords()"
       (keywordAction)="onMicrosoftKeywordAction($event)" />
-    <!-- Reddit keyword performance (campaign-service #331): read-only, its own read and window. -->
-    <lfx-reddit-keywords-table [projectSlug]="activeFoundationSlug()" [reloadToken]="redditKeywordsReload()" [campaignNames]="redditCampaignNames()" />
+    <!--
+      Reddit keyword performance (campaign-service #331), its own read and window. A keyword of an
+      available Reddit row of this brief can be added as its negative, through the same root
+      negative-keywords service as that row's editor.
+    -->
+    <lfx-reddit-keywords-table
+      [projectSlug]="activeFoundationSlug()"
+      [reloadToken]="redditKeywordsReload()"
+      [campaignNames]="redditCampaignNames()"
+      [briefId]="briefId()"
+      [negativeTargets]="redditNegativeTargets()" />
   }
 
   <!-- LinkedIn Optimization -->
@@ -1213,4 +982,270 @@
       }
     </div>
   }
+
+  <!--
+  Google Ads' wasted-spend and low-quality-score keyword sections. They read only `/keywords` (project-scoped),
+  so they render in the data branch and in the restricted branch, where the shared Google Ads account monitor
+  was refused (lfx-self-serve-ops#54).
+  -->
+  <ng-template #googleKeywordSections>
+    <!-- Wasted Keyword Spend -->
+    <!--
+    Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. The ring replaces
+    the outline so the operator can see where the lever moved focus.
+  -->
+    <div
+      id="optimization-wasted-keywords"
+      tabindex="-1"
+      class="flex flex-col gap-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      data-testid="optimization-wasted-keywords">
+      <div class="flex items-center gap-2">
+        <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
+        @if (hasWastedKeywords()) {
+          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
+        }
+      </div>
+      @if (keywordsLoading() && !keywordsData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading keyword data...
+          </div>
+        </div>
+      } @else if (keywordsRestricted()) {
+        <div class="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3" data-testid="optimization-keywords-restricted">
+          <p class="text-sm font-medium text-gray-700">
+            <i class="fa-light fa-lock mr-1" aria-hidden="true"></i>Google Ads keyword insights are limited to LF administrators
+          </p>
+          <p class="text-xs text-gray-500">This legacy read uses an ad account shared by every foundation.</p>
+        </div>
+      } @else if (keywordsError()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
+          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
+        </div>
+      } @else if (!hasWastedKeywords()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
+          <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
+          <!--
+          The all-clear is a claim about EVERY keyword, so it must not be made over a capped
+          slice: omitted rows can carry exactly the waste it says is absent. When the set was
+          truncated the same green state reports only what was actually examined.
+        -->
+          @if (keywordsPartial()) {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
+              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
+            </p>
+          } @else if (keywordsCompletenessUnknown()) {
+            <!--
+            Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
+            no probe for a further row, so it cannot say whether more keywords exist. An
+            unqualified all-clear here would be a claim about every keyword, made over a set
+            nobody established was whole -- hiding the very waste it says is absent.
+          -->
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
+              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
+            </p>
+          } @else {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
+          }
+        </div>
+      } @else {
+        <div class="flex justify-end">
+          <button
+            type="button"
+            (click)="bulkKeywordAction(wastedKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            data-testid="optimization-bulk-pause-wasted">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ wastedKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
+                        {{ kw.qualityScore ?? '–' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <!--
+                        THREE states, not two. An unconfirmed change may already have applied,
+                        and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                        the retry that must not happen.
+
+                        The message is RENDERED rather than hidden behind `title`: a tooltip on
+                        a non-focusable span is unreachable by keyboard and touch, and the text
+                        it carries is the "verify before retrying" guidance — the one thing an
+                        operator must read before acting on an irreversible REMOVE.
+                      -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Low Quality Score Keywords -->
+    @if (hasLowQualityKeywords()) {
+      <div class="flex flex-col gap-3" data-testid="optimization-low-qs">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-semibold text-gray-900">Low Quality Score Keywords</h4>
+            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{{ lowQualityKeywords().length }}</span>
+          </div>
+          <button
+            type="button"
+            (click)="bulkKeywordAction(lowQualityKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            data-testid="optimization-bulk-pause-low-qs">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ lowQualityKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Quality Score</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0">
+                    <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <!--
+                        THREE states, not two. An unconfirmed change may already have applied,
+                        and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                        the retry that must not happen.
+
+                        The message is RENDERED rather than hidden behind `title`: a tooltip on
+                        a non-focusable span is unreachable by keyboard and touch, and the text
+                        it carries is the "verify before retrying" guidance — the one thing an
+                        operator must read before acting on an irreversible REMOVE.
+                      -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    }
+  </ng-template>
 </div>

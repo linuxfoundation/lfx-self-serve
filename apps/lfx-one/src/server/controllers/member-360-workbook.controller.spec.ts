@@ -8,11 +8,12 @@ import { SYNTHETIC_ORG_NAME } from '../../../e2e/fixtures/mock-data/synthetic-or
 import { ServiceValidationError } from '../errors';
 import { Member360WorkbookController } from './member-360-workbook.controller';
 
-const mocks = vi.hoisted(() => ({ download: vi.fn(), parseTracker: vi.fn() }));
+const mocks = vi.hoisted(() => ({ download: vi.fn(), parseTracker: vi.fn(), deleteTracker: vi.fn() }));
 vi.mock('../services/member-360-workbook.service', () => ({
   Member360WorkbookService: class {
     public download = mocks.download;
     public parseTracker = mocks.parseTracker;
+    public deleteTracker = mocks.deleteTracker;
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: () => 0, success: vi.fn() } }));
@@ -33,24 +34,37 @@ describe('Member 360 workbook HTTP response', () => {
     expect(res.send).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
     expect(next).not.toHaveBeenCalled();
   });
+  it('returns an empty private 204 for an erased or already-gone tracker', async () => {
+    const req = { query: { project: 'sample-project' }, params: { id: 'a'.repeat(64) } } as unknown as Request;
+    const res = { setHeader: vi.fn(), status: vi.fn(), end: vi.fn(), json: vi.fn() };
+    res.status.mockReturnValue(res);
+    const next = vi.fn();
+    await new Member360WorkbookController().deleteTracker(req, res as unknown as Response, next);
+    expect(mocks.deleteTracker).toHaveBeenCalledWith(req, 'sample-project', 'a'.repeat(64));
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
   it('rejects repeated/non-string project query values before service access', async () => {
     const next = vi.fn();
     await new Member360WorkbookController().download({ query: { project: ['first', 'second'] }, params: {} } as unknown as Request, {} as Response, next);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     expect(mocks.download).not.toHaveBeenCalled();
   });
-  it('passes raw tracker bytes to the entitled parser and returns only parsed rows', async () => {
+  it('passes raw tracker bytes to the entitled parser and returns only an opaque receipt', async () => {
     const res = { setHeader: vi.fn(), json: vi.fn() };
     const next = vi.fn();
-    const tracker = { filename: 'Q3+sponsors — draft.csv', rows: [{ company: SYNTHETIC_ORG_NAME }] };
+    const filename = 'Q3+sponsors — draft.csv';
+    const tracker = { trackerId: 'a'.repeat(64), rowCount: 1, columnCount: 1, byteCount: 100 };
     mocks.parseTracker.mockResolvedValue(tracker);
     const req = {
       query: { project: 'sample-project', filename: 'ignored-query.csv' },
-      headers: { 'x-file-name': encodeURIComponent(tracker.filename) },
+      headers: { 'x-file-name': encodeURIComponent(filename) },
       body: Buffer.from(`company\n${SYNTHETIC_ORG_NAME}`),
     } as unknown as Request;
     await new Member360WorkbookController().parseTracker(req, res as unknown as Response, next);
-    expect(mocks.parseTracker).toHaveBeenCalledWith(req, 'sample-project', tracker.filename, req.body);
+    expect(mocks.parseTracker).toHaveBeenCalledWith(req, 'sample-project', filename, req.body);
     expect(res.json).toHaveBeenCalledWith(tracker);
   });
   it.each([undefined, ['a.csv', 'b.csv'], { name: 'a.csv' }, '%E0%A4%A'].map((raw) => ({ raw })))(

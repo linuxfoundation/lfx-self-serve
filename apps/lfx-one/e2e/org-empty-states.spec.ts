@@ -46,6 +46,7 @@ const CORRELATION_ID = '11111111-2222-3333-4444-555555555555';
 
 const RETIRED_NO_ORG_HEADLINE = 'No organization linked';
 const NO_ACCESS_COPY = ORG_LENS_EMPTY_STATE_COPY['no-access'];
+const AFFILIATED_NO_GRANT_COPY = ORG_LENS_EMPTY_STATE_COPY['affiliated-no-grant'];
 
 type RoleGrantsOverrides = Partial<{
   writers: string[];
@@ -56,6 +57,8 @@ type RoleGrantsOverrides = Partial<{
   lookupOutcome: 'ok' | 'partial' | 'failed';
   staffCheck: 'ok' | 'failed';
   correlationId: string;
+  /** #4225 — the server's verdict on the caller's own employer. */
+  affiliation: { hasEmployer: boolean; employerIsMember: boolean; lookup: 'ok' | 'failed' };
 }>;
 
 function roleGrantsBody(overrides: RoleGrantsOverrides = {}): Record<string, unknown> {
@@ -289,6 +292,55 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
       await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
       await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // #4225 — the same "holds nothing" caller, but their own employer is an LF member: the affiliation
+    // CTA of S2a is the one action that cannot help them, so the reason has to change.
+    test('S2a-affiliated: an employee of a member org sees the no-access reason, never the affiliation CTA', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: true, lookup: 'ok' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'affiliated-no-grant');
+      await expect(state.title).toHaveText(AFFILIATED_NO_GRANT_COPY.headline);
+      await expect(state.description).toContainText('access is limited to a small set of admins');
+      // The whole point: it must not send them to add an affiliation they already have.
+      await expect(page.locator('body')).not.toContainText('Add an affiliation');
+      await expect(state.contactSupport).toBeVisible();
+      await expect(state.retry).toHaveCount(0);
+      // The employer is never named — the copy is about the caller, so it interpolates nothing.
+      await expect(state.description).not.toContainText('undefined');
+    });
+
+    // An employer the server could not place must not earn the new reason: unknown stays today's copy.
+    test('S2a-unresolved: an unestablished employer verdict keeps the no-organization copy', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'failed' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
+      await expect(state.primary).toContainText('Add an affiliation');
+    });
+
+    // A non-member employer is #4314's state, not this one; until it ships it falls through unchanged.
+    test('S2a-non-member: an affiliated employee at a non-member employer still sees no-organization', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ affiliation: { hasEmployer: true, employerIsMember: false, lookup: 'ok' } }),
+      });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
     });
 
     // The profile route declares the Me lens, so every way in switches — not only the in-app link:

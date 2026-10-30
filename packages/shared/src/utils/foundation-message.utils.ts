@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
+
 // Pure Messaging Framework helpers (messaging-framework-output/v1 and the
 // questions/answers turns): request validation, the intake form payload and
 // its rendering into the one text message the agent receives, the questions
@@ -41,7 +44,6 @@ import {
   FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
   FOUNDATION_MESSAGE_MAX_QUESTIONS,
   FOUNDATION_MESSAGE_MODES,
-  FOUNDATION_MESSAGE_NON_ANSWER_REGEX,
   FOUNDATION_MESSAGE_NONE_ANSWER,
   FOUNDATION_MESSAGE_PROJECT_SLUG_REGEX,
   FOUNDATION_MESSAGE_QUESTION_ID_MAX_CHARS,
@@ -77,6 +79,8 @@ import {
 } from '../interfaces/foundation-message.interface';
 import { MktgFrameworkAsset, MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../constants/mktg-intake.constants';
+import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
 const FORM_ANSWER_KEYS = new Set<string>(FOUNDATION_MESSAGE_ANSWER_KEYS);
@@ -122,7 +126,10 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
     return { valid: false, errors: ['answers must be an object keyed by intake field key'] };
   }
   const record = answers as Record<string, unknown>;
-  const errors: string[] = [];
+  const errors = validateMktgIntakeAnswerLengths(record, MKTG_INTAKE_ANSWER_LIMITS['foundation-setup']);
+  if (errors.length > 0) {
+    return { valid: false, errors };
+  }
 
   const projectName = record['project_name'];
   if (typeof projectName !== 'string' || !projectName.trim() || !ONE_LINE.test(projectName.trim())) {
@@ -174,6 +181,9 @@ export function validateFoundationMessageIntakeAnswers(answers: unknown): Founda
       }
       if (entries.some((link) => !FOUNDATION_MESSAGE_HTTP_URL_REGEX.test(link))) {
         errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} must be http(s) URLs, one per line`);
+      }
+      if (entries.some((link) => link.length > MKTG_INTAKE_URL_MAX_CHARS)) {
+        errors.push(`answers.${FOUNDATION_MESSAGE_LINKS_KEY} URLs must be at most ${MKTG_INTAKE_URL_MAX_CHARS} characters each`);
       }
     }
   }
@@ -532,8 +542,7 @@ export function foundationMessageAnswerOrigin(text: string, suggestedAnswer: str
 
 /** True when the text is a real answer — not blank, not a skip, not a TBD. */
 export function isFoundationMessageAnswerSubstantive(text: string): boolean {
-  const trimmed = text.trim();
-  return trimmed !== '' && !FOUNDATION_MESSAGE_NON_ANSWER_REGEX.test(trimmed);
+  return mktgAnswerProblem(text) === null;
 }
 
 /**
@@ -548,7 +557,7 @@ export function validateFoundationMessageAnswers(answers: unknown): FoundationMe
   }
   const errors: string[] = [];
   if (answers.length === 0 || answers.length > FOUNDATION_MESSAGE_MAX_QUESTIONS) {
-    errors.push(`answers takes 1 to ${FOUNDATION_MESSAGE_MAX_QUESTIONS} entries`);
+    errors.push(answers.length === 0 ? MKTG_ANSWERS_INCOMPLETE_MESSAGE : `answers takes 1 to ${FOUNDATION_MESSAGE_MAX_QUESTIONS} entries`);
   }
   const seen = new Set<string>();
   answers.forEach((entry: unknown, index) => {
@@ -571,9 +580,10 @@ export function validateFoundationMessageAnswers(answers: unknown): FoundationMe
       seen.add(key);
     }
     const text = answer['text'];
-    if (typeof text !== 'string' || !isFoundationMessageAnswerSubstantive(text)) {
-      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
-    } else if (text.length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
+    const problem = mktgAnswerProblem(text);
+    if (problem) {
+      errors.push(`${problem}: ${typeof key === 'string' ? key : at}`);
+    } else if (typeof text === 'string' && text.length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {
       errors.push(`${at}.text must be at most ${FOUNDATION_MESSAGE_ANSWER_MAX_CHARS} characters`);
     }
     if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(answer['origin'] as string)) {

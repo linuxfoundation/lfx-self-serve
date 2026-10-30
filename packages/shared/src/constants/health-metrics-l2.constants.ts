@@ -3,10 +3,7 @@
 
 import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
-/** Query param holding the header's project selection; absent means all projects. Not `project`, the app-wide context param. */
-export const HEALTH_METRICS_PROJECT_QUERY_PARAM = 'projectScope';
-
-/** Shape a project slug must have before it reaches a read; anything else falls back to all projects. */
+/** Shape a project slug must have before it reaches a read; the server rejects anything else. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 /**
@@ -32,3 +29,29 @@ export const HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX: Readonly<Record<HealthMetric
   COMPLETED_YEAR_2: 'prev_completed_year',
   COMPLETED_YEAR_3: '3rd_last_completed_year',
 };
+
+/** Where a section's data comes from, finishing its empty state's "This fills in …" (the design's wording). */
+export const HEALTH_METRICS_L2_EMPTY_SOURCES = {
+  event: 'once the foundation has an event on the calendar',
+  survey: 'after a member satisfaction survey closes',
+  invoice: 'when a member invoice becomes overdue',
+  courses: 'as people enroll in the foundation’s courses',
+  board: 'as board meetings are held or added in LFX',
+  members: 'as members join and take part in foundation activities',
+  newsletter: 'when the foundation sends a newsletter through LFX',
+} as const;
+
+/** A section's empty state for YTD and for a past year; `{source}` and `{Y}` are filled in per section and period. */
+export const HEALTH_METRICS_L2_EMPTY_COPY = {
+  ytd: { title: 'Nothing recorded yet', text: 'This fills in {source}. Updates can take 24–48 hours to appear.' },
+  past: {
+    title: 'Nothing in {Y}',
+    text: 'Nothing was recorded this year. Activity tracked outside LFX or under another foundation isn’t included.',
+  },
+} as const;
+
+/** A tab's blank card for a past year: its lead names the tab's activity, and every tab gives these reasons. */
+export const HEALTH_METRICS_L2_BLANK_PAST = {
+  lead: 'No {activity} was recorded for the foundation in {Y}.',
+  reasons: ['The foundation may not have launched yet', 'It may have been recorded under a parent foundation', 'A later year may have data to compare'],
+} as const;

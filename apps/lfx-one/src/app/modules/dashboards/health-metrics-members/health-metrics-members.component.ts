@@ -3,11 +3,10 @@
 
 import { Component, computed, signal } from '@angular/core';
 import {
+  HEALTH_METRICS_MEMBERS_BLANK,
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
-  HEALTH_METRICS_MEMBERS_SCOPE_NOTE,
-  HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX,
   HEALTH_METRICS_MEMBERS_SECTIONS,
-  HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE,
+  HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersSubNavItems } from '@lfx-one/shared/utils';
 
@@ -48,8 +47,7 @@ export class HealthMetricsMembersComponent {
   protected readonly sections = HEALTH_METRICS_MEMBERS_SECTIONS;
   protected readonly idPrefix = HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_MEMBERS_DATA_SECTIONS;
-  protected readonly crossReference = HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE;
-  protected readonly scopeNote = HEALTH_METRICS_MEMBERS_SCOPE_NOTE;
+  protected readonly blank = HEALTH_METRICS_MEMBERS_BLANK;
   protected readonly listCount = signal<number | null>(null);
   protected readonly riskNote = signal<string>('');
   protected readonly renewalsCount = signal<number | null>(null);

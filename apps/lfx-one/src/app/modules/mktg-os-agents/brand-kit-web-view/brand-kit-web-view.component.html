@@ -10,7 +10,8 @@
 @let sample = 'flex items-center justify-center overflow-hidden rounded-lg p-6';
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its card instead of running across the next one. -->
-<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
+<!-- Screen-only containment leaves the book's print positioning context unchanged. -->
+<section class="[@media_screen]:@container/asset flex min-w-0 w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
   <!-- Header: what this is, which version, and what you can do with it -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="brand-kit-web-view-header">
     @if (showMetadata()) {
@@ -22,25 +23,19 @@
         <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="brand-kit-web-view-mode">{{ modeLabel() }}</span>
       }
     }
-    <div class="grow"></div>
-    <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <ng-content select="[asset-actions]" />
-      <span
-        [pTooltip]="pdfTooltip()"
-        tooltipPosition="bottom"
-        tooltipEvent="both"
-        [attr.aria-label]="pdfTooltip() || null"
-        [attr.tabindex]="pdfTooltip() ? 0 : null">
-        <lfx-button
-          label="Download PDF"
-          icon="fa-light fa-file-pdf"
-          [outlined]="true"
-          size="small"
-          [disabled]="!printView()"
-          ariaLabel="Download the approved current brand kit as a PDF"
-          data-testid="brand-kit-web-view-download-pdf"
-          (onClick)="onDownloadPdf()" />
-      </span>
+    @if (showMetadata()) {
+      <div class="grow"></div>
+      <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
+        <ng-content select="[asset-actions]" />
+        <ng-container [ngTemplateOutlet]="titleActions" />
+      </div>
+    }
+  </div>
+
+  <ng-template #titleActions>
+    @if (viewingDraft()) {
+      <p class="text-sm text-gray-500" data-testid="brand-kit-web-view-approval-required">Export is available once this version is approved</p>
+    } @else {
       <!-- The kit as a deck: the panel below the header shows the export. -->
       <span
         [pTooltip]="slidesExport.disabledReason()"
@@ -52,36 +47,44 @@
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
           [outlined]="true"
-          size="small"
           [loading]="slidesExport.busy()"
           [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the brand kit to Google Slides"
           data-testid="brand-kit-web-view-export-slides"
           (onClick)="slidesExport.onExport()" />
       </span>
-      <lfx-button
-        label="Report"
-        icon="fa-light fa-clipboard-list"
-        [text]="true"
-        size="small"
-        [badge]="gapCount() > 0 ? gapCount().toString() : undefined"
-        ariaLabel="Open the run's report: sources read, failed and gaps"
-        data-testid="brand-kit-web-view-report"
-        (onClick)="onGoToTab('sources')" />
-    </div>
-  </div>
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current brand kit as a PDF"
+          data-testid="brand-kit-web-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
+    }
+  </ng-template>
 
   @if (!exportTarget()) {
     @if (approvedLoading()) {
       <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
     } @else if (approvedError()) {
       <lfx-message severity="error" [text]="approvedError()" />
-    } @else {
-      <p class="text-xs text-gray-500" data-testid="brand-kit-web-view-approval-required">{{ approvalRequiredNote }}</p>
     }
   }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="brand-kit-web-view-slides-export" />
+  <lfx-mktg-slides-export
+    #slidesExport
+    [target]="exportTarget()"
+    [lookupTarget]="exportLookupTarget()"
+    (lookupAnswered)="exportLookupAnswered.emit($event)"
+    [viewingDraft]="viewingDraft()"
+    data-testid="brand-kit-web-view-slides-export" />
 
   <!-- Tabs: the overview, the six chapters, the run's report -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">
@@ -113,8 +116,8 @@
         id="brand-kit-web-view-panel-overview"
         aria-labelledby="brand-kit-web-view-tab-overview"
         data-testid="brand-kit-web-view-panel-overview">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div class="lg:col-span-2" [class]="card">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
+          <div class="@2xl/asset:col-span-2" [class]="card">
             <h3 [class]="cardTitle">What this kit is built from</h3>
             <p class="text-sm leading-relaxed text-gray-800" data-testid="brand-kit-web-view-built-from">{{ v.builtFrom }}</p>
             <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -149,7 +152,7 @@
 
         <div class="flex flex-col gap-2">
           <h3 [class]="cardTitle">Chapters</h3>
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="brand-kit-web-view-chapters">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-3" data-testid="brand-kit-web-view-chapters">
             @for (chapter of chapters(); track chapter.id) {
               <article [class]="card" [attr.data-testid]="'brand-kit-web-view-chapter-' + chapter.id">
                 <div class="flex items-baseline justify-between gap-2">
@@ -157,13 +160,6 @@
                   <span class="text-xs text-gray-400">{{ chapter.number }}</span>
                 </div>
                 <p class="grow text-sm text-gray-800">{{ chapter.summary }}</p>
-                <button
-                  type="button"
-                  class="self-start text-xs font-medium text-blue-600 hover:text-blue-800"
-                  [attr.data-testid]="'brand-kit-web-view-open-' + chapter.id"
-                  (click)="onGoToTab(chapter.id)">
-                  Open {{ chapter.title }}
-                </button>
               </article>
             }
           </div>
@@ -187,13 +183,16 @@
             No logo artwork yet: the marks below are placeholders until the logo files are uploaded.
           </div>
         }
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
           <div [class]="card">
             <h3 [class]="cardTitle">Logo system</h3>
-            <p class="text-sm text-gray-800">{{ v.logo.system }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm text-gray-800">{{ v.logo.system }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.system' }" />
+            </div>
             <p class="text-sm text-gray-800">Logo artwork is supplied as files. Never retype the wordmark.</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2" data-testid="brand-kit-web-view-lockups">
+          <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3 @2xl/asset:col-span-2" data-testid="brand-kit-web-view-lockups">
             <article [class]="card">
               <div class="h-36 border border-gray-200 bg-white" [class]="sample">
                 <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Horizontal lockup' }" />
@@ -219,7 +218,10 @@
                 <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
               </div>
               <span [class]="label">Symbol</span>
-              <span [class]="caption">{{ v.logo.symbol }}</span>
+              <div class="group/commentfield" data-mktg-comment-group>
+                <span [class]="caption">{{ v.logo.symbol }}</span>
+                <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.symbol' }" />
+              </div>
             </article>
           </div>
         </div>
@@ -231,7 +233,7 @@
             Full color on white and light grounds. Reversed (white) on {{ v.darkName }} and dark imagery. One-color black for print, engraving and embossing
             only. Accent colors are never logo colors.
           </p>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-colorways">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-4" data-testid="brand-kit-web-view-colorways">
             @for (colorway of v.colorways; track colorway.name) {
               <article [class]="card" data-testid="brand-kit-web-view-colorway">
                 <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
@@ -246,10 +248,13 @@
         </div>
 
         <!-- Clear space and minimum sizes -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-clear-space">
             <h3 [class]="cardTitle">Clear space</h3>
-            <p class="text-sm text-gray-800">{{ v.logo.clear_space }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm text-gray-800">{{ v.logo.clear_space }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.clear_space' }" />
+            </div>
             <!-- The lockup inside a frame one X from every edge. -->
             <div class="relative flex h-44 items-center justify-center border border-dashed border-gray-400 bg-white p-10">
               <span class="absolute left-1/2 top-2 text-xs text-gray-500">X</span>
@@ -263,10 +268,13 @@
           </div>
           <div [class]="card" data-testid="brand-kit-web-view-minimum-size">
             <h3 [class]="cardTitle">Minimum size</h3>
-            <p class="text-sm text-gray-800">
-              {{ v.logo.minimum_size.screen_px }} px tall on screen, {{ v.logo.minimum_size.print_mm }} mm in print. {{ v.logo.minimum_size.rule }} (minimum
-              {{ v.logo.minimum_size.symbol_px }} px).
-            </p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm text-gray-800">
+                {{ v.logo.minimum_size.screen_px }} px tall on screen, {{ v.logo.minimum_size.print_mm }} mm in print. {{ v.logo.minimum_size.rule }} (minimum
+                {{ v.logo.minimum_size.symbol_px }} px).
+              </p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.minimum_size.rule' }" />
+            </div>
             <div class="flex flex-wrap items-end gap-6 rounded-lg border border-gray-200 bg-white p-4">
               @for (size of v.minimumSizes; track size.label) {
                 <div class="flex flex-col items-start gap-1.5">
@@ -287,7 +295,7 @@
         </div>
 
         <!-- The symbol in shape, and the partnership lockup -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card">
             <h3 [class]="cardTitle">Symbol in shape</h3>
             <p class="text-sm text-gray-800">For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.</p>
@@ -311,7 +319,9 @@
             <h3 [class]="cardTitle">Partnership lockup</h3>
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
               @for (rule of v.logo.partnership; track $index) {
-                <li>{{ rule }}</li>
+                <li class="group/commentfield" data-mktg-comment-group>
+                  {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.partnership[' + $index + ']' }" />
+                </li>
               }
             </ul>
             <div class="h-24 gap-6 border border-gray-200 bg-white" [class]="sample">
@@ -332,7 +342,7 @@
           <p class="text-sm text-gray-600">
             Consistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on {{ v.darkName }}, with X of clear space.
           </p>
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="brand-kit-web-view-watchouts">
+          <div class="grid grid-cols-2 gap-3 @2xl/asset:grid-cols-3 @4xl/asset:grid-cols-6" data-testid="brand-kit-web-view-watchouts">
             @for (watchout of v.watchouts; track watchout.label) {
               <article [class]="card" data-testid="brand-kit-web-view-watchout">
                 <div class="relative h-24 border border-gray-200 bg-white" [class]="sample" [style.background]="watchout.ground || null">
@@ -348,7 +358,10 @@
                     </div>
                   }
                 </div>
-                <span class="text-sm text-gray-800">{{ watchout.label }}</span>
+                <div class="group/commentfield" data-mktg-comment-group>
+                  <span class="text-sm text-gray-800">{{ watchout.label }}</span>
+                  <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.logo.watchouts[' + $index + ']' }" />
+                </div>
               </article>
             }
           </div>
@@ -366,11 +379,14 @@
         data-testid="brand-kit-web-view-panel-color">
         <div [class]="card">
           <h3 [class]="cardTitle">Palette</h3>
-          <p class="text-sm text-gray-800">{{ v.color.summary }}</p>
+          <div class="group/commentfield" data-mktg-comment-group>
+            <p class="text-sm text-gray-800">{{ v.color.summary }}</p>
+            <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.color.summary' }" />
+          </div>
           <p [class]="caption">Values come from the logo artwork, the site and the brand page; each card says where.</p>
         </div>
         <!-- auto-fit: as many swatch columns as fit at 13rem each (arbitrary value, see styling.md). -->
-        <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3" data-testid="brand-kit-web-view-swatches">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3" data-testid="brand-kit-web-view-swatches">
           @for (swatch of v.palette; track swatch.hex) {
             <article
               class="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
@@ -380,11 +396,15 @@
               </div>
               <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-4 text-sm">
                 <dt class="text-gray-500">HEX</dt>
-                <dd class="font-mono text-gray-900">{{ swatch.hex }}</dd>
+                <dd class="group/commentfield font-mono text-gray-900" data-mktg-comment-group>
+                  {{ swatch.hex }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.color.palette[' + $index + '].hex' }" />
+                </dd>
                 <dt class="text-gray-500">RGB</dt>
                 <dd class="font-mono text-gray-900">{{ swatch.rgb }}</dd>
                 <dt class="text-gray-500">Role</dt>
-                <dd class="text-gray-800">{{ swatch.role }}</dd>
+                <dd class="group/commentfield text-gray-800" data-mktg-comment-group>
+                  {{ swatch.role }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.color.palette[' + $index + '].role' }" />
+                </dd>
                 <dt class="text-gray-500">Found</dt>
                 <dd class="text-gray-600">{{ swatch.source }}</dd>
               </dl>
@@ -416,8 +436,11 @@
 
         <div [class]="card">
           <h3 [class]="cardTitle">Contrast</h3>
-          <p class="text-sm text-gray-800">{{ v.color.contrast.rule }}</p>
-          <table class="w-full text-sm" data-testid="brand-kit-web-view-contrast">
+          <div class="group/commentfield" data-mktg-comment-group>
+            <p class="text-sm text-gray-800">{{ v.color.contrast.rule }}</p>
+            <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.color.contrast.rule' }" />
+          </div>
+          <table class="w-full table-fixed text-sm" data-testid="brand-kit-web-view-contrast">
             <thead>
               <tr class="text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">
                 <th class="pb-1 pr-3 font-semibold">Sample</th>
@@ -466,11 +489,14 @@
         id="brand-kit-web-view-panel-type"
         aria-labelledby="brand-kit-web-view-tab-type"
         data-testid="brand-kit-web-view-panel-type">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div class="lg:col-span-2" [class]="card" data-testid="brand-kit-web-view-specimen">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
+          <div class="@2xl/asset:col-span-2" [class]="card" data-testid="brand-kit-web-view-specimen">
             <span [class]="label">Typeface</span>
             <div class="flex flex-col gap-3 text-gray-900" [style.font-family]="v.fontStack">
-              <span class="text-4xl font-medium leading-tight">{{ v.type.family }}</span>
+              <div class="group/commentfield" data-mktg-comment-group>
+                <span class="text-4xl font-medium leading-tight">{{ v.type.family }}</span>
+                <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.type.family' }" />
+              </div>
               <span class="text-2xl leading-snug">{{ v.voice.line }}</span>
               <span class="text-base tracking-wide text-gray-700">{{ v.specimen }}</span>
               <div class="flex flex-wrap gap-6 pt-1">
@@ -485,13 +511,21 @@
           </div>
           <div [class]="card">
             <h3 [class]="cardTitle">How to set it</h3>
-            <p class="text-sm text-gray-800">{{ v.type.summary }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm text-gray-800">{{ v.type.summary }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.type.summary' }" />
+            </div>
             @if (v.type.note) {
-              <p class="text-sm text-gray-800">{{ v.type.note }}</p>
+              <div class="group/commentfield" data-mktg-comment-group>
+                <p class="text-sm text-gray-800">{{ v.type.note }}</p>
+                <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.type.note' }" />
+              </div>
             }
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
               @for (rule of v.type.rules; track $index) {
-                <li>{{ rule }}</li>
+                <li class="group/commentfield" data-mktg-comment-group>
+                  {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.type.rules[' + $index + ']' }" />
+                </li>
               }
             </ul>
           </div>
@@ -501,7 +535,7 @@
         <div class="[container-type:inline-size]" [class]="card" data-testid="brand-kit-web-view-scale">
           <h3 [class]="cardTitle">Type scale</h3>
           @for (row of v.scale; track row.label) {
-            <div class="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 border-t border-gray-100 py-2 md:grid-cols-[8rem_9rem_1fr]">
+            <div class="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 border-t border-gray-100 py-2 @2xl/asset:grid-cols-[8rem_9rem_minmax(0,1fr)]">
               <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
               <span class="text-xs text-gray-500">{{ row.spec }}</span>
               <span
@@ -528,12 +562,14 @@
         id="brand-kit-web-view-panel-visual"
         aria-labelledby="brand-kit-web-view-tab-visual"
         data-testid="brand-kit-web-view-panel-visual">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
-                <li>{{ rule }}</li>
+                <li class="group/commentfield" data-mktg-comment-group>
+                  {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }" />
+                </li>
               }
             </ul>
             <div class="grid grid-cols-4 gap-3 rounded-lg border border-gray-200 bg-white p-4">
@@ -544,15 +580,28 @@
                 </div>
               }
             </div>
-            <p [class]="caption">Recommended set: {{ v.visual.icons.recommended }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p [class]="caption">Recommended set: {{ v.visual.icons.recommended }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.recommended' }" />
+            </div>
           </div>
           <div [class]="card" data-testid="brand-kit-web-view-imagery">
             <h3 [class]="cardTitle">Imagery</h3>
-            <p class="text-sm text-gray-800">{{ v.visual.imagery.rule }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm text-gray-800">{{ v.visual.imagery.rule }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.imagery.rule' }" />
+            </div>
             <span [class]="label">Avoid</span>
             <ul class="flex flex-wrap gap-1.5">
               @for (item of v.visual.imagery.avoid; track $index) {
-                <li class="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs text-red-700">{{ item }}</li>
+                <li class="group/commentfield min-w-0" data-mktg-comment-group>
+                  <span
+                    class="inline-block rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs text-red-700"
+                    [attr.data-testid]="'brand-kit-web-view-imagery-avoid-' + $index"
+                    >{{ item }}</span
+                  >
+                  <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.imagery.avoid[' + $index + ']' }" />
+                </li>
               }
             </ul>
           </div>
@@ -560,7 +609,7 @@
 
         <div [class]="card" data-testid="brand-kit-web-view-elements">
           <h3 [class]="cardTitle">Graphic elements</h3>
-          <div class="grid grid-cols-1 gap-3 lg:grid-cols-3" [style.font-family]="v.fontStack">
+          <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3" [style.font-family]="v.fontStack">
             <div class="flex min-h-36 flex-col justify-end gap-1.5 rounded-lg p-5 text-white" [style.background]="v.dark">
               <span class="text-xs uppercase tracking-widest opacity-80">— Eyebrow</span>
               <span class="text-xl font-medium leading-snug">{{ v.voice.line }}</span>
@@ -591,9 +640,12 @@
         data-testid="brand-kit-web-view-panel-usage">
         <div [class]="card">
           <h3 [class]="cardTitle">Example usage</h3>
-          <p class="text-sm text-gray-800">{{ v.usage.summary }}</p>
+          <div class="group/commentfield" data-mktg-comment-group>
+            <p class="text-sm text-gray-800">{{ v.usage.summary }}</p>
+            <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.usage.summary' }" />
+          </div>
         </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="brand-kit-web-view-usages">
+        <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2" data-testid="brand-kit-web-view-usages">
           @for (usage of v.usageTiles; track usage.caption) {
             <article [class]="card" data-testid="brand-kit-web-view-usage">
               <div
@@ -621,7 +673,10 @@
                   }
                 }
               </div>
-              <span class="text-sm text-gray-800">{{ usage.caption }}</span>
+              <div class="group/commentfield" data-mktg-comment-group>
+                <span class="text-sm text-gray-800">{{ usage.caption }}</span>
+                <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.usage.examples[' + $index + '].name' }" />
+              </div>
             </article>
           }
         </div>
@@ -636,29 +691,43 @@
         id="brand-kit-web-view-panel-voice"
         aria-labelledby="brand-kit-web-view-tab-voice"
         data-testid="brand-kit-web-view-panel-voice">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2">
           <div [class]="card">
             <span [class]="label">Umbrella message</span>
-            <p class="text-sm leading-relaxed text-gray-900" data-testid="brand-kit-web-view-umbrella">{{ v.voice.umbrella }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="text-sm leading-relaxed text-gray-900" data-testid="brand-kit-web-view-umbrella">{{ v.voice.umbrella }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.voice.umbrella' }" />
+            </div>
           </div>
           <div class="flex flex-col gap-1 rounded-xl border border-blue-200 bg-blue-50 p-4">
             <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Brand line</span>
-            <p class="font-display text-xl text-blue-900" data-testid="brand-kit-web-view-line">{{ v.voice.line }}</p>
+            <div class="group/commentfield" data-mktg-comment-group>
+              <p class="font-display text-xl text-blue-900" data-testid="brand-kit-web-view-line">{{ v.voice.line }}</p>
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.voice.line' }" />
+            </div>
           </div>
         </div>
         <div class="flex flex-col gap-2">
           <h3 [class]="cardTitle">Attributes</h3>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-attributes">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-4" data-testid="brand-kit-web-view-attributes">
             @for (attribute of v.voice.attributes; track attribute.name) {
               <article [class]="card">
                 <h4 class="text-base font-semibold text-gray-900">{{ attribute.name }}</h4>
-                <p class="text-sm text-gray-800">{{ attribute.line }}</p>
+                <div class="group/commentfield" data-mktg-comment-group>
+                  <p class="text-sm text-gray-800">{{ attribute.line }}</p>
+                  <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.voice.attributes[' + $index + '].line' }" />
+                </div>
               </article>
             }
           </div>
         </div>
         <div [class]="card">
-          <p class="text-sm text-gray-800">{{ v.voice.note }}</p>
+          <div class="group/commentfield" data-mktg-comment-group>
+            <p class="text-sm text-gray-800">{{ v.voice.note }}</p>
+            @if (v.voice.note) {
+              <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.voice.note' }" />
+            }
+          </div>
           <p [class]="caption">{{ v.voice.source }}. For the full voice, persona and messaging rules, see the messaging framework.</p>
         </div>
       </div>
@@ -667,7 +736,7 @@
     <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state (the framework view's treatment) -->
     @case ('sources') {
       <div
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2"
         role="tabpanel"
         id="brand-kit-web-view-panel-sources"
         aria-labelledby="brand-kit-web-view-tab-sources"
@@ -731,17 +800,24 @@
 
   <!-- Footer: what Download PDF and the Google Slides export give you -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in
-    Google Drive, in the kit’s colours, typeface and logo.
+    PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours,
+    typeface and logo.
   </p>
 
-  <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->
+  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-brand-kit-view [view]="approvedPrint" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
     </div>
   }
 </section>
+
+<!-- Passage text is captured from the stored revision by the BFF, never copied from transformed samples or SVG artwork. -->
+<ng-template #commentTpl let-field>
+  @if (commentsEnabled()) {
+    <lfx-mktg-field-comments [field]="field" />
+  }
+</ng-template>
 
 <!-- A logo as drawn in a sample: the artwork, or a placeholder naming what goes there (no file, or a PNG/ZIP member the kit carries no bytes for). -->
 <ng-template #logoTpl let-image let-what="what">

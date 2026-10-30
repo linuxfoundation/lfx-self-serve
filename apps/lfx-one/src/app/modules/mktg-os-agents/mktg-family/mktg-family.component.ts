@@ -1,39 +1,43 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, Location } from '@angular/common';
-import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import { DatePipe, DOCUMENT, isPlatformBrowser, Location } from '@angular/common';
+import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild, viewChildren } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_KIT_FAMILIES,
-  MKTG_AGENTS,
-  MKTG_KIT_EXCLUDED_AGENT_IDS,
-  MKTG_DOCUMENT_TYPES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
-  MKTG_KIT_STATE_LABELS,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
+  MKTG_RUN_NEW_MODE,
+  MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, mktgKitRootCrumb, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
+import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
+import {
+  isMktgKitFamilyLive,
+  mktgFamilyExportAgentKeys,
+  readMktgRebuildNavigationIntent,
+  resolveMktgFamilyActions,
+  resolveMktgFamilyRun,
+} from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
-import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
 import { MktgFamilyDetailsComponent } from '../components/mktg-family-details/mktg-family-details.component';
 import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
-import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-mktg-family',
   imports: [
-    TooltipModule,
     DatePipe,
     RouterLink,
     ButtonComponent,
@@ -43,14 +47,15 @@ import { TooltipModule } from 'primeng/tooltip';
     PageHeaderComponent,
     MktgRebuildComponent,
     MktgBreadcrumbComponent,
+    MktgSkeletonComponent,
   ],
   providers: [MktgKitService],
   templateUrl: './mktg-family.component.html',
 })
 export class MktgFamilyComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly platform = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly location = inject(Location);
   private readonly exports = inject(MktgFamilyExportService);
   private readonly context = inject(ProjectContextService);
@@ -59,36 +64,37 @@ export class MktgFamilyComponent {
   // Writable signals
   private readonly navigationIntent = signal<MktgRebuildNavigationIntent | null>(null);
   protected readonly rebuildPanel = viewChild(MktgRebuildComponent);
+  protected readonly exportPanels = viewChildren(MktgFamilyExportActionsComponent);
   protected readonly rebuildFamilyId = MKTG_KIT_POSITIONING_FAMILY_ID;
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
-  /** Why the family's lead agent cannot run yet: one copy for the tooltip and the note under the button. */
-  protected readonly pendingReason = computed(() => this.definition()?.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon']);
-  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
-  protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();
-  protected readonly rowRunAgents: Signal<Record<string, MktgAgent>> = this.initRowRunAgents();
-  /** The first asset not run yet, in the family's run order (the framework before the assets that read it). */
-  protected readonly nextAgent = computed(() => {
-    const agents = this.rowRunAgents();
-    const row = this.family()?.rows.find((candidate) => agents[candidate.asset.id]);
-    return row ? { agent: agents[row.asset.id], label: row.asset.label } : null;
+  protected readonly actions = this.initActions();
+  protected readonly headerQueryParams = computed((): Record<string, string> => {
+    const header = this.actions()?.header;
+    if (header?.link) return { ...this.runQueryParams().plain, ...header.link.queryParams };
+    return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
-  protected readonly rebuildBlockedReason = computed(() => {
-    const panel = this.rebuildPanel();
-    if (!panel || panel.canStart()) return '';
-    if (panel.active()) return 'A rebuild is already running';
-    if (!this.context.canWrite()) return 'You need write access to this project to rebuild';
-    if (!this.kit.documents()?.approvedFramework) return 'Approve the messaging framework first: rebuilds start from the approved framework';
-    return 'Rebuild is not available right now';
-  });
-  private readonly routeQueryParams = toSignal(this.route.queryParams, { initialValue: {} });
+  protected readonly rows = computed(() =>
+    Object.values(this.actions()?.rows ?? {}).map((entry) => {
+      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../'], entry.row.document);
+      const link = run?.link;
+      return { ...entry, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
+    })
+  );
+  protected readonly headerRun = this.initHeaderRun();
+  /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
+  protected readonly runQueryParams = computed(
+    (): Record<'fresh' | 'plain', Record<string, string>> => ({
+      fresh: { project: this.kit.projectQueryParams().project ?? '', mode: MKTG_RUN_NEW_MODE },
+      plain: { project: this.kit.projectQueryParams().project ?? '' },
+    })
+  );
   protected readonly autoRebuild = computed(() =>
     this.navigationIntent()?.project === this.kit.projectUid() ? (this.navigationIntent()?.frameworkRevisionId ?? '') : ''
   );
-  protected readonly runQueryParams = computed(() => ({ ...this.routeQueryParams(), project: this.kit.projectQueryParams().project ?? '' }));
 
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.definition()?.name));
@@ -103,6 +109,22 @@ export class MktgFamilyComponent {
     });
     // Start the last-export read even while the unrelated kit/document listing is loading or failed.
     if (isPlatformBrowser(this.platform)) {
+      toObservable(computed(() => ({ project: this.kit.projectUid(), familyId: this.familyId(), denied: this.kit.accessDenied() || this.kit.refreshDenied() })))
+        .pipe(
+          distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+          switchMap(({ denied }) =>
+            denied
+              ? EMPTY
+              : createVisibilityPoll(this.document, (poll) => this.kit.refresh(poll), {
+                  intervalMs: MKTG_RUN_POLL.intervalMs,
+                  backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+                  backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+                  shouldContinue: () => !this.kit.accessDenied() && !this.kit.refreshDenied(),
+                })
+          ),
+          takeUntilDestroyed()
+        )
+        .subscribe();
       toObservable(computed(() => ({ project: this.context.activeContext()?.uid, familyId: this.familyId(), writer: this.context.canWrite() })))
         .pipe(
           distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -117,32 +139,39 @@ export class MktgFamilyComponent {
     }
   }
 
-  protected runFirstAgent(): void {
-    const agent = this.firstAgent();
-    if (this.live() && agent?.status === 'active') {
-      this.router.navigate(['../../', agent.id], { relativeTo: this.route, queryParams: this.kit.projectQueryParams(), queryParamsHandling: 'merge' });
-    }
+  protected focusExport(): void {
+    this.exportPanels()
+      .find((panel) => panel.isRendered())
+      ?.focusDownload();
   }
 
   protected rebuildStarted(): void {
     this.navigationIntent.set(null);
   }
 
-  private initRowRunAgents(): Signal<Record<string, MktgAgent>> {
+  private initHeaderRun() {
     return computed(() => {
-      const agents: Record<string, MktgAgent> = {};
-      for (const row of this.family()?.rows ?? []) {
-        if (row.state !== 'missing') continue;
-        const id = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === row.asset.agentKey)?.catalogAgentId;
-        const agent = MKTG_AGENTS.find((candidate) => candidate.id === id && candidate.status === 'active');
-        if (agent && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)) agents[row.asset.id] = agent;
-      }
-      return agents;
+      if (!this.kit.documents() || this.kit.accessDenied() || !this.context.canWrite()) return null;
+      const rows = this.rows();
+      const newest = [...(this.kit.documents()?.runs ?? [])]
+        .filter((run) => run.state !== 'failed')
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .find((run) => rows.some((entry) => entry.run && entry.row.asset.agentKey === run.agentKey));
+      const entry = rows.find(({ row }) => row.asset.agentKey === newest?.agentKey);
+      return entry?.run ? { ...entry.run, caption: `${entry.row.asset.label} · ${entry.run.caption}` } : null;
     });
   }
 
-  private initFirstAgent(): Signal<MktgAgent | undefined> {
-    return computed(() => MKTG_AGENTS.find((agent) => agent.id === this.definition()?.agentIds[0] && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)));
+  private initActions() {
+    return computed(() => {
+      const definition = this.definition();
+      if (!definition) return null;
+      return resolveMktgFamilyActions(this.family() ?? { family: definition, rows: [], agents: [], live: this.live() }, {
+        loaded: !!this.kit.documents() || (!this.kit.loading() && (!this.kit.error() || this.kit.accessDenied())),
+        canWrite: this.context.canWrite() && !this.kit.accessDenied(),
+        approvedFramework: !!this.kit.documents()?.approvedFramework,
+      });
+    });
   }
 
   private initLive(): Signal<boolean> {
