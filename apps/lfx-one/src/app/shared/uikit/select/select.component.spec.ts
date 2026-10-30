@@ -103,8 +103,6 @@ describe('UiSelectComponent', () => {
       ?.textContent?.trim();
 
   beforeEach(async () => {
-    // jsdom has no layout, so it has no scrollIntoView either.
-    Element.prototype.scrollIntoView = vi.fn();
     await TestBed.configureTestingModule({ imports: [SelectHostComponent] }).compileComponents();
     fixture = create('basic');
     host = fixture.nativeElement as HTMLElement;
@@ -783,11 +781,25 @@ describe('UiSelectComponent', () => {
       expect(listbox()).toBeNull();
     });
 
-    it('scrolls the highlighted row into view when the fallback moves it', async () => {
-      const scroll = vi.mocked(Element.prototype.scrollIntoView);
+    it('scrolls the list, and only the list, to the highlighted row when the fallback moves it', async () => {
+      // jsdom has no layout: report the list as 0 to 100px and every row as 150 to 190px, below its bottom edge.
+      const box = (top: number, bottom: number): DOMRect => ({
+        top,
+        bottom,
+        left: 0,
+        right: 0,
+        width: 0,
+        height: bottom - top,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      });
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute('role') === 'listbox' ? box(0, 100) : box(150, 190);
+      });
       await open();
       await press('ArrowDown');
-      scroll.mockClear();
+      listbox()!.scrollTop = 0;
       // The highlighted row (OpenSSF) loses its place, so the highlight falls back to the first enabled row.
       await set(
         'options',
@@ -795,7 +807,7 @@ describe('UiSelectComponent', () => {
       );
 
       expect(activeLabel()).toBe('Cloud Native Computing Foundation');
-      expect(scroll).toHaveBeenCalled();
+      expect(listbox()?.scrollTop).toBe(90);
     });
 
     it('opens on the first row that starts with the typed character when nothing is picked', async () => {

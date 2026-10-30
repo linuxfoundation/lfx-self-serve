@@ -149,7 +149,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       this.activeItem.set(this.options()[index] ?? null);
     });
     // After the panel renders, keep the highlighted row visible, including when the fallback moves it.
-    afterRenderEffect(() => this.document.getElementById(this.activeOption()?.id ?? '')?.scrollIntoView({ block: 'nearest' }));
+    afterRenderEffect(() => this.revealActive());
   }
 
   public writeValue(value: string | null): void {
@@ -396,6 +396,17 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   // The options can change while the list is open, and the key manager only follows silently: point it at the highlighted row before it acts.
   private syncKeyManager(): void {
     this.keyManager.updateActiveItem(this.activeIndex());
+  }
+
+  // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
+  private revealActive(): void {
+    const row = this.document.getElementById(this.activeOption()?.id ?? '');
+    const list = row?.closest<HTMLElement>('[role="listbox"]');
+    if (!row || !list) return;
+    const rowBox = row.getBoundingClientRect();
+    const listBox = list.getBoundingClientRect();
+    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
+    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
   }
 
   private panelHolds(node: EventTarget | null): boolean {
