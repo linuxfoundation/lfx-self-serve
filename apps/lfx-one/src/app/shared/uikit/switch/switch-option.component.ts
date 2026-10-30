@@ -21,6 +21,8 @@ import { UiSwitchComponent } from './switch.component';
   },
 })
 export class UiSwitchOptionComponent {
+  protected readonly group = inject(UiSwitchComponent);
+
   /** What the switch's value becomes when this option is chosen. */
   public readonly value = input.required<string>();
   /** The option's name. Shown as text, or as a tooltip and screen-reader text when `iconOnly` is set. */
@@ -32,7 +34,6 @@ export class UiSwitchOptionComponent {
   /** Disables this option: it keeps its place but cannot be chosen or focused. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
 
-  protected readonly group = inject(UiSwitchComponent);
   protected readonly isChecked: Signal<boolean> = this.initIsChecked();
   protected readonly isDisabled: Signal<boolean> = this.initIsDisabled();
   protected readonly tooltip: Signal<string> = this.initTooltip();
@@ -58,7 +59,7 @@ export class UiSwitchOptionComponent {
     return computed(() => {
       // Exact px, not rem: 14px root. Segment radius is the track radius minus its padding (9, 7 and 6px: no ui-* utility); padding and gap are library steps.
       const base =
-        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base motion-reduce:transition-none peer-focus-visible:shadow-focus';
+        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none peer-focus-visible:shadow-focus';
       const sizes = {
         tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12',
         small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium',

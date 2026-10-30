@@ -23,6 +23,9 @@ import { UiSwitchSize } from '@lfx-one/shared/interfaces';
   },
 })
 export class UiSwitchComponent implements ControlValueAccessor {
+  // Per-app generator: a module-level counter would drift between SSR requests and the client.
+  private readonly generatedName = inject(_IdGenerator).getId('lfx-ui-switch-');
+
   /** Accessible name of the radio group, such as `View`. Always required: the control has no visible legend. */
   public readonly ariaLabel = input.required<string>();
   /** `tiny` is 24px tall, `small` 32px and `medium` 40px, as for buttons. There is no large size. */
@@ -42,8 +45,6 @@ export class UiSwitchComponent implements ControlValueAccessor {
   /** True when the switch is disabled by input or by its form control. Read by `lfx-ui-switch-option`. */
   public readonly isDisabled: Signal<boolean> = this.initIsDisabled();
 
-  // Per-app generator: a module-level counter would drift between SSR requests and the client.
-  private readonly generatedName = inject(_IdGenerator).getId('lfx-ui-switch-');
   private onChangeFn?: (value: string | null) => void;
   private onTouchedFn?: () => void;
 
