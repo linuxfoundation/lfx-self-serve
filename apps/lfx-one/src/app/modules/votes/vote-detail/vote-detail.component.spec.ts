@@ -1565,13 +1565,22 @@ describe('VoteDetailComponent', () => {
         expect(tabFor(fixture, 'voters')?.countLabel).toBe('1 invited voter');
       });
 
-      it('shows no badge for zero comments or an unknown invited count', async () => {
+      it('shows no badge for zero comments or a zero invited count', async () => {
         voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 0 })));
         voteService.getVoteResults.mockReturnValue(of(makeResults()));
         const fixture = await setup();
 
         expect(tabFor(fixture, 'comments')?.count).toBeUndefined();
         expect(tabFor(fixture, 'voters')?.count).toBeUndefined();
+      });
+
+      it('shows no Voters badge when the invited count is missing', async () => {
+        voteService.fetchVote.mockReturnValue(of(makeVote()));
+        const fixture = await setup();
+
+        expect(tabFor(fixture, 'voters')).toBeDefined();
+        expect(tabFor(fixture, 'voters')?.count).toBeUndefined();
+        expect(tabFor(fixture, 'voters')?.countLabel).toBeUndefined();
       });
 
       it('shows no Comments badge while results are loading', async () => {
