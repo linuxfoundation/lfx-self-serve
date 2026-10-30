@@ -6,6 +6,7 @@ import type {
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
@@ -57,6 +58,7 @@ export interface HealthMetricsEngagementSubNavCounts {
   neverAttendedReps: number;
   nonMemberOrgs: number | null;
   newsletters: number | null;
+  recipients: number | null;
 }
 
 /** One group's numbers for a single period. Every period ships on every row, so the period pill
@@ -474,6 +476,7 @@ export interface HealthMetricsEngagementQueryParams {
   partMode?: HealthMetricsEngagementParticipationMode | null;
   repFilter?: HealthMetricsEngagementRepFilter | null;
   nlMode?: HealthMetricsEngagementNewsletterMode | null;
+  nlFilter?: HealthMetricsEngagementRecipientFilter | null;
 }
 
 /** The newsletter chart's toggle: each newsletter's rates, or its recipients and unique opens. */
@@ -574,4 +577,61 @@ export interface HealthMetricsEngagementNewsletterView {
   /** Oldest first: every newsletter for the audience chart, only those with engagement data for the rates chart. */
   audiencePoints: HealthMetricsEngagementNewsletterPointView[];
   ratePoints: HealthMetricsEngagementNewsletterPointView[];
+}
+
+/** The recipient table's cut: everyone, or one engagement segment. */
+export type HealthMetricsEngagementRecipientFilter = (typeof HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS)[number]['key'];
+
+/** Wire query for `GET /api/analytics/engagement-newsletter-recipients`. Search and the cut resolve client-side. */
+export interface HealthMetricsEngagementRecipientQuery {
+  foundationSlug: string;
+}
+
+/** One recipient of the latest newsletter. Times are UTC ISO strings; a figure the view lacks is `null`. */
+export interface HealthMetricsEngagementRecipient {
+  /** The view's engagement rank, unique within the newsletter; 1 is the most engaged. */
+  rank: number;
+  name: string | null;
+  organization: string | null;
+  /** `Delivered` or `Failed`, as the view reports it. */
+  deliveryStatus: string | null;
+  /** `opened`, `not-opened` or `failed`. A recipient who clicked without a recorded open is `not-opened`. */
+  segment: string | null;
+  clicked: boolean;
+  opens: number | null;
+  lastOpenedAt: string | null;
+  clicks: number | null;
+  lastClickedAt: string | null;
+}
+
+/** The newsletter the recipients received. */
+export interface HealthMetricsEngagementRecipientNewsletter {
+  key: string;
+  name: string;
+  sentDate: string | null;
+}
+
+/** `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter, most engaged first. */
+export interface HealthMetricsEngagementNewsletterRecipients {
+  /** `null` when the foundation has sent no newsletter. */
+  newsletter: HealthMetricsEngagementRecipientNewsletter | null;
+  recipients: HealthMetricsEngagementRecipient[];
+  /** The read hit its cap, so only the most engaged recipients came back and every count covers just those. */
+  truncated: boolean;
+}
+
+/** One recipient row, every cell labelled; a failed delivery reads "—" for engagement, opens and clicks. */
+export interface HealthMetricsEngagementRecipientRowView {
+  rank: number;
+  nameLabel: string;
+  organizationLabel: string;
+  deliveryLabel: string;
+  deliveryClass: string;
+  /** Empty for a failed delivery, which shows "—" instead of a tag. */
+  engagementLabel: string;
+  engagementClass: string;
+  opensLabel: string;
+  lastOpenedLabel: string;
+  clicksLabel: string;
+  lastClickedLabel: string;
 }

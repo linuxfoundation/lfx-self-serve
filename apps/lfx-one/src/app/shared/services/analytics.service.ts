@@ -84,11 +84,13 @@ import {
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEventsAtAGlance,
@@ -1117,6 +1119,23 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementNewsletterPerformance>('/api/analytics/engagement-newsletter-performance', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-newsletter-performance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Newsletter recipient engagement" table
+   * @param query - Foundation scope; search and the segment cut resolve client-side
+   * @returns Observable of the latest newsletter and every one of its recipients, most engaged first
+   */
+  public getEngagementNewsletterRecipients(query: HealthMetricsEngagementRecipientQuery): Observable<HealthMetricsEngagementNewsletterRecipients> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table reads as "no newsletter sent", so a swallowed failure would state that as fact.
+    return this.http.get<HealthMetricsEngagementNewsletterRecipients>('/api/analytics/engagement-newsletter-recipients', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-newsletter-recipients failed', { query, error });
         return throwError(() => error);
       })
     );

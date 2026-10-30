@@ -102,6 +102,7 @@
       </p>
     }
 
+    <!-- No [totalRecords]: p-table keeps only its first value and pins the paginator there, so it counts the rows instead. -->
     <lfx-table
       styleClass="hm-table"
       [rowHover]="false"
@@ -109,7 +110,6 @@
       [paginator]="current.rows.length > size()"
       [rows]="size()"
       [first]="first()"
-      [totalRecords]="current.rows.length"
       [showCurrentPageReport]="true"
       [showFirstLastIcon]="false"
       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"

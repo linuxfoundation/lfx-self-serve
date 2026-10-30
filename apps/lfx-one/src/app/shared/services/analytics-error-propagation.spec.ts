@@ -73,6 +73,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEngagementNewsletterPerformance({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getEngagementNewsletterRecipients',
+      url: '/api/analytics/engagement-newsletter-recipients',
+      // Its empty state reads "no newsletter sent", so a swallowed failure would read as a foundation that sent none.
+      call: () => service.getEngagementNewsletterRecipients({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'getEngagementRepresentatives',
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would

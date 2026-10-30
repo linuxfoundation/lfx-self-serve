@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
@@ -19,6 +20,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
@@ -38,6 +40,9 @@ import type {
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPeriod,
   HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRecipients,
+  HealthMetricsEngagementRecipient,
+  HealthMetricsEngagementRecipientQuery,
   HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
@@ -173,6 +178,22 @@ interface NewsletterRow {
   SENT_DATE: Date | string | null;
   HAS_ENGAGEMENT_DATA: boolean | null;
   [figureColumn: string]: unknown;
+}
+
+interface NewsletterRecipientRow {
+  NEWSLETTER_KEY: string | null;
+  NEWSLETTER_NAME: string | null;
+  SENT_AT: string | null;
+  ENGAGEMENT_RANK: number | string | null;
+  RECIPIENT_NAME: string | null;
+  ORGANIZATION_NAME: string | null;
+  DELIVERY_STATUS: string | null;
+  ENGAGEMENT_SEGMENT: string | null;
+  IS_CLICKED: boolean | null;
+  OPEN_COUNT: number | string | null;
+  LAST_OPENED_AT: string | null;
+  CLICK_COUNT: number | string | null;
+  LAST_CLICKED_AT: string | null;
 }
 
 interface MeetingParticipationRow {
@@ -670,6 +691,61 @@ export class HealthMetricsEngagementService {
     };
   }
 
+  /**
+   * Every recipient of the foundation's latest newsletter, most engaged first. The view ranks newsletters and
+   * recipients itself, so search and the segment cut resolve client-side. The recipient's email is never read.
+   */
+  public async getNewsletterRecipients(req: Request, query: HealthMetricsEngagementRecipientQuery): Promise<HealthMetricsEngagementNewsletterRecipients> {
+    // NTZ times are stored in UTC, so they leave as UTC ISO strings rather than through the driver's local-time Date.
+    const sql = `
+      SELECT
+        newsletter_key,
+        newsletter_name,
+        TO_VARCHAR(sent_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS sent_at,
+        engagement_rank,
+        recipient_name,
+        organization_name,
+        delivery_status,
+        engagement_segment,
+        is_clicked,
+        open_count,
+        TO_VARCHAR(last_opened_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_opened_at,
+        click_count,
+        TO_VARCHAR(last_clicked_ts, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS last_clicked_at
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.recipients}
+      WHERE foundation_slug = ?
+        AND newsletter_sort_rank = 1
+      -- _key only breaks ties, so a capped read keeps the same people; it is never selected.
+      ORDER BY engagement_rank ASC NULLS LAST, _key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}
+    `;
+
+    const result = await executeSnowflakeViewRead<NewsletterRecipientRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: HEALTH_METRICS_NEWSLETTER_VIEWS.recipients,
+      operation: 'get_engagement_newsletter_recipients',
+      clientMessage: 'Newsletter recipient engagement is unavailable right now.',
+    });
+
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+      operation: 'get_engagement_newsletter_recipients',
+      subject: 'newsletter recipients',
+      noun: 'Newsletter recipient',
+      foundationSlug: query.foundationSlug,
+    });
+
+    const first = rows[0];
+    const key = first?.NEWSLETTER_KEY?.trim();
+    if (!first || !key) return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED;
+
+    return {
+      newsletter: { key, name: first.NEWSLETTER_NAME?.trim() || 'Untitled newsletter', sentDate: first.SENT_AT?.slice(0, 10) ?? null },
+      recipients: rows.map(mapRecipient).filter((recipient): recipient is HealthMetricsEngagementRecipient => recipient !== null),
+      // Read one past the cap, so a longer list is told apart from one of exactly the cap.
+      truncated: result.rows.length > HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP,
+    };
+  }
+
   /** One cap rule for every engagement read, so a new capped section cannot log or cut differently. */
   private capRows<T>(req: Request, rows: T[], context: CapContext): T[] {
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
@@ -986,6 +1062,25 @@ function mapNewsletter(row: NewsletterRow): HealthMetricsEngagementNewsletter | 
     openRate: toNullableNumber(row['OPEN_RATE']),
     clickRate: toNullableNumber(row['CLICK_RATE']),
     clickToOpenRate: toNullableNumber(row['CLICK_TO_OPEN_RATE']),
+  };
+}
+
+/** A row without a rank has no place in the order and nothing to key it by, so it is dropped. */
+function mapRecipient(row: NewsletterRecipientRow): HealthMetricsEngagementRecipient | null {
+  const rank = toNullableNumber(row.ENGAGEMENT_RANK);
+  if (rank === null) return null;
+
+  return {
+    rank,
+    name: row.RECIPIENT_NAME?.trim() || null,
+    organization: row.ORGANIZATION_NAME?.trim() || null,
+    deliveryStatus: row.DELIVERY_STATUS,
+    segment: row.ENGAGEMENT_SEGMENT,
+    clicked: row.IS_CLICKED === true,
+    opens: toNullableNumber(row.OPEN_COUNT),
+    lastOpenedAt: row.LAST_OPENED_AT,
+    clicks: toNullableNumber(row.CLICK_COUNT),
+    lastClickedAt: row.LAST_CLICKED_AT,
   };
 }
 

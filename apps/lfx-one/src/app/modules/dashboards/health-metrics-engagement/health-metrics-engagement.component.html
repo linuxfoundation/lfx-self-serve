@@ -56,4 +56,11 @@
       (reading)="shell.sectionReading('newsletters')"
       (settled)="shell.sectionSettled('newsletters', $event)" />
   </ng-template>
+
+  <ng-template lfxHealthMetricsL2Section="recipients">
+    <lfx-engagement-newsletter-recipients
+      (countChange)="recipientCount.set($event)"
+      (reading)="shell.sectionReading('recipients')"
+      (settled)="shell.sectionSettled('recipients', $event)" />
+  </ng-template>
 </lfx-health-metrics-l2-shell>

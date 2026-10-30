@@ -3476,6 +3476,41 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter.
+   * Search and the segment cut resolve client-side.
+   */
+  public async getEngagementNewsletterRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_recipients');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterRecipients(req, { foundationSlug });
+
+      // Counts only: recipient names never reach the logs.
+      logger.success(req, 'get_engagement_newsletter_recipients', startTime, {
+        foundation_slug: foundationSlug,
+        has_newsletter: response.newsletter !== null,
+        recipient_count: response.recipients.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
    * the filter cut and the period all resolve client-side, so none of them reaches the wire.
    */
