@@ -15,8 +15,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  *
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
- * Do not import `UiTooltipDirective` into the consuming component for this: the directive would also attach to the wrapper. A disabled
- * button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
+ * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
+ * A disabled button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  */
 @Component({
   selector: 'lfx-ui-button',
@@ -83,8 +83,9 @@ export class UiButtonComponent {
   }
 
   // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.
+  // A disabled link has no native `disabled` either, so a programmatic click is stopped the same way.
   protected onClick(event: Event): void {
-    if (!this.loading()) return;
+    if (!this.loading() && !(this.link() !== null && this.disabled())) return;
     event.preventDefault();
     event.stopPropagation();
   }

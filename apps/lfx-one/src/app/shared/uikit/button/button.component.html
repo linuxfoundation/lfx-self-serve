@@ -18,6 +18,7 @@
     [routerLink]="disabled() || loading() ? null : link()"
     [class]="classes()"
     [attr.aria-label]="ariaLabel() || null"
+    [attr.role]="disabled() || loading() ? 'link' : null"
     [attr.aria-disabled]="disabled() || null"
     [attr.aria-busy]="loading() || null"
     [attr.tabindex]="linkTabIndex()"
@@ -27,6 +28,7 @@
     [lfxUiTooltipSide]="tooltipSide()"
     [lfxUiTooltipDelay]="tooltipDelay()"
     [lfxUiTooltipDisabled]="tooltipDisabled()"
+    (click)="onClick($event)"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </a>

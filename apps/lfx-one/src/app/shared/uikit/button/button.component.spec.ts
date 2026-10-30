@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiButtonComponent } from './button.component';
 
 @Component({
@@ -18,6 +19,25 @@ class ClickHostComponent {
   public readonly loading = signal(false);
   public save = vi.fn();
 }
+
+@Component({
+  selector: 'lfx-ui-button-link-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button link="/meetings" [disabled]="disabled()" [loading]="loading()" (click)="open()">Open</lfx-ui-button>`,
+})
+class LinkHostComponent {
+  public readonly disabled = signal(false);
+  public readonly loading = signal(false);
+  public open = vi.fn();
+}
+
+@Component({
+  selector: 'lfx-ui-button-both-tooltips-host',
+  imports: [UiButtonComponent, UiTooltipDirective],
+  template: `<span lfxUiTooltip="Plain tooltip" tabindex="0">Plain</span
+    ><lfx-ui-button lfxUiTooltip="Copy link" ariaLabel="Copy" [iconOnly]="true" icon="fa-light fa-copy" />`,
+})
+class BothTooltipsHostComponent {}
 
 @Component({
   selector: 'lfx-ui-button-tooltip-host',
@@ -254,7 +274,56 @@ describe('UiButtonComponent', () => {
     });
   });
 
+  describe('link states', () => {
+    async function linkHost(configure: (host: LinkHostComponent) => void = () => undefined) {
+      const host = TestBed.createComponent(LinkHostComponent);
+      configure(host.componentInstance);
+      await host.whenStable();
+      return { host, anchor: host.nativeElement.querySelector('a') as HTMLAnchorElement };
+    }
+
+    it('keeps the link role while loading or disabled, when the href is gone', async () => {
+      const loading = await linkHost((host) => host.loading.set(true));
+      expect(loading.anchor.getAttribute('role')).toBe('link');
+      const disabled = await linkHost((host) => host.disabled.set(true));
+      expect(disabled.anchor.getAttribute('role')).toBe('link');
+    });
+
+    it('has no explicit role while idle', async () => {
+      const { anchor } = await linkHost();
+      expect(anchor.hasAttribute('role')).toBe(false);
+    });
+
+    it('swallows a click on a loading link', async () => {
+      const { host, anchor } = await linkHost((instance) => instance.loading.set(true));
+      anchor.click();
+      expect(host.componentInstance.open).not.toHaveBeenCalled();
+    });
+
+    it('swallows a click on a disabled link', async () => {
+      const { host, anchor } = await linkHost((instance) => instance.disabled.set(true));
+      anchor.click();
+      expect(host.componentInstance.open).not.toHaveBeenCalled();
+    });
+
+    it('passes a click on an idle link through', async () => {
+      vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      const { host, anchor } = await linkHost();
+      anchor.click();
+      expect(host.componentInstance.open).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('tooltip forwarding', () => {
+    it('does not attach a second tooltip to the wrapper when the directive is imported next to it', async () => {
+      const host = TestBed.createComponent(BothTooltipsHostComponent);
+      await host.whenStable();
+      const wrapper = host.nativeElement.querySelector('lfx-ui-button') as HTMLElement;
+      expect(wrapper.getAttribute('aria-describedby')).toBeNull();
+      expect(wrapper.querySelector('button')?.getAttribute('aria-describedby')).toBeTruthy();
+      expect(host.nativeElement.querySelector('span')?.getAttribute('aria-describedby')).toBeTruthy();
+    });
+
     it('registers the spoken description on the inner button, not the wrapper', async () => {
       const host = TestBed.createComponent(TooltipHostComponent);
       await host.whenStable();
