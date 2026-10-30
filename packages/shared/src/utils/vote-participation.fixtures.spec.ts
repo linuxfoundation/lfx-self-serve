@@ -12,7 +12,7 @@ import type { Vote } from '../interfaces/poll.interface';
 /**
  * Contract fixtures for the vote participation rules (epic #4140 / #4741). The same file is consumed by
  * lfx-mcp#193 in Go, so JSON has no NaN: the string "NaN" stands in for it, and a non-number count must read as
- * unavailable exactly like NaN does. `end_time` / `early_end_time` are passed through but do not affect the result.
+ * unavailable exactly like NaN does. `end_time` / `early_end_time` are passed through but do not affect the result. `awaitingInvitationCount` is optional (default false) and maps to the function's second argument.
  */
 describe('vote-participation.fixtures.json', () => {
   it('has uniquely named entries', () => {
@@ -34,6 +34,6 @@ describe('vote-participation.fixtures.json', () => {
       total_voting_request_invitations: toCount(input.total_voting_request_invitations),
     };
 
-    expect(computeVoteRowParticipation(vote)).toMatchObject(expected);
+    expect(computeVoteRowParticipation(vote, input.awaitingInvitationCount ?? false)).toMatchObject(expected);
   });
 });

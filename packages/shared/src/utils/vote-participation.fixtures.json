@@ -150,6 +150,22 @@
     }
   },
   {
+    "name": "just opened, invitation count not reported yet is counting",
+    "input": {
+      "num_response_received": 0,
+      "total_voting_request_invitations": 0,
+      "status": "active",
+      "end_time": "2026-06-01T00:00:00Z",
+      "early_end_time": null,
+      "awaitingInvitationCount": true
+    },
+    "expected": {
+      "label": "Counting invitations…",
+      "percent": null,
+      "state": "counting"
+    }
+  },
+  {
     "name": "not started shows no counts",
     "input": {
       "num_response_received": null,
