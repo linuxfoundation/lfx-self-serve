@@ -145,6 +145,14 @@ describe('UiDescriptionComponent', () => {
     expect(value().className).toContain('focus-visible:shadow-focus');
   });
 
+  it('names a truncated value by its text so a screen reader does not read it twice', async () => {
+    fixture.componentRef.setInput('ellipsis', true);
+    await fixture.whenStable();
+
+    expect(value().getAttribute('aria-label')).toBe('Europe (Lisbon)');
+    expect(value().getAttribute('aria-describedby')).toBeNull();
+  });
+
   it('shows the full value in a tooltip when a truncated value gets keyboard focus', async () => {
     fixture.componentRef.setInput('ellipsis', true);
     await fixture.whenStable();

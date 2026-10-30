@@ -15,7 +15,12 @@
         data-testid="ui-description-help"></i>
     }
   </dt>
-  <dd [class]="valueClasses()" [attr.tabindex]="ellipsis() ? 0 : null" [lfxUiTooltip]="ellipsis() ? value() : ''" data-testid="ui-description-value">
+  <dd
+    [class]="valueClasses()"
+    [attr.tabindex]="ellipsis() ? 0 : null"
+    [attr.aria-label]="ellipsis() ? value() : null"
+    [lfxUiTooltip]="ellipsis() ? value() : ''"
+    data-testid="ui-description-value">
     {{ value() }}
   </dd>
 </dl>

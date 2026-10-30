@@ -101,6 +101,21 @@ describe('UiStatusDotComponent', () => {
     expect(tooltip()?.textContent?.trim()).toBe('Ready');
   });
 
+  it('dot-only shows the word in a tooltip on keyboard focus', async () => {
+    document.body.appendChild(host);
+    fixture.componentRef.setInput('dotOnly', true);
+    await fixture.whenStable();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    // A Tab keydown first, so the focus counts as keyboard focus.
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    image().focus();
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(document.activeElement).toBe(image());
+    expect(tooltip()?.textContent?.trim()).toBe('Ready');
+  });
+
   it('shows no tooltip when the word is visible', async () => {
     document.body.appendChild(host);
     await fixture.whenStable();
