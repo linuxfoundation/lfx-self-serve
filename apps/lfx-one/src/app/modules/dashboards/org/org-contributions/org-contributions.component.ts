@@ -85,6 +85,7 @@ import {
   parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
+  servedOrgScopeForCaption,
 } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
@@ -207,14 +208,7 @@ export class OrgContributionsComponent {
   // The secondary filters behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted while not
   // at their default so a pick from the URL stays visible on the collapsed link.
   protected readonly moreFiltersExpanded = signal(false);
-  protected readonly hiddenFilterCount: Signal<number> = computed(() => {
-    const query = this.query();
-    return [
-      orgCodeFilterValues(query).metric !== DEFAULT_ORG_CODE_MEASURE,
-      query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS,
-      query.orgScope !== DEFAULT_ORG_SCOPE,
-    ].filter(Boolean).length;
-  });
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => this.initHiddenFilterCount());
 
   private readonly orgUid$ = toObservable(this.accountContext.selectedAccount).pipe(
     map((account) => account.uid),
@@ -229,11 +223,7 @@ export class OrgContributionsComponent {
    * States the counting rule and exact window under the KPI strip, so displayed figures can be matched to source data,
    * and the organization scope served: an account without an Insights organization is served every related one.
    */
-  protected readonly windowCaption: Signal<string> = computed(() => {
-    const query = this.query();
-    const orgScope = this.orgScopeService.current()?.hasInsightsOrg === false ? 'all' : query.orgScope;
-    return describeContributionsCaption({ ...query, orgScope }, this.companyName(), describeContributionsWindow(query.dateRange));
-  });
+  protected readonly windowCaption: Signal<string> = computed(() => this.initWindowCaption());
   protected readonly metricLabels: Signal<ContributionsMetricLabels> = computed(() => CONTRIBUTIONS_METRIC_LABELS[this.query().metric]);
   private readonly codeUnit: Signal<OrgCountUnit> = computed(() => ORG_CODE_METRIC_UNIT[this.query().metric]);
   protected readonly metricDefinition: Signal<string> = computed(() => ORG_CODE_MEASURE_DEFINITION[orgCodeFilterValues(this.query()).metric]);
@@ -349,7 +339,7 @@ export class OrgContributionsComponent {
         if (teamMembers !== this.filterForm.controls.teamMembers.value) this.filterForm.patchValue({ teamMembers });
       });
 
-    // `?orgScope=` is shared with Overview, People and Project Detail (lfx-self-serve-ops#1219); same echo guard.
+    // `?orgScope=` is shared with People, Projects and Project Detail (lfx-self-serve-ops#1219); same echo guard.
     this.route.queryParamMap
       .pipe(
         map((params) => parseOrgScopeFilter(params.get(ORG_SCOPE_QUERY_PARAM)) ?? DEFAULT_ORG_SCOPE),
@@ -493,6 +483,21 @@ export class OrgContributionsComponent {
       query.orgScope !== DEFAULT_ORG_SCOPE ||
       !sameOrgCommitFilters(query, DEFAULT_ORG_COMMIT_FILTERS)
     );
+  }
+
+  private initHiddenFilterCount(): number {
+    const query = this.query();
+    return [
+      orgCodeFilterValues(query).metric !== DEFAULT_ORG_CODE_MEASURE,
+      query.teamMembers !== DEFAULT_ORG_TEAM_MEMBERS,
+      query.orgScope !== DEFAULT_ORG_SCOPE,
+    ].filter(Boolean).length;
+  }
+
+  private initWindowCaption(): string {
+    const query = this.query();
+    const orgScope = servedOrgScopeForCaption(query.orgScope, this.orgScopeService.current());
+    return describeContributionsCaption({ ...query, orgScope }, this.companyName(), describeContributionsWindow(query.dateRange));
   }
 
   private initResponse(): Signal<OrgContributionsResponse> {

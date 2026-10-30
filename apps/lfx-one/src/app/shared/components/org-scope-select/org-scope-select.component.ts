@@ -13,7 +13,8 @@ import { TooltipModule } from 'primeng/tooltip';
 import { map, of, startWith, switchMap } from 'rxjs';
 
 /**
- * The Organization scope picker (lfx-self-serve-ops#1219) every Org Lens page with contributor counts shows, bound to
+ * The Organization scope picker (lfx-self-serve-ops#1219) on People → Contributors and All Employees, Code Contributions,
+ * Projects and Project Detail (the Overview has none and always counts the default scope), bound to
  * the page's `orgScope` control: Insights organization (default) or All related organizations (N). Its tooltip says what
  * the picked option counts, naming the account's Insights organization. An account with no Insights organization gets a
  * disabled select showing All related organizations, the same size as the enabled one, with a focusable info button in
@@ -43,11 +44,7 @@ export class OrgScopeSelectComponent {
 
   private readonly value: Signal<OrgScopeFilter> = this.initValue();
 
-  protected readonly tooltip = computed(() => {
-    const text = orgScopeTooltip(this.unavailable() ? 'all' : this.value(), this.orgScopeService.current());
-    const note = this.note();
-    return note ? `${text} ${note}` : text;
-  });
+  protected readonly tooltip: Signal<string> = computed(() => this.initTooltip());
 
   public constructor() {
     // A page visit after a failed metadata read asks again, so the picker recovers its name, count and availability.
@@ -63,5 +60,11 @@ export class OrgScopeSelectComponent {
       ),
       { initialValue: DEFAULT_ORG_SCOPE }
     );
+  }
+
+  private initTooltip(): string {
+    const text = orgScopeTooltip(this.unavailable() ? 'all' : this.value(), this.orgScopeService.current());
+    const note = this.note();
+    return note ? `${text} ${note}` : text;
   }
 }

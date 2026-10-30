@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
 import { ORG_SCOPE_PROJECT_DETAIL_NOTE, PD_HEALTH_TAG } from '@lfx-one/shared/constants';
-import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
+import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensInfluenceBlock, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -383,13 +383,14 @@ describe('OrgProjectDetailComponent — organization scope', () => {
 
   async function create(
     initialQuery: Record<string, string> = {},
-    hero: OrgLensProjectHero | null = null
+    hero: OrgLensProjectHero | null = null,
+    influence: OrgLensInfluenceBlock | null = null
   ): Promise<{ fixture: ComponentFixture<OrgProjectDetailComponent>; component: OrgProjectDetailComponent }> {
     queryParams = new BehaviorSubject<ParamMap>(convertToParamMap(initialQuery));
     navigate = vi.fn();
     detail = {
       getHero: vi.fn(() => of(hero ? { hero, isNonLfProject: false } : null)),
-      getInfluenceBlock: vi.fn(() => of(null)),
+      getInfluenceBlock: vi.fn(() => of(influence)),
       getTrendBlock: vi.fn(() => of(null)),
       getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
       getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
@@ -494,6 +495,36 @@ describe('OrgProjectDetailComponent — organization scope', () => {
     await create({ orgScope: 'all' });
 
     expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'all');
+  });
+
+  // Under insights the band chips are the Insights organization's row only; when it has none on the project the BFF
+  // sends null levels even if a related organization has a row, and the section titles carry no chip at all.
+  it.each([
+    { levels: { technical: null, ecosystem: null }, chips: 0 },
+    { levels: { technical: 'leading', ecosystem: 'contributing' }, chips: 2 },
+  ] as const)('renders $chips band chips for levels $levels', async ({ levels, chips }) => {
+    const hero: OrgLensProjectHero = {
+      projectName: 'Kubernetes',
+      description: '',
+      logoUrl: '',
+      lfxInsightsUrl: null,
+      firstCommit: null,
+      softwareValueUsd: null,
+      health: null,
+      healthOverallScore: null,
+      healthMaxScore: null,
+      healthCoveredCategoryCount: null,
+      healthMaintainer: null,
+      healthSecurity: null,
+      healthDevelopment: null,
+      foundationLabel: '',
+    };
+    const { fixture } = await create({}, hero, { technical: [], ecosystem: [], isNonLfProject: false, levels });
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="project-detail-technical-group"] h2')?.textContent).toBe('Our Technical Influence');
+    expect(el.querySelectorAll('[data-testid="project-detail-technical-band"], [data-testid="project-detail-ecosystem-band"]')).toHaveLength(chips);
   });
 
   it('re-reads the influence cards and writes ?orgScope= on a pick, dropping it at the default', async () => {

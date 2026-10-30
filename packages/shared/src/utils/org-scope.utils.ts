@@ -22,6 +22,15 @@ export function effectiveOrgScope(scope: OrgScopeFilter, info: Pick<OrgLensOrgSc
   return scope === 'insights' && info?.hasInsightsOrg === true ? 'insights' : 'all';
 }
 
+/**
+ * The scope a caption names: the pick, except `all` once the account is known to have no Insights organization. Unlike
+ * {@link effectiveOrgScope}, it keeps the pick while the account's scope metadata is still loading (`null`), so a
+ * caption does not flash All related organizations on every page load.
+ */
+export function servedOrgScopeForCaption(scope: OrgScopeFilter, info: Pick<OrgLensOrgScope, 'hasInsightsOrg'> | null | undefined): OrgScopeFilter {
+  return info?.hasInsightsOrg === false ? 'all' : scope;
+}
+
 /** Dropdown options for an account: All related organizations carries the related-organization count once it is known. */
 export function orgScopeOptions(info: Pick<OrgLensOrgScope, 'relatedOrgCount'> | null | undefined): OrgScopeOption[] {
   return ORG_SCOPE_OPTIONS.map((option) =>

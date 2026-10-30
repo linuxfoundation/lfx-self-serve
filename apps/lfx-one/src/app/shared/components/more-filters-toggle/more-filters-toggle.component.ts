@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model } from '@angular/core';
+import { Component, computed, input, model, Signal } from '@angular/core';
 
 /**
  * The "More filters" / "Fewer filters" link at the end of an Org Lens filter row (lfx-self-serve#4735). It shows and
@@ -23,13 +23,15 @@ export class MoreFiltersToggleComponent {
   public readonly controls = input.required<string>();
   public readonly dataTest = input<string>('more-filters-toggle');
 
-  protected readonly label = computed(() => {
-    if (this.expanded()) return 'Fewer filters';
-    const count = this.count();
-    return count > 0 ? `More filters (${count})` : 'More filters';
-  });
+  protected readonly label: Signal<string> = computed(() => this.initLabel());
 
   protected toggle(): void {
     this.expanded.update((expanded) => !expanded);
+  }
+
+  private initLabel(): string {
+    if (this.expanded()) return 'Fewer filters';
+    const count = this.count();
+    return count > 0 ? `More filters (${count})` : 'More filters';
   }
 }

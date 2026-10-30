@@ -1483,3 +1483,50 @@ describe('OrgPeopleDirectoryService.getLive — organization scope', () => {
     expect(cache.entry).not.toBeNull();
   });
 });
+
+// lfx-self-serve#4735: the stored roster leaves out a current employee whose only engagement was code the live window has
+// passed (`getAllEmployeesInternal`). Their Org Lens access is current state, so it alone lists them, the way it lists any
+// principal with no engagement in the range: as an access-only row with no code and no stored identity.
+describe('OrgPeopleDirectoryService.getLive — a current employee dropped for code the window has passed', () => {
+  it('stays off the roster without live access', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
+
+    const { rows } = await run('30d');
+
+    expect(rows).toEqual([]);
+  });
+
+  it('is listed once, access-only, with no code, when they still hold Org Lens access', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
+    getAccessPrincipals.mockResolvedValue([accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke', role: 'viewer' })]);
+
+    const { rows } = await run('30d');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      lfUsername: 'dclarke',
+      lfid: null,
+      sources: ['access'],
+      accessBadge: 'viewer',
+      commitsCount: 0,
+      codeActivitiesCount: 0,
+      seatsCount: 0,
+      eventsCount: 0,
+      coursesCount: 0,
+    });
+    expect(rows[0].personKey).toMatch(/^live-/);
+    expect(rows[0].isFormer).toBeUndefined();
+  });
+
+  it('is listed former, without address or title, when they left and still hold access', async () => {
+    getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
+    getAccessPrincipals.mockResolvedValue([
+      accessUser({ email: 'dclarke@lfx-partner.example', username: 'dclarke', name: 'Devon Clarke', role: 'viewer', jobTitle: 'VP Product' }),
+    ]);
+    getFormerUsernames.mockResolvedValue(['dclarke']);
+
+    const { rows } = await run('30d');
+
+    expect(rows).toEqual([expect.objectContaining({ lfUsername: 'dclarke', sources: ['access'], isFormer: true, email: null, title: null, commitsCount: 0 })]);
+  });
+});

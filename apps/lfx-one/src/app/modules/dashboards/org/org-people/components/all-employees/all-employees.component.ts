@@ -112,6 +112,7 @@ import {
   parseOrgTeamMembersFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
+  servedOrgScopeForCaption,
 } from '@lfx-one/shared/utils';
 
 import { AllEmployeesService } from '../../services/all-employees.service';
@@ -179,8 +180,9 @@ export class AllEmployeesComponent {
 
   // The URL-backed filters as the page opened: `?employment=`, `?range=` (shared with the other People tabs and Code
   // Contributions), `?projectScope=` / `?metric=` (shared with the Contributors tab), `?teamMembers=` (shared with
-  // Contributors, lfx-self-serve#4685) and `?orgScope=` (shared with every page with contributor counts,
-  // lfx-self-serve-ops#1219). They seed the form and the signals below.
+  // Contributors, lfx-self-serve#4685) and `?orgScope=` (shared with the other pages with an organization scope picker:
+  // Contributors, Code Contributions, Projects and Project Detail, lfx-self-serve-ops#1219). They seed the form and the
+  // signals below.
   private readonly initialEmployment = AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'));
   private readonly initialRange = parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range'));
   private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
@@ -286,10 +288,7 @@ export class AllEmployeesComponent {
   // Under "Current employees" the tile leaves out people who have left, unlike Contributors and Code; under "All
   // employees" it matches them, people with code but no employment record included. Say which, and whose code it
   // counts: the organization scope served (an account without an Insights organization is served every related one).
-  protected readonly codeStatNote = computed(() => {
-    const orgScope = this.orgScopeService.current()?.hasInsightsOrg === false ? 'all' : this.selectedOrgScope();
-    return [ORG_ALL_EMPLOYEE_CODE_NOTE[this.selectedEmployment()], ORG_SCOPE_CAPTION_PHRASE[orgScope]].filter(Boolean).join(' ');
-  });
+  protected readonly codeStatNote: Signal<string> = computed(() => this.initCodeStatNote());
   // The code activity option is named after the metric it filters on.
   protected readonly activityOptions: Signal<OrgAllEmployeeActivityOption[]> = computed(() =>
     ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS.map((option) => (option.value === 'code' ? { ...option, label: this.codeColumnLabel() } : option))
@@ -651,6 +650,11 @@ export class AllEmployeesComponent {
     }
     const options = [...foundations].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
     return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...options];
+  }
+
+  private initCodeStatNote(): string {
+    const orgScope = servedOrgScopeForCaption(this.selectedOrgScope(), this.orgScopeService.current());
+    return [ORG_ALL_EMPLOYEE_CODE_NOTE[this.selectedEmployment()], ORG_SCOPE_CAPTION_PHRASE[orgScope]].filter(Boolean).join(' ');
   }
 
   /** Tiles count the reconciled rows of the selected view, so someone who is current again carries their stored activity into them. */

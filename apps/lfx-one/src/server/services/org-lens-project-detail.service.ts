@@ -2108,9 +2108,10 @@ export class OrgLensProjectDetailService {
   }
 
   /**
-   * The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. Under `insights` it
-   * is the account's Insights organization's row when credited to the account (lfx-self-serve-ops#1219), else the
-   * account's best-ranked row.
+   * The viewing org's own leaderboard row (for the Our-Influence tab's band chips); null if absent. Under `all` it is the
+   * account's best-ranked row. Under `insights` (lfx-self-serve-ops#1219) it is only the account's Insights
+   * organization's row: when that organization has no row on the project, it is null even if a related organization has
+   * one, so the page shows no band chip, as the boards flag no row as this company's (`isViewingRow`).
    */
   private async fetchViewingLeaderboardRow(viewing: OrgLensViewingOrg, slug: string, timeRangeType: string): Promise<LeaderboardRow | null> {
     const byInsightsOrg = viewing.insightsOrgId !== null;

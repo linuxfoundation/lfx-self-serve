@@ -1216,6 +1216,32 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:insights$/));
   });
 
+  it("shows no band chip under insights when only a related organization has the project's leaderboard row", async () => {
+    const warehouse = execute.getMockImplementation()!;
+    // The viewing-row read as the warehouse answers it: only a related organization of the account has a row.
+    execute.mockImplementation(async (sql: string, binds: unknown[] = []) =>
+      sql.includes('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n')
+        ? {
+            rows: binds.includes(INSIGHTS_ORG)
+              ? []
+              : [
+                  {
+                    ORG_ORGANIZATION_ID: 'crowd-other-entity',
+                    ORG_ACCOUNT_ID: ORG,
+                    ORG_NAME: 'Acme Labs',
+                    LEVEL_TECHNICAL: 'Leading',
+                    LEVEL_ECOSYSTEM: 'Contributing',
+                    RANK: 1,
+                  },
+                ],
+          }
+        : warehouse(sql, binds)
+    );
+
+    expect((await service.getInfluenceBlock(ORG, SLUG, '1y', 'insights'))!.levels).toEqual({ technical: null, ecosystem: null });
+    expect((await service.getInfluenceBlock(ORG, SLUG, '1y', 'all'))!.levels).toEqual({ technical: 'leading', ecosystem: 'contributing' });
+  });
+
   it('reads exactly today’s columns and the account rows under all, with only the key suffixed', async () => {
     await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
 

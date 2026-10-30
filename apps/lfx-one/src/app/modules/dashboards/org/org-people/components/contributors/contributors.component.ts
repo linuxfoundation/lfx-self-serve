@@ -82,6 +82,7 @@ import {
   parseOrgEmploymentFilter,
   readOrgCommitFilters,
   sameOrgCommitFilters,
+  servedOrgScopeForCaption,
 } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
@@ -225,8 +226,7 @@ export class ContributorsComponent {
       this.accountContext.selectedAccount().accountName,
       describeContributionsWindow(this.timeRange()),
       this.employment(),
-      // The scope served: an account without an Insights organization is served every related one.
-      this.orgScopeService.current()?.hasInsightsOrg === false ? 'all' : this.orgScope()
+      servedOrgScopeForCaption(this.orgScope(), this.orgScopeService.current())
     )
   );
 

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { effectiveOrgScope, orgScopeOptions, orgScopeTooltip, orgScopeUrlParam, parseOrgScopeFilter } from './org-scope.utils';
+import { effectiveOrgScope, orgScopeOptions, orgScopeTooltip, orgScopeUrlParam, parseOrgScopeFilter, servedOrgScopeForCaption } from './org-scope.utils';
 
 // lfx-self-serve-ops#1219 — Insights organization vs all related organizations.
 describe('parseOrgScopeFilter', () => {
@@ -32,6 +32,20 @@ describe('effectiveOrgScope', () => {
   it('falls back to all without an Insights organization or without a scope row', () => {
     expect(effectiveOrgScope('insights', { hasInsightsOrg: false })).toBe('all');
     expect(effectiveOrgScope('insights', null)).toBe('all');
+  });
+});
+
+describe('servedOrgScopeForCaption', () => {
+  it('names all once the account is known to have no Insights organization', () => {
+    expect(servedOrgScopeForCaption('insights', { hasInsightsOrg: false })).toBe('all');
+    expect(servedOrgScopeForCaption('all', { hasInsightsOrg: false })).toBe('all');
+  });
+
+  it('keeps the pick for an account with an Insights organization and while its metadata is unknown', () => {
+    expect(servedOrgScopeForCaption('insights', { hasInsightsOrg: true })).toBe('insights');
+    expect(servedOrgScopeForCaption('all', { hasInsightsOrg: true })).toBe('all');
+    expect(servedOrgScopeForCaption('insights', null)).toBe('insights');
+    expect(servedOrgScopeForCaption('insights', undefined)).toBe('insights');
   });
 });
 

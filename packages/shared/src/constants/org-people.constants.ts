@@ -177,8 +177,9 @@ export const ORG_SCOPE_PROJECTS_NOTE = 'Applies to the Contributors column only.
 export const ORG_SCOPE_PROJECT_DETAIL_NOTE = "Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.";
 
 /**
- * Note under a disabled organization-scope filter: the account has no Insights organization, or its Insights organization
- * has no code activity on the account in the past 730 days (lf-dbt `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
+ * Note on the info button of a disabled organization-scope filter (its tooltip and accessible label): the account has no
+ * Insights organization, or its Insights organization has no code activity on the account in the past 730 days (lf-dbt
+ * `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
  */
 export const ORG_SCOPE_UNAVAILABLE_NOTE =
   'This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.';
