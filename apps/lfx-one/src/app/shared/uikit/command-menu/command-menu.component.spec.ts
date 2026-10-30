@@ -68,6 +68,9 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     return event;
   };
 
+  const hadScrollIntoView = 'scrollIntoView' in Element.prototype;
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+
   beforeEach(() => {
     // jsdom has no layout: no scrollIntoView, and no geometry, which the CDK needs to count the search field as tabbable.
     Element.prototype.scrollIntoView = vi.fn();
@@ -79,6 +82,8 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    if (hadScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
+    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
@@ -163,6 +168,23 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
     await type('comm create');
     expect(labels()).toEqual(['Create Committee']);
+  });
+
+  it('keeps a row on screen as the same element while the search narrows around it', async () => {
+    await open();
+    const meeting = rows().find((row) => labelOf(row) === 'Schedule Meeting');
+
+    await type('e');
+    await type('meeting');
+
+    expect(rows()).toEqual([meeting]);
+  });
+
+  it('gives every label a native title, so a truncated one can still be read', async () => {
+    await open();
+
+    const titles = rows().map((row) => row.querySelector('[data-testid="ui-command-menu-item-label"]')?.getAttribute('title'));
+    expect(titles).toEqual(labels());
   });
 
   it('numbers the rows across groups after filtering, so the ids follow what is on screen', async () => {
@@ -359,9 +381,32 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
       expect(container.querySelector('.cdk-dialog-container')).toBeNull();
     });
 
-    it('opens with ⌘K', async () => {
-      await shortcut({ metaKey: true, key: 'K' });
+    it('leaves ⌘K alone off Apple platforms', async () => {
+      const event = await shortcut({ metaKey: true });
 
+      expect(event.defaultPrevented).toBe(false);
+      expect(container.querySelector('.cdk-dialog-container')).toBeNull();
+    });
+
+    it('opens with ⌘K on an Apple platform and leaves Ctrl K to the text field', async () => {
+      vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('MacIntel');
+
+      const ctrl = await shortcut({ ctrlKey: true });
+      expect(ctrl.defaultPrevented).toBe(false);
+      expect(container.querySelector('.cdk-dialog-container')).toBeNull();
+
+      const meta = await shortcut({ metaKey: true, key: 'K' });
+      expect(meta.defaultPrevented).toBe(true);
+      expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
+    });
+
+    it('ignores a held key: it neither closes the open palette nor opens a closed one', async () => {
+      const held = await shortcut({ ctrlKey: true, repeat: true });
+      expect(held.defaultPrevented).toBe(true);
+      expect(container.querySelector('.cdk-dialog-container')).toBeNull();
+
+      await shortcut({ ctrlKey: true });
+      await shortcut({ ctrlKey: true, repeat: true });
       expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
     });
 
