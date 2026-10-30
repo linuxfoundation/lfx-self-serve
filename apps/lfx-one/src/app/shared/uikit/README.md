@@ -7,7 +7,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Selector prefix:** `lfx-ui-` (enforced by an ESLint override for this folder), e.g. `lfx-ui-button`.
 - **Class names:** `Ui*Component` (`UiButtonComponent`), so they never collide with the wrapper classes.
 - **Angular:** standalone, signal `input()` / `output()`, `model()` for two-way values, `ChangeDetectionStrategy.OnPush`. The app is zoneless.
-- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Tabs and search-input still use `lfxColors` until they are realigned.
+- **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...). Search-input still uses `lfxColors` until it is realigned.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
@@ -20,7 +20,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | Selector                | Class                      | Purpose                                                                                                                                                                |
 | ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`; button or router link                                                                 |
-| `lfx-ui-tabs`           | `UiTabsComponent`          | Underline tabs with optional counts and arrow-key navigation; `[(value)]`                                                                                              |
+| `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`                                 |
 | `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field, 34px tall, 300px minimum width; `[(value)]`                                                                                                         |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
 | `lfx-ui-status-dot`     | `UiStatusDotComponent`     | Six run states as a 10px dot and a word; queued and building pulse; dot-only mode with `role="img"`                                                                    |
