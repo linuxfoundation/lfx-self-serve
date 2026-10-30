@@ -16,7 +16,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } f
  * <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings.">
  *   <input ... />
  *   <div modalInset>Create a mailing list for this committee</div>
- *   <ng-container modalActions><lfx-ui-button variant="outline-neutral">Cancel</lfx-ui-button> ...</ng-container>
+ *   <ng-container modalActions><lfx-ui-button variant="secondary">Cancel</lfx-ui-button> ...</ng-container>
  * </lfx-ui-modal>
  * ```
  */

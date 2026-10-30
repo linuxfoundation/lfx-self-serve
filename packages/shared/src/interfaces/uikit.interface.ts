@@ -163,3 +163,9 @@ export type UiCollapseSize = 'default' | 'small';
 
 /** Heading level (`aria-level`) of the triggers in a uikit collapse group. */
 export type UiCollapseHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
+export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
+
+/** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
+export type UiButtonSize = 'tiny' | 'small' | 'medium';
