@@ -230,6 +230,17 @@ export interface UiToastRef {
   id: string;
   /** Removes the toast now. Does nothing if it is already gone. */
   dismiss(): void;
+
+/** One choice of a uikit select. The same shape is meant for the combobox and multi-select, which differ in how they pick, not in what they pick from. */
+export interface UiOption {
+  /** Stable identifier written to the form control and the `value` model. Unique within the list. */
+  value: string;
+  /** Text shown in the row and, once picked, in the trigger. Type-ahead matches it. */
+  label: string;
+  /** The option stays visible but cannot be picked, and the keyboard skips it. */
+  disabled?: boolean;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. */
+  icon?: string;
 }
 
 /** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
