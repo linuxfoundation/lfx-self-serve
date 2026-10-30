@@ -7,10 +7,12 @@ import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
+import { firstGrant } from '../helpers/first-grant.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import type { EasyClaCompany } from '../types/cla.types';
 import { isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
+import { OrgClaAdminService } from './org-cla-admin.service';
 import { OrgClaManagerScopesService } from './org-cla-manager-scopes.service';
 
 const SERVICE = 'org_cla_only_orgs';
@@ -43,17 +45,20 @@ export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, r
 }
 
 /**
- * Lists and resolves CLA-only organizations. Which companies qualify comes from
- * `OrgClaManagerScopesService` — the caller's own `cla-manager` scopes — and the identity shown for
+ * Lists and resolves CLA-only organizations. Which companies are listed comes from
+ * `OrgClaManagerScopesService` — the caller's own `cla-manager` scopes, since `cla_admin` can be
+ * checked but not listed; an address also qualifies through `cla_admin`. The identity shown for
  * each comes from EasyCLA `GET /v4/company/external/{sfid}` with the caller's token (the target's
  * while impersonating). Query-service is not asked: its per-row read filter is the Org Lens grant
  * these callers do not hold.
  */
 export class OrgClaOnlyOrgsService {
   private readonly scopes: OrgClaManagerScopesService;
+  private readonly claAdmins: OrgClaAdminService;
 
-  public constructor(scopes?: OrgClaManagerScopesService) {
+  public constructor(scopes?: OrgClaManagerScopesService, claAdmins?: OrgClaAdminService) {
     this.scopes = scopes ?? new OrgClaManagerScopesService();
+    this.claAdmins = claAdmins ?? new OrgClaAdminService();
   }
 
   /** The caller's CLA-manager company SFIDs, sorted. Throws when user-service cannot answer. */
@@ -120,15 +125,27 @@ export class OrgClaOnlyOrgsService {
   }
 
   /**
-   * One CLA-only organization for an address, or null. Null when the caller holds no `cla-manager`
-   * scope on it, when EasyCLA does not know it, and when either upstream cannot answer: an
-   * unverifiable address reads as not found, with the outage logged, rather than opening a page
-   * whose every call would then fail.
+   * One CLA-only organization for an address, or null. The caller qualifies with `cla_admin` on that
+   * organization or a `cla-manager` scope on it (#3793), whichever admits first (`firstGrant`); a
+   * failed `cla_admin` check is "not held", so the scope decides as before. Null when neither names it, when EasyCLA does not know it, and
+   * when an upstream the answer depends on cannot answer: an unverifiable address reads as not found,
+   * with the outage logged, rather than opening a page whose every call would then fail.
    */
   public async resolveOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
     try {
-      const uids = await this.scopes.getCompanySfids(req);
-      if (!uids.has(uid)) return null;
+      const managedAnswer: Promise<{ held: boolean } | { failed: unknown }> = this.scopes.getCompanySfids(req).then(
+        (uids) => ({ held: uids.has(uid) }),
+        (failed: unknown) => ({ failed })
+      );
+      const qualified = await firstGrant<true>([
+        this.claAdmins.holds(req, uid).then((held) => (held ? true : null)),
+        managedAnswer.then((managed) => ('held' in managed && managed.held ? true : null)),
+      ]);
+      if (!qualified) {
+        const managed = await managedAnswer;
+        if ('failed' in managed) throw managed.failed;
+        return null;
+      }
       const org = await this.lookupCompany(req, uid);
       return org ? { uid: org.uid, slug: null, name: org.name, claOnly: true } : null;
     } catch (error) {

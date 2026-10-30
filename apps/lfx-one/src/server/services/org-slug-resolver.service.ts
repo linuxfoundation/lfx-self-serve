@@ -16,10 +16,13 @@ import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { OrgClaAdminService } from './org-cla-admin.service';
 import { OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
@@ -43,9 +46,11 @@ const OPERATION = 'resolve_org_segment';
  * Resolves a `/org/{segment}/…` address segment — an 18-char SFID or a lowercase slug — to the
  * organization it names, only when the caller can read that organization.
  *
- * Every lookup goes through query-service with the caller's context, so per-row `auditor`
- * filtering happens upstream (ADR-0012/0015) and this service never sees an organization the
- * caller may not: "no such org" and "no access" are the same `miss` (DR-002, FR-017).
+ * Every lookup goes through query-service with the caller's context, so per-row filtering happens
+ * upstream (ADR-0012/0015) and this service never sees an organization the caller may not: "no such
+ * org" and "no access" are the same `miss` (DR-002, FR-017). A returned row opens the full lens only
+ * when the Org Lens read gate also admits the caller (`opensFullLens`); otherwise an SFID address is
+ * resolved as CLA-only or not at all, and a slug as not found.
  *
  * Slugs are derived from the organization name by member-service (DR-007), so a handful of
  * organizations share one. Resolution is per viewer, which removes most collisions; when several
@@ -59,10 +64,12 @@ const OPERATION = 'resolve_org_segment';
 export class OrgSlugResolverService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly claAdmins: OrgClaAdminService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService, claAdmins?: OrgClaAdminService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
     this.claOnlyOrgs = claOnlyOrgs ?? new OrgClaOnlyOrgsService();
+    this.claAdmins = claAdmins ?? new OrgClaAdminService();
   }
 
   public async resolveSegment(req: Request, rawSegment: string, prefer?: string): Promise<OrgSegmentResolution> {
@@ -77,9 +84,10 @@ export class OrgSlugResolverService {
     }
 
     if (segmentKind === 'sfid') {
-      // A CLA Manager holds no Org Lens read, so query-service hides the org from them; their own
-      // `cla-manager` scope is the second chance. SFID only — a CLA-only org is addressed by SFID.
-      const org = (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment));
+      // A CLA Manager holds no Org Lens read, so the address opens for them only as CLA-only, through
+      // `cla_admin` or their own `cla-manager` scope. SFID only — a CLA-only org is addressed by SFID.
+      const readable = await this.lookupByUid(req, segment);
+      const org = readable && (await this.opensFullLens(req, readable.uid)) ? readable : await this.claOnlyOrgs.resolveOrg(req, segment);
       return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 
@@ -107,6 +115,9 @@ export class OrgSlugResolverService {
     if (key === null) cache = 'bypass';
     else if (fetched) cache = 'miss';
 
+    if (cached.outcome === 'hit' && !(await this.opensFullLens(req, cached.org.uid))) {
+      return { outcome: 'miss', cache };
+    }
     if (cached.outcome !== 'ambiguous') {
       return { ...cached, cache };
     }
@@ -119,10 +130,42 @@ export class OrgSlugResolverService {
     // read it and member-service published this very slug for it. Size-independent — it does not
     // depend on how many rows the first query returned.
     const preferred = await this.lookupByUid(req, prefer);
-    if (preferred && preferred.slug === segment) {
+    if (preferred && preferred.slug === segment && (await this.opensFullLens(req, preferred.uid))) {
       return { outcome: 'hit', org: preferred, cache };
     }
     return { outcome: 'ambiguous', cache };
+  }
+
+  /**
+   * #3793 — whether a row query-service returned opens the full lens for this caller. Its read filter
+   * is the index document's access check, which may come to admit a CLA Manager (`viewer` is
+   * `auditor or cla_admin`), so a returned row is not proof of Org Lens read. The read gate decides: a
+   * 403 means the row is not a full-lens organization for this caller. When the read gate cannot
+   * answer (503), `cla_admin` decides instead: a returned row the caller is not `cla_admin` on was
+   * admitted through `auditor`, so query-service's answer is kept, as before this check existed.
+   * When `cla_admin` cannot be checked either, the 503 propagates: classifying the row either way
+   * could rewrite an SFID address to a slug that stops resolving once the outage ends.
+   *
+   * Both checks share the resolver's fail-fast budget, because the SSR guard blocks the page on
+   * this lookup and the authorizer's own timeout is far longer.
+   */
+  private opensFullLens(req: Request, uid: string): Promise<boolean> {
+    return withDeadline(this.classifyFullLens(req, uid));
+  }
+
+  private async classifyFullLens(req: Request, uid: string): Promise<boolean> {
+    try {
+      await assertOrgLensRead(req, uid, OPERATION);
+      return true;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 403) return false;
+      if (error instanceof MicroserviceError && error.statusCode === 503) {
+        const claAdmin = await this.claAdmins.status(req, uid);
+        if (claAdmin === 'unknown') throw error;
+        return claAdmin === 'not-held';
+      }
+      throw error;
+    }
   }
 
   private classify(segment: string, path: string): 'sfid' | 'slug' {
@@ -153,7 +196,9 @@ export class OrgSlugResolverService {
    * access check, so one page can hold zero or one readable row and still carry a cursor while
    * another readable same-slug organization sits on the next page — deciding on a single page could
    * turn a tie into a cached "unique" hit or a real match into a miss. The cursor is followed until
-   * two readable rows are in hand or it is exhausted, within a hard page cap.
+   * two readable rows are in hand or it is exhausted, within a hard page cap. A row counts as readable
+   * only when it opens the full lens (`opensFullLens`), so an organization the caller reaches as a CLA
+   * Manager alone never turns another organization's slug into a tie.
    */
   private async lookupBySlug(req: Request, slug: string): Promise<CachedResolution> {
     const rows: OrgResolveResponse[] = [];
@@ -161,10 +206,12 @@ export class OrgSlugResolverService {
 
     for (let page = 0; page < ORG_SLUG_RESOLVE_PAGE_CAP; page += 1) {
       const response = await this.query(req, [`slug:${slug}`], ORG_SLUG_RESOLVE_PAGE_SIZE, pageToken);
-      for (const resource of response?.resources ?? []) {
+      const returned = (response?.resources ?? []).flatMap((resource) => {
         const uid = extractUid(resource.id);
-        if (uid && resource.data) rows.push(toResolveResponse(uid, resource.data));
-      }
+        return uid && resource.data ? [toResolveResponse(uid, resource.data)] : [];
+      });
+      const fullLens = await Promise.all(returned.map((row) => this.opensFullLens(req, row.uid)));
+      rows.push(...returned.filter((_row, index) => fullLens[index]));
       if (rows.length >= 2) {
         logger.warning(req, OPERATION, 'Slug shared by several readable organizations', { slug, rows: rows.length, pages: page + 1 });
         return { outcome: 'ambiguous' };
@@ -224,6 +271,37 @@ function isCacheableHit(value: unknown): value is CachedResolution {
     typeof name === 'string' &&
     (slug === null || (typeof slug === 'string' && ORG_SLUG_SEGMENT_PATTERN.test(slug)))
   );
+}
+
+/**
+ * Caps the full-lens classification at {@link ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}, following
+ * `OrgAffiliationService.withDeadline`. Expiry is an upstream failure, so the controller answers
+ * 502 and the client keeps the address as typed (FR-020). The underlying checks are not
+ * cancelled; they are simply no longer waited on.
+ */
+function withDeadline(classification: Promise<boolean>): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new MicroserviceError(`Full-lens check exceeded ${ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'ORG_FULL_LENS_CHECK_TIMEOUT', {
+            operation: OPERATION,
+            service: 'org_slug_resolver_service',
+          })
+        ),
+      ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS
+    );
+    classification.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 }
 
 function toResolveResponse(uid: string, doc: B2bOrgIndexedDoc): OrgResolveResponse {

@@ -352,8 +352,12 @@ export interface B2bOrgIndexedDoc {
 /** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
 export interface B2bOrgSettingsMember {
   username?: string | null;
-  /** `writer` wins when a user holds both roles (member-service dedupes writer-first). */
-  role?: 'writer' | 'auditor';
+  /**
+   * `writer` wins when a user holds both roles (member-service dedupes writer-first). `cla_admin`
+   * (#3793) is a CLA Manager entry: it opens the EasyCLA routes through the `cla_admin` relation and
+   * is never an Org Lens grant.
+   */
+  role?: 'writer' | 'auditor' | 'cla_admin';
   /** Only `accepted` invites count as grants (D-002, FR-002). Revoked/expired are excluded from the index entirely. */
   invite_status?: 'pending' | 'accepted' | 'revoked' | 'expired';
 }

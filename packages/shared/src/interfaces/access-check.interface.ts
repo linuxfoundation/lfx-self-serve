@@ -53,6 +53,8 @@ export type AccessCheckAccessType =
   | 'writer_guard'
   | 'viewer'
   | 'auditor'
+  /** `b2b_org` only: a CLA Manager's direct grant on their own company (`B2B_ORG_CLA_ADMIN_RELATION`). Implies neither `writer` nor `auditor`. */
+  | 'cla_admin'
   /** `project` only: `auditor or global_writer or global_auditor`. Every `writer_guard` holder also holds it. */
   | 'auditor_guard'
   | 'organizer'

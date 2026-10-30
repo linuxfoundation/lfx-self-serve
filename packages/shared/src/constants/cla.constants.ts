@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { AccessCheckAccessType } from '../interfaces/access-check.interface';
 import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
@@ -993,6 +994,14 @@ export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
  * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
  */
 export const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+/**
+ * #3793 — the `b2b_org` relation a CLA Manager of a signed CCLA holds directly on their own company.
+ * It opens the EasyCLA section only: it does not cascade through the company family and implies
+ * neither `writer` nor `auditor`. Self Serve can check it but not list it, so `ORG_CLA_MANAGER_ROLE`
+ * scopes still discover the companies.
+ */
+export const B2B_ORG_CLA_ADMIN_RELATION = 'cla_admin' satisfies AccessCheckAccessType;
 
 /** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
 export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';

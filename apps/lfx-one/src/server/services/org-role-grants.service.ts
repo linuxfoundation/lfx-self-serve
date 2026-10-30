@@ -516,6 +516,9 @@ export class OrgRoleGrantsService {
    * `members[]` indexer shape and falling back to the legacy `writers[]`/`auditors[]` arrays
    * (member-service `b2bOrgSettingsIndexerView`). Only `accepted` entries count, and writer
    * wins over auditor when the caller appears as both (matches the indexer's writer-first dedupe).
+   * A `cla_admin` entry grants nothing here and must never displace a writer or auditor entry for
+   * the same caller: a CLA Manager is admitted by the EasyCLA routes alone, and an organization only
+   * they manage must not start the family walk.
    */
   private classifyDirectRole(data: B2bOrgSettingsDoc | undefined, username: string): 'writer' | 'auditor' | null {
     const members = data?.members;

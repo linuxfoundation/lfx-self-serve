@@ -980,3 +980,63 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref', isStaff: true })).toBe(false);
   });
 });
+
+describe('OrgRoleGrantsService — cla_admin settings entries', () => {
+  interface Member {
+    username: string;
+    role: 'writer' | 'auditor' | 'cla_admin';
+    invite_status: 'accepted';
+  }
+  const entry = (role: Member['role']): Member => ({ username: USERNAME, role, invite_status: 'accepted' });
+
+  function seedSettings(membersByOrg: Record<string, Member[]>): void {
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = (params as { type?: string } | undefined)?.type;
+      const tags = ((params as { tags?: string[] } | undefined)?.tags ?? []) as string[];
+      if (type === 'b2b_org_settings') {
+        return { resources: Object.entries(membersByOrg).map(([uid, members]) => ({ id: `b2b_org_settings:${uid}`, data: { members } })) };
+      }
+      const requested = tags.filter((tag) => tag.startsWith('b2b_org_uid:')).map((tag) => tag.slice('b2b_org_uid:'.length));
+      return { resources: requested.map((uid) => ({ id: `b2b_org:${uid}`, data: { uid, name: `Org ${uid}` } })) };
+    });
+  }
+
+  function askedAbout(uid: string): boolean {
+    return proxyRequest.mock.calls.some(([, , , , params]) =>
+      (((params as { tags?: string[] } | undefined)?.tags ?? []) as string[]).some((tag) => tag === `b2b_org_uid:${uid}` || tag === `parent_b2b_org_uid:${uid}`)
+    );
+  }
+
+  it.each([
+    ['before', [entry('cla_admin'), entry('auditor')]],
+    ['after', [entry('auditor'), entry('cla_admin')]],
+  ])('keeps the auditor grant when a cla_admin entry is listed %s it', async (_order, members) => {
+    seedSettings({ aud: members });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.auditors).toEqual(['aud']);
+    expect(response.writers).toEqual([]);
+  });
+
+  it('keeps the writer grant when a cla_admin entry is listed with it', async () => {
+    seedSettings({ wri: [entry('cla_admin'), entry('writer')] });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.writers).toEqual(['wri']);
+  });
+
+  it('grants nothing for a cla_admin entry alone, and never walks from that organization', async () => {
+    seedSettings({ clo: [entry('cla_admin')], aud: [entry('auditor')] });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(
+      [...response.writers, ...response.auditors, ...response.cascadingWriters, ...response.cascadingAuditors].map((grant) =>
+        typeof grant === 'string' ? grant : grant.uid
+      )
+    ).toEqual(['aud']);
+    expect(askedAbout('clo')).toBe(false);
+  });
+});
