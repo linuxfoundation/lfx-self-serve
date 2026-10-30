@@ -70,6 +70,29 @@ describe('extractUrls', () => {
     expect(extractUrls('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual(['https://en.wikipedia.org/wiki/Foo_(bar)']);
   });
 
+  it.each([
+    'https://example.com/list?ids[]=1',
+    'https://example.com/list?ids[]=1&ids[]=2',
+    'https://example.com/items[1]',
+    'https://example.com/page#section[1]',
+    'https://[2606:4700:4700::1111]/',
+  ])('preserves square brackets in %s', (url) => {
+    expect(extractUrls(`See ${url} for details`)).toEqual([url]);
+  });
+
+  it.each([
+    ['[https://example.com/list?ids[]=1&ids[]=2],', 'https://example.com/list?ids[]=1&ids[]=2'],
+    ['[https://example.com/items[1]]', 'https://example.com/items[1]'],
+    ['([https://example.com/page.])', 'https://example.com/page'],
+    ['[[https://example.com/page]],', 'https://example.com/page'],
+  ])('trims only prose brackets and punctuation from %s', (text, url) => {
+    expect(extractUrls(text)).toEqual([url]);
+  });
+
+  it.each(['https://[::1]/', 'https://[fe80::1]/', 'https://[fd00::1]/', 'https://[::ffff:127.0.0.1]/'])('does not link private IPv6 destination %s', (url) => {
+    expect(extractUrls(url)).toEqual([]);
+  });
+
   it('re-trims punctuation exposed by stripping an unmatched bracket', () => {
     expect(extractUrls('(see https://example.com/page.)')).toEqual(['https://example.com/page']);
     expect(extractUrls('(https://example.com/page,)')).toEqual(['https://example.com/page']);

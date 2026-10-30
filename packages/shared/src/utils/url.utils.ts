@@ -5,9 +5,10 @@
  * Basic regex pattern to identify potential URLs in text
  * This is used for initial detection only, followed by proper URL validation.
  * Pattern matches http:// or https:// followed by non-whitespace/control characters.
- * We intentionally exclude common dangerous characters: <>"{}|\^`[]
+ * We intentionally exclude common dangerous characters: <>"{}|\^`
+ * Square brackets are allowed for query parameters, paths, and IPv6 hosts.
  */
-const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
+const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`]+/gi;
 
 /**
  * List of additional dangerous URL patterns to reject
@@ -51,7 +52,8 @@ export function isValidUrl(urlString: string): boolean {
       hostname.startsWith('10.') ||
       hostname.startsWith('172.') ||
       hostname.startsWith('192.168.') ||
-      hostname === '0.0.0.0'
+      hostname === '0.0.0.0' ||
+      (hostname.startsWith('[') && isPrivateHost(hostname))
     ) {
       console.debug('Rejected private/local URL', urlString);
       return false;
@@ -112,10 +114,10 @@ const TRAILING_PUNCTUATION_CHARS: ReadonlySet<string> = new Set(['.', ',', ';', 
 /**
  * Trailing bracket closers — only stripped when unmatched inside the URL, so legitimately
  * bracketed paths (e.g. Wikipedia's `https://en.wikipedia.org/wiki/Foo_(bar)`) keep them.
- * Only `)` is listed: the detection regex never admits `[]{}'` into a match, so those
- * closers can never trail one.
+ * Parentheses and square brackets may be part of a URL; curly braces remain excluded
+ * by the detection regex.
  */
-const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
+const TRAILING_BRACKETS: Record<string, string> = { ')': '(', ']': '[' };
 
 /**
  * Trims sentence punctuation and unmatched closing brackets off the end of a detected URL.
