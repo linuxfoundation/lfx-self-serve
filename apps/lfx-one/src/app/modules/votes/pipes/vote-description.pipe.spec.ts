@@ -36,6 +36,11 @@ describe('VoteDescriptionPipe', () => {
     '<strong>Important</strong>\n\n  <USERNAME> &amp; &#169;',
     '<p>Use <placeholder/> &lt;value&gt;</p>',
     '<strong>Important</strong> </placeholder> &copy;',
+    '<p>Dear <first_name></p>',
+    '<p>Contact <alice@example.org></p>',
+    '<p>Dear <FIRST_NAME/> &copy;</p>',
+    '<p>Dear </first_name> &amp;</p>',
+    '<p>Contact </alice@example.org></p>',
   ])('renders ambiguous placeholder/HTML input entirely literally: %s', (value) => {
     for (const linkify of [false, true]) {
       const result = render(value, linkify);
@@ -58,6 +63,39 @@ describe('VoteDescriptionPipe', () => {
       expect(result.querySelector('p')?.textContent).toBe('One');
       expect(result.textContent).toBe('One');
       expect(result.querySelector('.whitespace-pre-wrap')).toBeNull();
+    }
+  });
+
+  it.each([
+    { html: 'Vote now <!-- editor note -->', text: 'Vote now ' },
+    { html: 'Use <first_name> &copy;<!-- editor note -->', text: 'Use <first_name> &copy;' },
+    { html: '<!-- <strong>hidden</strong> -->', text: '' },
+    { html: 'Vote now <!-- unclosed editor note', text: 'Vote now ' },
+    { html: '<script>hidden</script>', text: '' },
+    { html: '<style>hidden</style>', text: '' },
+    { html: '<template><strong>hidden</strong></template>', text: '' },
+    { html: 'Vote now <script>hidden', text: 'Vote now ' },
+    { html: 'Vote now <style>hidden', text: 'Vote now ' },
+    { html: 'Vote now <template><strong>hidden', text: 'Vote now ' },
+  ])('keeps hidden markup out of descriptions without supported elements: $html', ({ html, text }) => {
+    for (const linkify of [false, true]) {
+      const result = render(html, linkify);
+      expect(result.textContent).toBe(text);
+      expect(result.querySelector('script, style, template, strong, first_name')).toBeNull();
+    }
+  });
+
+  it.each([
+    '<a href="https://example.com" title="Enter <username>">Help</a>',
+    "<a href='https://example.com' title='Enter <first_name>'>Help</a>",
+    '<a href="https://example.com" title="Contact <alice@example.org>">Help</a>',
+    '<a href="https://example.com" title="Enter </first_name>">Help</a>',
+  ])('does not treat angle-bracket text in attributes as a placeholder tag: %s', (value) => {
+    for (const linkify of [false, true]) {
+      const result = render(value, linkify);
+      expect(result.textContent).toBe('Help');
+      expect(result.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+      expect(result.querySelector('a')?.getAttribute('title')).toBeTruthy();
     }
   });
 

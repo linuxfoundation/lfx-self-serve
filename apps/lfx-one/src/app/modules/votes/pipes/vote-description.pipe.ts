@@ -5,7 +5,7 @@ import { DOCUMENT } from '@angular/common';
 import { inject, Pipe, PipeTransform, SecurityContext } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { isPrivateHost } from '@lfx-one/shared/utils';
-import { Parser } from 'htmlparser2';
+import { Parser, Tokenizer } from 'htmlparser2';
 
 /** Keeps textarea text literal while retaining sanitized descriptions from the legacy HTML editor. */
 @Pipe({ name: 'voteDescription' })
@@ -22,14 +22,8 @@ export class VoteDescriptionPipe implements PipeTransform {
     // With no stored format discriminator, bare unsupported tags make the input ambiguous.
     // Prefer a fully literal fallback over losing placeholders/entities in otherwise supported HTML.
     const elementNames = new Set(Array.from(container.querySelectorAll('*'), (element) => element.tagName.toLowerCase()));
-    const visibleMarkup = elementNames.size ? this.stripHiddenMarkup(value, elementNames) : value;
-    const hasUnsupportedPlaceholder = Array.from(visibleMarkup.matchAll(/<\/?([a-z][a-z0-9-]*)\s*\/?>/gi)).some(([, tag]) => {
-      if (elementNames.has(tag.toLowerCase())) return false;
-      // A discarded active-content subtree is not a placeholder. Ask the same sanitizer
-      // whether this tag retains text, rather than duplicating its unsafe-element list.
-      return !!this.sanitizer.sanitize(SecurityContext.HTML, `<${tag}>text</${tag}>`);
-    });
-    if (!elementNames.size || hasUnsupportedPlaceholder) {
+    const visibleMarkup = this.stripHiddenMarkup(value, elementNames);
+    if (!elementNames.size || this.hasUnsupportedPlaceholder(visibleMarkup, elementNames)) {
       const text = this.document.createElement('span');
       text.className = 'whitespace-pre-wrap';
       text.textContent = visibleMarkup;
@@ -55,6 +49,42 @@ export class VoteDescriptionPipe implements PipeTransform {
 
     // No trusted-HTML bypass: the template sanitizer still applies.
     return container.innerHTML;
+  }
+
+  private hasUnsupportedPlaceholder(value: string, supportedTags: ReadonlySet<string>): boolean {
+    // Tokenizer reports actual source tags, including unmatched closing tags that Parser
+    // omits, without interpreting angle-bracket text inside attribute values as markup.
+    let unsupported = false;
+    const checkTag = (start: number, end: number): void => {
+      const tag = value.slice(start, end).toLowerCase();
+      if (unsupported || supportedTags.has(tag)) return;
+      // Let Angular distinguish stripped formatting/placeholder tags from discarded content.
+      unsupported = !!this.sanitizer.sanitize(SecurityContext.HTML, `<${tag}>text</${tag}>`);
+    };
+    const ignoreToken = (): void => undefined;
+    const tokenizer = new Tokenizer(
+      { decodeEntities: false },
+      {
+        onopentagname: checkTag,
+        onclosetag: checkTag,
+        onattribdata: ignoreToken,
+        onattribentity: ignoreToken,
+        onattribend: ignoreToken,
+        onattribname: ignoreToken,
+        oncdata: ignoreToken,
+        oncomment: ignoreToken,
+        ondeclaration: ignoreToken,
+        onend: ignoreToken,
+        onopentagend: ignoreToken,
+        onprocessinginstruction: ignoreToken,
+        onselfclosingtag: ignoreToken,
+        ontext: ignoreToken,
+        ontextentity: ignoreToken,
+      }
+    );
+    tokenizer.write(value);
+    tokenizer.end();
+    return unsupported;
   }
 
   private stripHiddenMarkup(value: string, supportedTags: ReadonlySet<string>): string {

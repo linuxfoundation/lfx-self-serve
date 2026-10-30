@@ -70,7 +70,7 @@ If the close time passes while you are on the form, you see a **Deadline expired
 
 Plain text keeps its line breaks and indentation. Supported HTML is sanitized and displays its formatting; a source newline next to an explicit HTML line break does not add another blank line, and the next line's indentation stays intact.
 
-If a description mixes bare unsupported placeholders such as `<username>` with HTML, its visible source displays literally, including its tags and entity spellings such as `&copy;`. This avoids silently losing saved text, but formatting tags in that ambiguous description do not apply. HTML comments and discarded active content stay hidden and do not trigger this fallback in otherwise supported HTML. This same rule is used in the review, ballot drawer, personalized ballot, vote page, and presenter.
+If a description mixes bare unsupported placeholders such as `<username>`, `<first_name>`, or `<alice@example.org>` with HTML, its visible source displays literally, including its tags and entity spellings such as `&copy;`. This also preserves unmatched closing placeholders. It avoids silently losing saved text, but formatting tags in that ambiguous description do not apply. Angle-bracket text inside HTML attributes does not trigger this fallback. HTML comments and discarded active content stay hidden, even when no supported HTML remains. This same rule is used in the review, ballot drawer, personalized ballot, vote page, and presenter.
 
 ## Save a draft instead
 
