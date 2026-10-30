@@ -2,48 +2,74 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { UiButtonSize, UiButtonVariant, UiTooltipSide } from '@lfx-one/shared/interfaces';
+
+import { UiSpinnerComponent } from '../spinner/spinner.component';
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
- * Supports a leading and a trailing Font Awesome icon, an icon-only mode, and full width.
+ * Button with seven variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
+ * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
+ *
+ * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
+ * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
+ * Do not import `UiTooltipDirective` into the consuming component for this: the directive would also attach to the wrapper. A disabled
+ * button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
  */
 @Component({
   selector: 'lfx-ui-button',
-  imports: [NgTemplateOutlet, RouterLink],
+  imports: [NgTemplateOutlet, RouterLink, UiSpinnerComponent, UiTooltipDirective],
   templateUrl: './button.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.inline-block]': '!fullWidth()',
     '[class.block]': 'fullWidth()',
-    '[class.pointer-events-none]': 'disabled()',
+    '[class.pointer-events-none]': 'disabled() || loading()',
   },
 })
 export class UiButtonComponent {
-  /** Visual style. `recording` is the green variant. */
-  public readonly variant = input<
-    'primary' | 'outline-neutral' | 'outline-accent' | 'ghost-neutral' | 'ghost-accent' | 'destructive' | 'ghost-destructive' | 'recording'
-  >('primary');
-  /** `sm` is 24px tall (8px radius), `md` 32px (12px radius), `lg` 40px (16px radius). */
-  public readonly size = input<'sm' | 'md' | 'lg'>('md');
-  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. */
+  /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one. */
+  public readonly variant = input<UiButtonVariant>('primary');
+  /** `tiny` is 24px tall, `small` 32px and `medium` 40px. */
+  public readonly size = input<UiButtonSize>('medium');
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Replaced by a spinner while `loading`. */
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, e.g. `fa-light fa-chevron-right`. Independent of `icon`. */
   public readonly trailingIcon = input<string>('');
-  /** Renders a square, icon-only button. Pair it with `ariaLabel`. */
-  public readonly iconOnly = input<boolean>(false);
+  /** Renders a circular, icon-only button. Pair it with `ariaLabel` and a tooltip. */
+  public readonly iconOnly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Accessible name; required for icon-only buttons. */
   public readonly ariaLabel = input<string>('');
   /** Disables the button (or the link, when `link` is set). */
-  public readonly disabled = input<boolean>(false);
+  public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Swaps the leading icon for a spinner, keeps the label and sets `aria-busy`. The button ignores clicks until it is cleared. */
+  public readonly loading = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Stretches the button to the width of its container. */
-  public readonly fullWidth = input<boolean>(false);
+  public readonly fullWidth = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native button type; ignored when `link` is set. */
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
+  /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
+  /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
+  public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });
+  /** Bold first line of the rich tooltip layout. */
+  public readonly tooltipTitle = input<string>('', { alias: 'lfxUiTooltipTitle' });
+  /** Keys shown as key caps after the tooltip text, such as `['⌘', 'K']`. */
+  public readonly tooltipShortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
+  /** Preferred tooltip side; it flips when it does not fit. */
+  public readonly tooltipSide = input<UiTooltipSide>('top', { alias: 'lfxUiTooltipSide' });
+  /** Milliseconds between hover or keyboard focus and the tooltip appearing. */
+  public readonly tooltipDelay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
+  /** Turns the tooltip off without removing it. */
+  public readonly tooltipDisabled = input<boolean, unknown>(false, { alias: 'lfxUiTooltipDisabled', transform: booleanAttribute });
 
+  /* eslint-enable @angular-eslint/no-input-rename */
+
+  /** Icon and spinner size in px: 12 on a tiny button, 16 otherwise. */
+  protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
 
   public constructor() {
@@ -54,44 +80,57 @@ export class UiButtonComponent {
     });
   }
 
+  // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.
+  protected onClick(event: Event): void {
+    if (!this.loading()) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  private initIconSize(): Signal<number> {
+    return computed(() => (this.size() === 'tiny' ? 12 : 16));
+  }
+
   private initClasses(): Signal<string> {
     return computed(() => {
       const base =
-        'inline-flex items-center justify-center whitespace-nowrap border font-medium no-underline cursor-pointer transition duration-150 active:scale-[.97] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50';
+        'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline transition-[background-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
+      // Hover and active mix the fill toward slate-900 (14% and 24%); the library has no token for the mix, so the formula is spelled out.
       const variants = {
-        primary: 'bg-blue-500 text-white hover:bg-blue-600 hover:shadow active:bg-blue-700 active:shadow-none',
-        'outline-neutral': 'border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-900 hover:shadow-sm active:bg-gray-200',
-        'outline-accent':
-          'border-blue-300 text-blue-500 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600 hover:shadow-sm active:bg-blue-100 active:text-blue-700',
-        'ghost-neutral': 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 active:bg-gray-200',
-        'ghost-accent': 'text-blue-500 hover:bg-blue-100 hover:text-blue-600 active:bg-blue-200 active:text-blue-700',
-        destructive: 'bg-red-700 text-white hover:bg-red-800 hover:shadow active:bg-red-900 active:shadow-none',
-        'ghost-destructive': 'text-red-700 hover:bg-red-50 hover:text-red-800 active:bg-red-100',
-        recording: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow active:bg-emerald-800 active:shadow-none',
+        primary:
+          'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
+        secondary: 'bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
+        // The 1px accent-300 ring has no utility; an arbitrary shadow keeps the focus ring able to replace it.
+        'secondary-accent':
+          'bg-ui-background-100 text-ui-accent-500 shadow-[0_0_0_1px_var(--ui-accent-300)] hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
+        tertiary: 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
+        'tertiary-accent': 'bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
+        danger:
+          'bg-ui-danger-600 text-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
+        'danger-tertiary': 'bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
       };
-      // Exact px (8/12/16 radius steps): rem undershoots the design at the 14px root.
+      // Disabled looks the same for every variant; the tertiary family stays transparent and ringless.
+      const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());
+      const disabled = flat ? 'bg-transparent text-ui-neutral-500' : 'bg-ui-neutral-50 text-ui-neutral-500 edge';
+      // Exact px: the 8px and 10px radii, the 4/6/8px gaps and the 8/10/16px padding are library steps with no ui-* utility at the 14px root.
       const sizes = {
-        sm: {
-          text: 'h-[24px] gap-[4px] rounded-[8px] text-[12px] leading-[16px] [&>i]:text-[13px] [&>i]:leading-none',
-          pad: 'px-[6px]',
-          square: 'w-[24px] px-0',
-        },
-        md: {
-          text: 'h-[32px] gap-[8px] rounded-[12px] text-[14px] leading-[20px] [&>i]:text-[14px] [&>i]:leading-none',
-          pad: 'px-[12px]',
-          square: 'w-[32px] px-0',
-        },
-        lg: {
-          text: 'h-[40px] gap-[8px] rounded-[16px] text-[16px] leading-[24px] [&>i]:text-[15px] [&>i]:leading-none',
-          pad: 'px-[16px]',
-          square: 'w-[40px] px-0',
-        },
+        tiny: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[8px]', pad: 'px-[8px]' },
+        small: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[16px]', radius: 'rounded-[10px]', pad: 'px-[10px]' },
+        medium: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[16px]', radius: 'rounded-ui-sm', pad: 'px-[16px]' },
       };
       const size = sizes[this.size()];
-      const width = this.fullWidth() ? 'w-full' : '';
-      // Tailwind emits border-transparent after border colors, so outline variants must omit it.
-      const border = this.variant().startsWith('outline') ? '' : 'border-transparent';
-      return [base, border, variants[this.variant()], size.text, this.iconOnly() ? size.square : size.pad, width].filter(Boolean).join(' ');
+      // Icon-only is a circle: square from the height, no padding.
+      const shape = this.iconOnly() ? 'aspect-square rounded-ui-full' : `${size.radius} ${size.pad}`;
+      return [
+        base,
+        this.disabled() ? disabled : variants[this.variant()],
+        size.box,
+        shape,
+        this.fullWidth() ? 'w-full' : '',
+        this.disabled() || this.loading() ? 'pointer-events-none' : 'cursor-pointer',
+      ]
+        .filter(Boolean)
+        .join(' ');
     });
   }
 }

@@ -2,7 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <ng-template #content>
-  @if (icon()) {
+  @if (loading()) {
+    <lfx-ui-spinner tone="current" [size]="iconSize()" data-testid="ui-button-spinner" />
+  } @else if (icon()) {
     <i [class]="icon()" aria-hidden="true"></i>
   }
   <ng-content />
@@ -13,16 +15,36 @@
 
 @if (link() !== null) {
   <a
-    [routerLink]="disabled() ? null : link()"
+    [routerLink]="disabled() || loading() ? null : link()"
     [class]="classes()"
     [attr.aria-label]="ariaLabel() || null"
     [attr.aria-disabled]="disabled() || null"
+    [attr.aria-busy]="loading() || null"
     [attr.tabindex]="disabled() ? -1 : null"
+    [lfxUiTooltip]="tooltip()"
+    [lfxUiTooltipTitle]="tooltipTitle()"
+    [lfxUiTooltipShortcut]="tooltipShortcut()"
+    [lfxUiTooltipSide]="tooltipSide()"
+    [lfxUiTooltipDelay]="tooltipDelay()"
+    [lfxUiTooltipDisabled]="tooltipDisabled()"
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </a>
 } @else {
-  <button [type]="type()" [class]="classes()" [disabled]="disabled()" [attr.aria-label]="ariaLabel() || null" data-testid="ui-button">
+  <button
+    [type]="type()"
+    [class]="classes()"
+    [disabled]="disabled()"
+    [attr.aria-label]="ariaLabel() || null"
+    [attr.aria-busy]="loading() || null"
+    [lfxUiTooltip]="tooltip()"
+    [lfxUiTooltipTitle]="tooltipTitle()"
+    [lfxUiTooltipShortcut]="tooltipShortcut()"
+    [lfxUiTooltipSide]="tooltipSide()"
+    [lfxUiTooltipDelay]="tooltipDelay()"
+    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    (click)="onClick($event)"
+    data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </button>
 }

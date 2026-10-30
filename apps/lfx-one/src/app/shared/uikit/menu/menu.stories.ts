@@ -9,8 +9,8 @@ import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
 import { UiMenuComponent } from './menu.component';
 
-// The triggers below are plain buttons styled like the library's secondary button; lfx-ui-button is not realigned yet and renders its
-// own inner button, so it cannot carry `cdkMenuTriggerFor`.
+// The triggers below are plain buttons styled like the library's secondary button; lfx-ui-button renders its own inner button, so it
+// cannot carry `cdkMenuTriggerFor`.
 const meta: Meta<UiMenuComponent> = {
   title: 'Uikit/Menu',
   component: UiMenuComponent,
