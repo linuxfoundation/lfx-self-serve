@@ -132,6 +132,26 @@ describe('UiButtonComponent', () => {
     expect(el().querySelectorAll('i')).toHaveLength(1);
   });
 
+  it('writes aria-expanded and aria-controls on the inner button, and nothing by default', async () => {
+    expect(el().hasAttribute('aria-expanded')).toBe(false);
+    expect(el().hasAttribute('aria-controls')).toBe(false);
+
+    await set('ariaExpanded', false);
+    await set('ariaControls', 'more-rows');
+    expect(el().getAttribute('aria-expanded')).toBe('false');
+    expect(el().getAttribute('aria-controls')).toBe('more-rows');
+
+    await set('ariaExpanded', true);
+    expect(el().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('writes aria-expanded on a link too', async () => {
+    await set('link', '/meetings');
+    await set('ariaExpanded', true);
+    expect(el().tagName).toBe('A');
+    expect(el().getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('makes an icon-only button a circle and names it', async () => {
     await set('ariaLabel', 'Next');
     await set('iconOnly', true);

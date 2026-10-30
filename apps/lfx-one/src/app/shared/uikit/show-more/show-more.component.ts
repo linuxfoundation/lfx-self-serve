@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
+import { UiButtonVariant } from '@lfx-one/shared/interfaces';
+
+import { UiButtonComponent } from '../button/button.component';
 
 /**
  * Reveals the rest of a long list or block in place: a small button between two rules, "Show 12 More" then "Show Less".
@@ -10,6 +13,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, 
  */
 @Component({
   selector: 'lfx-ui-show-more',
+  imports: [UiButtonComponent],
   templateUrl: './show-more.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -28,6 +32,7 @@ export class UiShowMoreComponent {
   public readonly expanded = model<boolean>(false);
 
   protected readonly label: Signal<string> = this.initLabel();
+  protected readonly variant: Signal<UiButtonVariant> = this.initVariant();
   protected readonly buttonClasses: Signal<string> = this.initButtonClasses();
   protected readonly ruleClasses: Signal<string> = this.initRuleClasses();
 
@@ -42,12 +47,15 @@ export class UiShowMoreComponent {
     });
   }
 
+  // Library: a small secondary button; the borderless form drops to tertiary (as in the library preview).
+  private initVariant(): Signal<UiButtonVariant> {
+    return computed(() => (this.noBorder() ? 'tertiary' : 'secondary'));
+  }
+
   private initButtonClasses(): Signal<string> {
-    // shortcut: native button styled like the library's tertiary button. revisit: when lfx-ui-button realigns to the library, swap to it.
-    // Exact px: 10px radius (a missing token), 10px padding and 6px gap are library steps with no ui-* utility.
-    const base =
-      'inline-flex h-ui-small cursor-pointer items-center justify-center gap-[6px] whitespace-nowrap rounded-[10px] px-[10px] button-14 text-ui-neutral-900 transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none';
-    return computed(() => (this.noBorder() ? `${base} bg-transparent` : `${base} bg-ui-background-100 shadow-border`));
+    // The library's 12px chevron flips when expanded. Exact px, not rem; `button>i` outranks the button's own 16px icon rule.
+    const base = '[&_button>i]:text-[12px] [&_button>i]:transition-transform [&_button>i]:duration-ui-base motion-reduce:[&_button>i]:transition-none';
+    return computed(() => (this.expanded() ? `${base} [&_button>i]:rotate-180` : base));
   }
 
   private initRuleClasses(): Signal<string> {

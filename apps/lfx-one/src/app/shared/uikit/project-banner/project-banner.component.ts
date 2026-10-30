@@ -10,7 +10,7 @@ import { UiProjectBannerVariant } from '@lfx-one/shared/interfaces';
  * use `lfx-ui-note` instead.
  *
  * Project one sentence in sentence case, then one small secondary button that names the fix ("Update Payment") as
- * `<button banner-action>`.
+ * `<lfx-ui-button banner-action variant="secondary" size="small">`.
  */
 @Component({
   selector: 'lfx-ui-project-banner',
