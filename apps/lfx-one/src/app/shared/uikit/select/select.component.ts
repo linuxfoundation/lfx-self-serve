@@ -224,8 +224,9 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       // Holding the key that opened the list must not pick on its repeats.
       if (!event.repeat) this.select(this.activeOption());
     } else if (event.key === 'Tab') {
-      // Tab picks the highlighted row and lets focus move on.
+      // Tab picks the highlighted row, if there is one, and lets focus move on.
       this.select(this.activeOption());
+      this.closeForTab();
     } else if (this.isCharacter(event)) {
       event.preventDefault();
       this.typeAhead(event.key);
@@ -277,9 +278,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
         event.preventDefault();
         return;
       }
-      // Forward: the still-mounted header would be the trigger's next tab stop, so make it inert and close.
-      (event.currentTarget as HTMLElement).inert = true;
-      this.closePanel();
+      this.closeForTab();
     }
   }
 
@@ -397,6 +396,13 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   // The options can change while the list is open, and the key manager only follows silently: point it at the highlighted row before it acts.
   private syncKeyManager(): void {
     this.keyManager.updateActiveItem(this.activeIndex());
+  }
+
+  // The panel is still mounted when the browser moves focus, and its header would be the trigger's next tab stop, so take the header out of the tab order.
+  private closeForTab(): void {
+    const header = this.overlay().overlayRef?.overlayElement.querySelector<HTMLElement>('[data-testid="ui-select-header"]');
+    if (header) header.inert = true;
+    this.closePanel();
   }
 
   // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
