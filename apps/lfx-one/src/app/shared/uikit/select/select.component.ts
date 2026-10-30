@@ -321,8 +321,8 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       if (!this.expanded()) return null;
       const options = this.options();
       const item = this.activeItem();
-      // The highlighted row may have left the list (a filter) or been disabled: fall back to the first row that can be picked.
-      return (item && !item.disabled && options.includes(item) ? item : options.find((option) => !option.disabled)) ?? null;
+      // A row that left the list (a filter) hands the highlight to the first row that can be picked. A disabled row keeps it, and Enter does nothing.
+      return (item && options.includes(item) ? item : options.find((option) => !option.disabled)) ?? null;
     });
   }
 
