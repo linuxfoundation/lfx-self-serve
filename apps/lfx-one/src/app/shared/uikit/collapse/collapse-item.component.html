@@ -1,21 +1,24 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<button
-  type="button"
-  [class]="triggerClasses()"
-  [id]="idPrefix + '-trigger'"
-  [attr.aria-expanded]="isOpen()"
-  [attr.aria-controls]="idPrefix + '-panel'"
-  (click)="toggle()"
-  data-testid="ui-collapse-trigger">
-  <span>{{ title() }}</span>
-  <i
-    class="fa-light fa-chevron-down shrink-0 text-[14px] text-ui-neutral-600 transition-transform duration-ui-slow ease-ui-standard motion-reduce:transition-none"
-    [class.rotate-180]="isOpen()"
-    aria-hidden="true"
-    data-testid="ui-collapse-chevron"></i>
-</button>
+<div role="heading" [attr.aria-level]="headingLevel()" data-testid="ui-collapse-heading">
+  <button
+    type="button"
+    [class]="triggerClasses()"
+    [id]="idPrefix + '-trigger'"
+    [attr.aria-expanded]="isOpen()"
+    [attr.aria-controls]="idPrefix + '-panel'"
+    (click)="toggle()"
+    data-testid="ui-collapse-trigger">
+    <span>{{ title() }}</span>
+    <!-- 14px icon as an exact px value, not rem (14px root), matching the library. -->
+    <i
+      class="fa-light fa-chevron-down shrink-0 text-[14px] text-ui-neutral-600 transition-transform duration-ui-slow ease-ui-standard motion-reduce:transition-none"
+      [class.rotate-180]="isOpen()"
+      aria-hidden="true"
+      data-testid="ui-collapse-chevron"></i>
+  </button>
+</div>
 <div
   role="region"
   [class]="panelClasses()"

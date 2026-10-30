@@ -20,12 +20,15 @@ class TestItemsComponent {}
 @Component({
   selector: 'lfx-ui-collapse-test-host',
   imports: [UiCollapseComponent, TestItemsComponent],
-  template: `<lfx-ui-collapse [(open)]="open" [exclusive]="exclusive()" [size]="size()"><lfx-ui-collapse-test-items /></lfx-ui-collapse>`,
+  template: `<lfx-ui-collapse [(open)]="open" [exclusive]="exclusive()" [size]="size()" [headingLevel]="headingLevel()"
+    ><lfx-ui-collapse-test-items
+  /></lfx-ui-collapse>`,
 })
 class TestHostComponent {
   public readonly open = signal<string[]>([]);
   public readonly exclusive = signal(false);
   public readonly size = signal<UiCollapseSize>('default');
+  public readonly headingLevel = signal(3);
 }
 
 @Component({
@@ -76,8 +79,12 @@ describe('UiCollapseComponent', () => {
     expect(expanded()).toEqual(['false', 'false']);
     expect(panels().map((p) => p.hidden)).toEqual([true, true]);
     expect(panels()[0].textContent).toContain('Any member.');
-    expect(host.querySelector('lfx-ui-collapse')?.className).toContain('border-t');
-    expect(host.querySelector('lfx-ui-collapse-item')?.className).toContain('border-b');
+    expect(host.querySelector('lfx-ui-collapse')?.className).toContain('shadow-[inset_0_1px_0_0]');
+    expect(host.querySelector('lfx-ui-collapse')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(host.querySelector('lfx-ui-collapse')?.className).not.toContain('border-t');
+    expect(host.querySelector('lfx-ui-collapse-item')?.className).toContain('shadow-[inset_0_-1px_0_0]');
+    expect(host.querySelector('lfx-ui-collapse-item')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(host.querySelector('lfx-ui-collapse-item')?.className).not.toContain('border-b');
   });
 
   it('opens and closes on click and flips the chevron', async () => {
@@ -116,6 +123,40 @@ describe('UiCollapseComponent', () => {
 
     expect(cmp.open()).toEqual(['votes']);
     expect(expanded()).toEqual(['false', 'true']);
+  });
+
+  it('counts only the last value as open when exclusive', async () => {
+    cmp.exclusive.set(true);
+    cmp.open.set(['join', 'votes']);
+    await fixture.whenStable();
+    expect(expanded()).toEqual(['false', 'true']);
+
+    triggers()[1].click();
+    await fixture.whenStable();
+    expect(cmp.open()).toEqual([]);
+    expect(expanded()).toEqual(['false', 'false']);
+  });
+
+  it('wraps each trigger in a heading at level 3 by default and follows the group headingLevel', async () => {
+    const headings = () => Array.from(host.querySelectorAll<HTMLElement>('[data-testid="ui-collapse-heading"]'));
+    expect(headings()).toHaveLength(2);
+    for (const heading of headings()) {
+      expect(heading.getAttribute('role')).toBe('heading');
+      expect(heading.getAttribute('aria-level')).toBe('3');
+      expect(heading.querySelector('button')).not.toBeNull();
+    }
+
+    cmp.headingLevel.set(2);
+    await fixture.whenStable();
+    expect(headings().map((h) => h.getAttribute('aria-level'))).toEqual(['2', '2']);
+  });
+
+  it('falls back to heading level 3 without a group', async () => {
+    const solo = TestBed.createComponent(SoloTestHostComponent);
+    await solo.whenStable();
+    const heading = (solo.nativeElement as HTMLElement).querySelector('[data-testid="ui-collapse-heading"]');
+
+    expect(heading?.getAttribute('aria-level')).toBe('3');
   });
 
   it('writes open changes back and reads them in (two-way)', async () => {
