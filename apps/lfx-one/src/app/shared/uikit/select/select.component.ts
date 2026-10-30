@@ -55,8 +55,8 @@ import { UiSelectValueDirective } from './select-value.directive';
  *
  * Keyboard: Arrow Down, Arrow Up, Enter or Space opens the list on the chosen row. Arrows, Home, End, Page Up and Page Down move through
  * it, typing jumps to a row by its label, Enter or Space picks, Escape closes without picking, Tab picks and moves on. With a header field,
- * a typed character on the closed trigger only opens the list, so typing starts in the field. Tab from the last header field hands focus back
- * to the trigger and moves on, and Shift+Tab from the first one stops on the trigger; neither picks an option.
+ * a typed character on the closed trigger only opens the list, so typing starts in the field. Tab from the last header field closes the list
+ * and moves on from the trigger, and Shift+Tab from the first one stops on the trigger; neither picks an option.
  * Use it for short lists. For typed input that is the value itself, use the combobox; for several values, the multi-select.
  */
 @Component({
@@ -271,8 +271,14 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
       const edge = event.shiftKey ? fields[0] : fields.at(-1);
       if (edge && edge !== event.target) return;
       this.focusTrigger();
-      // Forward, the default Tab goes on from the trigger; backward, the trigger is where focus stops.
-      if (event.shiftKey) event.preventDefault();
+      if (event.shiftKey) {
+        // Backward, the trigger is where focus stops.
+        event.preventDefault();
+        return;
+      }
+      // Forward: the still-mounted header would be the trigger's next tab stop, so make it inert and close.
+      (event.currentTarget as HTMLElement).inert = true;
+      this.closePanel();
     }
   }
 

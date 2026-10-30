@@ -896,6 +896,16 @@ describe('UiSelectComponent', () => {
       expect(slots.componentInstance.value()).toBeNull();
     });
 
+    it('closes the list and takes the header out of the tab order, so Tab cannot loop back into it', async () => {
+      const { fixture: slots, field } = await openWithHeader();
+      const header = document.querySelector('[data-testid="ui-select-header"]') as HTMLElement;
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, bubbles: true, cancelable: true }));
+      await slots.whenStable();
+
+      expect(header.inert).toBe(true);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')).toBeNull();
+    });
+
     it('stops on the trigger for Shift+Tab from the first field', async () => {
       const { fixture: slots, trigger: slotsTrigger, field } = await openWithHeader();
       const event = new KeyboardEvent('keydown', { key: 'Tab', keyCode: 9, shiftKey: true, bubbles: true, cancelable: true });

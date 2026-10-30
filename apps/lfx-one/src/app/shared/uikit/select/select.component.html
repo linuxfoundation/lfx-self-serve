@@ -57,6 +57,8 @@
   [cdkConnectedOverlayPositions]="positions"
   [cdkConnectedOverlayMinWidth]="panelWidth()"
   [cdkConnectedOverlayDisableClose]="true"
+  [cdkConnectedOverlayFlexibleDimensions]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
   (detach)="closePanel()">
   <!-- Exact px, not rem; 14px root. The listbox mousedown guard keeps focus on the trigger so the list stays open while a row is clicked. -->
   <div
