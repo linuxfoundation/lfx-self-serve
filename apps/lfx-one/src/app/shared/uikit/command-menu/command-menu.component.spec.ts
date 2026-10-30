@@ -278,6 +278,52 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(result.closed).toBe(false);
   });
 
+  it('leaves the arrows to the IME candidate list while composing', async () => {
+    await open();
+    const event = await press('ArrowDown', { isComposing: true });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(activeLabel()).toBe('Kubernetes');
+  });
+
+  it('keeps the palette open when Escape only cancels an IME composition', async () => {
+    await open();
+    const event = await press('Escape', { isComposing: true });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(result.closed).toBe(false);
+    expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
+  });
+
+  it('scrolls the highlighted row into view when a search resets the highlight', async () => {
+    const scrolledTo = (): HTMLElement => vi.mocked(Element.prototype.scrollIntoView).mock.contexts.at(-1) as HTMLElement;
+    await open();
+    await press('ArrowUp');
+    expect(labelOf(scrolledTo())).toBe('Change Theme…');
+
+    await type(' ');
+
+    expect(activeLabel()).toBe('Kubernetes');
+    expect(labelOf(scrolledTo())).toBe('Kubernetes');
+  });
+
+  it('scrolls to the first row you can choose when disabled rows come first', async () => {
+    await open({
+      groups: [
+        {
+          label: 'Projects',
+          items: [
+            { value: 'off', label: 'Off', disabled: true },
+            { value: 'on', label: 'On' },
+          ],
+        },
+      ],
+    });
+
+    const scrolledTo = vi.mocked(Element.prototype.scrollIntoView).mock.contexts.at(-1) as HTMLElement;
+    expect(labelOf(scrolledTo)).toBe('On');
+  });
+
   it('chooses a row on click and keeps focus in the search field until it closes', async () => {
     await open();
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });

@@ -4,7 +4,7 @@
 import { _IdGenerator, ListKeyManager } from '@angular/cdk/a11y';
 import { DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, Injector, input, linkedSignal, output, signal, Signal } from '@angular/core';
+import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, inject, Injector, input, linkedSignal, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { UiCommandGroup, UiCommandGroupView, UiCommandItem } from '@lfx-one/shared/interfaces';
 
@@ -61,10 +61,13 @@ export class UiCommandMenuComponent {
   private readonly keyManager = new ListKeyManager(this.items, this.injector).withWrap().withVerticalOrientation();
 
   public constructor() {
-    this.keyManager.change.pipe(takeUntilDestroyed()).subscribe((index) => {
-      this.activeIndex.set(index);
-      // Wait for the highlighted row to render before scrolling to it.
-      afterNextRender(() => this.document.getElementById(this.optionId(index))?.scrollIntoView({ block: 'nearest' }), { injector: this.injector });
+    this.keyManager.change.pipe(takeUntilDestroyed()).subscribe((index) => this.activeIndex.set(index));
+    // Keep the highlighted row in view whenever it moves: arrows, a search that resets it, or a first row below disabled ones.
+    afterRenderEffect(() => {
+      // Read the list too: a new search can leave the highlight on the same id with different content.
+      this.visibleGroups();
+      const id = this.activeDescendant();
+      if (id) this.document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
     });
   }
 
@@ -77,11 +80,16 @@ export class UiCommandMenuComponent {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
+    // During IME composition the keys belong to the candidate list; Escape only cancels the composition, so it must not reach the modal.
+    if (event.isComposing) {
+      if (event.key === 'Escape') event.stopPropagation();
+      return;
+    }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       // Start the manager from the row the pointer may have moved the highlight to.
       this.keyManager.updateActiveItem(this.activeIndex());
       this.keyManager.onKeydown(event);
-    } else if (event.key === 'Enter' && !event.isComposing) {
+    } else if (event.key === 'Enter') {
       event.preventDefault();
       this.choose(this.activeIndex());
     }
