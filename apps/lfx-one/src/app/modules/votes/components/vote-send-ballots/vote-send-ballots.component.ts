@@ -130,7 +130,8 @@ export class VoteSendBallotsComponent {
         next: (recipients) => {
           if (uid !== this.voteUid() || this.blocked()) return;
           const count = recipients.length;
-          this.remaining.set(count);
+          // An empty answer disables the button only when the counts agree; otherwise the next click reads again.
+          if (count > 0 || this.countsConfirmComplete()) this.remaining.set(count);
           // The list was not known to be empty when the button was clicked, so this is the race (or an unknown list).
           if (count === 0) {
             this.messageService.add({ severity: 'info', summary: 'Nobody to email', detail: 'Everyone eligible has already voted.' });

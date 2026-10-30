@@ -308,8 +308,10 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     it('toasts when the click-time read is still empty', () => {
       create({ responded: 0, invited: 4 });
       button().click();
+      fixture.detectChanges();
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
+      expect(button().disabled).toBe(false);
     });
 
     it('disables for an empty list when N of N have responded', () => {
@@ -345,6 +347,8 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     getReminderRecipients.mockReturnValueOnce(prefetch).mockReturnValue(of([]));
     fixture = TestBed.createComponent(VoteSendBallotsComponent);
     fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.componentRef.setInput('responded', 4);
+    fixture.componentRef.setInput('invited', 4);
     fixture.detectChanges();
 
     button().click();
