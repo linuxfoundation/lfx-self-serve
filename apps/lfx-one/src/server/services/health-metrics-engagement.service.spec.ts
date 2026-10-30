@@ -1382,12 +1382,13 @@ describe('HealthMetricsEngagementService.getNewsletterPerformance', () => {
 
 describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
   const service = new HealthMetricsEngagementService();
+  // Synthetic recipients: the names are placeholders and the organizations come from the synthetic-org fixtures.
   const recipientRow = (overrides: Record<string, unknown> = {}) => ({
     NEWSLETTER_KEY: 'lfx_v2_n1',
     NEWSLETTER_NAME: 'Monthly: Latest',
     SENT_AT: '2026-10-26T16:31:37Z',
     ENGAGEMENT_RANK: 1,
-    RECIPIENT_NAME: 'Maya Okonkwo',
+    RECIPIENT_NAME: 'Recipient Alpha',
     ORGANIZATION_NAME: 'Acme Motors',
     DELIVERY_STATUS: 'Delivered',
     ENGAGEMENT_SEGMENT: 'opened',
@@ -1412,14 +1413,17 @@ describe('HealthMetricsEngagementService.getNewsletterRecipients', () => {
 
     expect(lastBinds()).toEqual(['acme']);
     expect(lastSql()).toContain('AND newsletter_sort_rank = 1');
-    expect(lastSql()).toContain(`ORDER BY engagement_rank ASC NULLS LAST LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}`);
-    expect(lastSql()).not.toMatch(/email|\b_key\b/i);
+    expect(lastSql()).toContain(`ORDER BY engagement_rank ASC NULLS LAST, _key ASC LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}`);
+    // Neither the email nor the row key is selected; the key only breaks ties in the order.
+    const selectList = lastSql().slice(0, lastSql().indexOf(' FROM '));
+    expect(selectList).not.toMatch(/email|\b_key\b/i);
+    expect(lastSql()).not.toMatch(/email/i);
     expect(response).toEqual({
       newsletter: { key: 'lfx_v2_n1', name: 'Monthly: Latest', sentDate: '2026-10-26' },
       recipients: [
         {
           rank: 1,
-          name: 'Maya Okonkwo',
+          name: 'Recipient Alpha',
           organization: 'Acme Motors',
           deliveryStatus: 'Delivered',
           segment: 'opened',

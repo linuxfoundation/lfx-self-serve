@@ -13,10 +13,11 @@ import { EngagementNewsletterRecipientsComponent } from './engagement-newsletter
 
 import type { HealthMetricsEngagementNewsletterRecipients, HealthMetricsEngagementRecipient } from '@lfx-one/shared/interfaces';
 
+// Synthetic recipients: the names are placeholders and the organizations come from the synthetic-org fixtures.
 function recipient(overrides: Partial<HealthMetricsEngagementRecipient>): HealthMetricsEngagementRecipient {
   return {
     rank: 1,
-    name: 'Maya Okonkwo',
+    name: 'Recipient Alpha',
     organization: 'Acme Motors',
     deliveryStatus: 'Delivered',
     segment: 'opened',
@@ -33,8 +34,17 @@ const RECIPIENTS: HealthMetricsEngagementNewsletterRecipients = {
   newsletter: { key: 'n1', name: 'Monthly: Latest', sentDate: '2026-10-26' },
   recipients: [
     recipient({ rank: 1 }),
-    recipient({ rank: 2, name: 'Daniel Reyes', organization: 'Vendor Corp', segment: 'not-opened', opens: 0 }),
-    recipient({ rank: 3, name: 'Chen Yu', organization: null, deliveryStatus: 'Failed', segment: 'failed', clicked: false, opens: null, clicks: null }),
+    recipient({ rank: 2, name: 'Recipient Bravo', organization: 'Vendor Corp', segment: 'not-opened', opens: 0 }),
+    recipient({
+      rank: 3,
+      name: 'Recipient Charlie',
+      organization: null,
+      deliveryStatus: 'Failed',
+      segment: 'failed',
+      clicked: false,
+      opens: null,
+      clicks: null,
+    }),
   ],
   truncated: false,
 };
@@ -90,7 +100,7 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     expect(rowRanks()).toEqual(['engagement-newsletter-recipients-row-1', 'engagement-newsletter-recipients-row-2', 'engagement-newsletter-recipients-row-3']);
     // A failed delivery shows dashes, not zeros, and a missing organization reads "—".
     const failed = [...(query('engagement-newsletter-recipients-row-3')?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent?.trim());
-    expect(failed).toEqual(['Chen Yu—', 'Failed', '—', '—', '—', '—', '—']);
+    expect(failed).toEqual(['Recipient Charlie—', 'Failed', '—', '—', '—', '—', '—']);
     expect(counts.at(-1)).toBe(3);
     expect(verdicts).toEqual([false]);
   });

@@ -937,9 +937,10 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
 
 describe('newsletter recipient rules', () => {
   const now = new Date('2026-10-28T12:00:00Z');
+  // Synthetic recipients: the names are placeholders and the organizations come from the synthetic-org fixtures.
   const recipient = (overrides: Partial<HealthMetricsEngagementRecipient>): HealthMetricsEngagementRecipient => ({
     rank: 1,
-    name: 'Maya Okonkwo',
+    name: 'Recipient Alpha',
     organization: 'Acme Motors',
     deliveryStatus: 'Delivered',
     segment: 'opened',
@@ -953,10 +954,19 @@ describe('newsletter recipient rules', () => {
   const recipients = [
     recipient({ rank: 1 }),
     // Clicked without a recorded open: not opened, yet still in the Clicked cut.
-    recipient({ rank: 2, name: 'Daniel Reyes', organization: 'Vendor Corp', segment: 'not-opened', opens: 0, lastOpenedAt: null }),
+    recipient({ rank: 2, name: 'Recipient Bravo', organization: 'Vendor Corp', segment: 'not-opened', opens: 0, lastOpenedAt: null }),
     recipient({ rank: 3, name: null, organization: null, segment: 'not-opened', clicked: false, opens: 0, clicks: 0, lastOpenedAt: null, lastClickedAt: null }),
     // The view can carry an open time on a failed delivery; the row still reads "—".
-    recipient({ rank: 4, name: 'Chen Yu', deliveryStatus: 'Failed', segment: 'failed', clicked: false, opens: null, clicks: null, lastClickedAt: null }),
+    recipient({
+      rank: 4,
+      name: 'Recipient Charlie',
+      deliveryStatus: 'Failed',
+      segment: 'failed',
+      clicked: false,
+      opens: null,
+      clicks: null,
+      lastClickedAt: null,
+    }),
   ];
 
   it('counts each cut, with a click outside any open counted under both Clicked and Not opened', () => {
@@ -966,18 +976,21 @@ describe('newsletter recipient rules', () => {
   it('counts a failed delivery only as Failed, even where the view still segments it as not opened', () => {
     const bounced = recipient({ rank: 5, deliveryStatus: 'Failed', segment: 'not-opened', clicked: false });
     expect(countHealthMetricsEngagementRecipients([bounced])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
+    // A stray click on a failed delivery does not put it under Clicked either.
+    const clickedBounce = recipient({ rank: 6, deliveryStatus: 'Failed', segment: 'failed', clicked: true });
+    expect(countHealthMetricsEngagementRecipients([clickedBounce])).toEqual({ all: 1, opened: 0, clicked: 0, 'not-opened': 0, failed: 1 });
     expect(buildHealthMetricsEngagementRecipientRow(bounced, now).deliveryLabel).toBe('Failed');
   });
 
   it('cuts by segment or click and searches name and organization, keeping the engagement order', () => {
     expect(filterHealthMetricsEngagementRecipients(recipients, 'clicked', '').map((row) => row.rank)).toEqual([1, 2]);
     expect(filterHealthMetricsEngagementRecipients(recipients, 'all', '  vendor ').map((row) => row.rank)).toEqual([2]);
-    expect(filterHealthMetricsEngagementRecipients(recipients, 'not-opened', 'reyes').map((row) => row.rank)).toEqual([2]);
+    expect(filterHealthMetricsEngagementRecipients(recipients, 'not-opened', 'bravo').map((row) => row.rank)).toEqual([2]);
   });
 
   it('labels a row, with dashes for a failed delivery and for a missing name or organization', () => {
     expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now)).toMatchObject({
-      nameLabel: 'Maya Okonkwo',
+      nameLabel: 'Recipient Alpha',
       deliveryLabel: 'Delivered',
       engagementLabel: 'Opened',
       opensLabel: '2',

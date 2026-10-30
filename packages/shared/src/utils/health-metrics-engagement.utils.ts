@@ -609,10 +609,10 @@ function buildNewsletterPoint(newsletter: HealthMetricsEngagementNewsletter): He
 
 function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, filter: HealthMetricsEngagementRecipientFilter): boolean {
   if (filter === 'all') return true;
-  if (filter === 'clicked') return recipient.clicked;
   // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
   if (filter === 'failed') return isFailedRecipient(recipient);
-  return recipient.segment === filter && !isFailedRecipient(recipient);
+  if (isFailedRecipient(recipient)) return false;
+  return filter === 'clicked' ? recipient.clicked : recipient.segment === filter;
 }
 
 /** Failed by either the view's segment or its delivery status. */

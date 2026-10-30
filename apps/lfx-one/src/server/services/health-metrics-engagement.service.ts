@@ -715,7 +715,8 @@ export class HealthMetricsEngagementService {
       FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.recipients}
       WHERE foundation_slug = ?
         AND newsletter_sort_rank = 1
-      ORDER BY engagement_rank ASC NULLS LAST
+      -- _key only breaks ties, so a capped read keeps the same people; it is never selected.
+      ORDER BY engagement_rank ASC NULLS LAST, _key ASC
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP + 1}
     `;
 
