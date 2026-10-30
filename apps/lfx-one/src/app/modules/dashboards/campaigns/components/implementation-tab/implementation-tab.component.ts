@@ -2765,18 +2765,7 @@ export class ImplementationTabComponent implements OnInit {
    * tab cannot make. Empty while no image field is rendered, which `googleImageSlots` already limits to
    * an explicit library yes.
    */
-  protected readonly googleSuggestionTargets: Signal<string[]> = computed(() => {
-    const targets: string[] = [];
-    for (const key of Object.keys(this.googleImageSlots())) {
-      const [groupName, control] = key.split('.');
-      const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
-      if (!channel) continue;
-      for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
-        if (mapped === control) targets.push(`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
-      }
-    }
-    return targets;
-  });
+  protected readonly googleSuggestionTargets: Signal<string[]> = this.initGoogleSuggestionTargets();
   /** The last apply's result for the brief now open, or `''`. */
   protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
     const result = this.googleSuggestedApply();
@@ -7473,6 +7462,21 @@ export class ImplementationTabComponent implements OnInit {
         }
       }
       return views;
+    });
+  }
+
+  private initGoogleSuggestionTargets(): Signal<string[]> {
+    return computed(() => {
+      const targets: string[] = [];
+      for (const key of Object.keys(this.googleImageSlots())) {
+        const [groupName, control] = key.split('.');
+        const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+        if (!channel) continue;
+        for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
+          if (mapped === control) targets.push(`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
+        }
+      }
+      return targets;
     });
   }
 

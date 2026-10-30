@@ -89,14 +89,7 @@ export class CreativeSlotGridComponent {
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
   /** The ready plan's assignments that name an image for a slot the host can fill — what "Use suggested images" hands over. */
-  protected readonly suggestions: Signal<CreativeSlotAssignment[]> = computed(() => {
-    const state = this.state();
-    if (state.status !== 'ready' || !state.plan) return [];
-    const targets = new Set(this.suggestionTargets());
-    return state.plan.assignments.filter(
-      (assignment) => assignment.assetIds.length > 0 && targets.has(`${assignment.platform}/${assignment.channel ?? ''}/${assignment.slot}`)
-    );
-  });
+  protected readonly suggestions: Signal<CreativeSlotAssignment[]> = this.initSuggestions();
 
   // === Protected Methods ===
   protected applySuggestions(): void {
@@ -322,6 +315,17 @@ export class CreativeSlotGridComponent {
       // about the same number. "an image" is the floor, not the total: a slot that is PARTLY
       // covered is counted here too, and what it is short of is one more image.
       return open === 1 ? '1 image slot still needs an image.' : `${open} image slots still need an image.`;
+    });
+  }
+
+  private initSuggestions(): Signal<CreativeSlotAssignment[]> {
+    return computed(() => {
+      const state = this.state();
+      if (state.status !== 'ready' || !state.plan) return [];
+      const targets = new Set(this.suggestionTargets());
+      return state.plan.assignments.filter(
+        (assignment) => assignment.assetIds.length > 0 && targets.has(`${assignment.platform}/${assignment.channel ?? ''}/${assignment.slot}`)
+      );
     });
   }
 
