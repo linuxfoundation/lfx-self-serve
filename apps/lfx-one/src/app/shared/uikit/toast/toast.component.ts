@@ -14,6 +14,7 @@ import {
   input,
   output,
   Signal,
+  signal,
 } from '@angular/core';
 import { UiToastAction, UiToastVariant } from '@lfx-one/shared/interfaces';
 
@@ -62,6 +63,8 @@ export class UiToastComponent {
   protected readonly showDismiss: Signal<boolean> = this.initShowDismiss();
 
   private readonly resolvedDuration: Signal<number> = this.initResolvedDuration();
+  // The duration the countdown started with; later changes of `duration` do not restart it, so the dismiss rule follows this value.
+  private readonly startedDuration = signal<number | null>(null);
   private remaining = 0;
   private startedAt = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -74,6 +77,7 @@ export class UiToastComponent {
     // afterNextRender never runs on the server, so no timer is left behind there.
     afterNextRender(() => {
       this.remaining = this.resolvedDuration();
+      this.startedDuration.set(this.remaining);
       this.resume();
     });
     this.destroyRef.onDestroy(() => {
@@ -172,7 +176,7 @@ export class UiToastComponent {
   }
 
   private initShowDismiss(): Signal<boolean> {
-    return computed(() => this.dismissible() || (this.resolvedDuration() === 0 && !this.visibleActions().length));
+    return computed(() => this.dismissible() || ((this.startedDuration() ?? this.resolvedDuration()) === 0 && !this.visibleActions().length));
   }
 
   private syncTimer(): void {

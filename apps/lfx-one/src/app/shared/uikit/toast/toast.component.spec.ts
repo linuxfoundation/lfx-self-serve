@@ -206,6 +206,18 @@ describe('UiToastComponent', () => {
       expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
     });
 
+    it('keeps the forced dismiss button when duration changes after the countdown was set', async () => {
+      await setup((instance) => {
+        instance.duration.set(0);
+        instance.dismissible.set(false);
+      });
+      host.duration.set(5000);
+      await flush();
+      await advance(60000);
+      expect(host.dismissed).not.toHaveBeenCalled();
+      expect(toast().querySelector('[data-testid="ui-toast-dismiss"]')).not.toBeNull();
+    });
+
     it('can be hidden on an error that has an action to close it', async () => {
       await setup((instance) => {
         instance.variant.set('error');
