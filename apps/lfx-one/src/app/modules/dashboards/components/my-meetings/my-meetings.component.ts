@@ -30,6 +30,16 @@ export class MyMeetingsComponent {
   protected readonly upcomingLoading = signal(true);
   protected readonly pastLoading = signal(true);
 
+  // Set when the underlying fetch failed (e.g. a `fga-sync` read_tuples outage, GH-4780) rather
+  // than genuinely returning zero rows — lets the template show "couldn't load" + retry instead of
+  // silently rendering the same empty state as a user with no meetings. Backed by
+  // UserService.getUserMeetings / getUserLatestPastMeetings, both of which now propagate failures.
+  protected readonly upcomingError = signal(false);
+  protected readonly pastError = signal(false);
+
+  private readonly upcomingRetry = signal(0);
+  private readonly pastRetry = signal(0);
+
   private readonly selectedProject = computed(() => this.projectContextService.activeContext());
 
   // Raw data from API — switches data source based on active lens
@@ -55,9 +65,19 @@ export class MyMeetingsComponent {
     this.activeLens() === 'me' ? 'Your scheduled meetings will appear here.' : 'No upcoming meetings found.'
   );
 
+  protected retryUpcoming(): void {
+    this.upcomingRetry.update((n) => n + 1);
+  }
+
+  protected retryPast(): void {
+    this.pastRetry.update((n) => n + 1);
+  }
+
   private initRawMeetings() {
     return this.initLensSwitchedData<Meeting>(
       this.upcomingLoading,
+      this.upcomingError,
+      this.upcomingRetry,
       () => this.userService.getUserMeetings(),
       (uid) => this.meetingService.getUpcomingMeetingsByProject(uid)
     );
@@ -66,6 +86,8 @@ export class MyMeetingsComponent {
   private initRawPastMeetings() {
     return this.initLensSwitchedData<PastMeeting>(
       this.pastLoading,
+      this.pastError,
+      this.pastRetry,
       () => this.userService.getUserLatestPastMeetings(),
       (uid) => this.meetingService.getPastMeetingsByProject(uid)
     );
@@ -73,15 +95,21 @@ export class MyMeetingsComponent {
 
   private initLensSwitchedData<T>(
     loading: WritableSignal<boolean>,
+    error: WritableSignal<boolean>,
+    retry: Signal<number>,
     meFetcher: () => Observable<T[]>,
     projectFetcher: (projectUid: string) => Observable<T[]>
   ): Signal<T[]> {
     const project$ = toObservable(this.selectedProject);
     const lens$ = toObservable(this.activeLens);
+    const retry$ = toObservable(retry);
 
     return toSignal(
-      combineLatest([project$, lens$]).pipe(
-        tap(() => loading.set(true)),
+      combineLatest([project$, lens$, retry$]).pipe(
+        tap(() => {
+          loading.set(true);
+          error.set(false);
+        }),
         switchMap(([project, lens]) => {
           if (lens === 'org') {
             loading.set(false);
@@ -100,8 +128,10 @@ export class MyMeetingsComponent {
 
           return source$.pipe(
             tap(() => loading.set(false)),
-            catchError(() => {
+            catchError((err) => {
+              console.error('my-meetings fetch failed', err);
               loading.set(false);
+              error.set(true);
               return of([] as T[]);
             })
           );

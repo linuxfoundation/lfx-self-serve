@@ -506,8 +506,11 @@ export class UserService {
 
     const projectFilterParams = this.buildProjectScopeFilters(projectUid, foundationProjectUids);
 
-    // failOnPartial: true — completeness matters for membership correctness. Outer .catch is a
-    // defensive guard so upstream failures don't 500 the Me lens; returning [] is graceful.
+    // failOnPartial: true — completeness matters for membership correctness. A failure here (e.g.
+    // the `fga-sync` read_tuples RPC backing `filter_grants=direct`, GH-4780) must propagate to the
+    // controller rather than degrade to []: an empty result is indistinguishable from "no meetings"
+    // and silently hides the user's own meetings. Callers that can tolerate a degraded view (e.g.
+    // the pending-actions aggregator) already wrap this call in their own `.catch`.
     const meetings = await fetchAllQueryResources<Meeting>(
       req,
       (pageToken) =>
@@ -519,12 +522,7 @@ export class UserService {
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
-    ).catch((error) => {
-      logger.warning(req, 'get_user_meetings', 'Query service fetch failed, returning empty meeting list', {
-        err: error,
-      });
-      return [] as Meeting[];
-    });
+    );
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
@@ -686,6 +684,8 @@ export class UserService {
       }
       const projectFilterParams = this.buildProjectScopeFilters(projectUid, resolvedFoundationUids);
 
+      // Propagate failures instead of degrading to [] — see getUserMeetings for full rationale
+      // (GH-4780): an empty result here is indistinguishable from "no past meetings".
       return fetchAllQueryResources<PastMeeting>(
         req,
         (pageToken) =>
@@ -698,12 +698,7 @@ export class UserService {
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true }
-      ).catch((error) => {
-        logger.warning(req, 'get_user_past_meetings', 'Past meeting query failed, returning empty list', {
-          err: error,
-        });
-        return [] as PastMeeting[];
-      });
+      );
     });
 
     const [{ participants, loaded: attendanceLoaded }, pastMeetings] = await Promise.all([participantQuery, pastMeetingsQuery]);
@@ -838,22 +833,18 @@ export class UserService {
 
     // See module-level LATEST_PAST_MEETINGS_FETCH_SIZE / RETURN_LIMIT JSDoc for why we
     // over-fetch here.
-    const response = await this.microserviceProxy
-      .proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting',
-        filter_grants: 'direct',
-        sort: 'name_desc',
-        page_size: LATEST_PAST_MEETINGS_FETCH_SIZE,
-        ...projectFilterParams,
-      })
-      .catch((error) => {
-        logger.warning(req, 'get_user_latest_past_meetings', 'Past meeting query failed, returning empty list', {
-          err: error,
-        });
-        return null;
-      });
+    // Propagate failures instead of degrading to [] — see getUserMeetings for full rationale
+    // (GH-4780): an empty result here is indistinguishable from "no past meetings". This is the
+    // method the dashboard's Me-lens "last meeting" card actually calls.
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'v1_past_meeting',
+      filter_grants: 'direct',
+      sort: 'name_desc',
+      page_size: LATEST_PAST_MEETINGS_FETCH_SIZE,
+      ...projectFilterParams,
+    });
 
-    if (!response || !response.resources || response.resources.length === 0) {
+    if (!response.resources || response.resources.length === 0) {
       return [];
     }
 

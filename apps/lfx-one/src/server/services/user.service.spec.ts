@@ -796,6 +796,44 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
   });
 });
 
+describe('UserService meeting fetch failure propagation (GH-4780)', () => {
+  // A failing `filter_grants=direct` query-service call (the `fga-sync` read_tuples RPC) must
+  // reject rather than degrade to [] — an empty result is indistinguishable from "no meetings".
+  const req = {} as unknown as Request;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getUsernameFromAuth.mockResolvedValue(null);
+    getEffectiveEmail.mockReturnValue('');
+  });
+
+  it('getUserMeetings rejects when the v1_meeting query fails', async () => {
+    proxyRequest.mockRejectedValue(new Error('query service unavailable'));
+    const service = new UserService();
+
+    await expect(service.getUserMeetings(req)).rejects.toThrow('query service unavailable');
+  });
+
+  it('getUserPastMeetings rejects when the v1_past_meeting query fails', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_past_meeting') return Promise.reject(new Error('query service unavailable'));
+      return queryPage([]);
+    });
+    const service = new UserService();
+
+    await expect(service.getUserPastMeetings(req, 'user@example.com')).rejects.toThrow('query service unavailable');
+  });
+
+  it('getUserLatestPastMeetings rejects when the v1_past_meeting query fails', async () => {
+    proxyRequest.mockRejectedValue(new Error('query service unavailable'));
+    const service = new UserService();
+
+    await expect(service.getUserLatestPastMeetings(req)).rejects.toThrow('query service unavailable');
+  });
+});
+
 describe('UserService.getPendingActions meeting rows (GH-3311)', () => {
   const req = {} as unknown as Request;
   const email = 'invitee@example.com';
