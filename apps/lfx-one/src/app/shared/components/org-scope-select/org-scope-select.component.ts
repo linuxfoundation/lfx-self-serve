@@ -9,18 +9,20 @@ import { DEFAULT_ORG_SCOPE, ORG_SCOPE_LABEL, ORG_SCOPE_UNAVAILABLE_NOTE } from '
 import type { OrgScopeFilter, OrgScopeOption } from '@lfx-one/shared/interfaces';
 import { orgScopeOptions, orgScopeTooltip, parseOrgScopeFilter } from '@lfx-one/shared/utils';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
+import { TooltipModule } from 'primeng/tooltip';
 import { map, of, startWith, switchMap } from 'rxjs';
 
 /**
  * The Organization scope picker (lfx-self-serve-ops#1219) every Org Lens page with contributor counts shows, bound to
  * the page's `orgScope` control: Insights organization (default) or All related organizations (N). Its tooltip says what
  * the picked option counts, naming the account's Insights organization. An account with no Insights organization gets a
- * disabled select showing All related organizations and a note; the page's control is left alone, since the BFF serves
+ * disabled select showing All related organizations, the same size as the enabled one, with a focusable info button in
+ * place of its chevron whose tooltip and label carry the note; the page's control is left alone, since the BFF serves
  * that account All related organizations whatever is asked.
  */
 @Component({
   selector: 'lfx-org-scope-select',
-  imports: [SelectComponent],
+  imports: [SelectComponent, TooltipModule],
   templateUrl: './org-scope-select.component.html',
 })
 export class OrgScopeSelectComponent {

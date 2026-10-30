@@ -9,6 +9,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { ORG_SCOPE_ALL_TOOLTIP, ORG_SCOPE_CODE_ONLY_NOTE, ORG_SCOPE_UNAVAILABLE_NOTE } from '@lfx-one/shared/constants';
 import type { OrgLensOrgScope, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
+import { Tooltip } from 'primeng/tooltip';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgScopeSelectComponent } from './org-scope-select.component';
@@ -90,22 +91,35 @@ describe('OrgScopeSelectComponent', () => {
     expect(select().tooltip()).toContain('Counts only Example Org');
   });
 
-  it('shows a disabled All related organizations and a note when the account has no Insights organization, leaving the page control alone', async () => {
+  it('shows a disabled All related organizations with the note on a focusable info button, no text under it, leaving the page control alone', async () => {
     await mount({ info: { ...SCOPE, hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null } });
 
     expect(select().form()).not.toBe(form);
     expect(select().form().get('orgScope')?.value).toBe('all');
     expect(select().form().get('orgScope')?.disabled).toBe(true);
     expect(select().tooltip()).toBe(ORG_SCOPE_ALL_TOOLTIP);
-    expect(el().querySelector('[data-testid="page-org-scope-unavailable"]')?.textContent?.trim()).toBe(ORG_SCOPE_UNAVAILABLE_NOTE);
+    // The select keeps the enabled one's size; only its chevron, which opens nothing, gives way to the button.
+    expect(select().styleClass()).toBe('w-full [&_.p-select-dropdown]:invisible');
+    const info = fixture.debugElement.query(By.css('[data-testid="page-org-scope-unavailable"]'));
+    expect(info.nativeElement.tagName).toBe('BUTTON');
+    expect(info.nativeElement.getAttribute('type')).toBe('button');
+    expect(info.nativeElement.getAttribute('aria-label')).toBe(ORG_SCOPE_UNAVAILABLE_NOTE);
+    expect(info.nativeElement.tabIndex).toBe(0);
+    expect(info.nativeElement.querySelector('i.fa-light.fa-circle-info')?.getAttribute('aria-hidden')).toBe('true');
+    const tooltip = info.injector.get(Tooltip);
+    expect(tooltip.content).toBe(ORG_SCOPE_UNAVAILABLE_NOTE);
+    expect(tooltip.tooltipEvent).toBe('both');
+    expect(el().textContent).not.toContain(ORG_SCOPE_UNAVAILABLE_NOTE);
+    expect(el().querySelector('p')).toBeNull();
     expect(form.controls.orgScope.value).toBe('insights');
     expect(form.controls.orgScope.enabled).toBe(true);
   });
 
-  it('shows no unavailable note while the account has an Insights organization', async () => {
+  it('shows no info button and keeps the chevron while the account has an Insights organization', async () => {
     await mount();
 
     expect(el().querySelector('[data-testid="page-org-scope-unavailable"]')).toBeNull();
+    expect(select().styleClass()).toBe('w-full');
   });
 
   it('asks the scope service to retry a failed metadata read when it is created', async () => {
