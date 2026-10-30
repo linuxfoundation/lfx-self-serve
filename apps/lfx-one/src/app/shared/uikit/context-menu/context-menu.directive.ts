@@ -102,13 +102,13 @@ export class UiContextMenuDirective {
   }
 
   protected onPointerDown(event: PointerEvent): void {
-    this.openedByLongPress = false;
-    if (event.pointerType !== 'touch' || this.trigger.disabled) return;
-    // Only the first finger can start a long press; another one is a pinch or a scroll.
+    // Only the first finger can start a long press; another one is a pinch or a scroll, and says nothing about the press that is down.
     if (!event.isPrimary) {
       this.cancelLongPress();
       return;
     }
+    this.openedByLongPress = false;
+    if (event.pointerType !== 'touch' || this.trigger.disabled) return;
     const { clientX, clientY } = event;
     const target = event.target as Element;
     this.pressX = clientX;

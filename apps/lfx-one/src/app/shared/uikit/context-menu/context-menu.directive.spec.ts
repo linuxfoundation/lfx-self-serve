@@ -474,6 +474,18 @@ describe('UiContextMenuDirective', () => {
       expect(menus().length).toBe(1);
     });
 
+    it('keeps the release click expected when another finger lands on the host mid-press', async () => {
+      pointer(el('outer'), 'pointerdown');
+      vi.advanceTimersByTime(500);
+      await settle();
+      pointer(el('outer'), 'pointerdown', { pointerId: 2, isPrimary: false });
+      pointer(el('outer'), 'pointerup');
+      el('outer').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await settle();
+
+      expect(menus().length).toBe(1);
+    });
+
     it('lets a new tap through, even right after the release', async () => {
       pointer(el('outer'), 'pointerdown');
       vi.advanceTimersByTime(500);
