@@ -12,6 +12,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TagComponent } from '@components/tag/tag.component';
 import {
   VOTE_DETAIL_DEFAULT_TAB,
+  VOTE_DETAIL_RESULTS_POLL_OPTIONS,
   VOTE_DETAIL_SUMMARY_CARD_ACTIONS,
   VOTE_DETAIL_TABS,
   VOTE_DETAIL_VALID_TABS,
@@ -64,6 +65,7 @@ import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { exportSlideImage, voteSlideFileName, voteSlideToast } from '@shared/utils/slide-export.util';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -574,16 +576,16 @@ export class VoteDetailComponent {
     });
   }
 
-  /** Managers always load results; voters only after close with a settled, matching, non-removed response. */
+  /** Active managers refresh visible-tab results; voters read once after close with verified, matching access. */
   private initVoteResults(): Signal<VoteResultsResponse | null> {
     const key = computed(() => {
       const id = this.voteId();
       const canManage = this.canManage();
       const tick = this.refreshTick();
       if (!id || canManage === null) return null;
-      if (canManage) return { id, tick };
+      if (canManage) return { id, tick, poll: isPlatformBrowser(this.platformId) && normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE };
       const canFetch = canVoterFetchVoteResults(id, this.vote(), this.myResponse(), this.myResponseLoading(), this.myResponseError());
-      return canFetch ? { id, tick } : null;
+      return canFetch ? { id, tick, poll: false } : null;
     });
 
     // Retain only the current eligible vote's last results while a same-vote refresh is in flight.
@@ -592,7 +594,7 @@ export class VoteDetailComponent {
 
     const results = toSignal(
       toObservable(key).pipe(
-        distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick),
+        distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick && a?.poll === b?.poll),
         switchMap((resultsKey) => {
           if (!resultsKey) {
             loadedFor = null;
@@ -603,17 +605,33 @@ export class VoteDetailComponent {
           if (loadedFor !== resultsKey.id) lastResults = null;
           loadedFor = resultsKey.id;
           this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
-          return this.voteService.getVoteResults(resultsKey.id).pipe(
-            catchError(() => {
-              this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: true });
-              return of(null);
+          const load = () => {
+            this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
+            return this.voteService.getVoteResults(resultsKey.id).pipe(
+              finalize(() => {
+                this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
+              })
+            );
+          };
+          const requests = resultsKey.poll
+            ? createVisibilityPoll(this.document, load, VOTE_DETAIL_RESULTS_POLL_OPTIONS)
+            : load().pipe(
+                map((value) => ({ kind: 'ok' as const, value })),
+                catchError((error: unknown) => of({ kind: 'error' as const, error }))
+              );
+          return requests.pipe(
+            map((event) => {
+              if (event.kind === 'error') {
+                console.error('Failed to load vote results for detail page');
+                lastResults = null;
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: true });
+              } else {
+                lastResults = event.value;
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false });
+              }
+              return { id: resultsKey.id, payload: lastResults };
             }),
-            tap((results) => (lastResults = results)),
-            finalize(() => {
-              this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
-            }),
-            startWith(lastResults),
-            map((payload) => ({ id: resultsKey.id, payload }))
+            startWith({ id: resultsKey.id, payload: lastResults })
           );
         })
       ),

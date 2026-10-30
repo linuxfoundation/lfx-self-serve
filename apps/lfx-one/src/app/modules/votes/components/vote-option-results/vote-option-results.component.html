@@ -28,11 +28,11 @@
           <div class="flex flex-wrap items-center gap-2 min-w-0">
             <span
               class="break-words min-w-0"
-              [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+              [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-gray-900' : 'font-normal text-gray-600'">
               {{ option.text }}
             </span>
             @if (option.isWinner) {
-              <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
                 <i class="fa-solid fa-check text-[10px]"></i>
                 Winner
               </span>
@@ -44,18 +44,18 @@
               </span>
             }
           </div>
-          <span [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+          <span [class]="option.isWinner || option.isTied || option.isLeading ? 'font-semibold text-gray-900' : 'font-normal text-gray-600'">
             <ng-container [ngTemplateOutlet]="count" [ngTemplateOutletContext]="{ $implicit: option }" />
             · {{ option.percentage }}%
           </span>
         </div>
-        <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
+        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
           <div
             class="h-full rounded-full transition-all"
-            [class.bg-green-500]="option.isWinner"
+            [class.bg-emerald-500]="option.isWinner"
             [class.bg-amber-500]="option.isTied"
             [class.bg-blue-500]="!option.isWinner && !option.isTied && option.isLeading"
-            [class.bg-slate-300]="!option.isWinner && !option.isTied && !option.isLeading"
+            [class.bg-gray-300]="!option.isWinner && !option.isTied && !option.isLeading"
             [style.width.%]="option.percentage"></div>
         </div>
       </div>

@@ -294,9 +294,6 @@
           <div class="flex flex-col gap-3" data-testid="vote-detail-overview-bars">
             <h3 class="text-sm font-semibold text-gray-900">{{ q.question }}</h3>
             <lfx-vote-option-results [options]="q.options" variant="compact" testIdPrefix="vote-detail-overview-option-" />
-            @if (showAbstain()) {
-              <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
-            }
           </div>
         } @else {
           @for (line of overviewSummary(); track line.questionId; let idx = $index) {
@@ -310,6 +307,9 @@
               <p class="text-sm text-gray-700 break-words" [attr.data-testid]="'vote-detail-overview-summary-' + line.questionId">{{ line.text }}</p>
             </div>
           }
+        }
+        @if (showAbstain()) {
+          <lfx-vote-abstain-result [stats]="participationStats()" variant="live" testId="vote-detail-overview-abstain" />
         }
       }
     </ng-template>

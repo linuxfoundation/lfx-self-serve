@@ -58,7 +58,7 @@ describe('VoteOptionResultsComponent', () => {
       render([option({ choiceId: 'c1', voteCount: 3, percentage: 75, isLeading: true }), option({ choiceId: 'c2', voteCount: 1, percentage: 25 })], 'compact');
 
       expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('width: 75%');
-      expect(row('vote-results-option-c2')?.querySelector('.bg-slate-300')).toBeTruthy();
+      expect(row('vote-results-option-c2')?.querySelector('.bg-gray-300')).toBeTruthy();
       expect(text('vote-results-option-c1')).not.toContain('Winner');
       expect(text('vote-results-option-c1')).not.toContain('Tied');
     });
@@ -77,7 +77,7 @@ describe('VoteOptionResultsComponent', () => {
       );
 
       expect(text('vote-results-option-c1')).toContain('Winner');
-      expect(row('vote-results-option-c1')?.querySelector('.bg-green-500')).toBeTruthy();
+      expect(row('vote-results-option-c1')?.querySelector('.bg-emerald-500')).toBeTruthy();
       expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')).toBeNull();
       expect(text('vote-results-option-c2')).not.toContain('Winner');
     });
