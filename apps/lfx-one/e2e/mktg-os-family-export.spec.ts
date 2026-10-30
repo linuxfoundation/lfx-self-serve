@@ -135,7 +135,7 @@ test('unsupported family shows one line without export buttons or Positioning no
   await page.screenshot({ path: info.outputPath('unsupported-family-export.png'), fullPage: true });
 });
 
-test('Download PDF prepares all four assets then opens print synchronously on the explicit preview click', async ({ page }, info) => {
+test('the PDF button reads Preparing PDF… and ignores a press until all four assets are prepared, then prints on the first click', async ({ page }, info) => {
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });
   await page.evaluate(() => {
     window.print = () => {
@@ -143,12 +143,15 @@ test('Download PDF prepares all four assets then opens print synchronously on th
     };
   });
   const pdf = page.getByTestId('family-export-pdf').getByRole('button');
+  await expect(pdf).toBeEnabled();
+  await expect(pdf).toHaveText('Preparing PDF…');
   await pdf.click();
-  await expect(pdf).toBeDisabled();
+  await expect(pdf).toHaveText('Preparing PDF…');
   await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
   controls.releasePrint();
-  await expect(pdf).toHaveText('Open print preview');
-  await expect(page.getByTestId('family-export-pdf-ready')).toHaveText('Your PDF is ready — click to open the print preview');
+  await expect(pdf).toHaveText('Download PDF');
+  await expect(pdf).toBeEnabled();
+  await expect(page.getByTestId('family-export-pdf-ready')).toHaveCount(0);
   await expect(page.locator('body')).not.toHaveAttribute('data-family-print-class');
   // Keep a JS stack around the entire click dispatch. Inspect before returning:
   // even a resolved Promise/await would run too late to satisfy this assertion.

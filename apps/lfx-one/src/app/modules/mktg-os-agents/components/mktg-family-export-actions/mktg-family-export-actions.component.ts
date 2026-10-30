@@ -12,7 +12,9 @@ import {
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
   MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_PDF_LABEL,
   MKTG_FAMILY_PDF_NOTE,
+  MKTG_FAMILY_PDF_PREPARING_LABEL,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
   MKTG_FAMILY_SLIDES_NOTE,
@@ -82,21 +84,28 @@ export class MktgFamilyExportActionsComponent {
   protected readonly message = signal('');
   protected readonly partialLink = signal<string | null>(null);
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
-  protected readonly printing = signal(false);
   protected readonly printView = signal<MktgFamilyPrintView | null>(null);
   private readonly retry = new Subject<boolean>();
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
   protected readonly pdfReady = signal(false);
-  protected readonly previewRequested = signal(false);
-  private pdfPending = false;
+  protected readonly pdfPreparedScope = signal('');
+  private readonly pdfPending = signal(false);
   private pdfScope = '';
 
   protected readonly writer = computed(() => this.context.canWrite());
   protected readonly target = this.initTarget();
-  protected readonly busy = computed(() => this.phase() === 'running' || this.printing());
+  protected readonly busy = computed(() => this.phase() === 'running');
   protected readonly canExport = this.initCanExport();
   protected readonly canPrint = this.initCanPrint();
+  /**
+   * One solid primary, never disabled by preparation: a busy primary only changes its label, and
+   * once per preparation (the approval check that precedes it counts as preparing, so the label
+   * does not flicker on the way). A failed preparation reads "Download PDF" again: a press re-runs it.
+   */
+  protected readonly pdfLabel = computed(() =>
+    this.pdfPending() || (this.writer() && this.checking()) ? MKTG_FAMILY_PDF_PREPARING_LABEL : MKTG_FAMILY_PDF_LABEL
+  );
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
@@ -173,14 +182,15 @@ export class MktgFamilyExportActionsComponent {
     const target = this.target();
     const members = this.lookup()?.currentMembers;
     if (!target || !members || !this.canPrint()) return;
-    if (this.pdfReady() && this.printView() && this.pdfScope === JSON.stringify([target, members])) {
+    // A completed preparation may precede its render callback; keep this print in the click task.
+    if (this.markPdfReady() && this.pdfScope === JSON.stringify([target, members])) {
       this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
       return;
     }
-    this.previewRequested.set(true);
-    this.printing.set(true);
+    // "Preparing PDF…": a press does nothing. After a failed preparation, a press runs it again (never prints by itself).
+    if (this.pdfPending()) return;
     this.message.set('');
-    if (!this.pdfPending) this.pdfRetry.next();
+    this.pdfRetry.next();
   }
 
   /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
@@ -192,16 +202,17 @@ export class MktgFamilyExportActionsComponent {
         switchMap(({ target, writer, lookup, checking }) => {
           this.printView.set(null);
           this.pdfReady.set(false);
-          this.pdfPending = false;
+          this.pdfPending.set(false);
           this.pdfScope = '';
-          this.printing.set(false);
-          this.previewRequested.set(false);
+          this.pdfPreparedScope.set('');
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
             startWith(undefined),
             switchMap(() => {
-              this.pdfPending = true;
+              this.pdfPending.set(true);
+              this.pdfReady.set(false);
+              this.pdfPreparedScope.set('');
               return this.api.printView(target, lookup.currentMembers, this.context.activeContext()?.name ?? 'Project').pipe(
                 switchMap((view) => {
                   this.printView.set(view);
@@ -222,28 +233,40 @@ export class MktgFamilyExportActionsComponent {
       )
       .subscribe((prepared) => {
         if (!prepared) {
-          this.pdfPending = false;
-          this.printing.set(false);
+          this.pdfPending.set(false);
           return;
         }
-        // Mount the print-only document before offering the synchronous click.
+        if (this.printView() !== prepared.view) return;
+        // This template-bound signal schedules the mount in a zoneless app if it has not rendered yet.
+        this.pdfPreparedScope.set(prepared.key);
+        if (this.markPdfReady()) return;
         afterNextRender(
           () => {
-            if (
-              this.destroyRef.destroyed ||
-              !this.writer() ||
-              this.printView() !== prepared.view ||
-              JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== prepared.key
-            )
-              return;
-            this.pdfScope = prepared.key;
-            this.pdfReady.set(true);
-            this.pdfPending = false;
-            this.printing.set(false);
+            if (this.printView() === prepared.view && this.pdfPreparedScope() === prepared.key) this.markPdfReady();
           },
           { injector: this.injector }
         );
       });
+  }
+
+  /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */
+  private markPdfReady(): boolean {
+    const key = this.pdfPreparedScope();
+    if (
+      !isPlatformBrowser(this.platformId) ||
+      this.destroyRef.destroyed ||
+      !this.writer() ||
+      this.checking() ||
+      !key ||
+      !this.printView() ||
+      JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== key ||
+      !this.host.nativeElement.querySelector('[data-testid="family-export-print-document"] > *')
+    )
+      return false;
+    this.pdfScope = key;
+    this.pdfReady.set(true);
+    this.pdfPending.set(false);
+    return true;
   }
 
   private initTarget(): Signal<MktgFamilyExportTarget | null> {
@@ -292,7 +315,6 @@ export class MktgFamilyExportActionsComponent {
           this.run?.unsubscribe();
           this.print.clear(MKTG_FAMILY_PRINT_BODY_CLASS);
           this.printView.set(null);
-          this.printing.set(false);
           this.lookup.set(null);
           this.completed.set(null);
           this.phase.set('idle');
