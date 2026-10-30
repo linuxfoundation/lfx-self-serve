@@ -308,6 +308,19 @@ describe('UiContextMenuDirective', () => {
     });
   });
 
+  it('marks an enabled host for the iOS touch callout rule, and not a disabled one', async () => {
+    expect(el('outer').hasAttribute('data-enabled')).toBe(true);
+    expect(el('outer').className).toContain('[-webkit-touch-callout:none]');
+
+    fixture.componentInstance.outerDisabled.set(true);
+    await fixture.whenStable();
+    expect(el('outer').hasAttribute('data-enabled')).toBe(false);
+
+    fixture.componentInstance.outerDisabled.set(false);
+    await fixture.whenStable();
+    expect(el('outer').hasAttribute('data-enabled')).toBe(true);
+  });
+
   describe('long press on a touch screen', () => {
     beforeEach(() => vi.useFakeTimers());
 
@@ -372,6 +385,16 @@ describe('UiContextMenuDirective', () => {
 
     it('ignores a finger that is not the first, even when the first is elsewhere', async () => {
       pointer(el('outer'), 'pointerdown', { pointerId: 2, isPrimary: false });
+
+      vi.advanceTimersByTime(1000);
+      await settle();
+
+      expect(menus().length).toBe(0);
+    });
+
+    it('cancels when a second finger lands elsewhere on the page', async () => {
+      pointer(el('outer'), 'pointerdown');
+      pointer(document.body, 'pointerdown', { pointerId: 2, isPrimary: false });
 
       vi.advanceTimersByTime(1000);
       await settle();

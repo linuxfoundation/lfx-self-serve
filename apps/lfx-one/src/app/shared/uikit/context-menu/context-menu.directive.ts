@@ -44,8 +44,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
     '(pointerup)': 'onPointerUp()',
     '(pointercancel)': 'cancelLongPress()',
     '(contextmenu)': 'onContextMenu()',
-    // The host answers a long press with this menu, so drop the iOS link and image callout; text selection is left to the host.
-    class: '[-webkit-touch-callout:none]',
+    // The host answers a long press with this menu, so drop the iOS link and image callout while it is enabled; text selection is left to the host.
+    class: 'data-[enabled]:[-webkit-touch-callout:none]',
+    '[attr.data-enabled]': 'enabledAttr()',
     'data-testid': 'ui-context-menu-trigger',
   },
 })
@@ -113,8 +114,9 @@ export class UiContextMenuDirective {
     this.pressX = clientX;
     this.pressY = clientY;
     // Safari on iOS never raises `contextmenu`, so raise it from the press point; from the touched element, so the innermost enabled host takes it.
+    this.document.addEventListener('pointerdown', this.onAnotherFinger, true);
     this.longPressTimer = setTimeout(() => {
-      this.longPressTimer = null;
+      this.cancelLongPress();
       target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX, clientY }));
       this.openedByLongPress = this.trigger.isOpen();
     }, this.longPressMs);
@@ -142,6 +144,11 @@ export class UiContextMenuDirective {
     if (this.longPressTimer === null) return;
     clearTimeout(this.longPressTimer);
     this.longPressTimer = null;
+    this.document.removeEventListener('pointerdown', this.onAnotherFinger, true);
+  }
+
+  protected enabledAttr(): string | null {
+    return this.trigger.disabled ? null : '';
   }
 
   private clearReleaseClick(): void {
@@ -149,6 +156,11 @@ export class UiContextMenuDirective {
     clearTimeout(this.releaseClickTimer);
     this.releaseClickTimer = null;
   }
+
+  // A second finger anywhere on the page, not only on the host, makes the press a pinch or a scroll.
+  private readonly onAnotherFinger = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch' && !event.isPrimary) this.cancelLongPress();
+  };
 
   // Any new press means the click that follows is a real tap, not the release of the long press.
   private readonly onDocumentPointerDown = (): void => this.clearReleaseClick();
