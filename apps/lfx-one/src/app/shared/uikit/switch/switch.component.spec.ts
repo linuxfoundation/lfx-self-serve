@@ -144,6 +144,16 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
       expect(text.classList).not.toContain('sr-only');
     });
 
+    it('gives a checked but disabled segment a GrayText border and no Highlight fill in forced colours', async () => {
+      fixture.componentInstance.value.set('90d');
+      await fixture.whenStable();
+      const classes = segments()[3].classList;
+      expect(classes).toContain('forced-colors:border-[color:GrayText]');
+      expect(classes).toContain('forced-colors:text-[color:GrayText]');
+      expect(classes).not.toContain('forced-colors:bg-[color:Highlight]');
+      expect(classes).not.toContain('forced-colors:text-[color:HighlightText]');
+    });
+
     it('marks the checked segment with a Highlight fill and border, and the focus ring with an outline, in forced colours', () => {
       expect(segments()[1].classList).toContain('forced-colors:bg-[color:Highlight]');
       expect(segments()[1].classList).toContain('forced-colors:border');
