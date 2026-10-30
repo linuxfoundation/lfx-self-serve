@@ -88,6 +88,7 @@ export class MktgFamilyExportActionsComponent {
   private run: Subscription | null = null;
   private readonly pdfRetry = new Subject<void>();
   protected readonly pdfReady = signal(false);
+  protected readonly pdfPreparedScope = signal('');
   protected readonly previewRequested = signal(false);
   private pdfPending = false;
   private pdfScope = '';
@@ -173,7 +174,8 @@ export class MktgFamilyExportActionsComponent {
     const target = this.target();
     const members = this.lookup()?.currentMembers;
     if (!target || !members || !this.canPrint()) return;
-    if (this.pdfReady() && this.printView() && this.pdfScope === JSON.stringify([target, members])) {
+    // A completed preparation may precede its render callback; keep this print in the click task.
+    if (this.markPdfReady() && this.pdfScope === JSON.stringify([target, members])) {
       this.print.printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
       return;
     }
@@ -194,6 +196,7 @@ export class MktgFamilyExportActionsComponent {
           this.pdfReady.set(false);
           this.pdfPending = false;
           this.pdfScope = '';
+          this.pdfPreparedScope.set('');
           this.printing.set(false);
           this.previewRequested.set(false);
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
@@ -202,6 +205,7 @@ export class MktgFamilyExportActionsComponent {
             startWith(undefined),
             switchMap(() => {
               this.pdfPending = true;
+              this.pdfPreparedScope.set('');
               return this.api.printView(target, lookup.currentMembers, this.context.activeContext()?.name ?? 'Project').pipe(
                 switchMap((view) => {
                   this.printView.set(view);
@@ -226,24 +230,38 @@ export class MktgFamilyExportActionsComponent {
           this.printing.set(false);
           return;
         }
-        // Mount the print-only document before offering the synchronous click.
+        if (this.printView() !== prepared.view) return;
+        // This template-bound signal schedules the mount in a zoneless app if it has not rendered yet.
+        this.pdfPreparedScope.set(prepared.key);
+        if (this.markPdfReady()) return;
         afterNextRender(
           () => {
-            if (
-              this.destroyRef.destroyed ||
-              !this.writer() ||
-              this.printView() !== prepared.view ||
-              JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== prepared.key
-            )
-              return;
-            this.pdfScope = prepared.key;
-            this.pdfReady.set(true);
-            this.pdfPending = false;
-            this.printing.set(false);
+            if (this.printView() === prepared.view && this.pdfPreparedScope() === prepared.key) this.markPdfReady();
           },
           { injector: this.injector }
         );
       });
+  }
+
+  /** Readiness requires both completed font preparation and the current mounted document. Never prints asynchronously. */
+  private markPdfReady(): boolean {
+    const key = this.pdfPreparedScope();
+    if (
+      !isPlatformBrowser(this.platformId) ||
+      this.destroyRef.destroyed ||
+      !this.writer() ||
+      this.checking() ||
+      !key ||
+      !this.printView() ||
+      JSON.stringify([this.target(), this.lookup()?.currentMembers]) !== key ||
+      !this.host.nativeElement.querySelector('[data-testid="family-export-print-document"] > *')
+    )
+      return false;
+    this.pdfScope = key;
+    this.pdfReady.set(true);
+    this.pdfPending = false;
+    this.printing.set(false);
+    return true;
   }
 
   private initTarget(): Signal<MktgFamilyExportTarget | null> {

@@ -295,6 +295,68 @@ describe('Family export slot', () => {
     expect(print.clear).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS);
   });
 
+  it('prints on the first click when preparation resolves after rendering, without another change-detection pass', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    const { fixture, root, button } = await setup();
+    expect(root.querySelector('[data-testid="family-export-print-document"] > *')).not.toBeNull();
+    expect(fixture.componentInstance['pdfReady']()).toBe(false);
+    ready();
+    await Promise.resolve();
+    // Do not call detectChanges/whenStable here: the original zoneless latch needed a click to render.
+    expect(fixture.componentInstance['pdfReady']()).toBe(true);
+    expect(fixture.componentInstance['pdfPending']).toBe(false);
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('prints synchronously on the first click if only the ready flag has lagged behind completed preparation', async () => {
+    const { fixture, button } = await setup();
+    expect(fixture.componentInstance['pdfPreparedScope']()).not.toBe('');
+    fixture.componentInstance['pdfReady'].set(false);
+    fixture.componentInstance['pdfPending'] = true;
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(fixture.componentInstance['pdfPending']).toBe(false);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a genuinely pending font preparation explicit: no first-click print, ready label, then a synchronous second click', async () => {
+    let ready: () => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
+    const { fixture, root, button } = await setup();
+    button('pdf')?.click();
+    expect(print.printNow).not.toHaveBeenCalled();
+    await fixture.whenStable();
+    expect(button('pdf')?.disabled).toBe(true);
+    ready();
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')?.textContent).toContain('Your PDF is ready');
+    expect(button('pdf')?.textContent).toContain('Open print preview');
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(print.printNow).not.toHaveBeenCalled();
+    button('pdf')?.click();
+    expect(print.printNow).toHaveBeenCalledExactlyOnceWith(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(api.printView).toHaveBeenCalledOnce();
+  });
+
+  it('reports a font preparation failure without printing or leaving the PDF busy', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let fail: (reason: Error) => void = () => undefined;
+    print.prepare.mockReturnValue(new Promise<void>((_resolve, reject) => (fail = reject)));
+    const { fixture, root, button } = await setup();
+    button('pdf')?.click();
+    await fixture.whenStable();
+    fail(new Error('Synthetic font preparation failure'));
+    await fixture.whenStable();
+    expect(root.querySelector('[data-testid="family-export-error"]')?.textContent).toContain('could not be prepared for PDF');
+    expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
+    expect(button('pdf')?.disabled).toBe(false);
+    expect(fixture.componentInstance['pdfReady']()).toBe(false);
+    expect(print.printNow).not.toHaveBeenCalled();
+  });
+
   it('composes all four print roots in exporter order with a family cover, contents and branded type', async () => {
     const kit = brandKitTestRevision();
     const brand = mktgPrintBrand(kit);

@@ -102,7 +102,7 @@
   }
 </section>
 <!-- Print renderings in exporter order, with one family cover and contents. -->
-<div [class]="printOnlyClass" data-testid="family-export-print-document">
+<div [class]="printOnlyClass" [attr.data-prepared]="!!pdfPreparedScope()" data-testid="family-export-print-document">
   @if (printView(); as document) {
     @let frameworkNumber = '01';
     @let kitNumber = '02';
