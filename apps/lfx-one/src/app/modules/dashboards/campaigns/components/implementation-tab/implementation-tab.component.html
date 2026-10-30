@@ -2162,6 +2162,7 @@
                   <textarea
                     [id]="section.channel + '-' + field.control"
                     [formControlName]="field.control"
+                    (blur)="onGoogleImageFieldBlur(section.groupName, field)"
                     rows="3"
                     class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
@@ -2178,6 +2179,13 @@
                   <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
                     error
                   }}</span>
+                }
+                @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
+                  <span
+                    class="text-xs break-all text-amber-700"
+                    [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
+                    >{{ warning }}</span
+                  >
                 }
                 <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
                      and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->

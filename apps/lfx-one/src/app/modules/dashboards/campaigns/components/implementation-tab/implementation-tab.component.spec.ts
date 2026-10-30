@@ -39,6 +39,7 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
@@ -14203,5 +14204,150 @@ describe('ImplementationTabComponent performance max prefill', () => {
 
     const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
     expect(notice?.textContent).toContain('filled in from the brief');
+  });
+});
+
+/**
+ * Pasted Google image URLs are checked in the browser when the operator leaves the field: an
+ * advisory line only, since campaign-service downloads and checks every pasted URL before anything
+ * is created. jsdom never loads an image, so `Image` is a controllable fake.
+ */
+describe('ImplementationTabComponent pasted Google image URL check', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let images: FakeImage[];
+
+  class FakeImage {
+    public onload: (() => void) | null = null;
+    public onerror: (() => void) | null = null;
+    public naturalWidth = 0;
+    public naturalHeight = 0;
+    public src = '';
+    public constructor() {
+      images.push(this);
+    }
+    public load(width: number, height: number): void {
+      this.naturalWidth = width;
+      this.naturalHeight = height;
+      this.onload?.();
+    }
+    public fail(): void {
+      this.onerror?.();
+    }
+  }
+
+  const group = GOOGLE_CREATIVE_REQUEST_KEYS.display;
+  const key = `${group}.marketingImages`;
+  const marketingField = (): Record<string, unknown> =>
+    GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'marketingImages') as Record<string, unknown>;
+
+  function setUrls(c: Record<string, any>, value: string): void {
+    c['campaignForm'].controls[group].controls['marketingImages'].setValue(value);
+  }
+
+  function warning(c: Record<string, any>): string | undefined {
+    return (c['googleTypedImageWarnings']() as Record<string, string>)[key];
+  }
+
+  beforeEach(async () => {
+    images = [];
+    vi.stubGlobal('Image', FakeImage);
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('names a pasted image that misses the slot shape, with its measured size', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images.map((i) => i.src)).toEqual(['https://cdn.example.com/square.png']);
+    expect(warning(c)).toBeUndefined();
+
+    images[0].load(300, 300);
+
+    expect(warning(c)).toContain('Not 1.91:1');
+    expect(warning(c)).toContain('https://cdn.example.com/square.png (300x300)');
+    expect(warning(c)).toContain('Create will be refused for it.');
+  });
+
+  it('says nothing about a pasted image that fits', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(1200, 628);
+
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('reports an image that will not load as unchecked, not as wrong', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hotlinked.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+
+    expect(warning(c)).toBe('Could not be loaded here, so not checked: https://cdn.example.com/hotlinked.png. campaign-service checks it again at Create.');
+  });
+
+  it('gives up on a slow host after the timeout, as unchecked', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS - 1);
+    expect(warning(c)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(warning(c)).toContain('Could not be loaded here');
+    // A late load after the timeout changes nothing.
+    images[0].load(300, 300);
+    expect(warning(c)).not.toContain('Not 1.91:1');
+  });
+
+  it('drops the warning when the URL is removed, and does not probe a URL twice', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toBeDefined();
+
+    setUrls(c, '');
+    expect(warning(c)).toBeUndefined();
+
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(1);
+    expect(warning(c)).toContain('(300x300)');
+  });
+
+  it('probes nothing for a non-image field or a value that is not an http(s) URL', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls[group].controls['headlines'].setValue('https://cdn.example.com/a.png');
+    c['onGoogleImageFieldBlur'](
+      group,
+      GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'headlines')
+    );
+    setUrls(c, 'not a url\nftp://files.example.com/a.png\nlfx-asset:1234');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(0);
+  });
+
+  it('probes on leaving the textarea and renders the line under the field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    fixture.detectChanges();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="implementation-creative-display-marketingImages"]'
+    ) as HTMLTextAreaElement;
+    textarea.dispatchEvent(new Event('blur'));
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]');
+    expect(line?.textContent).toContain('(300x300)');
   });
 });

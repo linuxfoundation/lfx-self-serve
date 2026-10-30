@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe, SlicePipe } from '@angular/common';
+import { isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -130,6 +130,7 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_LINKEDIN_BUDGET_USD,
@@ -220,6 +221,7 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleTypedImageProbe,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -319,6 +321,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
@@ -1598,6 +1601,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /**
+   * What the browser learned about each pasted Google image URL, keyed by the URL itself: content-
+   * addressed, so a result stays true whichever slot, brief or draft the URL turns up in again.
+   */
+  private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
 
   // === Computed Signals ===
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
@@ -2753,6 +2761,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /** The advisory line under a Google image slot about its pasted URLs, keyed `<request key>.<control>`; absent when there is nothing to say. */
+  protected readonly googleTypedImageWarnings: Signal<Record<string, string>> = this.initGoogleTypedImageWarnings();
   /**
    * Why Create is blocked for a stored Google image the request cannot carry, or that
    * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
@@ -5025,6 +5035,25 @@ export class ImplementationTabComponent implements OnInit {
         this.step.set('form');
       },
     });
+  }
+
+  /**
+   * Check the pasted URLs of a Google image field in the browser once the operator leaves it.
+   *
+   * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
+   * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
+   * nothing; this only tells the operator while they are still on the field rather than at Create.
+   * Each URL is probed once, and a URL already probed keeps its answer.
+   */
+  protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
+    if (!field.image || !isPlatformBrowser(this.platformId)) return;
+    const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
+    const known = this.googleTypedImageProbes();
+    for (const url of this.splitCreativeLines(raw)) {
+      if (known[url] === undefined && this.isHttpUrl(url)) {
+        this.probeGoogleTypedImage(url);
+      }
+    }
   }
 
   // === Private Methods ===
@@ -9096,6 +9125,46 @@ export class ImplementationTabComponent implements OnInit {
     }
   }
 
+  /** Whether a pasted value is an absolute http(s) URL — the only kind a probe is worth making for. */
+  private isHttpUrl(value: string): boolean {
+    try {
+      const protocol = new URL(value).protocol;
+      return protocol === 'https:' || protocol === 'http:';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Load one pasted URL as an image and record its natural size, or that it could not be loaded within
+   * `GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS`. Only ever called in the browser (`onGoogleImageFieldBlur`).
+   * A load that fails here may still succeed from campaign-service — a host can refuse hotlinking or
+   * need a referrer — so a failure is reported as "could not check", never as a wrong image.
+   */
+  private probeGoogleTypedImage(url: string): void {
+    this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: { state: 'checking' } }));
+    const image = new Image();
+    let settled = false;
+    // Stops the probe without recording anything: the tab is gone, or the answer is in.
+    const stop = (): void => {
+      settled = true;
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const unregister = this.destroyRef.onDestroy(stop);
+    const settle = (probe: GoogleTypedImageProbe): void => {
+      if (settled) return;
+      stop();
+      unregister();
+      this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: probe }));
+    };
+    const timer = setTimeout(() => settle({ state: 'failed' }), GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => settle({ state: 'failed' });
+    image.src = url;
+  }
+
   /**
    * A one-entry-per-line textarea's value as the entries it stands for.
    *
@@ -9112,5 +9181,50 @@ export class ImplementationTabComponent implements OnInit {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line !== '');
+  }
+
+  /**
+   * The advisory line under each rendered Google image slot about its pasted URLs (see
+   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
+   * its warning with it. A URL still loading says nothing yet.
+   */
+  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const probes = this.googleTypedImageProbes();
+      const warnings: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const misfits: string[] = [];
+          const unchecked: string[] = [];
+          for (const url of this.splitCreativeLines(raw[field.control])) {
+            const probe = probes[url];
+            if (probe?.state === 'failed') {
+              unchecked.push(url);
+            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
+              misfits.push(`${url} (${probe.width}x${probe.height})`);
+            }
+          }
+          const lines: string[] = [];
+          if (misfits.length > 0) {
+            lines.push(
+              `Not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will be refused for ${misfits.length === 1 ? 'it' : 'them'}.`
+            );
+          }
+          if (unchecked.length > 0) {
+            lines.push(
+              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
+            );
+          }
+          if (lines.length > 0) {
+            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
+          }
+        }
+      }
+      return warnings;
+    });
   }
 }
