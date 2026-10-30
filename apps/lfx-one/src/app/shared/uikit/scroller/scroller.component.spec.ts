@@ -203,6 +203,46 @@ describe('UiScrollerComponent', () => {
     expect(document.activeElement).toBe(projected);
   });
 
+  it('moves focus to the viewport when `buttons` is turned off while a button has focus', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    (next() as HTMLButtonElement).focus();
+
+    fixture.componentRef.setInput('buttons', false);
+    await fixture.whenStable();
+
+    expect(next()).toBeNull();
+    expect(document.activeElement).toBe(viewport());
+  });
+
+  it('measures again when the direction changes', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 300, clientWidth: 300, scrollTop: 0, scrollHeight: 500, clientHeight: 200 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('0px');
+
+    fixture.componentRef.setInput('direction', 'vertical');
+    await fixture.whenStable();
+
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('40px');
+  });
+
+  it('measures again when the text inside an item changes', async () => {
+    setMetrics({ scrollLeft: 0, scrollWidth: 300, clientWidth: 300 });
+    viewport().dispatchEvent(new Event('scroll'));
+    await fixture.whenStable();
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('0px');
+
+    setMetrics({ scrollWidth: 800 });
+    (viewport().children[0].firstChild as Text).data = 'A much longer label';
+    // The mutation callback runs as a microtask.
+    await Promise.resolve();
+    await fixture.whenStable();
+
+    expect(viewport().style.getPropertyValue('--fade-end')).toBe('48px');
+  });
+
   it('moves one item per click, using the spacing between the first two items', async () => {
     setMetrics({ scrollLeft: 0, scrollWidth: 800, clientWidth: 300 });
     const items = viewport().children;

@@ -10,11 +10,13 @@ import {
   DestroyRef,
   ElementRef,
   inject,
+  Injector,
   input,
   signal,
   Signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
 
 /**
@@ -40,6 +42,7 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
 })
 export class UiScrollerComponent {
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
 
   /** Accessible name of the scrollable region, such as "Projects". Also names the scroll buttons: "Previous Projects". */
   public readonly label = input.required<string>();
@@ -74,13 +77,22 @@ export class UiScrollerComponent {
         this.measure();
       };
       const mutation = new MutationObserver(sync);
-      mutation.observe(el, { childList: true });
+      // Subtree and text changes can widen the content without resizing any observed box.
+      mutation.observe(el, { childList: true, subtree: true, characterData: true });
       sync();
       this.destroyRef.onDestroy(() => {
         resize.disconnect();
         mutation.disconnect();
       });
     });
+    // A new axis changes the layout without resizing what the observers watch, so measure once it has rendered.
+    toObservable(this.direction)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => afterNextRender(() => this.measure(), { injector: this.injector }));
+    // Runs before the template drops a focused scroller button, whatever removed it (overflow, `buttons` or `direction`).
+    toObservable(this.showButtons)
+      .pipe(takeUntilDestroyed())
+      .subscribe(() => this.keepFocusOnViewport());
   }
 
   protected measure(): void {
@@ -92,7 +104,6 @@ export class UiScrollerComponent {
     // 1px tolerance for fractional scroll positions.
     this.canScrollStart.set(position > 1);
     this.canScrollEnd.set(position + visible < total - 1);
-    this.keepFocusOnViewport();
   }
 
   protected scrollByItem(sign: 1 | -1): void {
