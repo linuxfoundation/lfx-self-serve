@@ -3,7 +3,7 @@
 
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
-import { UiOption } from '@lfx-one/shared/interfaces';
+import { UiOption, UiOptionLabelParts } from '@lfx-one/shared/interfaces';
 
 import { UiOptionHost } from './option-host';
 
@@ -49,7 +49,7 @@ export class UiOptionComponent {
   protected readonly isActive: Signal<boolean> = computed(() => this.host.isActive(this.item));
   protected readonly isVisible: Signal<boolean> = computed(() => this.host.isVisible?.(this.item) ?? true);
   /** The plain label split around the part the list emphasises (the typed text of a combobox). */
-  protected readonly labelParts: Signal<{ before: string; match: string; after: string }> = this.initLabelParts();
+  protected readonly labelParts: Signal<UiOptionLabelParts> = this.initLabelParts();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
 
   protected pick(): void {
@@ -80,7 +80,7 @@ export class UiOptionComponent {
     };
   }
 
-  private initLabelParts(): Signal<{ before: string; match: string; after: string }> {
+  private initLabelParts(): Signal<UiOptionLabelParts> {
     return computed(() => {
       const label = this.label();
       const range = this.host.matchRange?.(this.item) ?? null;

@@ -282,10 +282,22 @@ describe('UiComboboxComponent', () => {
     await type('zzz');
 
     expect(empty()?.textContent?.trim()).toBe('No projects match “zzz”');
-    expect(empty()?.getAttribute('role')).toBe('status');
+    expect(empty()?.hasAttribute('role')).toBe(false);
     expect(listbox()?.classList.contains('hidden')).toBe(true);
     expect(visibleRows()).toEqual([]);
     expect(activeId()).toBeNull();
+  });
+
+  it('announces the empty message through one persistent live region', async () => {
+    const status = (): HTMLElement => (fixture.nativeElement as HTMLElement).querySelector('[role="status"]') as HTMLElement;
+    expect(status().textContent?.trim()).toBe('');
+
+    await type('zzz');
+    expect(status().textContent?.trim()).toBe('No projects match “zzz”');
+    expect(document.querySelectorAll('[role="status"]').length).toBe(1);
+
+    await type('virt');
+    expect(status().textContent?.trim()).toBe('');
   });
 
   it('does nothing on Enter while nothing matches', async () => {
@@ -407,7 +419,7 @@ describe('UiComboboxComponent', () => {
 
     const groupsField = (): HTMLInputElement => (groupsFixture.nativeElement as HTMLElement).querySelector('input') as HTMLInputElement;
     const groups = (): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>('[role="group"]'));
-    const isHidden = (el: HTMLElement): boolean => getComputedStyle(el).display === 'none' || el.classList.contains('hidden');
+    const isHidden = (el: HTMLElement): boolean => el.classList.contains('hidden');
     const typeInGroups = async (text: string): Promise<void> => {
       groupsField().value = text;
       groupsField().dispatchEvent(new Event('input', { bubbles: true }));
@@ -429,12 +441,18 @@ describe('UiComboboxComponent', () => {
       expect(rich.querySelector('strong')).toBeNull();
     });
 
-    it('hides a group when none of its rows match', async () => {
+    it('hides a group when none of its rows match, and only that group', async () => {
       await typeInGroups('sig');
 
       const visibleOptions = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).filter((el) => !isHidden(el));
       expect(visibleOptions.map((el) => el.textContent?.trim())).toEqual(['Sigstore']);
-      expect(groups().length).toBe(2);
+      expect(groups().map((el) => [el.textContent?.includes('Cloud native'), isHidden(el)])).toEqual([
+        [true, true],
+        [false, false],
+      ]);
+
+      await typeInGroups('');
+      expect(groups().map(isHidden)).toEqual([false, false]);
     });
   });
 

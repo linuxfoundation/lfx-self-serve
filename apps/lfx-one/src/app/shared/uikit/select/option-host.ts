@@ -4,7 +4,7 @@
 import { UiOption } from '@lfx-one/shared/interfaces';
 
 /**
- * What a list of uikit options (select today, combobox and multi-select later) offers to the `lfx-ui-option` rows inside it. Options inject this
+ * What a list of uikit options (select and combobox, multi-select later) offers to the `lfx-ui-option` rows inside it. Options inject this
  * instead of a concrete list, so each list keeps its own picking rules and options never import the list that owns them.
  */
 export abstract class UiOptionHost {

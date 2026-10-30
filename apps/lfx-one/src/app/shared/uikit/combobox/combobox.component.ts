@@ -118,10 +118,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   protected readonly isEmpty: Signal<boolean> = computed(() => this.navigable().length === 0);
   protected readonly displayText: Signal<string> = computed(() => this.query() ?? this.selected()?.label ?? '');
   protected readonly emptyMessage: Signal<string> = computed(() => (this.queryText() ? `${this.emptyText()} “${this.queryText()}”` : this.emptyText()));
-  protected readonly activeOption: Signal<UiOption | null> = computed(() => {
-    const item = this.activeItem();
-    return this.expanded() && item && this.options().includes(item) ? item : null;
-  });
+  protected readonly activeOption: Signal<UiOption | null> = this.initActiveOption();
   protected readonly activeDescendant: Signal<string | null> = computed(() => this.activeOption()?.id ?? null);
   protected readonly describedBy: Signal<string | null> = computed(() => {
     if (this.error()) return this.errorId;
@@ -253,6 +250,53 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     if (wasOpen) this.openChange.emit(false);
   }
 
+  private initActiveOption(): Signal<UiOption | null> {
+    return computed(() => {
+      const item = this.activeItem();
+      return this.expanded() && item && this.options().includes(item) ? item : null;
+    });
+  }
+
+  private initKeyManager(): ListKeyManager<UiOption> {
+    // The manager skips disabled options and does not wrap, as the pattern asks. Home and End stay with the text caret.
+    return new ListKeyManager(this.navigable, this.injector).withVerticalOrientation().withPageUpDown();
+  }
+
+  private initTriggerClasses(): Signal<string> {
+    return computed(() => {
+      // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent) or invalid (danger).
+      const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
+      const interactive =
+        'cursor-text hover:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] data-[open]:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
+      // A disabled field keeps the resting ring only, so it does not look interactive on hover.
+      const rest = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
+      const ring = this.error() ? dangerHalo : rest;
+      const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
+      // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.
+      const border = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]';
+      const forced = `forced-colors:border ${border} forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]`;
+      const heights = { tiny: 'h-ui-tiny', small: 'h-ui-small', medium: 'h-ui-medium' };
+      // Exact px (14px root): 8 and 10px radii have no token; side padding and icon gap per size, as the library trigger.
+      const radii = { tiny: 'rounded-[8px]', small: 'rounded-[10px]', medium: 'rounded-ui-sm' };
+      const pads = { tiny: 'px-[8px] gap-[4px]', small: 'px-[10px] gap-[6px]', medium: 'px-[12px] gap-[8px]' };
+      const text = this.size() === 'tiny' ? 'label-12' : 'label-14';
+      const size = this.size();
+      return `flex w-full items-center transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${heights[size]} ${radii[size]} ${pads[size]} ${text} ${fill} ${ring} ${forced}`;
+    });
+  }
+
+  private initIconClasses(): Signal<string> {
+    return computed(() => `inline-flex shrink-0 items-center ${this.size() === 'tiny' ? 'text-[12px]' : 'text-[14px]'} text-ui-neutral-500`);
+  }
+
+  private initChevronClasses(): Signal<string> {
+    return computed(() => {
+      // Exact px: chevron 12px (10px tiny). The trigger gap spaces it from the text.
+      const sizes = { tiny: 'text-[10px]', small: 'text-[12px]', medium: 'text-[12px]' };
+      return `inline-flex shrink-0 cursor-pointer items-center text-ui-neutral-600 ${sizes[this.size()]}`;
+    });
+  }
+
   private inputElement(): HTMLInputElement | null {
     return this.origin().elementRef.nativeElement.querySelector('input');
   }
@@ -302,45 +346,5 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     const listBox = list.getBoundingClientRect();
     if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
     else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
-  }
-
-  private initKeyManager(): ListKeyManager<UiOption> {
-    // The manager skips disabled options and does not wrap, as the pattern asks. Home and End stay with the text caret.
-    return new ListKeyManager(this.navigable, this.injector).withVerticalOrientation().withPageUpDown();
-  }
-
-  private initTriggerClasses(): Signal<string> {
-    return computed(() => {
-      // Library recipe (same as Input): 1px ring at rest, stronger ring plus a 4px halo when focused or open (accent) or invalid (danger).
-      const dangerHalo = 'shadow-[0_0_0_1px_theme(colors.ui.danger.700),0_0_0_4px_theme(colors.ui.danger.200)]';
-      const interactive =
-        'cursor-text hover:edge-hover focus-within:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)] data-[open]:shadow-[0_0_0_1px_theme(colors.ui.accent.500),0_0_0_4px_theme(colors.ui.accent.100)]';
-      // A disabled field keeps the resting ring only, so it does not look interactive on hover.
-      const rest = this.isDisabled() ? 'edge cursor-not-allowed' : `edge ${interactive}`;
-      const ring = this.error() ? dangerHalo : rest;
-      const fill = this.isDisabled() ? 'bg-ui-neutral-50 text-ui-neutral-500' : 'bg-ui-background-100 text-ui-neutral-900';
-      // forced-colors: shadows vanish, so a real border keeps the field visible and an outline marks focus.
-      const border = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:CanvasText]';
-      const forced = `forced-colors:border ${border} forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]`;
-      const heights = { tiny: 'h-ui-tiny', small: 'h-ui-small', medium: 'h-ui-medium' };
-      // Exact px (14px root): 8 and 10px radii have no token; side padding and icon gap per size.
-      const radii = { tiny: 'rounded-[8px]', small: 'rounded-[10px]', medium: 'rounded-ui-sm' };
-      const pads = { tiny: 'px-[8px] gap-[8px]', small: 'px-[10px] gap-[12px]', medium: 'px-[12px] gap-[10px]' };
-      const text = this.size() === 'tiny' ? 'label-12' : 'label-14';
-      const size = this.size();
-      return `flex w-full items-center transition-shadow duration-ui-base ease-ui-standard motion-reduce:transition-none ${heights[size]} ${radii[size]} ${pads[size]} ${text} ${fill} ${ring} ${forced}`;
-    });
-  }
-
-  private initIconClasses(): Signal<string> {
-    return computed(() => `inline-flex shrink-0 items-center ${this.size() === 'tiny' ? 'text-[12px]' : 'text-[14px]'} text-ui-neutral-600`);
-  }
-
-  private initChevronClasses(): Signal<string> {
-    return computed(() => {
-      // Exact px: chevron 12px (10px tiny), pushed 12px from the text (10px small and tiny).
-      const sizes = { tiny: 'ml-[10px] text-[10px]', small: 'ml-[10px] text-[12px]', medium: 'ml-[12px] text-[12px]' };
-      return `inline-flex shrink-0 cursor-pointer items-center text-ui-neutral-600 ${sizes[this.size()]}`;
-    });
   }
 }
