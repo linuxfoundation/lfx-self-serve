@@ -103,7 +103,8 @@ describe('OrgOverviewFoundationsAndProjectsComponent maintainer roles (lfx-self-
   });
 });
 
-describe('OrgOverviewFoundationsAndProjectsComponent project navigation (lfx-self-serve-ops#1219)', () => {
+// lfx-self-serve-ops#1219: the Overview has no organization scope, so its project rows carry none (the default).
+describe('OrgOverviewFoundationsAndProjectsComponent project navigation', () => {
   interface Rows {
     onProjectRowClick: (row: OrgLensFoundationProject) => void;
     onProjectRowKeydown: (event: KeyboardEvent, row: OrgLensFoundationProject) => void;
@@ -118,18 +119,13 @@ describe('OrgOverviewFoundationsAndProjectsComponent project navigation (lfx-sel
     return navigate;
   }
 
-  it('carries ?orgScope=all to the project, by click and by keyboard', async () => {
-    const clicked = await navigateFrom('/?orgScope=all', (component, row) => component.onProjectRowClick(row));
-    expect(clicked).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: { orgScope: 'all' } });
+  it('opens the project with no organization scope, by click and by keyboard, whatever the address names', async () => {
+    for (const url of ['/', '/?orgScope=all']) {
+      const clicked = await navigateFrom(url, (component, row) => component.onProjectRowClick(row));
+      expect(clicked.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
 
-    const keyed = await navigateFrom('/?orgScope=all', (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
-    expect(keyed).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: { orgScope: 'all' } });
-  });
-
-  it('sends no orgScope from the default or an unknown value', async () => {
-    for (const url of ['/', '/?orgScope=insights', '/?orgScope=bogus']) {
-      const navigate = await navigateFrom(url, (component, row) => component.onProjectRowClick(row));
-      expect(navigate).toHaveBeenCalledWith(['/org', 'projects', 'k8s'], { queryParams: {} });
+      const keyed = await navigateFrom(url, (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
+      expect(keyed.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
     }
   });
 });

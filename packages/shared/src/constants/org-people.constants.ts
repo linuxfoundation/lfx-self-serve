@@ -143,8 +143,8 @@ export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choos
 export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
 
 /**
- * Organization-scope filter on every Org Lens page with contributor counts — Overview, People → Contributors and All
- * Employees (code only), Code Contributions and Project Detail (lfx-self-serve-ops#1219). `insights`, the default, counts
+ * Organization-scope filter on the Org Lens pages with contributor counts — People → Contributors and All Employees (code
+ * only), Code Contributions, Projects and Project Detail (lfx-self-serve-ops#1219); the Overview counts the default. `insights`, the default, counts
  * only the crowd.dev organization behind the account's LFX Insights page and only repositories LFX Insights counts, as
  * that page does; `all` counts every organization linked to the account in every repository. Maintainer roles, seats,
  * events and training are not affected.

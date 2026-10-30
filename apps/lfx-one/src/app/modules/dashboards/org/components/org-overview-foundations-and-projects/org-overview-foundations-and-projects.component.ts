@@ -12,7 +12,6 @@ import { OrgLensFoundationsService } from '@services/org-lens-foundations.servic
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PlausibleService } from '@services/plausible.service';
 import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
-import { orgScopeQueryParams } from '@shared/utils/org-scope-url.util';
 
 import {
   ORG_COMMITS_DEFINITION,
@@ -145,10 +144,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected onProjectRowClick(project: OrgLensFoundationRow['projects'][number]): void {
     if (!project.isLfProject) return;
     this.onProjectClick({ projectId: project.projectId, projectName: project.projectName });
-    // The Overview's organization scope pick carries to Project Detail (lfx-self-serve-ops#1219).
-    void this.router.navigate(this.orgLens.orgLensLink('projects', project.projectSlug || project.projectId), {
-      queryParams: orgScopeQueryParams(this.router.parseUrl(this.router.url).queryParamMap),
-    });
+    void this.router.navigate(this.orgLens.orgLensLink('projects', project.projectSlug || project.projectId));
   }
 
   protected onProjectRowKeydown(event: KeyboardEvent, project: OrgLensFoundationRow['projects'][number]): void {

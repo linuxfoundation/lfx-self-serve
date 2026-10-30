@@ -11,7 +11,6 @@ import type {
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgInvolvementMaintainersMonthlyResponse,
-  OrgScopeFilter,
   OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -27,10 +26,9 @@ export class OrgInvolvementAnalyticsService {
       .pipe(catchError(() => of({ accountId, foundationCount: 0, foundations: [] })));
   }
 
-  /** `orgScope` picks whose code the card counts (lfx-self-serve-ops#1219); the BFF falls back to all when the account has no Insights org. */
-  public getContributorsMonthly(accountId: string, orgScope: OrgScopeFilter): Observable<OrgInvolvementContributorsMonthlyResponse> {
+  public getContributorsMonthly(accountId: string): Observable<OrgInvolvementContributorsMonthlyResponse> {
     return this.http
-      .get<OrgInvolvementContributorsMonthlyResponse>('/api/analytics/org-involvement-contributors-monthly', { params: { accountId, orgScope } })
+      .get<OrgInvolvementContributorsMonthlyResponse>('/api/analytics/org-involvement-contributors-monthly', { params: { accountId } })
       .pipe(catchError(() => of({ accountId, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] })));
   }
 

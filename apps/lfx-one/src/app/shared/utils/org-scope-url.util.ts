@@ -7,7 +7,7 @@ import type { ActivatedRoute, ParamMap, Params, Router } from '@angular/router';
 import { DEFAULT_ORG_SCOPE, ORG_SCOPE_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type { OrgScopeFilter } from '@lfx-one/shared/interfaces';
 import { orgScopeUrlParam, parseOrgScopeFilter } from '@lfx-one/shared/utils';
-import { distinctUntilChanged, map } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs';
 
 /** The organization scope a route's `?orgScope=` selects (the default, insights, when absent or unknown). */
 export function readOrgScope(route: ActivatedRoute): OrgScopeFilter {
@@ -26,7 +26,7 @@ export function orgScopeQueryParams(params: ParamMap): Params {
 
 /**
  * Keeps an Organization scope picker and `?orgScope=` in step (lfx-self-serve-ops#1219), so the pick carries across
- * Overview, People, Code Contributions and Project Detail: a pick is written to the URL (dropped at the default), and a
+ * People, Code Contributions, Projects and Project Detail: a pick is written to the URL (dropped at the default), and a
  * query-only navigation sets the picker. Each side acts only when the other differs, so neither echoes the other.
  * `onPick` is merged into the URL with a pick, for a page whose other params the pick invalidates (the Projects list's
  * `page`). Call from an injection context (constructor).
@@ -50,5 +50,21 @@ export function syncOrgScopeWithUrl(control: FormControl<OrgScopeFilter>, route:
     )
     .subscribe((scope) => {
       if (scope !== control.value) control.setValue(scope);
+    });
+}
+
+/**
+ * Keeps `?orgScope=` off a page that always counts the default organization scope (the Org Overview, which has no
+ * picker), so its address never claims a scope it is not showing: an address that names one is replaced without it.
+ * Call from an injection context (constructor).
+ */
+export function dropOrgScopeFromUrl(route: ActivatedRoute, router: Router): void {
+  route.queryParamMap
+    .pipe(
+      filter((params) => params.has(ORG_SCOPE_QUERY_PARAM)),
+      takeUntilDestroyed()
+    )
+    .subscribe(() => {
+      void router.navigate([], { relativeTo: route, queryParams: { [ORG_SCOPE_QUERY_PARAM]: null }, queryParamsHandling: 'merge', replaceUrl: true });
     });
 }

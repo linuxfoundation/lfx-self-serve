@@ -921,13 +921,13 @@ export class SidebarNavService {
   private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
     const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
     return [
-      // The organization scope carries between every page that counts contributors and Projects, which leads to Project
-      // Detail (lfx-self-serve-ops#1219), so a pick of All related organizations survives the sidebar.
+      // The organization scope carries between the pages with a scope picker — Projects, People, Code Contributions, and
+      // Project Detail through Projects (lfx-self-serve-ops#1219) — so a pick of All related organizations survives the
+      // sidebar. The Dashboard always counts the default scope, so its link carries none.
       {
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
         routerLink: org('overview'),
-        carryQueryParams: [ORG_SCOPE_QUERY_PARAM],
       },
       {
         label: 'Memberships',

@@ -439,15 +439,16 @@ describe('NavMenuBase — carried query params', () => {
 });
 
 /**
- * The Org Lens organization scope (lfx-self-serve-ops#1219) carries between the pages that count contributors and
- * Projects, including from a project detail page under Projects, so a pick of All related organizations survives the sidebar.
+ * The Org Lens organization scope (lfx-self-serve-ops#1219) carries between the pages with a scope picker — Projects,
+ * People and Code Contributions, including from a project detail page under Projects — so a pick of All related
+ * organizations survives the sidebar. The Dashboard always shows the default, so its link carries none.
  */
 describe('NavMenuBase — carried organization scope', () => {
   @Component({ selector: 'lfx-carry-scope-blank-page', template: '' })
   class CarryScopeBlankPageStubComponent {}
 
   const items: SidebarMenuItem[] = [
-    { label: 'Dashboard', routerLink: '/org/acme-inc/overview', carryQueryParams: ['orgScope'] },
+    { label: 'Dashboard', routerLink: '/org/acme-inc/overview' },
     { label: 'Memberships', routerLink: '/org/acme-inc/memberships' },
     { label: 'Projects', routerLink: '/org/acme-inc/projects', carryQueryParams: ['orgScope'] },
     {
@@ -483,11 +484,11 @@ describe('NavMenuBase — carried organization scope', () => {
     component = fixture.componentInstance;
   });
 
-  it('carries ?orgScope=all from People to Dashboard, Projects and Code Contributions, the range only between People and Code Contributions', async () => {
+  it('carries ?orgScope=all from People to Projects and Code Contributions, not the Dashboard, the range only between People and Code Contributions', async () => {
     await router.navigateByUrl('/org/acme-inc/people?tab=contributors&range=90d&orgScope=all');
 
     expect(linkParams()).toEqual({
-      Dashboard: { orgScope: 'all' },
+      Dashboard: undefined,
       Memberships: undefined,
       Projects: { orgScope: 'all' },
       People: { range: '90d', orgScope: 'all' },
@@ -499,7 +500,7 @@ describe('NavMenuBase — carried organization scope', () => {
     await router.navigateByUrl('/org/acme-inc/projects/kubernetes?orgScope=all&range=1y');
 
     expect(linkParams()).toEqual({
-      Dashboard: { orgScope: 'all' },
+      Dashboard: undefined,
       Memberships: undefined,
       Projects: { orgScope: 'all' },
       People: { orgScope: 'all' },
@@ -508,7 +509,7 @@ describe('NavMenuBase — carried organization scope', () => {
   });
 
   it.each(['insights', 'bogus'])('carries no ?orgScope=%s, which is the default or unknown', async (orgScope) => {
-    await router.navigateByUrl(`/org/acme-inc/overview?orgScope=${orgScope}`);
+    await router.navigateByUrl(`/org/acme-inc/people?orgScope=${orgScope}`);
 
     expect(linkParams()).toEqual({ Dashboard: undefined, Memberships: undefined, Projects: undefined, People: undefined, 'Code Contributions': undefined });
   });
