@@ -41,9 +41,10 @@ import {
   votePermalinkPath,
 } from '@lfx-one/shared/utils';
 import { VoteService } from '@services/vote.service';
+import { createGuardedConfirm, GuardedConfirmOptions } from '@shared/utils/guarded-confirm.util';
 import { createHeldResults } from '@shared/utils/held-results.util';
 import { createLiveSnapshot } from '@shared/utils/live-snapshot.util';
-import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { map, timer } from 'rxjs';
 
@@ -106,8 +107,6 @@ export class VotePresenterComponent {
   private readonly endInFlight = signal(false);
   /** The poll generation the end request's forced restart started; only a result from that generation or later settles the close. */
   private readonly awaitingGeneration = signal<number | null>(null);
-  /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
-  protected readonly confirmOpen = signal(false);
   /** The Send ballots child owns its own dialog; its `confirming` flag tells Esc to stay out of the way (undefined once the child is destroyed). */
   private readonly sendBallots = viewChild(VoteSendBallotsComponent);
 
@@ -128,6 +127,20 @@ export class VotePresenterComponent {
     return live ? { vote: live.value, receivedAtMs: live.receivedAtMs } : null;
   });
   private readonly failures = this.live.failures;
+
+  // === Confirmations ===
+  /**
+   * Exit and Close confirmations: the accept is bound to the vote it opened for (dropped if the route has moved on), and focus
+   * returns to the opener, or to the current Exit button if the opener is disabled or gone.
+   */
+  private readonly guardedConfirm = createGuardedConfirm({
+    confirmation: this.confirmationService,
+    doc: this.doc,
+    currentKey: this.voteId,
+    fallbackFocus: () => this.doc.querySelector<HTMLElement>('[data-testid="vote-presenter-exit"] button'),
+  });
+  /** True while a presenter confirmation (Exit or Close) is up, so Esc cancels the dialog and never starts another action. */
+  protected readonly confirmOpen = this.guardedConfirm.isOpen;
 
   // === Computed Signals ===
   /** True from the confirmed Close until the request fails or the next poll lands, so the button cannot be double-fired. */
@@ -218,14 +231,10 @@ export class VotePresenterComponent {
   });
 
   private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
-  private confirmHiddenTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The element focused when a confirmation opened, so focus returns to the triggering button when it closes. */
-  private returnFocusTo: HTMLElement | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
       if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
-      if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
     });
     if (this.isBrowser) {
       timer(VOTE_PRESENTER_CLOCK_TICK_MS, VOTE_PRESENTER_CLOCK_TICK_MS)
@@ -242,16 +251,19 @@ export class VotePresenterComponent {
       this.leave(id);
       return;
     }
-    this.openConfirm({
-      header: 'Leave presenter',
-      message: 'Leave the presenter? The vote stays open.',
-      acceptLabel: 'Leave',
-      rejectLabel: 'Stay',
-      defaultFocus: 'reject',
-      acceptButtonStyleClass: 'p-button-info p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: this.acceptFor(id, (uid) => this.leave(uid)),
-    });
+    this.openConfirm(
+      {
+        header: 'Leave presenter',
+        message: 'Leave the presenter? The vote stays open.',
+        acceptLabel: 'Leave',
+        rejectLabel: 'Stay',
+        defaultFocus: 'reject',
+        acceptButtonStyleClass: 'p-button-info p-button-sm',
+        rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      },
+      id,
+      (uid) => this.leave(uid)
+    );
   }
 
   /** Esc is Exit, except while any confirmation is open, where PrimeNG's own handler cancels the dialog and this does nothing. */
@@ -260,23 +272,16 @@ export class VotePresenterComponent {
     this.exit();
   }
 
-  /** Called a tick after a dialog hides, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
+  /** Called when a dialog hides; the reset it triggers runs a tick later, so the Esc keydown that closed it is still seen as "dialog open" by `onEscape`. */
   protected onConfirmHidden(): void {
-    if (this.confirmHiddenTimer) clearTimeout(this.confirmHiddenTimer);
-    this.confirmHiddenTimer = setTimeout(() => {
-      this.confirmOpen.set(false);
-      this.restoreFocus();
-    });
+    this.guardedConfirm.onHidden();
   }
 
   /** Close vote: always asks first. Nothing is sent until the dialog is accepted. */
   protected onCloseClick(): void {
     const id = this.voteId();
     if (!id || !this.canClose()) return;
-    this.openConfirm({
-      ...VOTE_CLOSE_CONFIRMATION,
-      accept: this.acceptFor(id, (uid) => this.endVote(uid)),
-    });
+    this.openConfirm(VOTE_CLOSE_CONFIRMATION, id, (uid) => this.endVote(uid));
   }
 
   /** Restarts the poll loop from the error state without waiting out the backoff. */
@@ -344,41 +349,14 @@ export class VotePresenterComponent {
     });
   }
 
-  /**
-   * Hands focus back to the element that opened the dialog. After an accept that element can be disabled (Close while the
-   * request is in flight) or gone (the phase changed under the dialog), so focus falls back to the current Exit button.
-   */
-  private restoreFocus(): void {
-    const target = this.returnFocusTo;
-    this.returnFocusTo = null;
-    if (target?.isConnected && !(target as HTMLButtonElement).disabled) {
-      target.focus();
-      return;
-    }
-    this.doc.querySelector<HTMLElement>('[data-testid="vote-presenter-exit"] button')?.focus();
-  }
-
   private leave(id: string | null): void {
     void this.router.navigateByUrl(id ? votePermalinkPath(id) : '/votes');
   }
 
-  private openConfirm(options: Confirmation): void {
-    const active = this.doc.activeElement;
-    this.returnFocusTo = active instanceof HTMLElement ? active : null;
+  private openConfirm(options: GuardedConfirmOptions, id: string, action: (uid: string) => void): void {
     // A voter-list request still loading in Send ballots must not open its dialog over this one.
     this.sendBallots()?.abandon();
-    this.confirmOpen.set(true);
-    this.confirmationService.confirm(options);
-  }
-
-  /**
-   * Binds a confirmation's accept to the vote it was opened for: if the route has moved to another vote while the dialog
-   * was up, the accept is dropped (no request, no toast) so it can never act on the wrong vote.
-   */
-  private acceptFor(id: string, action: (uid: string) => void): () => void {
-    return () => {
-      if (id === this.voteId()) action(id);
-    };
+    this.guardedConfirm.open(options, id, action);
   }
 
   /** The upstream message when the voting service answered (for example "poll has not started"), a plain fallback otherwise. */
