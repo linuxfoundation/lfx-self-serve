@@ -97,6 +97,7 @@ describe('VoteDetailComponent', () => {
     getMyVoteResponse: ReturnType<typeof vi.fn>;
     getMyVoteBallot: ReturnType<typeof vi.fn>;
     getVoteResults: ReturnType<typeof vi.fn>;
+    getReminderRecipients: ReturnType<typeof vi.fn>;
   };
   let projectService: { getProjectStrict: ReturnType<typeof vi.fn> };
   let committeeService: { fetchCommittee: ReturnType<typeof vi.fn> };
@@ -159,6 +160,7 @@ describe('VoteDetailComponent', () => {
       getMyVoteResponse: vi.fn().mockReturnValue(of(null)),
       getMyVoteBallot: vi.fn().mockReturnValue(of(null)),
       getVoteResults: vi.fn().mockReturnValue(of(makeResults())),
+      getReminderRecipients: vi.fn().mockReturnValue(of([])),
     };
     projectService = { getProjectStrict: vi.fn().mockReturnValue(of({ writer: false } as Project)) };
     committeeService = { fetchCommittee: vi.fn().mockReturnValue(of({ writer: false })) };

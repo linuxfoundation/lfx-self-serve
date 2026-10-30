@@ -13,7 +13,8 @@
       (viewResults)="viewVoteResults($event)"
       (viewVote)="viewVote($event)"
       (refresh)="refreshVotes()"
-      (voteExtended)="onVoteExtended($event)">
+      (voteExtended)="onVoteExtended($event)"
+      (voteClosed)="onVoteClosed($event)">
       @if (canEdit()) {
         <lfx-button
           tableActions

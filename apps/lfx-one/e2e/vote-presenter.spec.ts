@@ -10,6 +10,7 @@
  *   - Close vote (#4143): the confirm dialog gates POST /api/votes/:uid/end, the next poll flips the presenter to the
  *     result state with `/results` requested once, and an upstream rejection shows a toast and leaves the vote open
  *   - Exit (#4691): asks first while the vote is open (Stay, Esc and backdrop keep the presenter, focus returns to Exit), and leaves at once when ended
+ *   - Send ballots now (#4740): disabled with "Everyone has voted" when the voter list is empty; a failed list read toasts and leaves the button usable
  *   - a non-writer is redirected away and never sees the presenter
  *   - network loss shows "Reconnecting" with the last count kept, then recovers without a reload
  *   - the link-first share panel fits at 1920x1080, 1024x768 and a 390x844 phone with no horizontal scroll
@@ -49,6 +50,8 @@ interface StubState {
   /** POST /end calls seen, and the upstream status to answer with (200 ends the stubbed vote; anything else rejects it). */
   endRequests?: number;
   endStatus?: number;
+  /** Members who have not voted, as GET /reminder-recipients reports them; 'error' answers 503. Defaults to 3. */
+  remaining?: number | 'error';
 }
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
@@ -93,6 +96,13 @@ async function stubVote(page: Page, state: StubState): Promise<void> {
     }
     state.vote = { ...state.vote, status: 'ended', early_end_time: '2099-05-02T10:00:00Z' };
     return fulfillJson(route, state.vote);
+  });
+  await page.route(`**/api/votes/${VOTE_UID}/reminder-recipients`, (route) => {
+    if (state.remaining === 'error') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' });
+    return fulfillJson(
+      route,
+      Array.from({ length: state.remaining ?? 3 }, (_, i) => ({ uid: `r-${i}`, name: `Member ${i}`, email: `member-${i}@example.test` }))
+    );
   });
   await page.route(`**/api/votes/${VOTE_UID}/results`, (route) => {
     state.resultsRequests += 1;
@@ -205,6 +215,31 @@ test.describe('Vote presenter (#4140)', () => {
     await expect(page.getByText('poll has not started')).toBeVisible({ timeout: RENDER_TIMEOUT });
     await expect(page.getByTestId('vote-presenter-open')).toBeVisible();
     expect(state.resultsRequests).toBe(0);
+  });
+
+  test('writer: Send ballots now is disabled with "Everyone has voted" once no one is left to email (#4740)', async ({ page }) => {
+    const state: StubState = { vote: buildVote(), writer: true, offline: false, resultsRequests: 0, remaining: 0 };
+    await stubVote(page, state);
+    await openPresenter(page);
+
+    const send = page.getByTestId('vote-presenter-send-ballots').getByRole('button', { name: 'Send ballots now' });
+    await expect(send).toBeDisabled({ timeout: RENDER_TIMEOUT });
+    await expect(page.getByTestId('vote-presenter-send-ballots')).toContainText('Everyone has voted');
+  });
+
+  test('writer: a failed voter-list read toasts, opens no dialog and re-enables Send ballots now (#4740)', async ({ page }) => {
+    const state: StubState = { vote: buildVote(), writer: true, offline: false, resultsRequests: 0, remaining: 'error' };
+    await stubVote(page, state);
+    await openPresenter(page);
+
+    const send = page.getByTestId('vote-presenter-send-ballots').getByRole('button', { name: 'Send ballots now' });
+    await expect(send).toBeEnabled({ timeout: RENDER_TIMEOUT });
+    await send.click();
+
+    await expect(page.getByText("Couldn't load the voter list. Try again.")).toBeVisible({ timeout: RENDER_TIMEOUT });
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(send).toBeEnabled();
+    await expect(send).toBeFocused();
   });
 
   test('axe: no violations on the open and ended states', async ({ page }) => {

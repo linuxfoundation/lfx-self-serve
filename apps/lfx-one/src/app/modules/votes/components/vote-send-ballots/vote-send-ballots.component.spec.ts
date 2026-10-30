@@ -167,7 +167,7 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  it('skips the dialog and tells the writer when everyone has voted', () => {
+  it('toasts only for the race: the list was non-empty at load and empty when clicked', () => {
     getReminderRecipients.mockReturnValue(of([]));
     const confirmSpy = vi.spyOn(confirmation, 'confirm');
     button().click();
@@ -242,11 +242,89 @@ describe('VoteSendBallotsComponent (#4363)', () => {
     expect(button().disabled).toBe(false);
   });
 
-  it('shows a plain error that nothing was sent when the voter list cannot be loaded', () => {
-    getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
-    button().click();
+  describe('voter list known to be empty (#4740)', () => {
+    beforeEach(() => {
+      fixture.destroy();
+      getReminderRecipients.mockReset();
+      getReminderRecipients.mockReturnValue(of([]));
+      fixture = TestBed.createComponent(VoteSendBallotsComponent);
+      fixture.componentRef.setInput('voteUid', 'v-1');
+      fixture.detectChanges();
+      confirmation = fixture.debugElement.injector.get(ConfirmationService);
+    });
 
-    expect(add.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: expect.stringContaining('Nothing was sent') });
+    it('disables the button and says why, without a toast or a second read', () => {
+      expect(getReminderRecipients).toHaveBeenCalledTimes(1);
+      expect(button().disabled).toBe(true);
+      expect(el().textContent).toContain('Everyone has voted');
+
+      button().click();
+      expect(getReminderRecipients).toHaveBeenCalledTimes(1);
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('re-reads the list when the vote changes and enables the button for a vote with voters left', () => {
+      getReminderRecipients.mockReturnValue(of(recipients(2)));
+      fixture.componentRef.setInput('voteUid', 'v-2');
+      fixture.detectChanges();
+
+      expect(getReminderRecipients).toHaveBeenLastCalledWith('v-2');
+      expect(button().disabled).toBe(false);
+    });
+  });
+
+  it('keeps the button disabled when the prefetch answers after a click found nobody left (#4744)', () => {
+    fixture.destroy();
+    const prefetch = new Subject<{ uid: string }[]>();
+    getReminderRecipients.mockReset();
+    getReminderRecipients.mockReturnValueOnce(prefetch).mockReturnValue(of([]));
+    fixture = TestBed.createComponent(VoteSendBallotsComponent);
+    fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.detectChanges();
+
+    button().click();
+    fixture.detectChanges();
+    expect(button().disabled).toBe(true);
+
+    prefetch.next(recipients(3));
+    prefetch.complete();
+    fixture.detectChanges();
+
+    expect(button().disabled).toBe(true);
+  });
+
+  it('leaves the button enabled when the list cannot be read up front', () => {
+    fixture.destroy();
+    getReminderRecipients.mockReturnValue(throwError(() => new Error('query down')));
+    fixture = TestBed.createComponent(VoteSendBallotsComponent);
+    fixture.componentRef.setInput('voteUid', 'v-1');
+    fixture.detectChanges();
+
+    expect(button().disabled).toBe(false);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  describe('voter list fails on click (#4740)', () => {
+    it('clears loading, re-enables the button, restores focus, toasts and opens no dialog', () => {
+      const answer = new Subject<{ uid: string }[]>();
+      getReminderRecipients.mockReturnValue(answer);
+      const confirmSpy = vi.spyOn(confirmation, 'confirm');
+      button().focus();
+      button().click();
+      fixture.detectChanges();
+      expect(button().disabled).toBe(true);
+      // A disabled button gives up focus in a real browser; jsdom keeps it, so release it by hand.
+      button().blur();
+
+      answer.error(new Error('query down'));
+      fixture.detectChanges();
+
+      expect(button().disabled).toBe(false);
+      expect(el().querySelector('[data-testid="vote-send-ballots-button"] .p-button-loading-icon, .pi-spinner')).toBeNull();
+      expect(document.activeElement).toBe(button());
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "Couldn't load the voter list. Try again." }));
+      expect(confirmSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the action enabled with no success line after a failed send', () => {

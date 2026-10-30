@@ -228,3 +228,13 @@ export const VOTE_LINK_NOT_AWAITING_RESPONSE = 'not awaiting response';
 
 /** Upstream 400 message (lowercased substring) when an update hits a ballot with no response yet: switch to first submission. */
 export const VOTE_LINK_NOT_RESPONDED = 'not responded';
+
+/** Close-vote confirmation (presenter and votes-table row menu): one copy so the two entry points never drift. */
+export const VOTE_CLOSE_CONFIRMATION = {
+  header: 'Close vote',
+  message: 'Close the vote now? Members can no longer cast or change ballots.',
+  acceptLabel: 'Close vote',
+  rejectLabel: 'Cancel',
+  acceptButtonStyleClass: 'p-button-danger p-button-sm',
+  rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+} as const;

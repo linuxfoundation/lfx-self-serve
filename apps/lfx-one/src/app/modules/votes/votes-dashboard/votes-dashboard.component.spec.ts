@@ -187,6 +187,32 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(list).not.toHaveBeenCalled();
   });
 
+  it('re-reads the page, tab counts and total after a row-menu close, which an extend does not (#4744)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const total = vi.mocked(service.getVotesCountByProject);
+    list.mockClear();
+    counts.mockClear();
+    total.mockClear();
+
+    dashboard['onVoteExtended']();
+    await settle();
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).not.toHaveBeenCalled();
+    expect(total).not.toHaveBeenCalled();
+
+    list.mockClear();
+    dashboard['onVoteClosed']();
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).toHaveBeenCalledTimes(1);
+    expect(total).toHaveBeenCalledTimes(1);
+    expect(dashboard['currentFirst']()).toBe(0);
+  });
+
   it('polls silently, and a failed poll keeps the rows and retries (GH-4078)', async () => {
     const service = TestBed.inject(VoteService);
     await management();
