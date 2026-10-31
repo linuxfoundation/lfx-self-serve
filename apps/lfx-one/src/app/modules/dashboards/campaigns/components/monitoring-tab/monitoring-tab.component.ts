@@ -111,8 +111,13 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
-  /** The Google read was refused for the caller's role (403, #4837). Retrying repeats the same refusal, so no Retry is offered. */
-  protected readonly errorForbidden = signal(false);
+  /**
+   * The panels whose last failed read was refused for the caller's role (a 403, #4837), keyed by panel
+   * (`google`, `google-accounts`, `linkedin`, `reddit`, `meta`, `report-backed`, `hubspot`). Retrying
+   * repeats the same refusal, so such an error offers no Retry. Written beside every error a panel
+   * shows, so a stale entry is never read: the error block it gates is hidden until the next error.
+   */
+  protected readonly refusedReads = signal<ReadonlySet<string>>(new Set());
 
   // Platform switcher
   protected readonly selectedPlatform = signal<MonitorTabPlatform>('google');
@@ -461,6 +466,7 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isSharedAccountRestricted(err)) {
             this.googleAccountsRefused = true;
           } else {
+            this.noteRefusal('google-accounts', err);
             this.googleAccountsError.set(extractErrorMessage(err, 'Failed to load Google Ads accounts'));
           }
         },
@@ -473,7 +479,6 @@ export class MonitoringTabComponent implements OnInit {
 
     this.loading.set(true);
     this.error.set(null);
-    this.errorForbidden.set(false);
     this.googleRestricted.set(false);
     const days = this.selectedDays();
 
@@ -497,7 +502,7 @@ export class MonitoringTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
-          this.errorForbidden.set(err instanceof HttpErrorResponse && err.status === 403);
+          this.noteRefusal('google', err);
           this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });
@@ -641,6 +646,7 @@ export class MonitoringTabComponent implements OnInit {
           this.setMetricsDisabled(platform, true);
           return;
         }
+        this.noteRefusal('report-backed', err);
         this.reportBackedError.set(this.reportBackedErrorMessage(err, label));
       },
     });
@@ -670,6 +676,7 @@ export class MonitoringTabComponent implements OnInit {
             // 404 — a gateway or routing miss — falls through to a retryable error below.
             this.hubSpotNoticeState.set('no_connection');
           } else {
+            this.noteRefusal('hubspot', err);
             this.hubSpotError.set(extractErrorMessage(err, 'Failed to load HubSpot email data'));
           }
         },
@@ -719,6 +726,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('linkedin', err);
           this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
@@ -766,6 +774,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('reddit', err);
           this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
@@ -815,6 +824,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('meta', err);
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
@@ -1377,6 +1387,19 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
+  /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
+  private noteRefusal(panel: string, err: unknown): void {
+    const refused = err instanceof HttpErrorResponse && err.status === 403;
+    if (refused === this.refusedReads().has(panel)) return;
+    const next = new Set(this.refusedReads());
+    if (refused) {
+      next.add(panel);
+    } else {
+      next.delete(panel);
+    }
+    this.refusedReads.set(next);
+  }
+
   private isSharedAccountRestricted(err: unknown): boolean {
     return this.errorCode(err) === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE;
   }
@@ -1737,6 +1760,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (linkedInSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('linkedin', err);
             this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
           },
         })
@@ -1761,6 +1785,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (redditSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('reddit', err);
             this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
           },
         })
@@ -1785,6 +1810,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (metaSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('meta', err);
             this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
           },
         })

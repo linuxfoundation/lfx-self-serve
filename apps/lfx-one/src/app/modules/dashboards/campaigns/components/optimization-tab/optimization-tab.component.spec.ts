@@ -5289,6 +5289,18 @@ describe('OptimizationTabComponent — shared Google Ads account restriction', (
 
     expect(el('optimization-error')).not.toBeNull();
     expect(el('optimization-restricted')).toBeNull();
+    expect(el('optimization-retry')).not.toBeNull();
+  });
+
+  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
+  it('offers no Retry when the Google read is refused for the caller role', () => {
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('optimization-error')?.textContent).toContain("campaign-service refused to read this project's Google Ads connection.");
+    expect(el('optimization-retry')).toBeNull();
   });
 
   it('clears cached Google monitor data after a refusal so a pending retry shows loading', () => {

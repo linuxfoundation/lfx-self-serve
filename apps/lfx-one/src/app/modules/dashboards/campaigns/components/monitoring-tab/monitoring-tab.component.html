@@ -139,14 +139,16 @@
         } @else if (googleAccountsError()) {
           <div class="flex items-center gap-3" role="alert" data-testid="monitoring-google-accounts-error">
             <p class="text-xs text-red-600">{{ googleAccountsError() }}</p>
-            <button
-              type="button"
-              (click)="retryPanelRead()"
-              class="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-              aria-label="Retry loading Google Ads accounts"
-              data-testid="monitoring-google-accounts-retry">
-              Retry
-            </button>
+            @if (!refusedReads().has('google-accounts')) {
+              <button
+                type="button"
+                (click)="retryPanelRead()"
+                class="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                aria-label="Retry loading Google Ads accounts"
+                data-testid="monitoring-google-accounts-retry">
+                Retry
+              </button>
+            }
           </div>
         } @else if (googleAccountOptions()?.length === 0) {
           <p class="text-xs text-gray-500" data-testid="monitoring-google-accounts-empty">This connection reaches no Google Ads accounts.</p>
@@ -187,7 +189,7 @@
         <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
         <p class="text-sm font-medium text-red-700">Failed to load campaign data</p>
         <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
-        @if (!errorForbidden()) {
+        @if (!refusedReads().has('google')) {
           <button
             type="button"
             (click)="fetchData()"
@@ -367,14 +369,16 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load LinkedIn data</p>
           <p class="text-xs text-red-500">{{ linkedInError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.linkedin"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="linkedin-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('linkedin')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.linkedin"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="linkedin-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (linkedInData() && linkedInCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="linkedin-empty">
@@ -446,14 +450,16 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Reddit data</p>
           <p class="text-xs text-red-500">{{ redditError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.reddit"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="reddit-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('reddit')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.reddit"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="reddit-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (redditData() && redditCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="reddit-empty">
@@ -516,14 +522,16 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load Meta data</p>
           <p class="text-xs text-red-500">{{ metaError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="paidRetryLabels.meta"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="meta-retry">
-            Retry
-          </button>
+          @if (!refusedReads().has('meta')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="paidRetryLabels.meta"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="meta-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (metaData() && metaCampaigns().length === 0) {
         <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="meta-empty">
@@ -588,14 +596,16 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load {{ reportBackedLabel() }} data</p>
           <p class="text-xs text-red-500">{{ reportBackedError() }}</p>
-          <button
-            type="button"
-            (click)="retryPanelRead()"
-            [attr.aria-label]="reportBackedRetryLabel()"
-            class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            [attr.data-testid]="reportBackedPanel() + '-retry'">
-            Retry
-          </button>
+          @if (!refusedReads().has('report-backed')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              [attr.aria-label]="reportBackedRetryLabel()"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              [attr.data-testid]="reportBackedPanel() + '-retry'">
+              Retry
+            </button>
+          }
         </div>
       } @else if (reportBackedView(); as view) {
         @if (reportBackedFreshness(); as freshness) {
@@ -663,9 +673,15 @@
           <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
           <p class="text-sm font-medium text-red-700">Failed to load HubSpot email data</p>
           <p class="text-xs text-red-500">{{ hubSpotError() }}</p>
-          <button type="button" (click)="retryPanelRead()" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
-            Retry
-          </button>
+          @if (!refusedReads().has('hubspot')) {
+            <button
+              type="button"
+              (click)="retryPanelRead()"
+              class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+              data-testid="hubspot-retry">
+              Retry
+            </button>
+          }
         </div>
       } @else if (hubSpotView(); as view) {
         @if (hubSpotFreshness(); as freshness) {

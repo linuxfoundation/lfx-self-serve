@@ -906,6 +906,37 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-error')).toContain('connection is not bound to this account');
     });
 
+    // #4837: a role refusal answers 403 again on every retry, so no panel offers Retry for one; any
+    // other failure keeps it.
+    const panelReads = [
+      ['linkedin', 'getLinkedInMonitorData'],
+      ['reddit', 'getRedditMonitorData'],
+      ['meta', 'getMetaMonitorData'],
+      ['microsoft', 'getMicrosoftMonitorData'],
+      ['twitter', 'getTwitterMonitorData'],
+      ['hubspot', 'getHubSpotMonitorData'],
+    ] as const;
+
+    it.each(panelReads)('offers no Retry on the %s panel when its read is refused for the caller role', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      select(panel);
+
+      expect(text(`${panel}-error`)).toContain('campaign-service refused to read this account.');
+      expect(el(`${panel}-retry`)).toBeNull();
+    });
+
+    it.each(panelReads)('still offers Retry on the %s panel for any other failure', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'upstream unavailable' } })));
+      select(panel);
+
+      expect(el(`${panel}-error`)).not.toBeNull();
+      expect(el(`${panel}-retry`)).not.toBeNull();
+    });
+
     it('marks the monitor read as coming from the connection', async () => {
       await setup(allConnected);
       select('reddit');
@@ -1059,6 +1090,18 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
       expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('offers no Retry when the account list is refused for the caller role (#4837)', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('campaign-service refused to read this account.');
+      expect(el('monitoring-google-accounts-retry')).toBeNull();
     });
 
     it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
