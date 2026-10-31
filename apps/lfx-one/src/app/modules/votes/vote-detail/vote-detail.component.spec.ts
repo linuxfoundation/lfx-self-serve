@@ -791,12 +791,21 @@ describe('VoteDetailComponent', () => {
       });
     });
 
-    it('offers no reminder once everyone has voted', async () => {
+    it('keeps View voters but offers no reminder once everyone has voted', async () => {
       voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 4 }));
-      const fixture = await setup();
+      const fixture = await setup('browser', [StatCardGridComponent]);
 
       expect(notVotedCard(fixture)).toMatchObject({ value: 0, subLine: 'Everyone has voted' });
-      expect(notVotedCard(fixture).ctas).toBeUndefined();
+      expect(notVotedCard(fixture).ctas).toEqual([{ label: 'View voters', action: 'responses', text: true }]);
+      expect(fixture.nativeElement.querySelector('[data-testid="stat-card-cta-not-voted"]')).toBeNull();
+
+      fixture.nativeElement.querySelector('[data-testid="stat-card-cta-responses"] button').click();
+
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: null } })
+      );
+      expect(dialogService.open).not.toHaveBeenCalled();
     });
 
     it('shows no Not voted buttons on a draft vote', async () => {

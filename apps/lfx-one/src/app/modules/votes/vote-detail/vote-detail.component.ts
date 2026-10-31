@@ -818,7 +818,7 @@ export class VoteDetailComponent {
       };
       return { ctas: showViewVoters ? [sendReminder, viewVoters] : [sendReminder] };
     }
-    if (this.isEnded() && showViewVoters) {
+    if (showViewVoters) {
       return { ctas: [viewVoters] };
     }
     return {};
