@@ -114,7 +114,8 @@ export class UiCommandMenuComponent {
       this.keyManager.onKeydown(event);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      this.choose(this.activeIndex());
+      // A held Enter that opened the palette repeats into the search field and must not choose.
+      if (!event.repeat) this.choose(this.activeIndex());
     }
   }
 
@@ -136,8 +137,10 @@ export class UiCommandMenuComponent {
     if (!row) return;
     const rowBox = row.getBoundingClientRect();
     const listBox = list.getBoundingClientRect();
-    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
+    // The dialog scales in, so the boxes are scaled and scrollTop is not: undo the scale (offsetHeight is untransformed).
+    const scale = list.offsetHeight ? listBox.height / list.offsetHeight : 1;
+    if (rowBox.top < listBox.top) list.scrollTop -= (listBox.top - rowBox.top) / scale;
+    else if (rowBox.bottom > listBox.bottom) list.scrollTop += (rowBox.bottom - listBox.bottom) / scale;
   }
 
   private initVisibleGroups(): Signal<UiCommandGroupView[]> {

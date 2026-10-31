@@ -279,6 +279,14 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(result.closed).toBe(false);
   });
 
+  it('does not choose on a repeated Enter, such as the one that opened the palette', async () => {
+    await open();
+    const event = await press('Enter', { repeat: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(result.closed).toBe(false);
+  });
+
   it('leaves the arrows to the IME candidate list while composing', async () => {
     await open();
     const event = await press('ArrowDown', { isComposing: true });
@@ -317,6 +325,18 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
       expect(labelOf(rows().at(-1) as HTMLElement)).toBe('Change Theme…');
       expect(scroller().scrollTop).toBe(360);
+    });
+
+    it('undoes the scale of the opening animation when measuring how far to scroll', async () => {
+      // The list is laid out 100 tall but drawn at half scale, so the 20px the row is short of it is 40 layout pixels.
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(100);
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        return (this.classList.contains('overflow-auto') ? { top: 100, bottom: 150, height: 50 } : { top: 120, bottom: 170 }) as DOMRect;
+      });
+
+      await open();
+
+      expect(scroller().scrollTop).toBe(40);
     });
 
     it('scrolls to the highlight again when a search resets it', async () => {
