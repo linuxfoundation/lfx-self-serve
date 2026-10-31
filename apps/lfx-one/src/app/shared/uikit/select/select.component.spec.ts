@@ -167,6 +167,12 @@ describe('UiSelectComponent', () => {
     expect(trigger().getAttribute('aria-controls')).toBe(listbox()?.id);
   });
 
+  it('gives the overlay pane the panel radius so a corner click is not a click on the pane', async () => {
+    await open();
+
+    expect(document.querySelector('.cdk-overlay-pane')?.classList.contains('rounded-ui-md')).toBe(true);
+  });
+
   it('closes when the trigger is clicked again', async () => {
     await open();
     await open();
