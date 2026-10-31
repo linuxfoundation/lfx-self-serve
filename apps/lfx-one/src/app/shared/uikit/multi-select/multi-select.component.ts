@@ -41,7 +41,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  *
  * Each row is a checkbox and, on the row under the pointer or the keyboard focus, an "Only" button that picks that value and drops the rest.
  * Picking a row keeps the list open. `values` is the list of picked `value`s, in the order they were picked, and the form value is the same
- * `string[]`. Works with `[(values)]` and with Angular forms (`formControlName`, `formControl`).
+ * `string[]`. Works with `[(values)]` and with Angular forms (`formControlName`, `formControl`). The count is the number of `values`, whether or
+ * not a row exists for each, so a page that removes options should drop their values too.
  *
  * When the trigger is too narrow for the name, hovering or focusing it shows the full name in a tooltip; the tooltip stays off otherwise and while the list is open.
  * The trigger is a disclosure button (`aria-expanded`, `aria-controls`) and the list is a labelled group of real checkboxes and buttons: focus
@@ -182,8 +183,14 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
     }
   }
 
-  protected onTriggerBlur(): void {
-    if (!this.open()) this.onTouched?.();
+  protected onTriggerBlur(event: FocusEvent): void {
+    if (!this.open()) {
+      this.onTouched?.();
+      return;
+    }
+    // Focus moving into the list keeps it open; moving anywhere else leaves the field.
+    const next = event.relatedTarget as Node | null;
+    if (next && !this.panel()?.contains(next)) this.leave();
   }
 
   protected onPanelKeydown(event: KeyboardEvent): void {

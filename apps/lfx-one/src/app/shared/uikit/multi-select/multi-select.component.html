@@ -14,7 +14,7 @@
   [lfxUiTooltipDisabled]="tooltipOff()"
   (click)="toggle()"
   (keydown)="onTriggerKeydown($event)"
-  (blur)="onTriggerBlur()"
+  (blur)="onTriggerBlur($event)"
   data-testid="ui-multi-select-trigger">
   <!-- Exact px, not rem; 14px root: 6px between the name and the count has no spacing token. -->
   <span class="flex min-w-0 flex-1 items-center gap-[6px] overflow-hidden whitespace-nowrap" data-testid="ui-multi-select-value">

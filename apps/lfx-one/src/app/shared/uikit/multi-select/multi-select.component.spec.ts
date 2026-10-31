@@ -189,7 +189,7 @@ describe('UiMultiSelectComponent', () => {
     }
   });
 
-  it('opens with Enter and Space as a button does, through its click', async () => {
+  it('leaves Enter and Space on the trigger to the native button, which opens through its click', async () => {
     for (const key of ['Enter', ' ']) {
       const event = await press(key, {}, trigger());
       expect(event.defaultPrevented, key).toBe(false);
@@ -334,6 +334,30 @@ describe('UiMultiSelectComponent', () => {
     await press('ArrowDown');
     expect(panel()).not.toBeNull();
     expect(document.activeElement).toBe(box(0));
+  });
+
+  it('closes and reports touched when focus leaves the trigger for somewhere outside while open', async () => {
+    const touched = vi.fn();
+    fixture.componentInstance.multiSelect().registerOnTouched(touched);
+    const outside = host.querySelector('[data-testid="outside"]') as HTMLElement;
+    await open();
+    trigger().focus();
+
+    trigger().dispatchEvent(new FocusEvent('blur', { relatedTarget: outside }));
+    await fixture.whenStable();
+
+    expect(panel()).toBeNull();
+    expect(touched).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the list open when the trigger hands focus to a row', async () => {
+    await open();
+    trigger().focus();
+
+    trigger().dispatchEvent(new FocusEvent('blur', { relatedTarget: box(0) }));
+    await fixture.whenStable();
+
+    expect(panel()).not.toBeNull();
   });
 
   it('closes on a click outside without taking focus, and toggles from the trigger', async () => {
