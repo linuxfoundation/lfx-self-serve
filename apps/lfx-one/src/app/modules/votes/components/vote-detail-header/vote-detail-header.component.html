@@ -95,9 +95,22 @@
           <i class="fa-light fa-check-to-slot" aria-hidden="true"></i>{{ methodLabel() }}
         </span>
         @if (closeDateText()) {
-          <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-close-date">
+          <span
+            class="inline-flex items-center gap-1.5"
+            [pTooltip]="closeTime() | longTimezone: viewerTimezone"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            tabindex="0"
+            role="note"
+            [attr.aria-label]="closeDateText() + ' (' + (closeTime() | longTimezone: viewerTimezone) + ')'"
+            data-testid="vote-detail-header-close-date">
             <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
           </span>
+          @if (timeRemainingText(); as remaining) {
+            <span class="inline-flex items-center gap-1.5 font-medium {{ remaining | dueDateLabelColor }}" data-testid="vote-detail-header-time-remaining">
+              <i class="fa-light fa-hourglass-half" aria-hidden="true"></i>{{ remaining }}
+            </span>
+          }
         }
         @if (endedEarlyNote(); as endedEarly) {
           <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-ended-early">
