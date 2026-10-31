@@ -151,6 +151,18 @@ describe('UiComboboxComponent', () => {
     expect(document.querySelector('.cdk-overlay-pane')?.classList.contains('rounded-ui-md')).toBe(true);
   });
 
+  it('keeps focus in the input on a press outside the text, so the chevron can close the list', async () => {
+    const chevron = host.querySelector('[data-testid="ui-combobox-chevron"]') as HTMLElement;
+    const press = (target: HTMLElement): MouseEvent => {
+      const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      return event;
+    };
+
+    expect(press(chevron).defaultPrevented).toBe(true);
+    expect(press(field()).defaultPrevented).toBe(false);
+  });
+
   it('toggles from the chevron and reports openChange', async () => {
     const emitted: boolean[] = [];
     fixture.componentInstance.combobox().openChange.subscribe((value) => emitted.push(value));
@@ -312,6 +324,30 @@ describe('UiComboboxComponent', () => {
 
     expect(fixture.componentInstance.value()).toBeNull();
     expect(listbox()).not.toBeNull();
+  });
+
+  it('replaces typed but unpicked text when a value is written from outside', async () => {
+    await type('kube');
+    await press('Escape');
+    expect(field().value).toBe('kube');
+
+    fixture.componentInstance.combobox().writeValue('envoy');
+    await fixture.whenStable();
+
+    expect(field().value).toBe('Envoy');
+  });
+
+  it('drops the highlight from a row whose label stops matching the typed text', async () => {
+    await type('kub');
+    expect(activeLabel()).toBe('Kubernetes');
+
+    fixture.componentRef.setInput(
+      'options',
+      OPTIONS.map((option) => (option.value === 'k8s' ? { ...option, label: 'Helm' } : option))
+    );
+    await fixture.whenStable();
+
+    expect(activeId()).toBeNull();
   });
 
   it('returns to the full list when the text is cleared', async () => {

@@ -30,6 +30,6 @@ export class UiOptionGroupComponent {
   protected readonly labelId = inject(_IdGenerator).getId('lfx-ui-option-group-');
   private readonly host = inject(UiOptionHost, { optional: true });
   private readonly options = contentChildren(UiOptionComponent, { descendants: true });
-  /** True when none of the group's rows is visible, so the title goes with them. */
-  protected readonly hidden: Signal<boolean> = computed(() => !this.options().some((option) => this.host?.isVisible?.(option.item) ?? true));
+  /** True when the list filters and none of the group's rows is visible, so the title goes with them. A list that does not filter never hides a group. */
+  protected readonly hidden: Signal<boolean> = computed(() => !!this.host?.isVisible && !this.options().some((option) => this.host?.isVisible?.(option.item)));
 }

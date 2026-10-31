@@ -48,7 +48,8 @@ import { UiOptionComponent } from '../select/option.component';
  *
  * Keyboard: typing opens the list and highlights the first match. Arrow Down and Arrow Up open it and move through the rows, Page Up and Page
  * Down jump, Enter picks the highlighted row, Escape closes the list and keeps the typed text, Tab closes it without picking and moves on. Home
- * and End stay with the text caret. Use it for long or searchable lists; for a short list use the select, for several values the multi-select.
+ * and End stay with the text caret. There is no clear button, as the library has none: the page clears the pick through `[(value)]` or the form
+ * control. Use it for long or searchable lists; for a short list use the select, for several values the multi-select.
  */
 @Component({
   selector: 'lfx-ui-combobox',
@@ -144,6 +145,8 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
 
   public writeValue(value: string | null): void {
     this.value.set(value ?? null);
+    // A value written from outside, such as a form reset, replaces any text typed but not picked.
+    this.query.set(null);
   }
 
   public registerOnChange(fn: (value: string | null) => void): void {
@@ -194,6 +197,11 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     // A click in the text opens the list; a click anywhere else on the field, such as the chevron, toggles it.
     if (this.open() && event.target !== this.inputElement()) this.closePanel();
     else this.openPanel();
+  }
+
+  protected onTriggerMousedown(event: MouseEvent): void {
+    // A press anywhere but in the text keeps focus in the input, so the chevron's click can toggle the list instead of finding it closed by a blur.
+    if (event.target !== this.inputElement()) event.preventDefault();
   }
 
   protected onInput(event: Event): void {
@@ -253,7 +261,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   private initActiveOption(): Signal<UiOption | null> {
     return computed(() => {
       const item = this.activeItem();
-      return this.expanded() && item && this.options().includes(item) ? item : null;
+      return this.expanded() && item && this.navigable().includes(item) ? item : null;
     });
   }
 
