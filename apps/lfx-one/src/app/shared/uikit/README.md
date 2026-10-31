@@ -63,6 +63,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-select`         | `UiSelectComponent`        | Select-only combobox on CDK: projected `lfx-ui-option` rows with any content, groups, separators, prefix, header and value slots; `[(value)]`, forms                   |
 | `lfx-ui-combobox`       | `UiComboboxComponent`      | Text field that filters the same `lfx-ui-option` rows as you type, bold match, empty state; picks from the list only; `[(value)]`, forms                               |
 | `lfx-ui-command-menu`   | `UiCommandMenuComponent`   | Command palette in a modal via `UiCommandMenuService`: search, groups, shortcut hints, empty state; combobox and listbox                                               |
+| `lfx-ui-multi-select`   | `UiMultiSelectComponent`   | Several values from the same `lfx-ui-option` rows: checkbox rows, Only action, count in the trigger; `[(values)]` and forms with `string[]`                            |
 
 ## Design tokens
 

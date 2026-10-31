@@ -8,6 +8,8 @@ import { UiOption } from '@lfx-one/shared/interfaces';
  * instead of a concrete list, so each list keeps its own picking rules and options never import the list that owns them.
  */
 export abstract class UiOptionHost {
+  /** True for a list that holds several values: its rows show a checkbox and an "Only" action instead of a trailing check mark. */
+  public readonly multiple?: boolean;
   /** True when the option is the picked one (`aria-selected`, check mark). */
   public abstract isSelected(option: UiOption): boolean;
   /** True when the option holds the keyboard highlight (`aria-activedescendant`). */
@@ -20,4 +22,6 @@ export abstract class UiOptionHost {
   public isVisible?(option: UiOption): boolean;
   /** The part of the option's label to emphasise, as `[start, end)`, or `null` for none. Only a row that shows its plain label is emphasised. */
   public matchRange?(option: UiOption): [number, number] | null;
+  /** Picks this option and drops every other one, for the "Only" action of a multi-value list. A disabled option is ignored. */
+  public only?(option: UiOption): void;
 }

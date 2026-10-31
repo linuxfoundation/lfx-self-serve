@@ -1,0 +1,32 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@switch (mode()) {
+  @case ('basic') {
+    <lfx-ui-multi-select label="Environments" [ariaLabel]="ariaLabel()" [size]="size()" [disabled]="disabled()" [(values)]="values">
+      @for (option of options(); track option.value) {
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="!!option.disabled" />
+      }
+    </lfx-ui-multi-select>
+    <button type="button" data-testid="outside">Outside</button>
+  }
+  @case ('groups') {
+    <lfx-ui-multi-select ariaLabel="Regions" [(values)]="values">
+      <lfx-ui-option-group label="Europe">
+        <lfx-ui-option value="lisbon" label="Lisbon" />
+        <lfx-ui-option value="paris" label="Paris" />
+      </lfx-ui-option-group>
+      <lfx-ui-option-separator />
+      <lfx-ui-option value="tokyo" label="Tokyo">
+        <span data-testid="rich-row">Tokyo, Japan</span>
+      </lfx-ui-option>
+    </lfx-ui-multi-select>
+  }
+  @case ('form') {
+    <lfx-ui-multi-select label="Environments" [formControl]="control">
+      @for (option of options(); track option.value) {
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="!!option.disabled" />
+      }
+    </lfx-ui-multi-select>
+  }
+}
