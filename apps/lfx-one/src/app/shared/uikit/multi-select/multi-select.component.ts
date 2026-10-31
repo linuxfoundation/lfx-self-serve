@@ -202,10 +202,13 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
         event.stopPropagation();
         this.closePanel(true);
         break;
-      case 'Tab':
-        // Focus goes back to the trigger first, so the browser's own Tab moves on from there and never drops to the page.
+      case 'Tab': {
+        // The panel is still mounted when the browser moves focus, so keep it out of the tab order; focus then goes back to the trigger first.
+        const group = this.panel();
+        if (group) group.inert = true;
         this.closePanel(true);
         break;
+      }
       case 'ArrowDown':
       case 'ArrowUp': {
         event.preventDefault();
