@@ -145,6 +145,12 @@ describe('UiComboboxComponent', () => {
     expect(document.activeElement).toBe(field());
   });
 
+  it('gives the overlay pane the panel radius so a corner click is not a click on the pane', async () => {
+    await open();
+
+    expect(document.querySelector('.cdk-overlay-pane')?.classList.contains('rounded-ui-md')).toBe(true);
+  });
+
   it('toggles from the chevron and reports openChange', async () => {
     const emitted: boolean[] = [];
     fixture.componentInstance.combobox().openChange.subscribe((value) => emitted.push(value));
