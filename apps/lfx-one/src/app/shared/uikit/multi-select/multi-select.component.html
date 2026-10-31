@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<button
+  type="button"
+  cdkOverlayOrigin
+  [id]="triggerId"
+  [class]="triggerClasses()"
+  [disabled]="isDisabled()"
+  [attr.aria-expanded]="expanded()"
+  [attr.aria-controls]="expanded() ? panelId : null"
+  [attr.aria-label]="accessibleName() || null"
+  [lfxUiTooltip]="accessibleName()"
+  [lfxUiTooltipDisabled]="expanded()"
+  (click)="toggle()"
+  (keydown)="onTriggerKeydown($event)"
+  (blur)="onTriggerBlur()"
+  data-testid="ui-multi-select-trigger">
+  <!-- Exact px, not rem; 14px root: 6px between the name and the count has no spacing token. -->
+  <span class="flex min-w-0 flex-1 items-center gap-[6px] overflow-hidden whitespace-nowrap" data-testid="ui-multi-select-value">
+    <span class="truncate">{{ name() }}</span>
+    @if (count() > 0) {
+      <lfx-ui-badge variant="subtle" size="sm" aria-hidden="true" data-testid="ui-multi-select-count">{{ count() }}</lfx-ui-badge>
+    }
+  </span>
+  <span [class]="chevronClasses()"><i class="fa-light fa-chevron-down" aria-hidden="true"></i></span>
+</button>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin()"
+  [cdkConnectedOverlayOpen]="expanded()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayMinWidth]="panelWidth()"
+  [cdkConnectedOverlayDisableClose]="true"
+  [cdkConnectedOverlayFlexibleDimensions]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
+  cdkConnectedOverlayPanelClass="rounded-ui-md"
+  (attach)="onAttach()"
+  (overlayOutsideClick)="onOutsideClick($event)"
+  (detach)="closePanel()">
+  <!-- Exact px, not rem; 14px root. A click on the padding or a row's text lands on the focusable group; the overlay pane has the panel's radius, so a corner click is an outside click. -->
+  <div
+    class="ui-multi-select-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    (keydown)="onPanelKeydown($event)"
+    (focusout)="onPanelFocusout($event)"
+    data-testid="ui-multi-select-panel">
+    <div
+      role="group"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto p-[6px] outline-none"
+      tabindex="-1"
+      [id]="panelId"
+      [attr.aria-label]="name() || null"
+      data-testid="ui-multi-select-group">
+      <ng-content />
+    </div>
+  </div>
+</ng-template>

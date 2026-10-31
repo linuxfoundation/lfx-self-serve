@@ -1,16 +1,29 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+@if (host.multiple) {
+  <lfx-ui-checkbox [ariaLabel]="label()" [checked]="isSelected()" [disabled]="disabled()" (checkedChange)="pick()" />
+}
 @if (icon()) {
   <span class="inline-flex shrink-0 items-center text-[14px] text-ui-neutral-600 group-aria-disabled:text-ui-neutral-500" data-testid="ui-option-icon"
     ><i [class]="icon()" aria-hidden="true"></i
   ></span>
 }
-<!-- Native title: focus stays on the trigger, so a tooltip here would be pointer-only. -->
+<!-- Native title: a tooltip here would be pointer-only. In a multi-value row the checkbox has focus and carries the label. -->
 <!-- The text parts touch the emphasis on purpose: a space there would show in the row. -->
 <!-- prettier-ignore -->
 <span class="min-w-0 flex-1 truncate" [attr.title]="label()" data-testid="ui-option-content"><ng-content>{{ labelParts().before }}@if (labelParts().match) {<strong class="font-medium">{{ labelParts().match }}</strong>}{{ labelParts().after }}</ng-content></span>
-@if (isSelected()) {
+@if (host.multiple) {
+  @if (!disabled()) {
+    <!-- Shown on hover and while the row has focus. Faded rather than hidden: visibility:hidden would stop the arrow keys from focusing it. Ignores the pointer while faded, so a tap cannot hit it unseen. -->
+    <span
+      class="pointer-events-none shrink-0 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+      data-ui-option-action
+      data-testid="ui-option-only">
+      <lfx-ui-button variant="tertiary" size="tiny" [ariaLabel]="'Only ' + label()" (click)="only($event)">Only</lfx-ui-button>
+    </span>
+  }
+} @else if (isSelected()) {
   <span class="inline-flex shrink-0 items-center text-[12px] text-ui-accent-500" data-testid="ui-option-check"
     ><i class="fa-light fa-check" aria-hidden="true"></i
   ></span>

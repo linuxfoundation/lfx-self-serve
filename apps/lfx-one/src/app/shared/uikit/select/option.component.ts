@@ -5,26 +5,29 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { UiOption, UiOptionLabelParts } from '@lfx-one/shared/interfaces';
 
+import { UiButtonComponent } from '../button/button.component';
+import { UiCheckboxComponent } from '../checkbox/checkbox.component';
 import { UiOptionHost } from './option-host';
 
 /**
- * One choice of an `lfx-ui-select` or `lfx-ui-combobox`: `<lfx-ui-option value="cncf" label="CNCF">...</lfx-ui-option>`. The projected content is the row, so it can
+ * One choice of an `lfx-ui-select`, `lfx-ui-combobox` or `lfx-ui-multi-select`: `<lfx-ui-option value="cncf" label="CNCF">...</lfx-ui-option>`. The projected content is the row, so it can
  * hold an avatar, a badge or a second line of description. Without content the row shows `label`. `label` stays required: it is the text the
  * trigger shows once the option is picked, and what type-ahead matches. Give the content its own text for screen readers; the row's accessible
  * name comes from it.
  */
 @Component({
   selector: 'lfx-ui-option',
+  imports: [UiButtonComponent, UiCheckboxComponent],
   templateUrl: './option.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    role: 'option',
+    '[attr.role]': "host.multiple ? null : 'option'",
     '[id]': 'id',
     '[class]': 'hostClasses()',
-    '[attr.aria-selected]': 'isSelected()',
+    '[attr.aria-selected]': 'host.multiple ? null : isSelected()',
     '[attr.aria-disabled]': 'disabled() ? "true" : null',
     '[attr.data-highlighted]': 'isActive() ? "" : null',
-    '(click)': 'pick()',
+    '(click)': 'onClick($event)',
     '(mousemove)': 'highlight()',
     'data-testid': 'ui-option',
   },
@@ -56,8 +59,20 @@ export class UiOptionComponent {
     this.host.pick(this.item);
   }
 
+  protected onClick(event: Event): void {
+    // In a multi-value row the checkbox and the Only button act for themselves; the rest of the row toggles.
+    if (this.host.multiple && (event.target as Element).closest('lfx-ui-checkbox, [data-ui-option-action]')) return;
+    this.pick();
+  }
+
   protected highlight(): void {
     this.host.highlight(this.item);
+  }
+
+  protected only(event: Event): void {
+    // The action must not also toggle the row.
+    event.stopPropagation();
+    this.host.only?.(this.item);
   }
 
   private initItem(): UiOption {
@@ -93,9 +108,13 @@ export class UiOptionComponent {
     return computed(() => {
       // Forced-colors drops the highlight fill, so an inset outline marks the highlighted row.
       // Exact px, not rem; 14px root. 40px is the menu-item height token (no min-height utility), so taller content grows the row; 10px radius is the panel radius minus its 6px padding.
+      // A multi-value row ends in the Only action, which sits 4px from the edge (library spacing-1). It has no highlight: the row follows the pointer and focus.
+      const multi = this.host.multiple
+        ? ' pr-[4px] hover:bg-ui-neutral-alpha-50 focus-within:bg-ui-neutral-alpha-50 forced-colors:focus-within:outline forced-colors:focus-within:outline-2 forced-colors:focus-within:-outline-offset-2 forced-colors:focus-within:outline-[color:Highlight]'
+        : '';
       // A row the list filters out is removed from the layout and from the accessibility tree.
       const visibility = this.isVisible() ? '' : ' hidden';
-      return `group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]${visibility}`;
+      return `group flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]${multi}${visibility}`;
     });
   }
 }
