@@ -5141,8 +5141,10 @@ export class ImplementationTabComponent implements OnInit {
     const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
     for (const url of this.splitCreativeLines(raw)) {
       // Read live, not from a snapshot taken before the loop: a URL pasted on two lines is marked
-      // `checking` by its first probe, so the second line starts none.
-      if (this.googleTypedImageProbes()[url]?.state !== 'checking' && isHttpUrl(url, true)) {
+      // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
+      // second line starts none.
+      const probe = this.googleTypedImageProbes()[url];
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true)) {
         this.probeGoogleTypedImage(url);
       }
     }
@@ -7533,8 +7535,9 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The advisory line under each rendered Google image slot about its pasted URLs (see
    * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
-   * its warning with it. A URL still loading says nothing yet, and no line is not a promise: a browser
-   * follows redirects and loads formats (WebP, SVG) that campaign-service refuses.
+   * its warning with it. A URL on its first probe says nothing yet, one probed again keeps its last
+   * answer until the new one settles, and no line is not a promise: a browser follows redirects and
+   * loads formats (WebP, SVG) that campaign-service refuses.
    */
   private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
     return computed(() => {
@@ -9301,7 +9304,13 @@ export class ImplementationTabComponent implements OnInit {
    * need a referrer — so a failure is reported as "could not check", never as a wrong image.
    */
   private probeGoogleTypedImage(url: string): void {
-    this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: { state: 'checking' } }));
+    // A settled answer stays on screen while it is checked again, so tabbing back through the field
+    // does not blank its line (or the live region) until the new probe settles.
+    this.googleTypedImageProbes.update((probes) => {
+      const previous = probes[url];
+      const next: GoogleTypedImageProbe = previous && previous.state !== 'checking' ? { ...previous, rechecking: true } : { state: 'checking' };
+      return { ...probes, [url]: next };
+    });
     const image = new Image();
     // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
     image.referrerPolicy = 'no-referrer';

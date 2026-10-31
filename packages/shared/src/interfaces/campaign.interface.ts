@@ -2488,6 +2488,8 @@ export interface GoogleTypedImageProbe {
   state: 'checking' | 'loaded' | 'failed';
   width?: number;
   height?: number;
+  /** A settled answer being probed again. It stays the answer shown until the new probe settles. */
+  rechecking?: boolean;
 }
 
 /**

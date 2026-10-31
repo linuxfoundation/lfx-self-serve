@@ -14472,6 +14472,11 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
 
     c['onGoogleImageFieldBlur'](group, marketingField());
     expect(images).toHaveLength(2);
+    // The last answer stays up while the URL is checked again, rather than blanking until it settles.
+    expect(warning(c)).toContain('(300x300)');
+    // Still in flight, so leaving the field again starts no third probe.
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
     images[1].load(1200, 628);
     expect(warning(c)).toBeUndefined();
   });
