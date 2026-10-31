@@ -166,6 +166,25 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     fixture.detectChanges();
   }
 
+  /** campaign-service reports keyword cost unconverted in the account's own currency and names none (#4807). */
+  it("prints a connected account's keyword amounts without a dollar sign, and says so", () => {
+    render(keywordsResponse({ amountsInAccountCurrency: true }));
+    const row = (fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent ?? '';
+
+    expect(row).toContain('25.00');
+    expect(row).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals"]')?.textContent).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')?.textContent?.trim()).toBe(
+      "Keyword spend and CPC are in the ad account's own currency."
+    );
+  });
+
+  it("keeps the legacy read's dollar amounts and no currency note", () => {
+    render(keywordsResponse());
+    expect((fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent).toContain('$25.00');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')).toBeNull();
+  });
+
   function partialCaption(): HTMLElement | null {
     return fixture.nativeElement.querySelector('[data-testid="keyword-totals-partial"]');
   }
@@ -854,6 +873,20 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getMetaMonitorData']).not.toHaveBeenCalled();
     });
 
+    /** campaign-service refused the read for lack of the project's `campaign_manager` role (#4837): no "refresh" advice. */
+    it('names the missing project role when campaign-service refused the connection read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('forbidden') } });
+      select('linkedin');
+
+      expect(el('linkedin-connection-notice')?.getAttribute('data-state')).toBe('forbidden');
+      expect(text('linkedin-connection-notice-title')).toBe('LinkedIn Ads monitoring needs the campaign manager role');
+      expect(text('linkedin-connection-notice-message')).toContain('Your account needs the campaign manager role on this project');
+      expect(text('linkedin-connection-notice-message')).not.toMatch(/refresh/i);
+      // Reading again cannot grant the role, so the notice offers no Refresh.
+      expect(el('linkedin-connection-notice-retry')).toBeNull();
+      expect(service['getLinkedInMonitorData']).not.toHaveBeenCalled();
+    });
+
     it('re-reads the connections from the notice', async () => {
       await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('unavailable') } });
       select('linkedin');
@@ -890,6 +923,37 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(el('microsoft-connection-notice')).toBeNull();
       expect(text('microsoft-error')).toContain('connection is not bound to this account');
+    });
+
+    // #4837: a role refusal answers 403 again on every retry, so no panel offers Retry for one; any
+    // other failure keeps it.
+    const panelReads = [
+      ['linkedin', 'getLinkedInMonitorData'],
+      ['reddit', 'getRedditMonitorData'],
+      ['meta', 'getMetaMonitorData'],
+      ['microsoft', 'getMicrosoftMonitorData'],
+      ['twitter', 'getTwitterMonitorData'],
+      ['hubspot', 'getHubSpotMonitorData'],
+    ] as const;
+
+    it.each(panelReads)('offers no Retry on the %s panel when its read is refused for the caller role', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      select(panel);
+
+      expect(text(`${panel}-error`)).toContain('campaign-service refused to read this account.');
+      expect(el(`${panel}-retry`)).toBeNull();
+    });
+
+    it.each(panelReads)('still offers Retry on the %s panel for any other failure', async (panel, read) => {
+      await setup(allConnected);
+      service[read].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { error: 'upstream unavailable' } })));
+      select(panel);
+
+      expect(el(`${panel}-error`)).not.toBeNull();
+      expect(el(`${panel}-retry`)).not.toBeNull();
     });
 
     it('marks the monitor read as coming from the connection', async () => {
@@ -1045,6 +1109,18 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getGoogleAdsAccounts']).toHaveBeenCalledTimes(reads);
       expect(el('monitoring-google-accounts')).toBeNull();
+    });
+
+    it('offers no Retry when the account list is refused for the caller role (#4837)', async () => {
+      await setup(allConnected);
+      service['getGoogleAdsAccounts'].mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'campaign-service refused to read this account.' } }))
+      );
+      fixture.componentInstance['loadGoogleAccounts']();
+      fixture.detectChanges();
+
+      expect(text('monitoring-google-accounts-error')).toContain('campaign-service refused to read this account.');
+      expect(el('monitoring-google-accounts-retry')).toBeNull();
     });
 
     it('shows nothing, not an error, when the read is refused as a shared-account read', async () => {
@@ -2477,6 +2553,19 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
 
     expect(el('monitoring-error')).not.toBeNull();
     expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-retry')).not.toBeNull();
+  });
+
+  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
+  it('offers no Retry when the Google read is refused for the caller role', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('monitoring-error')?.textContent).toContain('(HTTP 403)');
+    expect(el('monitoring-retry')).toBeNull();
   });
 
   // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped

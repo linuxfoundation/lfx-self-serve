@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root: 8px gap between label, field and message. -->
+<div class="flex min-w-0 flex-col gap-[8px]">
+  @if (label()) {
+    <label class="label-13 text-ui-neutral-600" [id]="labelId" [for]="inputId" data-testid="ui-combobox-label">{{ label() }}</label>
+  }
+  <div
+    cdkOverlayOrigin
+    [class]="triggerClasses()"
+    [attr.data-open]="expanded() ? '' : null"
+    (mousedown)="onTriggerMousedown($event)"
+    (click)="onTriggerClick($event)"
+    data-testid="ui-combobox-trigger">
+    <span [class]="iconClasses()"><i class="fa-light fa-magnifying-glass" aria-hidden="true"></i></span>
+    <input
+      type="text"
+      role="combobox"
+      autocomplete="off"
+      aria-autocomplete="list"
+      aria-haspopup="listbox"
+      class="min-w-0 flex-1 bg-transparent text-ui-neutral-900 outline-none placeholder:text-ui-neutral-500 disabled:cursor-not-allowed disabled:text-ui-neutral-500"
+      [id]="inputId"
+      [value]="displayText()"
+      [placeholder]="placeholder()"
+      [disabled]="isDisabled()"
+      [attr.aria-expanded]="expanded()"
+      [attr.aria-controls]="expanded() ? listboxId : null"
+      [attr.aria-activedescendant]="activeDescendant()"
+      [attr.aria-labelledby]="label() ? labelId : null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      [attr.aria-required]="required() ? 'true' : null"
+      [attr.aria-invalid]="error() ? 'true' : null"
+      [attr.aria-describedby]="describedBy()"
+      (input)="onInput($event)"
+      (keydown)="onKeydown($event)"
+      (blur)="onBlur()"
+      data-testid="ui-combobox-input" />
+    <span [class]="chevronClasses()" data-testid="ui-combobox-chevron"><i class="fa-light fa-chevron-down" aria-hidden="true"></i></span>
+  </div>
+  <!-- One live region that outlives the panel, so the empty message is announced when it appears. -->
+  <span role="status" class="sr-only" data-testid="ui-combobox-status">{{ expanded() && isEmpty() ? emptyMessage() : '' }}</span>
+  @if (error()) {
+    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-combobox-error">{{ error() }}</lfx-ui-error>
+  } @else if (hint()) {
+    <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-combobox-hint">{{ hint() }}</p>
+  }
+</div>
+
+<ng-template
+  cdkConnectedOverlay
+  [cdkConnectedOverlayOrigin]="origin()"
+  [cdkConnectedOverlayOpen]="expanded()"
+  [cdkConnectedOverlayPositions]="positions"
+  [cdkConnectedOverlayMinWidth]="panelWidth()"
+  [cdkConnectedOverlayDisableClose]="true"
+  [cdkConnectedOverlayFlexibleDimensions]="true"
+  [cdkConnectedOverlayViewportMargin]="8"
+  cdkConnectedOverlayPanelClass="rounded-ui-md"
+  (detach)="onDetach()">
+  <!-- Exact px, not rem; 14px root. The mousedown guard keeps focus in the input so the list stays open while a row is clicked. -->
+  <div
+    class="ui-combobox-panel flex max-h-[320px] flex-1 flex-col overflow-hidden rounded-ui-md bg-ui-background-100 shadow-menu"
+    (mousedown)="$event.preventDefault()"
+    data-testid="ui-combobox-panel">
+    <div
+      role="listbox"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto p-[6px]"
+      tabindex="-1"
+      [class.hidden]="isEmpty()"
+      [id]="listboxId"
+      [attr.aria-labelledby]="label() ? labelId : null"
+      [attr.aria-label]="label() ? null : ariaLabel() || null"
+      data-testid="ui-combobox-listbox">
+      <ng-content />
+    </div>
+    @if (isEmpty()) {
+      <p class="copy-14 px-[16px] py-[12px] text-ui-neutral-600" data-testid="ui-combobox-empty">
+        {{ emptyMessage() }}
+      </p>
+    }
+  </div>
+</ng-template>

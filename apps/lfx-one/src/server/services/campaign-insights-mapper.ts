@@ -186,6 +186,8 @@ export function toKeywordMetricsResponse(payload: CampaignServiceKeywords, effec
     truncated: payload.truncated,
     totals: keywordTotals(keywords),
     keywords,
+    // campaign-service reports keyword cost in the account's native currency and names none (#4807).
+    amountsInAccountCurrency: true,
   };
 }
 

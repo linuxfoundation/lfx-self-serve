@@ -232,5 +232,89 @@ export interface UiToastRef {
   dismiss(): void;
 }
 
+/** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled`. */
+export interface UiOption {
+  /** DOM id of the option row. The list points `aria-activedescendant` at it. */
+  readonly id: string;
+  /** Stable identifier written to the form control and the `value` model. Unique within the list. */
+  readonly value: string;
+  /** Plain text of the choice: shown in the trigger once picked and matched by type-ahead, whatever rich content the row holds. */
+  readonly label: string;
+  /** The option stays visible but cannot be picked, and the keyboard skips it. */
+  readonly disabled: boolean;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. Empty when the option has none. */
+  readonly icon: string;
+}
+
+/** A plain option label split around the part a filtering list emphasises. `match` is empty when nothing is emphasised. */
+export interface UiOptionLabelParts {
+  /** Text before the emphasised part, or the whole label when nothing is emphasised. */
+  before: string;
+  /** The emphasised part, such as the text typed in a combobox. */
+  match: string;
+  /** Text after the emphasised part. */
+  after: string;
+}
+
+/** What a custom uikit select value template receives: the picked option as the implicit value. */
+export interface UiSelectValueContext {
+  /** The picked option. */
+  $implicit: UiOption;
+}
+
 /** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
 export type UiSplitButtonVariant = 'primary' | 'secondary';
+
+/** One command in a uikit command menu: a place to go or an action to run. */
+export interface UiCommandItem {
+  /** Stable identifier, unique within the menu. The chosen item is handed back whole, so match on this. */
+  value: string;
+  /** What the row says and what typing matches, such as "Create Committee". */
+  label: string;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-users`. */
+  icon?: string;
+  /** Shortcut hint at the end of the row, one entry per key, such as `['⌘', 'M']`. A hint only; wire the shortcut yourself. */
+  shortcut?: string[];
+  /** Extra words that typing matches but the row does not show, such as "meeting" for "Schedule Meeting". */
+  keywords?: string[];
+  /** The row stays visible but cannot be chosen, and the keyboard skips it. */
+  disabled?: boolean;
+}
+
+/** A titled run of commands in a uikit command menu. Groups with no matching command are hidden while the user types. */
+export interface UiCommandGroup {
+  /** Small heading above the group, such as "Projects". */
+  label: string;
+  /** The commands in the group, in display order. */
+  items: UiCommandItem[];
+}
+
+/** What `UiCommandMenuService.open` needs to show a command menu. */
+export interface UiCommandMenuConfig {
+  /** The commands, grouped. */
+  groups: UiCommandGroup[];
+  /** Accessible name of the dialog, read when it opens. Defaults to "Command menu". */
+  label?: string;
+  /** Placeholder of the search field. */
+  placeholder?: string;
+}
+
+/** A command row of the uikit command menu with the ids and position its template needs. */
+export interface UiCommandItemView {
+  /** The command. */
+  item: UiCommandItem;
+  /** DOM id of the row, the target of `aria-activedescendant`. */
+  id: string;
+  /** Position among all visible commands, across groups. */
+  index: number;
+}
+
+/** A group of the uikit command menu after filtering. */
+export interface UiCommandGroupView {
+  /** DOM id of the group heading, which names the group. */
+  id: string;
+  /** Heading text. */
+  label: string;
+  /** The commands that match the search. */
+  items: UiCommandItemView[];
+}

@@ -3571,10 +3571,27 @@ export class CampaignController {
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
 
     try {
+      // A sentinel of its own, not `null`: the API client answers `null` for an empty success, which
+      // must still fail the 502 check below rather than read as a refusal.
+      const refused = Symbol('refused');
       const [payload, connection] = await Promise.all([
-        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug),
+        // Both reads sit behind campaign-service's `campaign_manager` rule, so a ROOT writer without the
+        // project's role is refused on both (#4837). The list's 403 is caught to `refused` rather than
+        // failing the whole read, so the answer is the connection's `forbidden` — named as the missing
+        // role on the tab — not an HTTP 403 the tab would read as the shared-account restriction.
+        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug).catch((error: unknown) => {
+          if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) return refused;
+          throw error;
+        }),
         this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
       ]);
+      // `refused` is the only symbol the list read can settle with; `typeof` is what narrows the union.
+      if (typeof payload === 'symbol') {
+        const forbiddenResult: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
+        logger.success(req, operation, startTime, { count: 0, connection: 'forbidden' });
+        res.json(forbiddenResult);
+        return;
+      }
       // `accounts` is required upstream; reading its absence as an empty list would say the
       // credential reaches nothing, so an unreadable body fails the read instead.
       if (!Array.isArray(payload?.accounts)) {
@@ -4825,9 +4842,9 @@ export class CampaignController {
   }
 
   /**
-   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's
-   * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
-   * `unavailable`, because only the service's typed 404 says the connection does not exist.
+   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's own
+   * 404 is `no_connection`, its 403 is `forbidden`, and anything else — a gateway 404, a transport
+   * failure — is `unavailable`, because only the service's typed 404 says the connection does not exist.
    */
   private async readMonitorConnection(
     req: Request,
@@ -4840,6 +4857,12 @@ export class CampaignController {
     } catch (error) {
       if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { state: 'no_connection', accountId: null, label: null };
+      }
+      // campaign-service authorizes every connection read with the project's `campaign_manager`
+      // relation, which a ROOT writer admitted by this app's guards (`requireGoogleMonitorAccess`,
+      // and `requireCampaignManager`'s ROOT writer branch) need not hold (#4837). A standing refusal.
+      if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) {
+        return { state: 'forbidden', accountId: null, label: null };
       }
       logger.warning(req, operation, 'campaign-service connection read failed; reporting the platform as unavailable', {
         provider,

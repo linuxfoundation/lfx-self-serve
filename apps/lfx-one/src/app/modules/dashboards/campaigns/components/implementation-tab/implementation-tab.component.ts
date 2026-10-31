@@ -2790,6 +2790,12 @@ export class ImplementationTabComponent implements OnInit {
     const result = this.googleSuggestedApply();
     return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.seq : 0;
   });
+  /**
+   * How many images each on-screen Google image field holds — pasted lines plus library images held
+   * for the open brief — keyed by every plan `slot_key` that maps onto it, for the slot grid (#4833).
+   * Only fields holding something appear.
+   */
+  protected readonly googleFormFilledSlots: Signal<Record<string, number>> = this.initGoogleFormFilledSlots();
   /** The last apply's result for the brief now open, or `''`. */
   protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
     const result = this.googleSuggestedApply();
@@ -5661,11 +5667,12 @@ export class ImplementationTabComponent implements OnInit {
           if (!offered || slug === '') return of(idle);
           return this.campaignService.getTwitterAdsAccounts(slug).pipe(
             // A connection campaign-service could not read comes back inside a 200 as
-            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
-            map(
-              (result): CampaignTwitterAccountState =>
-                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
-            ),
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry. One it
+            // REFUSED to read (`forbidden`, #4837) is a standing refusal and gets no Retry.
+            map((result): CampaignTwitterAccountState => {
+              if (result.connection?.state === 'forbidden') return { status: 'forbidden', result: null };
+              return result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result };
+            }),
             catchError((err: unknown) =>
               of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
             ),
@@ -7524,11 +7531,36 @@ export class ImplementationTabComponent implements OnInit {
         const [groupName, control] = key.split('.');
         const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
         if (!channel) continue;
-        for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
-          if (mapped === control) targets.push(`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
-        }
+        targets.push(...this.googlePlanSlotKeysFor(channel, control));
       }
       return targets;
+    });
+  }
+
+  private initGoogleFormFilledSlots(): Signal<Record<string, number>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      // Walks the RENDERED image fields, not `googleImageSlots`: those exist only while the library is
+      // an explicit yes, and pasted URLs are offered — and fill a slot — whatever it answers. Held
+      // images count only where the request would send them (`googleImageRefsFor`).
+      const briefId = this.briefPersistence().briefId ?? '';
+      const libraryOn = this.googleAssetUploadAvailable();
+      const held = this.googleHeldImages();
+      const filled: Record<string, number> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          if (!field.image) continue;
+          const key = `${section.groupName}.${field.control}`;
+          const heldCount = libraryOn ? (held[key] ?? []).filter((image) => image.briefId === briefId).length : 0;
+          const count = this.splitCreativeLines(raw[field.control]).length + heldCount;
+          if (count === 0) continue;
+          for (const slotKey of this.googlePlanSlotKeysFor(section.channel, field.control)) {
+            filled[slotKey] = count;
+          }
+        }
+      }
+      return filled;
     });
   }
 
@@ -9333,6 +9365,17 @@ export class ImplementationTabComponent implements OnInit {
     image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
     image.onerror = () => settle({ state: 'failed' });
     image.src = url;
+  }
+
+  /**
+   * Every asset-plan `slot_key` that maps onto one Google image field: `google-ads/CHANNEL/slot`, in the
+   * plan's own vocabulary (`GOOGLE_ASSET_PLAN_SLOT_CONTROLS`). The one place that mapping is walked, so the
+   * grid's suggestion targets and its form counts cannot drift apart.
+   */
+  private googlePlanSlotKeysFor(channel: GoogleCreativeChannel, control: string): string[] {
+    return Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])
+      .filter(([, mapped]) => mapped === control)
+      .map(([planSlot]) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
   }
 
   /**

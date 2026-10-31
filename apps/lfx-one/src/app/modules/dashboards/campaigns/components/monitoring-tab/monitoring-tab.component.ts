@@ -111,6 +111,13 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /**
+   * The panels whose last failed read was refused for the caller's role (a 403, #4837), keyed by panel
+   * (`google`, `google-accounts`, `linkedin`, `reddit`, `meta`, `report-backed`, `hubspot`). Retrying
+   * repeats the same refusal, so such an error offers no Retry. Written beside every error a panel
+   * shows, so a stale entry is never read: the error block it gates is hidden until the next error.
+   */
+  protected readonly refusedReads = signal<ReadonlySet<string>>(new Set());
 
   // Platform switcher
   protected readonly selectedPlatform = signal<MonitorTabPlatform>('google');
@@ -262,6 +269,12 @@ export class MonitoringTabComponent implements OnInit {
   private readonly googleAmount = computed(() =>
     this.monitorData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
   );
+  /** How a Google keyword amount prints: the connected account's own, unnamed currency without a symbol (#4807), else `$`. */
+  private readonly keywordAmount = computed(() =>
+    this.keywordsData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
+  );
+  /** True when the keyword amounts on screen are in the connected account's own, unnamed currency. */
+  protected readonly keywordCurrencyNote = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
   /** True when the Google amounts on screen are in the connected account's own, unnamed currency. */
   protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
   /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
@@ -459,6 +472,7 @@ export class MonitoringTabComponent implements OnInit {
           if (this.isSharedAccountRestricted(err)) {
             this.googleAccountsRefused = true;
           } else {
+            this.noteRefusal('google-accounts', err);
             this.googleAccountsError.set(extractErrorMessage(err, 'Failed to load Google Ads accounts'));
           }
         },
@@ -494,6 +508,7 @@ export class MonitoringTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.noteRefusal('google', err);
           this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });
@@ -637,6 +652,7 @@ export class MonitoringTabComponent implements OnInit {
           this.setMetricsDisabled(platform, true);
           return;
         }
+        this.noteRefusal('report-backed', err);
         this.reportBackedError.set(this.reportBackedErrorMessage(err, label));
       },
     });
@@ -666,6 +682,7 @@ export class MonitoringTabComponent implements OnInit {
             // 404 — a gateway or routing miss — falls through to a retryable error below.
             this.hubSpotNoticeState.set('no_connection');
           } else {
+            this.noteRefusal('hubspot', err);
             this.hubSpotError.set(extractErrorMessage(err, 'Failed to load HubSpot email data'));
           }
         },
@@ -715,6 +732,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('linkedin', err);
           this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn data'));
           this.linkedInLoading.set(false);
         },
@@ -762,6 +780,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('reddit', err);
           this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit data'));
           this.redditLoading.set(false);
         },
@@ -811,6 +830,7 @@ export class MonitoringTabComponent implements OnInit {
             return;
           }
           const httpErr = err as { error?: { message?: string }; message?: string };
+          this.noteRefusal('meta', err);
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta data'));
           this.metaLoading.set(false);
         },
@@ -1058,15 +1078,16 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(totals.impressions),
         clicks: this.formatNumber(totals.clicks),
         avgCtr: this.formatPct(totals.avgCtr),
-        spend: this.formatCurrency(totals.spend),
+        spend: this.keywordAmount()(totals.spend),
         conversions: this.formatNumber(totals.conversions),
       };
     });
   }
 
   private initVisibleKeywordRows(): Signal<KeywordRowView[]> {
-    return computed(() =>
-      this.visibleKeywords().map((kw) => ({
+    return computed(() => {
+      const amount = this.keywordAmount();
+      return this.visibleKeywords().map((kw) => ({
         trackKey: `${kw.keyword}-${kw.campaignId}`,
         keyword: kw.keyword,
         campaign: kw.campaign,
@@ -1078,11 +1099,11 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(kw.impressions),
         clicks: this.formatNumber(kw.clicks),
         ctr: this.formatPct(kw.ctr),
-        avgCpc: this.formatCurrency(kw.avgCpc),
-        spend: this.formatCurrency(kw.spend),
+        avgCpc: amount(kw.avgCpc),
+        spend: amount(kw.spend),
         conversions: this.formatNumber(kw.conversions),
-      }))
-    );
+      }));
+    });
   }
 
   /** Each platform button's classes and background for the current selection; see `MONITOR_PLATFORM_BUTTON_COLORS`. */
@@ -1373,6 +1394,19 @@ export class MonitoringTabComponent implements OnInit {
   }
 
   /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
+  /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
+  private noteRefusal(panel: string, err: unknown): void {
+    const refused = err instanceof HttpErrorResponse && err.status === 403;
+    if (refused === this.refusedReads().has(panel)) return;
+    const next = new Set(this.refusedReads());
+    if (refused) {
+      next.add(panel);
+    } else {
+      next.delete(panel);
+    }
+    this.refusedReads.set(next);
+  }
+
   private isSharedAccountRestricted(err: unknown): boolean {
     return this.errorCode(err) === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE;
   }
@@ -1439,6 +1473,14 @@ export class MonitoringTabComponent implements OnInit {
           state,
           title: `${label} monitoring is limited to LF administrators`,
           message: `This ${label} ad account is shared by every foundation, so its campaigns and spend can't be shown for a single project.`,
+        };
+      case 'forbidden':
+        // campaign-service authorizes the read with the project's `campaign_manager` relation, which a
+        // ROOT writer this app admits need not hold (#4837): a standing refusal, so no "refresh" advice.
+        return {
+          state,
+          title: `${label} monitoring needs the campaign manager role`,
+          message: `campaign-service refused to read this project's ${label} connection. Your account needs the campaign manager role on this project; ask an LFX administrator for it.`,
         };
       case 'metrics_disabled':
         return {
@@ -1725,6 +1767,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (linkedInSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('linkedin', err);
             this.linkedInError.set(extractErrorMessage(httpErr, 'Failed to load LinkedIn accounts'));
           },
         })
@@ -1749,6 +1792,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (redditSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('reddit', err);
             this.redditError.set(extractErrorMessage(httpErr, 'Failed to load Reddit accounts'));
           },
         })
@@ -1773,6 +1817,7 @@ export class MonitoringTabComponent implements OnInit {
           error: (err: unknown) => {
             if (metaSlug !== this.activeFoundationSlug() || this.monitorViaCampaignService()) return;
             const httpErr = err as { error?: { message?: string }; message?: string };
+            this.noteRefusal('meta', err);
             this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
           },
         })

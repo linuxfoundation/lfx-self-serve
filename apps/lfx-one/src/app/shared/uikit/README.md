@@ -60,6 +60,9 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-split-button`   | `UiSplitButtonComponent`   | Main action joined to a chevron that opens an `lfx-ui-menu`: primary or secondary, three sizes; named, `aria-haspopup`, `aria-expanded`                                |
 | `UiToastService`        | `UiToastService`           | Bottom-right stack in a CDK overlay, newest on top, kept as a polite live region; `show()` returns a handle, `dismissAll()`                                            |
 | `lfxUiContextMenu`      | `UiContextMenuDirective`   | Opens a `lfx-ui-menu` on right-click, touch long-press, Shift+F10 or the context menu key; flips inside the window; innermost host wins                                |
+| `lfx-ui-select`         | `UiSelectComponent`        | Select-only combobox on CDK: projected `lfx-ui-option` rows with any content, groups, separators, prefix, header and value slots; `[(value)]`, forms                   |
+| `lfx-ui-combobox`       | `UiComboboxComponent`      | Text field that filters the same `lfx-ui-option` rows as you type, bold match, empty state; picks from the list only; `[(value)]`, forms                               |
+| `lfx-ui-command-menu`   | `UiCommandMenuComponent`   | Command palette in a modal via `UiCommandMenuService`: search, groups, shortcut hints, empty state; combobox and listbox                                               |
 
 ## Design tokens
 
