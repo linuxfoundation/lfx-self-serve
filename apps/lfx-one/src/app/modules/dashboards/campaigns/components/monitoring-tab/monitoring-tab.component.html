@@ -977,6 +977,9 @@
               Totals cover the {{ keywords().length }} keywords returned by the ad account, which may include other foundations' campaigns.
             </p>
           }
+          @if (keywordCurrencyNote()) {
+            <p class="mb-2 text-xs text-gray-500" data-testid="keyword-currency-note">Keyword spend and CPC are in the ad account's own currency.</p>
+          }
           <div class="grid grid-cols-2 gap-3 md:grid-cols-5" data-testid="keyword-totals">
             <div class="rounded-md border border-gray-200 bg-white px-3 py-2">
               <p class="text-xs text-gray-500">

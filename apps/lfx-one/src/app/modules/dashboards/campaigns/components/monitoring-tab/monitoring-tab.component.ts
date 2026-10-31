@@ -262,6 +262,12 @@ export class MonitoringTabComponent implements OnInit {
   private readonly googleAmount = computed(() =>
     this.monitorData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
   );
+  /** How a Google keyword amount prints: the connected account's own, unnamed currency without a symbol (#4807), else `$`. */
+  private readonly keywordAmount = computed(() =>
+    this.keywordsData()?.amountsInAccountCurrency === true ? (n: number): string => this.formatAccountAmount(n) : (n: number): string => this.formatCurrency(n)
+  );
+  /** True when the keyword amounts on screen are in the connected account's own, unnamed currency. */
+  protected readonly keywordCurrencyNote = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
   /** True when the Google amounts on screen are in the connected account's own, unnamed currency. */
   protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
   /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
@@ -1058,15 +1064,16 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(totals.impressions),
         clicks: this.formatNumber(totals.clicks),
         avgCtr: this.formatPct(totals.avgCtr),
-        spend: this.formatCurrency(totals.spend),
+        spend: this.keywordAmount()(totals.spend),
         conversions: this.formatNumber(totals.conversions),
       };
     });
   }
 
   private initVisibleKeywordRows(): Signal<KeywordRowView[]> {
-    return computed(() =>
-      this.visibleKeywords().map((kw) => ({
+    return computed(() => {
+      const amount = this.keywordAmount();
+      return this.visibleKeywords().map((kw) => ({
         trackKey: `${kw.keyword}-${kw.campaignId}`,
         keyword: kw.keyword,
         campaign: kw.campaign,
@@ -1078,11 +1085,11 @@ export class MonitoringTabComponent implements OnInit {
         impressions: this.formatNumber(kw.impressions),
         clicks: this.formatNumber(kw.clicks),
         ctr: this.formatPct(kw.ctr),
-        avgCpc: this.formatCurrency(kw.avgCpc),
-        spend: this.formatCurrency(kw.spend),
+        avgCpc: amount(kw.avgCpc),
+        spend: amount(kw.spend),
         conversions: this.formatNumber(kw.conversions),
-      }))
-    );
+      }));
+    });
   }
 
   /** Each platform button's classes and background for the current selection; see `MONITOR_PLATFORM_BUTTON_COLORS`. */
