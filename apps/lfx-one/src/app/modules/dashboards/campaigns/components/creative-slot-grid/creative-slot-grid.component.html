@@ -28,7 +28,7 @@
   <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-live">{{ liveMessage() }}</div>
   <!-- The result of "Use suggested images", announced for the same reason and in its own region: the
        plan's own message above does not change when suggestions are applied. -->
-  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-apply-live">{{ applyResult() }}</div>
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-slot-grid-apply-live">{{ applyAnnouncement() }}</div>
 
   @if (state().status === 'loading') {
     <p class="text-xs text-gray-500" data-testid="creative-slot-grid-loading">Checking which slots this library covers…</p>

@@ -14,7 +14,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
 
 /** Platform ids in the order the brief's own platform picker shows them, so the grid reads in the same order. */
 const PLATFORM_ORDER: readonly string[] = CAMPAIGN_PLATFORMS.map((platform) => platform.id);
@@ -70,6 +70,11 @@ export class CreativeSlotGridComponent {
   public readonly suggestionTargets = input<readonly string[]>([]);
   /** What the host did with the last suggestions it was handed, or `''`. Shown and announced here, beside the button. */
   public readonly applyResult = input('');
+  /**
+   * Bumped by the host on every apply. Two applies can end in the same sentence, and a live region
+   * whose text does not change announces nothing, so this is what makes the second one heard.
+   */
+  public readonly applySeq = input(0);
 
   // === Outputs ===
   /**
@@ -88,6 +93,8 @@ export class CreativeSlotGridComponent {
   protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
+  /** The apply result as the live region announces it: emptied, then refilled on the next tick, per apply. */
+  protected readonly applyAnnouncement: Signal<string> = this.initApplyAnnouncement();
   /** The ready plan's assignments that name an image for a slot the host can fill — what "Use suggested images" hands over. */
   protected readonly suggestions: Signal<CreativeSlotAssignment[]> = this.initSuggestions();
 
@@ -316,6 +323,28 @@ export class CreativeSlotGridComponent {
       // covered is counted here too, and what it is short of is one more image.
       return open === 1 ? '1 image slot still needs an image.' : `${open} image slots still need an image.`;
     });
+  }
+
+  /**
+   * Every apply clears the region and refills it a tick later, so a result that repeats the previous
+   * one is announced again: a polite live region speaks only when its contents CHANGE, and the empty
+   * render in between is that change. The visible line reads `applyResult` directly and never blinks.
+   */
+  private initApplyAnnouncement(): Signal<string> {
+    const apply = computed(() => ({ seq: this.applySeq(), text: this.applyResult() }));
+    return toSignal(
+      toObservable(apply).pipe(
+        switchMap(({ text }) =>
+          text === ''
+            ? of('')
+            : timer(0).pipe(
+                map(() => text),
+                startWith('')
+              )
+        )
+      ),
+      { initialValue: '' }
+    );
   }
 
   private initSuggestions(): Signal<CreativeSlotAssignment[]> {

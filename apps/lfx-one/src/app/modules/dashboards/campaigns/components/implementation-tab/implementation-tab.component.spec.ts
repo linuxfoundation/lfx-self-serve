@@ -12843,6 +12843,8 @@ describe('ImplementationTabComponent google stored images', () => {
       const { c } = await mount(true);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
       c['onApplySuggestedGoogleImages']([assignment('logoImages', [SQUARE_LOGO])]);
+      // Each apply bumps the sequence, so the grid announces a repeated sentence again.
+      expect(c['googleSuggestedApplySeq']()).toBe(2);
 
       expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
       expect(c['googleSuggestedApplyResult']()).toBe('Nothing to fill: every image field with a suggestion already has images.');

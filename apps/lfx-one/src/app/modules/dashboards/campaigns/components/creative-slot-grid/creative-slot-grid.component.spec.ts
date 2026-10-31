@@ -351,16 +351,39 @@ describe('CreativeSlotGridComponent', () => {
       expect(emitted).toEqual([PLAN.assignments]);
     });
 
-    it("shows the host's result and announces it in a region that was mounted empty", () => {
+    /** The region is filled a tick after the render that empties it, so every apply is a change a reader announces. */
+    const tick = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+    };
+
+    it("shows the host's result and announces it in a region that was mounted empty", async () => {
       render({ ...ready, suggestionTargets: TARGETS });
       expect(q('creative-slot-grid-apply-live')?.textContent?.trim()).toBe('');
       expect(q('creative-slot-grid-apply-result')).toBeNull();
 
-      render({ applyResult: 'Filled 2 empty image slots with suggested images.' });
+      render({ applyResult: 'Filled 2 empty image slots with suggested images.', applySeq: 1 });
+      await tick();
 
       expect(text('creative-slot-grid-apply-result')).toBe('Filled 2 empty image slots with suggested images.');
       expect(text('creative-slot-grid-apply-live')).toBe('Filled 2 empty image slots with suggested images.');
       expect(q('creative-slot-grid-apply-result')?.getAttribute('role')).toBeNull();
+    });
+
+    /** A polite region speaks only on change, so a second apply with the same sentence must empty it first. */
+    it('announces a second apply that ends in the same sentence', async () => {
+      const sentence = 'Filled 1 empty image slot with suggested images.';
+      render({ ...ready, suggestionTargets: TARGETS, applyResult: sentence, applySeq: 1 });
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
+
+      render({ applySeq: 2 });
+      expect(text('creative-slot-grid-apply-live')).toBe('');
+      // The visible line does not blink while the region is refilled.
+      expect(text('creative-slot-grid-apply-result')).toBe(sentence);
+
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
     });
   });
 });

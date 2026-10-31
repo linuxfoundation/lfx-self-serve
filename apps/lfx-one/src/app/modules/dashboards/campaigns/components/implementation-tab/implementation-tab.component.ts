@@ -1602,7 +1602,7 @@ export class ImplementationTabComponent implements OnInit {
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
   /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
-  private readonly googleSuggestedApply = signal<{ briefId: string; message: string } | null>(null);
+  private readonly googleSuggestedApply = signal<{ briefId: string; message: string; seq: number } | null>(null);
 
   // === Computed Signals ===
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
@@ -2766,6 +2766,11 @@ export class ImplementationTabComponent implements OnInit {
    * an explicit library yes.
    */
   protected readonly googleSuggestionTargets: Signal<string[]> = this.initGoogleSuggestionTargets();
+  /** Bumped on every apply, so the grid announces a repeated result again; 0 when the last apply was for another brief. */
+  protected readonly googleSuggestedApplySeq: Signal<number> = computed(() => {
+    const result = this.googleSuggestedApply();
+    return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.seq : 0;
+  });
   /** The last apply's result for the brief now open, or `''`. */
   protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
     const result = this.googleSuggestedApply();
@@ -3990,7 +3995,7 @@ export class ImplementationTabComponent implements OnInit {
     if (filled > 0 && kept > 0) {
       message += ` Left ${kept} ${slotWord(kept)} you had already filled as ${kept === 1 ? 'it was' : 'they were'}.`;
     }
-    this.googleSuggestedApply.set({ briefId, message });
+    this.googleSuggestedApply.update((previous) => ({ briefId, message, seq: (previous?.seq ?? 0) + 1 }));
     if (filled > 0) this.emitDraft();
   }
 
