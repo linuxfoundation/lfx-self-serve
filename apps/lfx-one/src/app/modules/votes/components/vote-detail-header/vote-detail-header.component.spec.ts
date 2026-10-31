@@ -11,7 +11,7 @@ import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { of } from 'rxjs';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteDetailHeaderComponent } from './vote-detail-header.component';
 
@@ -43,7 +43,6 @@ describe('VoteDetailHeaderComponent', () => {
         { provide: MessageService, useValue: { add: () => undefined } },
       ],
     }).compileComponents();
-    fixture = TestBed.createComponent(VoteDetailHeaderComponent);
   });
 
   function render(
@@ -57,6 +56,7 @@ describe('VoteDetailHeaderComponent', () => {
       limited?: boolean;
     } = {}
   ): void {
+    fixture = TestBed.createComponent(VoteDetailHeaderComponent);
     fixture.componentRef.setInput('vote', inputs.vote ?? makeVote());
     fixture.componentRef.setInput('audience', inputs.audience ?? 'voter');
     fixture.componentRef.setInput('canCastVote', inputs.canCastVote ?? false);
@@ -170,6 +170,156 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026.');
   });
 
+  it.each(['creator', 'voter'] as const)('exposes the full closing time zone to screen readers for a %s', (audience) => {
+    render({ audience });
+    const closeDate: HTMLElement = fixture.nativeElement.querySelector('[data-testid="vote-detail-header-close-date"]');
+
+    expect(closeDate.getAttribute('aria-label')).toBe('Closes Oct 30, 2026 4:00 PM UTC (Coordinated Universal Time)');
+
+    fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
+    fixture.detectChanges();
+
+    expect(closeDate.getAttribute('aria-label')).toBe('Closed Oct 20, 2026 12:00 PM UTC (Coordinated Universal Time)');
+  });
+
+  describe('time remaining (#4767)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('shows how long an active vote has left, beside the unchanged close date', () => {
+      render();
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
+      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 30, 2026 4:00 PM UTC');
+    });
+
+    it('shows no time remaining for an ended vote', () => {
+      render({ vote: makeVote({ status: PollStatus.ENDED }) });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it.each(['2026-10-20T16:00:00Z', '2026-10-26T15:00:00Z', '2026-10-26T16:00:00Z'])('shows no time remaining at or after the deadline (%s)', (endTime) => {
+      render({ vote: makeVote({ end_time: endTime }) });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it('still shows time remaining for a deadline later today', () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T17:00:00Z' }) });
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+    });
+
+    it('shows none while limited', () => {
+      render({ limited: true });
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+  });
+
+  describe('mounted countdown clock (#4767)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      vi.stubEnv('TZ', 'UTC');
+      vi.setSystemTime(new Date('2026-10-26T16:00:00Z'));
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'browser' });
+    });
+
+    afterEach(() => {
+      fixture.destroy();
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    });
+
+    // Flush scheduled zoneless rendering, not fixture.detectChanges: elapsed time must update the DOM itself.
+    async function tick(ms: number): Promise<void> {
+      await vi.advanceTimersByTimeAsync(ms);
+      await fixture.whenStable();
+    }
+
+    it('removes the countdown when the mounted vote reaches its deadline', async () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+
+      await tick(999);
+      expect(exists('vote-detail-header-time-remaining')).toBe(true);
+      await tick(2);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+      expect(text('vote-detail-header-close-date')).toBe('Closes Oct 26, 2026 4:00 PM UTC');
+    });
+
+    it('refreshes the relative label at midnight without changing vote inputs', async () => {
+      vi.setSystemTime(new Date('2026-10-26T23:59:59Z'));
+      render({ vote: makeVote({ end_time: '2026-10-28T16:00:00Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 2 days');
+
+      await tick(1_001);
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
+    });
+
+    it('uses the viewer-local midnight across a daylight-saving transition', async () => {
+      vi.stubEnv('TZ', 'America/New_York');
+      vi.setSystemTime(new Date('2026-03-08T05:00:00Z')); // Midnight EST; the next midnight is only 23 hours away.
+      render({ vote: makeVote({ end_time: '2026-03-09T16:00:00Z' }) });
+      await fixture.whenStable();
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes tomorrow');
+
+      await tick(23 * 60 * 60 * 1_000 + 1);
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+    });
+
+    it('reschedules expiry when the deadline changes on the mounted header', async () => {
+      render({ vote: makeVote({ end_time: '2026-10-26T16:00:01Z' }) });
+      await fixture.whenStable();
+      fixture.componentRef.setInput('vote', makeVote({ end_time: '2026-10-26T16:00:02Z' }));
+      await tick(1);
+
+      await tick(1_000);
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes today');
+      await tick(1_000);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+    });
+
+    it('cancels the clock when the vote ends early', async () => {
+      render();
+      await fixture.whenStable();
+      fixture.componentRef.setInput('vote', makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-26T16:00:00Z' }));
+      await tick(1);
+
+      expect(exists('vote-detail-header-time-remaining')).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('cleans up the pending countdown timeout when destroyed', async () => {
+      render();
+      await fixture.whenStable();
+      expect(vi.getTimerCount()).toBe(1);
+
+      fixture.destroy();
+
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('does not schedule a countdown timeout during SSR', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      render();
+      await fixture.whenStable();
+
+      expect(text('vote-detail-header-time-remaining')).toBe('Closes in 4 days');
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
   describe('actions', () => {
     // Managers reach results from the Results tab, so only voters get View results (#4447).
     it.each([
@@ -239,6 +389,28 @@ describe('VoteDetailHeaderComponent', () => {
       expect(exists('vote-detail-header-present')).toBe(canPresent);
       expect(exists('vote-detail-header-copy-slide')).toBe(canPresent);
       expect(exists('vote-detail-header-send-ballots')).toBe(canSendBallots);
+    });
+
+    it('orders the manager actions by job: email actions, presenter actions, then Cast vote', () => {
+      render({ audience: 'creator', canPresent: true, canSendBallots: true, canCastVote: true });
+      const ids = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="vote-detail-header-actions"] > [data-testid]')).map((e) =>
+        (e as HTMLElement).getAttribute('data-testid')
+      );
+
+      expect(ids).toEqual([
+        'vote-detail-header-send-reminder',
+        'vote-detail-header-send-ballots',
+        'vote-detail-header-present',
+        'vote-detail-header-copy-slide',
+        'vote-detail-header-cast-vote',
+      ]);
+    });
+
+    it('renders Send ballots now with the compact variant', () => {
+      render({ audience: 'creator', canSendBallots: true });
+      const ballots = fixture.debugElement.query(By.css('[data-testid="vote-detail-header-send-ballots"]')).componentInstance;
+
+      expect(ballots.variant()).toBe('compact');
     });
 
     it('hides Present, Copy slide and Send ballots while limited', () => {
