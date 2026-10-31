@@ -238,6 +238,133 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis-unavailable"]')).not.toBeNull();
   });
 
+  /**
+   * The campaign-service Google read (#4526) can return a row it could not read or pace, with zero
+   * placeholders. Those render as the other panels render them, never as a measured 0 or a red 0% bar.
+   */
+  describe('Google rows from the campaign-service path', () => {
+    const base = {
+      name: 'C',
+      shortName: 'C',
+      eventName: 'KubeCon',
+      adFormat: 'Search',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 12.5,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId: '555',
+      googleAdsUrl: '',
+    };
+
+    function renderRow(overrides: Record<string, unknown>, totals: Record<string, unknown> = {}): string[] {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, ...overrides }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, ...totals },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      return Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.replace(/\s+/g, ' ').trim() ?? '');
+    }
+
+    const kpiConversions = (): string => fixture.nativeElement.querySelector('[data-testid="monitoring-kpi-conversions"]')?.textContent?.trim() ?? '';
+
+    it('keeps a measured row exactly as the legacy read renders it', () => {
+      const cells = renderRow({ fetchFailed: false, pacingUnknown: false, conversionsMeasured: true });
+      expect(cells.slice(2)).toEqual(['$3,000.00', '$25.00', '1,000', '40', '4.0%', '$0.63', '12.5', '50%']);
+    });
+
+    it('renders every figure of an unread row as a dash', () => {
+      const cells = renderRow({ fetchFailed: true, pacingPct: 0, spend: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0 });
+      expect(cells.slice(2)).toEqual(['—', '—', '—', '—', '—', '—', '—', '—']);
+    });
+
+    it('renders unknown pacing as Unknown with an empty grey bar, not a red 0%', () => {
+      renderRow({ pacingUnknown: true, pacingPct: 0 });
+      const bar: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] .rounded-full .h-full');
+      const text = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"] td:last-child span')?.textContent?.trim();
+      expect(text).toBe('Unknown');
+      expect(bar.className).toContain('bg-gray-300');
+      expect(bar.className).not.toContain('bg-red-500');
+      expect(bar.style.width).toBe('0%');
+    });
+
+    const totalsNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-totals-note"]')?.textContent?.trim() ?? null;
+
+    it('says what the totals leave out when a row was not read or did not measure conversions, as the other panels do', () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [
+          { ...base, campaignId: '1', fetchFailed: false, conversionsMeasured: true },
+          { ...base, campaignId: '2', fetchFailed: false, conversionsMeasured: false },
+          { ...base, campaignId: '3', fetchFailed: true, conversionsMeasured: false },
+        ],
+        accountTotals: { budgetDay: 300, impressions: 2000, clicks: 80, spend: 50, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+      });
+      fixture.detectChanges();
+
+      expect(totalsNote()).toBe('Totals may understate: 1 of 3 campaigns could not be fully read; conversions are measured for 1 of 3 campaigns.');
+    });
+
+    it('shows no totals note when every row was read and measured', () => {
+      renderRow({ fetchFailed: false, conversionsMeasured: true });
+      expect(totalsNote()).toBeNull();
+      // Paired positive: the strip itself rendered, so the absent note is not an absent panel.
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
+    it("prints the connected account's amounts without a dollar sign, and says so", () => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns: [{ ...base, fetchFailed: false, pacingUnknown: false, conversionsMeasured: true }],
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        amountsInAccountCurrency: true,
+      });
+      fixture.detectChanges();
+      const row: HTMLElement = fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-row-0"]');
+      const cells = Array.from(row.querySelectorAll('td')).map((cell) => (cell as HTMLElement).textContent?.trim() ?? '');
+
+      expect(cells.slice(2, 4)).toEqual(['3,000.00', '25.00']);
+      expect(cells[7]).toBe('0.63');
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')?.textContent?.trim()).toBe(
+        "Spend, budgets and CPC are in the ad account's own currency."
+      );
+    });
+
+    it('keeps the dollar sign and no currency note on the legacy read', () => {
+      renderRow({});
+      expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')).toBeNull();
+    });
+
+    it('renders unmeasured conversions as Not measured on the row and in the KPI strip', () => {
+      const cells = renderRow({ conversionsMeasured: false, conversions: 0 }, { conversions: 0, conversionsMeasured: false });
+      expect(cells[cells.length - 2]).toBe('Not measured');
+      expect(kpiConversions()).toBe('Not measured');
+    });
+  });
+
   it('renders an em dash for CTR when nothing was served', () => {
     // Zero impressions: clicks/0 is undefined, so 0% would state a rate never measured.
     renderTotals({ impressions: 0, clicks: 0, spend: 0, conversions: 0 });
@@ -443,7 +570,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
     expect(text(`${platform}-campaign-fetch-failed`)).toBe("Couldn't read");
     expect(text(`${platform}-campaign-conversions`)).toBe('—');
     expect(text(`${platform}-campaign-pacing`)).toBe('—');
-    expect(text(`${platform}-totals-note`)).toBe('Totals cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Totals may understate: 1 of 2 campaigns could not be fully read.');
   });
 
   it('notes a conversions total that covers only some campaigns', () => {
@@ -451,7 +578,7 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
       conversionsMeasured: true,
     });
 
-    expect(text(`${platform}-totals-note`)).toBe('conversions cover 1 of 2 campaigns.');
+    expect(text(`${platform}-totals-note`)).toBe('Conversions are measured for 1 of 2 campaigns.');
   });
 });
 
@@ -1202,7 +1329,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('microsoft-freshness')).toContain('The first report for this account is building');
       expect(text('microsoft-campaign-fetch-failed')).toBe("Couldn't read");
       expect(text('microsoft-campaign-pacing')).toBe('—');
-      expect(text('microsoft-totals-note')).toBe('Totals cover 0 of 1 campaigns.');
+      expect(text('microsoft-totals-note')).toBe('Totals may understate: 1 of 1 campaigns could not be fully read.');
     });
 
     it("shows a dash, not 0.00, for a failed row's unreadable budget", async () => {
@@ -1582,7 +1709,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
       select('microsoft');
 
-      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals cover 1 of 2 campaigns.');
+      expect(live()).toBe('Microsoft Ads: 2 campaigns shown. Totals may understate: 1 of 2 campaigns could not be fully read.');
     });
 
     it('says when the account has no campaigns', async () => {

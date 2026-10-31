@@ -214,6 +214,8 @@ import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMet
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import {
   toAccountMonitorClientError,
+  toGoogleMonitorConnectionError,
+  toGoogleMonitorResponse,
   toHubSpotEmailMonitorResponse,
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
@@ -2858,9 +2860,17 @@ export class CampaignController {
   }
 
   /**
-   * Google Ads account monitor, read account-wide through the BFF's own credentials. That customer
-   * is shared by every foundation, so the read is root-only (lfx-self-serve-ops#54); the project is
-   * still required, so a request naming none is a 400 for every caller.
+   * Google Ads account monitor. Root-only on both arms (lfx-self-serve-ops#54); the project is still
+   * required, so a request naming none is a 400 for every caller. The legacy arm needs the gate: it
+   * reads the shared customer account-wide, every foundation's campaigns at once. The campaign-service
+   * arm is project-scoped upstream (only the campaigns recorded for the project), so the gate is kept
+   * there only until opening it to project campaign managers is decided (#4526), not because it would
+   * leak another foundation's data.
+   *
+   * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, it is read from campaign-service through the
+   * project's OWN Google Ads connection (#4526): the account is the one that connection is bound to,
+   * resolved here because the Google panel has no account picker. Off, it is the legacy account-wide
+   * read through the BFF's own `GADS_*` credentials, which fails wherever those were deactivated.
    */
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -2869,6 +2879,10 @@ export class CampaignController {
       return;
     }
     if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
+      return;
+    }
+    if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
+      await this.serveGoogleConnectionMonitor(req, res, next, projectSlug);
       return;
     }
     const startTime = logger.startOperation(req, 'campaign_monitor', { days, projectSlug });
@@ -4576,7 +4590,7 @@ export class CampaignController {
   }
 
   /**
-   * The campaign-service arm of the LinkedIn, Meta and Reddit monitor routes: read the account monitor and
+   * The campaign-service arm of the Google Ads, LinkedIn, Meta and Reddit monitor routes: read the account monitor and
    * answer in the legacy shape the Monitor and Optimize panels already render.
    */
   private async serveLegacyShapedMonitor<T>(
@@ -4610,6 +4624,30 @@ export class CampaignController {
     } catch (error) {
       next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
     }
+  }
+
+  /**
+   * The campaign-service arm of the Google Ads monitor (#4526): resolve the account from the project's
+   * own connection, then read it as the LinkedIn, Meta and Reddit arms do. A connection that cannot be
+   * read through is the panel's error, never a fallback to the legacy account-wide read.
+   */
+  private async serveGoogleConnectionMonitor(req: Request, res: Response, next: NextFunction, projectSlug: string): Promise<void> {
+    const operation = 'campaign_monitor';
+    const connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation);
+    if (connection.state !== 'connected' || connection.accountId === null) {
+      next(toGoogleMonitorConnectionError(connection.state === 'connected' ? 'no_account' : connection.state, operation));
+      return;
+    }
+    const accountId = connection.accountId;
+    const days = this.parseMonitorDays(req);
+    await this.serveLegacyShapedMonitor(req, res, next, {
+      operation,
+      platformLabel: 'Google Ads',
+      days,
+      accountId,
+      read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, accountId, days),
+      toResponse: (payload) => toGoogleMonitorResponse(payload, new Date().toISOString()),
+    });
   }
 
   /** The Microsoft and X routes: flag gate, account-id shape check, then the body mapped with its freshness. */
@@ -4791,14 +4829,19 @@ export class CampaignController {
    * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
    * `unavailable`, because only the service's typed 404 says the connection does not exist.
    */
-  private async readMonitorConnection(req: Request, projectSlug: string, provider: CampaignServiceMonitorProvider): Promise<MonitorConnectionAccount> {
+  private async readMonitorConnection(
+    req: Request,
+    projectSlug: string,
+    provider: CampaignServiceMonitorProvider,
+    operation = 'monitor_connections'
+  ): Promise<MonitorConnectionAccount> {
     try {
       return toMonitorConnectionAccount(await this.campaignServiceClient.getConnection(req, projectSlug, provider), provider);
     } catch (error) {
       if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { state: 'no_connection', accountId: null, label: null };
       }
-      logger.warning(req, 'monitor_connections', 'campaign-service connection read failed; reporting the platform as unavailable', {
+      logger.warning(req, operation, 'campaign-service connection read failed; reporting the platform as unavailable', {
         provider,
         status: error instanceof MicroserviceError ? error.statusCode : undefined,
         err: error,

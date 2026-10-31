@@ -620,6 +620,11 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly hasActionItems = computed(() => this.actionItems().length > 0);
+  /**
+   * Google campaigns campaign-service could not read (#4526). It raises no action items for them, so
+   * "no action items" is not an all-clear while any exists; the template says so instead.
+   */
+  protected readonly unreadCampaignCount = computed(() => this.campaigns().filter((c) => c.fetchFailed === true).length);
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
 
@@ -636,11 +641,21 @@ export class OptimizationTabComponent implements OnInit {
     return all.filter((k) => k.qualityScore !== null && k.qualityScore <= 4).sort((a, b) => (a.qualityScore ?? 0) - (b.qualityScore ?? 0));
   });
 
+  /**
+   * The non-Search campaigns, lowest CTR first. On the campaign-service path (#4526) a row campaign-service
+   * could not read carries zero placeholders, so it is left out rather than ranked as a 0% CTR, and a row
+   * it could not pace shows "Unknown" with an empty bar rather than a measured 0%. The legacy read sets
+   * neither flag, so its rows are unchanged.
+   */
   protected readonly displayCampaigns = computed(() => {
     return this.campaigns()
-      .filter((c) => !c.adFormat.toLowerCase().includes('search'))
+      .filter((c) => !c.adFormat.toLowerCase().includes('search') && c.fetchFailed !== true)
       .sort((a, b) => a.ctr - b.ctr)
-      .map((c) => ({ ...c, displayPacingPct: Math.min(c.pacingPct, 100) }));
+      .map((c) => ({
+        ...c,
+        displayPacingPct: c.pacingUnknown === true ? 0 : Math.min(c.pacingPct, 100),
+        displayPacingText: c.pacingUnknown === true ? 'Unknown' : `${c.pacingPct}%`,
+      }));
   });
 
   /**
