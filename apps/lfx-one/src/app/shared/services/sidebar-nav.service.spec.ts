@@ -11,6 +11,8 @@ import {
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
+  IT_OS_AGENTS_ENABLED_FLAG,
+  IT_OS_AGENTS_LABEL,
   MAILING_LIST_LABEL,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
@@ -39,6 +41,7 @@ describe('SidebarNavService', () => {
   // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
   const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
+  const itOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const lfStaff = signal(false);
   const impersonating = signal(false);
@@ -87,6 +90,7 @@ describe('SidebarNavService', () => {
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
+    itOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     lfStaff.set(false);
     impersonating.set(false);
@@ -124,6 +128,7 @@ describe('SidebarNavService', () => {
           useValue: {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
+              if (key === IT_OS_AGENTS_ENABLED_FLAG) return itOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
@@ -267,6 +272,35 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
     expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating organizations') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
+  });
+
+  it('hides the project-lens IT OS entry while its flag is off', () => {
+    activeLens.set('project');
+    mktgOsEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/it-os-agents')).toBeUndefined();
+    expect(labels(items)).not.toContain(IT_OS_AGENTS_LABEL.nav);
+  });
+
+  it('places the project-lens IT OS entry directly under Marketing OS when its flag is on', () => {
+    activeLens.set('project');
+    mktgOsEnabled.set(true);
+    itOsEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const itemLabels = labels(items);
+
+    expect(findByLink(items, '/project/it-os-agents')).toEqual(
+      expect.objectContaining({
+        label: IT_OS_AGENTS_LABEL.nav,
+        routerLink: '/project/it-os-agents',
+        testId: 'sidebar-project-it-os-agents',
+      })
+    );
+    expect(itemLabels.indexOf(IT_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
+    expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(IT_OS_AGENTS_LABEL.nav) + 1);
   });
 
   it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers with the flag on', () => {
