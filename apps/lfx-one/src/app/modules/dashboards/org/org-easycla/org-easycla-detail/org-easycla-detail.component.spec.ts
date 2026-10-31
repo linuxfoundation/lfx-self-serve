@@ -88,6 +88,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const emptyStateService = {
     pageState,
     hasPageState: computed(() => pageState() !== null),
+    employerName: signal(null),
     settled: computed(() => grantsLoaded() && personaLoaded()),
     // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
     pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),

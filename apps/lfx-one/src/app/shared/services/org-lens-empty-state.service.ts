@@ -8,6 +8,7 @@ import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
+import { OrgLensEmployerAffiliationService } from './org-lens-employer-affiliation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -26,13 +27,31 @@ import { PersonaService } from './persona.service';
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
  *   6. caller holds nothing, but works for an LF member org     → `affiliated-no-grant` (#4225)
- *   7. caller holds nothing                                     → `no-organization`
- *   8. otherwise (a selection is pending)                       → `null`
+ *   7. caller holds nothing, and their own employer holds no
+ *      active LF membership                                     → `affiliated-non-member` (#4314)
+ *   8. caller holds nothing, and the employer lookup failed      → `could-not-load` (#4314)
+ *   9. caller holds nothing                                     → `no-organization`
+ *  10. otherwise (a selection is pending)                       → `null`
  *
  * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
  * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
  * such as key-contact auditors that no list shows, and an organization it admits renders the page even
  * when the roster lists nothing; with nothing selected it is "holds nothing".
+ *
+ * Rule 6 before 7 is #4314: "add an affiliation" is only an answer for someone who has none. A caller
+ * who already has one, at a company with no active membership in any LF-hosted foundation, is told that
+ * instead — there is no Org Lens behind the CTA and no administrator to ask. It keys on a *resolved*
+ * answer from `OrgLensEmployerAffiliationService`: no employer, a member employer, or a lookup that
+ * failed are each handled below, so an unknown never renders as "not a member". CLA state does not
+ * enter into it — a CLA-only caller is already admitted by rule 1.
+ *
+ * Rule 7 is the other half of that: with the employer lookup failed, "add an affiliation" is a guess
+ * too, since the caller may well have one. The honest render is the outage state with Retry, which
+ * re-runs the employer probe alongside the grants lookup.
+ *
+ * Rule 8 is what a *successful* lookup falls to — both "no current employer", where the affiliation
+ * CTA is the right answer, and "a member employer with no grant", where it is not but #4225 owns the
+ * copy. Only a failed lookup is diverted, at rule 7.
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
@@ -53,6 +72,7 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly employerAffiliation = inject(OrgLensEmployerAffiliationService);
 
   /**
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
@@ -94,8 +114,46 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
+  /**
+   * #4314 — the employer probe is owed an answer *that the page decision will read*. Only the callers
+   * who reach rules 6–8 do; every earlier rule settles the page whatever the employer answer turns out
+   * to be, and waiting for it there is latency spent on a result that is then discarded — a skeleton
+   * held over an outage state and its Retry while CDP and Snowflake run.
+   *
+   * So this walks the same rules in the same order `pageState` does, and the two must stay in step:
+   * a rule that starts answering before rule 6 belongs here too.
+   */
+  private readonly employerAnswerOwed: Signal<boolean> = computed(() => {
+    if (!this.employerAffiliation.pending()) {
+      return false;
+    }
+    // Rule 1 — the page renders.
+    if (this.selectedHeld() || this.selectedClaOnly()) {
+      return false;
+    }
+    const holdsAnything = this.accountContext.hasOrgSelectorAccess();
+    // Rules 2–4 — an outage answers first.
+    if (this.classifyLookup(holdsAnything)) {
+      return false;
+    }
+    // Rule 5 — a contractor verdict either way answers before rule 6; `null` is "not a contractor",
+    // or an answer still owed, which `settled` has already caught through `contractorProbePending`.
+    if (this.contractorVerdict(holdsAnything) !== null) {
+      return false;
+    }
+    // Rule 6 (#4225) outranks #4314's states and is already in hand, so a caller whose employer is a
+    // known member owes nothing further: waiting on a probe whose answer rule 7 will never reach
+    // would hold them on the skeleton for a CDP and warehouse round trip that changes no wording.
+    return !this.roleGrants.affiliatedToMember();
+  });
+
+  /** The shared bootstrap: both one-shot loads have answered, and a contractor's read check when one is owed. */
+  private readonly bootstrapSettled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending()
+  );
+
   /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  public readonly settled: Signal<boolean> = computed(() => this.bootstrapSettled() && !this.employerAnswerOwed());
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
@@ -105,6 +163,20 @@ export class OrgLensEmptyStateService {
    * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
    */
   public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
+
+  /**
+   * Readiness for `/org/not-found` (#4314). The dead end picks among the staff, outage, contractor and
+   * addressed-but-unheld states; none of them reads the employer answer, so it waits for the shared
+   * bootstrap and the caller's list, and not for a CDP/Snowflake lookup whose result it discards —
+   * which would otherwise hide an already-decided `no-access` and its support action behind it.
+   *
+   * Deliberately its own signal rather than a change to `settled`: the Org pages that gate on `settled`
+   * alone *do* reach rules 6–8, and releasing them early would render page content for a caller who
+   * holds nothing instead of a skeleton.
+   */
+  public readonly deadEndReady: Signal<boolean> = computed(
+    () => this.bootstrapSettled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
+  );
 
   /** The selected organization is in the caller's resolved set (direct, inherited, or company-wide team entitlement). */
   public readonly selectedHeld: Signal<boolean> = computed(() => {
@@ -156,14 +228,33 @@ export class OrgLensEmptyStateService {
       return null;
     }
     if (!holdsAnything) {
-      // #4225 — rule 6 splits on the caller's own employer. Someone who works for a member company
-      // and was simply never granted access is not missing an affiliation, and must not be sent to
-      // add one: that is the one action guaranteed not to help them. False whenever the server could
-      // not establish it, so an outage or an older server keeps the wording below.
-      return this.roleGrants.affiliatedToMember() ? 'affiliated-no-grant' : 'no-organization';
+      // #4225 and #4314 split rule 6 on the caller's own employer from opposite ends. Neither may
+      // send someone to "add an affiliation" they already have: the member employee was never
+      // granted access, and the non-member employee cannot be granted any. The member answer is
+      // asked first — it rides the role-grants response the page already waits for, and a caller
+      // whose employer is a member is by definition not one of #4314's. Both are false whenever the
+      // server could not establish them, so an outage or an older server keeps today's wording.
+      if (this.roleGrants.affiliatedToMember()) {
+        return 'affiliated-no-grant';
+      }
+      if (this.employerAffiliation.affiliatedToNonMember()) {
+        return 'affiliated-non-member';
+      }
+      if (this.employerAffiliation.lookupFailed()) {
+        return 'could-not-load';
+      }
+      return 'no-organization';
     }
     return null;
   });
+
+  /**
+   * #4314 — the employer name `affiliated-non-member` interpolates, for pages to pass straight into the
+   * empty state's `values`. `null` for every other state, so a page can bind it unconditionally.
+   */
+  public readonly employerName: Signal<string | null> = computed(() =>
+    this.pageState() === 'affiliated-non-member' ? this.employerAffiliation.employerName() : null
+  );
 
   /** Convenience for templates that only need "is a page-level state replacing the page". */
   public readonly hasPageState: Signal<boolean> = computed(() => this.pageState() !== null);
@@ -211,8 +302,8 @@ export class OrgLensEmptyStateService {
   }
 
   /**
-   * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-run
-   * the role-grants lookup past the BFF cache and, once it answers, re-fetch the org list from its
+   * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-ask
+   * the caller's employer affiliation (#4314), re-run the role-grants lookup past the BFF cache and, once it answers, re-fetch the org list from its
    * first page when one was fetched or is being fetched — the list is filtered server-side by the same
    * lookup, so refreshing only one of the two would leave the other stale, and a Retry pressed while
    * the first list fetch is still in flight must not skip it. The list refresh carries no bootstrap
@@ -220,6 +311,8 @@ export class OrgLensEmptyStateService {
    * list never requested is left to the switcher's own enabled-transition bootstrap.
    */
   public retry(): void {
+    // #4314 — the employer probe is the other half of what rule 6/7 read, and it has its own failure.
+    this.employerAffiliation.refresh();
     this.roleGrants
       .refresh(true)
       .pipe(take(1))

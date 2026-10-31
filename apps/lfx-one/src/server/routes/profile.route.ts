@@ -5,6 +5,7 @@ import { ALLOWED_AVATAR_MIME_TYPES, MAX_AVATAR_SIZE_BYTES } from '@lfx-one/share
 import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { InsightsTokensController } from '../controllers/insights-tokens.controller';
+import { OrgLensEmployerAffiliationController } from '../controllers/org-lens-employer-affiliation.controller';
 import { ProfileController } from '../controllers/profile.controller';
 import { MicroserviceError } from '../errors/microservice.error';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -14,6 +15,7 @@ const router = Router();
 
 const profileController = new ProfileController();
 const insightsTokensController = new InsightsTokensController();
+const orgLensEmployerAffiliationController = new OrgLensEmployerAffiliationController();
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -152,6 +154,9 @@ router.get('/project-affiliations', (req, res, next) => profileController.getPro
 
 // PATCH /api/profile/project-affiliations/:projectId - Update project affiliations
 router.patch('/project-affiliations/:projectId', blockDuringImpersonation, (req, res, next) => profileController.patchProjectAffiliation(req, res, next));
+
+// GET /api/profile/employer-affiliation - Current employer + whether it is an LF member (#4314)
+router.get('/employer-affiliation', (req, res, next) => orgLensEmployerAffiliationController.getEmployerAffiliation(req, res, next));
 
 // GET /api/profile/work-experiences - Get user's work experiences from CDP
 router.get('/work-experiences', (req, res, next) => profileController.getWorkExperiences(req, res, next));

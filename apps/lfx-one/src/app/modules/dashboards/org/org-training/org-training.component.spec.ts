@@ -54,6 +54,7 @@ async function render(state: OrgLensEmptyStateName | null, { settled = true } = 
         useValue: {
           pageState,
           hasPageState: computed(() => pageState() !== null),
+          employerName: signal(null),
           pageReady: signal(true),
           settled: signal(settled),
           retrying: signal(false),

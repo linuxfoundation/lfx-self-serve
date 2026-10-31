@@ -37,7 +37,7 @@
     <lfx-org-lens-empty-state
       [state]="state"
       [testId]="'org-easycla-no-access'"
-      [values]="{ correlationId: correlationId() }"
+      [values]="{ correlationId: correlationId(), employerName: emptyState.employerName() }"
       [retrying]="emptyState.retrying()"
       (retry)="emptyState.retry()" />
   } @else if (!orgContextLoaded()) {

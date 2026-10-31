@@ -71,6 +71,12 @@ export class UserService {
   public impersonating: WritableSignal<boolean> = signal<boolean>(false);
   public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * Bumped by every successful work-experience write below. Anything derived from the caller's own
+   * employer — the Org Lens `affiliated-non-member` state (#4314) — keys off it so an edit made on the
+   * profile page invalidates that derived answer, instead of it surviving until a full reload.
+   */
+  public readonly workExperienceRevision: WritableSignal<number> = signal<number>(0);
   public readonly userInitials: Signal<string> = this.initUserInitials();
   /**
    * The current user's uploaded avatar (Auth0 user_metadata.picture), null until either the
@@ -645,21 +651,21 @@ export class UserService {
    * Delete a work experience via CDP
    */
   public deleteWorkExperience(id: string): Observable<{ success: boolean }> {
-    return this.http.delete<{ success: boolean }>(`/api/profile/work-experiences/${id}`);
+    return this.http.delete<{ success: boolean }>(`/api/profile/work-experiences/${id}`).pipe(tap(() => this.bumpWorkExperienceRevision()));
   }
 
   /**
    * Update an existing work experience via CDP
    */
   public updateWorkExperience(id: string, body: WorkExperienceCreateUpdateBody): Observable<{ success: boolean }> {
-    return this.http.put<{ success: boolean }>(`/api/profile/work-experiences/${id}`, body);
+    return this.http.put<{ success: boolean }>(`/api/profile/work-experiences/${id}`, body).pipe(tap(() => this.bumpWorkExperienceRevision()));
   }
 
   /**
    * Create a new work experience via CDP
    */
   public createWorkExperience(body: WorkExperienceCreateUpdateBody): Observable<{ success: boolean }> {
-    return this.http.post<{ success: boolean }>('/api/profile/work-experiences', body);
+    return this.http.post<{ success: boolean }>('/api/profile/work-experiences', body).pipe(tap(() => this.bumpWorkExperienceRevision()));
   }
 
   /**
@@ -769,5 +775,10 @@ export class UserService {
       const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
       return (first + last).toUpperCase();
     });
+  }
+
+  /** Marks the caller's work history as changed; see {@link workExperienceRevision}. */
+  private bumpWorkExperienceRevision(): void {
+    this.workExperienceRevision.update((revision) => revision + 1);
   }
 }

@@ -41,7 +41,9 @@ export class OrgNotFoundComponent {
    * has too. A caller without switcher access never triggers the list fetch and must not be held on
    * the skeleton for it.
    */
-  protected readonly settled: Signal<boolean> = computed(() => this.emptyState.pageReady());
+  // #4314 — `deadEndReady`, not `pageReady`: this page's classifier never reads the employer answer,
+  // so it must not wait on that probe to show an already-decided state and its support action.
+  protected readonly settled: Signal<boolean> = computed(() => this.emptyState.deadEndReady());
 
   /** The caller's own held organizations — the same access-filtered rows the switcher shows. */
   protected readonly orgList: Signal<{ uid: string; name: string }[]> = computed(() =>
