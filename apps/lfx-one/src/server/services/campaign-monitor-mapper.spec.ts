@@ -210,7 +210,7 @@ describe('toAccountMonitorClientError', () => {
     return MicroserviceError.fromMicroserviceResponse(status, 'upstream', body, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-meta-ads/account-monitor');
   }
 
-  it.each([400, 404, 409, 500, 503])('keeps status %i and replaces the upstream message', (status) => {
+  it.each([400, 403, 404, 409, 500, 503])('keeps status %i and replaces the upstream message', (status) => {
     const original = upstream(status, { message: 'connection row 7f3e decrypt failed: ErrCredentialDecryptionFailed' });
 
     const mapped = toAccountMonitorClientError(original, 'Meta Ads', 'meta_monitor') as MicroserviceError;
@@ -220,6 +220,16 @@ describe('toAccountMonitorClientError', () => {
     expect(JSON.stringify(mapped.toResponse())).not.toContain('decrypt');
     expect(mapped.toResponse()['originalMessage']).toBeUndefined();
     expect(mapped.originalError).toBe(original);
+  });
+
+  /** campaign-service authorizes these reads with the project's `campaign_manager` relation (#4837): a standing refusal, not an outage. */
+  it("names the missing project role on campaign-service's 403, without inviting a retry", () => {
+    const mapped = toAccountMonitorClientError(upstream(403, { message: 'openfga check failed' }), 'Google Ads', 'campaign_monitor') as MicroserviceError;
+    expect(mapped.statusCode).toBe(403);
+    expect(mapped.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project: it needs the campaign manager role on the project.'
+    );
+    expect(mapped.toResponse()['error']).not.toMatch(/try again/i);
   });
 
   it("names the missing own connection, and marks it 'connection_not_found', on campaign-service's typed 404", () => {

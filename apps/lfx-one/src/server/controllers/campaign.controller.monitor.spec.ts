@@ -336,6 +336,44 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     expect(svcGoogle).not.toHaveBeenCalled();
   });
 
+  /**
+   * The route admits a ROOT writer before any project check, but campaign-service authorizes the read
+   * with the project's `campaign_manager` relation, which a ROOT writer need not hold (#4837). Its 403
+   * is a standing refusal: answered as a 403 naming the missing role, never the retryable 503.
+   */
+  it("answers campaign-service's refusal of a ROOT writer without the project role as a 403, not a retryable 503", async () => {
+    flag(true);
+    checkRootWriter.mockResolvedValue(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed for project:7f3e' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project: it needs the campaign manager role on the project.'
+    );
+    expect(error.toResponse()['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  it("words campaign-service's refusal of the monitor read itself the same way", async () => {
+    flag(true);
+    svcConnection.mockResolvedValueOnce({ account_id: '8666746580', label: 'LF Google Ads' });
+    svcGoogle.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toContain('needs the campaign manager role on the project');
+  });
+
   it('answers an unreadable connection as a 503 advisory, reading no monitor', async () => {
     flag(true);
     svcConnection.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
@@ -915,6 +953,18 @@ describe('CampaignController.getMonitorConnections', () => {
     // Every other provider's numeric id is offered exactly as stored.
     expect(body.platforms.linkedin?.accountId).toBe('187654321');
     expect(body.platforms.microsoft?.accountId).toBe('187654321');
+  });
+
+  /** Only the Google Ads monitor opts into seeing the refusal; the pickers' connection read is unchanged. */
+  it("still reports campaign-service's 403 as unavailable on the connections read", async () => {
+    flag(true);
+    svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const res = buildRes();
+
+    await new CampaignController().getMonitorConnections(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as CampaignMonitorConnections;
+    expect(body.platforms.linkedin?.state).toBe('unavailable');
   });
 
   it('reports a bare gateway 404 as unavailable, not as a missing connection', async () => {

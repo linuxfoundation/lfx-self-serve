@@ -4633,7 +4633,17 @@ export class CampaignController {
    */
   private async serveGoogleConnectionMonitor(req: Request, res: Response, next: NextFunction, projectSlug: string): Promise<void> {
     const operation = 'campaign_monitor';
-    const connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation);
+    // This route admits a ROOT reader before any project check, but campaign-service authorizes the
+    // read with the project's `campaign_manager` relation, which a ROOT writer need not hold (#4837).
+    // Its 403 is therefore a standing refusal, not an outage: it is answered as one, never as the
+    // retryable "could not be read just now" that `unavailable` would become.
+    let connection: MonitorConnectionAccount;
+    try {
+      connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation, true);
+    } catch (error) {
+      next(toAccountMonitorClientError(error, 'Google Ads', operation));
+      return;
+    }
     if (connection.state !== 'connected' || connection.accountId === null) {
       next(toGoogleMonitorConnectionError(connection.state === 'connected' ? 'no_account' : connection.state, operation));
       return;
@@ -4825,21 +4835,28 @@ export class CampaignController {
   }
 
   /**
-   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's
+   * One provider's connection as the Monitor tab's picker state. Never throws by default: campaign-service's
    * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
-   * `unavailable`, because only the service's typed 404 says the connection does not exist.
+   * `unavailable`, because only the service's typed 404 says the connection does not exist. With
+   * `rethrowForbidden`, campaign-service's 403 is thrown instead, for a caller that answers it as a refusal.
    */
   private async readMonitorConnection(
     req: Request,
     projectSlug: string,
     provider: CampaignServiceMonitorProvider,
-    operation = 'monitor_connections'
+    operation = 'monitor_connections',
+    rethrowForbidden = false
   ): Promise<MonitorConnectionAccount> {
     try {
       return toMonitorConnectionAccount(await this.campaignServiceClient.getConnection(req, projectSlug, provider), provider);
     } catch (error) {
       if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { state: 'no_connection', accountId: null, label: null };
+      }
+      // Opt-in: a caller whose route admits users campaign-service may refuse (the Google Ads monitor's
+      // ROOT readers) needs the refusal itself, not the `unavailable` a transient failure becomes.
+      if (rethrowForbidden && error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) {
+        throw error;
       }
       logger.warning(req, operation, 'campaign-service connection read failed; reporting the platform as unavailable', {
         provider,

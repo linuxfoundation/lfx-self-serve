@@ -438,6 +438,11 @@ function monitorErrorMessage(statusCode: number, platformLabel: string): string 
       // Only reached for a 404 that is NOT campaign-service's typed not-found (a gateway or routing
       // miss): nothing says the connection is absent, so the text claims no such thing.
       return `The ${platformLabel} monitor could not be reached just now. Please try again shortly.`;
+    case 403:
+      // campaign-service authorizes these reads with the project's `campaign_manager` relation, which a
+      // caller this app admits as a ROOT reader need not hold (#4837). A standing refusal, so not worded
+      // as something a retry fixes.
+      return `campaign-service refused to read this ${platformLabel} account for this project: it needs the campaign manager role on the project.`;
     case 409:
       return `This ${platformLabel} account cannot be monitored as it stands.`;
     case 502:
