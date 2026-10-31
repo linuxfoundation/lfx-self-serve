@@ -54,6 +54,7 @@ function row(personKey: string, name: string, over: Partial<OrgAllEmployeeRow> =
     seatsCount: 0,
     boardSeatsCount: 0,
     committeeSeatsCount: 0,
+    keyContactRoles: [],
     commitsCount: 0,
     // Any picked code count is also a code activity unless a test says otherwise.
     codeActivitiesCount: over.commitsCount ?? 0,
@@ -446,6 +447,35 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-9']);
       expect(el().querySelector('[data-testid="org-people-all-employees-access-p-9"]')?.textContent).toContain('Viewer');
+    });
+
+    // Only a board/committee/access-created row rejoins, so the case is someone holding a seat AND a
+    // key-contact role. The live row carries the roles; the surviving former row comes from the
+    // warehouse, which never has them, so dropping them on the fold reads as '—' and sorts as zero.
+    it('keeps the live key-contact roles when a live row folds into a former employee', async () => {
+      await mount('browser', '/?employment=all');
+      await answerCurrent();
+      live$.next(
+        response(
+          [
+            row('p-1', 'Ada Lovelace'),
+            row('live-grace', 'Grace Hopper', {
+              lfUsername: 'grace',
+              sources: ['committee', 'keyContact'],
+              seatsCount: 1,
+              committeeSeatsCount: 1,
+              keyContactRoles: ['Legal Contact'],
+            }),
+          ],
+          1
+        )
+      );
+      live$.complete();
+      former$.next(response([row('p-9', 'Grace Hopper', { lfUsername: 'grace', isFormer: true, commitsCount: 4 })], 1));
+      former$.complete();
+      await settle();
+
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-9"]')?.textContent?.trim()).toBe('Legal Contact');
     });
 
     it('never lists a former employee the server tagged as holding only Org Lens access under "Current employees"', async () => {
@@ -1363,6 +1393,82 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(getFormerEmployees).not.toHaveBeenCalled();
       expect(el().querySelector('[data-testid="org-people-all-employees-table-skeleton"]')).not.toBeNull();
+    });
+  });
+  // The Key Contact column borrows the Key Contacts tab's role pills for a single role, and collapses
+  // several onto one count chip so a person holding five roles can't stretch the row.
+  describe('in the browser, with key-contact roles on the roster', () => {
+    const keyContactCell = (personKey: string): HTMLElement | null =>
+      el().querySelector<HTMLElement>(`[data-testid="org-people-all-employees-key-contact-${personKey}"]`);
+
+    beforeEach(async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
+      await mount('browser');
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-one', 'Alan Turing', { keyContactRoles: ['Technical Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Authorized Signatory', 'Representative/Voting Contact'] }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    });
+
+    it('renders an em dash when the employee holds no key-contact role', () => {
+      expect(keyContactCell('p-none')?.textContent?.trim()).toBe('\u2014');
+    });
+
+    it('renders the role pill, in the Key Contacts tab colour, for a single role', () => {
+      const cell = keyContactCell('p-one');
+      expect(cell?.textContent?.trim()).toBe('Technical Contact');
+      expect(cell?.querySelector('span')?.className).toContain('text-sky-700');
+    });
+
+    it('collapses several roles onto a single count chip', () => {
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-count-p-many"]')?.textContent?.trim()).toBe('2 roles');
+    });
+
+    // The count is the only visible text, so a screen reader has to get the names some other way.
+    it('spells the roles out for assistive tech, and lets a keyboard reach the tooltip', () => {
+      const names = el().querySelector('[data-testid="org-people-all-employees-key-contact-roles-p-many"]');
+      expect(names?.className).toContain('sr-only');
+      expect(names?.textContent?.trim()).toBe('2 key contact roles: Authorized Signatory, Representative/Voting Contact');
+
+      const chip = keyContactCell('p-many');
+      expect(chip?.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('sorts by role count, most roles first, on the first click of the column header', async () => {
+      const header = [...el().querySelectorAll<HTMLButtonElement>('thead button')].find((b) => b.textContent?.includes('Key Contact'));
+      header?.click();
+      await settle();
+
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
+    });
+  });
+  // A rolling deploy serves this bundle against pods that predate the field, and requests are not
+  // sticky (charts/lfx-self-serve/values.yaml) — so a row can arrive without keyContactRoles at all.
+  // Reading `.length` off that would take the whole table down, not just the cell, for every rollout.
+  describe('in the browser, against a server that does not send keyContactRoles yet', () => {
+    beforeEach(async () => {
+      getFormerEmployees.mockImplementation(() => of(response([], 0)));
+      await mount('browser');
+    });
+
+    it('still renders the roster, with the cell empty', async () => {
+      const legacy = row('p-legacy', 'Ada Lovelace');
+      delete (legacy as Partial<OrgAllEmployeeRow>).keyContactRoles;
+
+      snowflake$.next(response([legacy], 1));
+      snowflake$.complete();
+      await settle();
+
+      expect(rowKeys()).toContain('org-people-all-employees-row-p-legacy');
+      expect(el().querySelector('[data-testid="org-people-all-employees-key-contact-p-legacy"]')?.textContent?.trim()).toBe('\u2014');
     });
   });
 

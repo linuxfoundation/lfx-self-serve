@@ -22,6 +22,7 @@ function row(personKey: string, over: Partial<OrgAllEmployeeRow> = {}): OrgAllEm
     seatsCount: 0,
     boardSeatsCount: 0,
     committeeSeatsCount: 0,
+    keyContactRoles: [],
     commitsCount: 0,
     codeActivitiesCount: 0,
     eventsCount: 0,

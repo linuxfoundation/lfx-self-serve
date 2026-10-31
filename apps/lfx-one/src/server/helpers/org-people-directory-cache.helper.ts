@@ -5,8 +5,8 @@ import { ORG_LENS_TIME_RANGE_OPTIONS, ORG_PROJECT_SCOPE_OPTIONS, VALKEY_CACHE } 
 import type { OrgLensTimeRange, OrgProjectScope } from '@lfx-one/shared/interfaces';
 
 /**
- * Per-user People directory cache namespace: `org-people-dir:v6:roster` for the unranged roster (the project
- * scope does not apply to it), else `org-people-dir:v6:{range}:{projectScope}`. Only these change who is
+ * Per-user People directory cache namespace: `org-people-dir:v7:roster` for the unranged roster (the project
+ * scope does not apply to it), else `org-people-dir:v7:{range}:{projectScope}`. Only these change who is
  * listed; the commit scope and metric pick a count after the read, so they share the entry. Every segment
  * is an allow-listed token.
  */

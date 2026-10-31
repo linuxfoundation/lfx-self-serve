@@ -9,6 +9,7 @@ import {
   OrgMembershipKeyContact,
   OrgMembershipKeyContactPerson,
   OrgMembershipKeyContactType,
+  ProjectMembershipIndexedDoc,
   QueryServiceResponse,
   ResolvedMembershipContext,
   ReplaceKeyContactRequest,
@@ -17,13 +18,20 @@ import { agreedUsername, isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { allOrgPeopleDirectoryNamespaces } from '../helpers/org-people-directory-cache.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
+import { evictPerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgMembershipResolverService } from './org-membership-resolver.service';
+import { invalidatePerUserCache } from './valkey.service';
 
 // Key-contact reads + writes backed by query-service (read) and member-service (write).
 export class OrgLensKeyContactsService {
+  // Active membership statuses, case-insensitive — mirrors OrgMembershipResolverService and OrgPeopleKeyContactsService so we don't silently drop 'purchased' or mixed-case 'active' memberships.
+  private static readonly activeMembershipStatuses = new Set(['active', 'purchased']);
+
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly resolver: OrgMembershipResolverService;
 
@@ -54,6 +62,9 @@ export class OrgLensKeyContactsService {
   public async addKeyContact(req: Request, b2bOrgUid: string, foundationSlug: string, body: AddKeyContactRequest): Promise<OrgMembershipKeyContact> {
     const ctx = await this.resolveOr404(req, b2bOrgUid, foundationSlug);
     const created = await this.createContact(req, ctx, body);
+    // Invalidate the moment the write lands, not after the reconcile: upsertRow re-reads the indexer
+    // and can throw, and a roster left cached behind a failed reconcile is stale all the same.
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     // Reconcile from the authoritative write response (real uid, no indexer lag), upserted over the
     // current role row. A bare indexer re-read here would race read-after-write and echo stale data.
     return this.upsertRow(req, ctx, body.contactType, created, []);
@@ -86,12 +97,17 @@ export class OrgLensKeyContactsService {
         etag ? { 'If-Match': etag } : undefined
       );
       authoritative = this.toPerson(updated);
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     } else {
       // Brand-new contact (FR-022b): create-new (carries names) then remove-old. These can't be a single
       // atomic call (the member-service update body has no name fields), so a create-succeeded /
       // delete-failed window exists where the role transiently holds BOTH contacts. On a delete failure
       // surface a reload-and-review message so the user doesn't blind-retry and create a second duplicate.
       authoritative = await this.createContact(req, ctx, body);
+      // The create has landed, so the role row has already changed. Invalidating here rather than only
+      // at the end covers every exit below it, including the 409 thrown when the delete fails — the case
+      // that most needs it, since that message sends the user off to review the contacts.
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
       const etag = await this.fetchEtag(req, ctx.membershipUid, contactUid);
       try {
         await this.microserviceProxy.proxyRequest(
@@ -117,6 +133,10 @@ export class OrgLensKeyContactsService {
           { operation: 'replace_org_key_contact', service: 'LFX_V2_SERVICE', path: `/project_memberships/${ctx.membershipUid}/key_contacts/${contactUid}` }
         );
       }
+      // Again, now that the delete has landed. Between the two the role genuinely holds BOTH contacts,
+      // and a read that started in that window caches that transient roster — the eviction above is
+      // already behind it, so without this the caller is served a two-holder row until the TTL expires.
+      await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     }
 
     // Single-slot replace: the role ends with exactly the new contact. Drop the old uid + dedup the new.
@@ -151,6 +171,7 @@ export class OrgLensKeyContactsService {
     );
 
     // Reconcile by dropping the removed uid from the pre-write row (indexer may still echo it).
+    await this.invalidateCallerDirectoryCache(req, ctx.b2bOrgUid);
     return { ...beforeRow, people: beforeRow.people.filter((p) => p.personId !== contactUid) };
   }
 
@@ -160,6 +181,34 @@ export class OrgLensKeyContactsService {
       return [];
     }
     return this.getEmployeesByOrgUid(req, b2bOrgUid);
+  }
+
+  /**
+   * Drop the caller's cached All Employees roster after a key-contact write.
+   *
+   * Mirrors `OrgLensBoardCommitteeService.invalidateCallerSeatCaches`, and for the same reason: the
+   * directory merges key contacts as one of its four sources, so a reassign changes both who appears
+   * on All Employees and — since #4401 — which roles their Key Contact cell shows. Without this, a
+   * user who reassigns a role and returns to All Employees sees the former holder's pill until the
+   * 30-second entry expires.
+   *
+   * Evicting the in-process flight matters as much as the delete: a merge that started before the
+   * write would otherwise be joined by the next read and write the pre-write roster back afterwards.
+   * Once evicted it skips its write (`isCurrent` is false) and the next read starts fresh.
+   *
+   * Residual, as with seats: the fence is per process and per caller. A fill in flight on another
+   * replica, or another caller's entry, can still serve the pre-write roster until the TTL expires.
+   */
+  private async invalidateCallerDirectoryCache(req: Request, b2bOrgUid: string): Promise<void> {
+    const username = getEffectiveUsername(req) ?? '';
+    // The directory is cached per (time range, project scope) and for the unranged roster, so the bare
+    // family name is not a key any entry is stored under. Every scope goes, as the seat helper does it:
+    // a key contact's roles are range-independent, so there is no scope a write can leave standing.
+    const namespaces = allOrgPeopleDirectoryNamespaces();
+    for (const namespace of namespaces) {
+      evictPerUserOrgFetch(namespace, username, b2bOrgUid);
+    }
+    await Promise.all(namespaces.map((namespace) => invalidatePerUserCache(namespace, username, b2bOrgUid)));
   }
 
   // ── internals ────────────────────────────────────────────────────────────────
@@ -190,16 +239,60 @@ export class OrgLensKeyContactsService {
   private async getEmployeesByOrgUid(req: Request, b2bOrgUid: string): Promise<KeyContactEmployee[]> {
     if (!isFilterSafeIdentifier(b2bOrgUid)) return [];
     // Username agreement is only sound over the complete document set, so a dropped page fails the fetch.
-    const docs = await fetchAllQueryResources<KeyContactDoc>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'key_contact',
-          tags: `b2b_org_uid:${b2bOrgUid}`,
-          page_size: 200,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
+    // The memberships ride alongside (not after) the contacts, so scoping the roles costs no serial latency.
+    //
+    // allSettled, not all: the memberships only scope the ROLES, while the employee list they travel with
+    // is what the reassign pickers search and what replaceKeyContact reads to choose PUT over create+delete.
+    // Letting a membership-index blip reject the whole read would take a write path and a people picker
+    // down for the sake of a column, and would drop every key-contact-only person out of the directory
+    // roster — the directory folds this source in with allSettled, so a rejection removes it entirely.
+    const [docsResult, membershipsResult] = await Promise.allSettled([
+      fetchAllQueryResources<KeyContactDoc>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<KeyContactDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'key_contact',
+            tags: `b2b_org_uid:${b2bOrgUid}`,
+            page_size: 200,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ),
+      fetchAllQueryResources<ProjectMembershipIndexedDoc>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_membership',
+            tags: `b2b_org_uid:${b2bOrgUid}`,
+            page_size: 200,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ),
+    ]);
+
+    // The contacts are this read's reason to exist, so their failure is still fatal.
+    if (docsResult.status === 'rejected') throw docsResult.reason;
+    const docs = docsResult.value;
+
+    // A contact document stays Active after its membership lapses, so a role is only real while the
+    // membership behind it is. The Key Contacts tab joins the same way (OrgPeopleKeyContactsService), and
+    // the two views have to agree about who holds what. This scopes the ROLES only — the employee list
+    // itself stays as it was, because the people pickers that share this read search the whole org.
+    //
+    // With the memberships unavailable there is no way to tell a live role from a lapsed one, so every
+    // role is dropped rather than guessed at. The column then reads as "no key-contact roles", which is
+    // wrong in the quiet direction; serving them unscoped would re-open the very disagreement with the
+    // Key Contacts tab that scoping them closed.
+    if (membershipsResult.status === 'rejected') {
+      logger.warning(req, 'get_org_key_contact_employees', 'Membership read failed; serving employees without key-contact roles', {
+        b2b_org_uid: b2bOrgUid,
+        err: membershipsResult.reason,
+      });
+    }
+    const memberships = membershipsResult.status === 'fulfilled' ? membershipsResult.value : [];
+    const activeMembershipUids = new Set(
+      memberships.filter((m) => m.uid && OrgLensKeyContactsService.activeMembershipStatuses.has((m.status ?? '').toLowerCase())).map((m) => m.uid as string)
     );
 
     // Group by address, then require the group to agree on one non-empty username; fail closed otherwise.
@@ -225,9 +318,41 @@ export class OrgLensKeyContactsService {
         initials: this.deriveInitials(firstName, lastName),
         avatarUrl: d.avatar?.trim() ? d.avatar.trim() : null,
         lfUsername: agreedUsername(group.map((doc) => doc.username)),
+        // One doc per (membership, role), so the same role on two foundation memberships appears twice — dedupe to the person-level set the Key Contact column renders.
+        roles: [
+          ...new Set(
+            group
+              .filter((doc) => OrgLensKeyContactsService.holdsLiveRole(doc, activeMembershipUids))
+              .map((doc) => doc.role?.trim())
+              .filter((role): role is string => !!role)
+          ),
+        ].sort((a, b) => a.localeCompare(b)),
       });
     }
     return employees.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  }
+
+  /**
+   * Whether the document describes a role the person actually holds right now.
+   *
+   * Both halves mirror OrgPeopleKeyContactsService, because the Key Contact column and the Key Contacts
+   * tab have to agree about who holds what:
+   *
+   * - The contact must itself be active. A set status that is anything other than 'active' is dropped,
+   *   not just 'inactive' — the tab reads it that way, so a 'Pending' contact would otherwise earn a pill
+   *   here and appear nowhere on the tab. An absent status is treated as active, as the tab treats it.
+   * - The membership behind it must still be live, read from `membership_uid` and that key alone. The tab
+   *   joins on it and drops a document without it, so honouring `project_membership_uid` as a fallback
+   *   would earn a pill here for a document the tab omits — the very disagreement this scoping closes.
+   *   A document with no `membership_uid` is dropped rather than trusted: an unattributable role cannot
+   *   be shown to be live, and showing a stale one is the worse failure.
+   *
+   * This gates the ROLE only. The employee list keeps its own looser filter, because the reassign pickers
+   * share that read and search the whole org.
+   */
+  private static holdsLiveRole(doc: KeyContactDoc, activeMembershipUids: ReadonlySet<string>): boolean {
+    if (doc.status && doc.status.toLowerCase() !== 'active') return false;
+    return !!doc.membership_uid && activeMembershipUids.has(doc.membership_uid);
   }
 
   // Resolves an active membership context or throws a not-found MicroserviceError.

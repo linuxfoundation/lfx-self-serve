@@ -4,6 +4,7 @@
 import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -58,7 +59,7 @@ export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 export type OrgAllEmployeeTrainingStatus = 'Certified' | 'Enrolled';
 
 /** Sortable column on the All Employees table. */
-export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'commits' | 'events' | 'courses' | 'access';
+export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'keyContact' | 'commits' | 'events' | 'courses' | 'access';
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgAllEmployeeSortDirection = 1 | -1;
@@ -120,6 +121,8 @@ export interface OrgAllEmployeeRow {
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
+  /** Distinct key-contact roles held on the org's active memberships, deduped across foundations and sorted. Empty when the person holds none. */
+  keyContactRoles: string[];
   /** The count the request's commit filters pick: authored commits, commits merged to the main branch, or code-contribution activities. */
   commitsCount: number;
   /**
@@ -148,6 +151,10 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   access: OrgAccessBadgeState | null;
   /** `true` when this row was synthesised from the access roster (no detected activity, no detail to fetch). */
   isSynthetic: boolean;
+  /** Pre-decorated role pills for the Key Contact cell — only populated when the person holds exactly one role, since several collapse to a count chip. */
+  keyContactRolePills: OrgKeyContactRolePillVm[];
+  /** Tooltip text listing every key-contact role, shown on the multi-role count chip. Empty when fewer than two roles. */
+  keyContactRolesTooltip: string;
   /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
   rowClass: string;
 }

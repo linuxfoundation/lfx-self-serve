@@ -33,6 +33,7 @@ function roster(name: string): OrgAllEmployeesResponse {
     seatsCount: 1,
     boardSeatsCount: 0,
     committeeSeatsCount: 1,
+    keyContactRoles: [],
     commitsCount: 0,
     codeActivitiesCount: 0,
     eventsCount: 0,
@@ -245,5 +246,33 @@ describe('OrgPeopleDirectoryStateService', () => {
 
     await expect(employees).resolves.toEqual([expect.objectContaining({ email: 'ada@example.com' })]);
     await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID))).resolves.toEqual(response);
+  });
+});
+
+// A rolling deploy (charts/lfx-self-serve/values.yaml, non-sticky requests) serves this bundle against
+// pods that predate `keyContactRoles`, so the picker must not hand its callers an undefined `roles`.
+describe('OrgPeopleDirectoryStateService.getEmployees — a row that predates keyContactRoles', () => {
+  let service: OrgPeopleDirectoryStateService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(OrgPeopleDirectoryStateService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('gives the picker an empty role list rather than undefined', async () => {
+    const response = roster('Ada Lovelace');
+    response.rows[0].email = 'ada.tester@vendor-corp.example';
+    delete (response.rows[0] as Partial<OrgAllEmployeeRow>).keyContactRoles;
+
+    const pending = firstValueFrom(service.getEmployees(SYNTHETIC_ORG_ACCOUNT_ID));
+    http.expectOne({ method: 'GET', url: ROSTER_URL }).flush(response);
+
+    expect((await pending)[0].roles).toEqual([]);
   });
 });

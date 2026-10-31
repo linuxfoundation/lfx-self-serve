@@ -64,6 +64,8 @@ import {
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  ORG_KEY_CONTACT_ROLE_PILL_CLASSES,
+  ORG_KEY_CONTACT_ROLE_PILL_FALLBACK,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/src/constants/index.ts';
 import plugin from 'tailwindcss/plugin';
@@ -245,6 +247,16 @@ export default {
     ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
+    // Key-contact role pills — People → Key Contacts, the All Employees Key Contact column and the
+    // person-detail drawer all colour a role from ORG_KEY_CONTACT_ROLE_PILL_CLASSES in @lfx-one/shared,
+    // outside `content`. Eight of the palette's tokens appear nowhere under ./src and so were never
+    // generated: `bg-indigo-50` and `border-indigo-300` (Authorized Signatory), `bg-sky-50` and
+    // `border-sky-300` (Technical Contact), and the `border-*-300` of Representative/Voting, PO, PR,
+    // Legal and Event Sponsorship. Those pills rendered with no tint and no border. The rest survived
+    // only by appearing literally elsewhere, which is not a property to depend on — spread the source
+    // map so the palette cannot drift from the safelist.
+    ...Object.values(ORG_KEY_CONTACT_ROLE_PILL_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...ORG_KEY_CONTACT_ROLE_PILL_FALLBACK.split(' '),
   ],
   theme: {
     // `container.screens` only sizes the `.container` utility's max-width per breakpoint — it does
