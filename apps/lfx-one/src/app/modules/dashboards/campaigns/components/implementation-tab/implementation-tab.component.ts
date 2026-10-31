@@ -5140,7 +5140,8 @@ export class ImplementationTabComponent implements OnInit {
    * A URL is probed again on every blur unless a probe for it is still running, so a host that was
    * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
    * effort only: the browser may answer from its cache with the old image, and busting the cache
-   * would break signed URLs. A replaced image is reliably re-checked under a new URL.
+   * would break signed URLs. A replaced image is reliably re-checked under a new URL. A URL on this
+   * application's own origin is never loaded ({@link isSameOriginUrl}).
    */
   protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
     if (!field.image || !isPlatformBrowser(this.platformId)) return;
@@ -5150,7 +5151,7 @@ export class ImplementationTabComponent implements OnInit {
       // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
       // second line starts none.
       const probe = this.googleTypedImageProbes()[url];
-      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true)) {
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isSameOriginUrl(url)) {
         this.probeGoogleTypedImage(url);
       }
     }
@@ -9365,6 +9366,16 @@ export class ImplementationTabComponent implements OnInit {
     image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
     image.onerror = () => settle({ state: 'failed' });
     image.src = url;
+  }
+
+  /**
+   * Whether a pasted URL is on this application's own origin. Such a URL is never probed: the browser
+   * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
+   * the session (Copilot, #4810). No image an ad uses is served from here, and campaign-service still
+   * checks every pasted URL at Create. Only called in the browser (`onGoogleImageFieldBlur`).
+   */
+  private isSameOriginUrl(url: string): boolean {
+    return new URL(url).origin === window.location.origin;
   }
 
   /**

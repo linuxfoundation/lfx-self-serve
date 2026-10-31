@@ -14601,6 +14601,17 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     expect(images).toHaveLength(0);
   });
 
+  /** The browser would send the operator's session cookie with it, so a route such as `/logout` would act on the session. */
+  it("never probes a URL on the application's own origin", () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, `${window.location.origin}/logout\nhttps://cdn.example.com/hero.png`);
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toBe('https://cdn.example.com/hero.png');
+    expect(warning(c)).toBeUndefined();
+  });
+
   it('probes on leaving the textarea and renders the line under the field', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     setUrls(c, 'https://cdn.example.com/square.png');
