@@ -62,6 +62,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfxUiContextMenu`      | `UiContextMenuDirective`   | Opens a `lfx-ui-menu` on right-click, touch long-press, Shift+F10 or the context menu key; flips inside the window; innermost host wins                                |
 | `lfx-ui-select`         | `UiSelectComponent`        | Select-only combobox on CDK: projected `lfx-ui-option` rows with any content, groups, separators, prefix, header and value slots; `[(value)]`, forms                   |
 | `lfx-ui-combobox`       | `UiComboboxComponent`      | Text field that filters the same `lfx-ui-option` rows as you type, bold match, empty state; picks from the list only; `[(value)]`, forms                               |
+| `lfx-ui-command-menu`   | `UiCommandMenuComponent`   | Command palette in a modal via `UiCommandMenuService`: search, groups, shortcut hints, empty state; combobox and listbox                                               |
 
 ## Design tokens
 
