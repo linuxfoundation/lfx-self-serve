@@ -3571,18 +3571,22 @@ export class CampaignController {
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
 
     try {
+      // A sentinel of its own, not `null`: the API client answers `null` for an empty success, which
+      // must still fail the 502 check below rather than read as a refusal.
+      const refused = Symbol('refused');
       const [payload, connection] = await Promise.all([
         // Both reads sit behind campaign-service's `campaign_manager` rule, so a ROOT writer without the
-        // project's role is refused on both (#4837). The list's 403 is caught to `null` rather than
+        // project's role is refused on both (#4837). The list's 403 is caught to `refused` rather than
         // failing the whole read, so the answer is the connection's `forbidden` — named as the missing
         // role on the tab — not an HTTP 403 the tab would read as the shared-account restriction.
         this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug).catch((error: unknown) => {
-          if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) return null;
+          if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) return refused;
           throw error;
         }),
         this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
       ]);
-      if (payload === null) {
+      // `refused` is the only symbol the list read can settle with; `typeof` is what narrows the union.
+      if (typeof payload === 'symbol') {
         const refused: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
         logger.success(req, operation, startTime, { count: 0, connection: 'forbidden' });
         res.json(refused);

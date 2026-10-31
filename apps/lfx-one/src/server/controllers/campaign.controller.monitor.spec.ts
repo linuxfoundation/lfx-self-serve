@@ -802,6 +802,20 @@ describe('CampaignController.getTwitterAdsAccounts', () => {
     expect(res.json).toHaveBeenCalledWith({ accounts: [], connection: { state: 'forbidden', accountId: null, label: null } });
   });
 
+  /** The API client answers `null` for an empty success; that is a malformed list, not a refusal. */
+  it('fails an empty account-list answer as unreadable, not as forbidden', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce(null);
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
   it('still fails the read on any other refusal of the account list', async () => {
     twitterOn();
     svcTwitterAccounts.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
