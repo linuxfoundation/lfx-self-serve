@@ -580,6 +580,20 @@ describe('UiMultiSelectComponent', () => {
       expect(formFixture.componentInstance.control.dirty).toBe(true);
     });
 
+    it('leaves the control pristine when Only is pressed on the sole pick', async () => {
+      formTrigger().focus();
+      formTrigger().click();
+      await formFixture.whenStable();
+      const emitted = vi.fn();
+      formFixture.componentInstance.control.valueChanges.subscribe(emitted);
+
+      document.querySelectorAll<HTMLButtonElement>('[data-testid="ui-option-only"] button')[1].click();
+      await formFixture.whenStable();
+
+      expect(emitted).not.toHaveBeenCalled();
+      expect(formFixture.componentInstance.control.dirty).toBe(false);
+    });
+
     it('follows control.setValue(), control.disable() and reset()', async () => {
       formFixture.componentInstance.control.setValue(['prod', 'dev']);
       formFixture.componentInstance.control.disable();

@@ -158,6 +158,8 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
 
   public override only(option: UiOption): void {
     if (option.disabled || this.isDisabled()) return;
+    // Only on the sole pick is not a change: the control stays pristine.
+    if (this.values().length === 1 && this.values()[0] === option.value) return;
     this.commit([option.value]);
   }
 
