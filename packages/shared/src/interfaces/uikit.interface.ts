@@ -246,6 +246,16 @@ export interface UiOption {
   readonly icon: string;
 }
 
+/** A plain option label split around the part a filtering list emphasises. `match` is empty when nothing is emphasised. */
+export interface UiOptionLabelParts {
+  /** Text before the emphasised part, or the whole label when nothing is emphasised. */
+  before: string;
+  /** The emphasised part, such as the text typed in a combobox. */
+  match: string;
+  /** Text after the emphasised part. */
+  after: string;
+}
+
 /** What a custom uikit select value template receives: the picked option as the implicit value. */
 export interface UiSelectValueContext {
   /** The picked option. */

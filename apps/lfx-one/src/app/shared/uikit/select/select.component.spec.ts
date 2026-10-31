@@ -515,6 +515,7 @@ describe('UiSelectComponent', () => {
       const title = (group: HTMLElement): string | undefined => document.getElementById(group.getAttribute('aria-labelledby') ?? '')?.textContent?.trim();
 
       expect(groups.map(title)).toEqual(['Team', 'Guests']);
+      expect(groups.some((group) => group.classList.contains('hidden'))).toBe(false);
       expect(groups[0].querySelectorAll('[role="option"]').length).toBe(3);
       document.querySelectorAll('[data-testid="ui-option-separator"]').forEach((separator) => expect(separator.getAttribute('aria-hidden')).toBe('true'));
       expect(document.querySelectorAll('[data-testid="ui-option-separator"]').length).toBe(2);
