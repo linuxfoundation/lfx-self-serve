@@ -154,6 +154,9 @@ export const EMAIL_SERVICE_PRE_SEND_REJECTIONS: readonly string[] = [
   'internal error',
 ];
 
+/** Fixed SMTP-attempt error reply; safe to log, but it does not prove that nothing was sent. */
+export const EMAIL_SERVICE_DELIVERY_FAILED_REASON = 'email delivery failed';
+
 /** An email-service error reply after SMTP may have started; not proof of non-delivery. */
 export const EMAIL_SEND_UNCONFIRMED = 'EMAIL_SEND_UNCONFIRMED';
 

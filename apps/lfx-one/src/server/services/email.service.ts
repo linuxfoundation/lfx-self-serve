@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMAIL_SEND_UNCONFIRMED, EMAIL_SERVICE_PRE_SEND_REJECTIONS, NATS_CONFIG } from '@lfx-one/shared/constants';
+import { EMAIL_SEND_UNCONFIRMED, EMAIL_SERVICE_DELIVERY_FAILED_REASON, EMAIL_SERVICE_PRE_SEND_REJECTIONS, NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { EmailServiceSendRequest, EmailServiceSendResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -53,7 +53,9 @@ export class EmailService {
       const rejectedBeforeSend = EMAIL_SERVICE_PRE_SEND_REJECTIONS.includes(reply.error);
       // Only contractually pre-send refusals prove nothing was sent. `email delivery failed`
       // also covers a disconnect after SMTP DATA acceptance; unknown errors are conservative too.
-      logger.warning(req, 'send_email', 'Email service reported a send error', { rejected_before_send: rejectedBeforeSend });
+      // Preserve fixed contract reasons for diagnosis; arbitrary replies may contain recipient data.
+      const knownReason = rejectedBeforeSend || reply.error === EMAIL_SERVICE_DELIVERY_FAILED_REASON ? reply.error : 'unrecognized';
+      logger.warning(req, 'send_email', 'Email service reported a send error', { rejected_before_send: rejectedBeforeSend, reason: knownReason });
       throw new MicroserviceError(
         rejectedBeforeSend ? 'The email service rejected the email' : 'The email service could not confirm the send outcome',
         502,

@@ -1624,8 +1624,8 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     );
   });
 
-  it('shows a retry-safe error for a clear rejection such as a 403', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN' } })));
+  it.each([401, 403])('shows a retry-safe error for a clear rejection with status %s', async (status) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
     await sendSummary();
 
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));

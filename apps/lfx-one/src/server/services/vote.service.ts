@@ -930,13 +930,15 @@ export class VoteService {
    * to each recipient — it never varies per voter, so it cannot disclose how any specific person
    * voted.
    *
-   * Every invited voter ends up in exactly one bucket (#4689): sent (the email service returned an
-   * `email_id`), skipped (no email address on file), failed (confirmed not sent: the service
-   * rejected it before sending or accepted without sending), or uncertain (transport failed or the
-   * email service reported an ambiguous SMTP outcome). One recipient's failure never blocks the rest, so a
-   * partial send reports the counts instead of throwing. Only when every attempt was confirmed
-   * failed (nothing sent, nothing uncertain) does it throw with the known counts, since a retry is then
-   * safe. A failure before any email was attempted is rethrown as `VOTE_SUMMARY_PRECHECK_FAILED`, also safe to retry.
+   * Counts distinct email recipients (#4689) as sent (the service returned an `email_id`), failed
+   * (confirmed not sent: rejected before sending or accepted without sending), or uncertain
+   * (transport failed or the service reported an ambiguous SMTP outcome). Invited voters without
+   * an email address are counted separately as skipped; shared email addresses are attempted once.
+   * One recipient's failure never blocks the rest, so a partial send reports the counts instead of
+   * throwing. Only when every attempt was confirmed failed (nothing sent, nothing uncertain) does
+   * it throw with the known counts. Permission, validation, rate-limit and not-ended errors keep
+   * their original responses; other failures before any email attempt become
+   * `VOTE_SUMMARY_PRECHECK_FAILED`, so retrying cannot duplicate this attempt.
    */
   public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
     let rendered: ReturnType<typeof renderVoteSummaryEmail>;

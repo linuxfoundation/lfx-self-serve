@@ -791,7 +791,7 @@ export class VotesTableComponent {
     const rejected =
       error instanceof HttpErrorResponse &&
       !isBffTransportFailure(error) &&
-      ([400, 403, 429].includes(error.status) || (error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED));
+      ([400, 401, 403, 429].includes(error.status) || (error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED));
     if (rejected) {
       this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
       return;

@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { EMAIL_SEND_UNCONFIRMED } from '@lfx-one/shared/constants';
+import { EMAIL_SEND_UNCONFIRMED, EMAIL_SERVICE_PRE_SEND_REJECTIONS } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import type { VoteSummaryRecipient } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,25 +60,34 @@ describe('EmailService.sendEmail', () => {
     expect(logged).not.toContain(EMAIL.to);
   });
 
-  it.each(['invalid from address', 'group is full', 'internal error'])('maps a pre-send %s reply to a confirmed 502 rejection', async (reason) => {
+  it.each(EMAIL_SERVICE_PRE_SEND_REJECTIONS)('maps a pre-send %s reply to a confirmed 502 rejection and logs its fixed reason', async (reason) => {
     request.mockResolvedValue(reply({ error: reason }));
 
     const error = await service.sendEmail(req, EMAIL).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error).toMatchObject({ statusCode: 502, code: 'EMAIL_SEND_FAILED' });
     expect((error as MicroserviceError).transportFailure).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(req, 'send_email', 'Email service reported a send error', { rejected_before_send: true, reason });
   });
 
-  it.each(['email delivery failed', 'an unknown service error'])('keeps %s unconfirmed even though the service answered', async (reason) => {
-    request.mockResolvedValue(reply({ error: reason }));
+  it.each(['email delivery failed', 'an unknown service error', `unknown failure for ${EMAIL.to}`])(
+    'keeps %s unconfirmed even though the service answered',
+    async (reason) => {
+      request.mockResolvedValue(reply({ error: reason }));
 
-    const error = await service.sendEmail(req, EMAIL).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(MicroserviceError);
-    expect(error).toMatchObject({ statusCode: 502, code: EMAIL_SEND_UNCONFIRMED });
-    // The service did answer: uncertainty must not masquerade as a BFF transport failure.
-    expect((error as MicroserviceError).transportFailure).toBeUndefined();
-    expect(JSON.stringify(warning.mock.calls)).not.toContain(reason);
-  });
+      const error = await service.sendEmail(req, EMAIL).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error).toMatchObject({ statusCode: 502, code: EMAIL_SEND_UNCONFIRMED });
+      // The service did answer: uncertainty must not masquerade as a BFF transport failure.
+      expect((error as MicroserviceError).transportFailure).toBeUndefined();
+      expect(warning).toHaveBeenCalledWith(req, 'send_email', 'Email service reported a send error', {
+        rejected_before_send: false,
+        reason: reason === 'email delivery failed' ? reason : 'unrecognized',
+      });
+      if (reason !== 'email delivery failed') expect(JSON.stringify(warning.mock.calls)).not.toContain(reason);
+      expect(JSON.stringify(warning.mock.calls)).not.toContain(EMAIL.to);
+    }
+  );
 
   it('maps a NATS timeout or an unparseable reply to 502 EMAIL_SEND_FAILED marked as a transport failure', async () => {
     request.mockRejectedValueOnce(new Error('TIMEOUT'));
