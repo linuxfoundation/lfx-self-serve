@@ -684,6 +684,11 @@
     @if (hasActionItems()) {
       <div class="flex flex-col gap-3" data-testid="optimization-action-items">
         <h4 class="text-sm font-semibold text-gray-900">Action Items</h4>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-actions">
+            Spend, and the amounts in each issue, are in the Google Ads account's own currency.
+          </p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -710,7 +715,7 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ item.issue }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
-                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-3 text-right">
                       @if (item.metrics.pacingUnknown) {
                         <span class="text-sm font-medium text-gray-500">Unknown</span>
@@ -758,6 +763,9 @@
           <h4 class="text-sm font-semibold text-gray-900">Display / Demand Gen Campaign Performance</h4>
           <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ displayCampaigns().length }}</span>
         </div>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-display">Spend is in the Google Ads account's own currency.</p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -775,7 +783,7 @@
               </thead>
               <tbody>
                 @for (c of displayCampaigns(); track c.campaignId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-display-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ c.eventName || c.name }}</p>
                       <p class="text-xs text-gray-400">{{ c.targeting }}</p>
@@ -790,7 +798,7 @@
                     <td class="px-4 py-2.5 text-right" [class]="c.ctr < 0.3 ? 'font-medium text-red-600' : 'text-gray-700'">
                       {{ c.ctr | adsPct }}
                     </td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
                     @if (c.conversionsMeasured === false) {
                       <td class="px-4 py-2.5 text-right text-gray-500">Not measured</td>
                     } @else {
@@ -1023,6 +1031,11 @@
           <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
         }
       </div>
+      @if (keywordAmountsInAccountCurrency()) {
+        <p class="text-xs text-gray-500" data-testid="optimization-keyword-currency-note">
+          Keyword spend and CPC are in the Google Ads account's own currency.
+        </p>
+      }
       @if (keywordsLoading() && !keywordsData()) {
         <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
           <div class="flex items-center gap-2 text-sm text-gray-500">
@@ -1098,7 +1111,7 @@
               </thead>
               <tbody>
                 @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-wasted-keyword-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
                     </td>
@@ -1113,10 +1126,10 @@
                       </span>
                     </td>
                     <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
@@ -1202,7 +1215,7 @@
               </thead>
               <tbody>
                 @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-low-quality-row-' + $index">
                     <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
                     <td class="px-4 py-2.5">
                       <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
@@ -1215,7 +1228,7 @@
                     <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
                     <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-2.5 text-center">
                       @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
                         <!--

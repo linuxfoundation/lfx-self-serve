@@ -620,6 +620,10 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly hasActionItems = computed(() => this.actionItems().length > 0);
+  /** True when the Google monitor's amounts are a connected account's own, unnamed currency (#4807): printed without `$`. */
+  protected readonly googleAmountsInAccountCurrency = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
+  /** The same for the Google keyword read, which campaign-service also reports unconverted. */
+  protected readonly keywordAmountsInAccountCurrency = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
   /**
    * Google campaigns campaign-service could not read (#4526). It raises no action items for them, so
    * "no action items" is not an all-clear while any exists; the template says so instead.
