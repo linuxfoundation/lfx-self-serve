@@ -3941,8 +3941,9 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Take the asset plan's suggestions into the Google image fields (#4825): "upload once, auto-assign".
    *
-   * Only EMPTY fields are filled — no held image and no pasted URL — so whatever the operator chose
-   * stays, and pressing again after more uploads fills only what is still empty. Only fields on
+   * Only EMPTY fields are filled — no held image, no pasted URL and no upload still running — so
+   * whatever the operator chose stays, and pressing again after more uploads fills only what is
+   * still empty. Only fields on
    * screen are touched (the plan covers every Google channel; the tab renders one), each up to its
    * own catalogued `max`, and only for the open brief. The combined marketing-image cap is not
    * re-checked here, as it is not for a manual pick: campaign-service refuses an over-cap creative
@@ -3966,7 +3967,9 @@ export class ImplementationTabComponent implements OnInit {
       const key = `${groupName}.${control}`;
       if (!slots[key]) continue;
       const raw = this.campaignForm.controls[groupName].getRawValue() as Record<string, string | null | undefined>;
-      if ((held[key] ?? []).length > 0 || this.splitCreativeLines(raw[control]).length > 0) {
+      // An upload still running counts as filled: the file it is sending is held when it lands
+      // (`followGoogleImageUpload`), and filling the field meanwhile would put it over its max.
+      if (slots[key].uploading || (held[key] ?? []).length > 0 || this.splitCreativeLines(raw[control]).length > 0) {
         kept += 1;
         continue;
       }
