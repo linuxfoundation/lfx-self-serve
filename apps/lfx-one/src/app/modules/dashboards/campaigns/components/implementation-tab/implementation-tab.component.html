@@ -3699,6 +3699,11 @@
                     Only LF administrators can see the X account details. The campaign is created under the ad account bound on this project's X connection.
                   </p>
                 }
+                @case ('forbidden') {
+                  <p class="text-gray-500" data-testid="implementation-twitter-account-forbidden">
+                    campaign-service refused to read this project's X connection. Your account needs the campaign manager role on this project.
+                  </p>
+                }
                 @case ('error') {
                   <div class="flex flex-col items-start gap-1" data-testid="implementation-twitter-account-error">
                     <p class="text-amber-800">

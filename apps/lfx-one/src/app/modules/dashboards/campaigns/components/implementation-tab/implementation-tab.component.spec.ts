@@ -13600,6 +13600,16 @@ describe('ImplementationTabComponent x create', () => {
       expect(q(fixture, 'implementation-twitter-account-retry')).not.toBeNull();
     });
 
+    /** A refusal for lack of the project's `campaign_manager` role (#4837) is standing: named, with no Retry. */
+    it('names the missing project role when campaign-service refused to read the X connection', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'forbidden', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+
+      expect(q(fixture, 'implementation-twitter-account-forbidden')?.textContent).toContain('Your account needs the campaign manager role on this project');
+      expect(q(fixture, 'implementation-twitter-account-retry')).toBeNull();
+      expect(q(fixture, 'implementation-twitter-account-error')).toBeNull();
+    });
+
     it('says the LF shared account is used when the project has no X connection, and lets Create through', async () => {
       getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_connection', accountId: null, label: null }));
       const { fixture } = await mount(true);

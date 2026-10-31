@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe, DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
@@ -605,6 +606,8 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /** The Google read was refused for the caller's role (a 403, #4837). Retrying repeats the refusal, so no Retry is offered. */
+  protected readonly errorRefused = signal(false);
   /**
    * The Google Ads monitor was refused because the customer is shared by every foundation
    * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54): a notice in place of the action
@@ -1647,6 +1650,7 @@ export class OptimizationTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.errorRefused.set(err instanceof HttpErrorResponse && err.status === 403);
           this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
         },
       });
