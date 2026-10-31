@@ -3572,9 +3572,22 @@ export class CampaignController {
 
     try {
       const [payload, connection] = await Promise.all([
-        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug),
+        // Both reads sit behind campaign-service's `campaign_manager` rule, so a ROOT writer without the
+        // project's role is refused on both (#4837). The list's 403 is caught to `null` rather than
+        // failing the whole read, so the answer is the connection's `forbidden` — named as the missing
+        // role on the tab — not an HTTP 403 the tab would read as the shared-account restriction.
+        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug).catch((error: unknown) => {
+          if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) return null;
+          throw error;
+        }),
         this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
       ]);
+      if (payload === null) {
+        const refused: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
+        logger.success(req, operation, startTime, { count: 0, connection: 'forbidden' });
+        res.json(refused);
+        return;
+      }
       // `accounts` is required upstream; reading its absence as an empty list would say the
       // credential reaches nothing, so an unreadable body fails the read instead.
       if (!Array.isArray(payload?.accounts)) {

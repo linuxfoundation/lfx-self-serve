@@ -863,6 +863,8 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(text('linkedin-connection-notice-title')).toBe('LinkedIn Ads monitoring needs the campaign manager role');
       expect(text('linkedin-connection-notice-message')).toContain('Your account needs the campaign manager role on this project');
       expect(text('linkedin-connection-notice-message')).not.toMatch(/refresh/i);
+      // Reading again cannot grant the role, so the notice offers no Refresh.
+      expect(el('linkedin-connection-notice-retry')).toBeNull();
       expect(service['getLinkedInMonitorData']).not.toHaveBeenCalled();
     });
 

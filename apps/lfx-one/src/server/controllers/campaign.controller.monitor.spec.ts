@@ -786,6 +786,33 @@ describe('CampaignController.getTwitterAdsAccounts', () => {
     });
   });
 
+  /** Both reads share campaign-service's `campaign_manager` rule (#4837): the answer is the role refusal, not the shared-account 403. */
+  it('answers a ROOT writer refused on both reads with a forbidden connection, not an HTTP 403', async () => {
+    twitterOn();
+    const refused = (): MicroserviceError =>
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+    svcTwitterAccounts.mockRejectedValueOnce(refused());
+    svcConnection.mockRejectedValueOnce(refused());
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ accounts: [], connection: { state: 'forbidden', accountId: null, label: null } });
+  });
+
+  it('still fails the read on any other refusal of the account list', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(500);
+  });
+
   it('reports a connection with no account bound, which the create would be refused for', async () => {
     twitterOn();
     svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] });

@@ -1139,13 +1139,16 @@
       <i class="fa-light fa-plug-circle-exclamation text-3xl text-gray-400" aria-hidden="true"></i>
       <p class="text-sm font-medium text-gray-700" [attr.data-testid]="panel + '-connection-notice-title'">{{ notice.title }}</p>
       <p class="max-w-lg text-center text-xs text-gray-500" [attr.data-testid]="panel + '-connection-notice-message'">{{ notice.message }}</p>
-      <button
-        type="button"
-        (click)="retryPanel(panel)"
-        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
-        [attr.data-testid]="panel + '-connection-notice-retry'">
-        Refresh
-      </button>
+      <!-- No Refresh for a refusal (#4837): reading again cannot grant the missing project role. -->
+      @if (notice.state !== 'forbidden') {
+        <button
+          type="button"
+          (click)="retryPanel(panel)"
+          class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+          [attr.data-testid]="panel + '-connection-notice-retry'">
+          Refresh
+        </button>
+      }
     </div>
   </ng-template>
 </div>
