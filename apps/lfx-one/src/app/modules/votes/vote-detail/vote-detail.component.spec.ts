@@ -2230,6 +2230,124 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
     });
 
+    it.each([0, 503])('retains the last good results with a stale notice after transient HTTP %s, then recovers', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const pending = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValueOnce(httpError(status)).mockReturnValueOnce(pending);
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
+      expect(testId(fixture, 'vote-detail-results-error')).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-stale')?.textContent).toContain('Reconnecting automatically');
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[0].value).toBe('3 / 4');
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-stale')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-loading')).toBeNull();
+      pending.next(makeMethodResults());
+      pending.complete();
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
+    });
+
+    it.each([401, 403, 404])('clears previously loaded results after HTTP %s instead of retaining unauthorized data', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.getVoteResults.mockReturnValueOnce(of(makeMethodResults())).mockReturnValueOnce(httpError(status)).mockReturnValue(httpError(503));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-overview-bars')).toBeNull();
+    });
+
+    it('retries transient metadata failures without discarding the last good results', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValueOnce(httpError(503)).mockReturnValue(of(makeVote()));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-stale')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-stale')).toBeNull();
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(2);
+    });
+
+    it('detects a remotely ended vote, shows final results, and stops both polling reads', async () => {
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).not.toContain('Winner');
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(voteService.fetchVote).toHaveBeenLastCalledWith('vote-1', { uncached: true });
+      expect(read<Vote>(fixture, 'vote').status).toBe(PollStatus.ENDED);
+      expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Final results');
+      expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('Winner');
+      const resultCalls = voteService.getVoteResults.mock.calls.length;
+      const metadataCalls = voteService.fetchVote.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 3);
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(resultCalls);
+      expect(voteService.fetchVote).toHaveBeenCalledTimes(metadataCalls);
+    });
+
+    it('does not infer an ended vote from an expired results deadline while server status is active', async () => {
+      vi.setSystemTime(new Date('2026-10-31T00:00:00Z'));
+      const fixture = await setup();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 2);
+      TestBed.tick();
+      expect(read<{ value: string }>(fixture, 'resultsStatusTag').value).toBe('Voting in progress');
+      expect(voteService.fetchVote).toHaveBeenCalledTimes(3);
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(3);
+    });
+
+    it.each(['hidden', 'destroyed', 'route changed'] as const)('cancels a pending metadata refresh when %s', async (reason) => {
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+      const pending = new Subject<Vote>();
+      voteService.fetchVote
+        .mockReturnValueOnce(of(makeVote()))
+        .mockReturnValueOnce(pending)
+        .mockReturnValue(of(makeVote({ uid: 'vote-2' })));
+      const fixture = await setup();
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.intervalMs * 2);
+      expect(pending.observers).toHaveLength(1);
+      expect(voteService.fetchVote).toHaveBeenCalledTimes(2);
+      expect(voteService.getVoteResults).toHaveBeenCalledTimes(1);
+
+      if (reason === 'hidden') {
+        visibility.mockReturnValue('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+      } else if (reason === 'destroyed') {
+        fixture.destroy();
+      } else {
+        paramMap.next(convertToParamMap({ id: 'vote-2' }));
+        TestBed.tick();
+        fixture.detectChanges();
+        expect(read<Vote>(fixture, 'vote').uid).toBe('vote-2');
+      }
+      expect(pending.observers).toHaveLength(0);
+    });
+
     it('disposes the previous vote loop on route changes', async () => {
       voteService.fetchVote.mockImplementation((uid: string) => of(makeVote({ uid })));
       const fixture = await setup();

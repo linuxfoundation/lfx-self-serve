@@ -35,6 +35,8 @@ A tab shows no count when there is nothing to count.
 
 Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
 
+Active-vote refreshes also check the vote's current status, so a vote ended elsewhere switches to final results without reloading the page. A temporary connection or server failure keeps the last successful figures visible with **Results may be out of date. Reconnecting automatically.** The notice clears after a successful refresh. If access is denied or results have never loaded successfully, no old figures are shown.
+
 The buttons at the top right depend on the vote's status:
 
 - **Send reminder** on active votes. See [Send a reminder](../manage-votes/#send-a-reminder).

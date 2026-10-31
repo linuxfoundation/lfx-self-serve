@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, isPlatformServer, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, ElementRef, inject, PLATFORM_ID, REQUEST_CONTEXT, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Params, Router } from '@angular/router';
@@ -71,7 +72,23 @@ import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, tap, throwError } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  merge,
+  Observable,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
 
 import { NotFoundComponent } from '../../not-found/not-found.component';
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
@@ -155,6 +172,8 @@ export class VoteDetailComponent {
 
   /** Re-runs the vote load: `retry` shows the skeleton again, `refresh` (after a ballot) reloads in place. */
   private readonly reload$ = new BehaviorSubject<'retry' | 'refresh'>('retry');
+  /** Authoritative metadata read by the results poll joins the same state stream as the initial load. */
+  private readonly polledVote$ = new Subject<Vote>();
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
@@ -170,7 +189,12 @@ export class VoteDetailComponent {
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
   /** Results status belongs to its request's vote, just like the retained payload. */
-  private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean }>({ voteId: null, loading: false, error: false });
+  private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean; stale: boolean }>({
+    voteId: null,
+    loading: false,
+    error: false,
+    stale: false,
+  });
   /** Bumped after a ballot is submitted so my-response and results reload. */
   private readonly refreshTick = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
@@ -206,6 +230,7 @@ export class VoteDetailComponent {
   protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
   protected readonly loadingVoteResults: Signal<boolean> = this.initLoadingVoteResults();
   protected readonly voteResultsError: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().error);
+  protected readonly voteResultsStale: Signal<boolean> = computed(() => this.voteResultsStatus().voteId === this.vote()?.uid && this.voteResultsStatus().stale);
   /** Settled, successful results — participation totals wait for these, since `computeVoteParticipationStats(null)` reads as zero. */
   protected readonly hasLoadedResults: Signal<boolean> = computed(() => !!this.voteResults() && !this.loadingVoteResults() && !this.voteResultsError());
   /** Pseudo-anonymous totals, abstentions and comments are held until the vote ends (#3916) — a missing `num_abstained` must not read as 0. */
@@ -460,7 +485,15 @@ export class VoteDetailComponent {
               console.error('Failed to load vote for detail page', { status: err?.status, message: err?.message });
               // A failed in-place refresh keeps the page it already shows: the ballot was recorded, only the reload failed.
               return of(inPlace && lastLoaded ? lastLoaded : errorState);
-            }),
+            })
+          );
+          const states$ = merge(
+            load$,
+            this.polledVote$.pipe(
+              filter((vote) => vote.uid === id),
+              map((vote): VoteDetailState => ({ loading: false, notFound: false, error: false, vote }))
+            )
+          ).pipe(
             tap((state) => {
               lastLoaded = state.vote ? state : null;
               // Real HTTP 404 during SSR for the not-found branch only; the error state intentionally stays HTTP 200.
@@ -469,7 +502,7 @@ export class VoteDetailComponent {
               }
             })
           );
-          return inPlace ? load$ : load$.pipe(startWith(loadingState));
+          return inPlace ? states$ : states$.pipe(startWith(loadingState));
         })
       ),
       { initialValue: loadingState }
@@ -599,15 +632,30 @@ export class VoteDetailComponent {
           if (!resultsKey) {
             loadedFor = null;
             lastResults = null;
-            this.voteResultsStatus.set({ voteId: null, loading: false, error: false });
+            this.voteResultsStatus.set({ voteId: null, loading: false, error: false, stale: false });
             return of(null);
           }
           if (loadedFor !== resultsKey.id) lastResults = null;
           loadedFor = resultsKey.id;
-          this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
-          const load = () => {
-            this.voteResultsStatus.set({ voteId: resultsKey.id, loading: !lastResults, error: false });
-            return this.voteService.getVoteResults(resultsKey.id).pipe(
+          this.voteResultsStatus.update((status) => ({
+            voteId: resultsKey.id,
+            loading: !lastResults,
+            error: false,
+            stale: status.voteId === resultsKey.id && status.stale,
+          }));
+          let attempted = false;
+          let backgroundRefresh = false;
+          const load = (poll = false) => {
+            backgroundRefresh = resultsKey.poll && (poll || attempted);
+            attempted = true;
+            this.voteResultsStatus.update((status) => ({ ...status, loading: !lastResults, error: false }));
+            // A scheduled or returning-tab refresh reads status first: deadlines alone never prove a vote formally ended.
+            // Both requests share the poll subscription, so hidden tabs, route changes and destruction cancel either read.
+            const metadata$: Observable<Vote | null> = backgroundRefresh
+              ? this.voteService.fetchVote(resultsKey.id, { uncached: true }).pipe(tap((vote) => this.polledVote$.next(vote)))
+              : of(null);
+            return metadata$.pipe(
+              switchMap(() => this.voteService.getVoteResults(resultsKey.id)),
               finalize(() => {
                 this.voteResultsStatus.update((status) => (status.voteId === resultsKey.id ? { ...status, loading: false } : status));
               })
@@ -623,11 +671,14 @@ export class VoteDetailComponent {
             map((event) => {
               if (event.kind === 'error') {
                 console.error('Failed to load vote results for detail page');
-                lastResults = null;
-                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: true });
+                const transient =
+                  event.error instanceof HttpErrorResponse && (event.error.status === 0 || (event.error.status >= 500 && event.error.status < 600));
+                const stale = backgroundRefresh && !!lastResults && transient;
+                if (!stale) lastResults = null;
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
               } else {
                 lastResults = event.value;
-                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false });
+                this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false, stale: false });
               }
               return { id: resultsKey.id, payload: lastResults };
             }),

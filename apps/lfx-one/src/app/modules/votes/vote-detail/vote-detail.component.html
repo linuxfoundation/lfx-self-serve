@@ -52,6 +52,11 @@
           <p-skeleton width="100%" height="12rem" />
         </div>
       } @else {
+        @if (showsResults() && voteResultsStale()) {
+          <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status" data-testid="vote-detail-results-stale">
+            Results may be out of date. Reconnecting automatically.
+          </p>
+        }
         @if (audience() === 'creator') {
           <lfx-stat-card-grid
             [cards]="summaryCards()"
