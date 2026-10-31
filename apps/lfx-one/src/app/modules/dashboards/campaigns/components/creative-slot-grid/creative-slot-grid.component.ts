@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PLATFORMS, GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS } from '@lfx-one/shared/constants';
 import type {
   CampaignPlatform,
   CreativeSlotCoverageGroup,
@@ -222,7 +222,7 @@ export class CreativeSlotGridComponent {
         const gap = slotGaps.get(assignment.slotKey);
         emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
-        this.pushRow(groups, assignment.platform, assignment.channel, assignment.minCount, {
+        this.pushRow(groups, assignment.platform, assignment.channel, assignment.minCount, [assignment.slotKey], {
           key: assignment.slotKey,
           label: assignment.label,
           requirement: assignment.requirement,
@@ -246,7 +246,9 @@ export class CreativeSlotGridComponent {
           continue;
         }
         emitted.add(key);
-        this.pushRow(groups, gap.platform, gap.channel, gap.need, {
+        // A cross-slot rule is matched against the form through its member slots, summed.
+        const formKeys = slotKey === '' ? (GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS[`${gap.platform}/${gap.channel ?? ''}`] ?? []) : [slotKey];
+        this.pushRow(groups, gap.platform, gap.channel, gap.need, formKeys, {
           key,
           label: gap.label,
           requirement: '',
@@ -384,23 +386,26 @@ export class CreativeSlotGridComponent {
   /**
    * Push a row, read against the form first: a slot whose field already holds at least the images it
    * requires (and at least one) is covered for THIS campaign whatever the library holds, so it reads
-   * "Filled in the form" with its count and is not open. A cross-slot rule row (`rule:` key) names no
-   * single field, so it never matches and keeps its library reading.
+   * "Filled in the form" with its count, needs nothing more, and is not open. `formKeys` names the
+   * slots whose form counts apply: the row's own slot, or a cross-slot rule's member slots summed
+   * (`GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS`); a rule with no known members never matches.
    */
   private pushRow(
     groups: Map<string, CreativeSlotCoverageGroup>,
     platform: string,
     channel: string | undefined,
     required: number,
+    formKeys: readonly string[],
     row: CreativeSlotCoverageRow
   ): void {
-    const inForm = this.formFilled()[row.key] ?? 0;
+    const filled = this.formFilled();
+    const inForm = formKeys.reduce((total, key) => total + (filled[key] ?? 0), 0);
     const covered = inForm > 0 && inForm >= required;
     this.push(
       groups,
       platform,
       channel,
-      covered ? { ...row, status: 'filled', statusLabel: 'Filled in the form', countText: `${inForm} in the form`, reason: '' } : row
+      covered ? { ...row, status: 'filled', statusLabel: 'Filled in the form', countText: `${inForm} in the form`, reason: '', need: 0 } : row
     );
   }
 

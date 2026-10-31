@@ -7486,9 +7486,7 @@ export class ImplementationTabComponent implements OnInit {
         const [groupName, control] = key.split('.');
         const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
         if (!channel) continue;
-        for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
-          if (mapped === control) targets.push(`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
-        }
+        targets.push(...this.googlePlanSlotKeysFor(channel, control));
       }
       return targets;
     });
@@ -7497,18 +7495,24 @@ export class ImplementationTabComponent implements OnInit {
   private initGoogleFormFilledSlots(): Signal<Record<string, number>> {
     return computed(() => {
       void this.campaignFormRevision();
+      // Walks the RENDERED image fields, not `googleImageSlots`: those exist only while the library is
+      // an explicit yes, and pasted URLs are offered — and fill a slot — whatever it answers. Held
+      // images count only where the request would send them (`googleImageRefsFor`).
       const briefId = this.briefPersistence().briefId ?? '';
+      const libraryOn = this.googleAssetUploadAvailable();
       const held = this.googleHeldImages();
       const filled: Record<string, number> = {};
-      for (const key of Object.keys(this.googleImageSlots())) {
-        const [groupName, control] = key.split('.');
-        const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
-        if (!channel) continue;
-        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[channel]].getRawValue() as Record<string, string | null | undefined>;
-        const count = this.splitCreativeLines(raw[control]).length + (held[key] ?? []).filter((image) => image.briefId === briefId).length;
-        if (count === 0) continue;
-        for (const [planSlot, mapped] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])) {
-          if (mapped === control) filled[`google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`] = count;
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          if (!field.image) continue;
+          const key = `${section.groupName}.${field.control}`;
+          const heldCount = libraryOn ? (held[key] ?? []).filter((image) => image.briefId === briefId).length : 0;
+          const count = this.splitCreativeLines(raw[field.control]).length + heldCount;
+          if (count === 0) continue;
+          for (const slotKey of this.googlePlanSlotKeysFor(section.channel, field.control)) {
+            filled[slotKey] = count;
+          }
         }
       }
       return filled;
@@ -9215,6 +9219,17 @@ export class ImplementationTabComponent implements OnInit {
       if (typeof value !== 'string') continue;
       this.campaignForm.controls[field].setValue(value, { emitEvent: false });
     }
+  }
+
+  /**
+   * Every asset-plan `slot_key` that maps onto one Google image field: `google-ads/CHANNEL/slot`, in the
+   * plan's own vocabulary (`GOOGLE_ASSET_PLAN_SLOT_CONTROLS`). The one place that mapping is walked, so the
+   * grid's suggestion targets and its form counts cannot drift apart.
+   */
+  private googlePlanSlotKeysFor(channel: GoogleCreativeChannel, control: string): string[] {
+    return Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])
+      .filter(([, mapped]) => mapped === control)
+      .map(([planSlot]) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
   }
 
   /**

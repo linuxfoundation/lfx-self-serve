@@ -4191,6 +4191,19 @@ export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', '
  * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
  * Display's names already match. A slot absent here is not applied.
  */
+/**
+ * The member `slot_key`s of each Google channel's cross-slot "any of" rule, keyed `platform/CHANNEL`
+ * (#4833). campaign-service reports a shortfall on such a rule with no `slot_key` (it spans several
+ * slots), so the slot grid needs the members to tell whether the form already satisfies it. Mirrors
+ * the `AnyOf` rules in `internal/platform/googleads/slot_catalog.go`: Demand Gen and Display each need
+ * a landscape OR a square marketing image; Performance Max has no such rule. A channel absent here has
+ * no rule the form can be matched against.
+ */
+export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'google-ads/DEMAND_GEN': ['google-ads/DEMAND_GEN/marketingImages', 'google-ads/DEMAND_GEN/squareMarketingImages'],
+  'google-ads/DISPLAY': ['google-ads/DISPLAY/marketingImages', 'google-ads/DISPLAY/squareMarketingImages'],
+};
+
 export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
   'performance-max': {
     MARKETING_IMAGE: 'marketingImages',

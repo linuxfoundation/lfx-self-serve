@@ -12870,6 +12870,18 @@ describe('ImplementationTabComponent google stored images', () => {
       });
     });
 
+    /** Pasted URLs fill a slot whatever the library answers; held images count only where the request would send them. */
+    it('counts pasted URLs with the library off, and ignores held images it would not send', async () => {
+      const { c } = await mount(false);
+      c['campaignForm'].controls.displayCreative.controls.marketingImages.setValue('https://cdn.example.org/wide.png');
+      c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
+        ...held,
+        'displayCreative.logoImages': [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }],
+      }));
+
+      expect(c['googleFormFilledSlots']()).toEqual({ 'google-ads/DISPLAY/marketingImages': 1 });
+    });
+
     /** Performance Max names its slots by Google asset field type; the table maps them onto the request's fields. */
     it("maps Performance Max's asset field types onto its fields", async () => {
       const { f, c } = await mount(true);

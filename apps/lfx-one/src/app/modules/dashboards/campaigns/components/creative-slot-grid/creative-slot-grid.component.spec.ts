@@ -419,17 +419,23 @@ describe('CreativeSlotGridComponent', () => {
       expect(q('creative-slot-grid-complete')).not.toBeNull();
     });
 
-    /** A rule spanning several slots names none of them, so the form cannot be matched to it. */
-    it('leaves a cross-slot rule row on its library reading', async () => {
-      await build({
-        ...PLAN,
-        gaps: [
-          ...PLAN.gaps,
-          { platform: 'google-ads', channel: 'DISPLAY', label: 'Display marketing image, landscape or square', need: 1, reason: 'None stored.' },
-        ],
-      });
-      render({ ...ready, formFilled: { 'google-ads/DISPLAY/marketingImages': 3 } });
-      expect(text('creative-slot-row-rule:google-ads/DISPLAY/Display marketing image, landscape or square')).toContain('Missing');
+    /** Display's only required marketing row is an "any of" rule with no slot_key; its member slots are summed (#4833). */
+    it('reads a cross-slot rule as filled once one of its member slots holds an image in the form', async () => {
+      const rule = { platform: 'google-ads', channel: 'DISPLAY', label: 'Display marketing image, landscape or square', need: 1, reason: 'None stored.' };
+      await build({ ...PLAN, gaps: [...PLAN.gaps, rule] });
+      render({ ...ready, formFilled: { 'google-ads/DISPLAY/squareMarketingImages': 1 } });
+
+      const row = text('creative-slot-row-rule:google-ads/DISPLAY/Display marketing image, landscape or square');
+      expect(row).toContain('Filled in the form');
+      expect(row).toContain('1 in the form');
+      expect(row).not.toContain('None stored.');
+    });
+
+    it('leaves a cross-slot rule with no known members on its library reading', async () => {
+      await build({ ...PLAN, gaps: [...PLAN.gaps, { platform: 'google-ads', channel: 'VIDEO', label: 'Video rule', need: 1, reason: 'None stored.' }] });
+      render({ ...ready, formFilled: { 'google-ads/VIDEO/anything': 3 } });
+
+      expect(text('creative-slot-row-rule:google-ads/VIDEO/Video rule')).toContain('Missing');
     });
   });
 });

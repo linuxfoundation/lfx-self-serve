@@ -335,7 +335,7 @@ export interface CreativeSlotCoverageRow {
   requirement: string;
   /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
   filled: number;
-  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  /** How many more this slot or rule still needs. Zero when nothing is missing, including a row the form already fills. */
   need: number;
   /** The plan's own words for why it is short. Empty when nothing is missing. */
   reason: string;
@@ -345,7 +345,8 @@ export interface CreativeSlotCoverageRow {
    * The count as a phrase: `filled` against the slot's minimum where the plan carried an
    * assignment and that minimum is above zero, a bare stored count where the slot states no
    * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
-   * cross-slot requirement, which has no single slot to count in.
+   * cross-slot requirement, which has no single slot to count in. A row the host's form already
+   * fills (#4833) reads `N in the form` instead, summed across a cross-slot rule's member slots.
    */
   countText: string;
 }
