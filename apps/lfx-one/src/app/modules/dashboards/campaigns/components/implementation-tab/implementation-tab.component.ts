@@ -5141,7 +5141,7 @@ export class ImplementationTabComponent implements OnInit {
    * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
    * effort only: the browser may answer from its cache with the old image, and busting the cache
    * would break signed URLs. A replaced image is reliably re-checked under a new URL. A URL on this
-   * application's own origin is never loaded ({@link isSameOriginUrl}).
+   * application's own host is never loaded ({@link isOwnHostUrl}).
    */
   protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
     if (!field.image || !isPlatformBrowser(this.platformId)) return;
@@ -5151,7 +5151,7 @@ export class ImplementationTabComponent implements OnInit {
       // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
       // second line starts none.
       const probe = this.googleTypedImageProbes()[url];
-      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isSameOriginUrl(url)) {
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isOwnHostUrl(url)) {
         this.probeGoogleTypedImage(url);
       }
     }
@@ -9369,13 +9369,15 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Whether a pasted URL is on this application's own origin. Such a URL is never probed: the browser
+   * Whether a pasted URL is on this application's own host. Such a URL is never probed: the browser
    * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
-   * the session (Copilot, #4810). No image an ad uses is served from here, and campaign-service still
+   * the session (Copilot, #4810). Compared by host name, not origin, because a browser upgrades an
+   * `http://` image on an HTTPS page and a cookie is not scoped by port, so neither the scheme nor the
+   * port makes such a URL safe. No image an ad uses is served from here, and campaign-service still
    * checks every pasted URL at Create. Only called in the browser (`onGoogleImageFieldBlur`).
    */
-  private isSameOriginUrl(url: string): boolean {
-    return new URL(url).origin === window.location.origin;
+  private isOwnHostUrl(url: string): boolean {
+    return new URL(url).hostname === window.location.hostname;
   }
 
   /**
