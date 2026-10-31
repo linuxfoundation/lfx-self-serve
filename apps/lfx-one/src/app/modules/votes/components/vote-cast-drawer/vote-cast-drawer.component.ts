@@ -5,6 +5,7 @@ import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -53,6 +54,7 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     DrawerModule,
     ExternalLinksDirective,
     LinkifyHtmlPipe,
+    VoteDescriptionPipe,
     SkeletonModule,
     CheckboxModule,
     DragDropModule,

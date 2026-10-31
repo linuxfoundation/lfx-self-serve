@@ -18,9 +18,11 @@ This article explains the vote's page, which shows how a vote is going and how i
 
 The page header shows the vote's title, status, whether ballots are named or pseudo-anonymous, its group, voting method, close date and how many voters were invited. Select **Votes** at the top to go back to the list.
 
-Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Existing rich-text formatting and links are preserved. The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
+Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Supported HTML formatting and links are preserved; descriptions mixing unsupported placeholders and HTML use the [literal fallback](../create-vote/#description-formatting). The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
 
 If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
+
+The vote's description keeps its paragraphs, line breaks, and lists, the same as in the cast drawer.
 
 ## If you manage the vote
 

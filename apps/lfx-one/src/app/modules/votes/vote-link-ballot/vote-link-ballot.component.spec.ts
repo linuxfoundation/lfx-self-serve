@@ -178,6 +178,48 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     }
   });
 
+  describe('description formatting (#4727)', () => {
+    const description = () => testId('vote-link-description');
+
+    it('preserves plain-text whitespace and keeps the mobile scroll region', async () => {
+      const raw = '  First\n\n\n    - indented  bullet\n1.  numbered';
+      await open(of({ ...BALLOT, description: raw }));
+
+      expect(description()?.textContent).toBe(raw);
+      expect(description()?.querySelector('span.whitespace-pre-wrap')?.children).toHaveLength(0);
+      expect(description()?.classList.contains('whitespace-normal')).toBe(true);
+      expect(description()?.classList.contains('prose')).toBe(true);
+      expect(description()?.classList.contains('max-sm:max-h-[40dvh]')).toBe(true);
+      expect(description()?.getAttribute('role')).toBe('region');
+      expect(description()?.getAttribute('aria-label')).toBe('Vote description');
+      expect(description()?.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('renders supported HTML structure as elements', async () => {
+      await open(of({ ...BALLOT, description: '<p>One <strong>bold</strong> <em>it</em></p><ul><li>A<ol><li>B</li></ol></li></ul>' }));
+
+      expect(description()?.querySelectorAll('p')).toHaveLength(1);
+      expect(description()?.querySelector('ul > li > ol > li')?.textContent).toBe('B');
+      expect(description()?.querySelector('strong')?.textContent).toBe('bold');
+      expect(description()?.querySelector('em')?.textContent).toBe('it');
+      expect(description()?.textContent).not.toContain('<p>');
+    });
+
+    it('strips unsafe content', async () => {
+      await open(of({ ...BALLOT, description: '<p>ok</p><script>alert(1)</script><img src="x" onerror="alert(2)"><a href="javascript:alert(3)">link</a>' }));
+
+      expect(description()?.querySelector('script')).toBeNull();
+      expect(description()?.innerHTML).not.toContain('onerror');
+      expect(description()?.querySelector('a')?.getAttribute('href')).toMatch(/^unsafe:/);
+    });
+
+    it('renders no description section for an empty description', async () => {
+      await open(of({ ...BALLOT, description: '' }));
+
+      expect(description()).toBeNull();
+    });
+  });
+
   it('renders the loading state before the ballot arrives', async () => {
     window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
     getLinkBallot.mockReturnValue(new Observable<VoteLinkBallot>());
