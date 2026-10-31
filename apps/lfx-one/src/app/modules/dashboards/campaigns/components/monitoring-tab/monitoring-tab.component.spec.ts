@@ -166,6 +166,25 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     fixture.detectChanges();
   }
 
+  /** campaign-service reports keyword cost unconverted in the account's own currency and names none (#4807). */
+  it("prints a connected account's keyword amounts without a dollar sign, and says so", () => {
+    render(keywordsResponse({ amountsInAccountCurrency: true }));
+    const row = (fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent ?? '';
+
+    expect(row).toContain('25.00');
+    expect(row).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-totals"]')?.textContent).not.toContain('$');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')?.textContent?.trim()).toBe(
+      "Keyword spend and CPC are in the ad account's own currency."
+    );
+  });
+
+  it("keeps the legacy read's dollar amounts and no currency note", () => {
+    render(keywordsResponse());
+    expect((fixture.nativeElement.querySelector('[data-testid="keyword-row-0"]') as HTMLElement).textContent).toContain('$25.00');
+    expect(fixture.nativeElement.querySelector('[data-testid="keyword-currency-note"]')).toBeNull();
+  });
+
   function partialCaption(): HTMLElement | null {
     return fixture.nativeElement.querySelector('[data-testid="keyword-totals-partial"]');
   }

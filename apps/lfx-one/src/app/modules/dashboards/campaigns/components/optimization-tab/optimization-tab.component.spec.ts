@@ -2355,6 +2355,43 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     expect(pacingCell(1)?.className).toContain('text-red-600');
   });
 
+  /** campaign-service's Google amounts are the connected account's own, unnamed currency (#4807): no dollar sign, with a note. */
+  it("prints a connected account's Google amounts without a dollar sign, and says so", () => {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void; (): Record<string, unknown> | null };
+      keywordsData: { set(v: unknown): void; (): Record<string, unknown> | null };
+    };
+    instance.monitorData.set({
+      ...(instance.monitorData() ?? {}),
+      amountsInAccountCurrency: true,
+      actionItems: [
+        {
+          eventName: 'KubeCon',
+          campaigns: ['KubeCon'],
+          campaignUrls: {},
+          priority: 'MED',
+          issue: 'Underspending',
+          action: 'Broaden targeting',
+          metrics: { spend: 1234.5, budget: 100, pacingPct: 40, impressions: 1, clicks: 1, conversions: 0 },
+        },
+      ],
+    });
+    instance.keywordsData.set({ ...(instance.keywordsData() ?? {}), amountsInAccountCurrency: true });
+    fixture.detectChanges();
+
+    expect(q('action-item-row-0')?.textContent).toContain('1,234.50');
+    expect(q('action-item-row-0')?.textContent).not.toContain('$');
+    expect(q('optimization-google-currency-note')).not.toBeNull();
+    expect(q('optimization-keyword-currency-note')).not.toBeNull();
+  });
+
+  it("keeps the legacy read's dollar amounts and no currency notes", () => {
+    renderKeywords(false);
+    expect(q('optimization-google-currency-note')).toBeNull();
+    expect(q('optimization-keyword-currency-note')).toBeNull();
+  });
+
   it('does not claim ALL keywords are clean when the set was capped', () => {
     renderKeywords(true);
 

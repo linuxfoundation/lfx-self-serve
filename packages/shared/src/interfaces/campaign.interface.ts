@@ -3497,6 +3497,12 @@ export interface KeywordMetricsResponse {
   truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
+  /**
+   * Campaign-service path only: true when spend and CPC are the project's own connected account's,
+   * unconverted, in a currency nobody named (`cost_micros` is "the account's native currency", with
+   * no FX). The legacy read is the LF's own USD account and leaves it unset (#4807).
+   */
+  amountsInAccountCurrency?: boolean;
 }
 
 // ---------------------------------------------------------------------------

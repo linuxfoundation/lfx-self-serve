@@ -49,8 +49,13 @@ export class EventLabelPipe implements PipeTransform {
 
 @Pipe({ name: 'adsCurrency' })
 export class AdsCurrencyPipe implements PipeTransform {
-  public transform(value: number): string {
-    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  /**
+   * `inAccountCurrency`: the amount is a connected ad account's own, in a currency nobody named
+   * (campaign-service's Google reads, #4807), so it prints without a symbol rather than as dollars.
+   */
+  public transform(value: number, inAccountCurrency = false): string {
+    const amount = value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return inAccountCurrency ? amount : `$${amount}`;
   }
 }
 
