@@ -2355,16 +2355,63 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
     expect(pacingCell(1)?.className).toContain('text-red-600');
   });
 
-  /** campaign-service's Google amounts are the connected account's own, unnamed currency (#4807): no dollar sign, with a note. */
-  it("prints a connected account's Google amounts without a dollar sign, and says so", () => {
+  /**
+   * campaign-service's Google amounts are the connected account's own, unnamed currency (#4807). One
+   * fixture exercises every changed binding: the action item, a display campaign, a wasted-spend
+   * keyword and a low-quality keyword, each with a recognisable amount.
+   */
+  function renderGoogleAmounts(inAccountCurrency: boolean): void {
     renderKeywords(false);
     const instance = fixture.componentInstance as unknown as {
       monitorData: { set(v: unknown): void; (): Record<string, unknown> | null };
       keywordsData: { set(v: unknown): void; (): Record<string, unknown> | null };
     };
+    const keyword = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      keyword: 'kw',
+      matchType: 'PHRASE',
+      qualityScore: 8,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '1',
+      criterionId: '2',
+      campaign: 'C',
+      campaignId: '555',
+      googleAdsUrl: '',
+      impressions: 100,
+      clicks: 10,
+      ctr: 10,
+      avgCpc: 3.25,
+      spend: 0,
+      conversions: 1,
+      ...overrides,
+    });
     instance.monitorData.set({
       ...(instance.monitorData() ?? {}),
-      amountsInAccountCurrency: true,
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      campaigns: [
+        {
+          name: 'D',
+          shortName: 'D',
+          eventName: 'KubeCon',
+          adFormat: 'Display',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-08-30',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 2222.5,
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          conversions: 1,
+          pacingPct: 50,
+          pacingLabel: 'normal',
+          campaignId: '777',
+          googleAdsUrl: '',
+        },
+      ],
       actionItems: [
         {
           eventName: 'KubeCon',
@@ -2377,18 +2424,45 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
         },
       ],
     });
-    instance.keywordsData.set({ ...(instance.keywordsData() ?? {}), amountsInAccountCurrency: true });
+    instance.keywordsData.set({
+      ...(instance.keywordsData() ?? {}),
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      keywords: [
+        keyword({ keyword: 'wasted', criterionId: '3', spend: 3333.5, conversions: 0 }),
+        keyword({ keyword: 'weak', criterionId: '4', qualityScore: 3, spend: 4444.5 }),
+      ],
+    });
     fixture.detectChanges();
+  }
 
-    expect(q('action-item-row-0')?.textContent).toContain('1,234.50');
-    expect(q('action-item-row-0')?.textContent).not.toContain('$');
-    expect(q('optimization-google-currency-note')).not.toBeNull();
+  const cellText = (id: string): string => q(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+  it("prints a connected account's Google amounts without a dollar sign on every table, and says so", () => {
+    renderGoogleAmounts(true);
+
+    expect(cellText('action-item-row-0')).toContain('1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3,333.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3.25');
+    expect(cellText('optimization-low-quality-row-0')).toContain('4,444.50');
+    for (const id of ['action-item-row-0', 'optimization-display-row-0', 'optimization-wasted-keyword-row-0', 'optimization-low-quality-row-0']) {
+      expect(cellText(id), id).not.toContain('$');
+    }
+    // The action-item note covers the issue text too, whose amounts campaign-service formats itself.
+    expect(cellText('optimization-google-currency-note-actions')).toContain('the amounts in each issue');
+    expect(q('optimization-google-currency-note-display')).not.toBeNull();
     expect(q('optimization-keyword-currency-note')).not.toBeNull();
   });
 
-  it("keeps the legacy read's dollar amounts and no currency notes", () => {
-    renderKeywords(false);
-    expect(q('optimization-google-currency-note')).toBeNull();
+  it("keeps the legacy read's dollar amounts on every table, with no currency notes", () => {
+    renderGoogleAmounts(false);
+
+    expect(cellText('action-item-row-0')).toContain('$1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('$2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('$3,333.50');
+    expect(cellText('optimization-low-quality-row-0')).toContain('$4,444.50');
+    expect(q('optimization-google-currency-note-actions')).toBeNull();
+    expect(q('optimization-google-currency-note-display')).toBeNull();
     expect(q('optimization-keyword-currency-note')).toBeNull();
   });
 
