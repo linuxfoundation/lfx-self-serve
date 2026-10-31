@@ -3989,9 +3989,12 @@ export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'micros
  * - `connected`: a connection exists and is bound to `accountId`;
  * - `no_connection`: campaign-service has no connection of this provider for the project;
  * - `no_account`: a connection exists but no ad account is bound to it;
- * - `unavailable`: the connection could not be read, so neither of the above is known.
+ * - `unavailable`: the connection could not be read, so neither of the above is known;
+ * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
+ *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
  */
-export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable';
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
 
 /** One platform's connection, as the Monitor tab's account picker consumes it. */
 export interface MonitorConnectionAccount {
@@ -5780,10 +5783,11 @@ export type CampaignTwitterDraft = Pick<
 export interface CampaignTwitterAccountState {
   /**
    * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
-   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `error` for any
-   * other failure. Only `loaded` carries a `result`.
+   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `forbidden` when
+   * campaign-service refused to read the project's X connection for lack of its `campaign_manager` role
+   * (#4837), `error` for any other failure. Only `loaded` carries a `result`.
    */
-  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'error';
+  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'forbidden' | 'error';
   result: TwitterAdsAccountsResult | null;
 }
 

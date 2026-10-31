@@ -336,6 +336,46 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     expect(svcGoogle).not.toHaveBeenCalled();
   });
 
+  /**
+   * The route admits a ROOT writer before any project check, but campaign-service authorizes the read
+   * with the project's `campaign_manager` relation, which a ROOT writer need not hold (#4837). Its 403
+   * is a standing refusal: answered as a 403 naming the missing role, never the retryable 503.
+   */
+  it("answers campaign-service's refusal of a ROOT writer without the project role as a 403, not a retryable 503", async () => {
+    flag(true);
+    checkRootWriter.mockResolvedValue(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed for project:7f3e' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
+    );
+    expect(error.toResponse()['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  it("words campaign-service's refusal of the monitor read itself the same way", async () => {
+    flag(true);
+    svcConnection.mockResolvedValueOnce({ account_id: '8666746580', label: 'LF Google Ads' });
+    svcGoogle.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
+    );
+  });
+
   it('answers an unreadable connection as a 503 advisory, reading no monitor', async () => {
     flag(true);
     svcConnection.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
@@ -746,6 +786,47 @@ describe('CampaignController.getTwitterAdsAccounts', () => {
     });
   });
 
+  /** Both reads share campaign-service's `campaign_manager` rule (#4837): the answer is the role refusal, not the shared-account 403. */
+  it('answers a ROOT writer refused on both reads with a forbidden connection, not an HTTP 403', async () => {
+    twitterOn();
+    const refused = (): MicroserviceError =>
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+    svcTwitterAccounts.mockRejectedValueOnce(refused());
+    svcConnection.mockRejectedValueOnce(refused());
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ accounts: [], connection: { state: 'forbidden', accountId: null, label: null } });
+  });
+
+  /** The API client answers `null` for an empty success; that is a malformed list, not a refusal. */
+  it('fails an empty account-list answer as unreadable, not as forbidden', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce(null);
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('still fails the read on any other refusal of the account list', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(500);
+  });
+
   it('reports a connection with no account bound, which the create would be refused for', async () => {
     twitterOn();
     svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] });
@@ -915,6 +996,18 @@ describe('CampaignController.getMonitorConnections', () => {
     // Every other provider's numeric id is offered exactly as stored.
     expect(body.platforms.linkedin?.accountId).toBe('187654321');
     expect(body.platforms.microsoft?.accountId).toBe('187654321');
+  });
+
+  /** The pickers' read gets the same standing refusal as the Google monitor (#4837), never the retryable `unavailable`. */
+  it("reports campaign-service's 403 as forbidden on the connections read", async () => {
+    flag(true);
+    svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const res = buildRes();
+
+    await new CampaignController().getMonitorConnections(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as CampaignMonitorConnections;
+    expect(body.platforms.linkedin?.state).toBe('forbidden');
   });
 
   it('reports a bare gateway 404 as unavailable, not as a missing connection', async () => {

@@ -5623,11 +5623,12 @@ export class ImplementationTabComponent implements OnInit {
           if (!offered || slug === '') return of(idle);
           return this.campaignService.getTwitterAdsAccounts(slug).pipe(
             // A connection campaign-service could not read comes back inside a 200 as
-            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
-            map(
-              (result): CampaignTwitterAccountState =>
-                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
-            ),
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry. One it
+            // REFUSED to read (`forbidden`, #4837) is a standing refusal and gets no Retry.
+            map((result): CampaignTwitterAccountState => {
+              if (result.connection?.state === 'forbidden') return { status: 'forbidden', result: null };
+              return result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result };
+            }),
             catchError((err: unknown) =>
               of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
             ),

@@ -644,13 +644,15 @@
       <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
       <p class="text-sm font-medium text-red-700">Failed to load optimization data</p>
       <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
-      <button
-        type="button"
-        (click)="fetchData()"
-        class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-        data-testid="optimization-retry">
-        Retry
-      </button>
+      @if (!errorRefused()) {
+        <button
+          type="button"
+          (click)="fetchData()"
+          class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          data-testid="optimization-retry">
+          Retry
+        </button>
+      }
     </div>
   } @else if (!hasCampaigns()) {
     <div
