@@ -111,6 +111,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /** The Google read was refused for the caller's role (403, #4837). Retrying repeats the same refusal, so no Retry is offered. */
+  protected readonly errorForbidden = signal(false);
 
   // Platform switcher
   protected readonly selectedPlatform = signal<MonitorTabPlatform>('google');
@@ -471,6 +473,7 @@ export class MonitoringTabComponent implements OnInit {
 
     this.loading.set(true);
     this.error.set(null);
+    this.errorForbidden.set(false);
     this.googleRestricted.set(false);
     const days = this.selectedDays();
 
@@ -494,6 +497,7 @@ export class MonitoringTabComponent implements OnInit {
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.errorForbidden.set(err instanceof HttpErrorResponse && err.status === 403);
           this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });

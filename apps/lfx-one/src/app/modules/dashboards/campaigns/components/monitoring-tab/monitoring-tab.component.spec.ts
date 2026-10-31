@@ -2491,6 +2491,19 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
 
     expect(el('monitoring-error')).not.toBeNull();
     expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-retry')).not.toBeNull();
+  });
+
+  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
+  it('offers no Retry when the Google read is refused for the caller role', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('monitoring-error')?.textContent).toContain('(HTTP 403)');
+    expect(el('monitoring-retry')).toBeNull();
   });
 
   // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped

@@ -3587,9 +3587,9 @@ export class CampaignController {
       ]);
       // `refused` is the only symbol the list read can settle with; `typeof` is what narrows the union.
       if (typeof payload === 'symbol') {
-        const refused: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
+        const forbiddenResult: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
         logger.success(req, operation, startTime, { count: 0, connection: 'forbidden' });
-        res.json(refused);
+        res.json(forbiddenResult);
         return;
       }
       // `accounts` is required upstream; reading its absence as an empty list would say the
