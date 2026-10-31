@@ -33,6 +33,14 @@ export const Default: Story = {};
 export const SomePicked: Story = { args: { values: ['prod', 'preview'] } };
 export const Disabled: Story = { args: { disabled: true, values: ['prod'] } };
 export const NoVisibleLabel: Story = { args: { label: '', ariaLabel: 'Environments' } };
+/** The name is cut off by a narrow trigger, so hovering or focusing it shows the full name in a tooltip. */
+export const TruncatedName: Story = {
+  args: { label: 'Deployment environments for every region' },
+  render: (args) => ({
+    props: args,
+    template: `<div class="w-[160px]"><lfx-ui-multi-select ${argsToTemplate(args)}>${ENVIRONMENTS}</lfx-ui-multi-select></div>`,
+  }),
+};
 export const AllSizes: Story = {
   render: (args) => ({
     props: args,

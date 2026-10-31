@@ -365,18 +365,78 @@ describe('UiMultiSelectComponent', () => {
     expect(box(0).getAttribute('aria-label')).toBe('Preview');
   });
 
-  it('shows the field name and count in a tooltip on the trigger, not a native title, and hides it while open', async () => {
-    await set('values', ['prod']);
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  describe('name tooltip', () => {
+    let resize: () => void = () => undefined;
     const tooltip = (): HTMLElement | null => document.querySelector('[data-testid="ui-tooltip"]');
+    const nameEl = (): HTMLElement => host.querySelector('[data-testid="ui-multi-select-name"]') as HTMLElement;
+    // Layout does not exist in the test environment, so the name's widths are set by hand.
+    const measure = async (scrollWidth: number, clientWidth: number): Promise<void> => {
+      Object.defineProperty(nameEl(), 'scrollWidth', { configurable: true, value: scrollWidth });
+      Object.defineProperty(nameEl(), 'clientWidth', { configurable: true, value: clientWidth });
+      resize();
+      await fixture.whenStable();
+    };
+    const hover = async (): Promise<void> => {
+      trigger().dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+      await vi.advanceTimersByTimeAsync(400);
+      fixture.detectChanges();
+    };
 
-    expect(host.querySelector('[title]')).toBeNull();
-    trigger().dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
-    await vi.advanceTimersByTimeAsync(400);
-    fixture.detectChanges();
-    expect(tooltip()?.textContent?.trim()).toBe('Environments, 1 selected');
+    beforeEach(async () => {
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          public observe = vi.fn();
+          public disconnect = vi.fn();
+          public constructor(callback: () => void) {
+            resize = callback;
+          }
+        }
+      );
+      fixture = create('basic');
+      host = fixture.nativeElement as HTMLElement;
+      await fixture.whenStable();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
 
-    vi.useRealTimers();
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('stays off while the name fits, and is not a native title', async () => {
+      await measure(100, 100);
+      await hover();
+
+      expect(host.querySelector('[title]')).toBeNull();
+      expect(tooltip()).toBeNull();
+    });
+
+    it('shows only the field name when it is cut off, without the count', async () => {
+      await set('values', ['prod', 'dev']);
+      await measure(220, 100);
+      await hover();
+
+      expect(tooltip()?.textContent?.trim()).toBe('Environments');
+    });
+
+    it('turns off again once the name fits', async () => {
+      await measure(220, 100);
+      await measure(100, 100);
+      await hover();
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('stays off while the list is open', async () => {
+      await measure(220, 100);
+      vi.useRealTimers();
+      await open();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      await hover();
+
+      expect(tooltip()).toBeNull();
+    });
   });
 
   it('gives the overlay pane the panel radius so a corner click is not a click on the pane', async () => {

@@ -10,6 +10,8 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
+  ElementRef,
   inject,
   Injector,
   input,
@@ -41,6 +43,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Picking a row keeps the list open. `values` is the list of picked `value`s, in the order they were picked, and the form value is the same
  * `string[]`. Works with `[(values)]` and with Angular forms (`formControlName`, `formControl`).
  *
+ * When the trigger is too narrow for the name, hovering or focusing it shows the full name in a tooltip; the tooltip stays off otherwise and while the list is open.
  * The trigger is a disclosure button (`aria-expanded`, `aria-controls`) and the list is a labelled group of real checkboxes and buttons: focus
  * moves into it when it opens. Each checkbox is named by its option's `label`; the Only button is named "Only" plus that label.
  *
@@ -64,7 +67,9 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
   private readonly ngControl = inject(NgControl, { self: true, optional: true });
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly origin = viewChild.required(CdkOverlayOrigin);
+  private readonly nameEl = viewChild.required<ElementRef<HTMLElement>>('nameEl');
   public override readonly multiple = true;
 
   /** The field's name, shown in the trigger and used as its accessible name. Without one, set `ariaLabel`. */
@@ -95,6 +100,9 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
   protected readonly name: Signal<string> = computed(() => this.label() || this.ariaLabel());
   protected readonly count: Signal<number> = computed(() => this.values().length);
   protected readonly accessibleName: Signal<string> = computed(() => (this.count() > 0 ? `${this.name()}, ${this.count()} selected` : this.name()));
+  // True while the field's name is cut off by the trigger's width; the name tooltip only shows then.
+  protected readonly truncated = signal(false);
+  protected readonly tooltipOff: Signal<boolean> = computed(() => this.expanded() || !this.truncated());
   protected readonly triggerClasses: Signal<string> = this.initTriggerClasses();
   protected readonly chevronClasses: Signal<string> = this.initChevronClasses();
 
@@ -104,6 +112,16 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
   public constructor() {
     super();
     if (this.ngControl) this.ngControl.valueAccessor = this;
+    afterNextRender(() => {
+      const name = this.nameEl().nativeElement;
+      const measure = (): void => this.truncated.set(name.scrollWidth > name.clientWidth);
+      measure();
+      if (typeof ResizeObserver === 'undefined') return;
+      // The name's box changes with the trigger's width, the count badge and the name itself.
+      const observer = new ResizeObserver(measure);
+      observer.observe(name);
+      this.destroyRef.onDestroy(() => observer.disconnect());
+    });
   }
 
   public writeValue(values: string[] | null): void {
