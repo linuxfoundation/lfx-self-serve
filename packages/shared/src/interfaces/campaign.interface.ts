@@ -2480,6 +2480,19 @@ export interface GoogleCreativeImageOption {
 }
 
 /**
+ * What the browser learned about one pasted Google image URL, by loading it as an image: still
+ * loading, its natural size, or that it could not be loaded here. Advisory only — campaign-service
+ * downloads and checks every pasted URL itself before anything is created.
+ */
+export interface GoogleTypedImageProbe {
+  state: 'checking' | 'loaded' | 'failed';
+  width?: number;
+  height?: number;
+  /** A settled answer being probed again. It stays the answer shown until the new probe settles. */
+  rechecking?: boolean;
+}
+
+/**
  * One Google image slot's library controls, assembled by the Implement tab for
  * `lfx-google-creative-image-library`. `key` is `<request key>.<control>`, the key the held images
  * and the draft are stored under.
