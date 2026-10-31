@@ -37,6 +37,7 @@ import {
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
@@ -12759,6 +12760,142 @@ describe('ImplementationTabComponent google stored images', () => {
 
     expect(c['googleImageAssetBlock']()?.kind).toBe('uploadFailed');
     expect(c['googleImageSlots']()[SLOT].error).toBe('image is not decodable');
+  });
+
+  /** "Use suggested images" (#4825): the asset plan's assignments fill only EMPTY, rendered Google image fields. */
+  describe('applying the asset plan', () => {
+    const assignment = (slot: string, assetIds: string[], channel = 'DISPLAY', platform = 'google-ads') => ({
+      slotKey: `${platform}/${channel}/${slot}`,
+      platform,
+      channel,
+      slot,
+      label: slot,
+      requirement: '',
+      assetIds,
+      minCount: 0,
+      maxCount: 5,
+    });
+
+    it('fills empty rendered fields and reports how many', async () => {
+      const { c, latest } = await mount(true);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO]), assignment('squareLogoImages', [SQUARE_LOGO])]);
+
+      expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(latest()?.googleImageAssets?.[SLOT]).toEqual([{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 2 empty image slots with suggested images.');
+    });
+
+    it('leaves a field the operator filled — by a pick or a pasted URL — exactly as it is', async () => {
+      const { c } = await mount(true);
+      c['onGoogleImagePick'](SLOT, SQUARE_LOGO);
+      c['campaignForm'].controls.displayCreative.controls.squareLogoImages.setValue('https://cdn.example.org/square.png');
+      c['onApplySuggestedGoogleImages']([
+        assignment('logoImages', [WIDE_LOGO]),
+        assignment('squareLogoImages', [SQUARE_LOGO]),
+        assignment('marketingImages', [UPLOADED]),
+      ]);
+
+      expect(logos(c)).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual(['https://cdn.example.org/square.png']);
+      expect(c['googleCreativePayload']()['displayCreative']['marketingImages']).toEqual([{ imageAssetId: UPLOADED }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 1 empty image slot with suggested images. Left 2 slots you had already filled as they were.');
+    });
+
+    /** The running upload's file is held when it lands, so filling the field now would put it over its max. */
+    it('leaves a field with an upload still running as it is', async () => {
+      const { c } = await mount(true);
+      c['googleImageUploadStatus'].set('uploading');
+      c['googleImageUploadSlot'].set(SLOT);
+      expect(c['googleImageSlots']()[SLOT].uploading).toBe(true);
+
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO]), assignment('squareLogoImages', [SQUARE_LOGO])]);
+
+      expect(logos(c)).toBeUndefined();
+      expect(c['googleCreativePayload']()['displayCreative']['squareLogoImages']).toEqual([{ imageAssetId: SQUARE_LOGO }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Filled 1 empty image slot with suggested images. Left 1 slot you had already filled as it was.');
+    });
+
+    it('fills nothing for another channel, another platform, or a field not on screen', async () => {
+      const { c, latest } = await mount(true);
+      c['onApplySuggestedGoogleImages']([
+        // A real Performance Max slot, mapped, but Performance Max is not the type on screen.
+        assignment('LOGO', [WIDE_LOGO], 'PERFORMANCE_MAX'),
+        assignment('logoImages', [WIDE_LOGO], 'DISPLAY', 'meta-ads'),
+        assignment('youtubeVideoIds', ['x'], 'DISPLAY'),
+      ]);
+
+      expect(logos(c)).toBeUndefined();
+      expect(latest()?.googleImageAssets?.[SLOT] ?? []).toEqual([]);
+      expect(c['googleHeldImages']()['performanceMaxCreative.logoImages'] ?? []).toEqual([]);
+      expect(c['googleSuggestedApplyResult']()).toBe('No suggested images to apply: no Google image field on screen has a suggestion.');
+    });
+
+    it('caps a field at its own catalogued max', async () => {
+      const { c } = await mount(true);
+      const max = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'logoImages')?.max ?? 0;
+      const many = Array.from({ length: max + 2 }, (_, i) => `aaaaaaaa-0000-4000-8000-${String(i).padStart(12, '0')}`);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', many)]);
+
+      expect((logos(c) as unknown[]).length).toBe(max);
+    });
+
+    it('says when every suggested field was already filled, and pressing again changes nothing', async () => {
+      const { c } = await mount(true);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [SQUARE_LOGO])]);
+      // Each apply bumps the sequence, so the grid announces a repeated sentence again.
+      expect(c['googleSuggestedApplySeq']()).toBe(2);
+
+      expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
+      expect(c['googleSuggestedApplyResult']()).toBe('Nothing to fill: every image field with a suggestion already has images.');
+    });
+
+    /** Performance Max names its slots by Google asset field type; the table maps them onto the request's fields. */
+    it("maps Performance Max's asset field types onto its fields", async () => {
+      const { f, c } = await mount(true);
+      c['campaignForm'].patchValue({ includeDisplay: false, includePerformanceMax: true });
+      f.detectChanges();
+      c['onApplySuggestedGoogleImages']([
+        assignment('MARKETING_IMAGE', [WIDE_LOGO], 'PERFORMANCE_MAX'),
+        assignment('marketingImages', [SQUARE_LOGO], 'PERFORMANCE_MAX'),
+      ]);
+
+      expect(c['googleCreativePayload']()['performanceMaxCreative']['marketingImages']).toEqual([{ imageAssetId: WIDE_LOGO }]);
+    });
+
+    it('maps every planned slot onto an image field of its own channel', () => {
+      for (const [channel, slots] of Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS)) {
+        const imageControls = (
+          GOOGLE_CREATIVE_FIELD_SPECS[channel as keyof typeof GOOGLE_CREATIVE_FIELD_SPECS] as readonly { control: string; image?: unknown }[]
+        )
+          .filter((field) => field.image)
+          .map((field) => field.control);
+        for (const control of Object.values(slots)) {
+          expect(imageControls, `${channel} ${control}`).toContain(control);
+        }
+      }
+    });
+
+    it('offers suggestions only while a Google image field is on screen, and drops the result on a brief switch', async () => {
+      const { f, c } = await mount(true);
+      // Display on screen: its four image fields, in the plan's own vocabulary.
+      expect(c['googleSuggestionTargets']()).toEqual([
+        'google-ads/DISPLAY/marketingImages',
+        'google-ads/DISPLAY/squareMarketingImages',
+        'google-ads/DISPLAY/logoImages',
+        'google-ads/DISPLAY/squareLogoImages',
+      ]);
+      c['onApplySuggestedGoogleImages']([assignment('logoImages', [WIDE_LOGO])]);
+      expect(c['googleSuggestedApplyResult']()).not.toBe('');
+
+      f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: OTHER_BRIEF, message: null, approved: true });
+      f.detectChanges();
+      expect(c['googleSuggestedApplyResult']()).toBe('');
+
+      const off = await mount(false);
+      expect(off.c['googleSuggestionTargets']()).toEqual([]);
+    });
   });
 });
 

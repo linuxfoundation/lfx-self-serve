@@ -310,4 +310,80 @@ describe('CreativeSlotGridComponent', () => {
     render({ platforms: ['reddit-ads', 'google-ads'] });
     expect(getCreativeAssetPlan).toHaveBeenCalledTimes(1);
   });
+
+  /** "Use suggested images" (#4825): the grid hands the plan to its host, which decides what to apply. */
+  describe('suggested images', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const TARGETS = ['google-ads/PERFORMANCE_MAX/MARKETING_IMAGE', 'google-ads/PERFORMANCE_MAX/LOGO', 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO'];
+
+    it('offers no button while the host can fill no slot', () => {
+      render(ready);
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    /** Suggestions only for slots the host cannot fill — another channel, another platform — would make a button that fills nothing. */
+    it('offers no button when every suggestion is for a slot the host cannot fill', () => {
+      render({ ...ready, suggestionTargets: ['google-ads/DISPLAY/logoImages'] });
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('offers no button for a plan that suggests no image', async () => {
+      await build({ ...PLAN, assignments: PLAN.assignments.map((a) => ({ ...a, assetIds: [] })) });
+      render({ ...ready, suggestionTargets: TARGETS });
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('hands over only the assignments that name an image for a slot the host can fill', async () => {
+      await build({
+        ...PLAN,
+        assignments: [
+          ...PLAN.assignments,
+          { ...PLAN.assignments[0], slotKey: 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO', slot: 'LANDSCAPE_LOGO', assetIds: [] },
+          { ...PLAN.assignments[0], slotKey: 'google-ads/DISPLAY/logoImages', channel: 'DISPLAY', slot: 'logoImages', assetIds: ['a-3'] },
+        ],
+      });
+      render({ ...ready, suggestionTargets: TARGETS });
+      const emitted: unknown[] = [];
+      fixture.componentInstance.applySuggested.subscribe((assignments) => emitted.push(assignments));
+
+      q('creative-slot-grid-apply')?.click();
+
+      expect(emitted).toEqual([PLAN.assignments]);
+    });
+
+    /** The region is filled a tick after the render that empties it, so every apply is a change a reader announces. */
+    const tick = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+    };
+
+    it("shows the host's result and announces it in a region that was mounted empty", async () => {
+      render({ ...ready, suggestionTargets: TARGETS });
+      expect(q('creative-slot-grid-apply-live')?.textContent?.trim()).toBe('');
+      expect(q('creative-slot-grid-apply-result')).toBeNull();
+
+      render({ applyResult: 'Filled 2 empty image slots with suggested images.', applySeq: 1 });
+      await tick();
+
+      expect(text('creative-slot-grid-apply-result')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(text('creative-slot-grid-apply-live')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(q('creative-slot-grid-apply-result')?.getAttribute('role')).toBeNull();
+    });
+
+    /** A polite region speaks only on change, so a second apply with the same sentence must empty it first. */
+    it('announces a second apply that ends in the same sentence', async () => {
+      const sentence = 'Filled 1 empty image slot with suggested images.';
+      render({ ...ready, suggestionTargets: TARGETS, applyResult: sentence, applySeq: 1 });
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
+
+      render({ applySeq: 2 });
+      expect(text('creative-slot-grid-apply-live')).toBe('');
+      // The visible line does not blink while the region is refilled.
+      expect(text('creative-slot-grid-apply-result')).toBe(sentence);
+
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
+    });
+  });
 });

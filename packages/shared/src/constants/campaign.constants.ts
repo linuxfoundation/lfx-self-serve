@@ -4183,6 +4183,38 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
+ * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
+ * Implement tab's creative control it fills (#4825). An explicit table, not an identity, because the
+ * plan's slot is the PLATFORM layer's name: Performance Max uses Google's asset field types
+ * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
+ * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
+ * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
+ * Display's names already match. A slot absent here is not applied.
+ */
+export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
+  'performance-max': {
+    MARKETING_IMAGE: 'marketingImages',
+    SQUARE_MARKETING_IMAGE: 'squareMarketingImages',
+    PORTRAIT_MARKETING_IMAGE: 'portraitImages',
+    LOGO: 'logoImages',
+    LANDSCAPE_LOGO: 'landscapeLogoImages',
+  },
+  'demand-gen': {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    portraitMarketingImages: 'portraitImages',
+    tallPortraitMarketingImages: 'tallPortraitImages',
+    logoImages: 'logoImages',
+  },
+  display: {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    logoImages: 'logoImages',
+    squareLogoImages: 'squareLogoImages',
+  },
+};
+
+/**
  * The Google channels that accept campaign ad extensions — the six this application collects
  * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
  * does not collect yet.
