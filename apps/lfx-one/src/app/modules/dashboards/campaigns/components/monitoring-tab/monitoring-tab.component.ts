@@ -1440,6 +1440,14 @@ export class MonitoringTabComponent implements OnInit {
           title: `${label} monitoring is limited to LF administrators`,
           message: `This ${label} ad account is shared by every foundation, so its campaigns and spend can't be shown for a single project.`,
         };
+      case 'forbidden':
+        // campaign-service authorizes the read with the project's `campaign_manager` relation, which a
+        // ROOT writer this app admits need not hold (#4837): a standing refusal, so no "refresh" advice.
+        return {
+          state,
+          title: `${label} monitoring needs the campaign manager role`,
+          message: `campaign-service refused to read this project's ${label} connection. Your account needs the campaign manager role on this project; ask an LFX administrator for it.`,
+        };
       case 'metrics_disabled':
         return {
           state,

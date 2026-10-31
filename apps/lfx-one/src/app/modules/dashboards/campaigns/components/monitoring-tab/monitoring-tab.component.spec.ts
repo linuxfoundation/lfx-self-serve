@@ -854,6 +854,18 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getMetaMonitorData']).not.toHaveBeenCalled();
     });
 
+    /** campaign-service refused the read for lack of the project's `campaign_manager` role (#4837): no "refresh" advice. */
+    it('names the missing project role when campaign-service refused the connection read', async () => {
+      await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('forbidden') } });
+      select('linkedin');
+
+      expect(el('linkedin-connection-notice')?.getAttribute('data-state')).toBe('forbidden');
+      expect(text('linkedin-connection-notice-title')).toBe('LinkedIn Ads monitoring needs the campaign manager role');
+      expect(text('linkedin-connection-notice-message')).toContain('Your account needs the campaign manager role on this project');
+      expect(text('linkedin-connection-notice-message')).not.toMatch(/refresh/i);
+      expect(service['getLinkedInMonitorData']).not.toHaveBeenCalled();
+    });
+
     it('re-reads the connections from the notice', async () => {
       await setup({ ...allConnected, platforms: { ...allConnected.platforms, linkedin: none('unavailable') } });
       select('linkedin');

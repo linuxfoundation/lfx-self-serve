@@ -439,10 +439,10 @@ function monitorErrorMessage(statusCode: number, platformLabel: string): string 
       // miss): nothing says the connection is absent, so the text claims no such thing.
       return `The ${platformLabel} monitor could not be reached just now. Please try again shortly.`;
     case 403:
-      // campaign-service authorizes these reads with the project's `campaign_manager` relation, which a
-      // caller this app admits as a ROOT reader need not hold (#4837). A standing refusal, so not worded
-      // as something a retry fixes.
-      return `campaign-service refused to read this ${platformLabel} account for this project: it needs the campaign manager role on the project.`;
+      // campaign-service authorizes every connection and monitor read with the project's
+      // `campaign_manager` relation, which a ROOT writer this app admits need not hold (#4837). A
+      // standing refusal, so not worded as something a retry fixes.
+      return `campaign-service refused to read this ${platformLabel} account for this project. Your account needs the campaign manager role on this project.`;
     case 409:
       return `This ${platformLabel} account cannot be monitored as it stands.`;
     case 502:
@@ -526,6 +526,13 @@ export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionS
         ...context,
         errorBody: { error: ACCOUNT_MONITOR_NO_CONNECTION_CODE },
       });
+    case 'forbidden':
+      return new MicroserviceError(
+        "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project.",
+        403,
+        getCodeForStatus(403),
+        context
+      );
     case 'no_account':
       return new MicroserviceError(
         "This project's Google Ads connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection.",

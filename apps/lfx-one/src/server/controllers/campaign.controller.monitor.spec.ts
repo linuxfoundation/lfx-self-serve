@@ -354,7 +354,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(403);
     expect(error.toResponse()['error']).toBe(
-      'campaign-service refused to read this Google Ads account for this project: it needs the campaign manager role on the project.'
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
     );
     expect(error.toResponse()['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
     expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
@@ -371,7 +371,9 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(403);
-    expect(error.toResponse()['error']).toContain('needs the campaign manager role on the project');
+    expect(error.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
+    );
   });
 
   it('answers an unreadable connection as a 503 advisory, reading no monitor', async () => {
@@ -955,8 +957,8 @@ describe('CampaignController.getMonitorConnections', () => {
     expect(body.platforms.microsoft?.accountId).toBe('187654321');
   });
 
-  /** Only the Google Ads monitor opts into seeing the refusal; the pickers' connection read is unchanged. */
-  it("still reports campaign-service's 403 as unavailable on the connections read", async () => {
+  /** The pickers' read gets the same standing refusal as the Google monitor (#4837), never the retryable `unavailable`. */
+  it("reports campaign-service's 403 as forbidden on the connections read", async () => {
     flag(true);
     svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
     const res = buildRes();
@@ -964,7 +966,7 @@ describe('CampaignController.getMonitorConnections', () => {
     await new CampaignController().getMonitorConnections(buildReq({ project: 'tlf' }), res, vi.fn());
 
     const body = vi.mocked(res.json).mock.calls[0][0] as CampaignMonitorConnections;
-    expect(body.platforms.linkedin?.state).toBe('unavailable');
+    expect(body.platforms.linkedin?.state).toBe('forbidden');
   });
 
   it('reports a bare gateway 404 as unavailable, not as a missing connection', async () => {
