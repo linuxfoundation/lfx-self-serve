@@ -103,7 +103,6 @@ import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vo
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteCommentResultsComponent } from '../components/vote-comment-results/vote-comment-results.component';
-import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteMyBallotComponent } from '../components/vote-my-ballot/vote-my-ballot.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
@@ -153,7 +152,6 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteCastDrawerComponent,
     VoteCommentItemComponent,
     VoteCommentResultsComponent,
-    VoteDetailFactsComponent,
     VoteDetailHeaderComponent,
     VoteMyBallotComponent,
     VoteOptionResultsComponent,

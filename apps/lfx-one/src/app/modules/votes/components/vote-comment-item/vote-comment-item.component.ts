@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input, output, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { CommentResponseView } from '@lfx-one/shared/interfaces';
@@ -23,8 +23,27 @@ export class VoteCommentItemComponent {
   public readonly anonymous = input<boolean>(false);
   /** Adds a "View ballot" link — vote managers on named votes only (#3914). */
   public readonly showBallotLink = input<boolean>(false);
+  /**
+   * `button` (default) shows a trailing "View ballot" button. `row` drops it: the commenter's name becomes the keyboard
+   * control and a pointer click anywhere on the row opens the ballot too. Only effective where `showBallotLink` is allowed.
+   */
+  public readonly linkStyle = input<'button' | 'row'>('button');
 
   // === Outputs ===
   /** The response's `vote_id` — the vote response (ballot) uid the Voters tab opens. */
   public readonly viewBallot = output<string>();
+
+  // === Computed Signals ===
+  /** The ballot uid a click may open: manager on a named vote, a non-anonymous row and a known ballot. */
+  protected readonly ballotId: Signal<string | null> = computed(() => (!this.anonymous() && this.showBallotLink() ? (this.response().vote_id ?? null) : null));
+  protected readonly rowClickable: Signal<boolean> = computed(() => this.linkStyle() === 'row' && this.ballotId() !== null);
+
+  // === Protected Methods ===
+  /** Pointer convenience for row mode; links and buttons inside the row (comment links, expand control, name button) keep their own behavior. */
+  protected onRowClick(event: MouseEvent): void {
+    const voteId = this.ballotId();
+    if (!this.rowClickable() || !voteId) return;
+    if ((event.target as Element | null)?.closest('a, button')) return;
+    this.viewBallot.emit(voteId);
+  }
 }

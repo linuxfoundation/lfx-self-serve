@@ -54,6 +54,8 @@ describe('VoteDetailHeaderComponent', () => {
       canSendBallots?: boolean;
       slideBusy?: boolean;
       limited?: boolean;
+      resultsHeld?: boolean;
+      commentPromptCount?: number | null;
     } = {}
   ): void {
     fixture = TestBed.createComponent(VoteDetailHeaderComponent);
@@ -64,6 +66,8 @@ describe('VoteDetailHeaderComponent', () => {
     fixture.componentRef.setInput('canSendBallots', inputs.canSendBallots ?? false);
     fixture.componentRef.setInput('slideBusy', inputs.slideBusy ?? false);
     fixture.componentRef.setInput('limited', inputs.limited ?? false);
+    fixture.componentRef.setInput('resultsHeld', inputs.resultsHeld ?? false);
+    fixture.componentRef.setInput('commentPromptCount', inputs.commentPromptCount ?? null);
     fixture.componentRef.setInput('activeTab', 'overview');
     fixture.componentRef.setInput('tabs', VOTE_DETAIL_TABS);
     fixture.detectChanges();
@@ -458,13 +462,50 @@ describe('VoteDetailHeaderComponent', () => {
   it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows only title, status and back navigation when limited on a %s vote (#4330)', (status) => {
     render({ limited: true, vote: makeVote({ status, early_end_time: '2026-10-20T12:00:00Z' }) });
 
-    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+    for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
       expect(exists(`vote-detail-header-${suffix}`)).toBe(false);
     }
     expect(fixture.nativeElement.querySelector('[data-testid^="vote-detail-header-tab-"]')).toBeNull();
     expect(text('vote-detail-header-title')).toBe('Synthetic roadmap approval');
     expect(exists('vote-detail-header-status')).toBe(true);
     expect(exists('vote-detail-header-back')).toBe(true);
+  });
+
+  describe('visibility tooltip and vote details', () => {
+    const privacyTooltip = (): string => fixture.debugElement.query(By.css('[data-testid="vote-detail-header-privacy"]')).componentInstance.tooltip();
+
+    it('explains the visibility rules to a manager on an open named vote', () => {
+      render({ audience: 'creator', vote: makeVote({ pseudo_anonymity: false }) });
+
+      expect(privacyTooltip()).toContain('Voters see only their own response until the vote closes.');
+      expect(privacyTooltip()).toContain("You can see each voter's ballot on the Voters tab.");
+    });
+
+    it('explains the final visibility on a closed vote', () => {
+      render({ audience: 'creator', vote: makeVote({ status: PollStatus.ENDED }) });
+
+      expect(privacyTooltip()).toContain('As a manager, you can see the final totals and comments.');
+    });
+
+    it('explains held totals when results are still being finalized', () => {
+      render({ audience: 'creator', resultsHeld: true, vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }) });
+
+      expect(privacyTooltip()).toContain('Totals and comments will appear once they are finalized.');
+    });
+
+    it('shows the created date and comment settings in the meta row', () => {
+      render({ vote: makeVote({ creation_time: '2026-10-01T12:00:00Z', poll_comment_prompts: [] }), commentPromptCount: 2 });
+
+      expect(text('vote-detail-header-created')).toBe('Created Oct 1, 2026');
+      expect(text('vote-detail-header-comments')).toBe('Comments: Optional · 2 questions');
+    });
+
+    it('reports comments as not enabled and omits Created without a creation time', () => {
+      render();
+
+      expect(text('vote-detail-header-comments')).toBe('Comments: Not enabled');
+      expect(exists('vote-detail-header-created')).toBe(false);
+    });
   });
 
   it('renders the tab strip and emits the clicked tab', () => {

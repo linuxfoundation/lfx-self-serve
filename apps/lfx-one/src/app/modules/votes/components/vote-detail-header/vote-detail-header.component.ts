@@ -7,10 +7,17 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
+import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
-import { formatVoteDeadline, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, normalizePollStatus } from '@lfx-one/shared/utils';
+import {
+  formatVoteDeadline,
+  getUserTimezone,
+  getVoteEndedEarlyDetailTooltip,
+  getVoteVisibilityRules,
+  isVoteEndedEarly,
+  normalizePollStatus,
+} from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
@@ -65,6 +72,10 @@ export class VoteDetailHeaderComponent {
    * non-removed invitation lookup for this vote is verified, including loading and failed-lookup states.
    */
   public readonly limited = input<boolean>(false);
+  /** Totals and comments can remain held after close while upstream finalizes them; changes the visibility tooltip. */
+  public readonly resultsHeld = input<boolean>(false);
+  /** The page includes prompts recovered from authorized results; standalone callers fall back to vote metadata. */
+  public readonly commentPromptCount = input<number | null>(null);
 
   // === Outputs ===
   public readonly tabChange = output<VoteDetailTab>();
@@ -102,6 +113,10 @@ export class VoteDetailHeaderComponent {
   protected readonly timeRemainingText: Signal<string> = this.initTimeRemainingText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
+  protected readonly visibilityText: Signal<string> = this.initVisibilityText();
+  /** `creation_time` — for a draft opened later this is when it was saved, so the fact reads "Created". */
+  protected readonly createdText: Signal<string | null> = this.initCreatedText();
+  protected readonly commentsText: Signal<string> = this.initCommentsText();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -194,5 +209,31 @@ export class VoteDetailHeaderComponent {
     const midnight = new Date(now);
     midnight.setHours(24, 0, 0, 0);
     this.countdownTimer = setTimeout(() => this.refreshCountdownClock(), Math.min(deadline, midnight.getTime()) - now);
+  }
+
+  /** Every voter visibility rule, joined for the privacy tag's tooltip (hover and keyboard focus). */
+  private initVisibilityText(): Signal<string> {
+    return computed(() => {
+      const vote = this.vote();
+      const status = normalizePollStatus(vote.status);
+      const ended = status === PollStatus.ENDED;
+      const ballotsAvailable = status === PollStatus.ACTIVE || ended;
+      return getVoteVisibilityRules(this.audience(), vote.pseudo_anonymity, ended, ballotsAvailable, this.resultsHeld()).join(' ');
+    });
+  }
+
+  private initCreatedText(): Signal<string | null> {
+    return computed(() => {
+      const created = this.vote().creation_time;
+      return created ? formatDate(created, 'MMM d, y', 'en-US') : null;
+    });
+  }
+
+  private initCommentsText(): Signal<string> {
+    return computed(() => {
+      const prompts = this.commentPromptCount() ?? this.vote().poll_comment_prompts?.length ?? 0;
+      if (prompts === 0) return 'Not enabled';
+      return `Optional · ${prompts} ${prompts === 1 ? 'question' : 'questions'}`;
+    });
   }
 }

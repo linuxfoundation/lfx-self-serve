@@ -41,7 +41,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
-import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
 import { VoteDetailHeaderComponent } from '../components/vote-detail-header/vote-detail-header.component';
 import { VoteOptionResultsComponent } from '../components/vote-option-results/vote-option-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
@@ -1791,7 +1790,7 @@ describe('VoteDetailComponent', () => {
       expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toContain('comments');
       expect(previewComments(fixture).map((response) => response.comment_text)).toEqual(['Second synthetic comment', 'First synthetic comment']);
       expect(read<StatCardItem[]>(fixture, 'summaryCards').find((card) => card.label === 'Comments')?.subLine).toBe('Written comments left by voters');
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['commentPromptCount']).toBe(1);
       const viewAll = fixture.debugElement.query(By.css('[data-testid="vote-detail-overview-all-comments"]'));
       expect(viewAll.properties['label']).toBe('View all 2 comments');
       viewAll.triggerEventHandler('onClick', undefined);
@@ -1806,6 +1805,49 @@ describe('VoteDetailComponent', () => {
         'Second synthetic comment',
         'First synthetic comment',
       ]);
+    });
+
+    describe('Overview comment rows (#4771)', () => {
+      const overviewComments: PollCommentResult[] = [
+        {
+          prompt: { prompt_id: 'result-prompt', prompt: 'Any concerns?' },
+          responses: [{ vote_id: 'response-1', comment_text: 'Synthetic row comment', vote_creation_time: '2026-10-20T12:00:00Z', abstained: false }],
+        },
+      ];
+      const rowItems = (fixture: ComponentFixture<VoteDetailComponent>) =>
+        fixture.debugElement.queryAll(By.css('[data-testid="vote-detail-overview-comment"] lfx-vote-comment-item'));
+
+      it('makes rows open the ballot for a manager on a named vote', async () => {
+        projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+        voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: false, poll_comment_prompts: [] })));
+        voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: overviewComments }));
+        const fixture = await setup();
+
+        const items = rowItems(fixture);
+        expect(items).toHaveLength(1);
+        expect(items[0].attributes['linkStyle']).toBe('row');
+        expect(items[0].properties['showBallotLink']).toBe(true);
+        expect(items[0].properties['anonymous']).toBe(false);
+        items[0].triggerEventHandler('viewBallot', 'response-1');
+        expect(router.navigate).toHaveBeenLastCalledWith(
+          [],
+          expect.objectContaining({ queryParams: expect.objectContaining({ tab: 'voters', voters_ballot: 'response-1' }) })
+        );
+      });
+
+      it('keeps rows inert and anonymous on a pseudo-anonymous vote', async () => {
+        projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+        voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, poll_comment_prompts: [] })));
+        voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), comment_results: overviewComments }));
+        const fixture = await setup();
+
+        const items = rowItems(fixture);
+        expect(items).toHaveLength(1);
+        expect(items[0].properties['showBallotLink']).toBe(false);
+        expect(items[0].properties['anonymous']).toBe(true);
+        items[0].triggerEventHandler('viewBallot', 'response-1');
+        expect(router.navigate).not.toHaveBeenCalled();
+      });
     });
 
     it.each([
@@ -1860,7 +1902,7 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'audience')).toBe('voter');
       expect(read(fixture, 'activeTab')).toBe('comments');
       expect(testId(fixture, 'vote-detail-comments')).not.toBeNull();
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['commentPromptCount']).toBe(1);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['commentPromptCount']).toBe(1);
       const list = fixture.debugElement.query(By.css('lfx-vote-comment-results'));
       expect((list.properties['commentResults'] as PollCommentResult[])[0].responses[0].comment_text).toBe('Synthetic linked comment');
     });
@@ -2088,7 +2130,6 @@ describe('VoteDetailComponent', () => {
       expect(content?.hasAttribute('role')).toBe(false);
       expect(content?.hasAttribute('aria-labelledby')).toBe(false);
       expect(testId(fixture, 'vote-detail-description')).toBeNull();
-      expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
       expect(testId(fixture, 'vote-detail-summary')).toBeNull();
       expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
       expect(voteService.getVoteResults).not.toHaveBeenCalled();
@@ -2104,7 +2145,7 @@ describe('VoteDetailComponent', () => {
 
         expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
         expect(testId(fixture, 'vote-detail-header-status')?.textContent).toContain('Ended');
-        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
           expect(testId(fixture, `vote-detail-header-${suffix}`)).toBeNull();
         }
         expect(testId(fixture, response ? 'vote-detail-voter-access-denied' : 'vote-detail-voter-not-participant')).not.toBeNull();
@@ -2126,7 +2167,7 @@ describe('VoteDetailComponent', () => {
         expect(testId(fixture, 'vote-detail-voter-my-response-error')).not.toBeNull();
         expect(testId(fixture, 'vote-detail-header-title')?.textContent).toContain('Synthetic board election');
         expect(testId(fixture, 'vote-detail-header-status')).not.toBeNull();
-        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'view-results', 'tabs']) {
+        for (const suffix of ['privacy', 'group', 'method', 'close-date', 'ended-early', 'invited', 'created', 'comments', 'view-results', 'tabs']) {
           expect(testId(fixture, `vote-detail-header-${suffix}`)).toBeNull();
         }
         expect(read<{ key: string }[]>(fixture, 'tabs').map((tab) => tab.key)).toEqual(['overview']);
@@ -2135,7 +2176,6 @@ describe('VoteDetailComponent', () => {
         expect(content?.hasAttribute('role')).toBe(false);
         expect(content?.hasAttribute('aria-labelledby')).toBe(false);
         expect(testId(fixture, 'vote-detail-description')).toBeNull();
-        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).toBeNull();
         expect(fixture.nativeElement.querySelector('lfx-vote-comment-results')).toBeNull();
         expect(voteService.getVoteResults).not.toHaveBeenCalled();
       });
@@ -2149,7 +2189,8 @@ describe('VoteDetailComponent', () => {
         expect(read(fixture, 'showVoteDetails')).toBe(true);
         expect(testId(fixture, 'vote-detail-header-tabs')).not.toBeNull();
         expect(testId(fixture, 'vote-detail-description')).not.toBeNull();
-        expect(fixture.nativeElement.querySelector('lfx-vote-detail-facts')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-header-comments')).not.toBeNull();
+        expect(testId(fixture, 'vote-detail-header-created')).toBeNull();
         expect(voteService.getVoteResults).toHaveBeenCalledWith('vote-1');
       });
     });
@@ -2209,7 +2250,7 @@ describe('VoteDetailComponent', () => {
           })
         )
       );
-      const fixture = await setup('browser', [VoteDetailHeaderComponent, VoteDetailFactsComponent]);
+      const fixture = await setup('browser', [VoteDetailHeaderComponent]);
       const page = testId(fixture, 'vote-detail-page')!.cloneNode(true) as HTMLElement;
       page.querySelector('[data-testid="vote-detail-summary"]')?.remove();
       // The Voters tab badge carries its own screen-reader text (#4768); the tab strip is not a header fact.
@@ -2290,7 +2331,7 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-callout')).toBeNull();
     });
 
-    it.each(['creator', 'voter'] as const)('passes held and released results to the facts card for %s', async (audience) => {
+    it.each(['creator', 'voter'] as const)('passes held and released results to the header for %s', async (audience) => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: audience === 'creator' } as Project));
       voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true, status: PollStatus.ENDED })));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
@@ -2301,12 +2342,12 @@ describe('VoteDetailComponent', () => {
       results.next(heldResults());
       TestBed.tick();
       fixture.detectChanges();
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(true);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['resultsHeld']).toBe(true);
 
       results.next(makeMethodResults());
       TestBed.tick();
       fixture.detectChanges();
-      expect(fixture.debugElement.query(By.css('lfx-vote-detail-facts')).properties['resultsHeld']).toBe(false);
+      expect(fixture.debugElement.query(By.css('lfx-vote-detail-header')).properties['resultsHeld']).toBe(false);
     });
 
     it('never reads 100% participation on an open held vote as final', async () => {

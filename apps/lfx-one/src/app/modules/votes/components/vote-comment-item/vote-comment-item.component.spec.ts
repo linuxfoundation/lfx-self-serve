@@ -33,10 +33,11 @@ describe('VoteCommentItemComponent', () => {
 
   afterEach(() => fixture.destroy());
 
-  function render(response: CommentResponseView, inputs: { anonymous?: boolean; showBallotLink?: boolean } = {}): HTMLElement {
+  function render(response: CommentResponseView, inputs: { anonymous?: boolean; showBallotLink?: boolean; linkStyle?: 'button' | 'row' } = {}): HTMLElement {
     fixture.componentRef.setInput('response', response);
     if (inputs.anonymous !== undefined) fixture.componentRef.setInput('anonymous', inputs.anonymous);
     if (inputs.showBallotLink !== undefined) fixture.componentRef.setInput('showBallotLink', inputs.showBallotLink);
+    if (inputs.linkStyle !== undefined) fixture.componentRef.setInput('linkStyle', inputs.linkStyle);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -101,6 +102,108 @@ describe('VoteCommentItemComponent', () => {
       expect(link.getAttribute('aria-label')).toBe('View ballot of Synthetic Voter');
       link.click();
       expect(emitted).toEqual(['synthetic-response-1']);
+    });
+  });
+
+  describe('row link style', () => {
+    const nameButtonId = 'vote-results-comment-view-ballot-synthetic-response-1';
+    const row = (el: HTMLElement): HTMLElement => byTestId(el, 'vote-results-comment')!;
+    const collect = (): string[] => {
+      const emitted: string[] = [];
+      fixture.componentInstance.viewBallot.subscribe((voteId) => emitted.push(voteId));
+      return emitted;
+    };
+
+    it('default mode keeps the View ballot button and ignores row clicks', () => {
+      const el = render(view(), { showBallotLink: true });
+      const emitted = collect();
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
+      expect(byTestId(el, nameButtonId)?.textContent).toContain('View ballot');
+    });
+
+    it('renders the name as the ballot button without a View ballot label', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+
+      const button = byTestId(el, nameButtonId)!.querySelector('button')!;
+      expect(button.textContent).toContain('Synthetic Voter');
+      expect(el.textContent).not.toContain('View ballot');
+      expect(button.getAttribute('aria-label')).toBe('View ballot of Synthetic Voter');
+    });
+
+    it('emits once from the name button', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+
+      byTestId(el, nameButtonId)!.querySelector('button')!.click();
+
+      expect(emitted).toEqual(['synthetic-response-1']);
+    });
+
+    it('emits from a click on the row', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+
+      row(el).click();
+
+      expect(emitted).toEqual(['synthetic-response-1']);
+      expect(row(el).classList).toContain('cursor-pointer');
+    });
+
+    it('does not emit from a link inside the comment text', () => {
+      const el = render(view({ paragraphs: ['See https://example.com/doc'] }), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const link = row(el).querySelector('a');
+      expect(link).not.toBeNull();
+      link!.addEventListener('click', (event) => event.preventDefault());
+
+      link!.click();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('does not emit from another button inside the row', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const inner = document.createElement('button');
+      row(el).appendChild(inner);
+
+      inner.click();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('stays inert when the ballot link is not allowed', () => {
+      const el = render(view(), { showBallotLink: false, linkStyle: 'row' });
+      const emitted = collect();
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
+      expect(byTestId(el, nameButtonId)).toBeNull();
+      expect(row(el).classList).not.toContain('cursor-pointer');
+    });
+
+    it('stays inert and hides the name when anonymous', () => {
+      const el = render(view(), { anonymous: true, showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
+      expect(el.textContent).not.toContain('Synthetic Voter');
+      expect(row(el).classList).not.toContain('cursor-pointer');
+    });
+
+    it('stays inert without a vote id', () => {
+      const el = render(view({ vote_id: undefined }), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+
+      row(el).click();
+
+      expect(emitted).toEqual([]);
     });
   });
 });
