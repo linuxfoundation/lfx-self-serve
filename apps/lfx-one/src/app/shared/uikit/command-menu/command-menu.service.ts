@@ -3,8 +3,10 @@
 
 import { DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT } from '@angular/common';
-import { inject, Injectable } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { DestroyRef, inject, Injectable } from '@angular/core';
 import { UiCommandItem, UiCommandMenuConfig } from '@lfx-one/shared/interfaces';
+import { filter } from 'rxjs';
 
 import { UiModalService } from '../modal/modal.service';
 import { UiCommandMenuComponent } from './command-menu.component';
@@ -20,6 +22,7 @@ import { UiCommandMenuComponent } from './command-menu.component';
 export class UiCommandMenuService {
   private readonly modal = inject(UiModalService);
   private readonly document = inject(DOCUMENT);
+  private readonly destroyRef = inject(DestroyRef);
   private ref: DialogRef<UiCommandItem | undefined, UiCommandMenuComponent> | null = null;
 
   /** Opens the palette, or returns the one already open. `ref.closed` emits the chosen item. */
@@ -36,19 +39,28 @@ export class UiCommandMenuService {
 
   /**
    * Opens the palette with ⌘K on Apple platforms or Ctrl K elsewhere, and closes it with the same key. Ctrl K stays free on macOS, where it deletes
-   * to the end of the line. Holding the key down does not toggle it again. Returns a function that removes the listener.
+   * to the end of the line. Holding the key down does not toggle it again. `onChoose` receives the command the user picks; dismissing
+   * the palette does not call it. Returns a function that removes the listener.
    */
-  public bindShortcut(getConfig: () => UiCommandMenuConfig): () => void {
+  public bindShortcut(getConfig: () => UiCommandMenuConfig, onChoose: (item: UiCommandItem) => void): () => void {
     const onKeydown = (event: KeyboardEvent): void => {
       // A composing key belongs to the input method, so its conversion shortcuts stay available.
       if (event.isComposing) return;
-      const apple = /mac|iphone|ipad|ipod/i.test(this.document.defaultView?.navigator.platform ?? '');
+      const navigator = this.document.defaultView?.navigator as (Navigator & { userAgentData?: { platform?: string } }) | undefined;
+      const apple = /mac|iphone|ipad|ipod/i.test(navigator?.userAgentData?.platform || navigator?.platform || '');
       const modifier = apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
       if (!modifier || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
       event.preventDefault();
       if (event.repeat) return;
       if (this.ref?.overlayRef.hasAttached()) this.ref.close();
-      else this.open(getConfig());
+      else {
+        this.open(getConfig())
+          .closed.pipe(
+            filter((item): item is UiCommandItem => !!item),
+            takeUntilDestroyed(this.destroyRef)
+          )
+          .subscribe(onChoose);
+      }
     };
     this.document.addEventListener('keydown', onKeydown);
     return () => this.document.removeEventListener('keydown', onKeydown);

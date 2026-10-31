@@ -6,7 +6,7 @@ import { OverlayContainer } from '@angular/cdk/overlay';
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { UiCommandGroup, UiCommandItem, UiCommandMenuConfig } from '@lfx-one/shared/interfaces';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { UiCommandMenuComponent } from './command-menu.component';
 import { UiCommandMenuService } from './command-menu.service';
@@ -437,6 +437,7 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
   describe('shortcut', () => {
     let unbind: () => void;
+    let onChoose: Mock<(item: UiCommandItem) => void>;
 
     const shortcut = async (init: KeyboardEventInit): Promise<KeyboardEvent> => {
       const event = new KeyboardEvent('keydown', { key: 'k', bubbles: true, cancelable: true, ...init });
@@ -446,7 +447,8 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     };
 
     beforeEach(() => {
-      unbind = service.bindShortcut(() => ({ groups: GROUPS }));
+      onChoose = vi.fn<(item: UiCommandItem) => void>();
+      unbind = service.bindShortcut(() => ({ groups: GROUPS }), onChoose);
     });
 
     afterEach(() => unbind());
@@ -459,6 +461,18 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
       await shortcut({ ctrlKey: true });
       expect(container.querySelector('.cdk-dialog-container')).toBeNull();
+    });
+
+    it('hands the command chosen from a shortcut-opened palette to the callback, and nothing when dismissed', async () => {
+      await shortcut({ ctrlKey: true });
+      await press('Enter');
+
+      expect(onChoose).toHaveBeenCalledTimes(1);
+      expect(onChoose).toHaveBeenCalledWith(GROUPS[0].items[0]);
+
+      await shortcut({ ctrlKey: true });
+      await press('Escape');
+      expect(onChoose).toHaveBeenCalledTimes(1);
     });
 
     it('leaves ⌘K alone off Apple platforms', async () => {
@@ -478,6 +492,21 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
       const meta = await shortcut({ metaKey: true, key: 'K' });
       expect(meta.defaultPrevented).toBe(true);
       expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
+    });
+
+    it('prefers the platform from userAgentData over the deprecated navigator.platform', async () => {
+      vi.spyOn(window.navigator, 'platform', 'get').mockReturnValue('');
+      Object.defineProperty(window.navigator, 'userAgentData', { value: { platform: 'macOS' }, configurable: true });
+
+      try {
+        const ctrl = await shortcut({ ctrlKey: true });
+        expect(ctrl.defaultPrevented).toBe(false);
+
+        const meta = await shortcut({ metaKey: true });
+        expect(meta.defaultPrevented).toBe(true);
+      } finally {
+        Reflect.deleteProperty(window.navigator, 'userAgentData');
+      }
     });
 
     it('ignores a key that belongs to an IME composition', async () => {
@@ -516,7 +545,7 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     it('reads the commands at the moment it opens', async () => {
       unbind();
       let groups = GROUPS;
-      unbind = service.bindShortcut(() => ({ groups }));
+      unbind = service.bindShortcut(() => ({ groups }), onChoose);
       groups = [{ label: 'Late', items: [{ value: 'late', label: 'Added Later' }] }];
       await shortcut({ ctrlKey: true });
 
