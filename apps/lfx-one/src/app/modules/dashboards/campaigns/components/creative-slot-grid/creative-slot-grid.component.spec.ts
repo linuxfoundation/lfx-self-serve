@@ -386,4 +386,56 @@ describe('CreativeSlotGridComponent', () => {
       expect(text('creative-slot-grid-apply-live')).toBe(sentence);
     });
   });
+
+  /** The plan reads only the library; a slot the form already fills is covered for this campaign (#4833). */
+  describe('slots filled in the form', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const PORTRAIT = 'google-ads/PERFORMANCE_MAX/PORTRAIT_MARKETING_IMAGE';
+    const LOGO = 'google-ads/PERFORMANCE_MAX/LOGO';
+
+    it('reads a missing slot the form fills as filled in the form, and no longer counts it open', () => {
+      render(ready);
+      expect(text('creative-slot-grid-open-count')).toContain('2 slots still need an image');
+
+      render({ formFilled: { [PORTRAIT]: 1 } });
+
+      const row = text(`creative-slot-row-${PORTRAIT}`);
+      expect(row).toContain('Filled in the form');
+      expect(row).toContain('1 in the form');
+      expect(row).not.toContain('No stored image is 4:5.');
+      expect(text('creative-slot-grid-open-count')).toContain('1 slot still needs an image');
+    });
+
+    it('keeps a slot short while the form holds fewer images than the slot requires', () => {
+      render({ ...ready, formFilled: { [LOGO]: 1 } });
+      expect(text(`creative-slot-row-${LOGO}`)).toContain('Partly covered');
+
+      render({ formFilled: { [LOGO]: 2 } });
+      expect(text(`creative-slot-row-${LOGO}`)).toContain('Filled in the form');
+    });
+
+    it('reads every open slot as covered once the form fills them all', () => {
+      render({ ...ready, formFilled: { [PORTRAIT]: 1, [LOGO]: 2 } });
+      expect(q('creative-slot-grid-complete')).not.toBeNull();
+    });
+
+    /** Display's only required marketing row is an "any of" rule with no slot_key; its member slots are summed (#4833). */
+    it('reads a cross-slot rule as filled once one of its member slots holds an image in the form', async () => {
+      const rule = { platform: 'google-ads', channel: 'DISPLAY', label: 'Display marketing image, landscape or square', need: 1, reason: 'None stored.' };
+      await build({ ...PLAN, gaps: [...PLAN.gaps, rule] });
+      render({ ...ready, formFilled: { 'google-ads/DISPLAY/squareMarketingImages': 1 } });
+
+      const row = text('creative-slot-row-rule:google-ads/DISPLAY/Display marketing image, landscape or square');
+      expect(row).toContain('Filled in the form');
+      expect(row).toContain('1 in the form');
+      expect(row).not.toContain('None stored.');
+    });
+
+    it('leaves a cross-slot rule with no known members on its library reading', async () => {
+      await build({ ...PLAN, gaps: [...PLAN.gaps, { platform: 'google-ads', channel: 'VIDEO', label: 'Video rule', need: 1, reason: 'None stored.' }] });
+      render({ ...ready, formFilled: { 'google-ads/VIDEO/anything': 3 } });
+
+      expect(text('creative-slot-row-rule:google-ads/VIDEO/Video rule')).toContain('Missing');
+    });
+  });
 });
