@@ -528,3 +528,16 @@ export type SocialListeningQueryParamValue = string | string[] | null | undefine
 
 /** Local stand-in for Angular's `Params` — keeps `@angular/router` out of the server-consumed shared package. */
 export type SocialListeningQueryParams = Record<string, SocialListeningQueryParamValue>;
+
+// ---------------------------------------------------------------------------
+// Access
+// ---------------------------------------------------------------------------
+
+/** Why the caller can (or cannot) view Social Listening for a foundation. */
+export type SocialListeningAccessReason = 'lf-staff' | 'executive-director' | 'group-member' | 'none';
+
+/** `GET /api/social-listening/access` — whether the caller can view Social Listening for `foundationSlug`. */
+export interface SocialListeningAccessResponse {
+  canView: boolean;
+  reason: SocialListeningAccessReason;
+}

@@ -107,6 +107,7 @@ export class CommitteeSettingsTabComponent {
     public: new FormControl(false),
     sso_group_enabled: new FormControl(false),
     show_meeting_attendees: new FormControl(false),
+    members_can_view_social_listening: new FormControl(false),
     chat_channel: new FormControl<string | null>(null),
     website: new FormControl<string | null>(null),
     // Write-only — never patched from the committee (Committee.has_slack_webhook is the only
@@ -185,6 +186,7 @@ export class CommitteeSettingsTabComponent {
           public: c.public || false,
           sso_group_enabled: c.sso_group_enabled || false,
           show_meeting_attendees: c.show_meeting_attendees || false,
+          members_can_view_social_listening: c.members_can_view_social_listening || false,
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
@@ -377,6 +379,7 @@ export class CommitteeSettingsTabComponent {
         public: values.public ?? false,
         sso_group_enabled: values.sso_group_enabled ?? false,
         show_meeting_attendees: values.show_meeting_attendees ?? false,
+        members_can_view_social_listening: values.members_can_view_social_listening ?? false,
         chat_channel: values.chat_channel || null,
         website: values.website || null,
         ...(chatWebhookUrlIncludedInSave ? { chat_webhook_url: values.chat_webhook_url || null } : {}),

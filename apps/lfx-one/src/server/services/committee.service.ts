@@ -8,7 +8,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   ApiRequestOptions,
@@ -572,6 +572,7 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: membersCanViewSocialListening,
       ...committeeData
     } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
     /* eslint-enable @typescript-eslint/no-unused-vars */
@@ -599,9 +600,21 @@ export class CommitteeService {
     }
 
     // Step 2: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
+    if (
+      business_email_required !== undefined ||
+      is_audit_enabled !== undefined ||
+      show_meeting_attendees !== undefined ||
+      member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined
+    ) {
       try {
-        await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
+        await this.updateCommitteeSettings(req, newCommittee.uid, {
+          business_email_required,
+          is_audit_enabled,
+          show_meeting_attendees,
+          member_visibility,
+          members_can_view_social_listening: membersCanViewSocialListening,
+        });
       } catch {
         logger.warning(req, 'create_committee_settings', 'Failed to update committee settings, but committee was created successfully', {
           committee_uid: newCommittee.uid,
@@ -615,6 +628,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
     };
   }
 
@@ -640,6 +654,7 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: membersCanViewSocialListening,
       writers,
       auditors,
       chat_webhook_url: rawChatWebhookUrlTyped,
@@ -726,6 +741,7 @@ export class CommitteeService {
       is_audit_enabled !== undefined ||
       show_meeting_attendees !== undefined ||
       member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined ||
       writers !== undefined ||
       auditors !== undefined ||
       chatWebhookUrlToSave !== undefined;
@@ -833,6 +849,7 @@ export class CommitteeService {
         is_audit_enabled,
         show_meeting_attendees,
         member_visibility,
+        members_can_view_social_listening: membersCanViewSocialListening,
         writers,
         auditors,
         chat_webhook_url: chatWebhookUrlToSave,
@@ -866,6 +883,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
       ...(writers !== undefined && { writers }),
       ...(auditors !== undefined && { auditors }),
       // Workaround: upstream committee-service PUT does not include mailing_list in the response body
@@ -1406,6 +1424,60 @@ export class CommitteeService {
     });
 
     return userMemberships;
+  }
+
+  /**
+   * Whether the current user is a member of a group of `foundationUid` that has the
+   * `members_can_view_social_listening` group setting on (lfx-self-serve-ops#387).
+   *
+   * Membership is read with the user's own token; groups of child projects carry a different
+   * `project_uid` and never match. Settings are read with M2M because upstream gates
+   * `/committees/{uid}/settings` on committee#writer, which members usually are not — only the
+   * one boolean is used. Any failure denies.
+   */
+  public async canGroupMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return false;
+    }
+
+    const memberships = await fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_member',
+          tags_all: [`username:${username}`, `project_uid:${foundationUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // Only active seats count; upstream defaults status to Active, so a missing or Inactive status denies.
+    const groupUids = [
+      ...new Set(
+        memberships
+          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE)
+          .map((m) => m.committee_uid)
+          .filter((uid): uid is string => Boolean(uid))
+      ),
+    ];
+    if (groupUids.length === 0) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    // allSettled: one failed read must not hide another group that has the setting on.
+    const results = await settleInBatches(groupUids, 10, (uid) =>
+      this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions: { bearerToken: m2mToken } })
+    );
+    if (results.some((r) => r.status === 'fulfilled' && r.value?.members_can_view_social_listening === true)) {
+      return true;
+    }
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
+    return false;
   }
 
   // ── My Committees ─────────────────────────────────────────────────────────
@@ -2708,6 +2780,7 @@ export class CommitteeService {
       ...(settings.is_audit_enabled !== undefined && { is_audit_enabled: settings.is_audit_enabled }),
       ...(settings.show_meeting_attendees !== undefined && { show_meeting_attendees: settings.show_meeting_attendees }),
       ...(settings.member_visibility !== undefined && { member_visibility: settings.member_visibility }),
+      ...(settings.members_can_view_social_listening !== undefined && { members_can_view_social_listening: settings.members_can_view_social_listening }),
       ...(settings.chat_webhook_url !== undefined && { chat_webhook_url: settings.chat_webhook_url }),
       ...(settings.writers !== undefined && { writers: settings.writers }),
       ...(settings.auditors !== undefined && { auditors: settings.auditors }),
