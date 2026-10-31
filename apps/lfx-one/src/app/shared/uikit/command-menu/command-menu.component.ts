@@ -4,7 +4,21 @@
 import { _IdGenerator, ListKeyManager } from '@angular/cdk/a11y';
 import { DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT } from '@angular/common';
-import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, inject, Injector, input, linkedSignal, output, signal, Signal } from '@angular/core';
+import {
+  afterRenderEffect,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  linkedSignal,
+  output,
+  signal,
+  Signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { UiCommandGroup, UiCommandGroupView, UiCommandItem } from '@lfx-one/shared/interfaces';
 
@@ -58,6 +72,7 @@ export class UiCommandMenuComponent {
   protected readonly activeDescendant: Signal<string | null> = computed(() => (this.activeIndex() >= 0 ? this.optionId(this.activeIndex()) : null));
   protected readonly emptyText: Signal<string> = computed(() => (this.query().trim() ? `No results for “${this.query().trim()}”.` : 'No commands available.'));
 
+  private readonly scroller = viewChild.required<ElementRef<HTMLElement>>('scroller');
   private readonly keyManager = new ListKeyManager(this.items, this.injector).withWrap().withVerticalOrientation();
 
   public constructor() {
@@ -67,7 +82,7 @@ export class UiCommandMenuComponent {
       // Read the list too: a new search can leave the highlight on the same id with different content.
       this.visibleGroups();
       const id = this.activeDescendant();
-      if (id) this.document.getElementById(id)?.scrollIntoView({ block: 'nearest' });
+      if (id) this.revealRow(id);
     });
   }
 
@@ -88,7 +103,8 @@ export class UiCommandMenuComponent {
 
   protected onKeydown(event: KeyboardEvent): void {
     // During IME composition the keys belong to the candidate list; Escape only cancels the composition, so it must not reach the modal.
-    if (event.isComposing) {
+    // Safari reports the committing Enter with isComposing false and keyCode 229.
+    if (event.isComposing || event.keyCode === 229) {
       if (event.key === 'Escape') event.stopPropagation();
       return;
     }
@@ -111,6 +127,17 @@ export class UiCommandMenuComponent {
     if (!item || item.disabled) return;
     this.selected.emit(item);
     this.dialogRef?.close(item);
+  }
+
+  // Scrolls the list only: scrollIntoView would also move the page or the dialog around it.
+  private revealRow(id: string): void {
+    const row = this.document.getElementById(id);
+    const list = this.scroller().nativeElement;
+    if (!row) return;
+    const rowBox = row.getBoundingClientRect();
+    const listBox = list.getBoundingClientRect();
+    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
+    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
   }
 
   private initVisibleGroups(): Signal<UiCommandGroupView[]> {

@@ -27,7 +27,7 @@
 </div>
 
 <!-- The mousedown guard keeps focus in the search field while a row is clicked, but leaves the list's own scrollbar alone. -->
-<div class="min-h-0 flex-1 overflow-auto p-[8px]" (mousedown)="keepSearchFocus($event)">
+<div #scroller class="min-h-0 flex-1 overflow-auto p-[8px]" (mousedown)="keepSearchFocus($event)">
   @if (hasResults()) {
     <div role="listbox" [id]="listboxId" [attr.aria-label]="label()" data-testid="ui-command-menu-listbox">
       @for (group of visibleGroups(); track group.id) {

@@ -45,7 +45,7 @@ export class UiCommandMenuService {
   public bindShortcut(getConfig: () => UiCommandMenuConfig, onChoose: (item: UiCommandItem) => void): () => void {
     const onKeydown = (event: KeyboardEvent): void => {
       // A composing key belongs to the input method, so its conversion shortcuts stay available.
-      if (event.isComposing) return;
+      if (event.isComposing || event.keyCode === 229) return;
       const navigator = this.document.defaultView?.navigator as (Navigator & { userAgentData?: { platform?: string } }) | undefined;
       const apple = /mac|iphone|ipad|ipod/i.test(navigator?.userAgentData?.platform || navigator?.platform || '');
       const modifier = apple ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;

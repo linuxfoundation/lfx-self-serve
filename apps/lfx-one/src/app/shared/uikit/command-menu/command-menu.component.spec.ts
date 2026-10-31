@@ -68,12 +68,8 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     return event;
   };
 
-  const hadScrollIntoView = 'scrollIntoView' in Element.prototype;
-  const originalScrollIntoView = Element.prototype.scrollIntoView;
-
   beforeEach(() => {
-    // jsdom has no layout: no scrollIntoView, and no geometry, which the CDK needs to count the search field as tabbable.
-    Element.prototype.scrollIntoView = vi.fn();
+    // jsdom has no layout, and no geometry, which the CDK needs to count the search field as tabbable.
     vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
     service = TestBed.inject(UiCommandMenuService);
     app = TestBed.inject(ApplicationRef);
@@ -82,8 +78,6 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    if (hadScrollIntoView) Element.prototype.scrollIntoView = originalScrollIntoView;
-    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
@@ -278,6 +272,13 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(result.closed).toBe(false);
   });
 
+  it('does not choose on Enter that Safari reports with keyCode 229', async () => {
+    await open();
+    await press('Enter', { keyCode: 229 });
+
+    expect(result.closed).toBe(false);
+  });
+
   it('leaves the arrows to the IME candidate list while composing', async () => {
     await open();
     const event = await press('ArrowDown', { isComposing: true });
@@ -295,44 +296,56 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     expect(container.querySelector('.cdk-dialog-container')).not.toBeNull();
   });
 
-  it('scrolls the highlighted row into view when a search resets the highlight', async () => {
-    const scrolledTo = (): HTMLElement => vi.mocked(Element.prototype.scrollIntoView).mock.contexts.at(-1) as HTMLElement;
-    await open();
-    await press('ArrowUp');
-    expect(labelOf(scrolledTo())).toBe('Change Theme…');
+  describe('scrolling the highlighted row into view', () => {
+    // jsdom has no layout: the list spans 100–200, "Kubernetes" sits above it and "Change Theme…" below it.
+    const boxes: Record<string, { top: number; bottom: number }> = { Kubernetes: { top: 40, bottom: 70 }, 'Change Theme…': { top: 230, bottom: 260 } };
+    const scroller = (): HTMLElement => container.querySelector<HTMLElement>('.overflow-auto') as HTMLElement;
 
-    await type(' ');
-
-    expect(activeLabel()).toBe('Kubernetes');
-    expect(labelOf(scrolledTo())).toBe('Kubernetes');
-  });
-
-  it('goes back to the first row you can choose when the search is cleared', async () => {
-    await open();
-    await press('ArrowUp');
-    expect(activeLabel()).toBe('Change Theme…');
-
-    await type('theme');
-    await type('');
-
-    expect(activeLabel()).toBe('Kubernetes');
-  });
-
-  it('scrolls to the first row you can choose when disabled rows come first', async () => {
-    await open({
-      groups: [
-        {
-          label: 'Projects',
-          items: [
-            { value: 'off', label: 'Off', disabled: true },
-            { value: 'on', label: 'On' },
-          ],
-        },
-      ],
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const box = this.classList.contains('overflow-auto') ? { top: 100, bottom: 200 } : (boxes[labelOf(this)] ?? { top: 120, bottom: 150 });
+        return box as DOMRect;
+      });
     });
 
-    const scrolledTo = vi.mocked(Element.prototype.scrollIntoView).mock.contexts.at(-1) as HTMLElement;
-    expect(labelOf(scrolledTo)).toBe('On');
+    it('scrolls the list when a row is above it or below it', async () => {
+      await open();
+      expect(scroller().scrollTop).toBe(-60);
+
+      scroller().scrollTop = 300;
+      await press('ArrowUp');
+
+      expect(labelOf(rows().at(-1) as HTMLElement)).toBe('Change Theme…');
+      expect(scroller().scrollTop).toBe(360);
+    });
+
+    it('scrolls to the highlight again when a search resets it', async () => {
+      await open();
+      await press('ArrowUp');
+      scroller().scrollTop = 0;
+
+      await type(' ');
+
+      expect(activeLabel()).toBe('Kubernetes');
+      expect(scroller().scrollTop).toBe(-60);
+    });
+
+    it('scrolls to the first row you can choose when disabled rows come first', async () => {
+      boxes['On'] = { top: 10, bottom: 40 };
+      await open({
+        groups: [
+          {
+            label: 'Projects',
+            items: [
+              { value: 'off', label: 'Off', disabled: true },
+              { value: 'on', label: 'On' },
+            ],
+          },
+        ],
+      });
+
+      expect(scroller().scrollTop).toBe(-90);
+    });
   });
 
   it('chooses a row on click and keeps focus in the search field until it closes', async () => {
@@ -507,6 +520,13 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
       } finally {
         Reflect.deleteProperty(window.navigator, 'userAgentData');
       }
+    });
+
+    it('ignores a Safari composition key reported with keyCode 229', async () => {
+      const event = await shortcut({ ctrlKey: true, keyCode: 229 });
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(container.querySelector('.cdk-dialog-container')).toBeNull();
     });
 
     it('ignores a key that belongs to an IME composition', async () => {
