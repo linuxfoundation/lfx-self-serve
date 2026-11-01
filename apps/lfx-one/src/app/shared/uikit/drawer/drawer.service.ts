@@ -31,7 +31,8 @@ export class UiDrawerService {
     const edge = this.overlay.position().global().top('0');
     let leaving = false;
     let exited = false;
-    let opened: DialogRef<R, C> | undefined;
+    // Filled once `modal.open` returns; the predicate can run before that if the content closes itself while it is created.
+    const opened: { ref?: DialogRef<R, C> } = {};
 
     const ref = this.modal.open<R, D, C>(
       content,
@@ -44,7 +45,7 @@ export class UiDrawerService {
         // Runs on every `ref.close()`: the first call plays the exit animation and closes again once it ends, with the same result.
         closePredicate: (result) => {
           // Nothing to animate on the server, before the ref exists (content closed itself while being created) or once the overlay is detached (disposed on navigation).
-          const current = opened;
+          const current = opened.ref;
           if (!this.isBrowser || !current || exited || !current.overlayRef.hasAttached()) return true;
           if (!leaving) {
             leaving = true;
@@ -68,7 +69,7 @@ export class UiDrawerService {
       }
     );
 
-    opened = ref;
+    opened.ref = ref;
 
     let asking = false;
     context.requestClose = () => {
