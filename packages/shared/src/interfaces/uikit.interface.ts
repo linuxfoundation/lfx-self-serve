@@ -327,3 +327,9 @@ export interface UiCommandGroupView {
   /** The commands that match the search. */
   items: UiCommandItemView[];
 }
+
+/** What a uikit popover passes to its template: `<ng-template let-close="close">` closes the popover from inside, such as a Done button. */
+export interface UiPopoverContext {
+  /** Closes the popover and returns focus to the trigger. */
+  close: () => void;
+}

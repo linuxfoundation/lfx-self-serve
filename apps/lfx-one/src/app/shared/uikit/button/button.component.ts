@@ -19,8 +19,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiButtonSize, UiButtonVariant, UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
+import { UiPopoverDirective } from '../popover/popover.directive';
 import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
@@ -35,10 +36,14 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  *
  * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
  * to the button on close). A button rendered as a link (`link`) does not open a menu.
+ *
+ * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog and `popoverWidth` fixes its width in px; see `lfxUiPopover`.
+ * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
   selector: 'lfx-ui-button',
-  imports: [NgTemplateOutlet, RouterLink, CdkMenuTrigger, UiSpinnerComponent, UiTooltipDirective],
+  imports: [NgTemplateOutlet, RouterLink, CdkMenuTrigger, UiPopoverDirective, UiSpinnerComponent, UiTooltipDirective],
   templateUrl: './button.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -76,6 +81,12 @@ export class UiButtonComponent {
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
   /** Template reference of an `lfx-ui-menu` to open from the button, such as `#actions`. Ignored when `link` is set. */
   public readonly menu = input<TemplateRef<unknown> | null>(null);
+  /** Template reference of the content to open from the button as a popover, such as `#filters`. Ignored when `link` or `menu` is set. */
+  public readonly popover = input<TemplateRef<UiPopoverContext> | null>(null);
+  /** Accessible name of the popover dialog. Without one the button names it. */
+  public readonly popoverLabel = input<string>('');
+  /** Fixed width of the popover in px. Without it the panel is as wide as its content. */
+  public readonly popoverWidth = input<number | null>(null);
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
