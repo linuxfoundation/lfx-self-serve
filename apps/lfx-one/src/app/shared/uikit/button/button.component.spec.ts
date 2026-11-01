@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiMenuItemComponent } from '../menu/menu-item.component';
+import { UiMenuComponent } from '../menu/menu.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiButtonComponent } from './button.component';
 
@@ -45,6 +48,17 @@ class BothTooltipsHostComponent {}
   template: `<lfx-ui-button lfxUiTooltip="Copy link" ariaLabel="Copy" [iconOnly]="true" icon="fa-light fa-copy" />`,
 })
 class TooltipHostComponent {}
+
+// Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
+const MENU_HOST_TEMPLATE = `
+  <lfx-ui-button [menu]="actions" ariaLabel="Project actions">Actions</lfx-ui-button>
+  <ng-template #actions>
+    <lfx-ui-menu ariaLabel="Project actions"><lfx-ui-menu-item>Edit</lfx-ui-menu-item></lfx-ui-menu>
+  </ng-template>
+`;
+
+@Component({ selector: 'lfx-ui-button-menu-host', template: '' })
+class MenuHostComponent {}
 
 describe('UiButtonComponent', () => {
   let fixture: ComponentFixture<UiButtonComponent>;
@@ -354,5 +368,74 @@ describe('UiButtonComponent', () => {
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
     });
+  });
+});
+
+describe('UiButtonComponent menu', () => {
+  const settle = async (host: ComponentFixture<unknown>): Promise<void> => {
+    await host.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  };
+
+  afterEach(() => TestBed.inject(OverlayContainer).ngOnDestroy());
+
+  it('makes the inner button the menu trigger and returns focus to it on Escape', async () => {
+    TestBed.overrideComponent(MenuHostComponent, {
+      set: { imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent], template: MENU_HOST_TEMPLATE },
+    });
+    const host = TestBed.createComponent(MenuHostComponent);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    expect(inner.getAttribute('aria-haspopup')).toBe('menu');
+    expect(inner.getAttribute('aria-expanded')).toBe('false');
+
+    inner.click();
+    await settle(host);
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+    expect(container.querySelector('[data-testid="ui-menu"]')).not.toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBe('true');
+
+    // CDK Menu reads `keyCode`, so the synthetic event carries it.
+    (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(inner);
+
+    host.destroy();
+  });
+
+  it('opens no menu while loading, by click or ArrowDown', async () => {
+    TestBed.overrideComponent(MenuHostComponent, {
+      set: {
+        imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent],
+        template: MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button [loading]="true" '),
+      },
+    });
+    const host = TestBed.createComponent(MenuHostComponent);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+
+    inner.click();
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+
+    inner.focus();
+    inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }));
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+
+    host.destroy();
+  });
+
+  it('adds no popup semantics without a menu', async () => {
+    const plain = TestBed.createComponent(UiButtonComponent);
+    await plain.whenStable();
+    const inner = plain.nativeElement.querySelector('[data-testid="ui-button"]') as HTMLElement;
+    expect(inner.getAttribute('aria-haspopup')).toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBeNull();
   });
 });

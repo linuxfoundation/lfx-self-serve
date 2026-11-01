@@ -1,16 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AriaDescriber, FocusMonitor } from '@angular/cdk/a11y';
+import { AriaDescriber, FocusMonitor, InputModalityDetector } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { afterNextRender, ComponentRef, computed, DestroyRef, Directive, ElementRef, inject, Injector, input, PLATFORM_ID } from '@angular/core';
+import {
+  afterNextRender,
+  booleanAttribute,
+  ComponentRef,
+  computed,
+  DestroyRef,
+  Directive,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  PLATFORM_ID,
+  signal,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { toSpokenKeys } from '@lfx-one/shared/utils';
-import { take } from 'rxjs';
+import { Subscription, take } from 'rxjs';
 
 import { UiTooltipPanelComponent } from './tooltip-panel.component';
 
@@ -45,13 +58,16 @@ export class UiTooltipDirective {
   /** Milliseconds between hover or keyboard focus and the tooltip appearing. Escape and blur close it at once; leaving with the pointer waits a short grace period. */
   public readonly delay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
   /** Turns the tooltip off without removing the directive. */
-  public readonly disabled = input<boolean>(false, { alias: 'lfxUiTooltipDisabled' });
+  public readonly disabled = input<boolean, unknown>(false, { alias: 'lfxUiTooltipDisabled', transform: booleanAttribute });
   /* eslint-enable @angular-eslint/no-input-rename */
+  /** For a component that carries this directive as a host directive and knows when its own tooltip applies, such as a locked menu item. Template users keep `lfxUiTooltipDisabled`. */
+  public readonly hostDisabled = signal(false);
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly document = inject(DOCUMENT);
   private readonly overlay = inject(Overlay);
   private readonly focusMonitor = inject(FocusMonitor);
+  private readonly inputModality = inject(InputModalityDetector);
   private readonly ariaDescriber = inject(AriaDescriber);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -60,7 +76,12 @@ export class UiTooltipDirective {
   private readonly gap = 6;
   // Milliseconds the pointer may spend crossing the gap between the host and the tooltip before it closes.
   private readonly graceMs = 100;
-  private readonly config = computed(() => ({ text: this.text(), title: this.title(), shortcut: this.shortcut(), disabled: this.disabled() }));
+  private readonly config = computed(() => ({
+    text: this.text(),
+    title: this.title(),
+    shortcut: this.shortcut(),
+    disabled: this.disabled() || this.hostDisabled(),
+  }));
 
   private overlayRef: OverlayRef | null = null;
   private panel: ComponentRef<UiTooltipPanelComponent> | null = null;
@@ -68,26 +89,20 @@ export class UiTooltipDirective {
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private keyboardFocused = false;
   private description = '';
+  private focusSubscription: Subscription | null = null;
+  private rendered = false;
+  private hasContent = false;
 
   public constructor() {
     afterNextRender(() => {
-      // Hover covers the pointer; only keyboard focus opens it, so a click-focus does not flash a tooltip.
-      this.focusMonitor
-        .monitor(this.host, true)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe((origin) => {
-          this.keyboardFocused = origin === 'keyboard';
-          if (origin === 'keyboard') {
-            this.cancelHide();
-            this.scheduleShow();
-          } else if (origin === null) this.hide();
-        });
+      this.rendered = true;
+      this.syncFocusMonitor();
     });
     toObservable(this.config)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((config) => this.apply(config));
     this.destroyRef.onDestroy(() => {
-      this.focusMonitor.stopMonitoring(this.host);
+      this.stopFocusMonitor();
       this.hide();
       this.describe('');
     });
@@ -103,7 +118,38 @@ export class UiTooltipDirective {
     if (event.pointerType !== 'touch') this.scheduleHide();
   }
 
+  // Every lfx-ui-button instantiates this directive, so the focus monitor runs only while there is something to show.
+  private syncFocusMonitor(): void {
+    if (!this.rendered) return;
+    if (!this.hasContent) this.stopFocusMonitor();
+    else if (!this.focusSubscription) {
+      // Hover covers the pointer; only keyboard focus opens it, so a click-focus does not flash a tooltip.
+      this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
+        this.keyboardFocused = origin === 'keyboard';
+        if (origin === 'keyboard') {
+          this.cancelHide();
+          this.scheduleShow();
+        } else if (origin === null) this.hide();
+      });
+      // A menu opened by key hands focus to its first item before this subscription exists, so the focus event was missed.
+      if (this.host.contains(this.document.activeElement) && this.inputModality.mostRecentModality === 'keyboard') {
+        this.keyboardFocused = true;
+        this.scheduleShow();
+      }
+    }
+  }
+
+  private stopFocusMonitor(): void {
+    if (!this.focusSubscription) return;
+    this.focusSubscription.unsubscribe();
+    this.focusSubscription = null;
+    this.focusMonitor.stopMonitoring(this.host);
+    this.keyboardFocused = false;
+  }
+
   private apply(config: { text: string; title: string; shortcut: string[]; disabled: boolean }): void {
+    this.hasContent = !!(config.text || config.title);
+    this.syncFocusMonitor();
     const empty = config.disabled || !(config.text || config.title);
     this.describe(empty ? '' : this.descriptionOf(config));
     if (empty) {
@@ -149,7 +195,7 @@ export class UiTooltipDirective {
   }
 
   private scheduleShow(): void {
-    if (!this.isBrowser || this.overlayRef || this.timer !== null || this.disabled() || !(this.text() || this.title())) return;
+    if (!this.isBrowser || this.overlayRef || this.timer !== null || this.disabled() || this.hostDisabled() || !(this.text() || this.title())) return;
     this.listenForEscape();
     this.timer = setTimeout(() => {
       this.timer = null;

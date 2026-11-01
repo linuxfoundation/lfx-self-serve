@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FocusMonitor } from '@angular/cdk/a11y';
 import { FlexibleConnectedPositionStrategy, Overlay, OverlayContainer, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
@@ -370,6 +371,27 @@ describe('UiTooltipDirective', () => {
       pointer(trigger, 'pointerleave');
       await hover();
       expect(tooltip()).toBeNull();
+    });
+
+    it('watches focus only while there is text or a title', async () => {
+      await setup();
+      const focusMonitor = TestBed.inject(FocusMonitor);
+      const monitor = vi.spyOn(focusMonitor, 'monitor');
+      const stop = vi.spyOn(focusMonitor, 'stopMonitoring');
+      fixture.componentInstance.text.set('');
+      await flush();
+      expect(stop).toHaveBeenCalledWith(trigger);
+
+      pressKey('Tab');
+      trigger.focus();
+      await advance(60);
+      expect(tooltip()).toBeNull();
+      expect(monitor).not.toHaveBeenCalled();
+
+      trigger.blur();
+      fixture.componentInstance.heading.set('Heading');
+      await flush();
+      expect(monitor).toHaveBeenCalledWith(trigger, true);
     });
 
     it('stays closed while disabled', async () => {

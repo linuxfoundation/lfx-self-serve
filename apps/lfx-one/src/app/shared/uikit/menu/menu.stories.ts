@@ -4,18 +4,20 @@
 import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiMenuGroupComponent } from './menu-group.component';
 import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
 import { UiMenuComponent } from './menu.component';
 
-// The triggers below are plain buttons styled like the library's secondary button; lfx-ui-button renders its own inner button, so it
-// cannot carry `cdkMenuTriggerFor`.
+// The triggers are `lfx-ui-button [menu]`. IconTrigger is the exception: a plain CDK trigger, because lfx-ui-button's icon-only shape is a circle.
 const meta: Meta<UiMenuComponent> = {
   title: 'Uikit/Menu',
   component: UiMenuComponent,
   subcomponents: { UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent },
-  decorators: [moduleMetadata({ imports: [CdkMenuTrigger, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] })],
+  decorators: [
+    moduleMetadata({ imports: [CdkMenuTrigger, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] }),
+  ],
   parameters: { layout: 'padded' },
   args: { ariaLabel: 'Project actions' },
   // Aliased CDK menu item inputs and output; Compodoc cannot see host-directive aliases.
@@ -39,9 +41,7 @@ const meta: Meta<UiMenuComponent> = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        Actions <i class="fa-light fa-chevron-down text-[12px]" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu [ariaLabel]="cfg.ariaLabel">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -64,9 +64,7 @@ export const ItemVariants: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        Actions <i class="fa-light fa-chevron-down text-[12px]" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions" class="!w-[240px]">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square" shortcut="⌘E">Edit</lfx-ui-menu-item>
@@ -111,9 +109,7 @@ export const FlipsAtTheEdge: Story = {
     props: { cfg: args },
     template: `
       <div class="flex h-[360px] items-end">
-        <button type="button" class="edge inline-flex h-ui-medium items-center gap-[8px] rounded-ui-sm bg-ui-background-100 px-[14px] label-14 font-medium text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-          Actions <i class="fa-light fa-chevron-up text-[12px]" aria-hidden="true"></i>
-        </button>
+        <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">

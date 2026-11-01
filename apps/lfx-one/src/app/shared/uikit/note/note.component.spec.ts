@@ -33,10 +33,10 @@ describe('UiNoteComponent', () => {
     await fixture.whenStable();
   });
 
-  it('is a note by default and an alert on request', async () => {
+  it('is a note by default and an alert when announced', async () => {
     expect(host.getAttribute('role')).toBe('note');
 
-    await set('alert', true);
+    await set('announce', true);
 
     expect(host.getAttribute('role')).toBe('alert');
   });

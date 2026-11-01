@@ -10,7 +10,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, 
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
-    '[attr.role]': 'alert() ? "alert" : "note"',
+    '[attr.role]': 'announce() ? "alert" : "note"',
     'data-testid': 'ui-note',
   },
 })
@@ -25,8 +25,8 @@ export class UiNoteComponent {
   public readonly label = input<string>('');
   /** Font Awesome icon classes that replace the variant's default icon, such as `fa-light fa-bell`. */
   public readonly icon = input<string>('');
-  /** Announces the note to screen readers right away. Use for errors that appear after an action. */
-  public readonly alert = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Sets `role="alert"` so screen readers announce the note right away. Use for errors that appear after an action. */
+  public readonly announce = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   protected readonly classes: Signal<string> = this.initClasses();
   protected readonly iconClasses: Signal<string> = this.initIconClasses();

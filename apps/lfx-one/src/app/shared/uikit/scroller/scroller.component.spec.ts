@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { Component, input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
@@ -38,6 +39,9 @@ class HostComponent {
   public readonly buttons = input<boolean>(true);
   public readonly items = signal(['A', 'B', 'C']);
 }
+
+// True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
+const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
 describe('UiScrollerComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
@@ -81,6 +85,8 @@ describe('UiScrollerComponent', () => {
     expect(viewport().getAttribute('role')).toBe('region');
     expect(viewport().getAttribute('aria-label')).toBe('Projects');
     expect(viewport().tabIndex).toBe(0);
+    // Registered with the CDK so overlays opened from inside follow its scrolling.
+    expect(registered(viewport())).toBe(true);
     expect(host.querySelector('[data-testid="ui-scroller-frame"]')?.className).toContain('focus-visible');
   });
 

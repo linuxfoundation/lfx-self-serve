@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiTableColumn, UiTableSort } from '@lfx-one/shared/interfaces';
@@ -32,6 +33,9 @@ class HostComponent {
   public readonly activated: unknown[] = [];
 }
 
+// True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
+const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
+
 describe('UiTableComponent', () => {
   let fixture: ComponentFixture<UiTableComponent>;
   let host: HTMLElement;
@@ -61,6 +65,8 @@ describe('UiTableComponent', () => {
     expect(host.getAttribute('aria-label')).toBe('Contributors');
     expect(host.tabIndex).toBe(0);
     expect(host.className).toContain('overflow-x-auto');
+    // Registered with the CDK so overlays opened from a cell follow its scrolling.
+    expect(registered(host)).toBe(true);
   });
 
   it('renders column headers with scope col, a 40px band and the label type', () => {

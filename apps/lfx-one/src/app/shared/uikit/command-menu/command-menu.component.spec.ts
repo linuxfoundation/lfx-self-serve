@@ -87,7 +87,7 @@ describe('UiCommandMenuComponent and UiCommandMenuService', () => {
     const title = container.querySelector('[data-testid="ui-command-menu-title"]') as HTMLElement;
 
     expect(dialog.getAttribute('role')).toBe('dialog');
-    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.getAttribute('aria-modal')).not.toBe('true');
     expect(dialog.getAttribute('aria-labelledby')).toBe(title.id);
     expect(title.textContent).toBe('Command menu');
     expect(title.className).toContain('sr-only');

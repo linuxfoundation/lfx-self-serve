@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
@@ -23,7 +23,7 @@ export class UiStatusDotComponent {
   /** Overrides the default word for the state, such as "Running" for `building`. Keep it sentence case. */
   public readonly label = input<string>('');
   /** Shows only the dot. It then becomes a focusable `role="img"` named by the word, with a tooltip on hover and keyboard focus. */
-  public readonly dotOnly = input<boolean>(false);
+  public readonly dotOnly = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   protected readonly text: Signal<string> = this.initText();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();

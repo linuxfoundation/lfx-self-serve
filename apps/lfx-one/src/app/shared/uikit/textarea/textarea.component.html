@@ -24,7 +24,7 @@
     (blur)="onBlur()"
     data-testid="ui-textarea"></textarea>
   @if (error()) {
-    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-textarea-error">{{ error() }}</lfx-ui-error>
+    <lfx-ui-error size="small" [announce]="false" [id]="errorId" data-testid="ui-textarea-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
     <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-textarea-hint">{{ hint() }}</p>
   }

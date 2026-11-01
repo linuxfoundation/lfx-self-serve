@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { NgTemplateOutlet } from '@angular/common';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, contentChildren, input, model, output, Signal } from '@angular/core';
 import { UiTableColumn, UiTableColumnView, UiTableSort } from '@lfx-one/shared/interfaces';
@@ -21,6 +22,8 @@ import { UiTableCellDirective } from './table-cell.directive';
   imports: [NgTemplateOutlet],
   templateUrl: './table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // The host is the scroll container; CdkScrollable lets overlays opened from a cell follow it.
+  hostDirectives: [CdkScrollable],
   host: {
     '[class]': 'hostClasses()',
     '[attr.aria-label]': 'label()',

@@ -82,7 +82,8 @@ describe('UiTextareaComponent', () => {
 
     expect(host.querySelector('[data-testid="ui-textarea-hint"]')).toBeNull();
     expect(error.textContent).toContain('Add at least one sentence.');
-    expect(error.getAttribute('role')).toBe('alert');
+    // aria-invalid and aria-describedby carry the error; a live region would read it twice.
+    expect(error.getAttribute('role')).toBeNull();
     expect(field().getAttribute('aria-invalid')).toBe('true');
     expect(field().getAttribute('aria-describedby')).toBe(error.id);
   });
