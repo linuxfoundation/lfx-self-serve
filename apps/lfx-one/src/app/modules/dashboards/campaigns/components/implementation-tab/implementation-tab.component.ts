@@ -3212,7 +3212,9 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
   /**
    * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
-   * field, because the same validator holds Create disabled and nothing else on screen says why.
+   * field, because on a Google create the same validator holds Create disabled and nothing else on
+   * screen says why. The field renders only for a Google selection, so the message never shows
+   * under a budget nothing else reads.
    */
   protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();

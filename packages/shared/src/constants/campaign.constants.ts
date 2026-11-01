@@ -169,8 +169,9 @@ export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
 
 /**
  * The Google daily budget the Implementation tab starts from when the brief carries no total to
- * divide over the flight (#4847). A DAILY figure, like its siblings above: campaign-service creates
- * the Google budget with no period, which Google treats as daily.
+ * divide over the flight (#4847). A DAILY figure, like the Microsoft budget and the Meta and LinkedIn
+ * budgets in their default mode, and unlike Reddit's lifetime cap: campaign-service creates the
+ * Google budget with no period, which Google treats as an average daily budget.
  */
 export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
 

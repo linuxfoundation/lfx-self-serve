@@ -240,33 +240,36 @@
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-budget-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget &amp; Schedule</h3>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <!-- DAILY, not a total (#4847): campaign-service creates the Google budget with no period,
-               which Google treats as daily. The flight total it implies sits underneath, with the
-               brief's planned total when there is one, so the operator sees both numbers. -->
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-gray-700" for="implementation-budget">Google Ads Daily Budget</label>
-            <input
-              id="implementation-budget"
-              type="number"
-              formControlName="budgetUsd"
-              min="1"
-              step="0.01"
-              aria-describedby="implementation-budget-hint"
-              class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              data-testid="implementation-budget" />
-            <span id="implementation-budget-hint" class="text-xs text-gray-400" data-testid="implementation-budget-hint">
-              In the ad account's currency, charged daily.
-              @if (googleBudgetFlight(); as flight) {
-                About {{ flight.total | number: '1.0-2' }} over {{ flight.days }} {{ flight.days === 1 ? 'day' : 'days' }}, start and end days included.
+          @if (showGoogleSection()) {
+            <!-- DAILY, not a total (#4847): campaign-service creates the Google budget with no period,
+                 which Google treats as an average daily budget. The flight total it implies sits
+                 underneath, with the brief's planned total when there is one, so the operator sees both
+                 numbers. Google-only, like every reader of the field: the dates beside it are shared. -->
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="implementation-budget">Google Ads Daily Budget</label>
+              <input
+                id="implementation-budget"
+                type="number"
+                formControlName="budgetUsd"
+                min="1"
+                step="0.01"
+                aria-describedby="implementation-budget-hint"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                data-testid="implementation-budget" />
+              <span id="implementation-budget-hint" class="text-xs text-gray-400" data-testid="implementation-budget-hint">
+                An average daily amount, in the ad account's currency.
+                @if (googleBudgetFlight(); as flight) {
+                  About {{ flight.total | number: '1.0-2' }} over {{ flight.days }} {{ flight.days === 1 ? 'day' : 'days' }}, start and end days included.
+                }
+                @if (googleBriefTotalBudget(); as planned) {
+                  The brief plans {{ planned | number: '1.0-2' }} in total.
+                }
+              </span>
+              @if (googleBudgetInvalid()) {
+                <span class="text-xs text-red-600" data-testid="implementation-budget-error">Enter a daily budget of at least 1.</span>
               }
-              @if (googleBriefTotalBudget(); as planned) {
-                The brief plans {{ planned | number: '1.0-2' }} in total.
-              }
-            </span>
-            @if (googleBudgetInvalid()) {
-              <span class="text-xs text-red-600" data-testid="implementation-budget-error">Enter a daily budget of at least 1.</span>
-            }
-          </div>
+            </div>
+          }
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-gray-700">Start Date</label>
             <input

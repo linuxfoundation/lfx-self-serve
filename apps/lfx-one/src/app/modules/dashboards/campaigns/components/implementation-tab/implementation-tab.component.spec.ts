@@ -14429,7 +14429,7 @@ describe('ImplementationTabComponent google daily budget', () => {
     // The tab opens on today to today + 30: 31 days with both ends counted, and 900 / 31 = 29.03 rounded down.
     expect(c['campaignForm'].controls.budgetUsd.value).toBe(29.03);
     expect(text('implementation-budget-hint')).toBe(
-      "In the ad account's currency, charged daily. About 899.93 over 31 days, start and end days included. The brief plans 900 in total."
+      "An average daily amount, in the ad account's currency. About 899.93 over 31 days, start and end days included. The brief plans 900 in total."
     );
   });
 
@@ -14504,6 +14504,16 @@ describe('ImplementationTabComponent google daily budget', () => {
 
     expect(c['campaignForm'].controls.budgetUsd.value).toBe(DEFAULT_GOOGLE_DAILY_BUDGET_USD);
     expect(text('implementation-budget-hint')).not.toContain('The brief plans');
+  });
+
+  it('shows neither the field nor its error when Google is not selected', () => {
+    // A total this small seeds a daily figure below the minimum, which would show the error.
+    mountBrief({ totalBudget: 10, selectedPlatforms: ['meta-ads'] });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(text('implementation-budget-hint')).toBeNull();
+    expect(text('implementation-budget-error')).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget"]')).toBeNull();
   });
 
   it('sends the daily figure on screen, not the brief total', () => {
