@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { InteractivityChecker } from '@angular/cdk/a11y';
-import { Component, input, model, viewChild } from '@angular/core';
+import { Component, computed, input, model, viewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { UiInputSize } from '@lfx-one/shared/interfaces';
@@ -50,6 +50,7 @@ class SelectHostComponent {
   public readonly prefixIcon = input<string>('');
   public readonly query = model<string>('');
   public readonly projects = input<string[]>(['Kubernetes', 'Envoy', 'Sigstore']);
+  public readonly noMatch = computed(() => !this.projects().some((name) => name.toLowerCase().includes(this.query().toLowerCase())));
   public readonly control = new FormControl<string | null>('openssf');
 }
 
@@ -613,6 +614,35 @@ describe('UiSelectComponent', () => {
       await slotsFixture.whenStable();
 
       expect(rows()).toEqual(['Sigstore']);
+    });
+
+    it('shows the projected empty message in a live region outside the listbox only while it is projected', async () => {
+      slotsTrigger().click();
+      await slotsFixture.whenStable();
+      const status = document.querySelector('[data-testid="ui-select-empty"]') as HTMLElement;
+
+      expect(status.getAttribute('role')).toBe('status');
+      expect(status.className).toContain('empty:hidden');
+      expect(status.textContent?.trim()).toBe('');
+      expect(optionEls().length).toBe(3);
+
+      (search() as HTMLInputElement).value = 'zzz';
+      search()?.dispatchEvent(new Event('input', { bubbles: true }));
+      await slotsFixture.whenStable();
+
+      const message = document.querySelector('[data-testid="empty"]') as HTMLElement;
+      expect(optionEls().length).toBe(0);
+      expect(status.contains(message)).toBe(true);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')?.contains(message)).toBe(false);
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')?.classList).toContain('hidden');
+      expect(status.textContent?.trim()).toBe('No projects match');
+
+      (search() as HTMLInputElement).value = 'env';
+      search()?.dispatchEvent(new Event('input', { bubbles: true }));
+      await slotsFixture.whenStable();
+
+      expect(document.querySelector('[data-testid="empty"]')).toBeNull();
+      expect(document.querySelector('[data-testid="ui-select-listbox"]')?.classList).not.toContain('hidden');
     });
 
     it('closes on Escape from the field and returns focus to the trigger', async () => {

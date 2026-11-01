@@ -170,19 +170,24 @@ export const CustomTrigger: Story = {
   }),
 };
 
-/** A search field in the header slot takes focus when the list opens. The page filters its own options and resets the query from `openChange`; Arrow Down moves to the list and Escape closes. */
+/** A search field in the header slot takes focus when the list opens. The page filters its own options and resets the query from `openChange`; Arrow Down moves to the list and Escape closes. While nothing matches, project an element with `lfxUiSelectEmpty`. */
 export const SearchHeader: Story = {
   args: { label: 'Project', placeholder: 'Pick a project' },
   render: (args) => ({
-    props: { ...args, query: '', projects: ['Kubernetes', 'Envoy', 'Sigstore', 'SLSA', 'OpenTelemetry', 'Prometheus'] },
+    props: {
+      ...args,
+      query: '',
+      projects: ['Kubernetes', 'Envoy', 'Sigstore', 'SLSA', 'OpenTelemetry', 'Prometheus'],
+      matches: (projects: string[], query: string) => projects.filter((project) => project.toLowerCase().includes(query.toLowerCase())),
+    },
     template: `
       <div class="w-[320px]">
         <lfx-ui-select ${argsToTemplate(args)} (openChange)="query = ''; search.value = ''">
           <input #search lfxUiSelectHeader type="search" class="h-ui-small w-full rounded-ui-sm bg-ui-neutral-50 px-[10px] label-14 text-ui-neutral-900 outline-none focus-visible:shadow-focus" aria-label="Search projects" placeholder="Search" (input)="query = $any($event.target).value" />
-          @for (project of projects; track project) {
-            @if (project.toLowerCase().includes(query.toLowerCase())) {
-              <lfx-ui-option [value]="project.toLowerCase()" [label]="project" />
-            }
+          @for (project of matches(projects, query); track project) {
+            <lfx-ui-option [value]="project.toLowerCase()" [label]="project" />
+          } @empty {
+            <p lfxUiSelectEmpty>No projects match “{{ query }}”.</p>
           }
         </lfx-ui-select>
       </div>`,

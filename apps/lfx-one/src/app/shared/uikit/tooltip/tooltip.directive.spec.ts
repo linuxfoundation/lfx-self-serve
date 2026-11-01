@@ -138,6 +138,26 @@ describe('UiTooltipDirective', () => {
       expect(tooltip()).toBeNull();
     });
 
+    it('opens when focus enters from outside the document, where no key event was seen', async () => {
+      await setup();
+      trigger.focus();
+      await advance(40);
+      expect(tooltip()).not.toBeNull();
+
+      trigger.blur();
+      await advance(0);
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus once the pointer has been used', async () => {
+      await setup();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
     it('does not open when focus comes from a mouse click', async () => {
       await setup();
       trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));

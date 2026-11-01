@@ -21,9 +21,9 @@ import { UiSkeletonComponent } from '../skeleton/skeleton.component';
     '[style.width.px]': 'size()',
     '[style.height.px]': 'size()',
     '[style.font-size.px]': 'fontSize()',
-    '[attr.role]': 'decorative() || placeholder() || !name() ? null : "img"',
-    '[attr.aria-label]': 'decorative() || placeholder() || !name() ? null : name()',
-    '[attr.title]': 'decorative() || placeholder() || !name() ? null : name()',
+    '[attr.role]': 'accessibleName() ? "img" : null',
+    '[attr.aria-label]': 'accessibleName() || null',
+    '[attr.title]': 'accessibleName() || null',
     '[attr.aria-hidden]': 'decorative() || placeholder() ? "true" : null',
     'data-testid': 'ui-avatar',
   },
@@ -55,6 +55,8 @@ export class UiAvatarComponent {
   private readonly failedSrc = signal<string>('');
   private readonly photoEl = viewChild<ElementRef<HTMLImageElement>>('photo');
 
+  // Empty for a decorative or loading avatar and for a blank name, so none of them is announced as an unnamed image.
+  protected readonly accessibleName: Signal<string> = computed(() => (this.decorative() || this.placeholder() ? '' : this.name().trim()));
   protected readonly photoSrc: Signal<string> = this.initPhotoSrc();
   protected readonly text: Signal<string> = this.initText();
   protected readonly fontSize: Signal<number> = this.initFontSize();

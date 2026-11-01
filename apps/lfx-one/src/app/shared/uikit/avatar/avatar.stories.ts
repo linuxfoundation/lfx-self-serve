@@ -59,6 +59,7 @@ export const GitProvider: Story = { args: { name: 'octocat', badgeIcon: 'fa-bran
 export const Entity: Story = { args: { name: 'CNCF', icon: 'fa-light fa-cube', shape: 'rounded' } };
 export const Placeholder: Story = { args: { placeholder: true } };
 export const Decorative: Story = { args: { decorative: true } };
+export const BlankName: Story = { args: { name: '' } };
 export const Group: Story = {
   render: () => ({
     template: `<lfx-ui-avatar-group [limit]="3" [items]="[

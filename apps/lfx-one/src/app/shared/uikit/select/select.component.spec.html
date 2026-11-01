@@ -50,6 +50,9 @@
           <lfx-ui-option [value]="option.toLowerCase()" [label]="option" />
         }
       }
+      @if (noMatch()) {
+        <p lfxUiSelectEmpty data-testid="empty">No projects match</p>
+      }
     </lfx-ui-select>
     <button type="button" data-testid="outside">Outside</button>
   }

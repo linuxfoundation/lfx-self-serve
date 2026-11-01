@@ -48,7 +48,8 @@ import { UiSelectValueDirective } from './select-value.directive';
  * Slots, by attribute: `lfxUiSelectPrefix` (content before the value in the trigger, such as an icon or an avatar), `lfxUiSelectHeader` (the top
  * of the panel, such as a search field; the first focusable element in it takes focus when the panel opens, Escape closes and returns focus to the
  * trigger, and Arrow Down hands focus back to the list) and `<ng-template lfxUiSelectValue let-option>` (what the trigger shows for the picked
- * option, instead of its label). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows,
+ * option, instead of its label) and `lfxUiSelectEmpty` (the message for a search that matches nothing, shown in a live region below the list; the page
+ * projects it only while no row matches). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows,
  * and reset the query from `openChange`. The trigger keeps showing the picked option while a filter hides its row.
  *
  * Built to the WAI-ARIA select-only combobox pattern: the list is a `listbox` and the highlighted row is announced with `aria-activedescendant`.

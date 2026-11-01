@@ -200,6 +200,17 @@ describe('UiTableComponent', () => {
     expect(fixture.componentInstance.sort()).toEqual({ key: 'contributions', direction: 'asc' });
   });
 
+  it('only reports the sort: the rows stay in the order the page gives them', async () => {
+    const order = (): string[] => bodyRows().map((row) => row.querySelector('td')?.textContent?.trim() ?? '');
+    const before = order();
+
+    (headers()[0].querySelector('button') as HTMLButtonElement).click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.sort()).toEqual({ key: 'name', direction: 'asc' });
+    expect(order()).toEqual(before);
+  });
+
   it('does not activate an interactive row for a click on a control or label inside a cell template', async () => {
     const withTemplate = TestBed.createComponent(HostComponent);
     await withTemplate.whenStable();

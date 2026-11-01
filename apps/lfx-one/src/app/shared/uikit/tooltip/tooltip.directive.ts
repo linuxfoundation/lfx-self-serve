@@ -128,8 +128,10 @@ export class UiTooltipDirective {
     else if (!this.focusSubscription) {
       // Hover covers the pointer; only keyboard focus opens it, so a click-focus does not flash a tooltip.
       this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
-        this.keyboardFocused = origin === 'keyboard';
-        if (origin === 'keyboard') {
+        // Focus that enters from outside the document (Tab from the browser UI or a parent frame) has no key event to see, so the CDK calls it `program`.
+        const keyboard = origin === 'keyboard' || (origin === 'program' && this.inputModality.mostRecentModality === null);
+        this.keyboardFocused = keyboard;
+        if (keyboard) {
           this.cancelHide();
           this.scheduleShow();
         } else if (origin === null) this.hide();
