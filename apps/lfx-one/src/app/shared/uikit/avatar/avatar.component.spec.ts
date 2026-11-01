@@ -177,6 +177,13 @@ describe('UiAvatarComponent', () => {
     expect(host.querySelector('[data-testid="ui-avatar-fallback"]')).toBeNull();
 
     fixture.componentRef.setInput('name', '');
+    fixture.componentRef.setInput('icon', 'fa-light fa-cube');
+    await fixture.whenStable();
+
+    expect(host.querySelector('[data-testid="ui-avatar-icon"]')?.classList.contains('fa-cube')).toBe(true);
+    expect(host.querySelector('[data-testid="ui-avatar-fallback"]')).toBeNull();
+
+    fixture.componentRef.setInput('icon', '');
     fixture.componentRef.setInput('initials', '+4');
     await fixture.whenStable();
 

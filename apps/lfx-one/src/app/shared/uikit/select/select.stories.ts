@@ -8,6 +8,7 @@ import { UiBadgeComponent } from '../badge/badge.component';
 import { UiOptionGroupComponent } from './option-group.component';
 import { UiOptionSeparatorComponent } from './option-separator.component';
 import { UiOptionComponent } from './option.component';
+import { UiSelectSlotDirective } from './select-slot.directive';
 import { UiSelectValueDirective } from './select-value.directive';
 import { UiSelectComponent } from './select.component';
 
@@ -31,6 +32,7 @@ const meta: Meta<UiSelectComponent> = {
         UiOptionGroupComponent,
         UiOptionSeparatorComponent,
         UiSelectValueDirective,
+        UiSelectSlotDirective,
         UiAvatarComponent,
         UiBadgeComponent,
       ],

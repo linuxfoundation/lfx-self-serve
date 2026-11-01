@@ -91,6 +91,9 @@ export class UiTooltipDirective {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private keyboardFocused = false;
+  // True from a window focus event until the next macrotask: focus that enters the page from outside.
+  private windowFocusing = false;
+  private windowFocusTimer: ReturnType<typeof setTimeout> | null = null;
   private description = '';
   private focusSubscription: Subscription | null = null;
   private rendered = false;
@@ -128,14 +131,15 @@ export class UiTooltipDirective {
     else if (!this.focusSubscription) {
       // Hover covers the pointer; only keyboard focus opens it, so a click-focus does not flash a tooltip.
       this.focusSubscription = this.focusMonitor.monitor(this.host, true).subscribe((origin) => {
-        // Focus that enters from outside the document (Tab from the browser UI or a parent frame) has no key event to see, so the CDK calls it `program`.
-        const keyboard = origin === 'keyboard' || (origin === 'program' && this.inputModality.mostRecentModality === null);
+        // CDK calls focus entering the page from outside `program`; count it only right after a window focus, before any input.
+        const keyboard = origin === 'keyboard' || (origin === 'program' && this.windowFocusing && this.inputModality.mostRecentModality === null);
         this.keyboardFocused = keyboard;
         if (keyboard) {
           this.cancelHide();
           this.scheduleShow();
         } else if (origin === null) this.hide();
       });
+      this.document.defaultView?.addEventListener('focus', this.onWindowFocus);
       // A menu opened by key hands focus to its first item before this subscription exists, so the focus event was missed.
       if (this.host.contains(this.document.activeElement) && this.inputModality.mostRecentModality === 'keyboard') {
         this.keyboardFocused = true;
@@ -149,8 +153,21 @@ export class UiTooltipDirective {
     this.focusSubscription.unsubscribe();
     this.focusSubscription = null;
     this.focusMonitor.stopMonitoring(this.host);
+    this.document.defaultView?.removeEventListener('focus', this.onWindowFocus);
+    if (this.windowFocusTimer !== null) clearTimeout(this.windowFocusTimer);
+    this.windowFocusTimer = null;
+    this.windowFocusing = false;
     this.keyboardFocused = false;
   }
+
+  private readonly onWindowFocus = (): void => {
+    this.windowFocusing = true;
+    if (this.windowFocusTimer !== null) clearTimeout(this.windowFocusTimer);
+    this.windowFocusTimer = setTimeout(() => {
+      this.windowFocusTimer = null;
+      this.windowFocusing = false;
+    });
+  };
 
   private apply(config: { text: string; title: string; shortcut: string[]; disabled: boolean }): void {
     this.hasContent = !!(config.text || config.title);

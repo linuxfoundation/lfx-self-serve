@@ -63,6 +63,11 @@
       <lfx-ui-option value="kubernetes" label="Kubernetes" />
     </lfx-ui-select>
   }
+  @case ('empty-only') {
+    <lfx-ui-select ariaLabel="Project" [(value)]="value">
+      <p lfxUiSelectEmpty data-testid="empty">No projects yet</p>
+    </lfx-ui-select>
+  }
   @case ('form') {
     <lfx-ui-select label="Foundation" [formControl]="control">
       @for (option of options(); track option.value) {

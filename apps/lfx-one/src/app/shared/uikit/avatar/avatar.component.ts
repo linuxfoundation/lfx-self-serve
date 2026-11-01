@@ -8,7 +8,7 @@ import { UiSkeletonComponent } from '../skeleton/skeleton.component';
 
 /**
  * A person, organization or bot as a photo or initials in a circle with a hairline ring. Falls back from the photo to the icon or
- * initials when the image is missing or fails to load. Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
+ * initials when the image is missing or fails to load, and to a neutral person glyph when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
  * 48 to 64 in headers. Use `lfx-ui-avatar-group` to stack several.
  */
 @Component({

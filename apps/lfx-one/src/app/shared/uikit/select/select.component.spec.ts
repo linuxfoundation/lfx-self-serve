@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UiOptionGroupComponent } from './option-group.component';
 import { UiOptionSeparatorComponent } from './option-separator.component';
 import { UiOptionComponent } from './option.component';
+import { UiSelectSlotDirective } from './select-slot.directive';
 import { UiSelectValueDirective } from './select-value.directive';
 import { UiSelectComponent } from './select.component';
 
@@ -31,13 +32,21 @@ const OPTIONS: TestOption[] = [
 
 @Component({
   selector: 'lfx-ui-select-test-host',
-  imports: [UiSelectComponent, UiOptionComponent, UiOptionGroupComponent, UiOptionSeparatorComponent, UiSelectValueDirective, ReactiveFormsModule],
+  imports: [
+    UiSelectComponent,
+    UiOptionComponent,
+    UiOptionGroupComponent,
+    UiOptionSeparatorComponent,
+    UiSelectValueDirective,
+    UiSelectSlotDirective,
+    ReactiveFormsModule,
+  ],
   templateUrl: './select.component.spec.html',
 })
 class SelectHostComponent {
   public readonly select = viewChild.required(UiSelectComponent);
   /** Which composition the template renders. */
-  public readonly mode = input<'basic' | 'rich' | 'slots' | 'skipped-field' | 'form'>('basic');
+  public readonly mode = input<'basic' | 'rich' | 'slots' | 'skipped-field' | 'empty-only' | 'form'>('basic');
   public readonly options = input<TestOption[]>(OPTIONS);
   public readonly value = model<string | null>(null);
   public readonly ariaLabel = input<string>('');
@@ -70,7 +79,7 @@ const KEY_CODES: Record<string, number> = {
   l: 76,
 };
 
-const create = (mode: 'basic' | 'rich' | 'slots' | 'skipped-field' | 'form'): ComponentFixture<SelectHostComponent> => {
+const create = (mode: 'basic' | 'rich' | 'slots' | 'skipped-field' | 'empty-only' | 'form'): ComponentFixture<SelectHostComponent> => {
   const created = TestBed.createComponent(SelectHostComponent);
   created.componentRef.setInput('mode', mode);
   return created;
@@ -180,6 +189,26 @@ describe('UiSelectComponent', () => {
 
     expect(listbox()).toBeNull();
     expect(trigger().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('stays closed when there are no options, header or empty message', async () => {
+    await set('options', []);
+    await open();
+
+    expect(listbox()).toBeNull();
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+    await press('ArrowDown');
+    expect(trigger().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('opens with no options when an empty message is projected', async () => {
+    fixture = create('empty-only');
+    host = fixture.nativeElement as HTMLElement;
+    await fixture.whenStable();
+    await open();
+
+    expect(trigger().getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('[data-testid="ui-select-empty"]')?.textContent?.trim()).toBe('No projects yet');
   });
 
   it('follows the projected options as they change', async () => {
