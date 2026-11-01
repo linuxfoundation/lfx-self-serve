@@ -214,6 +214,24 @@ for (const [name, build] of voteRequestBuilders) {
       expect('allow_abstain' in request).toBe(true);
     });
 
+    it.each([
+      ['plain text with indentation and blank lines', '\n  First paragraph\n\n\n    - indented  bullet\n1.  numbered\n'],
+      ['rich HTML', '<p>One</p>\n<ul><li>A<ul><li>B</li></ul></li></ul>'],
+    ])('preserves the description exactly for %s', (_label, description) => {
+      expect(build(formValue({ description }), 'project-uid').description).toBe(description);
+    });
+
+    it.each([[''], ['   \n  '], [undefined], [null]])('emits an empty description for %j', (description) => {
+      expect(build(formValue({ description: description as string }), 'project-uid').description).toBe('');
+    });
+
+    it('still trims the title but not the description', () => {
+      const request = build(formValue({ title: '  Title  ', description: '  keep  ' }), 'project-uid');
+
+      expect(request.name).toBe('Title');
+      expect(request.description).toBe('  keep  ');
+    });
+
     // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
     it('always emits end_time_timezone (required by the v2 vote mutation contract)', () => {
       const request = build(formValue({ timezone: 'America/New_York' }), 'project-uid');
@@ -305,6 +323,15 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it.each([
+    ['form', mapVoteToFormValue],
+    ['clone form', mapVoteToCloneFormValue],
+  ])('keeps the stored description untouched in the %s value', (_label, map) => {
+    const description = '  Indented\n\n\n<p>Rich</p>  ';
+
+    expect(map(vote({ description })).description).toBe(description);
   });
 
   it('hydrates close time and zone from end_time in the stored timezone', () => {
