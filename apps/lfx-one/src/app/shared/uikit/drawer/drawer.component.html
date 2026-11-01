@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem; 14px root. Header, body and footer share a 24px gutter. -->
+<!-- Narrow drawers put the actions on their own row under the title and close button; from 560px wide they sit between them. -->
+<div class="flex shrink-0 flex-wrap items-start gap-[12px] border-b border-ui-neutral-alpha-200 px-[24px] py-[16px]" data-testid="ui-drawer-header">
+  <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
+    <h2 class="heading-24 text-ui-neutral-900" [id]="titleId" data-testid="ui-drawer-title">{{ heading() }}</h2>
+    @if (subtitle()) {
+      <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-drawer-subtitle">{{ subtitle() }}</p>
+    }
+  </div>
+  <div class="order-3 flex basis-full flex-wrap items-center gap-[8px] empty:hidden @[560px]:order-1 @[560px]:basis-auto">
+    <ng-content select="[drawerActions]" />
+  </div>
+  <lfx-ui-button
+    class="order-2"
+    variant="tertiary"
+    size="small"
+    [iconOnly]="true"
+    icon="fa-light fa-xmark"
+    ariaLabel="Close"
+    lfxUiTooltip="Close"
+    (click)="context.requestClose()"
+    data-testid="ui-drawer-close" />
+</div>
+<!-- cdkScrollable lets overlays opened from the body (Select, Menu) follow its scrolling. -->
+<div class="flex min-h-0 flex-1 flex-col gap-[16px] overflow-auto px-[24px] py-[24px] copy-14 text-ui-neutral-900" cdkScrollable data-testid="ui-drawer-body">
+  <ng-content />
+</div>
+<div
+  class="flex shrink-0 items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden"
+  data-testid="ui-drawer-footer">
+  <ng-content select="[drawerFooter]" />
+</div>

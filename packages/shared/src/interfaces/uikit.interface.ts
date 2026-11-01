@@ -68,6 +68,23 @@ export interface UiModalConfig<D = unknown> {
   autoFocus?: string;
 }
 
+/** Edge of the window a uikit drawer is anchored to. */
+export type UiDrawerSide = 'left' | 'right';
+
+/** Options for `UiDrawerService.open`. Every field is optional. Takes the modal options, except `role`: a drawer is always a `dialog`. */
+export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'role'> {
+  /** Edge the drawer slides in from. Defaults to `right`. */
+  side?: UiDrawerSide;
+  /** Width in px. Defaults to 600; it never exceeds the window and fills it at 640px and narrower. */
+  width?: number;
+  /**
+   * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
+   * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal.
+   * `DialogRef.close()` does not ask: call it once the work is saved or discarded.
+   */
+  canClose?: () => boolean | Promise<boolean>;
+}
+
 /** One day button in a uikit calendar month grid. */
 export interface UiCalendarDay {
   /** Local `YYYY-MM-DD` key. Stable per date. */
