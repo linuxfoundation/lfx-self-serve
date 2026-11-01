@@ -48,6 +48,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
   },
 })
 export class UiButtonComponent {
+  private readonly document = inject(DOCUMENT);
+
   /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
   /** `tiny` is 24px tall, `small` 32px and `medium` 40px. */
@@ -98,7 +100,6 @@ export class UiButtonComponent {
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
 
-  private readonly document = inject(DOCUMENT);
   private readonly menuTrigger = viewChild(CdkMenuTrigger);
   private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
 
