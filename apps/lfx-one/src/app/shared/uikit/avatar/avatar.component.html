@@ -1,7 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!placeholder()) {
+@if (placeholder()) {
+  <lfx-ui-skeleton width="100%" height="100%" data-testid="ui-avatar-skeleton" />
+} @else {
   @if (photoSrc(); as url) {
     <img
       #photo

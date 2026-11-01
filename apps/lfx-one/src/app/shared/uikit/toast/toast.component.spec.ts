@@ -312,7 +312,7 @@ describe('UiToastComponent', () => {
       await flush();
       const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLElement;
       expect(action.classList).not.toContain('bg-ui-accent-500');
-      expect(action.classList).toContain('text-white');
+      expect(action.classList).toContain('text-ui-white');
     });
   });
 });

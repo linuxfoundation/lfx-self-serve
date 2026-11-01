@@ -13,6 +13,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
+- **Form controls:** register with `NG_VALUE_ACCESSOR` and `forwardRef`, as in `lfx-ui-checkbox`; that is the standard for new controls. The `NgControl`-based ones (input, textarea, slider, calendar, select, combobox, multi-select) convert when next touched.
 - **Every component has** a `*.stories.ts` (JSDoc on every input and output feeds the autodocs) and a `*.component.spec.ts`.
 
 ## Components
@@ -71,6 +72,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 
 - **CSS variables:** every token is a `--ui-*` variable: roles (`--ui-neutral-900`), primitives (`--ui-azure-500`), `--ui-shadow-*`, `--ui-radius-*`, `--ui-height-*`, `--ui-width-*`, `--ui-z-*`, `--ui-breakpoint-*`, `--ui-opacity-*`, `--ui-duration-*`, `--ui-ease*`, `--ui-font-*`, `--ui-spacing-*`. The names carry an extra `--ui-` prefix relative to the library's `bundle.css` (`--shadow-menu` there is `--ui-shadow-menu` here), so they cannot collide with app CSS. Values are on `:root` and `[data-theme='light']`; `[data-theme='dark']` overrides the themed ones. The app has no theme switch yet, so it always renders light.
 - **Tailwind utilities** (v3, `tailwind.config.js`) read those variables, so they follow the theme. Existing classes (`bg-blue-500`, `text-gray-700`, `rounded-md`, `shadow-md`, `text-sm`) are unchanged.
+- **White and black:** on-colour ink is `text-ui-white` (also `bg-ui-white`, `stroke-ui-white` and the `ui-black` equivalents), which reads `--ui-white`. The bare `text-white` is the app's `lfxColors.white`, not a library token.
 - **Exact px:** the app root font is 14px, so rem would scale. Library sizes are px values, not Tailwind's rem scale (`h-10` is 35px here; `h-ui-medium` is 40px).
 - **No opacity modifier:** colours are CSS variables, so `bg-ui-accent-500/50` does not work. Use the matching `ui-*-alpha` or lower step (`bg-ui-accent-100`).
 - **Primitives** (`azure`, `slate`, ...) are variables only. Components use the `ui-*` roles; the primitives are for charts, avatars and illustrations (`var(--ui-azure-500)`).

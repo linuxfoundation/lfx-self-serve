@@ -11,8 +11,8 @@
   background: transparent;
   cursor: pointer;
   --val: 50%;
-  // no token for the library's thumb shadow
-  --thumb-shadow: 0 0 0 1px var(--ui-neutral-alpha-300), 0 2px 4px rgba(15, 23, 43, 0.16);
+  // Thumb shadow: a 1px ring plus a 2px lift, both neutral-alpha-300; no shadow token has this geometry.
+  --thumb-shadow: 0 0 0 1px var(--ui-neutral-alpha-300), 0 2px 4px var(--ui-neutral-alpha-300);
 
   &::-webkit-slider-runnable-track {
     height: 4px;

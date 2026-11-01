@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator, InteractivityChecker, ListKeyManager } from '@angular/cdk/a11y';
-import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import { CdkConnectedOverlay, CdkOverlayOrigin } from '@angular/cdk/overlay';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
@@ -111,10 +111,6 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   protected readonly listboxId = `${this.baseId}-listbox`;
   protected readonly hintId = `${this.baseId}-hint`;
   protected readonly errorId = `${this.baseId}-error`;
-  protected readonly positions: ConnectedPosition[] = [
-    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-  ];
   protected readonly open = signal(false);
   // The highlighted option by identity, so it survives the options changing under it.
   protected readonly activeItem = signal<UiOption | null>(null);

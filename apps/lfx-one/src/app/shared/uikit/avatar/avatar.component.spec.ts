@@ -91,7 +91,7 @@ describe('UiAvatarComponent', () => {
     await fixture.whenStable();
 
     expect(host.className).toContain(fill);
-    expect(host.className).toContain('text-white');
+    expect(host.className).toContain('text-ui-white');
     expect(host.className).not.toContain('edge');
   });
 
@@ -176,7 +176,7 @@ describe('UiAvatarComponent', () => {
     fixture.componentRef.setInput('placeholder', true);
     await fixture.whenStable();
 
-    expect(host.className).toContain('avatar-shimmer');
+    expect(host.querySelector('lfx-ui-skeleton')).not.toBeNull();
     expect(host.getAttribute('aria-hidden')).toBe('true');
     expect(host.getAttribute('role')).toBeNull();
     expect(host.textContent?.trim()).toBe('');
@@ -187,7 +187,7 @@ describe('UiAvatarComponent', () => {
     await hosted.whenStable();
 
     const avatar = (hosted.nativeElement as HTMLElement).querySelector('lfx-ui-avatar');
-    expect(avatar?.className).toContain('avatar-shimmer');
+    expect(avatar?.querySelector('lfx-ui-skeleton')).not.toBeNull();
     expect(avatar?.getAttribute('aria-hidden')).toBe('true');
   });
 

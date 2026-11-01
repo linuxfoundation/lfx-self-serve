@@ -112,7 +112,7 @@ export class UiButtonComponent {
       // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
       const variants = {
         primary:
-          'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
+          'bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
         secondary: 'bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
         // The 1px ring geometry is arbitrary and its colour comes from the shadow colour utility, so the focus ring can replace it.
         'secondary-accent':
@@ -120,11 +120,11 @@ export class UiButtonComponent {
         tertiary: 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
         'tertiary-accent': 'bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
         danger:
-          'bg-ui-danger-600 text-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
+          'bg-ui-danger-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
         'danger-tertiary': 'bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
         // Not in the library: the epic's proposed green action, styled like primary on the success steps.
         recording:
-          'bg-ui-success-600 text-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
+          'bg-ui-success-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
       };
       // Disabled looks the same for every variant; the tertiary family stays transparent and ringless.
       const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());

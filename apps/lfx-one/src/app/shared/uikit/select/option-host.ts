@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { UiOption } from '@lfx-one/shared/interfaces';
 
 /**
@@ -10,6 +11,11 @@ import { UiOption } from '@lfx-one/shared/interfaces';
 export abstract class UiOptionHost {
   /** True for a list that holds several values: its rows show a checkbox and an "Only" action instead of a trailing check mark. */
   public readonly multiple?: boolean;
+  /** Where the dropdown panel opens: below the trigger, flipping above it when there is no room. */
+  protected readonly positions: ConnectedPosition[] = [
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
+    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
+  ];
   /** True when the option is the picked one (`aria-selected`, check mark). */
   public abstract isSelected(option: UiOption): boolean;
   /** True when the option holds the keyboard highlight (`aria-activedescendant`). */

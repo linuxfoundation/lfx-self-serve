@@ -11,7 +11,7 @@
 @if (shortcut().length) {
   <span class="inline-flex items-center gap-[4px]" data-testid="ui-tooltip-shortcut">
     @for (key of shortcut(); track $index) {
-      <!-- 1px white-at-25% ring: no white-alpha token exists. -->
+      <!-- shortcut: literal white at 25% for the key ring. revisit: when the library ships a white-alpha token. -->
       <kbd
         class="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-ui-xs px-[4px] label-12 font-normal tabular-nums shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
         >{{ key }}</kbd

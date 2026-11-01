@@ -1,16 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Enter only, as in the library.
-@media (prefers-reduced-motion: no-preference) {
-  .ui-combobox-panel {
-    animation: combobox-pop var(--ui-duration-fast) var(--ui-ease-standard);
-  }
-}
+@use '../pop';
 
-@keyframes combobox-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-}
+@include pop.enter('.ui-combobox-panel');

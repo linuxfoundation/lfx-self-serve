@@ -18,7 +18,7 @@
     --tg-h: 24px;
   }
 
-  // Thumb inset 2px; no token for the library's thumb shadow (--ui-shadow-small is a ring, not a lift).
+  // Thumb inset 2px.
   &::after {
     content: '';
     position: absolute;
@@ -28,6 +28,7 @@
     height: calc(var(--tg-h) - 4px);
     border-radius: var(--ui-radius-full);
     background: var(--ui-white);
+    // shortcut: literal neutral-ink rgba thumb shadow, no token matches. revisit: when the library ships a thumb-shadow token.
     box-shadow:
       0 1px 2px rgba(15, 23, 43, 0.2),
       0 0 0 0.5px rgba(15, 23, 43, 0.1);
