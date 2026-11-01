@@ -5,8 +5,7 @@ import { ConnectedPosition } from '@angular/cdk/overlay';
 import { UiOption } from '@lfx-one/shared/interfaces';
 
 /**
- * What a list of uikit options (select and combobox, multi-select later) offers to the `lfx-ui-option` rows inside it. Options inject this
- * instead of a concrete list, so each list keeps its own picking rules and options never import the list that owns them.
+ * What a uikit option list (select, combobox, multi-select) offers its `lfx-ui-option` rows, plus the dropdown panel positions the lists share.
  */
 export abstract class UiOptionHost {
   /** True for a list that holds several values: its rows show a checkbox and an "Only" action instead of a trailing check mark. */
