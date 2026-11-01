@@ -75,7 +75,7 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 // LFX UI Library (uikit) mapping. Everything is derived from the canonical tokens.json and points at the
 // `--ui-*` CSS variables in src/styles/ui-tokens.css, so values follow the active `data-theme`.
 // Generated utilities: colours `*-ui-{background|neutral|neutral-alpha|accent|success|warning|danger|feature}-<step>`,
-// `*-ui-focus`, `*-ui-overlay` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
+// `*-ui-focus`, `*-ui-overlay`, `*-ui-white`, `*-ui-black` (kept under the `ui` key so the library's `neutral`/`red`/`amber` names cannot collide
 // with Tailwind's palettes); `shadow-{border|small|medium|large|tooltip|menu|modal|fullscreen|focus}`;
 // `rounded-ui-{xs|sm|md|lg|full}`; `h-ui-{tiny|small|medium|large|menu-item|row}`; `duration-ui-{fast|base|slow}`;
 // `ease-ui` (spring), `ease-ui-standard`; `text-<role>` and `<role>` type
@@ -84,6 +84,11 @@ import uiTokens from './scripts/ui-tokens/tokens.json' with { type: 'json' };
 const uiVar = (name) => `var(${uiVarName(name)})`;
 const uiColors = {};
 for (const { name } of uiTokens.color.tokens) {
+  // `white` and `black` are the only primitives exposed, as on-colour ink (`text-ui-white`); the unprefixed names stay lfxColors.
+  if (name === 'white' || name === 'black') {
+    uiColors[name] = uiVar(name);
+    continue;
+  }
   if (!name.startsWith('ui-')) continue;
   const scaled = /^ui-(.+)-(\d+)$/.exec(name);
   if (scaled) (uiColors[scaled[1]] ??= {})[scaled[2]] = uiVar(name);

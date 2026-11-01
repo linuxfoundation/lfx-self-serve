@@ -199,7 +199,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
     if (day.selected) {
       // An unavailable selected date keeps its fill and gains the strike-through; the ink stays white to stay readable on the fill.
       const unavailable = day.disabled ? 'cursor-not-allowed line-through' : '';
-      return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
     }
     if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
     const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';

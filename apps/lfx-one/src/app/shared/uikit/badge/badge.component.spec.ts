@@ -57,7 +57,7 @@ describe('UiBadgeComponent', () => {
     await fixture.whenStable();
 
     expect(host.className).toContain(fill);
-    expect(host.className).toContain('text-white');
+    expect(host.className).toContain('text-ui-white');
   });
 
   it('uses slate-900 ink, not white, on the solid warning fill', async () => {
@@ -67,7 +67,7 @@ describe('UiBadgeComponent', () => {
 
     expect(host.className).toContain('bg-ui-warning-500');
     expect(host.className).toContain('text-ui-neutral-900');
-    expect(host.className).not.toContain('text-white');
+    expect(host.className).not.toContain('text-ui-white');
   });
 
   it.each([

@@ -84,10 +84,10 @@ export const RadiiAndHeights: Story = {
           <div class="h-16 w-24 rounded-ui-full bg-ui-accent-100 p-2 label-12">rounded-ui-full</div>
         </div>
         <div class="flex items-end gap-4">
-          <div class="h-ui-tiny w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-12 text-white flex items-center">h-ui-tiny 24px</div>
-          <div class="h-ui-small w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-12 text-white flex items-center">h-ui-small 32px</div>
-          <div class="h-ui-medium w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-14 text-white flex items-center">h-ui-medium 40px</div>
-          <div class="h-ui-large w-32 rounded-ui-md bg-ui-accent-500 px-2 button-16 text-white flex items-center">h-ui-large 48px</div>
+          <div class="h-ui-tiny w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-12 text-ui-white flex items-center">h-ui-tiny 24px</div>
+          <div class="h-ui-small w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-12 text-ui-white flex items-center">h-ui-small 32px</div>
+          <div class="h-ui-medium w-32 rounded-ui-sm bg-ui-accent-500 px-2 button-14 text-ui-white flex items-center">h-ui-medium 40px</div>
+          <div class="h-ui-large w-32 rounded-ui-md bg-ui-accent-500 px-2 button-16 text-ui-white flex items-center">h-ui-large 48px</div>
         </div>
       </div>
     `,
@@ -175,7 +175,7 @@ export const DarkTheme: Story = {
     template: `
       <div data-theme="dark" class="flex flex-wrap gap-6 p-6 bg-ui-background-100 text-ui-neutral-900">
         <div class="h-24 w-48 rounded-ui-md bg-ui-background-200 shadow-small p-3 label-14">Dark surface, shadow-small</div>
-        <div class="h-ui-medium rounded-ui-sm bg-ui-accent-500 px-4 button-14 text-white flex items-center">Accent button</div>
+        <div class="h-ui-medium rounded-ui-sm bg-ui-accent-500 px-4 button-14 text-ui-white flex items-center">Accent button</div>
         <div class="h-ui-medium rounded-ui-sm bg-ui-danger-50 text-ui-danger-700 px-4 label-14 flex items-center">Danger subtle</div>
       </div>
     `,

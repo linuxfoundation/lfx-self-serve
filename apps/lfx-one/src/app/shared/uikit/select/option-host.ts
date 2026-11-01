@@ -1,15 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ConnectedPosition } from '@angular/cdk/overlay';
 import { UiOption } from '@lfx-one/shared/interfaces';
 
 /**
- * What a list of uikit options (select and combobox, multi-select later) offers to the `lfx-ui-option` rows inside it. Options inject this
- * instead of a concrete list, so each list keeps its own picking rules and options never import the list that owns them.
+ * What a uikit option list (select, combobox, multi-select) offers its `lfx-ui-option` rows, plus the dropdown panel positions the lists share.
  */
 export abstract class UiOptionHost {
   /** True for a list that holds several values: its rows show a checkbox and an "Only" action instead of a trailing check mark. */
   public readonly multiple?: boolean;
+  /** Where the dropdown panel opens: below the trigger, flipping above it when there is no room. */
+  protected readonly positions: ConnectedPosition[] = [
+    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
+    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
+  ];
   /** True when the option is the picked one (`aria-selected`, check mark). */
   public abstract isSelected(option: UiOption): boolean;
   /** True when the option holds the keyboard highlight (`aria-activedescendant`). */

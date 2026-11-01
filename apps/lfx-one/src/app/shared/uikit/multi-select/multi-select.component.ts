@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
-import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import { CdkConnectedOverlay, CdkOverlayOrigin } from '@angular/cdk/overlay';
 import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
@@ -88,10 +88,6 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
 
   protected readonly triggerId = this.baseId;
   protected readonly panelId = `${this.baseId}-panel`;
-  protected readonly positions: ConnectedPosition[] = [
-    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-  ];
   protected readonly open = signal(false);
   protected readonly panelWidth = signal(0);
   protected readonly formDisabled = signal(false);

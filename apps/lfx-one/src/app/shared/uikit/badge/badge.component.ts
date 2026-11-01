@@ -40,13 +40,13 @@ export class UiBadgeComponent {
       };
       const solid: Record<UiBadgeTone, string> = {
         // shortcut: dark theme not handled (light only). revisit: when a theme switch lands — library pins neutral solid to slate-600 in both themes
-        neutral: 'bg-ui-neutral-600 text-white',
-        accent: 'bg-ui-accent-500 text-white',
-        feature: 'bg-ui-feature-600 text-white',
+        neutral: 'bg-ui-neutral-600 text-ui-white',
+        accent: 'bg-ui-accent-500 text-ui-white',
+        feature: 'bg-ui-feature-600 text-ui-white',
         // Tokens ink note: slate-900 on ui-warning-500; white on amber is about 2:1.
         warning: 'bg-ui-warning-500 text-ui-neutral-900',
-        danger: 'bg-ui-danger-600 text-white',
-        success: 'bg-ui-success-600 text-white',
+        danger: 'bg-ui-danger-600 text-ui-white',
+        success: 'bg-ui-success-600 text-ui-white',
       };
       const subtle: Record<UiBadgeTone, string> = {
         neutral: 'bg-ui-neutral-100 text-ui-neutral-900',

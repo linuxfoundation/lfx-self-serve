@@ -27,11 +27,17 @@ export type UiTabsSize = 'default' | 'small';
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
 export type UiTabsVariant = 'default' | 'secondary';
 
+/** Height of a uikit form control: `tiny` 24px, `small` 32px, `medium` 40px. Shared by the button, switch and text input. */
+export type UiControlSize = 'tiny' | 'small' | 'medium';
+
+/** The six colour roles of the LFX UI Library. */
+export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
-export type UiBadgeTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+export type UiBadgeTone = UiTone;
 
 /** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
-export type UiAvatarTone = 'neutral' | 'accent' | 'feature' | 'success' | 'warning' | 'danger';
+export type UiAvatarTone = UiTone;
 
 /** A person, organization or bot shown in a uikit avatar group. */
 export interface UiAvatarItem {
@@ -102,7 +108,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
 /** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
-export type UiInputSize = 'tiny' | 'small' | 'medium';
+export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
 export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'search';
@@ -177,10 +183,10 @@ export type UiCollapseSize = 'default' | 'small';
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
 /** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiButtonSize = 'tiny' | 'small' | 'medium';
+export type UiButtonSize = UiControlSize;
 
 /** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiSwitchSize = 'tiny' | 'small' | 'medium';
+export type UiSwitchSize = UiControlSize;
 
 /** Whether a uikit choicebox group picks one tile (`radio`) or any number of tiles (`checkbox`). A group never mixes the two. */
 export type UiChoiceboxType = 'radio' | 'checkbox';
