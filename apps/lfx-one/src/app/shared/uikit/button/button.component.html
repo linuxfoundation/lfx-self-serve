@@ -54,6 +54,28 @@
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </button>
+} @else if (popover(); as popoverRef) {
+  <!-- Own branch: only a button with a popover carries the directive, which sets the ARIA attributes. -->
+  <button
+    [type]="type()"
+    [class]="classes()"
+    [disabled]="disabled()"
+    [attr.aria-label]="ariaLabel() || null"
+    [attr.aria-busy]="loading() || null"
+    [lfxUiPopover]="loading() ? null : popoverRef"
+    [lfxUiPopoverLabel]="popoverLabel()"
+    [lfxUiPopoverWidth]="popoverWidth()"
+    [lfxUiPopoverPadding]="popoverPadding()"
+    [lfxUiTooltip]="tooltip()"
+    [lfxUiTooltipTitle]="tooltipTitle()"
+    [lfxUiTooltipShortcut]="tooltipShortcut()"
+    [lfxUiTooltipSide]="tooltipSide()"
+    [lfxUiTooltipDelay]="tooltipDelay()"
+    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    (click)="onClick($event)"
+    data-testid="ui-button">
+    <ng-container [ngTemplateOutlet]="content" />
+  </button>
 } @else {
   <button
     [type]="type()"
