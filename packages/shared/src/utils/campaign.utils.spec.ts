@@ -16,6 +16,8 @@ import {
   campaignActionItemLever,
   campaignActionRuleLever,
   campaignEtagVersion,
+  campaignFlightDays,
+  dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
   keywordActionKey,
   normalizeSponsors,
@@ -355,5 +357,75 @@ describe('describeCampaignDispatchFailure', () => {
     'dispatcher returned no campaign',
   ])('does not flag %j as nothing created', (error) => {
     expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: false });
+  });
+});
+
+describe('campaignFlightDays', () => {
+  it('counts the start and end days both', () => {
+    expect(campaignFlightDays('2026-10-29', '2026-11-28')).toBe(31);
+  });
+
+  it('counts a same-day flight as one day', () => {
+    expect(campaignFlightDays('2026-12-01', '2026-12-01')).toBe(1);
+  });
+
+  it('counts whole days across a daylight-saving change', () => {
+    // US clocks go back on 2026-11-01 and Sydney's go forward on 2026-10-04; neither may shave a day.
+    expect(campaignFlightDays('2026-10-31', '2026-11-02')).toBe(3);
+    expect(campaignFlightDays('2026-10-03', '2026-10-05')).toBe(3);
+  });
+
+  it('counts across a leap day', () => {
+    expect(campaignFlightDays('2028-02-28', '2028-03-01')).toBe(3);
+  });
+
+  it('returns null when the end is before the start', () => {
+    expect(campaignFlightDays('2026-12-10', '2026-12-01')).toBeNull();
+  });
+
+  it.each([[''], ['2026-1-01'], ['2026-02-30'], ['2026-13-01'], ['01/12/2026'], ['2026-12-01T00:00:00Z']])('returns null for the date %j', (bad) => {
+    expect(campaignFlightDays(bad, '2026-12-31')).toBeNull();
+    expect(campaignFlightDays('2026-01-01', bad)).toBeNull();
+  });
+});
+
+describe('dailyBudgetFromTotal', () => {
+  it('divides the total over the days, rounded down to the cent', () => {
+    expect(dailyBudgetFromTotal(900, 31)).toBe(29.03);
+    expect(dailyBudgetFromTotal(5000, 30)).toBe(166.66);
+  });
+
+  it('never spends more than the total over the flight', () => {
+    for (const [total, days] of [
+      [900, 31],
+      [5000, 30],
+      [1234.56, 7],
+      [0.07, 7],
+      [100, 3],
+    ]) {
+      const daily = dailyBudgetFromTotal(total, days) as number;
+      expect(Math.round(daily * days * 100)).toBeLessThanOrEqual(Math.round(total * 100));
+    }
+  });
+
+  it('keeps an exact division exact', () => {
+    expect(dailyBudgetFromTotal(3100, 31)).toBe(100);
+    expect(dailyBudgetFromTotal(500, 1)).toBe(500);
+  });
+
+  it('can return less than one when the total is small for the flight', () => {
+    expect(dailyBudgetFromTotal(10, 31)).toBe(0.32);
+  });
+
+  it.each([
+    [0, 31],
+    [-100, 31],
+    [Number.NaN, 31],
+    [Number.POSITIVE_INFINITY, 31],
+    [900, 0],
+    [900, 2.5],
+    [900, -1],
+  ])('returns null for a total of %d over %d day(s)', (total, days) => {
+    expect(dailyBudgetFromTotal(total, days)).toBeNull();
   });
 });

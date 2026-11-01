@@ -167,6 +167,14 @@ export const DEFAULT_META_BUDGET_USD = 500;
 export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
 export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
 
+/**
+ * The Google daily budget the Implementation tab starts from when the brief carries no total to
+ * divide over the flight (#4847). A DAILY figure, like the Microsoft budget and the Meta and LinkedIn
+ * budgets in their default mode, and unlike Reddit's lifetime cap: campaign-service creates the
+ * Google budget with no period, which Google treats as an average daily budget.
+ */
+export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 

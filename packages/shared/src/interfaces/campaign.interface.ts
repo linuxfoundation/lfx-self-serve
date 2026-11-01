@@ -914,6 +914,27 @@ export interface CampaignBriefPersistenceState {
   conflict?: CampaignBriefPersistResult['conflict'];
 }
 
+/** The Implementation tab's Google budget and flight controls, read together (#4847). */
+export interface GoogleBudgetInputs {
+  /** The daily budget control's value; `null` once the number input is emptied, whatever the control's declared type. */
+  daily: number | null;
+  /** The flight's first day, `YYYY-MM-DD`. */
+  start: string;
+  /** The flight's last day, `YYYY-MM-DD`. */
+  end: string;
+}
+
+/**
+ * The Google daily budget's flight on the Implementation tab: how many days it runs and what the
+ * daily figure spends over them, shown beside the field so the operator sees both numbers (#4847).
+ */
+export interface GoogleBudgetFlight {
+  /** Flight length in days, start and end days both counted (`campaignFlightDays`). */
+  days: number;
+  /** The daily budget times {@link GoogleBudgetFlight.days}. */
+  total: number;
+}
+
 /**
  * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
  *
@@ -984,7 +1005,10 @@ export interface CampaignImplementationDraft {
   /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
   headlines: string[];
   descriptions: string[];
-  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  /**
+   * Budget and flight, which the brief seeds but the user routinely overrides. `budgetUsd` is the
+   * Google DAILY budget (#4847), the same figure {@link CampaignCreateRequest.budgetUsd} sends.
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
@@ -3008,6 +3032,11 @@ export interface CampaignCreateRequest {
   registrationUrl: string;
   hsToken?: string;
   campaignTypes: CampaignType[];
+  /**
+   * The Google DAILY budget. campaign-service creates the Google budget with no period, which
+   * Google treats as daily, so this is never a flight total (#4847). Spent in the ad account's
+   * currency despite the name (LFXV2-3251).
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
