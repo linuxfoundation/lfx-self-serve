@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -134,6 +134,7 @@ import {
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   DEFAULT_LINKEDIN_BUDGET_USD,
   DEFAULT_LINKEDIN_TARGETING_PROFILE,
   DEFAULT_META_BUDGET_USD,
@@ -214,6 +215,8 @@ import type {
   GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
+  GoogleBudgetFlight,
+  GoogleBudgetInputs,
   GoogleCampaignChannel,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
@@ -241,7 +244,9 @@ import type {
 import {
   campaignBiddingError,
   campaignBiddingPayload,
+  campaignFlightDays,
   codePointLength,
+  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
   googleAdsToUpperCode,
@@ -306,6 +311,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     InputTextComponent,
     SelectComponent,
     TextareaComponent,
+    DecimalPipe,
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
@@ -804,7 +810,9 @@ export class ImplementationTabComponent implements OnInit {
     eventSlug: [''],
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
-    budgetUsd: [500, [Validators.required, Validators.min(1)]],
+    // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
+    // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -1480,6 +1488,12 @@ export class ImplementationTabComponent implements OnInit {
    * `resetGoogleFields`.
    */
   private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
+  /**
+   * The brief's planning total the Google daily budget was divided from (#4847), shown beside the
+   * field so the operator can compare it with the flight total. Null when the brief has no positive
+   * total. Set by every brief seed, so a brief switch never shows the previous brief's figure.
+   */
+  protected readonly googleBriefTotalBudget = signal<number | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -3193,6 +3207,14 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
+  /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
+  private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
+  protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
+  /**
+   * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
+   * field, because the same validator holds Create disabled and nothing else on screen says why.
+   */
+  protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
@@ -6855,12 +6877,19 @@ export class ImplementationTabComponent implements OnInit {
     this.resetTwitterFields();
     this.biddingDrafts.set({});
     const details = brief.eventDetails;
+    // The brief's budget is a TOTAL for the flight and Google's is DAILY (#4847), so the total is
+    // divided over the flight this seed opens with. Sending the total unchanged made every LFX
+    // Google budget the whole plan per day.
+    const briefTotal = brief.totalBudget ?? null;
+    const flightDays = campaignFlightDays(this.todayDate, this.defaultEndDate);
+    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
       eventSlug: details.slug,
       countryCode: details.countryCode || 'US',
       registrationUrl: details.registrationUrl,
-      budgetUsd: brief.totalBudget ?? 500,
+      budgetUsd: seededDailyBudget ?? DEFAULT_GOOGLE_DAILY_BUDGET_USD,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
       // The X fields are typed, never generated, so a new brief starts them blank. A same-event
@@ -7228,6 +7257,33 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: 100 - CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct }
     );
+  }
+
+  private initGoogleBudgetInputs(): Signal<GoogleBudgetInputs> {
+    const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
+    const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
+    return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleBudgetInvalid(): Signal<boolean> {
+    return computed(() => {
+      const { daily } = this.googleBudgetInputs();
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+    });
+  }
+
+  /**
+   * What the Google daily budget spends over the flight on screen (#4847), or `null` while the
+   * budget or either date cannot be counted. Recomputed from the controls on every change, so the
+   * figure beside the field always matches what Create would send.
+   */
+  private initGoogleBudgetFlight(): Signal<GoogleBudgetFlight | null> {
+    return computed(() => {
+      const { daily, start, end } = this.googleBudgetInputs();
+      const days = campaignFlightDays(start, end);
+      if (days === null || typeof daily !== 'number' || !Number.isFinite(daily) || daily <= 0) return null;
+      return { days, total: Math.round(daily * days * 100) / 100 };
+    });
   }
 
   private initCampaignName(): Signal<string> {

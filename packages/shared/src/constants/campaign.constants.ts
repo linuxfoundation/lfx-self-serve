@@ -167,6 +167,13 @@ export const DEFAULT_META_BUDGET_USD = 500;
 export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
 export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
 
+/**
+ * The Google daily budget the Implementation tab starts from when the brief carries no total to
+ * divide over the flight (#4847). A DAILY figure, like its siblings above: campaign-service creates
+ * the Google budget with no period, which Google treats as daily.
+ */
+export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
