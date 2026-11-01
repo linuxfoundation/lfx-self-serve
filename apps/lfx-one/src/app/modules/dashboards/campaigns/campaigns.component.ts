@@ -1,20 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { DecimalPipe, Location, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup, FormRecord, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EVENT_URL_QUERY_PARAM,
   CAMPAIGN_EMAIL_SEGMENT_LABELS,
+  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX,
+  CAMPAIGN_SURVEY_TYPES,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
   CAMPAIGN_TABS,
@@ -48,7 +54,16 @@ import type {
   CampaignCreateRequest,
   CampaignDeliveryType,
   CampaignEmailSegment,
+  CampaignEmailTypeOption,
+  CampaignSendWorkflowResult,
+  CampaignSequenceSend,
+  CampaignSurveySendWorkflowState,
+  CampaignSurveySequenceGenerateState,
+  CampaignSurveySequenceStagingState,
+  CampaignSurveyStage,
   CampaignEmailStage,
+  CampaignSendStage,
+  CampaignSurveyTypeOption,
   CampaignEmailTab,
   CampaignEventSponsor,
   CampaignImplementationDraft,
@@ -84,7 +99,7 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { filter, finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -135,6 +150,56 @@ function withUnlinkedCta(body: string, unlinkedLabel: string): string {
   const asParagraph = fragment.replace(/^<div>/, '<p>').replace(/<\/div>$/, '</p>');
   const alreadyFolded = [fragment, asParagraph].some((candidate) => body.includes(stripResourceLoadingHtml(candidate)));
   return alreadyFolded ? body : `${body}${fragment}`;
+}
+
+/**
+ * Where a generated button may point: the generated `ctaUrl`, but only when it is the brief's own
+ * registration URL; otherwise '' and no button is staged.
+ *
+ * MUST EQUAL the brief's registration URL. The generator is told "a button's url must be that
+ * URL, copied exactly ... never invented", so anything else is a model that did not follow its
+ * instructions -- and accepting it would ship a button pointing somewhere the brief never
+ * contained. Checking only that the URL is public-looking is not enough: a hallucinated
+ * `https://evil.example.com/phish` passes that check.
+ *
+ * Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl` does
+ * NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct. A model
+ * copying the URL and adding or dropping a slash addresses the SAME page, so refusing it would
+ * silently drop the button for a generation that followed its instructions.
+ *
+ * Stripping it from the whole serialized URL was the over-correction in the other direction: it
+ * also mutates the query and fragment, so a generated `?token=abc/` compared EQUAL to the brief's
+ * `?token=abc` and a different destination passed. Only the path may be normalized; `search` and
+ * `hash` must match exactly, because a trailing slash there is part of the value rather than a
+ * path separator.
+ *
+ * A module function rather than a computed so the single send and every send of a survey series
+ * judge their button by the same rule.
+ */
+function ctaDestinationFor(ctaUrl: string | undefined, registrationUrl: string | undefined): string {
+  const generated = canonicalHttpUrl(ctaUrl);
+  if (generated === '') return '';
+  const fromBrief = canonicalHttpUrl(registrationUrl);
+  const sameTarget = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+      return parsed.toString();
+    } catch {
+      // Not parseable: compare verbatim rather than guessing.
+      //
+      // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a brief
+      // with no usable registrationUrl, and `new URL('')` throws, so every such brief lands here
+      // while the generator has supplied a url.
+      //
+      // Returning the input verbatim is the right answer for that case: '' can then only equal
+      // '', so a generated url never matches an absent brief url and no button is staged -- which
+      // is what "the brief has no registration destination" should mean. Falling back to the old
+      // whole-string strip here would reintroduce the query/fragment gap.
+      return url;
+    }
+  };
+  return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
 }
 
 @Component({
@@ -245,6 +310,14 @@ export class CampaignsComponent {
   protected readonly selectedEmailTab = signal<Exclude<CampaignEmailTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
+
+  /**
+   * The SEND surface the email container is working on: the last of Email or Survey the operator
+   * chose. Unlike `selectedDeliveryType` it does not move to paid, so a trip through Paid Marketing
+   * hands the hidden planner no `paid-marketing` (which resets it) and keeps the selected type,
+   * brief and copy for the return.
+   */
+  protected readonly sendSurface = signal<'email' | 'survey'>('email');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
@@ -676,6 +749,20 @@ export class CampaignsComponent {
    * this, so the create is abandoned rather than issued against a context nobody is looking at.
    */
   private emailStagingGeneration = 0;
+
+  /**
+   * Guards the survey sequence's generate, stage and workflow-build loops. Each awaits several
+   * upstream calls in a row, so a brief reset, an asset switch or a count change landing between
+   * them would otherwise have the loop write the PREVIOUS series back onto the page -- or, while
+   * staging, keep cloning drafts for a series nobody is looking at.
+   */
+  private surveySequenceGeneration = 0;
+
+  /** Start-over counts for this page's lifetime, used when sessionStorage is unavailable. */
+  private readonly seriesRestartFallback = new Map<string, number>();
+
+  /** Bumped on every start-over, so the computeds that read the restart count re-read it. */
+  private readonly seriesRestartVersion = signal(0);
 
   /**
    * Guards a late variant-B copy response against a stage the operator has since changed.
@@ -1501,10 +1588,49 @@ export class CampaignsComponent {
    */
   protected readonly selectedEmailTypeId = signal<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
 
-  /** The stage that type generates from — what campaign-service actually takes. */
-  protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
-    () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
+  /**
+   * The type list for the ACTIVE send surface.
+   *
+   * One picker, two vocabularies. Upstream keys a brief on `(project, slug, delivery, stage)` and
+   * refuses a cross-surface pair, so offering the event stages on the survey surface would offer a
+   * choice the server rejects.
+   */
+  protected readonly sendTypes = computed<readonly CampaignEmailTypeOption[] | readonly CampaignSurveyTypeOption[]>(() =>
+    this.isSurvey() ? this.surveyAssetTypes() : CAMPAIGN_EMAIL_TYPES
   );
+
+  /**
+   * What the survey picker offers: the ASSET being promoted, not each send of it.
+   *
+   * The reminder and closing stages exist upstream and are what the series' briefs are keyed on,
+   * but they are not choices -- a reminder is not a different thing to promote, it is the second
+   * email about the same survey. Offering all four made the operator plan each send as a separate
+   * campaign, which is the repetition this surface exists to avoid; the count below decides how
+   * many sends the one asset gets.
+   */
+  private readonly surveyAssetTypes = computed<readonly CampaignSurveyTypeOption[]>(() =>
+    CAMPAIGN_SURVEY_TYPES.filter((type) => type.stage === 'Survey Promo' || type.stage === 'Report Promo')
+  );
+
+  /**
+   * A mutable COPY for the template, for the reason `emailTypes` below is one: `lfx-select` types
+   * `options` as `any[]` and will not take a readonly array.
+   */
+  protected readonly sendTypeOptions = computed(() => [...this.sendTypes()]);
+
+  /** The stage that type generates from — what campaign-service actually takes. */
+  protected readonly selectedEmailStage = computed<CampaignSendStage | undefined>(
+    () => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.stage
+  );
+
+  /**
+   * The stage audience QA runs under. QA's `stage` takes only the event email stages, so a survey
+   * or report stage is sent as no stage at all rather than refused.
+   */
+  protected readonly audienceQaStage = computed<CampaignEmailStage | ''>(() => {
+    const stage = this.selectedEmailStage();
+    return stage !== undefined && (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage) ? (stage as CampaignEmailStage) : '';
+  });
 
   /**
    * The chosen type's label, for the read-only line on Implement.
@@ -1515,7 +1641,7 @@ export class CampaignsComponent {
    * `onGenerateEmailCopy()` then sent the new stage against the old brief's id. The picker lives
    * above the planner, where the lookup can answer it.
    */
-  protected readonly selectedEmailTypeLabel = computed<string>(() => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
+  protected readonly selectedEmailTypeLabel = computed<string>(() => this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.label ?? '');
 
   /** The full type list, for the selector. */
   // A mutable COPY for the template. `lfx-select` types `options` as `any[]`, and a readonly
@@ -1537,9 +1663,14 @@ export class CampaignsComponent {
    * Narrowed by LOOKUP against the shared list rather than cast, so an id that is no longer a
    * member (a segment retired from `CAMPAIGN_EMAIL_SEGMENTS` while one was selected) degrades to
    * generic copy instead of travelling upstream as a value the service does not know.
+   *
+   * Always `undefined` on the survey surface. The picker is not shown there -- the segment blocks
+   * are written for events (sessions, past editions, "has attended before") and describe nothing
+   * about a survey's reader -- so a segment chosen earlier on the email surface must not ride
+   * along with a survey generate. The raw id is kept, so returning to email shows the choice again.
    */
   protected readonly selectedEmailSegment = computed<CampaignEmailSegment | undefined>(() =>
-    CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
+    this.isSurvey() ? undefined : CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
   );
 
   /**
@@ -1559,6 +1690,15 @@ export class CampaignsComponent {
 
   /** The chosen template's id — what `hubspotConfig.sourceEmailId` takes on create. */
   protected readonly selectedEmailTemplateId = signal<string>('');
+
+  /** The chosen template's name, for the line that says which one is being cloned. */
+  protected readonly selectedEmailTemplateName = computed<string>(() => {
+    const id = this.selectedEmailTemplateId();
+    if (id === '') {
+      return '';
+    }
+    return this.emailTemplates()?.find((template) => template.id === id)?.name ?? '';
+  });
 
   /**
    * Generated email copy for the brief on screen — LFXV2-3198's `email-copy`.
@@ -1977,48 +2117,9 @@ export class CampaignsComponent {
    * field -- never invent one -- so an absent url is a deliberate "registration is not the right
    * destination for this stage", not a gap for the UI to fill.
    */
-  protected readonly emailCtaDestination = computed<string>(() => {
-    const generated = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
-    if (generated === '') return '';
-    // MUST EQUAL the brief's registration URL. The generator is told "a button's url must be
-    // that URL, copied exactly ... never invented", so anything else is a model that did not
-    // follow its instructions -- and accepting it would ship a button pointing somewhere the
-    // brief never contained. Checking only that the URL is public-looking is not enough: a
-    // hallucinated `https://evil.example.com/phish` passes that check.
-    //
-    // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
-    // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
-    // A model copying the URL and adding or dropping a slash addresses the SAME page, so
-    // refusing it would silently drop the button for a generation that followed its
-    // instructions.
-    //
-    // Stripping it from the whole serialized URL was the over-correction in the other
-    // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
-    // EQUAL to the brief's `?token=abc` and a different destination passed. Only the path may
-    // be normalized; `search` and `hash` must match exactly, because a trailing slash there is
-    // part of the value rather than a path separator.
-    const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
-    const sameTarget = (url: string): string => {
-      try {
-        const parsed = new URL(url);
-        parsed.pathname = parsed.pathname.replace(/\/+$/, '');
-        return parsed.toString();
-      } catch {
-        // Not parseable: compare verbatim rather than guessing.
-        //
-        // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a
-        // brief with no usable registrationUrl, and `new URL('')` throws, so every such brief
-        // lands here while the generator has supplied a url.
-        //
-        // Returning the input verbatim is the right answer for that case: '' can then only equal
-        // '', so a generated url never matches an absent brief url and no button is staged --
-        // which is what "the brief has no registration destination" should mean. Falling back to
-        // the old whole-string strip here would reintroduce the query/fragment gap.
-        return url;
-      }
-    };
-    return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
-  });
+  protected readonly emailCtaDestination = computed<string>(() =>
+    ctaDestinationFor(this.emailCopy()?.ctaUrl, this.emailBriefOutput()?.eventDetails?.registrationUrl)
+  );
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
@@ -2080,12 +2181,249 @@ export class CampaignsComponent {
   /** A stage is in flight OR unresolved: what every lock that protects a stage keys on. */
   protected readonly emailStagingHeld = computed(() => this.emailStaging() === 'staging' || this.emailStagingUnresolved());
 
+  /**
+   * Whether the Audience tab must not replace the audience: a single send OR a survey series is
+   * being staged (or has a send held), and a replacement mid-way would leave drafts built against
+   * different audiences -- which the series' workflow then refuses.
+   */
+  protected readonly audienceLockedByStaging = computed(() => this.emailStagingHeld() || this.surveySeriesStarted());
+
   /** Terminal message for the staging attempt — empty while idle or in flight. */
   protected readonly emailStagingMessage = signal<string>('');
   /** HubSpot link to the staged draft; '' when the service sent none or it is not an http(s) URL. */
   protected readonly emailStagingDraftUrl = signal<string>('');
   /** Notes about best-effort steps of the staged draft that did not apply (e.g. a hero image that could not be added). */
   protected readonly emailStagingWarnings = signal<readonly string[]>([]);
+
+  /**
+   * How many emails this survey is promoted by: one, or a series of two or three.
+   *
+   * Asked ONCE, before generation, because it changes what gets written rather than how it is
+   * presented: each send is its own brief with its own stage, and the stage is what gives the
+   * reminder its "still open" framing and the closing its deadline framing.
+   */
+  protected readonly surveyEmailCount = signal<number>(1);
+
+  /**
+   * The counts on offer, with what each one means.
+   *
+   * Read from `CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS`: one email, or the full three-send series, the
+   * one length the configured workflow can send.
+   */
+  protected readonly surveyEmailCountOptions = CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS;
+
+  /** Report promotion is a single asset: a published report has no reminder and does not close. */
+  protected readonly surveySupportsSeries = computed(() => this.isSurvey() && this.selectedEmailStage() === 'Survey Promo');
+
+  /**
+   * The stages this campaign's sends occupy, in send order.
+   *
+   * One send, or three: an opening, a reminder while the survey is in field, and a closing that
+   * carries the deadline -- the shape of the configured workflow every series is copied from.
+   */
+  protected readonly surveySequenceStages = computed<readonly CampaignSurveyStage[]>(() => {
+    if (!this.surveySupportsSeries()) {
+      // Report promotion, or a survey stage reached some other way: a single send, named by
+      // whatever the picker currently addresses.
+      const stage = this.selectedEmailStage();
+      return stage === undefined ? [] : [stage as CampaignSurveyStage];
+    }
+    // Read from the shared options, so a count and its stages cannot be edited apart.
+    return CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((option) => option.count === this.surveyEmailCount())?.stages ?? ['Survey Promo'];
+  });
+
+  /** Staging progress for the whole sequence: which send is being created, and what failed. */
+  protected readonly sequenceStagingState = signal<CampaignSurveySequenceStagingState>('idle');
+  protected readonly sequenceStagingMessage = signal<string>('');
+  /** The sends that now have a HubSpot draft, by brief id, so the panel can show which are ready. */
+  protected readonly sequenceStagedBriefIds = signal<readonly string[]>([]);
+  /**
+   * Sends whose create was accepted but never reported back (a lost or timed-out job, or an
+   * indeterminate refusal): a draft may exist. Staging is held until the operator checks HubSpot,
+   * because staging them again could clone a second draft. Writing the series again clears it.
+   */
+  protected readonly sequenceUnresolvedBriefIds = signal<readonly string[]>([]);
+  /**
+   * A problem sharing the audience with the later sends. Shown whatever the generate or staging
+   * state, because sharing is best effort: the series is written either way, and only this line
+   * explains why a later send then has no audience.
+   */
+  protected readonly surveySequenceWarning = signal<string>('');
+
+  /** The sends this campaign has generated: one entry per stage, in send order. */
+  protected readonly surveySequenceSends = signal<readonly CampaignSequenceSend[]>([]);
+  protected readonly surveySequenceState = signal<CampaignSurveySequenceGenerateState>('idle');
+  protected readonly surveySequenceError = signal<string>('');
+  /** Which send is being written right now, for a progress line that says more than a spinner. */
+  protected readonly surveySequenceProgress = signal<string>('');
+
+  /**
+   * Whether every send can be staged right now.
+   *
+   * ONE statement of the rule, read by the button's disabled state, its explanation chain and the
+   * handler's own re-check -- the handler re-reads it after its awaits rather than trusting the
+   * click, since a template or audience can change while three creates are in flight.
+   *
+   * The audience is part of it, unlike the per-send Stage button's own guard: dispatch refuses a
+   * send with no audience, and this path creates several in a row, so letting it start would fail
+   * partway and leave some sends staged and others not.
+   */
+  protected readonly canStageSequence = computed(
+    () =>
+      this.sequenceStagingState() !== 'staging' &&
+      // Not while later sends are still being written: staging snapshots the list, so it would
+      // stage the sends written so far and report the series done.
+      this.surveySequenceState() !== 'generating' &&
+      // Nor while the audience is being replaced: `emailAudience()` still holds the old row.
+      !this.emailAudienceWriteInFlight() &&
+      // Nor over the single Stage button's own in-flight or unconfirmed create: send 1 is the same
+      // brief, so a series create beside it could clone a second draft. A restarted series is
+      // written on NEW briefs, so a hold left on the original brief no longer applies to it (its
+      // acknowledgment lives in the single-send controls a restart hides).
+      (this.surveySeriesRestarted() || !this.emailStagingHeld()) &&
+      // The WHOLE planned series: after a write that failed partway, the sends that did land stay
+      // on screen for review, but staging them would ship a series without its later emails.
+      this.surveySequenceComplete() &&
+      !this.sequenceHasHeldSend() &&
+      this.emailBriefOutput() !== null &&
+      this.activeFoundationSlug() !== '' &&
+      this.selectedEmailTemplateId() !== '' &&
+      this.emailAudience()?.status === 'built'
+  );
+
+  /**
+   * Whether this survey series has started reaching HubSpot: a send staged, staging, held, or a
+   * workflow building. From then on the audience is LOCKED (and the email count with it): every
+   * draft and the workflow were built against it, and nothing can re-point them, so changing it
+   * would leave HubSpot sending to lists the page no longer shows. Starting over is the way out.
+   */
+  protected readonly surveySeriesStarted = computed(
+    () =>
+      this.sequenceStagedBriefIds().length > 0 ||
+      this.sequenceStagingState() === 'staging' ||
+      this.sequenceHasHeldSend() ||
+      this.sendWorkflowState() === 'building'
+  );
+
+  /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
+  protected readonly surveySeriesMode = computed(() => (this.surveySupportsSeries() && this.surveyEmailCount() > 1) || this.surveySeriesRestarted());
+
+  /**
+   * Whether this survey's series was started over. Its emails then live on NEW briefs (`-rN`),
+   * so even a one-email survey or report stages through the series path: the single Stage button
+   * addresses the page's ORIGINAL brief, whose draft campaign-service would hand back unchanged.
+   */
+  protected readonly surveySeriesRestarted = computed(() => {
+    this.seriesRestartVersion();
+    const brief = this.emailBriefOutput();
+    return this.isSurvey() && brief !== null && this.readSeriesRestart(this.activeFoundationSlug(), brief.eventDetails?.slug ?? '') > 0;
+  });
+
+  /** Whether a survey series is staging, or holds a send, so the single Stage button must wait. */
+  protected readonly sequenceLocksSingleSend = computed(() => this.sequenceStagingState() === 'staging' || this.sequenceHasHeldSend());
+
+  /** Whether every send the operator planned has been written -- not just some of them. */
+  protected readonly surveySequenceComplete = computed(() => {
+    const sends = this.surveySequenceSends();
+    return sends.length > 0 && sends.length === this.surveySequenceStages().length;
+  });
+
+  /**
+   * Whether the whole series can be written right now.
+   *
+   * The brief is required because every send is a copy of it under a different stage; the
+   * foundation because a brief is stored under one.
+   */
+  protected readonly canGenerateSurveySequence = computed(
+    () =>
+      // Not once a send is staged: campaign-service hands back a brief's existing draft on a
+      // second create, so a rewrite would show new copy while HubSpot kept sending the old.
+      this.sequenceStagedBriefIds().length === 0 &&
+      this.surveySequenceState() !== 'generating' &&
+      this.sequenceStagingState() !== 'staging' &&
+      this.sendWorkflowState() !== 'building' &&
+      this.emailBriefOutput() !== null &&
+      this.activeFoundationSlug() !== ''
+  );
+
+  /**
+   * Whether the workflow can be built: two sends or more, every one of them staged. Upstream
+   * refuses a send with no draft anyway; checking here keeps the button from inviting a request
+   * that can only fail, and the hint beside it says what is missing.
+   */
+  protected readonly canBuildSequenceWorkflow = computed(() => {
+    const sends = this.surveySequenceSends();
+    const staged = this.sequenceStagedBriefIds();
+    return (
+      this.sendWorkflowState() !== 'building' &&
+      this.sequenceStagingState() !== 'staging' &&
+      // Not during an audience write: the workflow enrols the lists campaign-service reads now.
+      !this.emailAudienceWriteInFlight() &&
+      this.activeFoundationSlug() !== '' &&
+      sends.length > 1 &&
+      this.surveySequenceComplete() &&
+      sends.every((send) => staged.includes(send.briefId)) &&
+      this.sequenceDatesComplete()
+    );
+  });
+
+  /**
+   * Each send's body as it will be STAGED, keyed by brief id, so the review panel shows the same
+   * cleaned HTML the draft receives rather than the raw generated markup.
+   */
+  protected readonly surveySequenceBodies = computed<ReadonlyMap<string, string>>(() => {
+    const brief = this.emailBriefOutput();
+    return new Map(this.surveySequenceSends().map((send) => [send.briefId, this.sequenceSendContent(brief, send).bodyHtml]));
+  });
+
+  /**
+   * Each send's call-to-action button as it will be STAGED ('' when none is), keyed by brief id.
+   * Staged separately from the body, so the review panel shows it separately too -- otherwise the
+   * operator approves a draft whose button they never saw.
+   */
+  protected readonly surveySequenceButtons = computed<ReadonlyMap<string, { text: string; url: string }>>(() => {
+    const brief = this.emailBriefOutput();
+    return new Map(
+      this.surveySequenceSends().map((send) => {
+        const content = this.sequenceSendContent(brief, send);
+        return [send.briefId, { text: content.buttonText, url: content.buttonUrl }];
+      })
+    );
+  });
+
+  // --- The send workflow: one HubSpot workflow that sends a staged SERIES -------------------
+  //
+  // A single email is staged, scheduled and sent on its own. A series is not: its sends happen in
+  // order, days apart, to one enrolled audience, and that schedule is a HubSpot concept. So the
+  // series is handed to HubSpot as a workflow rather than three drafts an operator schedules by
+  // hand and keeps in step.
+
+  /** Name for the new workflow. Left empty, the build names it after the campaign: `<name> - Workflow`. */
+  protected readonly sendWorkflowForm = new FormGroup({
+    name: new FormControl<string>('', { nonNullable: true }),
+  });
+
+  /**
+   * One send date per written send, keyed `date-<index>` in send order. Rebuilt whenever a series
+   * is written, since its length is the series'.
+   */
+  protected readonly sequenceDatesForm = new FormRecord<FormControl<string>>({});
+
+  /** The dates as typed, as a signal so Build's enabled state follows them. */
+  private readonly sequenceDateValues = toSignal(this.sequenceDatesForm.valueChanges, { initialValue: {} as Partial<Record<string, string>> });
+
+  /**
+   * Whether every send has its date. campaign-service needs one per wait-until-date step of the
+   * workflow it copies -- the source's own dates belong to another campaign -- and refuses a
+   * missing one with a 409, so Build waits for all of them.
+   */
+  protected readonly sequenceDatesComplete = computed(() => {
+    const values = this.sequenceDateValues();
+    return this.surveySequenceSends().every((_send, index) => (values[`date-${index}`] ?? '').trim() !== '');
+  });
+  protected readonly sendWorkflowState = signal<CampaignSurveySendWorkflowState>('idle');
+  protected readonly sendWorkflowError = signal<string>('');
+  protected readonly sendWorkflowResult = signal<CampaignSendWorkflowResult | null>(null);
 
   /**
    * Whether a send can be staged right now.
@@ -2122,7 +2460,10 @@ export class CampaignsComponent {
       // That draft reads as plausible and is simply the wrong content, which is the failure mode
       // this panel keeps having to close.
       this.emailCopyState() !== 'generating' &&
-      this.abTestCopyState() !== 'generating'
+      this.abTestCopyState() !== 'generating' &&
+      // A survey series' first send IS this brief: while the series is staging, or holds a send
+      // whose draft may exist, a single-send create could clone a second draft for it.
+      !this.sequenceLocksSingleSend()
   );
 
   /**
@@ -2156,6 +2497,32 @@ export class CampaignsComponent {
    * the thing that can be mistyped; a name would be resolved from local context and would look
    * correct even when the queried id was wrong.
    */
+  /**
+   * Why the survey surface has no template, when that is a terminal state rather than a load in
+   * progress: not connected, a failed read, or a portal with no marketing emails. '' otherwise.
+   * The survey surface hides the picker, so without this those states read as an endless search.
+   */
+  protected readonly surveyTemplateProblem = computed<string>(() => {
+    if (this.emailTemplatesLoading() || this.selectedEmailTemplateId() !== '') {
+      return '';
+    }
+    if (this.emailChannelEnabled() === false) {
+      return this.emailNotConnectedMessage();
+    }
+    const error = this.emailTemplatesError();
+    if (error) {
+      return error;
+    }
+    const templates = this.emailTemplates();
+    return templates !== null && templates.length === 0 ? 'This HubSpot portal has no marketing emails to clone. Add one in HubSpot, then try again.' : '';
+  });
+
+  /** The survey surface's template line: its problem, or that the search is still running. */
+  protected readonly surveyTemplateHint = computed<string>(() => this.surveyTemplateProblem() || 'Finding a template in this portal to clone.');
+
+  /** Whether a send of the series on screen is held because its draft never confirmed. */
+  protected readonly sequenceHasHeldSend = computed(() => this.surveySequenceSends().some((send) => this.sequenceUnresolvedBriefIds().includes(send.briefId)));
+
   protected readonly emailNotConnectedMessage = computed<string>(() => {
     const slug = this.emailSearchProjectSlug();
     // The empty-slug search is refused before dispatch, so this is defensive only: naming nothing
@@ -2176,6 +2543,23 @@ export class CampaignsComponent {
    * would hide. `isEmail()` / `!isEmail()` reads as the opposition it is.
    */
   protected readonly isEmail = computed(() => this.selectedDeliveryType() === 'email');
+
+  /** Survey & Report — the surface whose brief is written from a pasted document, not a scraped event. */
+  protected readonly isSurvey = computed(() => this.sendSurface() === 'survey');
+
+  /**
+   * Both SEND surfaces: email and survey.
+   *
+   * They share one container because they share the pipeline -- the same tabs, the same audience
+   * builder, the same HubSpot staging, the same draft link. What differs is where the facts come
+   * from (a scraped event page vs a pasted source document) and which stage vocabulary the picker
+   * offers, and each of those is handled where it differs rather than by a second container.
+   *
+   * Written as "not paid" rather than "email or survey" deliberately: paid is the surface with a
+   * genuinely different page, so a fourth send surface should join this one automatically rather
+   * than silently render nothing.
+   */
+  protected readonly isEmailLike = computed(() => this.selectedDeliveryType() !== 'paid-marketing');
 
   /**
    * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
@@ -2449,6 +2833,10 @@ export class CampaignsComponent {
         this.removedKeywordsService.setScope(projectSlug);
       });
     this.destroyRef.onDestroy(() => {
+      // Leaving the page abandons a series being written or staged: the loops re-check the
+      // generation after every await, so none of them creates another HubSpot draft for a page
+      // that no longer exists.
+      this.surveySequenceGeneration++;
       this.negativeKeywordsService.releaseScope();
       this.keywordTargetingService.releaseScope();
       this.removedKeywordsService.releaseScope();
@@ -2564,7 +2952,7 @@ export class CampaignsComponent {
         // re-evaluates it after a switch, so the picker stayed empty until they navigated
         // away and back. Guarded, so a switch into a foundation whose channel is off still
         // renders that answer rather than looping on it.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'implementation') {
+        if (this.isEmailLike() && this.selectedEmailTab() === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
         }
 
@@ -2581,7 +2969,7 @@ export class CampaignsComponent {
         // resolvable: the panel repopulates instead of sitting empty until the operator
         // navigates away and back. `loadEmailMetrics` re-reads its own context and handles the
         // no-brief case, so it is safe to call unconditionally either way.
-        if (this.selectedDeliveryType() === 'email' && this.selectedEmailTab() === 'insights') {
+        if (this.isEmailLike() && this.selectedEmailTab() === 'insights') {
           this.loadEmailMetrics();
         }
 
@@ -2674,6 +3062,33 @@ export class CampaignsComponent {
       }
       this.selectedDeliveryType.set(value);
 
+      // The two send surfaces have DISJOINT type lists, so the id selected on one names nothing on
+      // the other. Left alone, `selectedEmailStage` resolves to undefined and the brief lookup
+      // addresses no row -- the planner then looks permanently empty with no error to explain it.
+      // Reset to the surface's own default, which is what a fresh selection on it would show.
+      //
+      // The CONTROL is reset with the signal, not just the signal: the dropdown renders the
+      // `emailType` control, and the signal only feeds the planner. Resetting one alone left the
+      // dropdown showing the previous surface's id -- which names no option in this surface's list,
+      // so it read as unselected while the planner quietly worked on the default. `emitEvent: false`
+      // because the signal is already set; the control's own stream would only re-enter
+      // `onSelectEmailType` to find nothing to do.
+      //
+      // Routed through `onSelectEmailType` rather than setting the signal, because the surfaces
+      // are separate brief identities upstream: the type handler is what drops the brief id, the
+      // brief and the audience of the stage being left. Set directly, the survey surface kept
+      // the email brief on screen and generated and staged against that row.
+      //
+      // Only when the SURFACE changes. Returning to the surface last used -- the round trip
+      // through Paid Marketing -- keeps its selection: its type is valid there, and resetting it
+      // discarded a chosen stage's brief, audience and copy.
+      if ((value === 'survey' || value === 'email') && value !== this.sendSurface()) {
+        this.sendSurface.set(value);
+        const defaultTypeId = value === 'survey' ? DEFAULT_CAMPAIGN_SURVEY_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
+        this.onSelectEmailType(defaultTypeId);
+        this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
+      }
+
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
       // documents one condition over: resetting a guard's inputs does nothing if nothing runs it.
       // The switch handler's reload is gated on `selectedDeliveryType()` AS IT READS AT THAT
@@ -2684,7 +3099,7 @@ export class CampaignsComponent {
       //
       // The same never-answered guard, so a channel-off or failed answer is not retried on every
       // round-trip and a healthy list is not re-fetched.
-      if (value === 'email' && this.selectedEmailTab() === 'implementation') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'implementation') {
         this.loadEmailTemplatesIfNeverAnswered();
       }
 
@@ -2694,7 +3109,7 @@ export class CampaignsComponent {
       // whatever was on screen before. Unlike the picker this is not merely stale-looking: these
       // numbers change when a human presses send in HubSpot, entirely outside this app, which is
       // the whole reason the tab is re-read on every entry rather than cached.
-      if (value === 'email' && this.selectedEmailTab() === 'insights') {
+      if (value !== 'paid-marketing' && this.selectedEmailTab() === 'insights') {
         this.loadEmailMetrics();
       }
     });
@@ -2780,7 +3195,8 @@ export class CampaignsComponent {
    * tablist passing index 2 against a four-length list would select Optimize and focus nothing.
    */
   protected onTabKeydown(event: KeyboardEvent, currentIndex: number, owner: CampaignDeliveryType): void {
-    const tabs = owner === 'email' ? this.emailTabs : this.tabs;
+    // Both send surfaces share the email tab set; only paid has its own (it alone has Optimize).
+    const tabs = owner === 'paid-marketing' ? this.tabs : this.emailTabs;
     let newIndex: number | null = null;
 
     if (event.key === 'ArrowRight') {
@@ -3289,6 +3705,9 @@ export class CampaignsComponent {
       this.selectedEmailTemplateRow.set(null);
       this.applyEventTemplateSuggestion(templates);
     }
+    this.ensureSurveyTemplateSelected();
+    // The series was written for the previous asset; its sends are that asset's briefs.
+    this.resetSurveySequence();
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
@@ -3535,6 +3954,366 @@ export class CampaignsComponent {
   }
 
   /**
+   * Abandon this series and its staging state, so the page can write and stage a new one. The
+   * drafts already created stay in HubSpot (the page says so): this cannot change or delete them.
+   */
+  protected onStartSeriesOver(): void {
+    if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building') {
+      return;
+    }
+    // Drafts exist for this series, so the next one is written under NEW briefs (see
+    // `readSeriesRestart`). A series that never reached HubSpot keeps its briefs.
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (this.surveySeriesStarted() && brief !== null && projectSlug !== '') {
+      const baseSlug = brief.eventDetails?.slug ?? '';
+      this.writeSeriesRestart(projectSlug, baseSlug, this.readSeriesRestart(projectSlug, baseSlug) + 1);
+    }
+    this.resetSurveySequence();
+  }
+
+  /** Read the portal's templates again after a failed or empty answer on the survey surface. */
+  protected onRetrySurveyTemplates(): void {
+    this.searchEmailTemplates('');
+  }
+
+  /** Change how many emails the survey is promoted by. */
+  protected onSurveyEmailCountChange(count: number): void {
+    // Locked with the audience once the series has drafts: a new count would rewrite briefs that
+    // HubSpot already holds drafts for, and those drafts would not change.
+    if (count === this.surveyEmailCount() || this.surveySeriesStarted()) {
+      return;
+    }
+    this.surveyEmailCount.set(count);
+    // The generated series belongs to the PREVIOUS count: dropping from three sends to two would
+    // otherwise leave a closing email on screen that this campaign no longer has, and the build
+    // would send a brief the operator can no longer see.
+    this.resetSurveySequence();
+  }
+
+  /**
+   * Write every send of this survey, in one pass.
+   *
+   * Each send is its own brief upstream -- keyed on `(project, slug, survey, stage)` -- so this
+   * persists the planned brief once per stage and generates that stage's copy against it. The
+   * stage is what differs: the opening asks the reader whether the survey is for them, the
+   * reminder frames it as still open, and the closing carries the deadline.
+   *
+   * Sequential rather than parallel. Three concurrent saves of the same event would race for the
+   * ownership record this page keeps per brief identity, and the loser would be refused as a
+   * duplicate create -- the failure `ensureEmailBriefId` already guards for one brief at a time.
+   */
+  protected async onGenerateSurveySequence(): Promise<void> {
+    if (!this.canGenerateSurveySequence()) {
+      return;
+    }
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+    const stages = this.surveySequenceStages();
+
+    // A rewrite replaces every send's copy, so drafts staged from the previous copy -- and a
+    // workflow pointed at them -- no longer describe what is on screen. They are dropped, and the
+    // sends are staged again from the new copy.
+    this.resetSequenceStaging();
+    const generation = ++this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    this.surveySequenceState.set('generating');
+    this.surveySequenceError.set('');
+    this.surveySequenceWarning.set('');
+    this.surveySequenceSends.set([]);
+    this.clearSequenceDates();
+
+    const baseSlug = brief.eventDetails?.slug ?? '';
+    const restart = this.readSeriesRestart(projectSlug, baseSlug);
+    const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
+
+    const written: CampaignSequenceSend[] = [];
+    try {
+      for (const stage of stages) {
+        this.surveySequenceProgress.set(`Writing the ${this.surveyStageLabel(stage)}...`);
+
+        // A COPY of the planned brief under this send's own stage. The brief carries its stage as
+        // part of its identity, so the same pasted source becomes a separate row per send rather
+        // than one row the sends overwrite in turn.
+        const staged: CampaignBriefOutput = {
+          ...brief,
+          deliveryType: 'survey',
+          emailStage: stage,
+          // After a start-over, a NEW identity: campaign-service hands back a brief's existing
+          // draft on a second create, so writing the original briefs again would show new copy
+          // while HubSpot kept the old drafts.
+          eventDetails: { ...brief.eventDetails, slug: seriesSlug },
+        };
+        const briefId = await this.persistSequenceBrief(staged, projectSlug);
+        if (!isCurrent()) {
+          return;
+        }
+        if (briefId === '') {
+          throw new Error(`The ${this.surveyStageLabel(stage)} could not be saved.`);
+        }
+
+        const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, stage));
+        if (!isCurrent()) {
+          return;
+        }
+        if (!result.enabled || !result.copy) {
+          throw new Error(result.error ?? `The ${this.surveyStageLabel(stage)} could not be generated.`);
+        }
+        written.push({ stage, label: this.surveyStageLabel(stage), briefId, copy: result.copy });
+        // The row's date control BEFORE the row is published: the template binds `date-<n>` as
+        // soon as two rows exist, and a control created only after the loop was missing while
+        // later sends were still being written -- and for good if one of them failed.
+        this.sequenceDatesForm.addControl(`date-${written.length - 1}`, new FormControl<string>('', { nonNullable: true }));
+        // Published as each send lands, so a failure part-way leaves the sends that DID get
+        // written on screen rather than discarding work the operator can still use.
+        this.surveySequenceSends.set([...written]);
+      }
+      const shareProblem = await this.shareAudienceAcrossSequence(written, projectSlug, isCurrent);
+      if (!isCurrent()) {
+        return;
+      }
+      this.surveySequenceWarning.set(shareProblem);
+      this.surveySequenceState.set('done');
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      this.surveySequenceError.set(this.sendWorkflowErrorText(error, 'The emails could not be written.'));
+      this.surveySequenceState.set('error');
+    } finally {
+      if (isCurrent()) {
+        this.surveySequenceProgress.set('');
+      }
+    }
+  }
+
+  /**
+   * Create a HubSpot draft for every send in the sequence.
+   *
+   * The ordinary Stage button addresses the ONE brief the page is holding, which is the first
+   * send. The other sends are separate briefs that the survey picker deliberately no longer
+   * offers -- so without this they could never be staged, and the workflow build refused on the
+   * first one that had no draft.
+   *
+   * Sequential, and it stops at the first failure. Each send is an upstream create, and carrying
+   * on past a failure would leave a part-built sequence whose gaps are only discovered later, by
+   * the workflow build, in a message about a different send than the one that actually broke.
+   */
+  protected async onStageSequenceSends(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    const sourceEmailId = this.selectedEmailTemplateId();
+    const sends = this.surveySequenceSends();
+    // The same rule the button is disabled by, re-read here: a click is not a promise that the
+    // conditions still hold. The narrowing below is what TypeScript needs regardless.
+    if (!this.canStageSequence() || brief === null || projectSlug === '' || sourceEmailId === '') {
+      return;
+    }
+
+    const generation = this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    this.sequenceStagingState.set('staging');
+    this.sequenceStagingMessage.set('');
+
+    // Share the audience HERE, not only at generate time. Dispatch refuses a send with no
+    // audience ("no audience found for this brief"), and the audience is usually composed AFTER
+    // the emails are written -- so sharing only at generation left sends 2 and 3 without one
+    // whenever the operator worked in that order, which is the order the tabs suggest.
+    //
+    // Idempotent: sends that already carry the audience are skipped, so running this again after
+    // a failed staging attempt costs one read per send and changes nothing else.
+    this.sequenceStagingMessage.set('Attaching the audience to every send...');
+    const shareProblem = await this.shareAudienceAcrossSequence(sends, projectSlug, isCurrent);
+    if (!isCurrent()) {
+      return;
+    }
+    // Stopped HERE rather than left to staging: a later send without the audience would be
+    // refused as "no audience found for this brief", which explains nothing about why.
+    this.surveySequenceWarning.set(shareProblem);
+    if (shareProblem !== '') {
+      this.sequenceStagingMessage.set(shareProblem);
+      this.sequenceStagingState.set('error');
+      return;
+    }
+    // Re-checked after the await, as the single-send path does: the audience may have been
+    // replaced while it was being shared.
+    if (this.emailAudienceWriteInFlight() || this.emailAudience()?.status !== 'built') {
+      this.sequenceStagingMessage.set('The send audience changed while staging. Stage again once it has finished updating.');
+      this.sequenceStagingState.set('error');
+      return;
+    }
+    const staged: string[] = [...this.sequenceStagedBriefIds()];
+
+    for (const send of sends) {
+      if (staged.includes(send.briefId)) {
+        continue;
+      }
+      // Re-checked per send, not only at the click: a reset between two creates must stop the
+      // loop before it clones a draft for a series nobody is looking at.
+      if (!isCurrent()) {
+        return;
+      }
+      this.sequenceStagingMessage.set(`Creating the ${send.label} draft in HubSpot...`);
+      try {
+        let outcome: { jobId: string; error?: string; indeterminate?: boolean };
+        try {
+          outcome = await firstValueFrom(this.campaignService.createCampaign(this.sequenceStageRequest(brief, send, sourceEmailId), projectSlug, send.briefId));
+        } catch (error) {
+          // The request was SENT and no answer arrived -- a dropped connection, a gateway 5xx --
+          // so the draft may exist, as the single-send path assumes. Held, not retried. Only an
+          // explicit 4xx is a refusal that created nothing and stays retryable.
+          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500;
+          if (!refused && isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw refused ? error : new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
+        }
+        // The refusal's own words, as the single-send path shows them. An INDETERMINATE one is
+        // a create that may have happened, so it says to look before staging again rather than
+        // inviting a retry that could clone a second draft.
+        if (outcome.error) {
+          if (outcome.indeterminate) {
+            // Only for the series still on screen: a reset since then cleared the holds, and an
+            // old brief id written back would block staging of the new series with no reason.
+            if (isCurrent()) {
+              this.holdUnresolvedSend(send.briefId);
+            }
+            throw new Error(`${outcome.error} Check HubSpot for this draft before staging again.`);
+          }
+          throw new Error(outcome.error);
+        }
+        if (!outcome.jobId) {
+          throw new Error(`HubSpot did not accept the ${send.label}.`);
+        }
+
+        // WAIT for the job, rather than treating a job id as a draft. The create is accepted
+        // asynchronously and can still fail upstream -- "no audience found for this brief" is the
+        // one that bit here -- so reporting success on the id alone told the operator all three
+        // drafts existed while two of them had already failed, and only the workflow build
+        // disagreed, about a different send than the one that broke.
+        let result: CampaignJobOutcome;
+        try {
+          result = await firstValueFrom(
+            this.campaignService.getCreateResult(outcome.jobId, projectSlug).pipe(
+              filter((job): job is CampaignJobOutcome => job !== null),
+              take(1)
+            )
+          );
+        } catch {
+          // The create was ACCEPTED and then never reported back -- a lost or timed-out job. The
+          // draft may well exist, so this is not a failure to retry: staging again could clone a
+          // second one. Held until the operator has looked, with a message that names HubSpot
+          // (the poller's own timeout text is written for the ad platforms).
+          if (isCurrent()) {
+            this.holdUnresolvedSend(send.briefId);
+          }
+          throw new Error(`HubSpot did not confirm the ${send.label} draft. Check HubSpot for it before staging again.`);
+        }
+        if (!isCurrent()) {
+          return;
+        }
+        const hubspotOutcome = (result.platformResults ?? []).find((platform) => platform.platform === 'hubspot');
+        // A FAILED job can still carry the draft HubSpot created (recording it was what failed).
+        // Keep where it landed and hold the send: staging it again would clone a second one.
+        if ((result.errors.length > 0 || (hubspotOutcome !== undefined && !hubspotOutcome.ok)) && (hubspotOutcome?.campaignId ?? '') !== '') {
+          const draftUrl = this.hubspotDraftUrl(hubspotOutcome?.hubspotUrl);
+          const draftId = hubspotOutcome?.campaignId ?? '';
+          this.surveySequenceSends.update((rows) => rows.map((row) => (row.briefId === send.briefId ? { ...row, draftUrl, draftId } : row)));
+          this.holdUnresolvedSend(send.briefId);
+          throw new Error(`HubSpot created the ${send.label} draft but staging did not finish. Check the draft in HubSpot before staging again.`);
+        }
+        // The HubSpot row's own refusal ("no audience found for this brief") before the job's
+        // generic failure text, which is all `errors[0]` holds when the job itself set no error.
+        if (hubspotOutcome !== undefined && !hubspotOutcome.ok && (hubspotOutcome.error ?? '') !== '') {
+          throw new Error(hubspotOutcome.error);
+        }
+        if (result.errors.length > 0) {
+          throw new Error(result.errors[0]);
+        }
+
+        // Record WHERE the draft landed. Without it the operator has to find three emails by name
+        // among the hundreds the portal holds -- the template picker's own copy says "Showing 100
+        // of 500". The link is built upstream from the connection's portal id, so it opens the
+        // right portal rather than whichever one the reader happens to be signed into; the id is
+        // kept too, because the link is absent when that portal id is unknown.
+        const hubspotResult = (result.platformResults ?? []).find((platform) => platform.platform === 'hubspot');
+        // A finished job can still report the HubSpot create as failed, with its reason on the row.
+        if (hubspotResult !== undefined && !hubspotResult.ok) {
+          throw new Error(hubspotResult.error || `HubSpot did not create the ${send.label}.`);
+        }
+        const draftUrl = this.hubspotDraftUrl(hubspotResult?.hubspotUrl);
+        const draftId = hubspotResult?.campaignId ?? '';
+        this.surveySequenceSends.update((rows) => rows.map((row) => (row.briefId === send.briefId ? { ...row, draftUrl, draftId } : row)));
+
+        staged.push(send.briefId);
+        this.sequenceStagedBriefIds.set([...staged]);
+      } catch (error) {
+        if (!isCurrent()) {
+          return;
+        }
+        this.sequenceStagingMessage.set(`${this.sendWorkflowErrorText(error, 'The draft could not be created.')} (${send.label})`);
+        this.sequenceStagingState.set('error');
+        return;
+      }
+    }
+
+    this.sequenceStagingMessage.set(`All ${sends.length} drafts were created in HubSpot. The workflow can be built now.`);
+    this.sequenceStagingState.set('done');
+  }
+
+  /**
+   * Build the workflow from the generated series, with the operator's dates.
+   *
+   * Only for two sends or more. One email is scheduled and sent on its own, so there is nothing
+   * for a workflow to sequence -- the audience is attached to that draft when it is staged.
+   */
+  protected async onBuildSequenceWorkflow(): Promise<void> {
+    const projectSlug = this.activeFoundationSlug();
+    const sends = this.surveySequenceSends();
+    if (!this.canBuildSequenceWorkflow()) {
+      return;
+    }
+    const generation = this.surveySequenceGeneration;
+    const isCurrent = (): boolean => generation === this.surveySequenceGeneration;
+    const typedName = this.sendWorkflowForm.controls.name.value.trim();
+    const name = typedName === '' ? `${this.emailBriefOutput()?.eventDetails?.name ?? 'Survey'} - Workflow` : typedName;
+    // Every date, always: Build is enabled only once each send has one (`sequenceDatesComplete`),
+    // because campaign-service re-dates every wait step of the copied workflow from them.
+    const dates = sends.map((_send, index) => (this.sequenceDatesForm.controls[`date-${index}`]?.value ?? '').trim());
+
+    this.sendWorkflowState.set('building');
+    this.sendWorkflowError.set('');
+    this.sendWorkflowResult.set(null);
+
+    try {
+      const created = await firstValueFrom(
+        this.campaignService.createSendWorkflow(projectSlug, {
+          // No source workflow: campaign-service uses the configured one, which is the workflow
+          // this flow is meant to clone.
+          name,
+          briefIds: sends.map((send) => send.briefId),
+          sendDates: dates,
+        })
+      );
+      if (!isCurrent()) {
+        return;
+      }
+      // Pinned like the drafts' links: an https link on HubSpot's app host, or no link at all.
+      this.sendWorkflowResult.set({ ...created, editUrl: this.hubspotDraftUrl(created.editUrl) });
+      this.sendWorkflowState.set('done');
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      this.sendWorkflowError.set(this.sendWorkflowErrorText(error));
+      this.sendWorkflowState.set('error');
+    }
+  }
+
+  /**
    * Stage the email send — LFXV2-3201's create trigger.
    *
    * TWO upstream calls, in order, because creation is brief-scoped: the route is
@@ -3604,7 +4383,11 @@ export class CampaignsComponent {
       this.emailAudience()?.status !== 'built' ||
       this.emailAudienceWriteInFlight() ||
       this.emailStaging() === 'staging' ||
-      this.emailStagingUnresolved()
+      this.emailStagingUnresolved() ||
+      this.sequenceLocksSingleSend() ||
+      // Hidden in series mode; refused here too, so nothing can stage a restarted survey's
+      // ORIGINAL brief.
+      this.surveySeriesMode()
     ) {
       return;
     }
@@ -3954,6 +4737,7 @@ export class CampaignsComponent {
           this.emailTemplates.set(selectable);
           this.emailTemplatesTruncated.set(result.possiblyTruncated);
           this.applyEventTemplateSuggestion(selectable);
+          this.autoSelectSurveyTemplate(selectable);
         },
         error: () => {
           if (!isCurrent()) {
@@ -5068,7 +5852,7 @@ export class CampaignsComponent {
    * what the picker showed before ranking existed.
    */
   private rankTemplatesForSelectedType(templates: HubSpotMarketingEmail[]): HubSpotMarketingEmail[] {
-    const keywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    const keywords = this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     const eventTerms = this.eventTemplateTerms();
     const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
     if (keywords.length === 0 && !hasEventTerms) {
@@ -6792,6 +7576,420 @@ export class CampaignsComponent {
     // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
+    // The survey series is this brief's too: its sends are copies of it under each stage.
+    this.resetSurveySequence();
+    // The survey surface hides the picker, so the selection cleared above would otherwise stay
+    // empty -- Stage disabled behind "Finding a template" -- until the list was fetched again.
+    this.ensureSurveyTemplateSelected();
+  }
+
+  /**
+   * Choose the survey surface's template, since it does not ask.
+   *
+   * The picker is hidden there -- every survey send clones the same portal template, so browsing
+   * for it per send is a question with one answer. That makes a selection MANDATORY here rather
+   * than merely helpful: `canStageEmail` requires a template id, so a hidden picker and an empty
+   * selection would leave Stage disabled with its reason pointing at a control that is not on
+   * screen.
+   *
+   * Runs AFTER `applyEventTemplateSuggestion`, and only fills what that left empty, so a template
+   * the ranking actually matched still wins over the top of the list.
+   */
+  private autoSelectSurveyTemplate(templates: HubSpotMarketingEmail[]): void {
+    if (!this.isSurvey() || this.selectedEmailTemplateId() !== '' || templates.length === 0) {
+      return;
+    }
+    // The ranked order, not the raw listing: `rankTemplatesForSelectedType` puts the templates
+    // whose names match this send's keywords first, so the fallback is still the best available
+    // guess rather than whichever email HubSpot happened to return first.
+    const best = this.rankTemplatesForSelectedType(templates)[0] ?? templates[0];
+    this.selectedEmailTemplateId.set(best.id);
+    // Marked as suggested, like the event path's own pre-fill: the operator did not choose it, and
+    // the flag is what lets a later deliberate choice replace it without being treated as a change.
+    this.emailTemplateSelectionIsSuggested.set(true);
+  }
+
+  /** A send's operator-facing name, read off the shared type list so the two cannot disagree. */
+  private surveyStageLabel(stage: CampaignSurveyStage): string {
+    return CAMPAIGN_SURVEY_TYPES.find((type) => type.stage === stage)?.label ?? stage;
+  }
+
+  /**
+   * The operator-facing text of a failed workflow build.
+   *
+   * Upstream's own message is preferred over anything written here, because it is the only part
+   * that is actionable: it names the send that is not staged, or both step counts when the chosen
+   * workflow's shape does not match. Same extraction order as the repo's other API error readers
+   * (`document-form.component.ts`) -- the BFF's envelope puts it under `error`, Goa's under
+   * `message`.
+   */
+  private sendWorkflowErrorText(error: unknown, fallback = 'The workflow could not be built.'): string {
+    const body = (error as { error?: { error?: string; message?: string } } | null)?.error;
+    const fromResponse = body?.error || body?.message;
+    if (fromResponse) {
+      return fromResponse;
+    }
+    // A plain Error carries its own message, and this path throws them: a failed staging job's
+    // upstream reason arrives that way. Reading only the HTTP envelope replaced those with the
+    // fallback below, so the operator was told "the workflow could not be built" when the real
+    // answer was "no audience found for this brief".
+    if (error instanceof Error && error.message.trim() !== '') {
+      return error.message;
+    }
+    return fallback;
+  }
+
+  /**
+   * Save ONE send of a sequence, under its own stage.
+   *
+   * Not `persistEmailBrief`, which returns `emailBriefId()` when the page already holds one. That
+   * is right for the single brief on screen and wrong here: in a loop it would hand the second and
+   * third sends the FIRST send's id, so their rows would never be created and every step of the
+   * workflow would point at one draft -- which upstream then refuses as a repeated brief, after
+   * the operator has watched three emails being written.
+   *
+   * Ownership is keyed on the brief's full identity, stage included, so re-running the generator
+   * REPLACES each send's row rather than being refused as a duplicate create.
+   */
+  private async persistSequenceBrief(brief: CampaignBriefOutput, projectSlug: string): Promise<string> {
+    // The FIRST send is the page's own brief, which `warmEmailBriefId` may be saving right now.
+    // Joined through `ensureEmailBriefId` rather than saved again beside it: two creates of one
+    // identity race, and the loser is refused as a duplicate, aborting the series.
+    const primary = this.emailBriefOutput();
+    if (primary !== null && (primary.emailStage ?? '') === (brief.emailStage ?? '') && primary.eventDetails?.slug === brief.eventDetails?.slug) {
+      const primaryId = await this.ensureEmailBriefId(primary, projectSlug);
+      if (primaryId === '') {
+        throw new Error(this.emailSaveFailureMessage('so the emails were not written.'));
+      }
+      return primaryId;
+    }
+
+    const ownershipKey = this.ownershipKey(projectSlug, brief);
+    const owned = ownershipKey === null ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
+
+    const persisted = await firstValueFrom(
+      this.campaignService.persistBrief(brief, projectSlug, owned?.id ?? null, owned?.etag ?? null, owned?.absence === 'overwrite')
+    );
+    const briefId = persisted.briefId ?? '';
+    // A REFUSED save (another editor changed the brief, or this page's version cannot be trusted)
+    // still answers with the stored row's id. Generating from that row and recording ownership of
+    // it -- with an overwrite licence, since a refusal carries no ETag -- let the next rewrite
+    // replace the other editor's brief without the conflict ever being shown. Stop and say why,
+    // keeping whatever ownership was held before, as `persistEmailBrief` does.
+    if (persisted.conflict !== undefined) {
+      // Not the single-brief conflict text: that promises an acknowledge-and-overwrite step this
+      // path does not have. The honest recovery is to reload the brief and write again.
+      throw new Error(
+        persisted.conflict === 'unowned-brief-exists'
+          ? 'This survey already has a saved email that this page did not open. Reload the page, restore the brief, then write the emails again.'
+          : 'This survey was changed elsewhere since this page loaded it, so the emails were not written. Reload the page, restore the brief, then write the emails again.'
+      );
+    }
+    // Saved but not approved: campaign-service will not stage from it, so writing its copy would
+    // only lead to a refusal at staging.
+    if (briefId !== '' && !persisted.approved) {
+      // The row WAS saved; only its approval failed. Its ownership is kept -- with the validator
+      // the write returned, and never an overwrite licence -- so writing again updates and
+      // re-approves this row instead of being refused as an unowned duplicate.
+      if (ownershipKey !== null) {
+        this.rememberBriefId(ownershipKey, { id: briefId, etag: persisted.etag ?? null });
+      }
+      throw new Error('The campaign was saved but not approved, so the emails were not written. Write them again to retry the approval.');
+    }
+    if (briefId === '' || ownershipKey === null) {
+      return briefId;
+    }
+
+    // Same shape the single-brief save records: a null validator is UNKNOWN rather than
+    // permission, so the overwrite licence is granted only where the write returned none at all.
+    const validator = persisted.etag ?? null;
+    this.rememberBriefId(ownershipKey, {
+      id: briefId,
+      etag: validator,
+      ...(validator === null ? { absence: 'overwrite' as const } : {}),
+    });
+    return briefId;
+  }
+
+  /**
+   * One send's staging request.
+   *
+   * The same shape `onStageEmailSend` builds: `CampaignCreateRequest` is the PAID contract, so
+   * the paid-only fields are sent empty because the contract requires them present, not because
+   * HubSpot reads them. What differs per send is the copy -- each send's own subject, preheader
+   * and body, taken from what was generated for its stage rather than from the page's single
+   * `emailCopy`, which only ever holds one of them.
+   *
+   * No A/B variant and no hero: the survey surface does not offer a split test, and the hero
+   * image path belongs to the event scrape this surface does not run.
+   */
+  private sequenceStageRequest(brief: CampaignBriefOutput, send: CampaignSequenceSend, sourceEmailId: string): CampaignCreateRequest {
+    const details = brief.eventDetails;
+    const content = this.sequenceSendContent(brief, send);
+    return {
+      eventName: details.name,
+      eventSlug: details.slug,
+      countryCode: details.countryCode,
+      registrationUrl: details.registrationUrl,
+      campaignTypes: [],
+      budgetUsd: 0,
+      searchBudgetPct: 0,
+      startDate: '',
+      endDate: '',
+      keywords: [],
+      headlines: [],
+      descriptions: [],
+      geoTargets: [],
+      platforms: ['hubspot'],
+      hubspotConfig: {
+        sourceEmailId,
+        subject: send.copy.subject,
+        bodyHtml: content.bodyHtml,
+        preheader: send.copy.preheader,
+        ...(content.buttonText !== '' ? { buttonText: content.buttonText, buttonUrl: content.buttonUrl } : {}),
+      },
+    };
+  }
+
+  /**
+   * One send's body and button, cleaned by the SAME rules the single send applies
+   * (`emailBodyHtmlForSend`, `emailCtaLabel`, `emailCtaDestination`), so a series cannot stage
+   * markup the single path would have refused.
+   *
+   * The body loses resource-loading HTML (a tracking pixel or remote stylesheet in generated copy
+   * would otherwise reach every reader); the button is staged only when it points at the brief's
+   * own promoted URL, and a refused button's label is folded into the body so the call to action
+   * does not vanish from the draft.
+   */
+  private sequenceSendContent(brief: CampaignBriefOutput | null, send: CampaignSequenceSend): { bodyHtml: string; buttonText: string; buttonUrl: string } {
+    const destination = ctaDestinationFor(send.copy.ctaUrl, brief?.eventDetails?.registrationUrl);
+    const body = stripResourceLoadingHtml(send.copy.body ?? '', destination === '' ? [] : [destination]);
+    const bodyIsStageable = hasVisibleHtmlText(body);
+    const label = sanitizeDisplayText(send.copy.cta ?? '');
+    const buttonText = destination !== '' && bodyIsStageable ? label : '';
+    const unlinkedLabel = destination === '' && bodyIsStageable && send.copy.ctaUrl ? label : '';
+    return { bodyHtml: withUnlinkedCta(body, unlinkedLabel), buttonText, buttonUrl: buttonText === '' ? '' : destination };
+  }
+
+  /**
+   * Point every send at the audience the first one already has.
+   *
+   * BEST EFFORT. The sends and their copy are already written and saved by this point, so failing
+   * the whole generation because a later send could not be pointed at the list would throw away
+   * work the operator can still use. Returns the problem, if any, in a sentence for the page --
+   * '' when every later send has the audience or there was nothing to share yet.
+   *
+   * Does nothing when the first send has no built audience yet, which is the ordinary order of
+   * work: plan, write, then compose the audience. Staging runs this again, so composing it
+   * afterwards still reaches every send.
+   */
+  private async shareAudienceAcrossSequence(
+    sends: readonly CampaignSequenceSend[],
+    projectSlug: string,
+    isCurrent: () => boolean = () => true
+  ): Promise<string> {
+    // The audience was composed for the page's own brief. In the original series that is send 1;
+    // after a start-over the sends are new briefs, so every one of them takes it from the page's.
+    const pageBriefId = this.emailBriefId();
+    const sourceBriefId = pageBriefId !== '' && !sends.some((send) => send.briefId === pageBriefId) ? pageBriefId : sends[0]?.briefId;
+    const targets = sends.filter((send) => send.briefId !== sourceBriefId);
+    if (sourceBriefId === undefined || targets.length === 0) {
+      return '';
+    }
+    // Read the STORED row rather than the one the page is holding. The object a compose returns
+    // (`toRecordedAudience`) carries the master list but not the suppression lists, so gating on
+    // what the page has meant this returned before issuing a single request -- silently, every
+    // time. `listAudiences` returns what was actually recorded.
+    const first = await this.builtAudienceFor(projectSlug, sourceBriefId);
+    // Checked after every read and before every attach: a series reset meanwhile must not attach
+    // the old lists to a brief the new series reuses.
+    if (!isCurrent()) {
+      return '';
+    }
+    if (first.state === 'unknown') {
+      return `The ${sends[0].label}'s audience could not be read, so it was not shared with the other sends. Try again in a moment.`;
+    }
+    if (first.state === 'none') {
+      return '';
+    }
+    const source = first.audience;
+    // The SAME send lists, in the shape they were recorded: a master list, or several include
+    // lists attached directly. Re-attaching only the first include list as a master would give
+    // the later sends a narrower audience, and the workflow build refuses briefs whose audiences
+    // differ -- a workflow enrols ONE audience.
+    const includeListIds = source.includeListIds ?? [];
+    const masterListId = source.platformMasterListId ?? '';
+    const sendLists = includeListIds.length > 0 ? { includeListIds } : { masterListId };
+    // Suppression travels WITH the include list, never dropped: these are the opt-out, GDPR and
+    // exclusion lists the first send was composed against, and a later send that kept the
+    // audience but lost its suppression would mail people the campaign already excluded.
+    // Upstream requires at least one, so an audience recorded without any cannot be shared.
+    const suppressionListIds = source.suppressionListIds ?? [];
+    if (suppressionListIds.length === 0) {
+      return 'The audience has no suppression lists recorded, so it cannot be shared with the other sends. Attach it to each send on the Audience tab.';
+    }
+
+    for (const send of targets) {
+      const existing = await this.builtAudienceFor(projectSlug, send.briefId);
+      if (!isCurrent()) {
+        return '';
+      }
+      // Already has THIS audience: a re-run must not mint a second row for it. A built audience
+      // with DIFFERENT lists -- the first send was re-composed since -- is attached over, since
+      // the newest row is the one staging uses and the workflow refuses briefs whose audiences
+      // differ. An UNREADABLE answer is not "none" either -- attaching then could duplicate one
+      // an outage hid -- so it stops here and says so.
+      if (existing.state === 'built' && this.sameAudienceLists(existing.audience, source)) {
+        continue;
+      }
+      if (existing.state === 'unknown') {
+        return `The ${send.label}'s audience could not be read, so it was not attached. Try again in a moment.`;
+      }
+      this.surveySequenceProgress.set(`Attaching the audience to the ${send.label}...`);
+      try {
+        await firstValueFrom(
+          this.campaignService.attachExistingAudience(projectSlug, {
+            briefId: send.briefId,
+            ...sendLists,
+            suppressionListIds,
+            inclusionSummary: `Shared with the ${this.surveyStageLabel(sends[0].stage)} of this survey.`,
+          })
+        );
+      } catch (error) {
+        // Reported with the upstream reason: staging would otherwise refuse this send with "no
+        // audience found for this brief", which explains nothing about why there is none.
+        return `The audience could not be attached to the ${send.label}: ${this.sendWorkflowErrorText(error, 'the request failed.')}`;
+      }
+    }
+    return '';
+  }
+
+  /**
+   * The stored, BUILT HubSpot audience under a brief -- or `none`, or `unknown` when the read
+   * failed or was not answered.
+   *
+   * campaign-service lists a brief's audiences NEWEST FIRST, so the first built HubSpot row is the
+   * current one, as the restore path reads it. A failed read is kept apart from "none" for the
+   * reason the restore path records `emailAudienceReadFailed`: an outage that hid an existing
+   * audience would otherwise attach a second one.
+   */
+  private async builtAudienceFor(
+    projectSlug: string,
+    briefId: string
+  ): Promise<{ state: 'built'; audience: CampaignAudience } | { state: 'none' } | { state: 'unknown' }> {
+    try {
+      const result = await firstValueFrom(this.campaignService.listAudiences(projectSlug, briefId));
+      if (!result.enabled || result.error) {
+        return { state: 'unknown' };
+      }
+      // The NEWEST HubSpot row decides, as campaign-service's staging does: a newer row that is
+      // still building or failed is the brief's audience, and falling back past it to an older
+      // built one would share lists staging will not use.
+      const newest = (result.audiences ?? []).find((row) => row.platform === 'hubspot');
+      const usable =
+        newest !== undefined && newest.status === 'built' && ((newest.platformMasterListId ?? '') !== '' || (newest.includeListIds ?? []).length > 0);
+      return usable ? { state: 'built', audience: newest } : { state: 'none' };
+    } catch {
+      return { state: 'unknown' };
+    }
+  }
+
+  /**
+   * Drop the survey series: its sends, their staging and the workflow built from them.
+   *
+   * Every send is a copy of the brief on screen under one stage, so the series belongs to that
+   * brief, that asset and that count -- a change to any of them leaves sends that describe
+   * something the page no longer holds. The generation bump stops a loop still awaiting upstream
+   * from writing the previous series back.
+   */
+  private resetSurveySequence(): void {
+    this.surveySequenceGeneration++;
+    this.surveySequenceSends.set([]);
+    this.surveySequenceState.set('idle');
+    this.surveySequenceError.set('');
+    this.surveySequenceProgress.set('');
+    this.surveySequenceWarning.set('');
+    this.clearSequenceDates();
+    this.resetSequenceStaging();
+  }
+
+  /**
+   * Whether two recorded audiences send to the same lists with the same suppression -- what the
+   * workflow build compares across a series. Order-insensitive: the lists are sets.
+   */
+  private sameAudienceLists(a: CampaignAudience, b: CampaignAudience): boolean {
+    const sendLists = (audience: CampaignAudience): string[] =>
+      [...((audience.includeListIds ?? []).length > 0 ? (audience.includeListIds ?? []) : [audience.platformMasterListId ?? ''])].sort();
+    const suppression = (audience: CampaignAudience): string[] => [...(audience.suppressionListIds ?? [])].sort();
+    const same = (x: string[], y: string[]): boolean => x.length === y.length && x.every((value, index) => value === y[index]);
+    return same(sendLists(a), sendLists(b)) && same(suppression(a), suppression(b));
+  }
+
+  /**
+   * How many times this survey's series was started over on this browser tab, so a reload does not
+   * write the original briefs (whose drafts already exist) again. 0 when unknown or on the server.
+   */
+  private readSeriesRestart(projectSlug: string, baseSlug: string): number {
+    if (baseSlug === '') {
+      return 0;
+    }
+    if (!isPlatformBrowser(this.platformId)) {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+    try {
+      const stored = Number(sessionStorage.getItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`) ?? '0');
+      const fallback = this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+      return Math.max(Number.isInteger(stored) && stored > 0 ? stored : 0, fallback);
+    } catch {
+      return this.seriesRestartFallback.get(`${projectSlug}:${baseSlug}`) ?? 0;
+    }
+  }
+
+  private writeSeriesRestart(projectSlug: string, baseSlug: string, restart: number): void {
+    if (baseSlug === '') {
+      return;
+    }
+    this.seriesRestartFallback.set(`${projectSlug}:${baseSlug}`, restart);
+    this.seriesRestartVersion.update((n) => n + 1);
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(`${CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX}${projectSlug}:${baseSlug}`, String(restart));
+    } catch {
+      // Storage refused (private mode, quota): the page-level record above still holds it.
+    }
+  }
+
+  /** Drop every send's date control; each is added back as its send is written. */
+  private clearSequenceDates(): void {
+    for (const key of Object.keys(this.sequenceDatesForm.controls)) {
+      this.sequenceDatesForm.removeControl(key);
+    }
+  }
+
+  /** Hold a send whose draft may exist; see `sequenceUnresolvedBriefIds`. */
+  private holdUnresolvedSend(briefId: string): void {
+    this.sequenceUnresolvedBriefIds.update((ids) => (ids.includes(briefId) ? ids : [...ids, briefId]));
+  }
+
+  /** Drop what was staged and built from the series, keeping the written sends themselves. */
+  private resetSequenceStaging(): void {
+    this.sequenceStagingState.set('idle');
+    this.sequenceStagingMessage.set('');
+    this.sequenceStagedBriefIds.set([]);
+    this.sequenceUnresolvedBriefIds.set([]);
+    this.sendWorkflowState.set('idle');
+    this.sendWorkflowError.set('');
+    this.sendWorkflowResult.set(null);
+  }
+
+  /** Pick the survey template from the list already loaded, when the selection is empty. */
+  private ensureSurveyTemplateSelected(): void {
+    const templates = this.emailTemplates();
+    if (templates !== null) {
+      this.autoSelectSurveyTemplate(templates);
+    }
   }
 
   /**

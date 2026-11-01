@@ -7,6 +7,7 @@ import type {
   CAMPAIGN_BIDDING_STRATEGIES,
   CAMPAIGN_EMAIL_SEGMENTS,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_EMAIL_VARIANTS,
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
@@ -89,8 +90,16 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
-/** How a campaign reaches its audience — the second selector after the program type. */
-export type CampaignDeliveryType = 'paid-marketing' | 'email';
+/**
+ * How a campaign reaches its audience — the second selector after the program type.
+ *
+ * `survey` is a SURFACE, not a kind of email: its brief is authored from a pasted source document
+ * and a promoted URL rather than a scraped event page, and its stages name which ASSET is promoted
+ * rather than which send in a series it is. Upstream keys a brief on `(project, slug, delivery,
+ * stage)`, so modelling it as an email stage would put a survey brief in the same identity slot as
+ * that event's sends and let one displace the other.
+ */
+export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
 
@@ -521,6 +530,15 @@ export interface CampaignBriefRequest {
    * two different things. This field is what distinguishes them.
    */
   deliveryType?: CampaignDeliveryType;
+  /**
+   * The SURVEY surface's source document: the survey instrument or report text the copy is written
+   * from. Required when `deliveryType` is `survey` and ignored otherwise.
+   *
+   * It replaces the scrape rather than supplementing it. A survey's facts live in the document the
+   * operator pasted, not on the page the call-to-action opens -- that page is often a bare form --
+   * so the survey path skips fetching and extraction entirely and takes this as the whole truth.
+   */
+  sourceText?: string;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -560,7 +578,117 @@ export interface CampaignEventSponsor {
   logoUrl: string;
 }
 
+/**
+ * One send of a survey series, as the page holds it between generating and building.
+ *
+ * Carries the brief id because each send is its own brief upstream, and the copy because the
+ * operator reviews all of them together before anything reaches HubSpot.
+ */
+export interface CampaignSequenceSend {
+  stage: CampaignSurveyStage;
+  /** The send's operator-facing name, e.g. "Survey Reminder". */
+  label: string;
+  briefId: string;
+  copy: EmailBriefCopy;
+  /** The HubSpot draft this send was staged as: its link, and its id for pasting into search. */
+  draftUrl?: string;
+  draftId?: string;
+}
+
+/**
+ * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
+ * schedule and enrollment it copies.
+ *
+ * Brief ids rather than HubSpot email ids, because which draft a brief produced is
+ * campaign-service's own record -- a client that looked that up could pair a brief with another
+ * campaign's email, and a workflow is exactly where that goes unnoticed: every step looks filled in.
+ */
+export interface CampaignSendWorkflowRequest {
+  /**
+   * The workflow to copy. Its HubSpot editor URL, or its bare numeric id. Only ever READ.
+   *
+   * OPTIONAL: omitted, campaign-service uses the deployment's configured survey-sequence
+   * workflow, which is the ordinary case -- an operator should not have to find a URL in HubSpot
+   * to do the usual thing.
+   */
+  sourceWorkflowUrl?: string;
+  /** Name for the new workflow. */
+  name: string;
+  /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */
+  briefIds: string[];
+  /**
+   * Calendar dates (YYYY-MM-DD), one per wait-until-date step of the source workflow, in flow
+   * order, each after today and after the one before it. Required by campaign-service whenever the
+   * source has dated steps -- its own dates belong to another campaign. Each step's time of day is
+   * always the source's.
+   */
+  sendDates?: string[];
+}
+
+/** The created workflow, which is always disabled until a human enables it in HubSpot. */
+export interface CampaignSendWorkflowResult {
+  flowId: string;
+  name: string;
+  /** Where the operator reviews and enables it. */
+  editUrl: string;
+  sourceFlowId: string;
+  sourceFlowName?: string;
+  /** Always false on create. Reported rather than assumed, so a portal that ignored it is visible. */
+  isEnabled: boolean;
+  /** How many of the source's send steps were pointed at this campaign's drafts. */
+  sendEmailSteps: number;
+  /** How many wait-until-date steps had their date replaced. */
+  datedSteps: number;
+  /**
+   * The HubSpot lists the new workflow enrolls: the series' shared audience (its master list, or
+   * every list it was attached from). The source workflow's own enrollment is always replaced.
+   */
+  enrollmentListIds: string[];
+  /** The new workflow's whole suppression set: the source workflow's own lists plus the audience's. */
+  suppressionListIds: string[];
+}
+
+/**
+ * campaign-service's `send-workflow-result`, as it arrives on the wire (snake_case). The BFF maps
+ * it to `CampaignSendWorkflowResult`; nothing outside the BFF reads this shape.
+ */
+export interface CampaignServiceSendWorkflowResult {
+  flow_id?: string;
+  name?: string;
+  edit_url?: string;
+  source_flow_id?: string;
+  source_flow_name?: string;
+  is_enabled?: boolean;
+  send_email_steps?: number;
+  dated_steps?: number;
+  enrollment_list_ids?: string[];
+  suppression_list_ids?: string[];
+}
+
+/** One choice in the survey surface's "How many emails?" picker. */
+export interface CampaignSurveyEmailCountOption {
+  count: number;
+  label: string;
+  description: string;
+  /** The stages this count's sends occupy, in send order. */
+  stages: readonly CampaignSurveyStage[];
+}
+
+/** Where a survey series' generate, stage or workflow build stands. */
+export type CampaignSurveySequenceGenerateState = 'idle' | 'generating' | 'done' | 'error';
+export type CampaignSurveySequenceStagingState = 'idle' | 'staging' | 'done' | 'error';
+export type CampaignSurveySendWorkflowState = 'idle' | 'building' | 'done' | 'error';
+
 export interface CampaignEventDetails {
+  /**
+   * The SURVEY surface's primary input: the survey instrument or report text the copy is written
+   * from, pasted by the operator rather than scraped. Empty on every event brief.
+   *
+   * It rides in this blob rather than in a column of its own because upstream stores
+   * `event_details` as an opaque JSON document, so carrying it costs no migration -- the
+   * generator reads it back as `sourceText` and renders it into the prompt as "Source document".
+   */
+  sourceText: string;
   name: string;
   dates: string;
   city: string;
@@ -674,7 +802,7 @@ export interface CampaignBriefOutput {
    * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
    * event, both live at once.
    */
-  emailStage?: CampaignEmailStage;
+  emailStage?: CampaignSendStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
@@ -6372,6 +6500,20 @@ export interface BriefMetrics {
 export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
+ * A stage on the SURVEY surface. Derived from `CAMPAIGN_SURVEY_STAGES` for the same reason
+ * `CampaignEmailStage` is derived from its list: the runtime value that goes on the wire and the
+ * type that describes it cannot then drift apart.
+ */
+export type CampaignSurveyStage = (typeof CAMPAIGN_SURVEY_STAGES)[number];
+
+/**
+ * A stage on any send surface. The wire field is one column upstream, so the places that merely
+ * carry a stage — the brief payload, the copy request — take this union, while the places that
+ * OFFER a choice take the surface's own list.
+ */
+export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage;
+
+/**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
  * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
  * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
@@ -6409,6 +6551,18 @@ export interface CampaignEmailTypeOption {
   id: string;
   label: string;
   stage: CampaignEmailStage;
+  keywords: readonly string[];
+}
+
+/**
+ * What the operator picks on the survey surface. Structurally the same as
+ * `CampaignEmailTypeOption` but carrying a survey stage, so the two cannot be assigned to each
+ * other by accident -- the stage is what upstream keys the brief on.
+ */
+export interface CampaignSurveyTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignSurveyStage;
   keywords: readonly string[];
 }
 

@@ -7,7 +7,7 @@
 // Verified by switching to the barrel and watching the suite fail.
 import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import {
   googleAdsToUpperCode,
@@ -42,6 +42,7 @@ import type {
   CampaignNegativeKeywordsRequest,
   CampaignPlatform,
   CampaignProximityTarget,
+  CampaignSendWorkflowRequest,
   CampaignCallExtension,
   CampaignPriceExtension,
   CampaignPromotion,
@@ -79,6 +80,12 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
+  CAMPAIGN_SEND_WORKFLOW_MAX_SENDS,
+  CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS,
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_SURVEY_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
@@ -428,16 +435,63 @@ export class CampaignController {
       return;
     }
 
-    try {
-      await validateScrapeUrl(body.url);
-    } catch (error) {
-      const validationError = ServiceValidationError.forField('url', error instanceof Error ? error.message : 'Invalid URL', {
-        operation: 'campaign_generate_brief',
-        service: 'campaign_controller',
-        path: req.path,
-      });
-      _next(validationError);
-      return;
+    // The SSRF guard protects a SERVER-SIDE FETCH: it resolves the host and refuses one that
+    // points at a private address, because this service would otherwise retrieve that page.
+    //
+    // The survey surface fetches nothing. Its brief is written from the document the operator
+    // pasted, and the URL is only the destination the call-to-action opens in the reader's own
+    // browser. Running the guard there made a DNS lookup a precondition for writing an email --
+    // and a resolver that could not answer for a perfectly ordinary public host ("DNS resolution
+    // failed — cannot verify host safety") blocked the whole flow for a page nobody was going to
+    // request. The link is still checked for shape below, so a malformed one cannot reach a draft.
+    if (body.deliveryType === 'survey') {
+      // Parsed here rather than run through `validateAndSanitizeUrl`, which prefixes a
+      // protocol-less value with the PCC base URL and so accepts `surveys.example.com/x` or a
+      // relative path as a link on the PCC host. The link becomes the brief's slug and the email's
+      // button, so it has to be a real absolute http(s) URL as typed.
+      let surveyUrl: URL | null = null;
+      try {
+        surveyUrl = new URL(body.url.trim());
+      } catch {
+        surveyUrl = null;
+      }
+      if (surveyUrl === null || (surveyUrl.protocol !== 'http:' && surveyUrl.protocol !== 'https:') || surveyUrl.hostname === '') {
+        _next(
+          ServiceValidationError.forField('url', 'url must be a valid http(s) link', {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+      body.url = surveyUrl.href;
+      // The 3,000-character limit campaign-service enforces at save and at copy generation, checked
+      // before anything is streamed so the operator reads it as a field error.
+      // The raw length is checked first (inside the helper), so an oversized body is refused
+      // without being copied or counted.
+      if (typeof body.sourceText === 'string' && campaignSurveySourceTextTooLong(body.sourceText)) {
+        _next(
+          ServiceValidationError.forField('sourceText', `sourceText is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit`, {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+    } else {
+      try {
+        await validateScrapeUrl(body.url);
+      } catch (error) {
+        const validationError = ServiceValidationError.forField('url', error instanceof Error ? error.message : 'Invalid URL', {
+          operation: 'campaign_generate_brief',
+          service: 'campaign_controller',
+          path: req.path,
+        });
+        _next(validationError);
+        return;
+      }
     }
 
     const startTime = logger.startOperation(req, 'campaign_generate_brief', {});
@@ -559,7 +613,10 @@ export class CampaignController {
     // The service refuses email refines too — that guard stays, since this controller is not its
     // only caller — but only this path is reached over HTTP, so only this one decides what the
     // user reads.
-    if (body.deliveryType === 'email') {
+    // Every SEND surface, not just email: neither generates ad copy, so there is nothing for the
+    // refine path to re-write. Checked as "not paid" so a later send surface is refused by default
+    // rather than reaching a generator that has no copy to refine.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       // `ServiceValidationError`, not a manual `res.status().json()` — the sibling checks below
       // all use it, and `docs/reviews/backend-checklist.md` §8 forbids the manual form. Going
       // around the error middleware would have skipped the standard error shape and its
@@ -2407,15 +2464,19 @@ export class CampaignController {
       }
     }
     // PRESENCE, not emptiness. `?delivery_type=` is a parameter the caller SENT, and an empty
-    // string is not one of the two values upstream accepts -- treating it as "omitted" answered a
-    // malformed request with the paid brief. Absence is `undefined`; anything present must be one
-    // of the two. Same rule as `stage` below, where `''` IS a legal value (the paid brief's stage)
-    // and so is checked differently -- the asymmetry is in the contract, not in the handling.
+    // string is not one of the values upstream accepts -- treating it as "omitted" answered a
+    // malformed request with the paid brief. Absence is `undefined`; anything present must be a
+    // known surface. Same rule as `stage` below, where `''` IS a legal value (the paid brief's
+    // stage) and so is checked differently -- the asymmetry is in the contract, not the handling.
+    //
+    // Derived from `CAMPAIGN_DELIVERY_TYPES` like its sibling checks, not spelled out again: the
+    // hand-written pair here kept rejecting `survey` after the constant had grown, so the surface
+    // existed everywhere except the one lookup that opens its brief.
     const deliveryTypeRaw = req.query['delivery_type'];
     const deliveryTypeParam = typeof deliveryTypeRaw === 'string' ? deliveryTypeRaw : '';
-    if (deliveryTypeRaw !== undefined && deliveryTypeParam !== 'email' && deliveryTypeParam !== 'paid-marketing') {
+    if (deliveryTypeRaw !== undefined && !SUPPORTED_DELIVERY_TYPES.has(deliveryTypeParam)) {
       next(
-        ServiceValidationError.forField('delivery_type', 'delivery_type must be one of: paid-marketing, email', {
+        ServiceValidationError.forField('delivery_type', `delivery_type must be one of: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2439,9 +2500,9 @@ export class CampaignController {
     // The EMPTY string stays valid and means the paid brief's stage — that is an omitted `stage`,
     // not a malformed one.
     const stageParam = typeof req.query['stage'] === 'string' ? req.query['stage'] : '';
-    if (stageParam !== '' && !(CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stageParam)) {
+    if (stageParam !== '' && !(CAMPAIGN_SEND_STAGES as readonly string[]).includes(stageParam)) {
       next(
-        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`, {
+        ServiceValidationError.forField('stage', `stage must be one of: ${CAMPAIGN_SEND_STAGES.join(', ')}`, {
           operation: 'campaign_load_brief',
           service: 'campaign_controller',
           path: req.path,
@@ -2451,20 +2512,24 @@ export class CampaignController {
     }
     const stage = stageParam;
 
-    const deliveryType: CampaignDeliveryType = deliveryTypeParam === 'email' ? 'email' : 'paid-marketing';
+    // Narrowed by lookup, so the survey surface keeps its own identity rather than collapsing to
+    // paid -- which would answer a survey caller with the event's paid brief.
+    const deliveryType: CampaignDeliveryType = CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === deliveryTypeParam)?.id ?? 'paid-marketing';
+    // Each send surface has its OWN stage vocabulary, and upstream refuses a cross-surface pair.
+    const surfaceStages: readonly string[] = deliveryType === 'survey' ? CAMPAIGN_SURVEY_STAGES : CAMPAIGN_EMAIL_STAGES;
     // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
     // is not: paid has no series, so its stage must be empty, and an email send is always some
     // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
     // service guard above it), so without this check the BFF forwards a request that cannot
     // succeed and relays an upstream error for something it could have named here.
-    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : (CAMPAIGN_EMAIL_STAGES as readonly string[]).includes(stage);
+    const pairIsValid = deliveryType === 'paid-marketing' ? stage === '' : surfaceStages.includes(stage);
     if (!pairIsValid) {
       next(
         ServiceValidationError.forField(
           'stage',
           deliveryType === 'paid-marketing'
             ? 'a paid-marketing brief has no series, so stage must be empty'
-            : `an email brief names one send in the series, so stage must be one of: ${CAMPAIGN_EMAIL_STAGES.join(', ')}`,
+            : `a ${deliveryType} brief names one send, so stage must be one of: ${surfaceStages.join(', ')}`,
           { operation: 'campaign_load_brief', service: 'campaign_controller', path: req.path }
         )
       );
@@ -3107,6 +3172,96 @@ export class CampaignController {
       const result = await this.proxyService.lookupHubSpotUtm(req, eventName, clientUnderstandsTokenlessFound);
       logger.success(req, 'hubspot_utm_lookup', startTime, { viaCampaignService: false, found: result.found });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Build the HubSpot workflow that sends a staged series.
+   *
+   * Only the two things this layer can judge are checked here -- that a project was named and that
+   * the body is shaped like a request. Everything else (each brief staged, the surface, repeats,
+   * the source workflow's step counts) needs the briefs and the workflow, which only
+   * campaign-service can see; re-deciding any of it here would create a second opinion about what
+   * is buildable, and the layers would drift.
+   */
+  public async createSendWorkflow(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug === '') {
+      next(
+        ServiceValidationError.forField('project', 'A project is required to build a send workflow', {
+          operation: 'send_workflow_create',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<CampaignSendWorkflowRequest> | undefined;
+    // REFUSED, not filtered. Both arrays are matched to the workflow's steps BY POSITION -- brief
+    // n to send step n, date n to wait step n -- so dropping a malformed entry from the middle
+    // would shift every later one onto the wrong step of a schedule that sends real email.
+    const isNonEmptyString = (value: unknown): value is string => typeof value === 'string' && value.trim() !== '';
+    const refuse = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'send_workflow_create', service: 'campaign_controller', path: req.path }));
+    if (body?.briefIds !== undefined && (!Array.isArray(body.briefIds) || !body.briefIds.every(isNonEmptyString))) {
+      refuse('briefIds', 'briefIds must be a list of brief ids');
+      return;
+    }
+    if (
+      body?.sendDates !== undefined &&
+      (!Array.isArray(body.sendDates) || !body.sendDates.every((date) => isNonEmptyString(date) && CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN.test(date.trim())))
+    ) {
+      refuse('sendDates', 'sendDates must be a list of YYYY-MM-DD dates');
+      return;
+    }
+    // Bounded here as campaign-service bounds them (`MaxLength(10)`), so an oversized body is a
+    // field error at this hop rather than a list proxied upstream to be refused there.
+    if ((body?.briefIds?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('briefIds', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} sends`);
+      return;
+    }
+    // Capped on its own, not against the brief count: campaign-service matches dates to the
+    // workflow's DATED wait steps, which can outnumber its send steps.
+    if ((body?.sendDates?.length ?? 0) > CAMPAIGN_SEND_WORKFLOW_MAX_SENDS) {
+      refuse('sendDates', `a send workflow carries at most ${CAMPAIGN_SEND_WORKFLOW_MAX_SENDS} dates`);
+      return;
+    }
+    const briefIds = (body?.briefIds ?? []).map((id) => id.trim());
+    const sourceWorkflowUrl = typeof body?.sourceWorkflowUrl === 'string' ? body.sourceWorkflowUrl.trim() : '';
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+
+    // The source workflow is NOT required here. It is optional upstream -- a series is normally
+    // built from the deployment's configured workflow, and the UI therefore sends none -- so
+    // requiring it at this hop refused every ordinary request before it reached the service that
+    // knows the default.
+    if (name.length > CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS) {
+      refuse('name', `name must be at most ${CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS} characters`);
+      return;
+    }
+    if (name === '' || briefIds.length === 0) {
+      next(
+        ServiceValidationError.forField('body', 'A send workflow needs a name and the briefs it sends', {
+          operation: 'send_workflow_create',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'send_workflow_create', { projectSlug, sends: briefIds.length });
+    try {
+      const created = await this.campaignServiceClient.createSendWorkflow(req, projectSlug, {
+        sourceWorkflowUrl,
+        name,
+        briefIds,
+        sendDates: body?.sendDates?.map((date) => date.trim()),
+      });
+      logger.success(req, 'send_workflow_create', startTime, { flowId: created.flowId, sends: created.sendEmailSteps });
+      res.json(created);
     } catch (error) {
       next(error);
     }

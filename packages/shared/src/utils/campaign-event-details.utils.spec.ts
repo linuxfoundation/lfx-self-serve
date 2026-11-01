@@ -34,6 +34,7 @@ import { coerceCampaignEventDetails } from './campaign-event-details.utils';
  * declare, including a rename of either optional one.
  */
 const EMPTY_DETAILS: CampaignEventDetails = {
+  sourceText: '',
   name: '',
   dates: '',
   city: '',
@@ -55,6 +56,10 @@ const EMPTY_DETAILS: CampaignEventDetails = {
 
 /** A saved brief with every declared field populated, each with a distinguishable value. */
 const POPULATED_DETAILS: CampaignEventDetails = {
+  // Only the survey surface populates this; an event brief leaves it empty. Given a
+  // distinguishable value here anyway, because this fixture's job is to prove every declared key
+  // survives a round trip, and a field left at '' would pass that assertion either way.
+  sourceText: 'Paste of the survey instrument: 12 questions on production compute environments.',
   name: 'TestOrbit Summit 2026',
   dates: 'March 3-5, 2026',
   city: 'Lisbon',
