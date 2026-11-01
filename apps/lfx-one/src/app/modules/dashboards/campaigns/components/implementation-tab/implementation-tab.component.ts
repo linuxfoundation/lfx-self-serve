@@ -9373,11 +9373,14 @@ export class ImplementationTabComponent implements OnInit {
    * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
    * the session (Copilot, #4810). Compared by host name, not origin, because a browser upgrades an
    * `http://` image on an HTTPS page and a cookie is not scoped by port, so neither the scheme nor the
-   * port makes such a URL safe. No image an ad uses is served from here, and campaign-service still
-   * checks every pasted URL at Create. Only called in the browser (`onGoogleImageFieldBlur`).
+   * port makes such a URL safe. A trailing dot (`app.example.org.`) survives URL parsing but names the
+   * same host, so it is dropped from both sides before comparing. No image an ad uses is served from
+   * here, and campaign-service still checks every pasted URL at Create. Only called in the browser
+   * (`onGoogleImageFieldBlur`).
    */
   private isOwnHostUrl(url: string): boolean {
-    return new URL(url).hostname === window.location.hostname;
+    const bareHost = (hostname: string): string => hostname.replace(/\.+$/, '');
+    return bareHost(new URL(url).hostname) === bareHost(window.location.hostname);
   }
 
   /**

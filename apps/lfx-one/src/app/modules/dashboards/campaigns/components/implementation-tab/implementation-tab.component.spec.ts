@@ -14602,10 +14602,13 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
   });
 
   /** The browser would send the operator's session cookie with it, so a route such as `/logout` would act on the session. */
-  it("never probes a URL on the application's own host, whatever its scheme or port", () => {
+  it("never probes a URL on the application's own host, whatever its scheme, port or trailing dot", () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const host = window.location.hostname;
-    setUrls(c, `${window.location.origin}/logout\nhttp://${host}/logout\nhttps://${host}:8443/logout\nhttps://cdn.example.com/hero.png`);
+    setUrls(
+      c,
+      `${window.location.origin}/logout\nhttp://${host}/logout\nhttps://${host}:8443/logout\nhttps://${host.toUpperCase()}./logout\nhttps://cdn.example.com/hero.png`
+    );
     c['onGoogleImageFieldBlur'](group, marketingField());
 
     expect(images).toHaveLength(1);
