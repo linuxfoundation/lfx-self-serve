@@ -138,6 +138,58 @@ describe('UiTooltipDirective', () => {
       expect(tooltip()).toBeNull();
     });
 
+    it('opens when focus enters the page from outside, right after a window focus', async () => {
+      await setup();
+      window.dispatchEvent(new Event('focus'));
+      trigger.focus();
+      await advance(40);
+      expect(tooltip()).not.toBeNull();
+
+      trigger.blur();
+      await advance(0);
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus without a window focus before it', async () => {
+      await setup();
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open when the window focus was a macrotask earlier', async () => {
+      await setup();
+      window.dispatchEvent(new Event('focus'));
+      await advance(0);
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus after a window focus once the pointer has been used', async () => {
+      await setup();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+      await advance(5);
+      window.dispatchEvent(new Event('focus'));
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus once the pointer has been used', async () => {
+      await setup();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+      // The CDK keeps the mouse origin for 1ms, so wait it out for the focus to count as a script focus.
+      await advance(5);
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
     it('does not open when focus comes from a mouse click', async () => {
       await setup();
       trigger.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));

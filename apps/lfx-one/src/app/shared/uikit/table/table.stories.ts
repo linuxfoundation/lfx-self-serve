@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { moduleMetadata, type Meta, type StoryObj } from '@storybook/angular';
+import { UiTableSort } from '@lfx-one/shared/interfaces';
 
 import { UiBadgeComponent } from '../badge/badge.component';
 import { UiTableCellDirective } from './table-cell.directive';
@@ -55,7 +56,36 @@ export const Bordered: Story = { args: { bordered: true } };
 export const Striped: Story = { args: { striped: true } };
 export const Interactive: Story = { args: { interactive: true, bordered: true } };
 export const WithFooter: Story = { args: { bordered: true, footer: { name: 'Total', contributions: '4,510' } } };
+/** The table only reports header clicks; the page reorders `rows` itself, here with a comparator that reads the formatted numbers. */
 export const Sortable: Story = {
+  render: (args) => {
+    const sortRows = (items: Record<string, unknown>[], sort: UiTableSort | null): Record<string, unknown>[] => {
+      if (!sort) return items;
+      const value = (row: Record<string, unknown>) => String(row[sort.key] ?? '');
+      const compare = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+        const [x, y] = [Number(value(a).replace(/,/g, '')), Number(value(b).replace(/,/g, ''))];
+        return Number.isNaN(x) || Number.isNaN(y) ? value(a).localeCompare(value(b)) : x - y;
+      };
+      return [...items].sort((a, b) => (sort.direction === 'asc' ? compare(a, b) : compare(b, a)));
+    };
+    return {
+      props: {
+        ...args,
+        rows: sortRows(args.rows, args.sort),
+        onSort(this: { sort: UiTableSort | null; rows: Record<string, unknown>[] }, sort: UiTableSort | null) {
+          this.sort = sort;
+          this.rows = sortRows(args.rows, sort);
+        },
+      },
+      template: `
+        <div class="max-w-[720px]">
+          <lfx-ui-table [label]="label" [columns]="columns" [rows]="rows" [rowKey]="rowKey" [bordered]="bordered" [sort]="sort" (sortChange)="onSort($event)">
+            <ng-template lfxUiTableCell="role" let-row><lfx-ui-badge size="sm">{{ row.role }}</lfx-ui-badge></ng-template>
+          </lfx-ui-table>
+        </div>
+      `,
+    };
+  },
   args: {
     bordered: true,
     sort: { key: 'contributions', direction: 'desc' },

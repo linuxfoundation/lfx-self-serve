@@ -58,8 +58,9 @@ export class UiSwitchOptionComponent {
   private initSegmentClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: 14px root. Segment radius is the track radius minus its padding (9, 7 and 6px: no ui-* utility); padding and gap are library steps.
+      // forced-colors:transition-none keeps a half-faded label off screen when the colours swap.
       const base =
-        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
+        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none forced-colors:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
       const sizes = {
         tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12',
         small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium',

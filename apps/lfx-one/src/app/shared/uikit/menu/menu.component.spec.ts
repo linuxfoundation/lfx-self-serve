@@ -78,10 +78,11 @@ describe('UiMenuComponent', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
     fixture.destroy();
     TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('opens from the trigger as a named menu with menuitem rows', async () => {
@@ -346,15 +347,19 @@ describe('UiMenuComponent', () => {
 class TooltipDirectiveHostComponent {}
 
 describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
+  const hosts: ComponentFixture<TooltipDirectiveHostComponent>[] = [];
+
   afterEach(() => {
+    hosts.splice(0).forEach((created) => created.destroy());
+    TestBed.inject(OverlayContainer).ngOnDestroy();
     vi.clearAllTimers();
     vi.useRealTimers();
-    TestBed.inject(OverlayContainer).ngOnDestroy();
   });
 
   it('attaches exactly one tooltip, the disabledReason, and not the lfxUiTooltip text', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const host = TestBed.createComponent(TooltipDirectiveHostComponent);
+    hosts.push(host);
     document.body.appendChild(host.nativeElement);
     await host.whenStable();
     const item = host.nativeElement.querySelector('lfx-ui-menu-item') as HTMLElement;
@@ -366,6 +371,5 @@ describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
     const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
     expect(tooltips.length).toBe(1);
     expect(tooltips[0].textContent?.trim()).toBe('y');
-    host.destroy();
   });
 });

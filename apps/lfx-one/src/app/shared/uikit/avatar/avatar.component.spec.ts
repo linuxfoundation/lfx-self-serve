@@ -161,6 +161,36 @@ describe('UiAvatarComponent', () => {
     expect(initials()).toBeUndefined();
   });
 
+  it('shows a hidden person glyph when no initials can be derived, and stays unnamed', async () => {
+    fixture.componentRef.setInput('name', '   ');
+    await fixture.whenStable();
+
+    const glyph = host.querySelector('[data-testid="ui-avatar-fallback"]');
+    expect(glyph?.classList.contains('fa-user')).toBe(true);
+    expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+    expect(initials()).toBeUndefined();
+    expect(host.getAttribute('role')).toBeNull();
+    expect(host.getAttribute('aria-label')).toBeNull();
+  });
+
+  it('keeps the initials, icon and override ahead of the person glyph', async () => {
+    expect(host.querySelector('[data-testid="ui-avatar-fallback"]')).toBeNull();
+
+    fixture.componentRef.setInput('name', '');
+    fixture.componentRef.setInput('icon', 'fa-light fa-cube');
+    await fixture.whenStable();
+
+    expect(host.querySelector('[data-testid="ui-avatar-icon"]')?.classList.contains('fa-cube')).toBe(true);
+    expect(host.querySelector('[data-testid="ui-avatar-fallback"]')).toBeNull();
+
+    fixture.componentRef.setInput('icon', '');
+    fixture.componentRef.setInput('initials', '+4');
+    await fixture.whenStable();
+
+    expect(initials()).toBe('+4');
+    expect(host.querySelector('[data-testid="ui-avatar-fallback"]')).toBeNull();
+  });
+
   it('pins the provider badge at 26% of the size', async () => {
     expect(host.querySelector('[data-testid="ui-avatar-badge"]')).toBeNull();
 
