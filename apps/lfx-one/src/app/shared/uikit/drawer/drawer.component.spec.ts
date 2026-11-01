@@ -48,6 +48,13 @@ class TestContentComponent {
   public readonly ref = inject(DialogRef);
 }
 
+@Component({ selector: 'lfx-ui-test-closing-content', imports: [UiDrawerComponent], template: '<lfx-ui-drawer heading="Closing" />' })
+class TestClosingContentComponent {
+  public constructor() {
+    inject(DialogRef).close('invalid');
+  }
+}
+
 // True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
 const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
@@ -189,6 +196,15 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     handled.preventDefault();
     document.body.dispatchEvent(handled);
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, shiftKey: true, bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('ignores an Escape that cancels an IME composition', async () => {
+    await open();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, isComposing: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true }));
     await settle();
 
     expect(dialog()).not.toBeNull();
@@ -417,6 +433,14 @@ describe('UiDrawerComponent and UiDrawerService', () => {
       expect(dialog()).not.toBeNull();
       pressEscape();
       await settle();
+      expect(dialog()).toBeNull();
+    });
+
+    it('closes at once, without throwing, when the content closes itself while it is being created', async () => {
+      // `closed` has already emitted by the time `open` returns, so the check is that nothing throws and nothing stays on screen.
+      expect(() => TestBed.inject(UiDrawerService).open(TestClosingContentComponent)).not.toThrow();
+      await settle();
+
       expect(dialog()).toBeNull();
     });
 

@@ -29,6 +29,7 @@ export class UiDrawerService {
     const edge = this.overlay.position().global().top('0');
     let leaving = false;
     let exited = false;
+    let opened: DialogRef<R, C> | undefined;
 
     const ref = this.modal.open<R, D, C>(
       content,
@@ -40,22 +41,23 @@ export class UiDrawerService {
         providers: [{ provide: UiDrawerContext, useValue: context }],
         // Runs on every `ref.close()`: the first call plays the exit animation and closes again once it ends, with the same result.
         closePredicate: (result) => {
-          // A detached overlay (disposed by the CDK on navigation) has no pane left to animate: let the close through.
-          if (exited || !ref.overlayRef.hasAttached()) return true;
+          // No ref yet (content closed itself while being created) or a detached overlay (disposed by the CDK on navigation): nothing to animate.
+          const current = opened;
+          if (!current || exited || !current.overlayRef.hasAttached()) return true;
           if (!leaving) {
             leaving = true;
-            ref.overlayRef.backdropElement?.classList.remove('cdk-overlay-backdrop-showing');
+            current.overlayRef.backdropElement?.classList.remove('cdk-overlay-backdrop-showing');
             // The host class is set on the element, not through the template: a close during teardown must not need a render.
-            const host = ref.overlayRef.overlayElement.querySelector('lfx-ui-drawer');
+            const host = current.overlayRef.overlayElement.querySelector('lfx-ui-drawer');
             host?.classList.add('is-leaving');
             const finish = () => {
               if (exited) return;
               clearTimeout(timer);
               exited = true;
-              ref.close(result as R);
+              current.close(result as R);
             };
             // Fallback so a missing `finished` cannot strand the close: the exit animation's own duration plus a 150ms margin.
-            const timer = setTimeout(finish, (parseFloat(getComputedStyle(host ?? ref.overlayRef.overlayElement).animationDuration) || 0) * 1000 + 150);
+            const timer = setTimeout(finish, (parseFloat(getComputedStyle(host ?? current.overlayRef.overlayElement).animationDuration) || 0) * 1000 + 150);
             // Only the host's own exit animation counts: looping ones in the body (Skeleton, Spinner) never finish. None running closes at once.
             Promise.allSettled((host?.getAnimations?.() ?? []).map((animation) => animation.finished)).then(finish);
           }
@@ -63,6 +65,8 @@ export class UiDrawerService {
         },
       }
     );
+
+    opened = ref;
 
     let asking = false;
     context.requestClose = () => {
@@ -80,7 +84,7 @@ export class UiDrawerService {
     if (config.closeOnEscape ?? true) {
       ref.keydownEvents
         .pipe(
-          filter((event) => event.key === 'Escape' && !event.defaultPrevented && !hasModifierKey(event)),
+          filter((event) => event.key === 'Escape' && !event.isComposing && event.keyCode !== 229 && !event.defaultPrevented && !hasModifierKey(event)),
           takeUntil(ref.closed)
         )
         .subscribe((event) => {
