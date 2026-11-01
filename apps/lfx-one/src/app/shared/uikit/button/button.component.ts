@@ -3,7 +3,19 @@
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { NgTemplateOutlet } from '@angular/common';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal, TemplateRef } from '@angular/core';
+import {
+  afterRenderEffect,
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  input,
+  isDevMode,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiButtonSize, UiButtonVariant, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
@@ -84,11 +96,17 @@ export class UiButtonComponent {
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
 
+  private readonly menuTrigger = viewChild(CdkMenuTrigger);
+
   public constructor() {
     effect(() => {
       if (isDevMode() && this.iconOnly() && !this.ariaLabel()) {
         console.warn('lfx-ui-button: an icon-only button needs an ariaLabel.');
       }
+    });
+    // Dropping the trigger's template does not close a menu that is already open, so close it when the button turns busy.
+    afterRenderEffect(() => {
+      if (this.loading()) this.menuTrigger()?.close();
     });
   }
 

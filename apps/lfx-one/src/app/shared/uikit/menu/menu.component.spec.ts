@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OverlayContainer } from '@angular/cdk/overlay';
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { FlexibleConnectedPositionStrategy, OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -294,6 +294,21 @@ describe('UiMenuComponent', () => {
     await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     expect(tooltip()).toBeNull();
+  });
+
+  it('opens the reason beside the locked row first, so it does not cover the neighbours', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const positions = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
+    expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
   });
 
   it.each([

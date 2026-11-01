@@ -35,11 +35,12 @@ import { UiTooltipPanelComponent } from './tooltip-panel.component';
  * accessible description, so screen readers read it on focus; it is skipped when it equals the host's `aria-label`.
  * Put it on the focusable element itself, such as a native `<button>`: on a component that wraps a button the description lands on the
  * wrapper, which screen readers do not read when the inner button is focused. `lfx-ui-button` is the exception: the directive never
- * attaches to it, and the button forwards `lfxUiTooltip` to its inner `<button>`. A disabled button gets no pointer events, so wrap it
+ * attaches to it, and the button forwards `lfxUiTooltip` to its inner `<button>`. `lfx-ui-menu-item` is the other: it carries the
+ * directive itself and exposes it as `disabledReason`, so a template attribute never attaches a second one. A disabled button gets no pointer events, so wrap it
  * in an element that carries the directive and `tabindex="0"`.
  */
 @Directive({
-  selector: '[lfxUiTooltip]:not(lfx-ui-button)',
+  selector: '[lfxUiTooltip]:not(lfx-ui-button):not(lfx-ui-menu-item)',
   host: {
     '(pointerenter)': 'onPointerEnter($event)',
     '(pointerleave)': 'onPointerLeave($event)',
@@ -62,6 +63,8 @@ export class UiTooltipDirective {
   /* eslint-enable @angular-eslint/no-input-rename */
   /** For a component that carries this directive as a host directive and knows when its own tooltip applies, such as a locked menu item. Template users keep `lfxUiTooltipDisabled`. */
   public readonly hostDisabled = signal(false);
+  /** For a host component that knows where its tooltip must not go, such as a menu item, whose neighbours sit above and below. Overrides `lfxUiTooltipSide`. */
+  public readonly hostSide = signal<UiTooltipSide | null>(null);
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly document = inject(DOCUMENT);
@@ -298,6 +301,6 @@ export class UiTooltipDirective {
       left: ['left', 'right', 'top', 'bottom'],
       right: ['right', 'left', 'top', 'bottom'],
     } as const;
-    return order[this.side()].map((side) => all[side]);
+    return order[this.hostSide() ?? this.side()].map((side) => all[side]);
   }
 }

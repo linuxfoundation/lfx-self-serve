@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { UiDensitySize } from '@lfx-one/shared/interfaces';
 
 /** Inline message tied to the content around it: information, success, a warning or an error. */
 @Component({
@@ -20,7 +21,7 @@ export class UiNoteComponent {
   /** Adds the tinted background. Without it the note is an outline only. */
   public readonly fill = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** `small` is 32px tall with 13px text, for dense places. */
-  public readonly size = input<'default' | 'small'>('default');
+  public readonly size = input<UiDensitySize>('default');
   /** Medium-weight topic before the message, including its colon, such as `Beta:`. */
   public readonly label = input<string>('');
   /** Font Awesome icon classes that replace the variant's default icon, such as `fa-light fa-bell`. */
