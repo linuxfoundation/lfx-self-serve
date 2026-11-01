@@ -651,7 +651,8 @@ describe('UiSelectComponent', () => {
       const status = document.querySelector('[data-testid="ui-select-empty"]') as HTMLElement;
 
       expect(status.getAttribute('role')).toBe('status');
-      expect(status.className).toContain('empty:hidden');
+      expect(status.className).toContain('empty:p-0');
+      expect(status.className).not.toContain('empty:hidden');
       expect(status.textContent?.trim()).toBe('');
       expect(optionEls().length).toBe(3);
 

@@ -85,8 +85,8 @@
       data-testid="ui-select-listbox">
       <ng-content />
     </div>
-    <!-- Outside the listbox, which may own only options. The wrapper stays mounted so a message that appears while the list is open is announced. -->
-    <div role="status" class="copy-14 px-[16px] py-[12px] text-ui-neutral-600 empty:hidden" data-testid="ui-select-empty">
+    <!-- Outside the listbox, which may own only options. The wrapper stays exposed while empty (only its padding collapses), so a message that appears while the list is open is announced. -->
+    <div role="status" class="copy-14 px-[16px] py-[12px] text-ui-neutral-600 empty:p-0" data-testid="ui-select-empty">
       <ng-content select="[lfxUiSelectEmpty]" />
     </div>
   </div>
