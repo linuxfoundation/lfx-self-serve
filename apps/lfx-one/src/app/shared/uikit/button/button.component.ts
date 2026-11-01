@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
-import { NgTemplateOutlet } from '@angular/common';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterRenderEffect,
   booleanAttribute,
@@ -10,6 +10,8 @@ import {
   Component,
   computed,
   effect,
+  ElementRef,
+  inject,
   input,
   isDevMode,
   Signal,
@@ -96,7 +98,9 @@ export class UiButtonComponent {
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
 
+  private readonly document = inject(DOCUMENT);
   private readonly menuTrigger = viewChild(CdkMenuTrigger);
+  private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
 
   public constructor() {
     effect(() => {
@@ -105,8 +109,13 @@ export class UiButtonComponent {
       }
     });
     // Dropping the trigger's template does not close a menu that is already open, so close it when the button turns busy.
+    // `close()` does not restore focus, so a focus that was inside the menu moves back to the button.
     afterRenderEffect(() => {
-      if (this.loading()) this.menuTrigger()?.close();
+      const trigger = this.menuTrigger();
+      if (!this.loading() || !trigger?.isOpen()) return;
+      const hadFocus = trigger.getMenu()?.nativeElement.contains(this.document.activeElement);
+      trigger.close();
+      if (hadFocus) this.menuButton()?.nativeElement.focus();
     });
   }
 

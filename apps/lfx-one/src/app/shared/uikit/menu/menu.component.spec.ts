@@ -7,6 +7,7 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiMenuGroupComponent } from './menu-group.component';
 import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
@@ -334,5 +335,37 @@ describe('UiMenuComponent', () => {
     await settle();
 
     expect(menu()).toBeNull();
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-tooltip-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent, UiTooltipDirective],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item lfxUiTooltip="x" [disabled]="true" disabledReason="y">Locked</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class TooltipDirectiveHostComponent {}
+
+describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+  });
+
+  it('attaches exactly one tooltip, the disabledReason, and not the lfxUiTooltip text', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = TestBed.createComponent(TooltipDirectiveHostComponent);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const item = host.nativeElement.querySelector('lfx-ui-menu-item') as HTMLElement;
+
+    item.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(300);
+    host.detectChanges();
+
+    const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
+    expect(tooltips.length).toBe(1);
+    expect(tooltips[0].textContent?.trim()).toBe('y');
+    host.destroy();
   });
 });
