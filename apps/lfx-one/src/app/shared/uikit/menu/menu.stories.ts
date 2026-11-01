@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
 import { UiButtonComponent } from '../button/button.component';
@@ -10,14 +9,12 @@ import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
 import { UiMenuComponent } from './menu.component';
 
-// The triggers are `lfx-ui-button [menu]`. IconTrigger is the exception: a plain CDK trigger, because lfx-ui-button's icon-only shape is a circle.
+// The triggers are `lfx-ui-button [menu]`.
 const meta: Meta<UiMenuComponent> = {
   title: 'Uikit/Menu',
   component: UiMenuComponent,
   subcomponents: { UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent },
-  decorators: [
-    moduleMetadata({ imports: [CdkMenuTrigger, UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] }),
-  ],
+  decorators: [moduleMetadata({ imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent] })],
   parameters: { layout: 'padded' },
   args: { ariaLabel: 'Project actions' },
   // Aliased CDK menu item inputs and output; Compodoc cannot see host-directive aliases.
@@ -88,10 +85,7 @@ export const IconTrigger: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <!-- Exact px, not rem; 14px root. No w-ui-* width utility, so the square matches h-ui-medium by hand. -->
-      <button type="button" aria-label="More actions" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-        <i class="fa-light fa-ellipsis" aria-hidden="true"></i>
-      </button>
+      <lfx-ui-button variant="secondary" size="medium" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="More actions">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>

@@ -21,8 +21,11 @@ export interface UiTabItem {
   disabledReason?: string;
 }
 
+/** Two-step density shared by the uikit tabs, collapse and note: `default`, or `small` for dense places. */
+export type UiDensitySize = 'default' | 'small';
+
 /** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
-export type UiTabsSize = 'default' | 'small';
+export type UiTabsSize = UiDensitySize;
 
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
 export type UiTabsVariant = 'default' | 'secondary';
@@ -177,7 +180,7 @@ export interface UiTableColumnView {
 }
 
 /** Size of a uikit collapse group: `default` has 20px headings, `small` 14px headings and tighter padding. */
-export type UiCollapseSize = 'default' | 'small';
+export type UiCollapseSize = UiDensitySize;
 
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';

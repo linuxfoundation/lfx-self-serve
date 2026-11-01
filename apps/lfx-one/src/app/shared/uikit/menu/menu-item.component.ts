@@ -13,7 +13,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  *
  * Inputs and output from the CDK menu item, under these names: `disabled` (boolean), `typeaheadLabel` (text type-ahead matches
  * instead of the projected label) and the `triggered` output. From `UiTooltipDirective`, `disabledReason` is its `lfxUiTooltip` text;
- * it applies only while the item is disabled.
+ * it applies only while the item is disabled. It is the item's only tooltip: `lfxUiTooltip` on the item does not attach a second one.
+ * The tooltip opens beside the row first, and only above or below when neither side fits.
  */
 @Component({
   selector: 'lfx-ui-menu-item',
@@ -46,6 +47,10 @@ export class UiMenuItemComponent implements DoCheck {
   private readonly tooltip = inject(UiTooltipDirective, { self: true });
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly affixClasses: Signal<string> = this.initAffixClasses();
+
+  public constructor() {
+    this.tooltip.hostSide.set('right');
+  }
 
   // The CDK item's disabled flag is not a signal, so the tooltip follows it on each check.
   public ngDoCheck(): void {

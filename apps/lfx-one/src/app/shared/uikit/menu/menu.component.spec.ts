@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OverlayContainer } from '@angular/cdk/overlay';
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { FlexibleConnectedPositionStrategy, OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiMenuGroupComponent } from './menu-group.component';
 import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
@@ -296,6 +297,21 @@ describe('UiMenuComponent', () => {
     expect(tooltip()).toBeNull();
   });
 
+  it('opens the reason beside the locked row first, so it does not cover the neighbours', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const positions = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
+    expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
+  });
+
   it.each([
     ['first', 'ArrowDown', 'editLocked', 'edit', 'Editing is paused'],
     ['last', 'ArrowUp', 'deleteLocked', 'delete', 'Deleting is paused'],
@@ -319,5 +335,37 @@ describe('UiMenuComponent', () => {
     await settle();
 
     expect(menu()).toBeNull();
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-tooltip-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent, UiTooltipDirective],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item lfxUiTooltip="x" [disabled]="true" disabledReason="y">Locked</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class TooltipDirectiveHostComponent {}
+
+describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+  });
+
+  it('attaches exactly one tooltip, the disabledReason, and not the lfxUiTooltip text', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = TestBed.createComponent(TooltipDirectiveHostComponent);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const item = host.nativeElement.querySelector('lfx-ui-menu-item') as HTMLElement;
+
+    item.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(300);
+    host.detectChanges();
+
+    const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
+    expect(tooltips.length).toBe(1);
+    expect(tooltips[0].textContent?.trim()).toBe('y');
+    host.destroy();
   });
 });

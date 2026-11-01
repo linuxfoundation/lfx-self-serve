@@ -2,8 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
-import { NgTemplateOutlet } from '@angular/common';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal, TemplateRef } from '@angular/core';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import {
+  afterRenderEffect,
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  isDevMode,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiButtonSize, UiButtonVariant, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
@@ -34,6 +48,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
   },
 })
 export class UiButtonComponent {
+  private readonly document = inject(DOCUMENT);
+
   /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
   /** `tiny` is 24px tall, `small` 32px and `medium` 40px. */
@@ -84,11 +100,23 @@ export class UiButtonComponent {
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
   protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
 
+  private readonly menuTrigger = viewChild(CdkMenuTrigger);
+  private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
+
   public constructor() {
     effect(() => {
       if (isDevMode() && this.iconOnly() && !this.ariaLabel()) {
         console.warn('lfx-ui-button: an icon-only button needs an ariaLabel.');
       }
+    });
+    // Dropping the trigger's template does not close a menu that is already open, so close it when the button turns busy.
+    // `close()` does not restore focus, so a focus that was inside the menu moves back to the button.
+    afterRenderEffect(() => {
+      const trigger = this.menuTrigger();
+      if (!this.loading() || !trigger?.isOpen()) return;
+      const hadFocus = trigger.getMenu()?.nativeElement.contains(this.document.activeElement);
+      trigger.close();
+      if (hadFocus) this.menuButton()?.nativeElement.focus();
     });
   }
 
