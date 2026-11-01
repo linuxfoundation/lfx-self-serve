@@ -15,7 +15,8 @@ import { UiDrawerContext } from './drawer.context';
  * Opens content in a drawer: a full-height side sheet over the page. Pass a component or an `<ng-template>` whose root is a
  * `lfx-ui-drawer`. It is a modal underneath (`UiModalService`), so focus is trapped and returns to the opener, the page behind does not
  * scroll, and Escape and a click on the backdrop close it unless the config turns them off. It slides out before it is removed.
- * Escape, the backdrop and the close button ask `canClose` first. `DialogRef.close()` (from the returned ref or `inject(DialogRef)`) does not.
+ * Escape, the backdrop and the close button ask `canClose` first, and are ignored while it slides out. `DialogRef.close()` (from the
+ * returned ref or `inject(DialogRef)`) does not ask. If the overlay is disposed from outside, as on browser Back, it closes at once.
  */
 @Injectable({ providedIn: 'root' })
 export class UiDrawerService {
@@ -39,18 +40,24 @@ export class UiDrawerService {
         providers: [{ provide: UiDrawerContext, useValue: context }],
         // Runs on every `ref.close()`: the first call plays the exit animation and closes again once it ends, with the same result.
         closePredicate: (result) => {
-          if (exited) return true;
+          // A detached overlay (disposed by the CDK on navigation) has no pane left to animate: let the close through.
+          if (exited || !ref.overlayRef.hasAttached()) return true;
           if (!leaving) {
             leaving = true;
             ref.overlayRef.backdropElement?.classList.remove('cdk-overlay-backdrop-showing');
             // The host class is set on the element, not through the template: a close during teardown must not need a render.
-            ref.overlayRef.overlayElement.querySelector('lfx-ui-drawer')?.classList.add('is-leaving');
-            // No running animation (reduced motion) closes at once.
-            const running = ref.overlayRef.overlayElement.getAnimations?.({ subtree: true }) ?? [];
-            Promise.allSettled(running.map((animation) => animation.finished)).then(() => {
+            const host = ref.overlayRef.overlayElement.querySelector('lfx-ui-drawer');
+            host?.classList.add('is-leaving');
+            const finish = () => {
+              if (exited) return;
+              clearTimeout(timer);
               exited = true;
               ref.close(result as R);
-            });
+            };
+            // The fallback is the base duration (150ms) plus a margin, so a missing `finished` cannot strand the close.
+            const timer = setTimeout(finish, 300);
+            // Only the host's own exit animation counts: looping ones in the body (Skeleton, Spinner) never finish. None running closes at once.
+            Promise.allSettled((host?.getAnimations?.() ?? []).map((animation) => animation.finished)).then(finish);
           }
           return false;
         },
@@ -59,12 +66,14 @@ export class UiDrawerService {
 
     let asking = false;
     context.requestClose = () => {
-      if (asking) return;
+      if (asking || leaving) return;
       asking = true;
-      Promise.resolve(config.canClose?.() ?? true)
+      Promise.resolve()
+        .then(() => config.canClose?.() ?? true)
         .then((allowed) => {
           if (allowed) ref.close();
         })
+        .catch((error) => console.error('lfx-ui-drawer canClose failed; keeping it open', error))
         .finally(() => (asking = false));
     };
 

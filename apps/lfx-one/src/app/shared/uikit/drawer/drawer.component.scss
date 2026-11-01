@@ -1,6 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The sheet is on its way out: it takes no more clicks.
+:host(.is-leaving) {
+  pointer-events: none;
+}
+
 // Slide 24px along the edge the drawer is anchored to and fade, as the library describes for drawers; none under reduced motion.
 @media (prefers-reduced-motion: no-preference) {
   :host(.is-right) {

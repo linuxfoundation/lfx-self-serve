@@ -79,7 +79,8 @@ export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'rol
   width?: number;
   /**
    * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
-   * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal.
+   * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
+   * never settles blocks dismissal until `ref.close()`. A throw or a rejection is logged and keeps the drawer open.
    * `DialogRef.close()` does not ask: call it once the work is saved or discarded.
    */
   canClose?: () => boolean | Promise<boolean>;

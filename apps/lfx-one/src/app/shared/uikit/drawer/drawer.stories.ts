@@ -5,6 +5,7 @@ import { Directive, inject, input, signal, TemplateRef } from '@angular/core';
 import { UiDrawerConfig } from '@lfx-one/shared/interfaces';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiAvatarComponent } from '../avatar/avatar.component';
 import { UiBadgeComponent } from '../badge/badge.component';
 import { UiButtonComponent } from '../button/button.component';
 import { UiMenuItemComponent } from '../menu/menu-item.component';
@@ -43,6 +44,7 @@ const meta: Meta<UiDrawerComponent> = {
         StoryOpensDrawerDirective,
         UiDrawerComponent,
         UiButtonComponent,
+        UiAvatarComponent,
         UiBadgeComponent,
         UiNoteComponent,
         UiSelectComponent,
@@ -74,13 +76,14 @@ type Story = StoryObj<UiDrawerComponent>;
 /** A 600px sheet on the right: title, subtitle, close button, a body that scrolls and an optional footer. Escape, the scrim and the close button dismiss it; focus returns to the button. At 640px and narrower it fills the window. */
 export const Default: Story = {};
 
-/** The meeting details layout: a header row with actions beside the close button, and a two-column body that stacks when the drawer is narrow. The body is long, so it scrolls under the header. */
+/** The meeting details layout: a header row with a project tile before the title and actions beside the close button, and a two-column body that stacks when the drawer is narrow. The body is long, so it scrolls under the header. */
 export const MeetingDetails: Story = {
   render: () => ({
     template: `
       <lfx-ui-button variant="primary" [lfxStoryOpensDrawer]="drawer" [lfxStoryOpensDrawerConfig]="{ width: 960 }">Open meeting</lfx-ui-button>
       <ng-template #drawer>
         <lfx-ui-drawer heading="Technical Steering Committee" subtitle="The Linux Foundation">
+          <lfx-ui-avatar drawerLeading shape="rounded" [size]="40" name="Technical Steering Committee" [decorative]="true" />
           <ng-container drawerActions>
             <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-pen">Edit meeting</lfx-ui-button>
             <lfx-ui-button variant="secondary" size="small" [iconOnly]="true" icon="fa-light fa-link" ariaLabel="Copy link" lfxUiTooltip="Copy link" />

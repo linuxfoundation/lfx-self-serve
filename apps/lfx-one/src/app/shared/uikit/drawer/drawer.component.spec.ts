@@ -17,6 +17,7 @@ const HOST_TEMPLATE = `
   <button id="opener" (click)="open(tpl)">Open</button>
   <ng-template #tpl let-ref="dialogRef">
     <lfx-ui-drawer heading="Weekly Sync" [subtitle]="subtitle">
+      <span drawerLeading id="tile">T</span>
       <ng-container drawerActions><button id="edit" type="button">Edit meeting</button></ng-container>
       <input id="name" />
       <button id="save" type="button" (click)="ref.close('saved')">Save</button>
@@ -101,6 +102,9 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(testId('ui-drawer-title').textContent).toBe('Weekly Sync');
     expect(dialog()?.getAttribute('aria-labelledby')).toBe(testId('ui-drawer-title').id);
     expect(testId('ui-drawer-subtitle').textContent).toBe('Technical Steering Committee');
+    expect(testId('ui-drawer-leading').querySelector('#tile')).not.toBeNull();
+    // The leading tile comes before the title in the header.
+    expect(testId('ui-drawer-leading').compareDocumentPosition(testId('ui-drawer-title')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(testId('ui-drawer-header').querySelector('#edit')).not.toBeNull();
     expect(testId('ui-drawer-body').querySelector('#name')).not.toBeNull();
     expect(testId('ui-drawer-footer').querySelector('#done')).not.toBeNull();
@@ -141,6 +145,8 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(drawer()?.className).toContain('max-[640px]:!w-screen');
     expect(drawer()?.className).toContain('max-[640px]:rounded-none');
     expect(drawer()?.className).toContain('max-w-[100vw]');
+    // The footer clears the home indicator on a phone-width sheet.
+    expect(testId('ui-drawer-footer').className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
   });
 
   it('is described by its subtitle when the config asks for it', async () => {
@@ -261,6 +267,36 @@ describe('UiDrawerComponent and UiDrawerService', () => {
       expect(dialog()).toBeNull();
     });
 
+    it('keeps the drawer open and logs when the guard throws, then asks again', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const canClose = vi.fn((): boolean => {
+        throw new Error('boom');
+      });
+      await open((host) => (host.config = { canClose }));
+
+      pressEscape();
+      await settle();
+      expect(dialog()).not.toBeNull();
+      expect(error).toHaveBeenCalledWith('lfx-ui-drawer canClose failed; keeping it open', expect.any(Error));
+
+      pressEscape();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(2);
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('keeps the drawer open and logs when the guard rejects', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const canClose = vi.fn(() => Promise.reject(new Error('no answer')));
+      await open((host) => (host.config = { canClose }));
+
+      pressEscape();
+      await settle();
+
+      expect(dialog()).not.toBeNull();
+      expect(error).toHaveBeenCalledWith('lfx-ui-drawer canClose failed; keeping it open', expect.any(Error));
+    });
+
     it('does not ask when the content closes the drawer itself', async () => {
       const canClose = vi.fn(() => false);
       await open((host) => (host.config = { canClose }));
@@ -300,6 +336,85 @@ describe('UiDrawerComponent and UiDrawerService', () => {
       expect(dialog()).not.toBeNull();
 
       finish();
+      await settle();
+      expect(dialog()).toBeNull();
+    });
+
+    it('ignores Escape, the backdrop and the close button while it slides out', async () => {
+      const finish = playExit();
+      const canClose = vi.fn(() => true);
+      await open((host) => (host.config = { canClose }));
+
+      pressEscape();
+      await settle();
+      expect(drawer()?.className).toContain('is-leaving');
+
+      pressEscape();
+      clickBackdrop();
+      testId('ui-drawer-close').querySelector('button')?.click();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(1);
+
+      finish();
+      await settle();
+      expect(dialog()).toBeNull();
+    });
+
+    it('waits only on its own exit animation, not on looping ones in the body', async () => {
+      let finish: () => void = () => undefined;
+      const exit = new Promise<void>((resolve) => (finish = resolve));
+      const looping = new Promise<void>(() => undefined);
+      // A Skeleton or Spinner in the body loops forever; only a `subtree` query would see it.
+      Object.defineProperty(Element.prototype, 'getAnimations', {
+        value(this: Element, options?: { subtree?: boolean }) {
+          return [...(this.localName === 'lfx-ui-drawer' ? [{ finished: exit }] : []), ...(options?.subtree ? [{ finished: looping }] : [])];
+        },
+        configurable: true,
+      });
+      await open();
+
+      pressEscape();
+      await settle();
+      expect(dialog()).not.toBeNull();
+
+      finish();
+      await settle();
+      expect(dialog()).toBeNull();
+    });
+
+    it('closes after a fallback delay when the exit animation never finishes', async () => {
+      Object.defineProperty(Element.prototype, 'getAnimations', { value: () => [{ finished: new Promise<void>(() => undefined) }], configurable: true });
+      await open();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        pressEscape();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(dialog()).not.toBeNull();
+
+        await vi.advanceTimersByTimeAsync(300);
+      } finally {
+        vi.useRealTimers();
+      }
+      await settle();
+      expect(dialog()).toBeNull();
+    });
+
+    it('closes and releases the page when the overlay is disposed from outside, as on browser Back', async () => {
+      const ref = TestBed.inject(UiDrawerService).open<string, string, TestContentComponent>(TestContentComponent, { data: 'payload' });
+      let closed = false;
+      ref.closed.subscribe(() => (closed = true));
+      await settle();
+      expect(fixture.nativeElement.getAttribute('aria-hidden')).toBe('true');
+
+      ref.overlayRef.dispose();
+      await settle();
+
+      expect(closed).toBe(true);
+      expect(fixture.nativeElement.getAttribute('aria-hidden')).toBeNull();
+
+      await open();
+      expect(dialog()).not.toBeNull();
+      pressEscape();
       await settle();
       expect(dialog()).toBeNull();
     });
@@ -348,6 +463,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     const el = bare.nativeElement as HTMLElement;
 
     expect(el.querySelector('[data-testid="ui-drawer-footer"]')?.matches(':empty')).toBe(true);
+    expect(el.querySelector('[data-testid="ui-drawer-leading"]')?.matches(':empty')).toBe(true);
     expect(el.style.width).toBe('600px');
     expect(el.getAttribute('role')).toBeNull();
     expect(() => (el.querySelector('[data-testid="ui-drawer-close"] button') as HTMLElement).click()).not.toThrow();

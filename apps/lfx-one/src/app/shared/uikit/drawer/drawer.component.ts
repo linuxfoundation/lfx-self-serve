@@ -14,10 +14,12 @@ import { UiDrawerContext } from './drawer.context';
  * footer. Make it the root of the content you open with `UiDrawerService`; the title labels the dialog and the service handles
  * placement, width, focus, Escape, the backdrop and the `canClose` guard.
  *
- * Project the body as plain content, header actions with `drawerActions` and footer buttons with `drawerFooter`:
+ * Project the body as plain content, a tile before the title with `drawerLeading`, header actions with `drawerActions` and footer buttons
+ * with `drawerFooter`:
  *
  * ```html
  * <lfx-ui-drawer heading="Weekly Sync" subtitle="Technical Steering Committee">
+ *   <lfx-ui-avatar drawerLeading shape="rounded" [size]="40" name="Technical Steering Committee" [decorative]="true" />
  *   <ng-container drawerActions><lfx-ui-button variant="secondary" size="small">Edit meeting</lfx-ui-button></ng-container>
  *   <p>Agenda…</p>
  *   <ng-container drawerFooter><lfx-ui-button variant="primary">Save</lfx-ui-button></ng-container>
@@ -38,14 +40,14 @@ import { UiDrawerContext } from './drawer.context';
 })
 export class UiDrawerComponent {
   private readonly dialogRef = inject(DialogRef, { optional: true });
+  /** Placement, width and close handling from `UiDrawerService`, or the defaults when the layout is rendered on its own. */
+  protected readonly context: UiDrawerContext = inject(UiDrawerContext, { optional: true }) ?? new UiDrawerContext();
 
   /** Title of the drawer. It names the dialog for screen readers. */
   public readonly heading = input.required<string>();
   /** One line under the title, such as the foundation a project belongs to. */
   public readonly subtitle = input<string>('');
 
-  /** Placement, width and close handling from `UiDrawerService`, or the defaults when the layout is rendered on its own. */
-  protected readonly context: UiDrawerContext = inject(UiDrawerContext, { optional: true }) ?? new UiDrawerContext();
   /** Id of the title; `UiDrawerService` points `aria-labelledby` at it. Inside a service-opened drawer it derives from the dialog id. */
   protected readonly titleId: string = this.dialogRef ? `${this.dialogRef.id}-title` : inject(_IdGenerator).getId('lfx-ui-drawer-title-');
   /** Id of the subtitle; `UiDrawerConfig.describedBy` points the dialog at it. */

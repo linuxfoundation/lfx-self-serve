@@ -4,6 +4,9 @@
 <!-- Exact px, not rem; 14px root. Header, body and footer share a 24px gutter. -->
 <!-- Narrow drawers put the actions on their own row under the title and close button; from 560px wide they sit between them. -->
 <div class="flex shrink-0 flex-wrap items-start gap-[12px] border-b border-ui-neutral-alpha-200 px-[24px] py-[16px]" data-testid="ui-drawer-header">
+  <div class="shrink-0 empty:hidden" data-testid="ui-drawer-leading">
+    <ng-content select="[drawerLeading]" />
+  </div>
   <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
     <h2 class="heading-24 text-ui-neutral-900" [id]="titleId" data-testid="ui-drawer-title">{{ heading() }}</h2>
     @if (subtitle()) {
@@ -28,8 +31,9 @@
 <div class="flex min-h-0 flex-1 flex-col gap-[16px] overflow-auto px-[24px] py-[24px] copy-14 text-ui-neutral-900" cdkScrollable data-testid="ui-drawer-body">
   <ng-content />
 </div>
+<!-- On a phone-width sheet the footer clears the home indicator: 16px padding plus the bottom inset. -->
 <div
-  class="flex shrink-0 items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden"
+  class="flex shrink-0 items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]"
   data-testid="ui-drawer-footer">
   <ng-content select="[drawerFooter]" />
 </div>

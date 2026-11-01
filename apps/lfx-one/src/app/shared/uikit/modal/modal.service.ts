@@ -20,13 +20,13 @@ export class UiModalService {
   private readonly ids = inject(_IdGenerator);
 
   /**
-   * Opens the modal and returns its `DialogRef`; `ref.closed` emits the result. `dialogOverrides` replaces CDK dialog options, such as
-   * the position, for components built on the modal like the drawer.
+   * Opens the modal and returns its `DialogRef`; `ref.closed` emits the result. `dialogOverrides` replaces the placement and close
+   * options a component built on the modal needs, like the drawer; the id, labelling, `disableClose` and focus handling stay the modal's.
    */
   public open<R = unknown, D = unknown, C = unknown>(
     content: ComponentType<C> | TemplateRef<C>,
     config: UiModalConfig<D> = {},
-    dialogOverrides: Partial<DialogConfig<D, DialogRef<R, C>>> = {}
+    dialogOverrides: Partial<Pick<DialogConfig<D, DialogRef<R, C>>, 'positionStrategy' | 'height' | 'maxWidth' | 'providers' | 'closePredicate'>> = {}
   ): DialogRef<R, C> {
     const id = this.ids.getId('lfx-ui-modal-');
     const closeOnEscape = config.closeOnEscape ?? true;
