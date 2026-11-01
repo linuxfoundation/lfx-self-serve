@@ -636,5 +636,17 @@ describe('UiPopoverDirective', () => {
       await settle();
       expect(panel()).toBeNull();
     });
+
+    it('stays closed when the button stops being busy', async () => {
+      inner().click();
+      await settle();
+      host.componentInstance.busy.set(true);
+      await settle();
+
+      host.componentInstance.busy.set(false);
+      await settle();
+      expect(panel()).toBeNull();
+      expect(inner().getAttribute('aria-expanded')).toBe('false');
+    });
   });
 });

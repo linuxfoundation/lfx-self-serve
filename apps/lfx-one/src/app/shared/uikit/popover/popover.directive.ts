@@ -95,7 +95,12 @@ export class UiPopoverDirective {
   public constructor() {
     toObservable(this.expanded)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((expanded) => (expanded ? this.attach() : this.detach(false)));
+      .subscribe((expanded) => {
+        if (expanded) return this.attach();
+        // No template is a close, so the panel does not reopen when the template comes back.
+        if (!this.template()) this.open.set(false);
+        this.detach(false);
+      });
     toObservable(this.config)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((config) => this.apply(config));
