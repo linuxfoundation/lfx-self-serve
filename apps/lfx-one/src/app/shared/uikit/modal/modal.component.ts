@@ -11,6 +11,8 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject,
  * The layout of a modal: a title and optional subtitle, a body, an optional inset band and an actions footer. Make it the root of
  * the content you open with `UiModalService`; the title labels the dialog and the service handles focus, Escape and the backdrop.
  *
+ * Give projected `<p>`/`<label>` a type role; the app base layer otherwise sets 14/21.
+ *
  * Project the body as plain content, an inset band with `modalInset` and the buttons with `modalActions`:
  *
  * ```html

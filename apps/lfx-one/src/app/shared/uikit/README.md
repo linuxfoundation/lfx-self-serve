@@ -30,7 +30,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-spinner`        | `UiSpinnerComponent`       | Twelve-bar spinner, 12 to 32px, neutral or current-colour tone; `role="status"` with a label                                                                           |
 | `lfx-ui-note`           | `UiNoteComponent`          | Inline message, six variants, optional fill, small size, label and one action slot; `role="note"`, `alert` with `announce`                                             |
 | `lfx-ui-description`    | `UiDescriptionComponent`   | Title and value as a definition list; right-aligned for numbers, ellipsis for long values, optional help icon                                                          |
-| `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; three sizes; `role="alert"` unless `announce` is off                                               |
+| `lfx-ui-error`          | `UiErrorComponent`         | Red error message with icon, optional medium-weight label and link; four sizes; `role="alert"` unless `announce` is off                                                |
 | `lfx-ui-keyboard-input` | `UiKeyboardInputComponent` | Key or shortcut as one `<kbd>` per key, 24 or 20px; `[keys]`                                                                                                           |
 | `lfx-ui-gauge`          | `UiGaugeComponent`         | Circular percentage, 20 to 128px; level colours at 67 and 34 or accent; indeterminate; `role="progressbar"`                                                            |
 | `lfx-ui-progress`       | `UiProgressComponent`      | 10px bar from `value / max`; accent, success, warning, error or secondary; `role="progressbar"` with a label                                                           |
@@ -101,7 +101,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 
 The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`.
 
-The type-role classes also set Inter's `cv11` and `ss01` features, as the library body does, so only uikit text gets them and the app body is unchanged.
+Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
 
 Use `duration-ui-*` / `ease-ui-*` instead of arbitrary `duration-[150ms]` / `ease-[cubic-bezier(...)]` values, and keep `prefers-reduced-motion` gating (`motion-safe:` / `motion-reduce:`).
 

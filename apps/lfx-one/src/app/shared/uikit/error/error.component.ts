@@ -18,7 +18,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, 
   },
 })
 export class UiErrorComponent {
-  /** Text size: `small` 13px, `default` 14px, `large` 16px. `field` is the 13px/16px line under a form field, which the field components use. */
+  /** Text size: `small` 13px, `default` 14px, `large` 16px. `field` is the 13px/16px line under a form field. */
   public readonly size = input<'field' | 'small' | 'default' | 'large'>('default');
   /** Medium-weight label before the message, such as "Error:" or "Email error:". Leave empty for none. */
   public readonly label = input<string>('');
@@ -30,7 +30,7 @@ export class UiErrorComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
-      // Type roles set size and line height (13/18, 14/20, 16/24); exact px gap, not rem; 14px root. `field` is the library's 13/16, 6px gap, centred.
+      // Type roles set size and line height; `field` is the library's 13/16 with a 6px gap.
       const sizes = {
         field: 'items-center gap-[6px] copy-13 leading-[16px]',
         small: 'items-start gap-[8px] copy-13',
@@ -44,7 +44,7 @@ export class UiErrorComponent {
 
   private initIconClasses(): Signal<string> {
     return computed(() => {
-      // Exact px sizes and nudge to centre the icon on the first line; 14px root.
+      // Exact px icon sizes; non-field sizes nudge it onto the first line.
       const sizes = { field: 'text-[13px]', small: 'text-[14px] pt-[2px]', default: 'text-[16px] pt-[2px]', large: 'text-[18px] pt-[3px]' };
       return `fa-light fa-circle-exclamation inline-flex ${sizes[this.size()]}`;
     });
