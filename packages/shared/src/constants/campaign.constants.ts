@@ -4481,6 +4481,13 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
 export const GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE = 0.01;
 
 /**
+ * How long the Implement tab waits for a pasted Google image URL to load in the browser before it
+ * reports the size as unchecked. A slow host is not a wrong image, so the timeout only ever produces
+ * "could not check", never a refusal.
+ */
+export const GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS = 10_000;
+
+/**
  * The most bytes one Google creative image may carry — campaign-service's `googleads.MaxImageBytes`
  * (5 MiB), which every Google slot states and both the fetch and the stored-asset paths enforce
  * before anything is created. Tighter than {@link CREATIVE_ASSET_MAX_BYTES}, the library's own

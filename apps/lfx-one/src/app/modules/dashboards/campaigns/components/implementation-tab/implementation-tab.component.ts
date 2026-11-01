@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe, SlicePipe } from '@angular/common';
+import { isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AbstractControl,
@@ -132,6 +132,7 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   DEFAULT_LINKEDIN_BUDGET_USD,
@@ -223,6 +224,7 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleTypedImageProbe,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -250,6 +252,7 @@ import {
   googleCreativeImageFit,
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
+  isHttpUrl,
   googlePromotionRefusal,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
@@ -322,6 +325,7 @@ export class ImplementationTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly briefData = input<CampaignBriefOutput | null>(null);
@@ -1601,6 +1605,12 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /**
+   * What the browser last learned about each pasted Google image URL, keyed by the URL itself, so a
+   * result follows the URL into any slot it is pasted into. Probed again on every blur (see
+   * `onGoogleImageFieldBlur`), best effort where the browser answers from its cache.
+   */
+  private readonly googleTypedImageProbes = signal<Readonly<Record<string, GoogleTypedImageProbe>>>({});
   /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
   private readonly googleSuggestedApply = signal<{ briefId: string; message: string; seq: number } | null>(null);
 
@@ -2758,6 +2768,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeLibrary: Signal<CreativeAssetLibraryState> = this.initGoogleCreativeLibrary();
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
+  /** The advisory line under a Google image slot about its pasted URLs, keyed `<request key>.<control>`; absent when there is nothing to say. */
+  protected readonly googleTypedImageWarnings: Signal<Record<string, string>> = this.initGoogleTypedImageWarnings();
+  /**
+   * Every current pasted-URL line, each named by its section and field, for the always-mounted live
+   * region. The lines arrive after focus has left the field, so the visible span alone would never be
+   * announced; the region is mounted empty and only its text changes, as the template's other
+   * announcements are. `''` when there is nothing to say.
+   */
+  protected readonly googleTypedImageAnnouncement: Signal<string> = this.initGoogleTypedImageAnnouncement();
   /**
    * The asset-plan slots "Use suggested images" can fill, as `platform/CHANNEL/slot` in the plan's own
    * vocabulary: one per plan slot name that maps onto a Google image field on screen. The grid offers
@@ -5110,6 +5129,32 @@ export class ImplementationTabComponent implements OnInit {
         this.step.set('form');
       },
     });
+  }
+
+  /**
+   * Check the pasted URLs of a Google image field in the browser once the operator leaves it.
+   *
+   * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
+   * format, size and shape before anything is created (`fetchSlotImages`), so a bad image already costs
+   * nothing; this only tells the operator while they are still on the field rather than at Create.
+   * A URL is probed again on every blur unless a probe for it is still running, so a host that was
+   * slow or down gets another chance. Re-checking a URL whose image was replaced in place is best
+   * effort only: the browser may answer from its cache with the old image, and busting the cache
+   * would break signed URLs. A replaced image is reliably re-checked under a new URL. A URL on this
+   * application's own host is never loaded ({@link isOwnHostUrl}).
+   */
+  protected onGoogleImageFieldBlur(groupName: string, field: GoogleCreativeFieldSpec): void {
+    if (!field.image || !isPlatformBrowser(this.platformId)) return;
+    const raw = this.campaignForm.get([groupName, field.control])?.value as string | null | undefined;
+    for (const url of this.splitCreativeLines(raw)) {
+      // Read live, not from a snapshot taken before the loop: a URL pasted on two lines is marked
+      // in flight (`checking`, or `rechecking` once it has an answer) by its first probe, so the
+      // second line starts none.
+      const probe = this.googleTypedImageProbes()[url];
+      if (probe?.state !== 'checking' && !probe?.rechecking && isHttpUrl(url, true) && !this.isOwnHostUrl(url)) {
+        this.probeGoogleTypedImage(url);
+      }
+    }
   }
 
   // === Private Methods ===
@@ -7521,6 +7566,69 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * The advisory line under each rendered Google image slot about its pasted URLs (see
+   * `onGoogleImageFieldBlur`). Built from the slot's CURRENT lines, so a URL the operator removes takes
+   * its warning with it. A URL on its first probe says nothing yet, one probed again keeps its last
+   * answer until the new one settles, and no line is not a promise: a browser follows redirects and
+   * loads formats (WebP, SVG) that campaign-service refuses.
+   */
+  private initGoogleTypedImageWarnings(): Signal<Record<string, string>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const probes = this.googleTypedImageProbes();
+      const warnings: Record<string, string> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          const shape = field.image;
+          if (!shape) continue;
+          const misfits: string[] = [];
+          const unchecked: string[] = [];
+          for (const url of this.splitCreativeLines(raw[field.control])) {
+            const probe = probes[url];
+            if (probe?.state === 'failed') {
+              unchecked.push(url);
+            } else if (probe?.state === 'loaded' && googleCreativeImageFit({ width: probe.width, height: probe.height }, shape) === 'misfit') {
+              misfits.push(`${url} (${probe.width}x${probe.height})`);
+            }
+          }
+          const lines: string[] = [];
+          if (misfits.length > 0) {
+            // "Likely", not "will": the browser applies a JPEG's EXIF rotation and campaign-service measures
+            // the raw pixels, so a rotated photo can measure differently there.
+            lines.push(
+              `Measured here as not ${googleCreativeImageRequirement(shape)}: ${misfits.join(', ')}. Create will likely be refused for ${misfits.length === 1 ? 'it' : 'them'}; campaign-service checks again before anything is created.`
+            );
+          }
+          if (unchecked.length > 0) {
+            lines.push(
+              `Could not be loaded here, so not checked: ${unchecked.join(', ')}. campaign-service checks ${unchecked.length === 1 ? 'it' : 'them'} again at Create.`
+            );
+          }
+          if (lines.length > 0) {
+            warnings[`${section.groupName}.${field.control}`] = lines.join(' ');
+          }
+        }
+      }
+      return warnings;
+    });
+  }
+
+  private initGoogleTypedImageAnnouncement(): Signal<string> {
+    return computed(() => {
+      const warnings = this.googleTypedImageWarnings();
+      const lines: string[] = [];
+      for (const section of this.googleCreativeSections()) {
+        for (const field of section.fields) {
+          const warning = warnings[`${section.groupName}.${field.control}`];
+          if (warning) lines.push(`${section.label} ${field.label}: ${warning}`);
+        }
+      }
+      return lines.join(' ');
+    });
+  }
+
+  /**
    * `initMetaImageAssetBlock`'s sibling, over every stored image held in a slot the request would
    * carry, plus two kinds of its own so campaign-service never has to refuse what this tab can see
    * first: an image no longer in the brief's library (`missing`), and one whose recorded size does
@@ -9220,6 +9328,56 @@ export class ImplementationTabComponent implements OnInit {
       if (typeof value !== 'string') continue;
       this.campaignForm.controls[field].setValue(value, { emitEvent: false });
     }
+  }
+
+  /**
+   * Load one pasted URL as an image and record its natural size, or that it could not be loaded within
+   * `GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS`. Only ever called in the browser (`onGoogleImageFieldBlur`).
+   * A load that fails here may still succeed from campaign-service — a host can refuse hotlinking or
+   * need a referrer — so a failure is reported as "could not check", never as a wrong image.
+   */
+  private probeGoogleTypedImage(url: string): void {
+    // A settled answer stays on screen while it is checked again, so tabbing back through the field
+    // does not blank its line (or the live region) until the new probe settles.
+    this.googleTypedImageProbes.update((probes) => {
+      const previous = probes[url];
+      const next: GoogleTypedImageProbe = previous && previous.state !== 'checking' ? { ...previous, rechecking: true } : { state: 'checking' };
+      return { ...probes, [url]: next };
+    });
+    const image = new Image();
+    // The host learns nothing of where the URL was pasted; one that insists on a referrer reads as "not checked".
+    image.referrerPolicy = 'no-referrer';
+    let settled = false;
+    // Stops the probe without recording anything: the tab is gone, or the answer is in.
+    const stop = (): void => {
+      settled = true;
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const unregister = this.destroyRef.onDestroy(stop);
+    const settle = (probe: GoogleTypedImageProbe): void => {
+      if (settled) return;
+      stop();
+      unregister();
+      this.googleTypedImageProbes.update((probes) => ({ ...probes, [url]: probe }));
+    };
+    const timer = setTimeout(() => settle({ state: 'failed' }), GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    image.onload = () => settle({ state: 'loaded', width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => settle({ state: 'failed' });
+    image.src = url;
+  }
+
+  /**
+   * Whether a pasted URL is on this application's own host. Such a URL is never probed: the browser
+   * would load it with the operator's session cookie, so pasting a route such as `/logout` would act on
+   * the session (Copilot, #4810). Compared by host name, not origin, because a browser upgrades an
+   * `http://` image on an HTTPS page and a cookie is not scoped by port, so neither the scheme nor the
+   * port makes such a URL safe. No image an ad uses is served from here, and campaign-service still
+   * checks every pasted URL at Create. Only called in the browser (`onGoogleImageFieldBlur`).
+   */
+  private isOwnHostUrl(url: string): boolean {
+    return new URL(url).hostname === window.location.hostname;
   }
 
   /**
