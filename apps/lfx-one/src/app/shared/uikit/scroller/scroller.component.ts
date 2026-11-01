@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { isPlatformBrowser } from '@angular/common';
 import {
   afterNextRender,
@@ -34,6 +35,7 @@ import { UiScrollerDirection } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-ui-scroller',
+  imports: [CdkScrollable],
   templateUrl: './scroller.component.html',
   styleUrl: './scroller.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

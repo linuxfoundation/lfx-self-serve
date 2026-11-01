@@ -419,6 +419,7 @@ describe('UiComboboxComponent', () => {
     expect(host.querySelector('[data-testid="ui-combobox-hint"]')).toBeNull();
     expect(field().getAttribute('aria-invalid')).toBe('true');
     expect(field().getAttribute('aria-describedby')).toBe(error.id);
+    expect(error.getAttribute('role')).toBeNull();
   });
 
   it('marks required for assistive technology', async () => {

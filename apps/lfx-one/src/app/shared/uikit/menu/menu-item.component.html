@@ -11,7 +11,3 @@
 @if (trailingIcon()) {
   <span [class]="affixClasses()" data-testid="ui-menu-item-trailing-icon"><i [class]="trailingIcon()" aria-hidden="true"></i></span>
 }
-@if (disabledReason()) {
-  <!-- Last, so type-ahead (which reads the item's text) matches the label. Hidden from the item's name; aria-describedby points here while disabled. -->
-  <span class="sr-only" aria-hidden="true" [id]="reasonId" data-testid="ui-menu-item-reason">{{ disabledReason() }}</span>
-}

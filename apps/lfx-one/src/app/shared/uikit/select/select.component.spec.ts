@@ -427,7 +427,8 @@ describe('UiSelectComponent', () => {
     const error = host.querySelector('[data-testid="ui-select-error"]') as HTMLElement;
 
     expect(host.querySelector('[data-testid="ui-select-hint"]')).toBeNull();
-    expect(error.getAttribute('role')).toBe('alert');
+    // aria-invalid and aria-describedby carry the error; a live region would read it twice.
+    expect(error.getAttribute('role')).toBeNull();
     expect(trigger().getAttribute('aria-invalid')).toBe('true');
     expect(trigger().getAttribute('aria-describedby')).toBe(error.id);
   });

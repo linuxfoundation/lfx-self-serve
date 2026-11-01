@@ -44,7 +44,7 @@
     <ng-content select="[lfxUiInputAction]" />
   </div>
   @if (error()) {
-    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>
+    <lfx-ui-error size="small" [announce]="false" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
     <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-input-hint">{{ hint() }}</p>
   }

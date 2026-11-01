@@ -312,7 +312,7 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
 
   private openPanel(): void {
     if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.trigger().getBoundingClientRect().width);
+    this.panelWidth.set(this.trigger().offsetWidth);
     this.open.set(true);
     this.openChange.emit(true);
   }

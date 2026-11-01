@@ -29,7 +29,7 @@ export class UiModalService {
       id,
       data: config.data,
       role: config.role ?? 'dialog',
-      ariaModal: true,
+      // No ariaModal: panes of a Select or Menu opened inside sit outside the dialog and would be treated as inert.
       autoFocus: config.autoFocus ?? 'first-tabbable',
       // The title inside lfx-ui-modal takes this id.
       ariaLabelledBy: `${id}-title`,

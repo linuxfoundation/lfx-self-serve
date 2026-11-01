@@ -81,7 +81,8 @@ describe('UiInputComponent', () => {
 
     expect(host.querySelector('[data-testid="ui-input-hint"]')).toBeNull();
     expect(error.textContent).toContain('Use lowercase letters only.');
-    expect(error.getAttribute('role')).toBe('alert');
+    // aria-invalid and aria-describedby carry the error; a live region would read it twice.
+    expect(error.getAttribute('role')).toBeNull();
     expect(field().getAttribute('aria-invalid')).toBe('true');
     expect(field().getAttribute('aria-describedby')).toBe(error.id);
   });

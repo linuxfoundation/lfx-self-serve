@@ -8,7 +8,7 @@ import { UiNoteComponent } from './note.component';
 const meta: Meta<UiNoteComponent> = {
   title: 'Uikit/Note',
   component: UiNoteComponent,
-  args: { variant: 'info', fill: false, size: 'default', label: '', icon: '', alert: false },
+  args: { variant: 'info', fill: false, size: 'default', label: '', icon: '', announce: false },
   render: (args) => ({ props: args, template: `<lfx-ui-note ${argsToTemplate(args)}>Meetings are moving to the new scheduler next week.</lfx-ui-note>` }),
 };
 export default meta;
@@ -18,7 +18,7 @@ export const Info: Story = {};
 export const Secondary: Story = { args: { variant: 'secondary' } };
 export const Success: Story = { args: { variant: 'success' } };
 export const Warning: Story = { args: { variant: 'warning' } };
-export const ErrorState: Story = { name: 'Error', args: { variant: 'error', alert: true } };
+export const ErrorState: Story = { name: 'Error', args: { variant: 'error', announce: true } };
 export const Violet: Story = { args: { variant: 'violet', label: 'Beta:' } };
 export const Filled: Story = { args: { fill: true } };
 export const Small: Story = { args: { size: 'small' } };

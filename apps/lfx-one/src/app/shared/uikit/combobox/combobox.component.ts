@@ -27,6 +27,7 @@ import { UiInputSize, UiOption } from '@lfx-one/shared/interfaces';
 import { UiErrorComponent } from '../error/error.component';
 import { UiOptionHost } from '../select/option-host';
 import { UiOptionComponent } from '../select/option.component';
+import { revealRowInList } from '../select/reveal-row';
 
 /**
  * A text field that narrows a list of suggestions as you type, with an optional label, hint and error. The suggestions are the same projected
@@ -318,7 +319,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   // Opens on the chosen row when it matches, or on the first one that can be picked.
   private openPanel(): void {
     if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
+    this.panelWidth.set(this.origin().elementRef.nativeElement.offsetWidth);
     this.open.set(true);
     const chosen = this.selected();
     this.activeItem.set(chosen && this.navigable().includes(chosen) ? chosen : this.firstPickable());
@@ -341,14 +342,9 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     this.keyManager.updateActiveItem(this.navigable().findIndex((option) => option === active));
   }
 
-  // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
   private revealActive(): void {
     const row = this.document.getElementById(this.activeOption()?.id ?? '');
     const list = row?.closest<HTMLElement>('[role="listbox"]');
-    if (!row || !list) return;
-    const rowBox = row.getBoundingClientRect();
-    const listBox = list.getBoundingClientRect();
-    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
+    if (row && list) revealRowInList(row, list);
   }
 }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 
 /** Circular percentage for health scores, coverage or completion, read at a glance in cards and tables. */
 @Component({
@@ -33,9 +33,9 @@ export class UiGaugeComponent {
   /** `level` colours the arc by value: high 67 and up is green, mid 34 to 66 is amber, low below 34 is red. `accent` is blue, for values with no good or bad meaning. */
   public readonly tone = input<'level' | 'accent'>('level');
   /** Shows the number, without a % sign, inside the ring. */
-  public readonly showValue = input<boolean>(true);
+  public readonly showValue = input<boolean, unknown>(true, { transform: booleanAttribute });
   /** Spins a partial arc while the value loads. Drops the progressbar value attributes. */
-  public readonly indeterminate = input<boolean>(false);
+  public readonly indeterminate = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   /** Ring geometry in the 100-unit viewBox; the arc length is the circumference times the fraction. */
   protected readonly radius = 42;

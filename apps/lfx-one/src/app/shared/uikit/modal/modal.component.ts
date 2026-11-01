@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { DialogRef } from '@angular/cdk/dialog';
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 
 /**
  * The layout of a modal: a title and optional subtitle, a body, an optional inset band and an actions footer. Make it the root of
@@ -22,7 +23,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } f
  */
 @Component({
   selector: 'lfx-ui-modal',
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, CdkScrollable],
   templateUrl: './modal.component.html',
   styleUrl: './modal.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,9 +42,9 @@ export class UiModalComponent {
   /** `md` is 540px wide, `sm` is 420px for short confirmations. Both shrink to fit the window. */
   public readonly size = input<'sm' | 'md'>('md');
   /** Keeps the title in place while a long body scrolls under it. The actions footer always stays in place. */
-  public readonly sticky = input<boolean>(false);
+  public readonly sticky = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Stretches the one button in the actions footer to the full width. */
-  public readonly singleAction = input<boolean>(false);
+  public readonly singleAction = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   /** Id of the title; `UiModalService` points `aria-labelledby` at it. Inside a service-opened modal it derives from the dialog id. */
   protected readonly titleId: string = this.dialogRef ? `${this.dialogRef.id}-title` : inject(_IdGenerator).getId('lfx-ui-modal-title-');

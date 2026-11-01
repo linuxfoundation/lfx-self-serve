@@ -1,17 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { _IdGenerator } from '@angular/cdk/a11y';
 import { CdkMenuItem } from '@angular/cdk/menu';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DoCheck, inject, input, Signal } from '@angular/core';
+
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
  * One action in a `lfx-ui-menu`. The label is the projected content. Choosing it (click, Enter or Space) emits `triggered`
  * and closes the menu. A disabled item has `aria-disabled="true"` and does nothing when chosen. It stays reachable with the arrow keys, and
- * `disabledReason` is read as its description, so a screen reader user hears why it is locked.
+ * `disabledReason` explains why it is locked: a tooltip on hover and keyboard focus, also read as the item's description.
  *
  * Inputs and output from the CDK menu item, under these names: `disabled` (boolean), `typeaheadLabel` (text type-ahead matches
- * instead of the projected label) and the `triggered` output.
+ * instead of the projected label) and the `triggered` output. From `UiTooltipDirective`, `disabledReason` is its `lfxUiTooltip` text;
+ * it applies only while the item is disabled.
  */
 @Component({
   selector: 'lfx-ui-menu-item',
@@ -23,14 +25,14 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } f
       inputs: ['cdkMenuItemDisabled: disabled', 'cdkMenuitemTypeaheadLabel: typeaheadLabel'],
       outputs: ['cdkMenuItemTriggered: triggered'],
     },
+    { directive: UiTooltipDirective, inputs: ['lfxUiTooltip: disabledReason'] },
   ],
   host: {
     '[class]': 'hostClasses()',
-    '[attr.aria-describedby]': 'menuItem.disabled && disabledReason() ? reasonId : null',
     'data-testid': 'ui-menu-item',
   },
 })
-export class UiMenuItemComponent {
+export class UiMenuItemComponent implements DoCheck {
   /** `danger` is for destructive actions; put those last, after a separator. */
   public readonly variant = input<'default' | 'danger'>('default');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-pen-to-square`. */
@@ -39,13 +41,16 @@ export class UiMenuItemComponent {
   public readonly trailingIcon = input<string>('');
   /** Keyboard shortcut shown at the end of the row, such as `⌘E`. It is a hint only; wire the shortcut yourself. */
   public readonly shortcut = input<string>('');
-  /** Why the item is locked, such as "Only owners can transfer". Read to screen reader users while the item is disabled. */
-  public readonly disabledReason = input<string>('');
 
   protected readonly menuItem = inject(CdkMenuItem);
-  protected readonly reasonId = inject(_IdGenerator).getId('lfx-ui-menu-item-reason-');
+  private readonly tooltip = inject(UiTooltipDirective, { self: true });
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly affixClasses: Signal<string> = this.initAffixClasses();
+
+  // The CDK item's disabled flag is not a signal, so the tooltip follows it on each check.
+  public ngDoCheck(): void {
+    this.tooltip.hostDisabled.set(!this.menuItem.disabled);
+  }
 
   private initHostClasses(): Signal<string> {
     return computed(() => {

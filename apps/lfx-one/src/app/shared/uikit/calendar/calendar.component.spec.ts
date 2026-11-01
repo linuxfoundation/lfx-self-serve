@@ -196,6 +196,45 @@ describe('UiCalendarComponent', () => {
     expect(sunday.getAttribute('tabindex')).toBe('0');
   });
 
+  describe('disabled input', () => {
+    it('makes the whole grid inert and refuses to select', async () => {
+      await set('disabled', true);
+
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+      expect((host.querySelector('[data-testid="ui-calendar-prev"] button') as HTMLButtonElement).disabled).toBe(true);
+      expect(day('2026-10-20').disabled).toBe(true);
+      expect(host.querySelectorAll('[data-testid="ui-calendar-day"][tabindex="0"]').length).toBe(0);
+
+      day('2026-10-20').click();
+      await fixture.whenStable();
+      expect(fixture.componentInstance.value()).toBeNull();
+    });
+
+    it('ignores keys', async () => {
+      await set('disabled', true);
+      (host.querySelector('[role="grid"]') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+      await fixture.whenStable();
+
+      expect(title()).toBe('October 2026');
+    });
+
+    it('accepts the bare attribute form and the string "false"', async () => {
+      await set('disabled', '');
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+
+      await set('disabled', 'false');
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('stays disabled when the form control enables it again', async () => {
+      await set('disabled', true);
+      fixture.componentInstance.setDisabledState(false);
+      await fixture.whenStable();
+
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+    });
+  });
+
   describe('with a reactive form control', () => {
     let formFixture: ComponentFixture<FormHostComponent>;
     const formDay = (key: string): HTMLButtonElement => (formFixture.nativeElement as HTMLElement).querySelector(`[data-date="${key}"]`) as HTMLButtonElement;

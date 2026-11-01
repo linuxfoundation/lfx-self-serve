@@ -34,6 +34,26 @@
     data-testid="ui-button">
     <ng-container [ngTemplateOutlet]="content" />
   </a>
+} @else if (menu(); as menuRef) {
+  <!-- Own branch: the CDK trigger sets aria-expanded itself and swallows ArrowUp and ArrowDown on any button it sits on. -->
+  <button
+    [type]="type()"
+    [class]="classes()"
+    [disabled]="disabled()"
+    [attr.aria-label]="ariaLabel() || null"
+    [attr.aria-controls]="ariaControls() || null"
+    [attr.aria-busy]="loading() || null"
+    [cdkMenuTriggerFor]="menuRef"
+    [lfxUiTooltip]="tooltip()"
+    [lfxUiTooltipTitle]="tooltipTitle()"
+    [lfxUiTooltipShortcut]="tooltipShortcut()"
+    [lfxUiTooltipSide]="tooltipSide()"
+    [lfxUiTooltipDelay]="tooltipDelay()"
+    [lfxUiTooltipDisabled]="tooltipDisabled()"
+    (click)="onClick($event)"
+    data-testid="ui-button">
+    <ng-container [ngTemplateOutlet]="content" />
+  </button>
 } @else {
   <button
     [type]="type()"

@@ -245,24 +245,53 @@ describe('UiMenuComponent', () => {
     expect(menu()).not.toBeNull();
   });
 
-  it('describes a disabled item with its reason and hides the reason from the item name', async () => {
-    await open();
-    const reason = item('transfer').querySelector('[data-testid="ui-menu-item-reason"]') as HTMLElement;
+  const descriptionOf = (el: HTMLElement) =>
+    (el.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(' ');
+  const tooltip = () => container.querySelector('[data-testid="ui-tooltip"]') as HTMLElement | null;
 
-    expect(reason.textContent).toBe('Only owners can transfer');
-    expect(reason.getAttribute('aria-hidden')).toBe('true');
-    expect(reason.className).toContain('sr-only');
-    expect(item('transfer').getAttribute('aria-describedby')).toBe(reason.id);
+  it('describes a disabled item with its reason and keeps the reason out of the item name', async () => {
+    await open();
+
+    expect(descriptionOf(item('transfer'))).toBe('Only owners can transfer');
+    expect(item('transfer').textContent?.trim()).toBe('Transfer Ownership');
     expect(item('edit').getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('only points at the reason while the item is disabled', async () => {
+  it('only describes the item with the reason while it is disabled', async () => {
     await open();
     expect(item('archive').getAttribute('aria-describedby')).toBeNull();
 
     fixture.componentInstance.archiveLocked.set(true);
     await settle();
-    expect(item('archive').getAttribute('aria-describedby')).toBe(item('archive').querySelector('[data-testid="ui-menu-item-reason"]')?.id);
+    expect(descriptionOf(item('archive'))).toBe('Archived projects are read-only');
+
+    fixture.componentInstance.archiveLocked.set(false);
+    await settle();
+    expect(item('archive').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('shows the reason in a tooltip when keyboard focus reaches a locked item, and not on an unlocked one', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    expect(document.activeElement).toBe(item('transfer'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()?.textContent?.trim()).toBe('Only owners can transfer');
+
+    key(item('transfer'), 'ArrowDown');
+    key(item('hidden-label'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('archive'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()).toBeNull();
   });
 
   it('closes when the user clicks outside', async () => {

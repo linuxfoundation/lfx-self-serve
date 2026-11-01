@@ -30,6 +30,7 @@ import { UiInputSize, UiOption } from '@lfx-one/shared/interfaces';
 import { UiErrorComponent } from '../error/error.component';
 import { UiOptionHost } from './option-host';
 import { UiOptionComponent } from './option.component';
+import { revealRowInList } from './reveal-row';
 import { UiSelectValueDirective } from './select-value.directive';
 
 /**
@@ -366,7 +367,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   // Opens on the chosen row, or on the first one that can be picked (the active option falls back to it).
   private openPanel(typed?: string): void {
     if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
+    this.panelWidth.set(this.origin().elementRef.nativeElement.offsetWidth);
     this.open.set(true);
     this.activeItem.set(this.options()[this.selectedIndex()] ?? null);
     this.syncKeyManager();
@@ -401,15 +402,10 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     this.closePanel();
   }
 
-  // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
   private revealActive(): void {
     const row = this.document.getElementById(this.activeOption()?.id ?? '');
     const list = row?.closest<HTMLElement>('[role="listbox"]');
-    if (!row || !list) return;
-    const rowBox = row.getBoundingClientRect();
-    const listBox = list.getBoundingClientRect();
-    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
+    if (row && list) revealRowInList(row, list);
   }
 
   private panelHolds(node: EventTarget | null): boolean {

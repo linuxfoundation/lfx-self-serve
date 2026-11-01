@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { NgTemplateOutlet } from '@angular/common';
-import { booleanAttribute, ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal, TemplateRef } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { UiButtonSize, UiButtonVariant, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
@@ -17,10 +18,13 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
  * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
  * A disabled button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
+ *
+ * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
+ * to the button on close). A button rendered as a link (`link`) does not open a menu.
  */
 @Component({
   selector: 'lfx-ui-button',
-  imports: [NgTemplateOutlet, RouterLink, UiSpinnerComponent, UiTooltipDirective],
+  imports: [NgTemplateOutlet, RouterLink, CdkMenuTrigger, UiSpinnerComponent, UiTooltipDirective],
   templateUrl: './button.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -42,7 +46,7 @@ export class UiButtonComponent {
   public readonly iconOnly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Accessible name; required for icon-only buttons. */
   public readonly ariaLabel = input<string>('');
-  /** Writes `aria-expanded` on the inner element for a button that shows or hides content, such as `lfx-ui-show-more`. Leave `null` for no attribute. */
+  /** Writes `aria-expanded` on the inner element for a button that shows or hides content, such as `lfx-ui-show-more`. Leave `null` for no attribute. Not used with `menu`, whose trigger sets it. */
   public readonly ariaExpanded = input<boolean | null>(null);
   /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. */
   public readonly ariaControls = input<string>('');
@@ -54,6 +58,8 @@ export class UiButtonComponent {
   public readonly fullWidth = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native button type; ignored when `link` is set. */
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
+  /** Template reference of an `lfx-ui-menu` to open from the button, such as `#actions`. Ignored when `link` is set. */
+  public readonly menu = input<TemplateRef<unknown> | null>(null);
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */

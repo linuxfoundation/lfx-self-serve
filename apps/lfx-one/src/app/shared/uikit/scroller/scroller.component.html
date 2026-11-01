@@ -17,6 +17,7 @@
 <div class="[&:has(>[role=region]:focus-visible)]:shadow-focus" data-testid="ui-scroller-frame">
   <div
     #viewport
+    cdkScrollable
     [class]="viewportClasses()"
     [style.--fade-start.px]="fadeStart()"
     [style.--fade-end.px]="fadeEnd()"
