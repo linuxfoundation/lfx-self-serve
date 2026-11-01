@@ -672,6 +672,8 @@ export class OrgLensPeopleService {
       seatsCount: row.SEATS_COUNT ?? 0,
       boardSeatsCount: row.BOARD_SEATS_COUNT ?? 0,
       committeeSeatsCount: row.COMMITTEE_SEATS_COUNT ?? 0,
+      // Key-contact roles are live-only (member-service), never warehoused — the directory merge fills these in.
+      keyContactRoles: [],
       commitsCount: row.COMMITS_COUNT ?? 0,
       mergedCommitsCount: row.MERGED_COMMITS_COUNT ?? 0,
       codeActivitiesCount: row.CODE_ACTIVITIES_COUNT ?? 0,

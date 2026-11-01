@@ -74,6 +74,7 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknow
       return value === null || isStoredString(value);
     case 'sources':
     case 'engagedFoundationIds':
+    case 'keyContactRoles':
       return isStringArray(value);
     case 'seatsCount':
     case 'boardSeatsCount':
@@ -392,6 +393,9 @@ export class OrgPeopleDirectoryService {
       this.logSourceFailure(req, accountId, 'committee seats', seats.reason);
     }
 
+    // Key contacts that matched no row, held for the deferred pass below. Enriching them here would read
+    // an ownership map that the access pass and the orphan fold have not contributed their addresses to yet.
+    const unmatchedKeyContacts: { emp: KeyContactEmployee; email: string }[] = [];
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
@@ -404,10 +408,13 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+          this.addKeyContactRoles(existing, emp.roles);
           // No username backfill onto an email-merged row: the username is member-service's resolution of
           // this address, and resolving identity from an address is prohibited.
         } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
+        } else {
+          unmatchedKeyContacts.push({ emp, email });
         }
       }
     } else {
@@ -437,6 +444,7 @@ export class OrgPeopleDirectoryService {
     }
 
     this.absorbIdentitylessRows(byKey);
+    this.enrichStoredOwnersFromKeyContacts(byKey, unmatchedKeyContacts);
     if (formerUsernames) {
       this.tagFormerAccessPrincipals(byKey, formerUsernames);
     } else {
@@ -471,9 +479,44 @@ export class OrgPeopleDirectoryService {
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
    */
-  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
-    // An address claimed by more than one identity has no correct owner, so it gets none: picking the
-    // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
+  /**
+   * Carry a key contact's roles onto the stored employee who owns its address.
+   *
+   * Only reached in a scope that enriches stored rows without adding live-only ones: there is no
+   * live-only row for `absorbIdentitylessRows` to fold, so without this an employee keyed by LF identity
+   * loses their pills while an email-keyed one keeps theirs.
+   *
+   * Deliberately last. The access pass and the orphan fold both call `addEmail`, so an ownership map
+   * built before them is wrong in two directions: an address only an access principal contributed is
+   * claimed by nobody and its roles vanish, and an address that a second identity claims later is handed
+   * to the first — putting one person's key-contact role on another, which is the worse of the two.
+   * Reading the final map means both cases resolve the way the full-roster path already resolves them.
+   */
+  private enrichStoredOwnersFromKeyContacts(
+    byKey: Map<string, OrgAllEmployeeRowInternal>,
+    unmatched: readonly { emp: KeyContactEmployee; email: string }[]
+  ): void {
+    if (unmatched.length === 0) return;
+    const identityOwners = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
+    for (const { emp, email } of unmatched) {
+      const owner = identityOwners.get(email);
+      if (!owner) continue;
+      this.addSource(owner, 'keyContact');
+      this.addEmail(owner, email);
+      this.fill(owner, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+      this.addKeyContactRoles(owner, emp.roles);
+    }
+  }
+
+  /**
+   * Address -> the single identity row listing it.
+   *
+   * An address claimed by more than one identity has no correct owner, so it gets none: picking the
+   * first would attribute by upstream ordering, which is not a property worth depending on. Shared by
+   * the orphan fold and by the key-contact enrichment, so the two cannot disagree about who owns an
+   * address.
+   */
+  private static identityOwnersByEmail(byKey: Map<string, OrgAllEmployeeRowInternal>): Map<string, OrgAllEmployeeRowInternal> {
     const claims = new Map<string, OrgAllEmployeeRowInternal[]>();
     for (const [key, row] of byKey) {
       if (!key.startsWith('identity:')) continue;
@@ -485,6 +528,11 @@ export class OrgPeopleDirectoryService {
     for (const [email, owners] of claims) {
       if (owners.length === 1) ownerByEmail.set(email, owners[0]);
     }
+    return ownerByEmail;
+  }
+
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
+    const ownerByEmail = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
 
     for (const [key, orphan] of byKey) {
       if (!key.startsWith('email:')) continue;
@@ -509,6 +557,7 @@ export class OrgPeopleDirectoryService {
       }
       for (const source of orphan.sources) this.addSource(owner, source);
       for (const email of orphan.emails) this.addEmail(owner, email);
+      this.addKeyContactRoles(owner, orphan.keyContactRoles);
       this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
       // Reachable only for an accepted principal whose settings record carries no username: it keys on
       // the address like any orphan, but `isPending` is false so its badge is a real role rather than
@@ -566,6 +615,14 @@ export class OrgPeopleDirectoryService {
     }
   }
 
+  /** Union the person's key-contact roles, kept sorted so the Key Contact column renders in a stable order across refetches. */
+  private addKeyContactRoles(row: OrgAllEmployeeRowInternal, roles: readonly string[] | undefined): void {
+    // Tolerates an absent array, not just an empty one: this is an upstream service's shape, and the
+    // field is newer than some of its callers.
+    if (!roles?.length) return;
+    row.keyContactRoles = [...new Set([...row.keyContactRoles, ...roles])].sort((a, b) => a.localeCompare(b));
+  }
+
   /** Record a contributing address. A merged person legitimately holds several; `email` stays the preferred display one. */
   private addEmail(row: OrgAllEmployeeRowInternal, email: string): void {
     if (email && !row.emails.includes(email)) {
@@ -607,7 +664,18 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRowInternal {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
+    const row = this.liveRow(
+      email,
+      emp.firstName || null,
+      emp.lastName || null,
+      emp.jobTitle,
+      emp.avatarUrl ?? null,
+      'keyContact',
+      key,
+      emp.lfUsername ?? null
+    );
+    this.addKeyContactRoles(row, emp.roles);
+    return row;
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRowInternal {
@@ -655,6 +723,7 @@ export class OrgPeopleDirectoryService {
       seatsCount: 0,
       boardSeatsCount: 0,
       committeeSeatsCount: 0,
+      keyContactRoles: [],
       commitsCount: 0,
       mergedCommitsCount: 0,
       codeActivitiesCount: 0,

@@ -155,6 +155,8 @@ export interface KeyContactEmployee {
    * Null means "not available from this view", not "no company address".
    */
   lfUsername?: string | null;
+  /** Distinct active key-contact roles this person holds across the org's memberships, sorted. Empty for a person surfaced by a non-key-contact source. */
+  roles: string[];
 }
 
 /** Response envelope for `GET /api/orgs/:orgUid/lens/key-contacts/employees`. */

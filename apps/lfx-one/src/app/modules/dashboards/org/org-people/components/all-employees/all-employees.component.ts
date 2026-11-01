@@ -62,6 +62,7 @@ import {
   ORG_TEAM_MEMBERS_TOOLTIP,
   ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
+import { orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
@@ -71,9 +72,9 @@ import type {
   OrgAllEmployeeEmploymentOption,
   OrgAllEmployeeRow,
   OrgAllEmployeeRowVm,
-  OrgAllEmployeesResponse,
   OrgAllEmployeeSortColumn,
   OrgAllEmployeeSortDirection,
+  OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
   OrgCodeFilterValues,
   OrgCodeMeasure,
@@ -81,6 +82,7 @@ import type {
   OrgCommitFilters,
   OrgCountUnit,
   OrgDropdownOption,
+  OrgKeyContactRolePillVm,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
   OrgProjectScope,
@@ -648,12 +650,29 @@ export class AllEmployeesComponent {
         seatsCount: role.seatsCount,
         boardSeatsCount: role.boardSeatsCount,
         committeeSeatsCount: role.committeeSeatsCount,
+        // The live row is the one carrying key-contact roles; the surviving former row comes from the
+        // warehouse, which never has them. Without this a former employee who still holds a role reads
+        // as '—' and sorts as zero.
+        keyContactRoles: AllEmployeesComponent.keyContactRolesOf(role),
         accessBadge: role.accessBadge ?? accessBadge,
       });
     }
     // `liveRows` is the account-checked current list: after an org switch the previous org's rows must not show (or feed the foundation dropdown) until the new fetch lands.
     const currentRows = this.showCurrent() ? [...liveRows.filter((row) => !row.isFormer && !folded.has(row)), ...rejoinedRows] : [];
     return this.showFormer() ? [...currentRows, ...shownFormerRows] : currentRows;
+  }
+
+  /**
+   * Key-contact roles as a guaranteed array.
+   *
+   * The field is required on the wire, but a rolling deploy serves this bundle against pods that
+   * predate it, and requests are not sticky (charts/lfx-self-serve/values.yaml). A row from an older
+   * pod arrives without the field, and every reader here goes straight for `.length` — so the whole
+   * All Employees table would fail to render for the length of each rollout. Normalising once, here,
+   * means the view model's own field is safe and nothing downstream has to remember this.
+   */
+  private static keyContactRolesOf(row: OrgAllEmployeeRow): string[] {
+    return (row.keyContactRoles as string[] | undefined) ?? [];
   }
 
   private initViewRows(): OrgAllEmployeeRowVm[] {
@@ -670,8 +689,17 @@ export class AllEmployeesComponent {
       // detail, so they must not be chevron-expandable or trigger a detail fetch — mark them synthetic
       // regardless of which live source (access / board / committee / keyContact) added them.
       isSynthetic: !row.sources.includes('snowflake'),
+      keyContactRoles: AllEmployeesComponent.keyContactRolesOf(row),
+      // Only a single role gets a pill — several collapse to a count chip, so building pills for them would be dead work.
+      keyContactRolePills: AllEmployeesComponent.keyContactRolePillsOf(row),
+      keyContactRolesTooltip: AllEmployeesComponent.keyContactRolesOf(row).length > 1 ? AllEmployeesComponent.keyContactRolesOf(row).join(', ') : '',
       rowClass: AllEmployeesComponent.rowClassActivity,
     }));
+  }
+
+  private static keyContactRolePillsOf(row: OrgAllEmployeeRow): OrgKeyContactRolePillVm[] {
+    const roles = AllEmployeesComponent.keyContactRolesOf(row);
+    return roles.length === 1 ? [{ role: roles[0], pillClass: orgKeyContactRolePillClass(roles[0]) }] : [];
   }
 
   private initFilteredRows(): OrgAllEmployeeRowVm[] {
@@ -740,6 +768,7 @@ export class AllEmployeesComponent {
     return {
       name: active === 'name' ? direction : 'none',
       seats: active === 'seats' ? direction : 'none',
+      keyContact: active === 'keyContact' ? direction : 'none',
       commits: active === 'commits' ? direction : 'none',
       events: active === 'events' ? direction : 'none',
       courses: active === 'courses' ? direction : 'none',
@@ -754,6 +783,7 @@ export class AllEmployeesComponent {
     return {
       name: iconFor('name'),
       seats: iconFor('seats'),
+      keyContact: iconFor('keyContact'),
       commits: iconFor('commits'),
       events: iconFor('events'),
       courses: iconFor('courses'),
@@ -970,6 +1000,8 @@ export class AllEmployeesComponent {
     switch (column) {
       case 'seats':
         return row.seatsCount;
+      case 'keyContact':
+        return row.keyContactRoles.length;
       case 'commits':
         return row.commitsCount;
       case 'events':
