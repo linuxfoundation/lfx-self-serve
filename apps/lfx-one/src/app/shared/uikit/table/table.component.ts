@@ -106,7 +106,7 @@ export class UiTableComponent {
         const ariaSorts = { asc: 'ascending', desc: 'descending' } as const;
         return {
           column,
-          headClasses: `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 font-medium text-ui-neutral-600`,
+          headClasses: `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 leading-[20px] font-medium text-ui-neutral-600`,
           bodyClasses: `h-ui-row ${pad} ${align} ${rule} align-middle ${column.muted ? 'text-ui-neutral-600' : 'text-ui-neutral-900'} ${hover}`,
           footClasses: `h-ui-row ${pad} ${align} align-middle bg-ui-background-200 font-medium text-ui-neutral-900`,
           ariaSort: sorted ? ariaSorts[sorted] : null,

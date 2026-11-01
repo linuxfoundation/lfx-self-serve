@@ -3,8 +3,8 @@
 
 <!-- Exact px, not rem; 14px root: 8px gap between the label row and the track. -->
 <div class="flex flex-col gap-[8px]">
-  <div class="flex justify-between copy-13 tabular-nums text-ui-neutral-600">
-    <label [for]="inputId" data-testid="ui-slider-label">{{ label() }}</label>
+  <div class="flex justify-between copy-13 leading-[20px] tabular-nums text-ui-neutral-600">
+    <label class="copy-13 leading-[20px]" [for]="inputId" data-testid="ui-slider-label">{{ label() }}</label>
     <output [for]="inputId" [class.text-ui-neutral-900]="!isDisabled()" data-testid="ui-slider-value">{{ displayValue() }}</output>
   </div>
   <input

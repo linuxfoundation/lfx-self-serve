@@ -119,7 +119,7 @@ export const Layout: Story = {
     template: `
       <div class="flex justify-center rounded-ui-md bg-ui-overlay p-[24px]">
         <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings, mailing list and voting.">
-          <p>Body content goes here.</p>
+          <p class="copy-14">Body content goes here.</p>
           <div modalInset class="label-14">Inset band</div>
           <ng-container modalActions>
             <lfx-ui-button variant="secondary">Cancel</lfx-ui-button>

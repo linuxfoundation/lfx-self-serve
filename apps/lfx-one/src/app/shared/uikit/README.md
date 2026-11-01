@@ -10,6 +10,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 - **Styling:** Tailwind only, no hex values. New and realigned components use the LFX UI Library `ui-*` roles below; feature code outside the uikit keeps using `lfxColors` (`blue`, `gray`, ...), but no uikit component still does.
 - **No PrimeNG** imports anywhere in this folder.
 - **Overlays** build on `@angular/cdk`.
+- **Modal** deliberately omits `aria-modal` (CDK default): overlays stay exposed to assistive technology, while the page behind still gets `aria-hidden`.
 - **Stacking:** CDK overlays sit at z-index 10000, above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. A PrimeNG overlay panel opened from inside a uikit modal renders below it unless it is appended to its own element.
 - **Types:** shared interfaces such as `UiTabItem` live in `@lfx-one/shared/interfaces`.
 - **Compound components** (a menu and its items, groups and separators) share one spec and one stories file, named after the parent.
@@ -76,6 +77,12 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 - **Exact px:** the app root font is 14px, so rem would scale. Library sizes are px values, not Tailwind's rem scale (`h-10` is 35px here; `h-ui-medium` is 40px).
 - **No opacity modifier:** colours are CSS variables, so `bg-ui-accent-500/50` does not work. Use the matching `ui-*-alpha` or lower step (`bg-ui-accent-100`).
 - **Primitives** other than white and black (`azure`, `slate`, ...) are variables only. Components use the `ui-*` roles, except the hover and active colour mixes on `--ui-slate-900` in Button, SplitButton and Toast, which copy the library's `bundle.css` until it ships mix tokens. The primitives are for charts, avatars and illustrations (`var(--ui-azure-500)`).
+- **Colour literals:** a few shadows and masks use literal colours, because the library ships no token for them yet:
+  - Slider thumb lift: `rgba(15, 23, 43, 0.16)` (the `--ui-slate-900` ink) for the 2px drop, since `shadow-small` is visibly heavier.
+  - Toggle thumb shadow: `rgba(15, 23, 43, 0.2)` and `0.1` for its two layers, copied from the library.
+  - Toast hover: white at 16% on success and error toasts, which have no white-alpha token.
+  - Tooltip key ring: white at 25% around the shortcut keys.
+  - Scroller mask: `#000` is only the mask's alpha stop, not a colour.
 
 | Need                                                         | Utility                                                                                                                                                | Variable                          |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
@@ -93,6 +100,8 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 | Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono`     |
 
 The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`.
+
+The type-role classes also set Inter's `cv11` and `ss01` features, as the library body does, so only uikit text gets them and the app body is unchanged.
 
 Use `duration-ui-*` / `ease-ui-*` instead of arbitrary `duration-[150ms]` / `ease-[cubic-bezier(...)]` values, and keep `prefers-reduced-motion` gating (`motion-safe:` / `motion-reduce:`).
 

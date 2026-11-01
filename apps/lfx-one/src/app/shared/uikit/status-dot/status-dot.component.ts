@@ -38,7 +38,7 @@ export class UiStatusDotComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
-      const base = 'inline-flex items-center text-copy-14 text-ui-neutral-900';
+      const base = 'inline-flex items-center font-features-ui text-copy-14 text-ui-neutral-900';
       // Exact px, not rem; 14px root.
       return this.dotOnly() ? base : `${base} gap-[8px]`;
     });

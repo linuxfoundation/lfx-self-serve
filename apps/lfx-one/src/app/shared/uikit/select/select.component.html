@@ -44,7 +44,7 @@
     <span [class]="chevronClasses()"><i class="fa-light fa-chevron-down" aria-hidden="true"></i></span>
   </div>
   @if (error()) {
-    <lfx-ui-error size="small" [announce]="false" [id]="errorId" data-testid="ui-select-error">{{ error() }}</lfx-ui-error>
+    <lfx-ui-error size="field" [announce]="false" [id]="errorId" data-testid="ui-select-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
     <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-select-hint">{{ hint() }}</p>
   }

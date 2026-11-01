@@ -15,7 +15,9 @@
     </div>
   }
   <ng-content />
-  <div class="-mx-[24px] border-y border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden -mb-[24px]" data-testid="ui-modal-inset">
+  <div
+    class="-mx-[24px] bg-ui-background-200 shadow-[inset_0_1px_0_0,inset_0_-1px_0_0] shadow-ui-neutral-alpha-200 px-[24px] py-[16px] empty:hidden -mb-[24px]"
+    data-testid="ui-modal-inset">
     <ng-content select="[modalInset]" />
   </div>
 </div>
