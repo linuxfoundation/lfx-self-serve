@@ -39,6 +39,9 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
 
+/** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
+export type UiChipVariant = 'subtle' | 'outline';
+
 /** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
 export type UiAvatarTone = UiTone;
 

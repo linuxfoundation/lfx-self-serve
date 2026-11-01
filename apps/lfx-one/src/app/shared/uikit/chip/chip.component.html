@@ -1,0 +1,18 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-badge [tone]="tone()" [variant]="variant()" [size]="size()">
+  <ng-content select="[slot=icon]" />
+  <span data-testid="ui-chip-label">{{ label() }}</span>
+  @if (dismissible()) {
+    <button
+      type="button"
+      [class]="dismissClasses()"
+      [attr.aria-label]="removeLabel()"
+      (click)="onDismiss(dismissButton)"
+      #dismissButton
+      data-testid="ui-chip-dismiss">
+      <i class="fa-light fa-xmark" aria-hidden="true"></i>
+    </button>
+  }
+</lfx-ui-badge>
