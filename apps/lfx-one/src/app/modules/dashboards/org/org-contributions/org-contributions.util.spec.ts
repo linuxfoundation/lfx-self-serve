@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { OrgCommitFilters } from '@lfx-one/shared/interfaces';
+import type { OrgCommitFilters, OrgScopeFilter } from '@lfx-one/shared/interfaces';
 
 import { describeContributionsCaption, describeContributionsWindow, describeContributorsTooltip } from './org-contributions.util';
 
@@ -30,12 +30,12 @@ describe('describeContributionsWindow', () => {
 describe('describeContributionsCaption', () => {
   const window = 'from Oct 21, 2025 to Oct 21, 2026 (UTC)';
   // Every caption here is for commits on any branch in LF projects unless the case overrides it.
-  const caption = (filters: Partial<OrgCommitFilters>) =>
-    describeContributionsCaption({ projectScope: 'lf', commitScope: 'all', metric: 'commits', ...filters }, 'Acme', window);
+  const caption = (filters: Partial<OrgCommitFilters & { orgScope: OrgScopeFilter }>) =>
+    describeContributionsCaption({ projectScope: 'lf', commitScope: 'all', metric: 'commits', orgScope: 'insights', ...filters }, 'Acme', window);
 
   it('describes commits on any branch in LF projects', () => {
     expect(caption({})).toBe(
-      'Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
+      "Commits authored by contributors affiliated with Acme, on any branch (including pull-request commits not yet merged) in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights organization, in repositories LFX Insights counts. Bots excluded."
     );
   });
 
@@ -45,7 +45,7 @@ describe('describeContributionsCaption', () => {
 
   it('describes only main branch commits in LF projects', () => {
     expect(caption({ commitScope: 'merged', projectScope: 'lf' })).toBe(
-      'Commits authored by contributors affiliated with Acme, only commits on the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.'
+      "Commits authored by contributors affiliated with Acme, only commits on the main branch in LF projects, counted once each, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights organization, in repositories LFX Insights counts. Bots excluded."
     );
   });
 
@@ -59,23 +59,34 @@ describe('describeContributionsCaption', () => {
     ['non_lf', ' outside LF projects'],
   ] as const)('describes code contributions with projectScope=%s, ignoring the commit scope', (projectScope, phrase) => {
     expect(caption({ metric: 'code', projectScope, commitScope: 'merged' })).toBe(
-      `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with Acme${phrase}, from Oct 21, 2025 to Oct 21, 2026 (UTC). Bots excluded.`
+      `Code contributions (commits, pull requests, reviews and comments) by contributors affiliated with Acme${phrase}, from Oct 21, 2025 to Oct 21, 2026 (UTC). Only the company's LFX Insights organization, in repositories LFX Insights counts. Bots excluded.`
     );
+  });
+
+  // lfx-self-serve-ops#1219 — the caption says which organizations' code the figures count.
+  it('names every related organization under orgScope=all', () => {
+    expect(caption({ orgScope: 'all' })).toContain('(UTC). Every organization related to the company, in every repository. Bots excluded.');
   });
 });
 
 describe('describeContributorsTooltip', () => {
   it('names the scope and window and credits the employer at the time, people who left included under All employees', () => {
-    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history', 'all')).toBe(
+    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history', 'all', 'insights')).toBe(
       'People with at least one code contribution (commit, pull request, review or comment) credited to Acme in LF projects, across all recorded history. ' +
         'Each contribution is credited to the employer the person had at the time, so people who have since left are included. ' +
-        'Maintainers with code are counted here too. Bots excluded.'
+        "Only the company's LFX Insights organization, in repositories LFX Insights counts. Maintainers with code are counted here too. Bots excluded."
     );
   });
 
   it('names LF and non-LF projects', () => {
-    expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)', 'all')).toContain(
+    expect(describeContributorsTooltip('all', 'Acme', 'from Oct 21, 2025 to Oct 21, 2026 (UTC)', 'all', 'all')).toContain(
       'credited to Acme in LF and non-LF projects, from Oct 21, 2025 to Oct 21, 2026 (UTC).'
+    );
+  });
+
+  it('names every related organization under orgScope=all', () => {
+    expect(describeContributorsTooltip('lf', 'Acme', 'across all recorded history', 'all', 'all')).toContain(
+      'Every organization related to the company, in every repository. Maintainers with code'
     );
   });
 
@@ -84,7 +95,7 @@ describe('describeContributorsTooltip', () => {
     ['current', 'Each contribution is credited to the employer the person had at the time, and only people who still work at Acme are counted. '],
     ['former', 'Each contribution is credited to the employer the person had at the time, and only people who have since left Acme are counted. '],
   ] as const)('says who is counted under %s employees', (employment, sentence) => {
-    const tooltip = describeContributorsTooltip('lf', 'Acme', 'across all recorded history', employment);
+    const tooltip = describeContributorsTooltip('lf', 'Acme', 'across all recorded history', employment, 'insights');
 
     expect(tooltip).toContain(sentence);
     expect(tooltip).not.toContain('people who have since left are included');
