@@ -4,7 +4,8 @@
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ComponentType, Overlay } from '@angular/cdk/overlay';
 import { DialogRef } from '@angular/cdk/dialog';
-import { inject, Injectable, TemplateRef } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { inject, Injectable, PLATFORM_ID, TemplateRef } from '@angular/core';
 import { UiDrawerConfig } from '@lfx-one/shared/interfaces';
 import { filter, takeUntil } from 'rxjs';
 
@@ -22,6 +23,7 @@ import { UiDrawerContext } from './drawer.context';
 export class UiDrawerService {
   private readonly modal = inject(UiModalService);
   private readonly overlay = inject(Overlay);
+  private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   /** Opens the drawer and returns its `DialogRef`; `ref.closed` emits the result once the exit animation ends. */
   public open<R = unknown, D = unknown, C = unknown>(content: ComponentType<C> | TemplateRef<C>, config: UiDrawerConfig<D> = {}): DialogRef<R, C> {
@@ -41,9 +43,9 @@ export class UiDrawerService {
         providers: [{ provide: UiDrawerContext, useValue: context }],
         // Runs on every `ref.close()`: the first call plays the exit animation and closes again once it ends, with the same result.
         closePredicate: (result) => {
-          // No ref yet (content closed itself while being created) or a detached overlay (disposed by the CDK on navigation): nothing to animate.
+          // Nothing to animate on the server, before the ref exists (content closed itself while being created) or once the overlay is detached (disposed on navigation).
           const current = opened;
-          if (!current || exited || !current.overlayRef.hasAttached()) return true;
+          if (!this.isBrowser || !current || exited || !current.overlayRef.hasAttached()) return true;
           if (!leaving) {
             leaving = true;
             current.overlayRef.backdropElement?.classList.remove('cdk-overlay-backdrop-showing');

@@ -4,7 +4,7 @@
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { ScrollDispatcher } from '@angular/cdk/scrolling';
-import { Component, inject, TemplateRef } from '@angular/core';
+import { Component, inject, Injector, PLATFORM_ID, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiDrawerConfig } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -442,6 +442,27 @@ describe('UiDrawerComponent and UiDrawerService', () => {
       await settle();
 
       expect(dialog()).toBeNull();
+      expect(fixture.nativeElement.getAttribute('aria-hidden')).toBeNull();
+
+      await open();
+      expect(dialog()).not.toBeNull();
+    });
+
+    it('closes at once on the server, without reading computed styles', async () => {
+      Object.defineProperty(Element.prototype, 'getAnimations', { value: () => [{ finished: new Promise<void>(() => undefined) }], configurable: true });
+      const styles = vi.spyOn(window, 'getComputedStyle');
+      const server = Injector.create({
+        providers: [{ provide: PLATFORM_ID, useValue: 'server' }, { provide: UiDrawerService }],
+        parent: TestBed.inject(Injector),
+      }).get(UiDrawerService);
+      const ref = server.open(TestContentComponent, { data: 'payload' });
+      await settle();
+      expect(dialog()).not.toBeNull();
+
+      ref.close();
+
+      expect(dialog()).toBeNull();
+      expect(styles).not.toHaveBeenCalled();
     });
 
     it('returns the result of a programmatic close after the exit', async () => {
