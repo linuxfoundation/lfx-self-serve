@@ -350,6 +350,24 @@ describe('UiButtonComponent', () => {
     });
   });
 
+  describe('focus', () => {
+    afterEach(() => fixture.nativeElement.remove());
+
+    it('focuses the inner button', () => {
+      document.body.appendChild(fixture.nativeElement);
+      fixture.componentInstance.focus();
+      expect(document.activeElement).toBe(el());
+    });
+
+    it('focuses the inner link when the button is a link', async () => {
+      await set('link', '/meetings');
+      document.body.appendChild(fixture.nativeElement);
+      fixture.componentInstance.focus();
+      expect(el().tagName).toBe('A');
+      expect(document.activeElement).toBe(el());
+    });
+  });
+
   describe('tooltip forwarding', () => {
     it('does not attach a second tooltip to the wrapper when the directive is imported next to it', async () => {
       const host = TestBed.createComponent(BothTooltipsHostComponent);

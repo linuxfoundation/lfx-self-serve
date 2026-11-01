@@ -55,7 +55,7 @@
     <ng-container [ngTemplateOutlet]="content" />
   </button>
 } @else if (popover(); as popoverRef) {
-  <!-- Own branch: only a button with a popover carries the directive. It sets aria-haspopup, aria-expanded and aria-controls itself. -->
+  <!-- Own branch: only a button with a popover carries the directive, which sets the ARIA attributes. -->
   <button
     [type]="type()"
     [class]="classes()"
@@ -65,6 +65,7 @@
     [lfxUiPopover]="loading() ? null : popoverRef"
     [lfxUiPopoverLabel]="popoverLabel()"
     [lfxUiPopoverWidth]="popoverWidth()"
+    [lfxUiPopoverPadding]="popoverPadding()"
     [lfxUiTooltip]="tooltip()"
     [lfxUiTooltipTitle]="tooltipTitle()"
     [lfxUiTooltipShortcut]="tooltipShortcut()"

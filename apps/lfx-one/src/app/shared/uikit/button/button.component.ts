@@ -19,7 +19,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiTooltipSide } from '@lfx-one/shared/interfaces';
+import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
 
 import { UiPopoverDirective } from '../popover/popover.directive';
 import { UiSpinnerComponent } from '../spinner/spinner.component';
@@ -38,7 +38,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * to the button on close). A button rendered as a link (`link`) does not open a menu.
  *
  * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
- * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog and `popoverWidth` fixes its width in px; see `lfxUiPopover`.
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px and `popoverPadding="none"` drops its 16px padding; see `lfxUiPopover`.
  * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
@@ -54,6 +54,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 })
 export class UiButtonComponent {
   private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
@@ -87,6 +88,8 @@ export class UiButtonComponent {
   public readonly popoverLabel = input<string>('');
   /** Fixed width of the popover in px. Without it the panel is as wide as its content. */
   public readonly popoverWidth = input<number | null>(null);
+  /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
+  public readonly popoverPadding = input<UiPopoverPadding>('default');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
   /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
@@ -129,6 +132,11 @@ export class UiButtonComponent {
       trigger.close();
       if (hadFocus) this.menuButton()?.nativeElement.focus();
     });
+  }
+
+  /** Focuses the inner `<button>` or `<a>`, for a caller that returns focus to this button, such as a chip whose neighbour was removed. */
+  public focus(): void {
+    this.host.querySelector<HTMLElement>('button, a')?.focus();
   }
 
   // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.

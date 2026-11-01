@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, input, TemplateRef } from '@angular/core';
-import { UiPopoverContext } from '@lfx-one/shared/interfaces';
+import { ChangeDetectionStrategy, Component, computed, input, Signal, TemplateRef } from '@angular/core';
+import { UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 
 /**
- * The popover panel that `UiPopoverDirective` opens in a CDK overlay: a non-modal `role="dialog"` in the Menu material. It has no padding,
- * so the projected template owns its own spacing. Not used on its own.
+ * The popover panel that `UiPopoverDirective` opens in a CDK overlay: a non-modal `role="dialog"` in the Menu material with 16px of padding,
+ * or none with `padding="none"`. Not used on its own.
  */
 @Component({
   selector: 'lfx-ui-popover-panel',
@@ -21,6 +21,7 @@ import { UiPopoverContext } from '@lfx-one/shared/interfaces';
       'flex max-w-[calc(100vw-16px)] min-h-0 flex-1 flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 text-ui-neutral-900 shadow-menu outline-none',
     role: 'dialog',
     tabindex: '-1',
+    '[class]': 'paddingClass()',
     '[attr.id]': 'panelId()',
     '[attr.aria-label]': 'label() || null',
     '[attr.aria-labelledby]': 'label() ? null : labelledBy() || null',
@@ -41,4 +42,9 @@ export class UiPopoverPanelComponent {
   public readonly labelledBy = input<string>('');
   /** Fixed width in px, or `null` to size to the content. */
   public readonly width = input<number | null>(null);
+  /** `default` pads the content by 16px; `none` lets it run edge to edge, such as a list with its own row padding. */
+  public readonly padding = input<UiPopoverPadding>('default');
+
+  // Exact px, not rem; 14px root.
+  protected readonly paddingClass: Signal<string> = computed(() => (this.padding() === 'none' ? '' : 'p-[16px]'));
 }

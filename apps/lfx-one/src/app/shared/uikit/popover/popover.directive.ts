@@ -22,8 +22,8 @@ import {
   TemplateRef,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { UiPopoverContext } from '@lfx-one/shared/interfaces';
-import { take } from 'rxjs';
+import { UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
+import { fromEvent, take, takeUntil } from 'rxjs';
 
 import { UiPopoverPanelComponent } from './popover-panel.component';
 
@@ -34,21 +34,22 @@ import { UiPopoverPanelComponent } from './popover-panel.component';
  *
  * ```html
  * <button type="button" [lfxUiPopover]="filters" lfxUiPopoverLabel="Filters">Filters</button>
- * <ng-template #filters let-close="close"><div class="p-[16px]">...<button (click)="close()">Done</button></div></ng-template>
+ * <ng-template #filters let-close="close"><div>...<button (click)="close()">Done</button></div></ng-template>
  * ```
  *
- * The panel uses the Menu material (16px radius, `shadow-menu`) with no padding, so the template spaces its own content. It is as wide as its content,
- * or `lfxUiPopoverWidth` px. The host gets `aria-haspopup="dialog"`, `aria-expanded` and `aria-controls`; the panel is a `role="dialog"` named by
+ * The panel uses the Menu material (16px radius, `shadow-menu`) with 16px of padding; `lfxUiPopoverPadding="none"` removes it for content that
+ * runs edge to edge. It is as wide as its content, or `lfxUiPopoverWidth` px. The host gets `aria-haspopup="dialog"`, `aria-expanded` and `aria-controls`; the panel is a `role="dialog"` named by
  * `lfxUiPopoverLabel`, or by the host when none is given. It opens below the host, start-aligned, then above it, then end-aligned, and follows
  * its host inside scrollable containers that carry `cdkScrollable`.
  *
  * Focus moves to the first tabbable element in the panel, or to the panel itself. Escape or a click outside closes it. Escape always returns focus
  * to the host; an outside click does too, unless the click already focused something else. Tab past the last field closes it and continues from the
- * host, and Shift+Tab before the first field closes it onto the host. Selects and menus opened from inside the panel keep it open. It is not a focus
- * trap: for a choice that must be answered first, use a modal.
+ * host, and Shift+Tab before the first field closes it onto the host. A click inside a select list, menu, modal or drawer opened from the panel
+ * does not close it, and Escape closes that overlay first. It is not a focus trap: for a choice that must be answered first, use a modal.
  *
  * Two-way `[(lfxUiPopoverOpen)]` reads or sets whether it is open. The template receives `close`, and `#pop="lfxUiPopover"` exposes `close()` and `toggle()`.
- * On `lfx-ui-button` the directive never attaches to the button element itself, so use the button's `popover`, `popoverLabel` and `popoverWidth` inputs.
+ * On `lfx-ui-button` the directive never attaches to the button element itself, so use the button's `popover`, `popoverLabel`, `popoverWidth` and
+ * `popoverPadding` inputs.
  */
 @Directive({
   selector: '[lfxUiPopover]:not(lfx-ui-button)',
@@ -68,6 +69,8 @@ export class UiPopoverDirective {
   public readonly label = input<string>('', { alias: 'lfxUiPopoverLabel' });
   /** Fixed width in px. Without it the panel is as wide as its content. */
   public readonly width = input<number | null>(null, { alias: 'lfxUiPopoverWidth' });
+  /** `none` removes the panel's 16px padding for content that runs edge to edge. */
+  public readonly padding = input<UiPopoverPadding>('default', { alias: 'lfxUiPopoverPadding' });
   /** Whether the panel is open. Supports two-way binding with `[(lfxUiPopoverOpen)]`. */
   public readonly open = model<boolean>(false, { alias: 'lfxUiPopoverOpen' });
   /* eslint-enable @angular-eslint/no-input-rename */
@@ -83,10 +86,11 @@ export class UiPopoverDirective {
   private readonly destroyRef = inject(DestroyRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly context: UiPopoverContext = { close: () => this.close() };
-  private readonly config = computed(() => ({ template: this.template(), label: this.label(), width: this.width() }));
+  private readonly config = computed(() => ({ template: this.template(), label: this.label(), width: this.width(), padding: this.padding() }));
 
   private overlayRef: OverlayRef | null = null;
   private panel: ComponentRef<UiPopoverPanelComponent> | null = null;
+  private tabbed = false;
 
   public constructor() {
     toObservable(this.expanded)
@@ -132,12 +136,22 @@ export class UiPopoverDirective {
     this.panel.setInput('panelId', this.panelId);
     this.panel.setInput('labelledBy', this.host.id);
     this.apply(this.config());
-    // A click on the host is the host's own toggle, so it is not an outside click. A select's list opened from inside the panel sits on top
-    // of it, and the CDK hands a click there to that list only.
-    overlayRef.outsidePointerEvents().subscribe((event) => {
-      if (!this.host.contains(event.target as Node)) this.close();
-    });
-    overlayRef.keydownEvents().subscribe((event) => this.onKeydown(event));
+    // The host toggles itself, and a modal or drawer opened from the panel has no outside-click listener, so neither counts here.
+    overlayRef
+      .outsidePointerEvents()
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => {
+        const target = event.target as Node;
+        if (!this.host.contains(target) && !this.inLaterOverlay(overlayRef, target)) this.close();
+      });
+    overlayRef
+      .keydownEvents()
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => this.onKeydown(event));
+    // Backstop for a Tab that leaves the panel without `onTab` catching it.
+    fromEvent<FocusEvent>(this.panelElement() as HTMLElement, 'focusout')
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => this.onFocusOut(event));
     // The CDK can dispose the overlay itself, such as on navigation; follow it.
     overlayRef
       .detachments()
@@ -151,7 +165,7 @@ export class UiPopoverDirective {
     afterNextRender(() => this.focusInitial(), { injector: this.injector });
   }
 
-  // Focus goes back to the host when it was inside the panel or nowhere, unless `force`. A click that focused another control keeps it there.
+  // Focus returns to the host when it was in the panel or nowhere, unless `force`.
   private detach(force: boolean): void {
     const overlayRef = this.overlayRef;
     if (!overlayRef) return;
@@ -171,11 +185,12 @@ export class UiPopoverDirective {
     overlayRef?.dispose();
   }
 
-  private apply(config: { template: TemplateRef<UiPopoverContext> | null | undefined; label: string; width: number | null }): void {
+  private apply(config: { template: TemplateRef<UiPopoverContext> | null | undefined; label: string; width: number | null; padding: UiPopoverPadding }): void {
     if (!this.panel || !config.template) return;
     this.panel.setInput('template', config.template);
     this.panel.setInput('label', config.label);
     this.panel.setInput('width', config.width);
+    this.panel.setInput('padding', config.padding);
     // The new content or width may change the size, so place the panel again once it has rendered.
     afterNextRender(() => this.overlayRef?.updatePosition(), { injector: this.injector });
   }
@@ -190,6 +205,8 @@ export class UiPopoverDirective {
     // Composition keys are not ours.
     if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Escape' && !hasModifierKey(event)) {
+      // A CDK menu or select prevents default on the Escape that closed it; that one is theirs.
+      if (event.defaultPrevented) return;
       event.preventDefault();
       this.open.set(false);
       this.detach(true);
@@ -198,12 +215,13 @@ export class UiPopoverDirective {
     }
   }
 
-  // The panel sits at the end of the body, so Tab out of it would land on <body>: hand focus to the host first, then continue from there.
+  // The panel is last in the body, so Tab out of it would land nowhere: hand focus to the host first.
   private onTab(event: KeyboardEvent): void {
     const panelElement = this.panelElement();
     const target = event.target as HTMLElement;
     // A key from the host or a nested list is not ours.
     if (!panelElement?.contains(target)) return;
+    this.tabbed = true;
     const fields = this.tabbables(panelElement);
     const leaves = event.shiftKey
       ? !fields.some((field) => target.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_PRECEDING)
@@ -216,8 +234,45 @@ export class UiPopoverDirective {
     this.detach(false);
   }
 
+  // Disabled controls are skipped, and a radio group is one stop: its checked radio, or the first.
   private tabbables(root: HTMLElement): HTMLElement[] {
-    return Array.from(root.querySelectorAll<HTMLElement>('*')).filter((element) => this.checker.isTabbable(element));
+    const stops = Array.from(root.querySelectorAll<HTMLElement>('*')).filter(
+      (element) => this.checker.isFocusable(element) && this.checker.isTabbable(element)
+    );
+    return stops.filter((element) => {
+      if (!(element instanceof HTMLInputElement) || element.type !== 'radio' || !element.name) return true;
+      const group = stops.filter(
+        (other) => other instanceof HTMLInputElement && other.type === 'radio' && other.name === element.name && other.form === element.form
+      );
+      return element.checked || (!group.some((radio) => (radio as HTMLInputElement).checked) && group[0] === element);
+    });
+  }
+
+  // Focus left the panel. Nowhere counts only right after a Tab: a click on a button or a removed control also blurs with no target.
+  private onFocusOut(event: FocusEvent): void {
+    const next = event.relatedTarget as Node | null;
+    const tabbed = this.tabbed;
+    this.tabbed = false;
+    if (next ? this.keepsFocus(next) : !tabbed || !this.document.hasFocus()) return;
+    if (next) {
+      // Focus is already on its target and a focus() here would cancel the move, so only close.
+      this.open.set(false);
+      this.dispose();
+      return;
+    }
+    this.host.focus();
+    this.close();
+  }
+
+  // The panel, the host (its click toggles) and overlay panes opened from the panel keep the popover open.
+  private keepsFocus(next: Node): boolean {
+    return !!this.panelElement()?.contains(next) || this.host.contains(next) || !!(next as Element).closest?.('.cdk-overlay-pane');
+  }
+
+  // Whether the target sits in an overlay pane or backdrop attached after this popover, such as a modal or drawer it opened.
+  private inLaterOverlay(overlayRef: OverlayRef, target: Node): boolean {
+    const other = (target as Element).closest?.('.cdk-overlay-pane, .cdk-overlay-backdrop');
+    return !!other && !overlayRef.hostElement.contains(other) && !!(overlayRef.hostElement.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING);
   }
 
   private panelElement(): HTMLElement | null {

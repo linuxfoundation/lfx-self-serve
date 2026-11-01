@@ -4,9 +4,12 @@
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, inject, signal, TemplateRef, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
+import { UiMenuItemComponent } from '../menu/menu-item.component';
+import { UiMenuComponent } from '../menu/menu.component';
 import { UiModalComponent } from '../modal/modal.component';
 import { UiModalService } from '../modal/modal.service';
 import { UiOptionComponent } from '../select/option.component';
@@ -50,6 +53,42 @@ const MODAL_TEMPLATE = `
   <ng-template #panel><button id="first" type="button">First</button></ng-template>
 `;
 
+const MENU_IN_PANEL_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <lfx-ui-button [menu]="actions" ariaLabel="Actions">Actions</lfx-ui-button>
+    <ng-template #actions>
+      <lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item>Edit</lfx-ui-menu-item></lfx-ui-menu>
+    </ng-template>
+  </ng-template>
+`;
+
+const DISABLED_FIRST_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel><button id="off" type="button" disabled>Off</button><input id="first" aria-label="Search" /><button id="done" type="button">Done</button></ng-template>
+`;
+
+const DISABLED_LAST_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel><input id="first" aria-label="Search" /><button id="done" type="button">Done</button><button id="off" type="button" disabled>Off</button></ng-template>
+`;
+
+const RADIO_LAST_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <input id="first" aria-label="Search" />
+    <input id="r1" type="radio" name="rsvp" aria-label="Going" />
+    <input id="r2" type="radio" name="rsvp" aria-label="Maybe" [checked]="checked()" />
+    <input id="r3" type="radio" name="rsvp" aria-label="Not going" />
+  </ng-template>
+`;
+
+const MODAL_FROM_PANEL_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel><button id="opener" type="button" (click)="openModal(tpl)">Open</button></ng-template>
+  <ng-template #tpl><lfx-ui-modal heading="Create Meeting"><button id="inside-modal" type="button">Inside</button></lfx-ui-modal></ng-template>
+`;
+
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   private readonly modal = inject(UiModalService);
@@ -59,6 +98,8 @@ class TestHostComponent {
   public readonly isOpen = signal(false);
   public readonly project = signal<string | null>(null);
   public readonly busy = signal(false);
+  public readonly checked = signal(true);
+  public readonly padding = signal<UiPopoverPadding>('default');
 
   public openModal(template: TemplateRef<unknown>): void {
     this.modal.open(template);
@@ -96,7 +137,11 @@ describe('UiPopoverDirective', () => {
     return event;
   };
 
-  beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    // jsdom has no layout, so every element reads as hidden to the focusable check; give each one a box.
+    vi.spyOn(Element.prototype, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
+  });
 
   afterEach(() => {
     fixtures.splice(0).forEach((fixture) => fixture.destroy());
@@ -313,6 +358,187 @@ describe('UiPopoverDirective', () => {
       key(trigger(), 'Escape');
       await settle();
       expect(container.querySelector('[data-testid="ui-modal"]')).toBeNull();
+    });
+  });
+
+  describe('with a modal opened from the panel', () => {
+    beforeEach(async () => mount(MODAL_FROM_PANEL_TEMPLATE, [UiModalComponent]));
+
+    it('stays open for a click inside the modal and closes for a click outside both', async () => {
+      await open();
+      el('opener').click();
+      await settle();
+      expect(container.querySelector('[data-testid="ui-modal"]')).not.toBeNull();
+
+      el('inside-modal').click();
+      await settle();
+      expect(panel()).not.toBeNull();
+
+      container.querySelector<HTMLElement>('.cdk-overlay-backdrop')?.click();
+      await settle();
+      expect(panel()).not.toBeNull();
+
+      el('trigger').parentElement?.click();
+      await settle();
+      expect(panel()).toBeNull();
+    });
+  });
+
+  describe('with a menu inside', () => {
+    beforeEach(async () => mount(MENU_IN_PANEL_TEMPLATE, [UiButtonComponent, UiMenuComponent, UiMenuItemComponent]));
+
+    it('closes only the menu on the first Escape, then the popover on the second', async () => {
+      await open();
+      (container.querySelector('lfx-ui-button button') as HTMLElement).click();
+      await settle();
+      expect(container.querySelector('[data-testid="ui-menu"]')).not.toBeNull();
+
+      // CDK Menu reads `keyCode`, so the synthetic event carries it.
+      key(document.activeElement as Element, 'Escape', { keyCode: 27 });
+      await settle();
+      expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+      expect(panel()).not.toBeNull();
+
+      key(document.activeElement as Element, 'Escape', { keyCode: 27 });
+      await settle();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('ignores an Escape that something inside already handled', async () => {
+      await open();
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      event.preventDefault();
+      (container.querySelector('lfx-ui-button button') as HTMLElement).dispatchEvent(event);
+      await settle();
+      expect(panel()).not.toBeNull();
+    });
+  });
+
+  describe('tab stops', () => {
+    it('skips a disabled first button: focus starts on the first field and Shift+Tab from it leaves', async () => {
+      await mount(DISABLED_FIRST_TEMPLATE);
+      await open();
+      expect(document.activeElement).toBe(el('first'));
+
+      const event = key(el('first'), 'Tab', { shiftKey: true });
+      await settle();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('leaves from the last enabled button when a disabled one follows it', async () => {
+      await mount(DISABLED_LAST_TEMPLATE);
+      await open();
+      el('done').focus();
+      key(el('done'), 'Tab');
+      await settle();
+
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('counts a trailing radio group as one stop: Tab from its checked radio leaves', async () => {
+      await mount(RADIO_LAST_TEMPLATE);
+      await open();
+      el('first').focus();
+      key(el('first'), 'Tab');
+      await settle();
+      expect(panel()).not.toBeNull();
+
+      el('r2').focus();
+      key(el('r2'), 'Tab');
+      await settle();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('counts the first radio of a group with none checked', async () => {
+      await mount(RADIO_LAST_TEMPLATE);
+      host.componentInstance.checked.set(false);
+      await open();
+      el('r1').focus();
+      key(el('r1'), 'Tab');
+      await settle();
+
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+  });
+
+  describe('focus leaving the panel', () => {
+    beforeEach(async () => mount(HOST_TEMPLATE));
+
+    it('closes onto the trigger when a Tab sends focus nowhere', async () => {
+      await open();
+      // jsdom reports no focus once the only focused element has blurred; a browser window that is still active reports it.
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      key(el('first'), 'Tab');
+      el('first').blur();
+      await settle();
+
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+    });
+
+    it('stays open when focus goes nowhere without a Tab, as when the focused control is removed', async () => {
+      await open();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      el('first').blur();
+      await settle();
+      expect(panel()).not.toBeNull();
+    });
+
+    it('stays open when the window itself lost focus', async () => {
+      await open();
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+      key(el('first'), 'Tab');
+      el('first').blur();
+      await settle();
+      expect(panel()).not.toBeNull();
+    });
+
+    it('closes and leaves focus where it went when it moves to a control outside', async () => {
+      await open();
+      el('after').focus();
+      await settle();
+
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(el('after'));
+    });
+
+    it('stays open when focus moves to the trigger, which toggles it by click', async () => {
+      await open();
+      trigger().focus();
+      await settle();
+      expect(panel()).not.toBeNull();
+    });
+
+    it('stays open when focus moves into an overlay pane opened from the panel', async () => {
+      await open();
+      const pane = document.createElement('div');
+      pane.className = 'cdk-overlay-pane';
+      pane.innerHTML = '<button id="in-pane" type="button">Pane</button>';
+      container.appendChild(pane);
+      el('in-pane').focus();
+      await settle();
+      expect(panel()).not.toBeNull();
+    });
+  });
+
+  describe('padding', () => {
+    beforeEach(async () =>
+      mount(`<button id="trigger" type="button" [lfxUiPopover]="panel" [lfxUiPopoverPadding]="padding()">Info</button><ng-template #panel>Text</ng-template>`)
+    );
+
+    it('pads the panel by 16px, and not at all with none', async () => {
+      await open();
+      expect(panel()?.classList.contains('p-[16px]')).toBe(true);
+
+      host.componentInstance.padding.set('none');
+      await settle();
+      expect(panel()?.classList.contains('p-[16px]')).toBe(false);
     });
   });
 

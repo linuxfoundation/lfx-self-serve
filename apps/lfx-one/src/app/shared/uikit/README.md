@@ -21,7 +21,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 | Selector                | Class                      | Purpose                                                                                                                                                                |
 | ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`, `menu` trigger; button or router link                                                 |
+| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`, `menu` and `popover` triggers; button or router link                                  |
 | `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`                                 |
 | `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field on `lfx-ui-input`: search icon, clear button, 32px tall, 300px minimum width; `[(value)]`                                                            |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
