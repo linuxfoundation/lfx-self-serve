@@ -109,6 +109,10 @@ describe('UiModalComponent and UiModalService', () => {
     expect(registered(container.querySelector('[data-testid="ui-modal-body"]') as Element)).toBe(true);
     expect(container.querySelector('[data-testid="ui-modal-inset"] #inset')).not.toBeNull();
     expect(container.querySelector('[data-testid="ui-modal-actions"] #create')).not.toBeNull();
+    // Rules are inset shadows, not borders, so the panel keeps the library's height.
+    expect(container.querySelector('[data-testid="ui-modal-inset"]')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(container.querySelector('[data-testid="ui-modal-actions"]')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(container.querySelector('[data-testid="ui-modal-actions"]')?.className).not.toContain('border-t');
   });
 
   it('dims the page with the ui-overlay backdrop', async () => {

@@ -36,6 +36,7 @@ export const AllSizes: Story = {
         <lfx-ui-error label="Error:">This email address is already in use.</lfx-ui-error>
         <lfx-ui-error size="small" label="Email error:">Use your organization email.</lfx-ui-error>
         <lfx-ui-error size="large">We couldn't verify your membership. <a href="#">Contact us</a></lfx-ui-error>
+        <lfx-ui-error size="field">Enter a valid email address.</lfx-ui-error>
       </div>`,
   }),
 };

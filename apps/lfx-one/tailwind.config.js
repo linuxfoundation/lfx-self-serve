@@ -98,6 +98,8 @@ const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
 const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
+// Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
+const FONT_FEATURES_UI = '"cv11", "ss01"';
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
@@ -453,6 +455,8 @@ export default {
       addUtilities({
         '.edge': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-200')}` },
         '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
+        // cv11/ss01 for uikit text that sets a size without a type role.
+        '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
       });
       // Full type roles (`heading-24`, `copy-14`, `button-14`, ...): family, size, line height, weight and tracking.
       addComponents(
@@ -461,6 +465,7 @@ export default {
             `.${s.name}`,
             {
               fontFamily: uiVar(`font-${s.family}`),
+              fontFeatureSettings: FONT_FEATURES_UI,
               fontSize: s.fontSize,
               lineHeight: s.lineHeight,
               fontWeight: String(s.fontWeight),

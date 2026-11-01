@@ -11,6 +11,8 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject,
  * The layout of a modal: a title and optional subtitle, a body, an optional inset band and an actions footer. Make it the root of
  * the content you open with `UiModalService`; the title labels the dialog and the service handles focus, Escape and the backdrop.
  *
+ * Give projected `<p>`/`<label>` a type role; the app base layer otherwise sets 14/21.
+ *
  * Project the body as plain content, an inset band with `modalInset` and the buttons with `modalActions`:
  *
  * ```html
@@ -71,7 +73,8 @@ export class UiModalComponent {
 
   private initActionsClasses(): Signal<string> {
     return computed(() => {
-      const base = 'flex items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden';
+      const base =
+        'flex items-center justify-between gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200 empty:hidden';
       // The button component's inner button is content-width unless told otherwise, so stretch it too.
       return this.singleAction() ? `${base} [&>*]:flex-1 [&_a]:w-full [&_button]:w-full` : base;
     });

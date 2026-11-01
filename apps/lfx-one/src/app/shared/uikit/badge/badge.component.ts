@@ -33,7 +33,7 @@ export class UiBadgeComponent {
   private initClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design.
-      const base = 'inline-flex items-center gap-[4px] rounded-ui-full font-medium whitespace-nowrap tabular-nums';
+      const base = 'inline-flex items-center gap-[4px] rounded-ui-full font-features-ui font-medium whitespace-nowrap tabular-nums';
       const sizes = {
         sm: 'h-[20px] px-[6px] text-[11px] leading-[16px] [&_svg]:h-[10px] [&_svg]:w-[10px] [&_i]:text-[10px]',
         md: 'h-ui-tiny px-[10px] text-label-12 [&_svg]:h-[12px] [&_svg]:w-[12px] [&_i]:text-[12px]',

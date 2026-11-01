@@ -111,7 +111,7 @@ export class UiAvatarComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
-      const base = 'relative inline-grid shrink-0 select-none place-items-center font-medium leading-none';
+      const base = 'relative inline-grid shrink-0 select-none place-items-center font-features-ui font-medium leading-none';
       // Exact px, not rem: the app root font is 14px.
       const shapes = { circle: 'rounded-ui-full', rounded: 'rounded-[8px]' };
       // text-ui-white matches the library's --white on tints; no on-fill token exists yet.

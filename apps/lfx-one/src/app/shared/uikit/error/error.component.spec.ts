@@ -51,6 +51,18 @@ describe('UiErrorComponent', () => {
     expect(icon().className).toContain(iconPad);
   });
 
+  it('sizes the field variant as the 13px/16px line under a form field', async () => {
+    fixture.componentRef.setInput('size', 'field');
+    await fixture.whenStable();
+
+    expect(host.className).toContain('copy-13');
+    expect(host.className).toContain('leading-[16px]');
+    expect(host.className).toContain('items-center');
+    expect(host.className).toContain('gap-[6px]');
+    expect(icon().className).toContain('text-[13px]');
+    expect(icon().className).not.toContain('pt-[');
+  });
+
   it('shows a medium-weight label before the message', async () => {
     fixture.componentRef.setInput('label', 'Email error:');
     await fixture.whenStable();

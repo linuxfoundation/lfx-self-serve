@@ -42,7 +42,7 @@
   <!-- One live region that outlives the panel, so the empty message is announced when it appears. -->
   <span role="status" class="sr-only" data-testid="ui-combobox-status">{{ expanded() && isEmpty() ? emptyMessage() : '' }}</span>
   @if (error()) {
-    <lfx-ui-error size="small" [announce]="false" [id]="errorId" data-testid="ui-combobox-error">{{ error() }}</lfx-ui-error>
+    <lfx-ui-error size="field" [announce]="false" [id]="errorId" data-testid="ui-combobox-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
     <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-combobox-hint">{{ hint() }}</p>
   }
