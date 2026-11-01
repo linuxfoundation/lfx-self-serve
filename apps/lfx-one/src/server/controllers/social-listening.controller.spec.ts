@@ -11,7 +11,7 @@ import { ServiceValidationError } from '../errors';
 import '@angular/compiler';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { userPreferenceSvc, socialListeningSvc, logger } = vi.hoisted(() => ({
+const { userPreferenceSvc, socialListeningSvc, logger, accessSvc } = vi.hoisted(() => ({
   userPreferenceSvc: { getPreference: vi.fn(), upsertPreference: vi.fn(), deletePreference: vi.fn() },
   socialListeningSvc: {
     getMentionsFeed: vi.fn(),
@@ -24,6 +24,7 @@ const { userPreferenceSvc, socialListeningSvc, logger } = vi.hoisted(() => ({
     getAnalyticsTopProjects: vi.fn(),
   },
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), etag: vi.fn() },
+  accessSvc: { getAccess: vi.fn() },
 }));
 
 vi.mock('../services/user-preference.service', () => ({
@@ -37,6 +38,7 @@ vi.mock('../services/social-listening.service', () => ({
   }),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
+vi.mock('../services/social-listening-access.service', () => ({ socialListeningAccessService: accessSvc }));
 
 // `isSocialListeningPreferenceName` + SOCIAL_LISTENING_PREFERENCE_APP_NAME load for real (JIT import
 // above) — faking the allowlist would let these tests pass against a broken name guard. Feed param
@@ -62,6 +64,40 @@ describe('SocialListeningController', () => {
     vi.clearAllMocks();
     controller = new SocialListeningController();
     next = vi.fn() as unknown as NextFunction;
+  });
+
+  describe('getAccess', () => {
+    it('passes the foundation slug through as given (case preserved) and returns the policy answer', async () => {
+      accessSvc.getAccess.mockResolvedValue({ canView: true, reason: 'group-member' });
+      const res = buildRes();
+      const req = buildReq({ query: { foundationSlug: 'TLF' } });
+
+      await controller.getAccess(req, res, next);
+
+      expect(accessSvc.getAccess).toHaveBeenCalledWith(req, 'TLF');
+      expect(res.json).toHaveBeenCalledWith({ canView: true, reason: 'group-member' });
+    });
+
+    it('rejects a missing foundationSlug with a validation error without asking the policy', async () => {
+      accessSvc.getAccess.mockReset();
+      const res = buildRes();
+
+      await controller.getAccess(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(accessSvc.getAccess).not.toHaveBeenCalled();
+    });
+
+    it('forwards a service rejection to next', async () => {
+      const error = new Error('access lookup failed');
+      accessSvc.getAccess.mockRejectedValueOnce(error);
+      const res = buildRes();
+
+      await controller.getAccess(buildReq({ query: { foundationSlug: 'tlf' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
   });
 
   describe('getPreference', () => {

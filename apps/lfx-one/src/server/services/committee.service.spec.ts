@@ -54,6 +54,7 @@ const {
 vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberRole: {},
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
+  CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
 vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
 vi.mock('@lfx-one/shared/constants', async () => {
@@ -108,6 +109,7 @@ vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail,
   getEffectiveUsername,
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(() => Promise.resolve('m2m-token')) }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -1903,5 +1905,122 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('CommitteeService — group Social Listening access (lfx-self-serve-ops#387)', () => {
+  const FOUNDATION_UID = 'foundation-uid';
+  let service: CommitteeService;
+
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    addAccessToResource.mockReset().mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
+    isImpersonating.mockReset().mockReturnValue(false);
+    vi.mocked(getUsernameFromAuth).mockReset().mockResolvedValue('synthetic-user');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    service = new CommitteeService();
+  });
+
+  describe('canGroupMemberViewSocialListening', () => {
+    /** Membership query, then one settings read per active group. */
+    function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active'): void {
+      proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
+        if (path === '/query/resources') {
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status } })) });
+        }
+        const value = settings[path.split('/')[2]];
+        return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
+      });
+    }
+
+    it("queries the user's group memberships on the foundation itself and reads each group's setting with M2M", async () => {
+      upstream(['board-1', 'board-1'], { 'board-1': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+
+      expect(proxyRequest.mock.calls[0][4]).toEqual({
+        type: 'committee_member',
+        tags_all: ['username:synthetic-user', `project_uid:${FOUNDATION_UID}`],
+      });
+      const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
+      expect(settingsCalls).toHaveLength(1);
+      expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+    });
+
+    it('ignores an inactive seat without reading its settings', async () => {
+      upstream(['board-1'], { 'board-1': true }, 'Inactive');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies when the group setting is off', async () => {
+      upstream(['board-1'], { 'board-1': false });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('allows when any one of several groups has the setting on', async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': false, 'board-2': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('denies without reading settings when the user is in no group of the foundation', async () => {
+      upstream([], {});
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("still allows when another group's settings read fails", async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': new Error('settings read failed'), 'board-2': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('surfaces a settings read failure so the caller denies without caching', async () => {
+      const error = new Error('settings read failed');
+      upstream(['board-1'], { 'board-1': error });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
+    });
+
+    it('denies without any upstream call when there is no username', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('members_can_view_social_listening writes', () => {
+    it('sends the setting on a group update', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'TSC', project_uid: 'project-1' });
+      fetchWithETag.mockResolvedValueOnce({ data: { members_can_view_social_listening: false }, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      await service.updateCommittee(req, 'committee-1', { members_can_view_social_listening: true });
+
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
+    });
+
+    it('sends the setting when creating a group', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'TSC', category: 'Technical Steering Committee' });
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      const result = await service.createCommittee(req, {
+        name: 'TSC',
+        category: 'Technical Steering Committee',
+        members_can_view_social_listening: true,
+      } as never);
+
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
+      expect(result).toMatchObject({ members_can_view_social_listening: true });
+    });
   });
 });

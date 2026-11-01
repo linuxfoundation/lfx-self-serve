@@ -468,6 +468,8 @@ export interface Committee {
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
   show_meeting_attendees?: boolean;
+  /** Whether the group's members can view the foundation's Social Listening */
+  members_can_view_social_listening?: boolean;
 
   // ── v2.0 Taxonomy fields ──
   /** Sub-type for oversight committees: governance (binding) vs advisory */
@@ -744,6 +746,8 @@ export interface CommitteeCreateData {
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
   show_meeting_attendees?: boolean;
+  /** Whether the group's members can view the foundation's Social Listening */
+  members_can_view_social_listening?: boolean;
 }
 
 /**
@@ -770,6 +774,20 @@ export interface CommitteeUpdateData extends Partial<Omit<CommitteeCreateData, '
 }
 
 /**
+ * Feature toggle shown on the committee settings step and tab
+ * @description Entry shape of `COMMITTEE_SETTINGS_FEATURES`; `key` is the form control name
+ */
+export interface CommitteeSettingsFeature {
+  key: string;
+  icon: string;
+  title: string;
+  description: string;
+  note?: string;
+  recommended?: boolean;
+  color: string;
+}
+
+/**
  * Committee settings update data
  * @description Specific settings that can be updated independently
  */
@@ -782,6 +800,8 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
+  /** Update whether the group's members can view the foundation's Social Listening */
+  members_can_view_social_listening?: boolean;
   /**
    * Update or clear the Slack incoming webhook URL (must match `hooks.slack.com/services/...`).
    * Lives on the settings sub-resource, not the base committee object, per LFXV2-3094 — the
