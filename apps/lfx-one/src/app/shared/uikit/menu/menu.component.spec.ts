@@ -16,7 +16,7 @@ const HOST_TEMPLATE = `
   <button id="trigger" [cdkMenuTriggerFor]="menu">Actions</button>
   <ng-template #menu>
     <lfx-ui-menu ariaLabel="Project actions">
-      <lfx-ui-menu-item id="edit" icon="fa-light fa-pen-to-square" shortcut="⌘E" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="edit" icon="fa-light fa-pen-to-square" shortcut="⌘E" [disabled]="editLocked()" disabledReason="Editing is paused" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
       <lfx-ui-menu-item id="duplicate" (triggered)="log('duplicate')">Duplicate</lfx-ui-menu-item>
       <lfx-ui-menu-separator />
       <lfx-ui-menu-group label="Share">
@@ -26,7 +26,7 @@ const HOST_TEMPLATE = `
         <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
       </lfx-ui-menu-group>
       <lfx-ui-menu-separator />
-      <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" [disabled]="deleteLocked()" disabledReason="Deleting is paused" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
     </lfx-ui-menu>
   </ng-template>
 `;
@@ -34,6 +34,8 @@ const HOST_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly archiveLocked = signal(false);
+  public readonly editLocked = signal(false);
+  public readonly deleteLocked = signal(false);
   public readonly events = signal<string[]>([]);
 
   public log(name: string): void {
@@ -292,6 +294,23 @@ describe('UiMenuComponent', () => {
     await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     expect(tooltip()).toBeNull();
+  });
+
+  it.each([
+    ['first', 'ArrowDown', 'editLocked', 'edit', 'Editing is paused'],
+    ['last', 'ArrowUp', 'deleteLocked', 'delete', 'Deleting is paused'],
+  ] as const)('shows the reason when the menu opens from the keyboard onto a locked %s item', async (_position, arrow, lock, id, reason) => {
+    fixture.componentInstance[lock].set(true);
+    await settle();
+    trigger.focus();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    key(trigger, arrow);
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(item(id));
+    expect(tooltip()?.textContent?.trim()).toBe(reason);
   });
 
   it('closes when the user clicks outside', async () => {

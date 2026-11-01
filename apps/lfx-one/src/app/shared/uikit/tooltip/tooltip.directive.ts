@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AriaDescriber, FocusMonitor } from '@angular/cdk/a11y';
+import { AriaDescriber, FocusMonitor, InputModalityDetector } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ConnectedPosition, Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
@@ -67,6 +67,7 @@ export class UiTooltipDirective {
   private readonly document = inject(DOCUMENT);
   private readonly overlay = inject(Overlay);
   private readonly focusMonitor = inject(FocusMonitor);
+  private readonly inputModality = inject(InputModalityDetector);
   private readonly ariaDescriber = inject(AriaDescriber);
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -130,6 +131,11 @@ export class UiTooltipDirective {
           this.scheduleShow();
         } else if (origin === null) this.hide();
       });
+      // A menu opened by key hands focus to its first item before this subscription exists, so the focus event was missed.
+      if (this.host.contains(this.document.activeElement) && this.inputModality.mostRecentModality === 'keyboard') {
+        this.keyboardFocused = true;
+        this.scheduleShow();
+      }
     }
   }
 

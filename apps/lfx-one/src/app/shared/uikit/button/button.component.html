@@ -35,7 +35,7 @@
     <ng-container [ngTemplateOutlet]="content" />
   </a>
 } @else if (menu(); as menuRef) {
-  <!-- Own branch: the CDK trigger sets aria-expanded itself and swallows ArrowUp and ArrowDown on any button it sits on. -->
+  <!-- Own branch: the CDK trigger sets aria-expanded itself and swallows ArrowUp and ArrowDown on any button it sits on. A busy button drops the menu, since keyboard input bypasses pointer-events-none. -->
   <button
     [type]="type()"
     [class]="classes()"
@@ -43,7 +43,7 @@
     [attr.aria-label]="ariaLabel() || null"
     [attr.aria-controls]="ariaControls() || null"
     [attr.aria-busy]="loading() || null"
-    [cdkMenuTriggerFor]="menuRef"
+    [cdkMenuTriggerFor]="loading() ? null : menuRef"
     [lfxUiTooltip]="tooltip()"
     [lfxUiTooltipTitle]="tooltipTitle()"
     [lfxUiTooltipShortcut]="tooltipShortcut()"

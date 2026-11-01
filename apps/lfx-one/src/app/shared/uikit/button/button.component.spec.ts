@@ -406,6 +406,31 @@ describe('UiButtonComponent menu', () => {
     host.destroy();
   });
 
+  it('opens no menu while loading, by click or ArrowDown', async () => {
+    TestBed.overrideComponent(MenuHostComponent, {
+      set: {
+        imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent],
+        template: MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button [loading]="true" '),
+      },
+    });
+    const host = TestBed.createComponent(MenuHostComponent);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+
+    inner.click();
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+
+    inner.focus();
+    inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }));
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+
+    host.destroy();
+  });
+
   it('adds no popup semantics without a menu', async () => {
     const plain = TestBed.createComponent(UiButtonComponent);
     await plain.whenStable();
