@@ -54,8 +54,8 @@ export class UiDrawerService {
               exited = true;
               ref.close(result as R);
             };
-            // The fallback is the base duration (150ms) plus a margin, so a missing `finished` cannot strand the close.
-            const timer = setTimeout(finish, 300);
+            // Fallback so a missing `finished` cannot strand the close: the exit animation's own duration plus a 150ms margin.
+            const timer = setTimeout(finish, (parseFloat(getComputedStyle(host ?? ref.overlayRef.overlayElement).animationDuration) || 0) * 1000 + 150);
             // Only the host's own exit animation counts: looping ones in the body (Skeleton, Spinner) never finish. None running closes at once.
             Promise.allSettled((host?.getAnimations?.() ?? []).map((animation) => animation.finished)).then(finish);
           }

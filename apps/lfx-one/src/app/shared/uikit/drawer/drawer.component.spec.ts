@@ -391,7 +391,8 @@ describe('UiDrawerComponent and UiDrawerService', () => {
         await vi.advanceTimersByTimeAsync(0);
         expect(dialog()).not.toBeNull();
 
-        await vi.advanceTimersByTimeAsync(300);
+        // jsdom computes no animation duration, so only the 150ms margin remains.
+        await vi.advanceTimersByTimeAsync(150);
       } finally {
         vi.useRealTimers();
       }
