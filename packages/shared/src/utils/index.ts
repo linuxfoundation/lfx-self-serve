@@ -20,6 +20,7 @@ export * from './keyboard.utils';
 export * from './mailing-list.utils';
 export * from './meeting-attachment.utils';
 export * from './meeting-calendar.utils';
+export * from './meeting-ics.utils';
 export * from './meeting.utils';
 export * from './meeting-list.utils';
 export * from './meeting-attendee-lock.utils';
