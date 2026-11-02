@@ -61,8 +61,14 @@ export class NewsletterSharePreviewComponent {
     return toSignal(
       this.newsletterService.getNewsletterSharePreview(this.projectSlug, this.newsletterId).pipe(
         map((preview): NewsletterSharePreviewState => ({ loading: false, preview })),
-        // 404 (unknown or unsent) is the expected neutral-card path; anything else degrades the same way.
-        catchError(() => of<NewsletterSharePreviewState>({ loading: false, preview: null })),
+        catchError((error: unknown) => {
+          // 404 (unknown or unsent issue) is the expected neutral-card path; anything else degrades the
+          // same way, but is logged so an outage is not mistaken for "nothing to show".
+          if ((error as { status?: number } | null)?.status !== 404) {
+            console.error('Failed to load newsletter share preview', error);
+          }
+          return of<NewsletterSharePreviewState>({ loading: false, preview: null });
+        }),
         startWith(loading)
       ),
       { initialValue: loading }

@@ -3,6 +3,7 @@
 
 import {
   ApiRequestOptions,
+  NewsletterSharePreview,
   CommitteeNewsletter,
   CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
@@ -32,6 +33,7 @@ import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { NewsletterServiceClient } from './newsletter-service.client';
 import { ProjectService } from './project.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 /** Upstream committee-list calls in flight at once during the my-newsletters fan-out. */
 const MY_NEWSLETTERS_CONCURRENCY = 5;
@@ -127,6 +129,47 @@ export class NewsletterService {
 
   public createNewsletter(req: Request, projectUid: string, payload: CreateNewsletterRequest): Promise<Newsletter> {
     return this.newsletterClient.createNewsletter(req, projectUid, payload);
+  }
+
+  /**
+   * What a signed-out link preview may show of a permalink (#4940): the subject of a sent issue of the
+   * slug's project, else null. The slug resolves over NATS (no token); the issue is read with an M2M
+   * token scoped to that one call, because the visitor has no session. Nothing else leaves here, and an
+   * unknown slug, unknown issue and unsent issue are the same null, so drafts are not revealed.
+   */
+  public async getSharePreview(req: Request, projectSlug: string, newsletterUid: string): Promise<NewsletterSharePreview | null> {
+    const project = await this.projectService.getProjectIdBySlug(req, projectSlug, { unavailableAsMissing: false });
+    if (!project.exists) {
+      logger.debug(req, 'get_newsletter_share_preview', 'Project slug not found', { project_slug: projectSlug });
+      return null;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    let newsletter: Newsletter;
+    try {
+      newsletter = await this.getNewsletter(req, project.uid, newsletterUid, { bearerToken: m2mToken });
+    } catch (error) {
+      // Every upstream 4xx is "nothing to show", indistinguishable from a draft, so neither the upstream
+      // message nor its status reaches a signed-out caller. A 403 means the M2M client lacks `viewer` on
+      // the project — worth seeing, since every preview of that project then falls back to the neutral card.
+      const statusCode = isBaseApiError(error) ? error.statusCode : undefined;
+      if (statusCode === undefined || statusCode < 400 || statusCode >= 500) throw error;
+      const metadata = { project_uid: project.uid, newsletter_uid: newsletterUid, status_code: statusCode };
+      if (statusCode === 403) {
+        logger.warning(req, 'get_newsletter_share_preview', 'M2M issue read refused; preview falls back to the neutral card', metadata);
+      } else {
+        logger.debug(req, 'get_newsletter_share_preview', 'Upstream refused the issue read', metadata);
+      }
+      return null;
+    }
+    if (newsletter.status !== 'sent' || newsletter.project_uid !== project.uid) {
+      logger.debug(req, 'get_newsletter_share_preview', 'Issue is not a sent issue of this project', {
+        project_uid: project.uid,
+        newsletter_uid: newsletterUid,
+      });
+      return null;
+    }
+    return { subject: newsletter.subject };
   }
 
   /** `options.bearerToken` scopes an M2M override to this one read (the public share preview). */
