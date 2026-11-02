@@ -67,10 +67,10 @@ import {
   buildMentorshipGraduateTaskWarning,
   escapeHtml,
   formatIsoDateLabel,
-  isMailtoSafeEmail,
   mentorshipApplicantDisplayStatus,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
@@ -730,14 +730,14 @@ export class CurrentMenteesTabComponent {
    */
   private rowActions(person: MentorshipProgramApplicant): MentorshipRowAction[] {
     const contactValue: MentorshipCurrentMenteeAction = 'contact-mentee';
-    const canEmail = isMailtoSafeEmail(person.email);
+    const contactUrl = mentorshipContactMenteeUrl(person.email);
     return mentorshipRowActions(
       MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
       MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
       MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
     ).flatMap((action) => {
       if (action.value !== contactValue) return [action];
-      return canEmail ? [{ ...action, url: `mailto:${person.email}` }] : [];
+      return contactUrl ? [{ ...action, url: contactUrl }] : [];
     });
   }
 }

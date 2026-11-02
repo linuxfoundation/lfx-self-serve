@@ -114,6 +114,7 @@ import {
   buildMentorshipTaskUpdate,
   mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
   getMentorshipEnrollTermDateErrors,
@@ -1274,6 +1275,13 @@ describe('program detail helpers', () => {
     expect(labelsFor('withdrawn')).toEqual(['Contact Mentee', 'Re-open']);
     // A graduation can be undone, back to accepted.
     expect(labelsFor('graduated')).toEqual(['Contact Mentee', 'Undo graduation']);
+  });
+
+  it('builds the Contact Mentee mailto: link, and none for an address not safe to put in one', () => {
+    expect(mentorshipContactMenteeUrl('ifeoma.adeyemi@example.com')).toBe('mailto:ifeoma.adeyemi@example.com');
+    expect(mentorshipContactMenteeUrl('ifeoma@example.com%0D%0ABcc:other@example.com')).toBeNull();
+    expect(mentorshipContactMenteeUrl('')).toBeNull();
+    expect(mentorshipContactMenteeUrl(undefined)).toBeNull();
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
