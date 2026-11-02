@@ -46,7 +46,7 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 
 ### Which enrollments and certificates are counted
 
-On the Certifications tab, **In Progress** counts people enrolled in the last 12 months who have no current certificate for the course. **Certified** counts people holding a current certificate, issued at any time; expired certificates are not counted. The same rule applies to the course list in a person's detail panel. The People › Trainees tab uses its own time range instead.
+On the Certifications tab, **In Progress** counts people enrolled in the last 12 months who have no current certificate for the course. **Certified** counts people holding a current certificate, issued at any time; expired certificates are not counted. The same rule applies to the course list in a person's detail panel and in an expanded row on People › All Employees, where the course count on the row follows the page's time range instead. The Trainings tab counts people who are In Progress or Completed in a course with no 12-month limit, and People › Trainees uses its own time range.
 
 ### Navigation
 

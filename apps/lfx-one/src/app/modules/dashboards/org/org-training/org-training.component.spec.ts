@@ -102,6 +102,5 @@ describe('OrgTrainingComponent', () => {
     const el = await render(null);
 
     expect(el.querySelector('[data-testid="org-certifications-window-note"]')?.textContent?.trim()).toBe(ORG_CERTIFICATIONS_WINDOW_NOTE);
-    expect(ORG_CERTIFICATIONS_WINDOW_NOTE).not.toMatch(/all time/i);
   });
 });

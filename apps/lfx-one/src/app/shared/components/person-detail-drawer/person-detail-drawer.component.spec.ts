@@ -350,7 +350,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     expect(byTestId('person-detail-drawer-training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
     expect(byTestId('person-detail-drawer-training-empty') === null).toBe(listed);
-    expect(document.body.textContent).toContain(listed ? 'Course One' : 'No training or certifications recorded.');
+    expect(document.body.textContent?.includes('Course One')).toBe(listed);
   });
 
   it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {

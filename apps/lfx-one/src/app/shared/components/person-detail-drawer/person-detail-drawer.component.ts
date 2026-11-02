@@ -3,7 +3,7 @@
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, OnDestroy, PLATFORM_ID, signal, type Signal } from '@angular/core';
-import { PERSON_DETAIL_TRAINING_WINDOW_NOTE, PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
+import { PERSON_DETAIL_TRAINING_EMPTY_NOTE, PERSON_DETAIL_TRAINING_WINDOW_NOTE, PERSON_DRAWER_COPIED_RESET_MS } from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeCommitteeMembership,
   OrgPersonCodeCount,
@@ -31,6 +31,7 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   protected readonly drawer = inject(PersonDetailDrawerService);
 
   protected readonly trainingWindowNote = PERSON_DETAIL_TRAINING_WINDOW_NOTE;
+  protected readonly trainingEmptyNote = PERSON_DETAIL_TRAINING_EMPTY_NOTE;
   protected readonly tabs: readonly { id: PersonDrawerTab; label: string }[] = [
     { id: 'events', label: 'Events' },
     { id: 'training', label: 'Training' },
