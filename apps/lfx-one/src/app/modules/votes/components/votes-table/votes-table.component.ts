@@ -18,12 +18,19 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { VOTE_CLOSE_CONFIRMATION, VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import {
+  VOTE_CLOSE_CONFIRMATION,
+  VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_NOTICE_LIFE_MS,
+  VOTE_SUMMARY_PRECHECK_FAILED,
+  VOTE_SUMMARY_SEND_FAILED,
+} from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   GroupsIOMailingList,
   MyVotesQuickFilter,
+  SendVoteSummaryResponse,
   Vote,
   VoteFilterState,
   VoteMailingListReminderDialogData,
@@ -33,6 +40,7 @@ import {
 import {
   buildMailtoHref,
   buildVoteMailingListReminder,
+  buildVoteSummarySendNotice,
   computeVoteRowParticipation,
   getEntityCommands,
   getMailingListEmail,
@@ -55,6 +63,7 @@ import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
+import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -469,20 +478,9 @@ export class VotesTableComponent {
           )
           .subscribe({
             next: (result) => {
-              const detail =
-                result.failed_count > 0
-                  ? `Summary sent to ${result.recipient_count} voter(s); ${result.failed_count} failed.`
-                  : `Summary sent to ${result.recipient_count} voter(s).`;
-              this.messageService.add({ severity: result.failed_count > 0 ? 'warn' : 'success', summary: 'Summary sent', detail });
+              this.messageService.add(buildVoteSummarySendNotice(result));
             },
-            error: (error: unknown) => {
-              const isNotEnded = error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === VOTE_SUMMARY_NOT_ENDED;
-              this.messageService.add({
-                severity: 'error',
-                summary: "Couldn't send summary",
-                detail: isNotEnded ? 'This vote has not closed yet.' : "We couldn't send the summary. Please try again.",
-              });
-            },
+            error: (error: unknown) => this.onSendSummaryFailed(error),
           });
       },
     });
@@ -755,6 +753,59 @@ export class VotesTableComponent {
     if (isBrowser) {
       this.document.location.href = href;
     }
+  }
+
+  /**
+   * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
+   * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
+   * already delivered, so those warn about duplicates instead of saying nothing was sent.
+   */
+  private onSendSummaryFailed(error: unknown): void {
+    const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
+
+    if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' });
+      return;
+    }
+
+    if (error instanceof HttpErrorResponse && code === VOTE_SUMMARY_PRECHECK_FAILED) {
+      let detail = 'Nothing was sent. Please try again.';
+      if (error.status === 401) {
+        detail = 'Nothing was sent. Sign in again before sending a summary.';
+      } else if (error.status === 404) {
+        detail = 'Nothing was sent. This vote is no longer available.';
+      }
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
+      return;
+    }
+
+    if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
+      const counts = error.error?.details as SendVoteSummaryResponse | undefined;
+      // Only a complete, confirmed-unsent BFF result is retry-safe. Legacy or invalid counts stay unconfirmed below.
+      if (
+        counts &&
+        counts.recipient_count === 0 &&
+        counts.uncertain_count === 0 &&
+        counts.failed_count > 0 &&
+        [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
+      ) {
+        this.messageService.add({ ...buildVoteSummarySendNotice(counts), severity: 'error', summary: "Couldn't send summary" });
+        return;
+      }
+    }
+
+    const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
+    if (rejected) {
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
+      return;
+    }
+
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Summary delivery unconfirmed',
+      detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
+      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
+    });
   }
 
   private showNoMailingListToast(): void {
