@@ -43,7 +43,7 @@ What the page shows depends on the meeting's access settings and on who you are:
 
 The organizer's name and contact link are only shown to signed-in visitors, even on a public meeting.
 
-If the organizer turned on **Show attendees to guests**, invited people can open **Show Members** to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
+If the organizer turned on **Show attendees to guests**, invited people can open **Show Members**, or select the **invited** count, to see who else is invited. Without it, they see how many people are invited but not who. A Restricted or Board meeting never shows its list to guests, even with that setting on.
 
 ## Register for a meeting
 

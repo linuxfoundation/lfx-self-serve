@@ -60,6 +60,8 @@ Marking a guest as a host is separate from being an organizer. Only organizers c
 
 The **Invited** card shows how many people are invited. When the meeting collects RSVPs, it also shows how many have accepted, for example "6 of 10 accepted". Hover over that line (or focus it with the keyboard) to see the full breakdown of accepted, declined, and awaiting a reply.
 
+On a phone, each guest's row shows their status as text: **Accepted**, **Declined**, **Invite declined** (they declined the calendar invitation without replying to the RSVP), **Maybe**, or **Pending**. A guest with no name on file appears as **Guest**.
+
 Use **Search people...** to filter a long list by name or email. In the guest list on the meeting card, the role filter shows only **Organizers**, or only **Hosts**, meaning guests marked as a Meeting Host who aren't organizers. Organizers are hosts already, so they appear under **Organizers** and not under **Hosts**.
 
 ## Resend an invitation
@@ -67,7 +69,7 @@ Use **Search people...** to filter a long list by name or email. In the guest li
 To send someone their invitation again:
 
 1. Edit the meeting and open **Invite guests**.
-2. Select the paper plane icon (**Resend invite**) next to the guest.
+2. Select the paper plane icon (**Resend invite**) next to the guest. On a phone, open the **⋮** menu on the guest's row and choose **Resend invite**.
 3. Confirm in the **Resend invitation** dialog.
 
 Resend is only available once the meeting is saved and the guest has been saved to it, so you won't see it for guests you've just added but haven't saved.
@@ -76,7 +78,7 @@ Guests can also resend their own invitation: it's the **Resend Invite** button o
 
 ## Remove a guest
 
-Select the **×** next to the guest to remove them from the list.
+Select the **×** next to the guest to remove them from the list. On a phone, open the **⋮** menu on the guest's row and choose **Remove**.
 
 - When you're creating a meeting, the guest is simply taken off the list. To invite them again, add them again.
 - When you're editing a saved meeting, the removal takes effect when you save. Until then, an **Undo** notice appears above the list, so you can bring them back.

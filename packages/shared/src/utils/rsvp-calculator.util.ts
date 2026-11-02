@@ -7,6 +7,7 @@ import {
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  RegistrantStatusLabel,
   RsvpCounts,
 } from '../interfaces/meeting.interface';
 
@@ -300,9 +301,6 @@ export function getRegistrantAttendanceStatus(
   if (registrant.invite_accepted === false) return 'declined';
   return 'pending';
 }
-
-/** Visible status wording for a guest row. `Invite declined` is a calendar/Zoom invite decline, not an RSVP. */
-export type RegistrantStatusLabel = 'Accepted' | 'Declined' | 'Invite declined' | 'Maybe' | 'Pending';
 
 /**
  * Text label for the status returned by {@link getRegistrantAttendanceStatus}.

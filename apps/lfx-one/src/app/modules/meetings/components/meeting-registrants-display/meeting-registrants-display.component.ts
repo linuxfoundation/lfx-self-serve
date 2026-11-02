@@ -25,6 +25,7 @@ import {
   PastMeetingParticipant,
   PastParticipantAttendanceFilter,
   PastParticipantInvitationFilter,
+  RegistrantStatusLabel,
 } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
@@ -42,7 +43,7 @@ import {
   resolveRsvpOccurrenceId,
   occurrenceIdToSeconds,
 } from '@lfx-one/shared/utils';
-import type { RegistrantAttendanceStatus, RegistrantStatusLabel } from '@lfx-one/shared/utils';
+import type { RegistrantAttendanceStatus } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
@@ -54,7 +55,16 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, final
 
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
-type RegistrantWithAttendance = MeetingRegistrant & { attendanceStatus: RegistrantAttendanceStatus; statusLabel: RegistrantStatusLabel; displayName: string };
+type RegistrantWithAttendance = MeetingRegistrant & {
+  attendanceStatus: RegistrantAttendanceStatus;
+  statusLabel: RegistrantStatusLabel;
+  statusClass: string;
+  displayName: string;
+  canResend: boolean;
+  canToggleHost: boolean;
+  canRemove: boolean;
+  hasActions: boolean;
+};
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
@@ -112,6 +122,7 @@ export class MeetingRegistrantsDisplayComponent {
   // update at once. A refetch is also requested, but the list can lag the write, so the override is kept
   // until the drawer closes rather than dropped when a fetch lands (a lagging fetch would flip the badge back).
   private readonly hostOverrides = signal<Map<string, boolean>>(new Map());
+  private rowActionMenuUid: string | null = null;
   protected readonly hostUpdatingUids = signal<Set<string>>(new Set());
   private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
   private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
@@ -451,8 +462,17 @@ export class MeetingRegistrantsDisplayComponent {
   // Mobile overflow menu: same actions, handlers and disabled rules as the desktop buttons.
   protected toggleRowActionMenu(event: Event, registrant: MeetingRegistrant, menu: MenuComponent): void {
     event.stopPropagation();
+    const sameRow = this.rowActionMenuUid === registrant.uid;
+    this.rowActionMenuUid = registrant.uid;
+    if (sameRow) {
+      this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
+      menu.toggle(event);
+      return;
+    }
+    // Another row's trigger: close the open menu first so the new row's items never swap in under it.
+    menu.hide();
     this.rowActionMenuItems = this.buildRowActionMenuItems(registrant);
-    menu.toggle(event);
+    menu.show(event);
   }
   protected buildRowActionMenuItems(registrant: MeetingRegistrant): MenuItem[] {
     const items: MenuItem[] = [];
@@ -836,16 +856,21 @@ export class MeetingRegistrantsDisplayComponent {
       const roles = this.guestRoles();
 
       return registrants
-        .map((registrant) => ({
-          ...registrant,
-          attendanceStatus: getRegistrantAttendanceStatus(registrant, {
-            inviteResponsesEnabled: this.inviteResponsesEnabled(),
-          }),
-          statusLabel: getRegistrantStatusLabel(registrant, {
-            inviteResponsesEnabled: this.inviteResponsesEnabled(),
-          }),
-          displayName: registrantDisplayName(registrant),
-        }))
+        .map((registrant) => {
+          const options = { inviteResponsesEnabled: this.inviteResponsesEnabled() };
+          const attendanceStatus = getRegistrantAttendanceStatus(registrant, options);
+          return {
+            ...registrant,
+            attendanceStatus,
+            statusLabel: getRegistrantStatusLabel(registrant, options),
+            statusClass: this.statusLabelClass(attendanceStatus),
+            displayName: registrantDisplayName(registrant),
+            canResend: this.canResendInvite(registrant),
+            canToggleHost: this.canToggleHost(registrant),
+            canRemove: this.canRemoveGuest(registrant),
+            hasActions: this.hasRowActions(registrant),
+          };
+        })
         .filter((registrant) => {
           // Search filter
           const matchesSearch =

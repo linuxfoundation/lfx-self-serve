@@ -140,7 +140,9 @@
         <!-- Name + Company + Voting Status -->
         <div class="flex flex-col min-w-0 flex-1">
           <div class="flex items-center gap-2">
-            <h3 class="truncate" data-testid="registrant-display-name">{{ registrant.displayName }}</h3>
+            <h3 class="max-sm:min-w-0 max-sm:truncate" [attr.title]="registrant.displayName" data-testid="registrant-display-name">
+              {{ registrant.displayName }}
+            </h3>
             @if (guestRoles().get(registrant.uid) === 'organizer') {
               <lfx-badge
                 value="Organizer"
@@ -167,7 +169,7 @@
             }
           </div>
           @if (inviteResponsesEnabled()) {
-            <span class="sm:hidden text-xs font-medium" [class]="statusLabelClass(registrant.attendanceStatus)" data-testid="registrant-status-label">
+            <span class="sm:hidden text-xs font-medium" [class]="registrant.statusClass" data-testid="registrant-status-label">
               {{ registrant.statusLabel }}
             </span>
           }
@@ -190,11 +192,11 @@
           }
         </div>
 
-        @if (canResendInvite(registrant)) {
+        @if (registrant.canResend) {
           <button
             type="button"
             class="hidden sm:block flex-shrink-0 rounded-md p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
-            [attr.aria-label]="'Resend invite to ' + registrant.first_name + ' ' + registrant.last_name"
+            [attr.aria-label]="'Resend invite to ' + registrant.displayName"
             [attr.data-testid]="'registrant-display-resend-' + registrant.uid"
             pTooltip="Resend invite"
             tooltipPosition="top"
@@ -204,7 +206,7 @@
           </button>
         }
 
-        @if (canToggleHost(registrant)) {
+        @if (registrant.canToggleHost) {
           <button
             type="button"
             class="hidden sm:block flex-shrink-0 rounded-md p-2 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
@@ -220,11 +222,11 @@
           </button>
         }
 
-        @if (canRemoveGuest(registrant)) {
+        @if (registrant.canRemove) {
           <button
             type="button"
             class="hidden sm:block flex-shrink-0 rounded-md p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-            [attr.aria-label]="'Remove ' + registrant.first_name + ' ' + registrant.last_name"
+            [attr.aria-label]="'Remove ' + registrant.displayName"
             [attr.data-testid]="'registrant-display-remove-' + registrant.uid"
             [disabled]="deleting()"
             (click)="onRequestRemoveGuest(registrant)">
@@ -233,7 +235,7 @@
         }
 
         <!-- Mobile: the same actions collapsed into one overflow menu -->
-        @if (hasRowActions(registrant)) {
+        @if (registrant.hasActions) {
           <lfx-button
             class="sm:hidden flex-shrink-0"
             icon="fa-light fa-ellipsis-vertical"
