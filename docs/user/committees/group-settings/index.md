@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-11-05
+last_updated: 2026-11-08
 intercom_collection: Committees
 ---
 
@@ -55,6 +55,17 @@ Members are automatically subscribed to a group's associated mailing lists when 
 Each list shows its name, **Public** or **Private**, type, address, and subscriber count. Mailing list changes save as soon as you confirm them; you don't need **Save Changes**. Linking or unlinking a list requires Manage access to that list. Lists you can see but can't change appear greyed out in the dialog, and **+ Add List** is disabled if you can't change any of them. Ask a project manager to link the list for you. **Create New List** in the dialog needs Manage access on the project; without it you see a permission message and stay on the Settings tab. A note on the card explains that removing someone from the group also removes them from the mailing list when the list is private.
 
 Mailing lists are added from this tab after the group exists; the create wizard doesn't include them.
+
+#### Sync Now
+
+Each associated list also has a **Sync Now** button for bringing it in line with the group's current roster:
+
+1. Select **Sync Now** beside the list you want to sync.
+2. Review the preview dialog, which groups the pending changes into **Add**, **Remove**, and **Conflicts** tabs. Conflicts are informational and list members whose group email and mailing list email don't match, so they aren't added or removed automatically.
+3. Clear the checkbox beside any row you want to skip.
+4. Select **Apply Changes**. Syncing can take a few minutes for larger lists; the dialog shows elapsed time while it works.
+
+When it finishes, the dialog lists the outcome for each change, including any that failed or resulted in an invite instead of a direct add.
 
 ### Chat channel and repository
 
