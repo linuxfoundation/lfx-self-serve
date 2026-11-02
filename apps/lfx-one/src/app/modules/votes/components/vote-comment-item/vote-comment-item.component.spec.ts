@@ -31,7 +31,11 @@ describe('VoteCommentItemComponent', () => {
     fixture = TestBed.createComponent(VoteCommentItemComponent);
   });
 
-  afterEach(() => fixture.destroy());
+  afterEach(() => {
+    document.getSelection()?.removeAllRanges();
+    (fixture.nativeElement as HTMLElement).remove();
+    fixture.destroy();
+  });
 
   function render(response: CommentResponseView, inputs: { anonymous?: boolean; showBallotLink?: boolean; linkStyle?: 'button' | 'row' } = {}): HTMLElement {
     fixture.componentRef.setInput('response', response);
@@ -113,6 +117,15 @@ describe('VoteCommentItemComponent', () => {
       fixture.componentInstance.viewBallot.subscribe((voteId) => emitted.push(voteId));
       return emitted;
     };
+    const selectCommentText = (el: HTMLElement): Selection => {
+      document.body.appendChild(el);
+      const range = document.createRange();
+      range.selectNodeContents(row(el).querySelector('p')!);
+      const selection = document.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return selection;
+    };
 
     it('default mode keeps the View ballot button and ignores row clicks', () => {
       const el = render(view(), { showBallotLink: true });
@@ -150,6 +163,40 @@ describe('VoteCommentItemComponent', () => {
 
       expect(emitted).toEqual(['synthetic-response-1']);
       expect(row(el).classList).toContain('cursor-pointer');
+    });
+
+    it('preserves selected comment prose without opening the ballot', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const selection = selectCommentText(el);
+      expect(selection.toString()).toBe('Synthetic comment');
+
+      row(el).querySelector('p')!.click();
+
+      expect(emitted).toEqual([]);
+      expect(selection.toString()).toBe('Synthetic comment');
+    });
+
+    it('opens the ballot when the text selection is collapsed', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      const selection = selectCommentText(el);
+      selection.collapseToEnd();
+      expect(selection.isCollapsed).toBe(true);
+
+      row(el).querySelector('p')!.click();
+
+      expect(emitted).toEqual(['synthetic-response-1']);
+    });
+
+    it('keeps the name button active while comment prose is selected', () => {
+      const el = render(view(), { showBallotLink: true, linkStyle: 'row' });
+      const emitted = collect();
+      selectCommentText(el);
+
+      byTestId(el, nameButtonId)!.querySelector('button')!.click();
+
+      expect(emitted).toEqual(['synthetic-response-1']);
     });
 
     it('does not emit from a link inside the comment text', () => {

@@ -43,7 +43,10 @@ export class VoteCommentItemComponent {
   protected onRowClick(event: MouseEvent): void {
     const voteId = this.ballotId();
     if (!this.rowClickable() || !voteId) return;
-    if ((event.target as Element | null)?.closest('a, button')) return;
+    const target = event.target as Element | null;
+    if (target?.closest('a, button')) return;
+    // Selecting a quote is not an intent to open the ballot.
+    if (target?.ownerDocument.defaultView?.getSelection()?.isCollapsed === false) return;
     this.viewBallot.emit(voteId);
   }
 }
