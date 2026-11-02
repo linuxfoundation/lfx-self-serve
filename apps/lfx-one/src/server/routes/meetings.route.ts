@@ -3,18 +3,23 @@
 
 import express, { Router } from 'express';
 
+import { MeetingCalendarController } from '../controllers/meeting-calendar.controller';
 import { MeetingController } from '../controllers/meeting.controller';
 import { aiRateLimiter, selfResendInviteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
 const meetingController = new MeetingController();
+const meetingCalendarController = new MeetingCalendarController();
 
 // GET /meetings - get all meetings
 router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next));
 
 // GET /meetings/count - get meetings count
 router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req, res, next));
+
+// GET /meetings/:uid/calendar.ics - download the next occurrence as an .ics file (#4862). Authenticated; same view permission as the page.
+router.get('/:uid/calendar.ics', (req, res, next) => meetingCalendarController.getMeetingCalendarIcs(req, res, next));
 
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));

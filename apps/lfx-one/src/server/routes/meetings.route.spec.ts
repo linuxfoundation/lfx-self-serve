@@ -27,6 +27,15 @@ const organizerHandler = vi.fn((_req: express.Request, res: express.Response) =>
   res.status(200).end();
 });
 
+const calendarHandler = vi.fn((_req: express.Request, res: express.Response) => {
+  res.status(200).end();
+});
+
+vi.mock('../controllers/meeting-calendar.controller', () => ({
+  MeetingCalendarController: class {
+    public getMeetingCalendarIcs = calendarHandler;
+  },
+}));
 vi.mock('../controllers/meeting.controller', () => ({
   MeetingController: class {
     public resendMyMeetingInvitation = selfHandler;
@@ -74,11 +83,12 @@ beforeEach(() => {
 const post = (path: string) =>
   fetch(`${baseUrl}/api/meetings/${MEETING_UID}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 
-describe('meetings router — removed per-meeting calendar download', () => {
-  it('no longer serves GET /:uid/calendar.ics, and no handler is reached for it', async () => {
-    const res = await fetch(`${baseUrl}/api/meetings/${MEETING_UID}/calendar.ics?scope=series`);
+describe('meetings router — calendar download', () => {
+  it('routes GET /:uid/calendar.ics to the calendar handler only', async () => {
+    const res = await fetch(`${baseUrl}/api/meetings/${MEETING_UID}/calendar.ics`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(calendarHandler).toHaveBeenCalledTimes(1);
     expect(selfHandler).not.toHaveBeenCalled();
     expect(organizerHandler).not.toHaveBeenCalled();
   });
