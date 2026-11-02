@@ -4,7 +4,7 @@ description: Frequently asked questions about groups (committees) in LFX Self Se
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, faq, governance, join, leave]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Committees
 ---
 
@@ -15,6 +15,18 @@ You need write access to the selected foundation or project, and you create grou
 ## How do I join a group?
 
 It depends on the group's join mode. In an **Open** group, select **Join Group**. In an **Apply & Review** group, select **Apply to Join** and optionally add a message. In an **Invite Only** group you need an invitation, and in a **Closed** group only admins add members. See [Join, Apply to, and Leave a Group](../join-and-leave-a-group/).
+
+## How do I find a group I'm not a member of?
+
+Open the **Projects** tab in the sidebar, select the project, then select **Groups**. Any signed-in user can browse a project's groups this way; you don't need a role on the project. Open a group to see its join button. See [Find a group to join](../join-and-leave-a-group/#find-a-group-to-join).
+
+## Where do groups I join show up?
+
+Under **Groups** in the **Me** lens. Pending invitations and applications are listed there too, until you accept or an admin approves you.
+
+## How do I see a project's meetings without joining a group?
+
+In the **Projects** tab, select the project, open **Meetings**, and select **Public Calendar**. Anyone can view the public calendar without signing in, and it shows the project's public meetings. See [See a project's meetings without joining](../join-and-leave-a-group/#see-a-project-s-meetings-without-joining).
 
 ## I applied to join. What happens next?
 
