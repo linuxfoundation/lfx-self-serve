@@ -46,7 +46,7 @@ import { UiPopoverPanelComponent } from './popover-panel.component';
  * Focus moves to the first tabbable element in the panel, or to the panel itself. Escape or a click outside closes it. Escape always returns focus
  * to the host; an outside click does too, unless the click already focused something else. Tab past the last field closes it and continues from the
  * host, and Shift+Tab before the first field closes it onto the host. Shift+Tab from a select search field, multi-select list or menu opened from
- * the panel closes that list and stops on its trigger, even on the first field. A click inside a select list, menu, modal or drawer opened from the panel
+ * the panel stops on its trigger, even on the first field; the multi-select list and the menu close, the select list stays open. A click inside a select list, menu, modal or drawer opened from the panel
  * does not close it, and Escape closes that overlay first. A click on a toast does not close it either. It is not a focus trap: for a choice that must be answered first, use a modal.
  *
  * Two-way `[(lfxUiPopoverOpen)]` reads or sets whether it is open. The template receives `close`, and `#pop="lfxUiPopover"` exposes `close()` and `toggle()`.
