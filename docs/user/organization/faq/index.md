@@ -49,7 +49,7 @@ A sanctioned organization has no status pill, and the Overview heading ends with
 
 ## How do I remove someone from my organization?
 
-Remove their Org Lens access. You must be an Admin for the organization. In the **Organization** lens, open **People**, select the **Org Lens Access** tab, select the trash icon next to the person, then select **Remove**. This only removes their access to your organization in the Organization lens; it does not remove them from committees, groups, mailing lists or meetings. You cannot remove the organization's only Admin until another Admin is added. See [Manage Org Lens Access](../manage-org-lens-access/#remove-someone-s-access).
+Remove their Org Lens access. You must be an Admin for the organization. In the **Organization** lens, open **People**, select the **Org Lens Access** tab, select the trash icon next to the person, then select **Remove**. This removes the access granted to them on that tab. If they can also open your organization another way, for example through access to a related organization, they keep that access. It does not remove them from committees, groups, mailing lists or meetings. You cannot remove the organization's only Admin until another Admin is added. See [Manage Org Lens Access](../manage-org-lens-access/#remove-someone-s-access).
 
 ## How do I give someone access to my organization?
 

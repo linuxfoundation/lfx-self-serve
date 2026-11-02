@@ -61,7 +61,7 @@ You must be an Admin.
 1. Find the person in the table and select the trash icon (**Remove access**) in the **Actions** column.
 2. Select **Remove** to confirm.
 
-This removes their Org Lens access to this organization. It does not remove them from any committee, group, mailing list or meeting, and it does not change their LFX account.
+This removes the access granted to them on this tab. If they can also open the organization another way, for example through access to a related organization, they keep that access. Removing them does not remove them from any committee, group, mailing list or meeting, and it does not change their LFX account.
 
 You cannot remove the organization's only Admin. Make someone else an Admin first, then remove them.
 
