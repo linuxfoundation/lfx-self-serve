@@ -13,12 +13,15 @@ export type OrgTraineeSortColumn = 'name' | 'status' | 'courses' | 'certs' | 're
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgTraineeSortDirection = 1 | -1;
 
-/** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
+/** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` for a people-list member — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
 export interface OrgTraineeDetailRow {
-  /** Warehouse person key for a people-list member; the same opaque per-response key as its trainee row otherwise. */
+  /**
+   * Warehouse key of the people-list member on the matching trainee row. A people-list row whose person has no
+   * current-employee row (a former employee) carries an opaque per-response key instead: counted in the cards, not listed.
+   */
   personKey: string;
   status: OrgTraineeStatus;
-  /** Enrollment or certificate id for a people-list member; '' for a learner outside the people list (#4287). */
+  /** Enrollment or certificate id; '' under an opaque key. */
   courseOrCertId: string;
   courseId: string;
   courseName: string;
@@ -34,21 +37,28 @@ export interface OrgTraineeDetailRow {
   activityTs: string;
 }
 
-/**
- * Per-(account, person) main row source — joined client-side with `details` for filter-aware derivations. A learner
- * outside the Org Lens people list (lfx-self-serve#4287) carries a name and nothing else: no ids, title or email, and an
- * opaque per-response `personKey` (`ORG_TRAINEE_OUTSIDE_KEY_PREFIX` + n) in place of their warehouse key.
- */
+/** Per-(account, person) main row source for a people-list member — joined client-side with `details` for filter-aware derivations. */
 export interface OrgTraineeRow {
-  /** Warehouse person key for a people-list member, which the person drawer reads; opaque per response otherwise. */
+  /** Warehouse person key, which the person drawer reads. */
   personKey: string;
   lfid: string | null;
   cdpMemberId: string | null;
   name: string;
   title: string | null;
   email: string | null;
-  /** False for a learner attributed to the organization by their enrollment who is not on the people list. */
-  onPeopleList: boolean;
+}
+
+/**
+ * A learner attributed to the organization by their enrollment who is not on its people list (lfx-self-serve#4287):
+ * name and one overall status for the range only. No course, project, foundation, level, format, date or id leaves the
+ * BFF for them.
+ */
+export interface OrgTraineeOutsideLearner {
+  /** Opaque per-response key (`ORG_TRAINEE_OUTSIDE_KEY_PREFIX` + n) in place of their warehouse key; person endpoints reject it. */
+  personKey: string;
+  name: string | null;
+  /** Certified when any of their training rows in the range is a certificate, Enrolled otherwise. */
+  status: OrgTraineeStatus;
 }
 
 /** Stats-card shape for the Trainees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
@@ -78,8 +88,12 @@ export interface OrgTraineesResponse {
   accountId: string;
   /** Echo of the range the BFF read — lets the client drop a late response from a previous range. */
   timeRange: OrgLensTimeRange;
+  /** People-list members with a training row in the range. */
   trainees: OrgTraineeRow[];
+  /** Training rows in the range of the people-list members in `trainees`; none for learners outside the people list. */
   details: OrgTraineeDetailRow[];
+  /** Learners outside the people list with a training row in the range, sorted by name; filtered by the range only. */
+  outsideLearners: OrgTraineeOutsideLearner[];
   filterOptions: OrgTraineeFilterOptions;
   /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
   asOf: string | null;
@@ -95,8 +109,6 @@ export interface OrgTraineeRowVm {
   email: string | null;
   initials: string;
   avatarColorClass: string;
-  /** False: name and training status only, and no person drawer (the drawer reads people-list data). */
-  onPeopleList: boolean;
   status: OrgTraineeStatus;
   coursesCount: number;
   certsCount: number;
@@ -151,8 +163,13 @@ export interface TraineeAsOfRow {
   AS_OF: Date | string | null;
 }
 
-/** Per-(account, person) row from `ORG_TRAINING_OUTSIDE_LEARNERS`: a learner outside the people list, name only. */
+/**
+ * Per-(account, person) row from `ORG_TRAINING_OUTSIDE_LEARNERS` joined to the person's training rows in the range: a
+ * learner outside the people list, name and overall status only.
+ */
 export interface OrgTrainingOutsideLearnerRow {
   PERSON_KEY: string;
   LEARNER_NAME: string | null;
+  /** Whether any of the learner's training rows in the range is a certificate (`BOOLOR_AGG`). */
+  IS_CERTIFIED: boolean | null;
 }

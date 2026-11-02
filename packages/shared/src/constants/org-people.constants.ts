@@ -208,6 +208,7 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
+  outsideLearners: [],
   filterOptions: { foundations: [], projects: [], courses: [], levels: [], formats: [] },
   asOf: null,
 };

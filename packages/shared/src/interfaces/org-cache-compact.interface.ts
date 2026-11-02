@@ -125,7 +125,7 @@ export interface CompactOrgEventAttendeesRawCache {
 /** Cached form of the Trainees raw warehouse reads. */
 export interface CompactOrgTraineesRawCache {
   traineeRows: ColumnarTable;
-  /** Learners outside the people list: `PERSON_KEY`, `LEARNER_NAME` (lfx-self-serve#4287). */
+  /** Learners outside the people list: `PERSON_KEY`, `LEARNER_NAME`, `IS_CERTIFIED` (lfx-self-serve#4287); no detail rows. */
   outsideLearnerRows: ColumnarTable;
   /** Distinct course-level field sets (course, foundation, project, level and format columns), once each. */
   courses: ColumnarTable;

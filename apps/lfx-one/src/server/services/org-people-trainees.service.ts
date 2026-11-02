@@ -18,6 +18,7 @@ import type {
   OrgPeopleTrainingRow,
   OrgTraineeDetailRow,
   OrgTraineeFilterOptions,
+  OrgTraineeOutsideLearner,
   OrgTraineeRow,
   OrgTraineesResponse,
   OrgTrainingOutsideLearnerRow,
@@ -56,68 +57,68 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v5:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
-    // so the read is windowed per range here instead of shipping every row for the client to filter. `v5` adds the
-    // table's build time, the project, level and format columns and the learners outside the people list, and drops the
-    // two option reads; a `v4` entry must miss.
+    // `people-trainees:v6:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` adds the
+    // table's build time, the project, level and format columns and the learners outside the people list (name and
+    // certified flag, no detail rows), and drops the two option reads; a `v5` entry, which cached those learners'
+    // detail rows, must miss.
     const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v5:${range}`,
+      `people-trainees:v6:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
     );
 
-    // Only people-list members keep their warehouse key, which the person drawer reads. Every other key (a learner
-    // outside the people list) is replaced by an opaque per-response key, the same in `trainees` and `details`.
-    const listedKeys = new Set(traineeRows.map((row) => row.PERSON_KEY));
-    const opaqueKeys = new Map<string, string>();
-    const wireKey = (personKey: string): string => {
+    const trainees: OrgTraineeRow[] = traineeRows.map((row) => ({
+      personKey: row.PERSON_KEY,
+      lfid: row.LFID,
+      cdpMemberId: row.CDP_MEMBER_ID,
+      name: row.NAME ?? '',
+      title: row.TITLE,
+      email: row.EMAIL,
+    }));
+
+    // Only people-list members keep their warehouse key, which the person drawer reads. Every other key gets an opaque
+    // per-response key from one counter: each learner outside the people list, and each person behind people-list
+    // training rows who has no current-employee row (a former employee; their rows still count in the cards, as on the
+    // Training page's certification tiles). The two are never merged, even on a shared warehouse key, so no course row
+    // on the wire is ever tied to an outside learner's name.
+    const listedKeys = new Set(trainees.map((row) => row.personKey));
+    let opaqueCount = 0;
+    const nextOpaqueKey = (): string => `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${++opaqueCount}`;
+    const formerKeys = new Map<string, string>();
+    const detailKey = (personKey: string): string => {
       if (listedKeys.has(personKey)) return personKey;
-      let opaque = opaqueKeys.get(personKey);
+      let opaque = formerKeys.get(personKey);
       if (!opaque) {
-        opaque = `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${opaqueKeys.size + 1}`;
-        opaqueKeys.set(personKey, opaque);
+        opaque = nextOpaqueKey();
+        formerKeys.set(personKey, opaque);
       }
       return opaque;
     };
 
-    const trainees: OrgTraineeRow[] = [
-      ...traineeRows.map((row) => ({
-        personKey: row.PERSON_KEY,
-        lfid: row.LFID,
-        cdpMemberId: row.CDP_MEMBER_ID,
-        name: row.NAME ?? '',
-        title: row.TITLE,
-        email: row.EMAIL,
-        onPeopleList: true,
-      })),
-      // Name and training status only (lfx-self-serve#4287): no warehouse key, ids, title or email leave the BFF for these learners.
-      ...outsideLearnerRows.map((row) => ({
-        personKey: wireKey(row.PERSON_KEY),
-        lfid: null,
-        cdpMemberId: null,
-        name: row.LEARNER_NAME ?? '',
-        title: null,
-        email: null,
-        onPeopleList: false,
-      })),
-    ];
+    // Name and one overall status only (lfx-self-serve#4287): no warehouse key, ids, course, project, foundation, level,
+    // format or date leaves the BFF for these learners.
+    const outsideLearners: OrgTraineeOutsideLearner[] = outsideLearnerRows.map((row) => ({
+      personKey: nextOpaqueKey(),
+      name: row.LEARNER_NAME || null,
+      status: row.IS_CERTIFIED === true ? 'Certified' : 'Enrolled',
+    }));
 
-    // Drop null-ACTIVITY_TS rows; coercing to '' would corrupt downstream lex sorts and most-recent derivations.
+    // People-list rows only (the read filters on ON_PEOPLE_LIST). Drop null-ACTIVITY_TS rows; coercing to '' would
+    // corrupt downstream lex sorts and most-recent derivations.
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
       if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
       const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
       if (!activityTs) return [];
-      const personKey = wireKey(row.PERSON_KEY);
-      const onPeopleList = listedKeys.has(row.PERSON_KEY);
+      const listed = listedKeys.has(row.PERSON_KEY);
       return [
         {
-          personKey,
+          personKey: detailKey(row.PERSON_KEY),
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
-          // Blank for learners outside the people list (lfx-self-serve#4287): the enrollment / certificate id is a
-          // per-person identifier, and no client reads it.
-          courseOrCertId: onPeopleList ? row.COURSE_OR_CERT_ID : '',
+          // Blank without a current-employee row: the enrollment / certificate id is a per-person identifier, and no client reads it.
+          courseOrCertId: listed ? row.COURSE_OR_CERT_ID : '',
           // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
           // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
           courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
@@ -138,6 +139,7 @@ export class OrgPeopleTraineesService {
       timeRange: range,
       trainees,
       details,
+      outsideLearners,
       filterOptions: buildFilterOptions(details),
       asOf,
     };
@@ -198,28 +200,38 @@ export class OrgPeopleTraineesService {
 
   /**
    * Learners attributed to the organization by their enrollment who are not on the people list (lfx-self-serve#4287),
-   * with a training row in the range: the name, nothing else.
+   * with a training row in the range: the name and whether any of those rows is a certificate, nothing else. The flag
+   * is aggregated here so none of their course rows is read or cached. Same row rules as the detail mapping: a known
+   * status and a dated row.
    */
   private async fetchOutsideLearnerRows(accountId: string, inRange: string): Promise<OrgTrainingOutsideLearnerRow[]> {
     const query = `
       SELECT
-        PERSON_KEY,
-        LEARNER_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_OUTSIDE_LEARNERS
-      WHERE ACCOUNT_ID = ?
-        AND PERSON_KEY IN (
-          SELECT PERSON_KEY
-          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-          WHERE ACCOUNT_ID = ?
-            AND NOT ON_PEOPLE_LIST
-            ${inRange}
-        )
-      ORDER BY LEARNER_NAME ASC NULLS LAST
+        o.PERSON_KEY,
+        o.LEARNER_NAME,
+        t.IS_CERTIFIED
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_OUTSIDE_LEARNERS o
+      INNER JOIN (
+        SELECT
+          PERSON_KEY,
+          BOOLOR_AGG(STATUS = 'Certified') AS IS_CERTIFIED
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+        WHERE ACCOUNT_ID = ?
+          AND NOT ON_PEOPLE_LIST
+          AND STATUS IN ('Enrolled', 'Certified')
+          AND ACTIVITY_TS IS NOT NULL
+          ${inRange}
+        GROUP BY PERSON_KEY
+      ) t
+        ON t.PERSON_KEY = o.PERSON_KEY
+      WHERE o.ACCOUNT_ID = ?
+      ORDER BY o.LEARNER_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<OrgTrainingOutsideLearnerRow>(query, [accountId, accountId]);
     return result.rows;
   }
 
+  /** The people list's training rows in the range; a learner outside the list is read by {@link fetchOutsideLearnerRows}. */
   private async fetchDetailRows(accountId: string, inRange: string): Promise<OrgPeopleTrainingRow[]> {
     const query = `
       SELECT
@@ -237,6 +249,7 @@ export class OrgPeopleTraineesService {
         COURSE_FORMAT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
+        AND ON_PEOPLE_LIST
         ${inRange}
       ORDER BY PERSON_KEY ASC, ACTIVITY_TS DESC NULLS LAST
     `;

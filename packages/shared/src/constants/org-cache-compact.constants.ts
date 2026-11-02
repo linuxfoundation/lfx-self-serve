@@ -154,8 +154,12 @@ export const ORG_TRAINEE_DETAIL_COLUMNS = [
   'ACTIVITY_TS',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
-/** `CompactOrgTraineesRawCache.outsideLearnerRows` — learners outside the people list, name only (lfx-self-serve#4287). */
-export const ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS = ['PERSON_KEY', 'LEARNER_NAME'] as const satisfies readonly (keyof OrgTrainingOutsideLearnerRow)[];
+/** `CompactOrgTraineesRawCache.outsideLearnerRows` — learners outside the people list, name and overall status only (lfx-self-serve#4287). */
+export const ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS = [
+  'PERSON_KEY',
+  'LEARNER_NAME',
+  'IS_CERTIFIED',
+] as const satisfies readonly (keyof OrgTrainingOutsideLearnerRow)[];
 
 /** `CompactOrgContributorRowsCache.projects` — the project-level columns lifted out of every aggregate row. */
 export const ORG_CONTRIBUTOR_PROJECT_COLUMNS = [

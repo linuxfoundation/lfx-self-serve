@@ -45,8 +45,8 @@ function responseFor(range: OrgLensTimeRange): OrgTraineesResponse {
     accountId: ORG,
     timeRange: range,
     trainees: [
-      { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: null, email: null, onPeopleList: true },
-      ...(range === '30d' ? [] : [{ personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null, onPeopleList: true }]),
+      { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: null, email: null },
+      ...(range === '30d' ? [] : [{ personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null }]),
     ],
     details,
     filterOptions: {
@@ -160,7 +160,7 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     expect(isFiltering()).toBe(true);
   });
 
-  it('opens the person drawer for the range the tab lists the person in, and none for a learner outside the people list', async () => {
+  it('opens the person drawer for the range the tab lists the person in', async () => {
     await mount('/?tab=trainees&range=30d');
     const open = (TestBed.inject(PersonDetailDrawerService) as unknown as { open: Mock }).open;
     const row: OrgTraineeRowVm = {
@@ -170,7 +170,6 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
       email: null,
       initials: 'AL',
       avatarColorClass: '',
-      onPeopleList: true,
       status: 'Enrolled',
       coursesCount: 1,
       certsCount: 0,
@@ -179,9 +178,8 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     };
 
     fixture.componentInstance.onPersonClick(row, new Event('click'));
-    fixture.componentInstance.onPersonClick({ ...row, personKey: 'outside:1', onPeopleList: false }, new Event('click'));
 
-    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', defaultTab: 'training', range: '30d' }));
   });
 
@@ -249,9 +247,9 @@ function filterResponseFor(range: OrgLensTimeRange): OrgTraineesResponse {
         ];
   const options = (values: (string | null)[]) => [...new Set(values.filter((v): v is string => !!v))].sort().map((v) => ({ label: v, value: v }));
   const people = [
-    { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com', onPeopleList: true },
-    { personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null, onPeopleList: true },
-    { personKey: 'p-3', lfid: null, cdpMemberId: null, name: 'Grace Hopper', title: null, email: null, onPeopleList: true },
+    { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com' },
+    { personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null },
+    { personKey: 'p-3', lfid: null, cdpMemberId: null, name: 'Grace Hopper', title: null, email: null },
   ];
   return {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
@@ -360,32 +358,48 @@ describe('TraineesComponent — project, course, level and format filters (lfx-s
   });
 });
 
-describe('TraineesComponent — a learner outside the people list (lfx-self-serve#4287)', () => {
+describe('TraineesComponent — learners outside the people list (lfx-self-serve#4287)', () => {
   let fixture: ComponentFixture<TraineesComponent>;
-  let open: Mock;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
   const listed = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
+  const outsideList = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside"]');
+  const outsideNames = (): string[] => [...(outsideList()?.querySelectorAll('li') ?? [])].map((li) => li.querySelector('span')?.textContent?.trim() ?? '');
+  const filteredNote = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-filtered-note"]');
+
   async function settle(): Promise<void> {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   }
 
+  /** Picks and searches reach the view through the 150 ms filter debounce. */
+  async function pick(values: Record<string, string>): Promise<void> {
+    fixture.componentInstance.filterForm.patchValue(values);
+    await firstValueFrom(timer(200));
+    await settle();
+  }
+
   beforeEach(async () => {
-    open = vi.fn();
     const response: OrgTraineesResponse = {
       ...EMPTY_ORG_TRAINEES_RESPONSE,
       accountId: ORG,
       timeRange: '730d',
-      trainees: [
-        { personKey: 'p-1', lfid: 'lfid-1', cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com', onPeopleList: true },
-        // The BFF sends nothing but the name for these learners; the row must not invent or borrow the rest.
-        { personKey: 'outside:1', lfid: null, cdpMemberId: null, name: 'Bea Outside', title: null, email: null, onPeopleList: false },
+      trainees: [{ personKey: 'p-1', lfid: 'lfid-1', cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com' }],
+      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf')],
+      // Name and one status each, nothing else; sent unsorted so the list's own order shows.
+      outsideLearners: [
+        { personKey: 'outside:1', name: 'Zoe Outside', status: 'Certified' },
+        { personKey: 'outside:2', name: null, status: 'Enrolled' },
+        { personKey: 'outside:3', name: 'Bea Outside', status: 'Enrolled' },
       ],
-      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf'), detail('outside:1', 'cka', 'Certified', 'cncf'), detail('outside:1', 'lfs101', 'Enrolled', 'lf')],
+      filterOptions: {
+        ...EMPTY_ORG_TRAINEES_RESPONSE.filterOptions,
+        foundations: [{ label: 'lf', value: 'lf' }],
+        courses: [{ label: 'lfs101', value: 'lfs101' }],
+      },
     };
     await TestBed.configureTestingModule({
       imports: [TraineesComponent],
@@ -393,7 +407,7 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
         provideRouter([]),
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
         { provide: TraineesService, useValue: { getTrainees: vi.fn(() => of(response)) } },
-        { provide: PersonDetailDrawerService, useValue: { open } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
       ],
     }).compileComponents();
     await TestBed.inject(Router).navigateByUrl('/?tab=training');
@@ -401,38 +415,45 @@ describe('TraineesComponent — a learner outside the people list (lfx-self-serv
     await settle();
   });
 
-  it('lists the learner with name and training status only, counted in the stat cards', () => {
-    const row = el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-outside:1"]')!;
-
-    expect(listed().sort()).toEqual(['outside:1', 'p-1']);
-    expect(stat('trainees')).toBe('2');
-    expect(stat('certifications')).toBe('1');
-    expect(row.textContent).toContain('Bea Outside');
-    expect(row.textContent).toContain('Certified');
-    expect(row.textContent).toContain('Not on the people list');
-    expect(row.textContent).not.toContain('@');
-    expect(row.querySelector('button')).toBeNull();
+  it('lists them apart from the table, by name, with a name and a status and nothing to expand', () => {
+    expect(listed()).toEqual(['p-1']);
+    expect(outsideList()?.querySelector('h3')?.textContent).toContain('Learners not on the people list (3)');
+    expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
+    const items = [...outsideList()!.querySelectorAll('li')].map((li) => li.textContent ?? '');
+    expect(items[1]).toContain('Certified');
+    expect(items[0]).toContain('Enrolled');
+    expect(outsideList()!.querySelector('button, [role="button"], [aria-expanded]')).toBeNull();
+    expect(filteredNote()).toBeNull();
   });
 
-  it('opens no person drawer from the learner, and the row still expands, sorts and searches', async () => {
-    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-outside:1-name"]')!.click();
-    await settle();
+  it('counts them in the people card only, and keeps the course and certification cards on the people list', () => {
+    expect(stat('trainees')).toBe('4');
+    expect(stat('courses-enrolled')).toBe('1');
+    expect(stat('certifications')).toBe('0');
+  });
 
-    expect(open).not.toHaveBeenCalled();
-    // The click reached the row: it toggled the training details open.
-    expect(el().querySelector('[data-testid="org-people-trainees-row-outside:1-detail-row"]')?.textContent).toContain('Courses & Certifications (2)');
+  it.each([
+    ['foundation', { foundation: 'lf' }],
+    ['course', { course: 'lfs101' }],
+  ])('hides them while a %s is picked, says why, and leaves them out of the people card', async (_label, values) => {
+    await pick(values);
 
-    fixture.componentInstance.onSort('name');
-    await settle();
-    expect(listed()).toEqual(['p-1', 'outside:1']);
-    fixture.componentInstance.onSort('name');
-    await settle();
-    expect(listed()).toEqual(['outside:1', 'p-1']);
+    expect(outsideList()).toBeNull();
+    expect(filteredNote()?.textContent).toContain('filtered by time range only');
+    expect(listed()).toEqual(['p-1']);
+    expect(stat('trainees')).toBe('1');
 
-    fixture.componentInstance.filterForm.patchValue({ search: 'bea' });
-    await firstValueFrom(timer(200));
-    await settle();
-    expect(listed()).toEqual(['outside:1']);
+    await pick({ foundation: '', course: '' });
+
+    expect(outsideList()).not.toBeNull();
+    expect(stat('trainees')).toBe('4');
+  });
+
+  it('narrows them by the name search, in the list and the people card alike', async () => {
+    await pick({ search: 'bea' });
+
+    expect(listed()).toEqual([]);
+    expect(outsideNames()).toEqual(['Bea Outside']);
     expect(stat('trainees')).toBe('1');
   });
 });

@@ -65,7 +65,7 @@ function mockWarehouse(): void {
       };
     }
     if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
-      return { rows: [{ PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Grace Hopper' }] };
+      return { rows: [{ PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Grace Hopper', IS_CERTIFIED: false }] };
     }
     if (query.includes('MAX(DBT_RUN_AT)')) {
       return { rows: [{ AS_OF: '2026-10-30 04:15:00' }] };
@@ -280,7 +280,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
         return { rows: [{ PERSON_KEY: null, LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
       }
       if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
-        return { rows: [{ PERSON_KEY: null, LEARNER_NAME: null }] };
+        return { rows: [{ PERSON_KEY: null, LEARNER_NAME: null, IS_CERTIFIED: null }] };
       }
       return {
         rows: [
@@ -314,11 +314,12 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v6:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
-    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two', 'outside:1']);
+    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+    expect(response.outsideLearners.map((row) => row.personKey)).toEqual(['outside:1']);
   });
 
   it('treats a v4-shaped entry without the build time as a miss, so the as-of date is never dropped for a TTL', async () => {
@@ -413,8 +414,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '30d');
 
     expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v6:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v6:365d')!)).toBe(true);
   });
 });
 
@@ -524,13 +525,14 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
 });
 
 describe('OrgPeopleTraineesService learners outside the people list (lfx-self-serve#4287)', () => {
-  const detailRow = (personKey: string, courseOrCertId: string, status: string) => ({
+  /** A training row as the warehouse holds it; `offList` stands in for its people-list flag. */
+  const trainingRow = (personKey: string, courseOrCertId: string, status: string, activityTs: string) => ({
     PERSON_KEY: personKey,
     STATUS: status,
     COURSE_OR_CERT_ID: courseOrCertId,
     COURSE_ID: 'course-one',
     COURSE_NAME: 'Course One',
-    ACTIVITY_TS: '2026-09-01 00:00:00',
+    ACTIVITY_TS: activityTs,
     FOUNDATION_ID: 'foundation-one',
     FOUNDATION_NAME: 'Foundation One',
     PROJECT_ID: 'project-one',
@@ -538,9 +540,24 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     COURSE_LEVEL: 'Beginner',
     COURSE_FORMAT: status === 'Enrolled' ? 'E-Learning' : null,
   });
+  const recent = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
+  const old = '2020-01-15 00:00:00';
+  const training = [
+    trainingRow('person-listed', 'enrolled:course-one', 'Enrolled', recent),
+    // On the people list, but with no current-employee row: counted under an opaque key, never listed.
+    trainingRow('person-former', 'enrolled:former', 'Enrolled', recent),
+    // Certified, but only before the 30-day window.
+    trainingRow('ti:outside-one', 'enrolled:outside', 'Enrolled', recent),
+    trainingRow('ti:outside-one', 'certified:outside', 'Certified', old),
+    trainingRow('ti:outside-two', 'enrolled:outside-two', 'Enrolled', old),
+  ];
+  const offList = new Set(['ti:outside-one', 'ti:outside-two']);
+  const learnerNames: Record<string, string | null> = { 'ti:outside-one': 'Zoe Outside', 'ti:outside-two': null };
 
   beforeEach(() => {
+    // Honours the predicates the way Snowflake would, so a read that dropped one would let the wrong rows through.
     execute.mockImplementation(async (query: string) => {
+      const inRange = (row: { ACTIVITY_TS: string }) => !/ACTIVITY_TS >= DATEADD\(day, -30,/.test(query) || row.ACTIVITY_TS === recent;
       if (query.includes('ORG_PEOPLE_ALL_RANGES')) {
         return {
           rows: [
@@ -556,47 +573,78 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
         };
       }
       if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
-        return { rows: [{ PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Outside Learner' }] };
+        if (!/BOOLOR_AGG\(STATUS = 'Certified'\) AS IS_CERTIFIED/.test(query) || !/AND NOT ON_PEOPLE_LIST\b/.test(query)) return { rows: [] };
+        const certified = new Map<string, boolean>();
+        for (const row of training.filter((candidate) => offList.has(candidate.PERSON_KEY) && inRange(candidate))) {
+          certified.set(row.PERSON_KEY, (certified.get(row.PERSON_KEY) ?? false) || row.STATUS === 'Certified');
+        }
+        return { rows: [...certified].map(([key, isCertified]) => ({ PERSON_KEY: key, LEARNER_NAME: learnerNames[key], IS_CERTIFIED: isCertified })) };
       }
       if (query.includes('MAX(DBT_RUN_AT)')) return { rows: [] };
-      return {
-        rows: [
-          detailRow('person-listed', 'enrolled:course-one', 'Enrolled'),
-          detailRow('ti:outside-one', 'enrolled:course-one', 'Enrolled'),
-          detailRow('ti:outside-one', 'certified:cert-one', 'Certified'),
-        ],
-      };
+      const onList = /AND ON_PEOPLE_LIST\b/.test(query);
+      return { rows: training.filter((row) => (!onList || !offList.has(row.PERSON_KEY)) && inRange(row)) };
     });
   });
 
-  it('lists the learner once, with a name and training rows and no ids, title or email', async () => {
-    const response = await service.getTrainees(ACCOUNT, '730d');
+  it('ships a name and one status per learner, and no course, project, foundation, level, format, date or id', async () => {
+    const response = await service.getTrainees(ACCOUNT, 'all');
 
-    expect(response.trainees).toEqual([
-      expect.objectContaining({ personKey: 'person-listed', onPeopleList: true, email: 'listed@company.example' }),
-      { personKey: 'outside:1', lfid: null, cdpMemberId: null, name: 'Outside Learner', title: null, email: null, onPeopleList: false },
+    expect(response.outsideLearners).toEqual([
+      { personKey: 'outside:1', name: 'Zoe Outside', status: 'Certified' },
+      { personKey: 'outside:2', name: null, status: 'Enrolled' },
     ]);
-    expect(response.details.filter((row) => row.personKey === 'outside:1').map((row) => row.status)).toEqual(['Enrolled', 'Certified']);
-    const outsideRows = response.details.filter((row) => row.personKey === 'outside:1');
-    expect(outsideRows.map((row) => row.courseOrCertId)).toEqual(['', '']);
-    expect(JSON.stringify(outsideRows)).not.toMatch(/certified:|enrolled:/);
+    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-listed']);
+    // People-list rows only: the learners' own course rows are never read, so none can reach the wire.
+    expect(response.details.map((row) => row.courseOrCertId)).not.toContain('enrolled:outside');
+    expect(JSON.stringify(response)).not.toMatch(/ti:outside|:outside/);
+  });
+
+  it('derives the status from the range: a certificate dated before it leaves the learner Enrolled', async () => {
+    const response = await service.getTrainees(ACCOUNT, '30d');
+
+    expect(response.outsideLearners).toEqual([{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }]);
+  });
+
+  it('maps a certified flag to Certified and a false or null one to Enrolled', async () => {
+    execute.mockImplementation(async (query: string) =>
+      query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')
+        ? {
+            rows: [
+              { PERSON_KEY: 'ti:a', LEARNER_NAME: 'A', IS_CERTIFIED: true },
+              { PERSON_KEY: 'ti:b', LEARNER_NAME: 'B', IS_CERTIFIED: false },
+              { PERSON_KEY: 'ti:c', LEARNER_NAME: '', IS_CERTIFIED: null },
+            ],
+          }
+        : { rows: [] }
+    );
+
+    const { outsideLearners } = await service.getTrainees(ACCOUNT, '365d');
+
+    expect(outsideLearners.map((learner) => [learner.name, learner.status])).toEqual([
+      ['A', 'Certified'],
+      ['B', 'Enrolled'],
+      [null, 'Enrolled'],
+    ]);
+  });
+
+  it('keeps a former employee behind people-list rows under its own opaque key, apart from every learner', async () => {
+    const response = await service.getTrainees(ACCOUNT, 'all');
+
+    const formerKeys = [...new Set(response.details.map((row) => row.personKey))].filter((key) => key !== 'person-listed');
+    expect(formerKeys).toEqual(['outside:3']);
+    expect(response.details.find((row) => row.personKey === 'outside:3')?.courseOrCertId).toBe('');
     expect(response.details.find((row) => row.personKey === 'person-listed')?.courseOrCertId).toBe('enrolled:course-one');
+    expect(JSON.stringify(response)).not.toContain('person-former');
   });
 
-  it("ships an opaque per-response key in place of the learner's warehouse key, the same in trainees and details", async () => {
-    const response = await service.getTrainees(ACCOUNT, '730d');
-
-    expect(JSON.stringify(response)).not.toContain('ti:outside-one');
-    expect(response.details.map((row) => row.personKey)).toEqual(['person-listed', 'outside:1', 'outside:1']);
-  });
-
-  it('reads the learners of the range from rows outside the people list, and the identity of listed people from rows on it', async () => {
+  it('windows the learners on the range and reads their status, not their rows', async () => {
     await service.getTrainees(ACCOUNT, '90d');
 
     const queries = execute.mock.calls.map(([sql]) => sql as string);
     const outside = queries.find((sql) => sql.includes('ORG_TRAINING_OUTSIDE_LEARNERS'))!;
-    expect(outside).toMatch(/AND NOT ON_PEOPLE_LIST\s+AND ACTIVITY_TS >= DATEADD\(day, -90,/);
-    expect(outside).not.toMatch(/\b(EMAIL|TITLE)\b/);
+    expect(outside).toMatch(/AND NOT ON_PEOPLE_LIST[\s\S]*AND ACTIVITY_TS >= DATEADD\(day, -90,[\s\S]*GROUP BY PERSON_KEY/);
+    expect(outside).not.toMatch(/\b(EMAIL|TITLE|COURSE_ID|COURSE_NAME|PROJECT_ID|FOUNDATION_ID|COURSE_OR_CERT_ID)\b/);
+    expect(queries.find((sql) => sql.includes('COURSE_OR_CERT_ID'))).toMatch(/AND ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
     expect(queries.find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))).toMatch(/AND ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
   });
 });

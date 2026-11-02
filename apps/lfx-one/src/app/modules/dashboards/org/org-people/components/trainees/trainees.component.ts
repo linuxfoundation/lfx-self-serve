@@ -23,6 +23,8 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_TRAINEES_INITIAL_LIMIT,
+  ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE,
+  ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING,
   ORG_TRAINEES_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -31,6 +33,7 @@ import type {
   OrgLensTimeRangeOption,
   OrgTraineeDetailRow,
   OrgTraineeExpandedRowVm,
+  OrgTraineeOutsideLearner,
   OrgTraineeRowVm,
   OrgTraineesResponse,
   OrgTraineeSortColumn,
@@ -43,7 +46,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { TraineesService } from '../../services/trainees.service';
 
-/** Trainees tab body — search + foundation + project + course + level + format + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
+/** Trainees tab body — search + foundation + project + course + level + format + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail, and a name-and-status list of learners not on the people list. */
 @Component({
   selector: 'lfx-org-people-trainees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
@@ -61,6 +64,8 @@ export class TraineesComponent {
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statDefinitions = ORG_TRAINEES_STAT_DEFINITIONS;
   protected readonly statSkeletonLabels: readonly string[] = Object.values(ORG_TRAINEES_STAT_DEFINITIONS).map((stat) => stat.label);
+  protected readonly outsideLearnersHeading = ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING;
+  protected readonly outsideLearnersFilteredNote = ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE;
 
   public readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -122,6 +127,14 @@ export class TraineesComponent {
   public readonly formatOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Formats', value: '' }, ...this.response().filterOptions.formats]);
   // Certified rows carry no format, so a picked format leaves enrollments only; the template says so while one is picked.
   protected readonly formatPicked: Signal<boolean> = computed(() => !!this.filterValues().format);
+  // Learners not on the people list carry no course data, so no foundation, project, course, level or format can match them.
+  protected readonly courseFilterPicked: Signal<boolean> = computed(() => {
+    const { foundation, project, course, level, format } = this.filterValues();
+    return !!(foundation || project || course || level || format);
+  });
+
+  // Learners not on the people list: already the range's (the BFF windows them), narrowed by the name search only, by name.
+  protected readonly outsideLearners: Signal<OrgTraineeOutsideLearner[]> = computed(() => this.initOutsideLearners());
 
   // Detail set is the canonical source — every filter-aware derivation (stats, rows, expanded section) reads it.
   protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
@@ -180,8 +193,6 @@ export class TraineesComponent {
 
   public onPersonClick(row: OrgTraineeRowVm, event: Event): void {
     event.stopPropagation();
-    // A learner outside the people list carries an opaque key no person endpoint accepts, so there is no drawer to open.
-    if (!row.onPeopleList) return;
     this.drawer.open({
       personKey: row.personKey,
       name: row.name,
@@ -261,6 +272,11 @@ export class TraineesComponent {
         certKeys.add(composite);
       }
     }
+    // The people card adds the listed learners outside the people list, as the Training page's people with training
+    // activity does; the course and certification cards stay on the people list, as its certification tiles do.
+    if (!this.courseFilterPicked()) {
+      for (const learner of this.outsideLearners()) trainees.add(learner.personKey);
+    }
     const coursesEnrolled = courseKeys.size;
     const certifications = certKeys.size;
     const completionRate = coursesEnrolled === 0 ? 0 : Math.round((certifications / coursesEnrolled) * 100);
@@ -316,7 +332,6 @@ export class TraineesComponent {
         email: trainee.email,
         initials: computePersonInitials(trainee.name),
         avatarColorClass: avatarColorClass(trainee.personKey),
-        onPeopleList: trainee.onPeopleList,
         status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
         coursesCount: courseIds.size,
         certsCount: certCourseIds.size,
@@ -412,6 +427,18 @@ export class TraineesComponent {
       out[personKey] = collapseExpandedRows(rows);
     }
     return out;
+  }
+
+  private initOutsideLearners(): OrgTraineeOutsideLearner[] {
+    const q = (this.filterValues().search ?? '').trim().toLowerCase();
+    const learners = q ? this.response().outsideLearners.filter((learner) => (learner.name ?? '').toLowerCase().includes(q)) : this.response().outsideLearners;
+    // By name; a learner without one sorts last.
+    return [...learners].sort((a, b) => {
+      if (a.name === b.name) return 0;
+      if (a.name === null) return 1;
+      if (b.name === null) return -1;
+      return a.name.localeCompare(b.name);
+    });
   }
 
   private initResponse(): Signal<OrgTraineesResponse> {

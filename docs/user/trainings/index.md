@@ -57,9 +57,11 @@ The **People with training activity** card on the Org Overview page shows the sa
 
 ### People › Trainees
 
-People › Trainees lists everyone with training activity in the selected time range. Filter by foundation, project, course, level or format, or search by name. **Format** applies to enrollments only, since certificates carry no format, so picking a format hides certificates. The cards at the top follow the time range and the filters, and state the date of the data.
+People › Trainees lists the people on your organization's people list with training activity in the selected time range. Filter by foundation, project, course, level or format, or search by name. **Format** applies to enrollments only, since certificates carry no format, so picking a format hides certificates. The cards at the top follow the time range and the filters, and state the date of the data.
 
-Learners linked to your organization who are not on its people list appear with their name, marked **Not on the people list**, and their training status only. They have no detail panel.
+Learners linked to your organization who are not on its people list appear in a separate list below the table, **Learners not on the people list**, with their name and one overall status for the time range: **Certified** if they earned a certificate in the range, **Enrolled** otherwise. No course, project or date is shown for them. The list follows the time range and the name search only, so it is hidden while a foundation, project, course, level or format is selected.
+
+**People with training activity** counts the people in the table plus the learners in that list, so with the time range set to All time it matches the same number at the top of the Training page; while a foundation, project, course, level or format is selected it counts people-list members only. **Courses taken**, **Certifications** and **Completion rate** count people-list members only, like the certification numbers at the top of the Training page.
 
 ### Which enrollments and certificates are counted
 

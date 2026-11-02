@@ -118,28 +118,41 @@ export const ORG_TRAINING_STAT_TILES: readonly OrgTrainingStatTileLayout[] = [
   },
 ];
 
-/** Trainees stat cards: same definitions as the strip, windowed by the page's range and narrowed by its filters. */
+/**
+ * Trainees stat cards: same definitions as the strip, windowed by the page's range and narrowed by its filters. The people
+ * card adds the learners outside the people list while no course-level filter is picked, as the strip's people with
+ * training activity does; the course and certification cards count people-list rows only, as the strip's certification
+ * tiles do.
+ */
 export const ORG_TRAINEES_STAT_DEFINITIONS: Readonly<Record<OrgTraineesStatKey, OrgTrainingStatDefinition>> = {
   trainees: {
     label: ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label,
     unit: 'people',
     definition:
-      'Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range and matching the filters.',
+      "Distinct people with at least one training or certification enrollment, or a certificate, dated in the selected range: people on this organization's people list matching the filters, plus learners linked to this organization who are not on its people list while no foundation, project, course, level or format is selected.",
   },
   coursesEnrolled: {
     label: 'Courses taken',
     unit: 'person-course pairs',
     definition:
-      'Distinct person-and-course pairs with an enrollment or a certificate dated in the selected range and matching the filters; a person in two courses counts twice, a course retaken counts once.',
+      "Distinct person-and-course pairs for people on this organization's people list, with an enrollment or a certificate dated in the selected range and matching the filters; a person in two courses counts twice, a course retaken counts once. Learners not on the people list are not counted.",
   },
   certifications: {
     label: 'Certifications',
     unit: 'person-course pairs',
-    definition: 'Courses taken that ended in a current certificate, dated in the selected range and matching the filters.',
+    definition:
+      "Courses taken by people on this organization's people list that ended in a current certificate, dated in the selected range and matching the filters. Learners not on the people list are not counted.",
   },
   completionRate: {
     label: 'Completion rate',
     unit: '% of courses taken',
-    definition: 'Certifications divided by courses taken, in the selected range and matching the filters.',
+    definition: "Certifications divided by courses taken, for people on this organization's people list, in the selected range and matching the filters.",
   },
 };
+
+/** Heading of the Trainees list of learners linked to the organization who are not on its people list (lfx-self-serve#4287). */
+export const ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING = 'Learners not on the people list';
+
+/** Shown in place of that list while a course-level filter is picked: the list carries no course data to filter on. */
+export const ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE =
+  'Learners not on the people list are filtered by time range only, so they are hidden while a foundation, project, course, level or format is selected.';
