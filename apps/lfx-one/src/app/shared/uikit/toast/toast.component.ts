@@ -189,7 +189,8 @@ export class UiToastComponent {
   }
 
   private initDescriptionClasses(): Signal<string> {
-    return computed(() => `block copy-13 ${this.variant() === 'dark' ? 'text-ui-neutral-300' : ''}`.trim());
+    // leading-[20px]: the dark description keeps the toast's 20px line, as in the library.
+    return computed(() => `block copy-13 ${this.variant() === 'dark' ? 'leading-[20px] text-ui-neutral-300' : ''}`.trim());
   }
 
   private initShowDismiss(): Signal<boolean> {

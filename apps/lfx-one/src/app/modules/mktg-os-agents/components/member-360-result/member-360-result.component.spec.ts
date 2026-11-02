@@ -324,6 +324,38 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
   });
   it.each([
+    { values: [null], note: 'No list-price value for this renewal' },
+    { values: [null, null], note: 'No list-price value for these 2 renewals' },
+    { values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
+    { values: [25000, null, null], note: '$25,000 known at list price · 2 without a value' },
+    { values: [25000, 15000], note: '$40,000 at list price' },
+    { values: [0], note: '$0 at list price' },
+    { values: [0, null], note: '$0 known at list price · 1 without a value' },
+    { values: [], note: `No renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days` },
+  ])('shows renewal value coverage for $values', ({ values, note }) => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = values.map((annualValue, index) => ({ ...row, annual_value: annualValue, days_to_renewal: index === 0 ? 0 : 120 }));
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe(String(values.length));
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe(note);
+    if (values.length > 0 && values.every((value) => value === null)) expect(card.textContent).not.toContain('$0');
+  });
+  it('excludes unknown, overdue and later renewals from both the subtotal and missing-value count', () => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = [
+      { ...row, annual_value: 25000, days_to_renewal: 120 },
+      ...[null, -1, 121].flatMap((daysToRenewal) => [
+        { ...row, annual_value: null, days_to_renewal: daysToRenewal },
+        { ...row, annual_value: 90000, days_to_renewal: daysToRenewal },
+      ]),
+    ];
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe('1');
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe('$25,000 at list price');
+  });
+  it.each([
     { days: null, classes: 'text-gray-500' },
     { days: MEMBER_360_RENEWAL_RED_DAYS, classes: 'font-bold text-red-700' },
     { days: MEMBER_360_RENEWAL_RED_DAYS + 1, classes: 'font-semibold text-amber-700' },

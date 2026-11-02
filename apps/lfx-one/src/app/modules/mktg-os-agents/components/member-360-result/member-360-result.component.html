@@ -23,8 +23,8 @@
     @for (card of cards(); track card.key) {
       <div class="flex flex-col gap-1 rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'member-360-summary-' + card.key">
         <span class="text-sm text-gray-500">{{ card.label }}</span>
-        <b class="text-2xl" [class.text-red-700]="card.key === 'renewals'">{{ card.value }}</b>
-        <span class="text-sm text-gray-500">{{ card.note }}</span>
+        <b class="text-2xl" [class.text-red-700]="card.key === 'renewals'" [attr.data-testid]="'member-360-summary-' + card.key + '-value'">{{ card.value }}</b>
+        <span class="text-sm text-gray-500" [attr.data-testid]="'member-360-summary-' + card.key + '-note'">{{ card.note }}</span>
       </div>
     }
   </div>

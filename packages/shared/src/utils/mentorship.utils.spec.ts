@@ -76,6 +76,7 @@ import { isSafeUploadFileName } from './file.utils';
 import {
   buildMentorshipMenteeApplicationView,
   hasMentorshipTaskFileExtension,
+  mentorshipTaskFileViewType,
   sanitizeMentorshipTaskFileName,
   buildMentorshipMenteeDemographicsUpdate,
   buildMentorshipMenteeProfileUpdate,
@@ -2159,6 +2160,34 @@ describe('hasMentorshipTaskFileExtension', () => {
     for (const name of ['a.png', 'a.pdf.exe', 'a.pdfx', 'pdf', 'a.', '']) {
       expect(hasMentorshipTaskFileExtension(name)).toBe(false);
     }
+  });
+});
+
+describe('mentorshipTaskFileViewType', () => {
+  it('opens a PDF or plain-text response as itself, whatever the name says', () => {
+    expect(mentorshipTaskFileViewType('application/pdf', 'essay.docx')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('Text/Plain; charset=iso-8859-1', null)).toBe('text/plain;charset=utf-8');
+  });
+
+  it('refuses any other specific type, even under a viewable name', () => {
+    expect(mentorshipTaskFileViewType('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.pdf')).toBeNull();
+    expect(mentorshipTaskFileViewType('application/msword', 'a.doc')).toBeNull();
+    expect(mentorshipTaskFileViewType('text/html', 'a.txt')).toBeNull();
+  });
+
+  it('never matches an inherited key', () => {
+    for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(mentorshipTaskFileViewType(type, 'a.pdf')).toBeNull();
+    }
+  });
+
+  it('reads the extension when the type is missing or generic', () => {
+    expect(mentorshipTaskFileViewType(null, 'Report.PDF')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('', 'notes.v2.txt')).toBe('text/plain;charset=utf-8');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.pdf')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.docx')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, 'submission')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, null)).toBeNull();
   });
 });
 

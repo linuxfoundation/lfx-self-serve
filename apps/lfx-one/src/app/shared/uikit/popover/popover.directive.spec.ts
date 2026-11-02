@@ -64,6 +64,16 @@ const MULTI_SELECT_TEMPLATE = `
   </ng-template>
 `;
 
+const MULTI_SELECT_FIRST_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <lfx-ui-multi-select label="Projects">
+      <lfx-ui-option value="cncf" label="CNCF" />
+    </lfx-ui-multi-select>
+    <button id="next" type="button">Apply</button>
+  </ng-template>
+`;
+
 const COMBOBOX_TEMPLATE = `
   <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
   <ng-template #panel>
@@ -81,6 +91,15 @@ const NESTED_TEMPLATE = `
     <button id="outer-last" type="button">Outer last</button>
   </ng-template>
   <ng-template #inner><input id="inner-first" aria-label="Search" /><button id="inner-last" type="button">Inner last</button></ng-template>
+`;
+
+const NESTED_LAST_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="outer">Outer</button>
+  <ng-template #outer>
+    <input id="outer-first" aria-label="Search" />
+    <button id="inner-trigger" type="button" [lfxUiPopover]="inner">Inner</button>
+  </ng-template>
+  <ng-template #inner><button id="inner-last" type="button">Inner last</button></ng-template>
 `;
 
 const BUTTON_TEMPLATE = `
@@ -762,19 +781,53 @@ describe('UiPopoverDirective', () => {
       return box;
     };
 
-    it.each([
-      ['Tab', false, false],
-      ['Shift+Tab', true, true],
-    ])('%s from an open list, with the MultiSelect as the only field, closes the list and the popover onto the host', async (_name, shiftKey, prevented) => {
+    it('Tab from an open list, with the MultiSelect as the only field, closes the list and the popover onto the host', async () => {
       const box = await focusRow();
 
-      const event = key(box, 'Tab', { shiftKey });
+      const event = key(box, 'Tab');
       await settle();
 
       expect(container.querySelector('[data-testid="ui-multi-select-panel"]')).toBeNull();
       expect(panel()).toBeNull();
       expect(document.activeElement).toBe(trigger());
-      expect(event.defaultPrevented).toBe(prevented);
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('Shift+Tab from an open list stops on the MultiSelect trigger and keeps the popover open', async () => {
+      const box = await focusRow();
+
+      const event = key(box, 'Tab', { shiftKey: true });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-multi-select-panel"]')).toBeNull();
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(container.querySelector('[data-testid="ui-multi-select-trigger"]'));
+      expect(event.defaultPrevented).toBe(true);
+    });
+  });
+
+  describe('with a multi-select before another field', () => {
+    beforeEach(async () => mount(MULTI_SELECT_FIRST_TEMPLATE, [UiMultiSelectComponent, UiOptionComponent]));
+
+    it('Tab from an open list closes only the list, and the popover stays open as focus moves to the next field', async () => {
+      await open();
+      const select = container.querySelector('[data-testid="ui-multi-select-trigger"]') as HTMLElement;
+      select.click();
+      await settle();
+      const box = container.querySelector('[data-testid="ui-multi-select-panel"] input[type="checkbox"]') as HTMLElement;
+      box.focus();
+
+      const event = key(box, 'Tab');
+      await settle();
+      expect(container.querySelector('[data-testid="ui-multi-select-panel"]')).toBeNull();
+      expect(document.activeElement).toBe(select);
+      expect(event.defaultPrevented).toBe(false);
+
+      // jsdom does not move focus on Tab, so make the browser's move from the trigger to the next field.
+      el('next').focus();
+      await settle();
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(el('next'));
     });
   });
 
@@ -815,6 +868,25 @@ describe('UiPopoverDirective', () => {
       expect(container.querySelectorAll('[data-testid="ui-popover-panel"]').length).toBe(1);
       expect(panel()).not.toBeNull();
       expect(document.activeElement).toBe(el('inner-trigger'));
+    });
+  });
+
+  describe('with a popover inside as the last field', () => {
+    beforeEach(async () => mount(NESTED_LAST_TEMPLATE));
+
+    it('Tab from the inner last field closes both popovers onto the outer host', async () => {
+      await open();
+      el('inner-trigger').click();
+      await settle();
+      expect(container.querySelectorAll('[data-testid="ui-popover-panel"]').length).toBe(2);
+      el('inner-last').focus();
+
+      const event = key(el('inner-last'), 'Tab');
+      await settle();
+
+      expect(container.querySelectorAll('[data-testid="ui-popover-panel"]').length).toBe(0);
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
     });
   });
 
