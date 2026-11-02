@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,7 +15,7 @@ import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/i
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
@@ -33,7 +33,6 @@ export class MailingListSyncSettingsComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
-  private readonly destroyRef = inject(DestroyRef);
 
   public readonly mailingList = input.required<GroupsIOMailingList>();
   public readonly updated = output<GroupsIOMailingList>();
@@ -46,6 +45,10 @@ export class MailingListSyncSettingsComponent {
     { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE },
   ];
 
+  public readonly form = new FormGroup({
+    direction: new FormControl<MailingListSyncMode>(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, { nonNullable: true }),
+  });
+
   // Dark-launch gate for this whole section (#4024). UI-only — see constant doc comment for the
   // real-time auto-sync execution kill switch tracked separately in #4878.
   protected readonly syncEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
@@ -56,10 +59,6 @@ export class MailingListSyncSettingsComponent {
   protected readonly isWriter = computed(() => this.mailingList().writer === true);
 
   protected readonly saving = signal(false);
-
-  public readonly form = new FormGroup({
-    direction: new FormControl<MailingListSyncMode>(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, { nonNullable: true }),
-  });
 
   protected readonly committee = computed(() => this.mailingList().committees?.[0] ?? null);
   protected readonly syncOn = computed(() => !!this.mailingList().sync_mode && this.mailingList().sync_mode !== MailingListSyncMode.MANUAL);
@@ -83,9 +82,10 @@ export class MailingListSyncSettingsComponent {
     this.form.controls.direction.valueChanges.pipe(takeUntilDestroyed()).subscribe((direction) => this.save(direction));
 
     // Only one direction is allowed per committee at a time — lock the selector whenever another
-    // linked mailing list already has one configured.
+    // linked mailing list already has one configured. Also lock it while a save is in flight so a
+    // second direction change can't fire an overlapping PUT that races the first (#4880 review).
     effect(() => {
-      if (this.activeSync()) {
+      if (this.saving() || this.activeSync()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
@@ -98,10 +98,9 @@ export class MailingListSyncSettingsComponent {
       this.save(MailingListSyncMode.MANUAL);
       return;
     }
-    const active = this.activeSync();
-    const direction = active?.sync_mode ?? this.form.controls.direction.value;
-    this.form.controls.direction.setValue(direction, { emitEvent: false });
-    this.save(direction);
+    // The toggle is disabled whenever activeSync() is set, so checked=true only ever fires when
+    // activeSync() is null — always fall back to the selector's current value (#4880 review).
+    this.save(this.form.controls.direction.value);
   }
 
   protected onSyncNow(): void {
@@ -122,9 +121,15 @@ export class MailingListSyncSettingsComponent {
         catchError((error) => {
           console.error('Failed to update mailing list sync settings', error);
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update sync settings' });
+          // Restore the selector to the persisted direction — the form control already picked up
+          // the attempted value via valueChanges, but the server never accepted it (#4880 review).
+          const persisted = ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+          this.form.controls.direction.setValue(persisted, { emitEvent: false });
           return of(null);
         }),
-        takeUntilDestroyed(this.destroyRef)
+        // Mailing-list writes are fire-and-forget in this codebase (take(1), not
+        // takeUntilDestroyed) — leaving the page mid-save must not cancel the PUT (#4880 review).
+        take(1)
       )
       .subscribe((result) => {
         this.saving.set(false);
@@ -161,11 +166,18 @@ export class MailingListSyncSettingsComponent {
       toObservable(this.committee).pipe(
         map((committee) => committee?.uid ?? null),
         distinctUntilChanged(),
-        switchMap((committeeUid) => (committeeUid ? this.mailingListService.getMailingListsByCommittee(committeeUid) : of([]))),
-        catchError((error) => {
-          console.error('Failed to load sibling mailing lists for sync settings', error);
-          return of([] as GroupsIOMailingList[]);
-        })
+        // Gate on the feature flag and writer status so this section's hidden state (enforced in
+        // the template) doesn't still add a request to every committee-linked list view (#4880 review).
+        switchMap((committeeUid) =>
+          committeeUid && this.syncEnabled() && this.isWriter()
+            ? this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
+                catchError((error) => {
+                  console.error('Failed to load sibling mailing lists for sync settings', error);
+                  return of([] as GroupsIOMailingList[]);
+                })
+              )
+            : of([])
+        )
       ),
       { initialValue: [] as GroupsIOMailingList[] }
     );

@@ -19,6 +19,24 @@
         id="sync-settings-toggle"
         dataTest="sync-settings-toggle"></lfx-toggle>
 
+      @if (activeSync(); as active) {
+        <div
+          class="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+          data-testid="active-committee-sync-notice">
+          <i class="fa-light fa-circle-check mt-0.5 text-green-600"></i>
+          <span>
+            Active {{ committeeLabel.singular | lowercase }} sync: <strong>{{ active.title }}</strong> already syncs with
+            {{ committeeRef.name || committeeLabel.singular }} in the
+            <strong>{{
+              active.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST
+                ? committeeLabel.singular + ' → Mailing List'
+                : 'Mailing List → ' + committeeLabel.singular
+            }}</strong>
+            direction. Only one mailing list per {{ committeeLabel.singular | lowercase }} can have automatic sync configured at a time.
+          </span>
+        </div>
+      }
+
       @if (syncOn()) {
         <div class="flex flex-col gap-2">
           <span class="text-sm font-medium text-gray-700">Sync direction</span>
@@ -30,24 +48,6 @@
             optionValue="value"
             data-testid="sync-settings-direction"></lfx-select-button>
         </div>
-
-        @if (activeSync(); as active) {
-          <div
-            class="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
-            data-testid="active-committee-sync-notice">
-            <i class="fa-light fa-circle-check mt-0.5 text-green-600"></i>
-            <span>
-              Active {{ committeeLabel.singular | lowercase }} sync: <strong>{{ active.title }}</strong> already syncs with
-              {{ committeeRef.name || committeeLabel.singular }} in the
-              <strong>{{
-                active.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST
-                  ? committeeLabel.singular + ' → Mailing List'
-                  : 'Mailing List → ' + committeeLabel.singular
-              }}</strong>
-              direction. Only one mailing list per {{ committeeLabel.singular | lowercase }} can have automatic sync configured at a time.
-            </span>
-          </div>
-        }
 
         <div>
           <lfx-button
