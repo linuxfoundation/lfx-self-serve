@@ -111,7 +111,7 @@ const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
 const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
-const SQLITE_ENROLLED_WINDOW = `date(ACTIVITY_TS) >= date('now', '-12 months') AND date(ACTIVITY_TS) < date('now')`;
+const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
 // SQLite form of the bound range start in the maintainer roles overlap predicate.
 const SQLITE_DAYS_BEFORE_TODAY = "date('now', '-' || ? || ' days')";
 let database: SqlDatabase;
@@ -291,7 +291,7 @@ beforeEach(() => {
       .prepare(
         query
           .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
-          .replaceAll(orgTrainingEnrolledWindowPredicate(), SQLITE_ENROLLED_WINDOW)
+          .replaceAll(orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS'), SQLITE_ENROLLED_WINDOW)
           .replaceAll('DATEADD(day, 0 - ?, CURRENT_DATE())', SQLITE_DAYS_BEFORE_TODAY)
           .replace(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 days')")
           .replaceAll('CURRENT_DATE()', "date('now')")
@@ -625,6 +625,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
       CREATE TABLE ORG_PEOPLE_TRAINING (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
       );
+      CREATE TABLE ORG_PEOPLE_TRAINING_COURSE_STATUS (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT
+      );
     `);
     database
       .prepare('INSERT INTO ORG_PEOPLE_COMMITTEE_MEMBERSHIP VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -643,8 +646,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
     database
-      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals', '2026-04-01');
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'course-one', 'Certified', 'Project Fundamentals', null, '2026-04-01');
   });
 
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
@@ -662,11 +665,14 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   it('lists certificates of any age but enrollments from the last 12 months only, today excluded', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)');
-    insert.run(ACCOUNT, personKey, 'cert-old', 'Certified', 'course-old-cert', 'Old Certificate', daysAgo(1500));
-    insert.run(ACCOUNT, personKey, 'enroll-recent', 'Enrolled', 'course-recent', 'Recent Enrollment', daysAgo(30));
-    insert.run(ACCOUNT, personKey, 'enroll-old', 'Enrolled', 'course-old', 'Old Enrollment', daysAgo(500));
-    insert.run(ACCOUNT, personKey, 'enroll-today', 'Enrolled', 'course-today', 'Today Enrollment', daysAgo(0));
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'course-old-cert', 'Certified', 'Old Certificate', null, daysAgo(1500));
+    insert.run(ACCOUNT, personKey, 'course-recent', 'Enrolled', 'Recent Enrollment', daysAgo(30), null);
+    insert.run(ACCOUNT, personKey, 'course-old', 'Enrolled', 'Old Enrollment', daysAgo(500), null);
+    insert.run(ACCOUNT, personKey, 'course-today', 'Enrolled', 'Today Enrollment', daysAgo(0), null);
+    // Another person's and another account's courses never reach this drawer.
+    insert.run(ACCOUNT, 'person-two', 'course-other-person', 'Enrolled', 'Other Person', daysAgo(30), null);
+    insert.run('other-account', personKey, 'course-other-account', 'Certified', 'Other Account', null, daysAgo(30));
 
     const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
@@ -676,26 +682,28 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['course-recent', 'Enrolled'],
     ]);
     expect(detail.training[0]?.coursesCount).toBe(3);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v5:${personKey}`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v6:${personKey}`)!)).toBe(true);
   });
 
-  it('shows one row per course, a certificate superseding a later re-enrollment, and counts the rows shown', async () => {
-    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?, ?)');
-    insert.run(ACCOUNT, personKey, 'cert-two', 'Certified', 'course-two', 'Course Two', daysAgo(400));
-    insert.run(ACCOUNT, personKey, 'enroll-two', 'Enrolled', 'course-two', 'Course Two', daysAgo(30));
-    insert.run(ACCOUNT, personKey, 'enroll-three', 'Enrolled', null, 'Course Three', daysAgo(20));
-    insert.run(ACCOUNT, personKey, 'enroll-three', 'Enrolled', null, 'Course Three', daysAgo(10));
+  // lf-dbt resolves one status per course, Certified winning over a re-enrollment; the drawer shows it as is, so a
+  // certified course keeps its certificate whatever the age of the re-enrollment beside it.
+  it('shows the resolved status per course, Certified with an enrollment beside it, and counts the rows shown', async () => {
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'course-two', 'Certified', 'Course Two', daysAgo(30), daysAgo(400));
+    insert.run(ACCOUNT, personKey, 'course-three', 'Certified', 'Course Three', daysAgo(900), daysAgo(800));
+    insert.run(ACCOUNT, personKey, 'course-four', 'Enrolled', 'Course Four', daysAgo(10), null);
 
     const { training } = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
 
     expect(training.map((row) => [row.courseId, row.status]).sort()).toEqual([
+      ['course-four', 'Enrolled'],
       ['course-one', 'Certified'],
+      ['course-three', 'Certified'],
       ['course-two', 'Certified'],
-      ['enroll-three', 'Enrolled'],
     ]);
     for (const row of training) {
-      expect(row.coursesCount).toBe(3);
-      expect(row.certificationsCount).toBe(2);
+      expect(row.coursesCount).toBe(4);
+      expect(row.certificationsCount).toBe(3);
     }
   });
 

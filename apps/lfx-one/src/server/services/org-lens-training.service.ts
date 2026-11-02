@@ -129,22 +129,23 @@ export class OrgLensTrainingService {
     const searchFilter = searchQuery ? 'AND (b.COURSE_NAME ILIKE ? OR b.FOUNDATION_NAME ILIKE ?)' : '';
     const levelFilter = level ? 'AND UPPER(d.LEVEL) = ?' : '';
 
+    // One row per (person, course) with its status resolved in lf-dbt (Certified wins over a re-enrollment); certificates
+    // of any age, in progress only when enrolled in the last 12 months. ORG_PEOPLE_ALL is unique per (account, person),
+    // so each person counts once per course and only people on the org's people list count.
     const filteredCte = `
       WITH base AS (
         SELECT
-          COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)        AS COURSE_ID,
-          MAX(t.COURSE_NAME)                                AS COURSE_NAME,
-          MAX(t.FOUNDATION_NAME)                            AS FOUNDATION_NAME,
-          -- One status per (person, course), Certified winning: a certified person who re-enrolled counts once, as certified.
-          COUNT(DISTINCT CASE WHEN t.STATUS = 'Certified' THEN t.PERSON_KEY END)                                  AS CERTIFIED_COUNT,
-          COUNT(DISTINCT t.PERSON_KEY) - COUNT(DISTINCT CASE WHEN t.STATUS = 'Certified' THEN t.PERSON_KEY END)   AS IN_PROGRESS_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
+          s.COURSE_ID,
+          MAX(s.COURSE_NAME)                AS COURSE_NAME,
+          MAX(s.FOUNDATION_NAME)            AS FOUNDATION_NAME,
+          COUNT_IF(s.STATUS = 'Certified')  AS CERTIFIED_COUNT,
+          COUNT_IF(s.STATUS = 'Enrolled')   AS IN_PROGRESS_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s
         INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-          ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
-        WHERE t.ACCOUNT_ID = ?
-          AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
-          AND (t.STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS')}))
-        GROUP BY COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
+          ON p.ACCOUNT_ID = s.ACCOUNT_ID AND p.PERSON_KEY = s.PERSON_KEY
+        WHERE s.ACCOUNT_ID = ?
+          AND (s.STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('s.LAST_ENROLLED_TS')}))
+        GROUP BY s.COURSE_ID
       ),
       ${scopedCourseCatalogDimCte('SELECT DISTINCT b.COURSE_ID FROM base b')},
       filtered AS (
@@ -166,7 +167,7 @@ export class OrgLensTrainingService {
 
     const raw = await withOrgCache(
       accountId,
-      `certifications:v3:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
+      `certifications:v4:${paramSignature([searchQuery ?? null, level, pageSize, offset, sortField, sortOrder])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () =>
         this.fetchPagedCourseRows<OrgCertificationRow>(req, 'get_org_certifications', filteredCte, {
@@ -264,40 +265,38 @@ export class OrgLensTrainingService {
       status,
     });
 
-    // Certificates are never windowed; in progress means a 12-month enrollment and no certificate for the course,
-    // so a certified person who re-enrolled is listed as certified only.
-    const enrolledWindow = orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS');
-    const statusCondition = status === 'certified' ? "t.STATUS = 'Certified'" : `(t.STATUS = 'Certified' OR (${enrolledWindow}))`;
-    const statusHaving = status === 'certified' ? '' : "HAVING COUNT_IF(t.STATUS = 'Certified') = 0";
+    // Status resolved in lf-dbt: a certified person who re-enrolled is Certified only. Certificates are never windowed;
+    // in progress means status Enrolled with an enrollment in the last 12 months.
+    const statusCondition =
+      status === 'certified' ? "s.STATUS = 'Certified'" : `s.STATUS = 'Enrolled' AND (${orgTrainingEnrolledWindowPredicate('s.LAST_ENROLLED_TS')})`;
     const searchFilter = searchQuery ? 'AND UPPER(p.NAME) LIKE UPPER(?)' : '';
 
+    // ORG_PEOPLE_ALL is unique per (account, person) and the status table per (account, person, course): one row each.
     const sql = `
       WITH ${scopedCourseCatalogDimCte('SELECT ? AS COURSE_ID')}
       SELECT
         p.PERSON_KEY        AS CONTACT_ID,
         p.NAME              AS NAME,
         p.TITLE             AS JOB_TITLE,
-        MAX(t.COURSE_NAME)  AS COURSE_NAME,
+        s.COURSE_NAME       AS COURSE_NAME,
         COUNT(*) OVER ()    AS TOTAL_MATCHES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s
       INNER JOIN course_dim d
-        ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
-      JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
-        ON p.ACCOUNT_ID = t.ACCOUNT_ID AND p.PERSON_KEY = t.PERSON_KEY
-      WHERE t.ACCOUNT_ID = ?
-        AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) = ?
+        ON d.COURSE_ID = s.COURSE_ID
+      INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL p
+        ON p.ACCOUNT_ID = s.ACCOUNT_ID AND p.PERSON_KEY = s.PERSON_KEY
+      WHERE s.ACCOUNT_ID = ?
+        AND s.COURSE_ID = ?
         AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
         AND ${statusCondition}
         ${searchFilter}
-      GROUP BY p.PERSON_KEY, p.NAME, p.TITLE
-      ${statusHaving}
       ORDER BY p.NAME ASC NULLS LAST
       LIMIT ${MAX_ORG_CERT_EMPLOYEES}
     `;
 
     const rows = await withOrgCache(
       accountId,
-      `certification-employees:v3:${paramSignature([courseId, status, searchQuery ?? null])}`,
+      `certification-employees:v4:${paramSignature([courseId, status, searchQuery ?? null])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchRosterRows(req, 'get_certification_employees', sql, [courseId, accountId, courseId], searchQuery, { courseId }),
       isRosterRowArray
