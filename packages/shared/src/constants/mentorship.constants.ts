@@ -521,7 +521,8 @@ export const MENTORSHIP_ACTIVE_APPLICATION_STATUSES: readonly MentorshipMenteeSt
 
 /**
  * Row actions on the admin Current Mentees tab. Source of the
- * `MentorshipCurrentMenteeAction` union; declaration order is the menu order.
+ * `MentorshipCurrentMenteeAction` union; each status's menu order is set by
+ * `MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS`.
  */
 export const MENTORSHIP_CURRENT_MENTEE_ACTIONS = [
   'accept',

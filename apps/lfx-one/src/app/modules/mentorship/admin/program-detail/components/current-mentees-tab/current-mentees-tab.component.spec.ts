@@ -393,7 +393,7 @@ describe('CurrentMenteesTabComponent', () => {
     expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
   });
 
-  it('keeps the Note link on a row with no actions left', () => {
+  it('keeps the Note link on a graduated row', () => {
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 
