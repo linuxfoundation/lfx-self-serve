@@ -200,8 +200,8 @@ describe('VoteCastDrawerComponent — deadline fallback (GH-3823 review)', () =>
 /**
  * GH-2326 description rendering: descriptions are poll-creator-authored rich HTML (PCC editor)
  * rendered through Angular's [innerHTML] sanitizer, while legacy plain-text descriptions rely on
- * whitespace-pre-line to keep their line breaks. Both tests fail against the pre-fix template —
- * interpolation showed the markup as literal text, and the element carried no whitespace-pre-line.
+ * whitespace-pre-wrap to keep their line breaks, blank lines and indentation (#4727). Both tests fail against the pre-fix template —
+ * interpolation showed the markup as literal text, and the element carried no whitespace-pre-wrap.
  */
 describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
   it('renders a rich-HTML description as elements, not literal tags', async () => {
@@ -224,24 +224,27 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     expect(description!.textContent).not.toContain('<p>');
   });
 
-  it('preserves a newline-only plain-text description via whitespace-pre-line', async () => {
+  it('preserves plain-text whitespace via whitespace-pre-wrap', async () => {
     const detail = new Subject<Vote>();
     await setup(vi.fn().mockReturnValue(detail.asObservable()));
 
     await openWithoutListVote();
 
-    detail.next({ ...VOTE, description: 'Line one\nLine two' });
+    detail.next({ ...VOTE, description: '  Line one\n\n\n    - indented  bullet\n1.  Line two' });
     detail.complete();
     await fixture.whenStable();
     fixture.detectChanges();
 
     const description = el('vote-cast-drawer-description');
     expect(description).toBeTruthy();
-    // whitespace-pre-line is what preserves the legacy plain-text line breaks.
-    expect(description!.classList.contains('whitespace-pre-line')).toBe(true);
-    expect(description!.textContent).toBe('Line one\nLine two');
-    // Plain text must not parse into child elements.
-    expect(description!.children).toHaveLength(0);
+    // whitespace-pre-wrap preserves line breaks, blank lines, repeated spaces and indentation while still wrapping.
+    expect(description!.querySelector('span.whitespace-pre-wrap')).toBeTruthy();
+    expect(description!.classList.contains('whitespace-normal')).toBe(true);
+    expect(description!.classList.contains('whitespace-pre-line')).toBe(false);
+    expect(description!.classList.contains('prose')).toBe(true);
+    expect(description!.textContent).toBe('  Line one\n\n\n    - indented  bullet\n1.  Line two');
+    // The plain-text wrapper must not interpret user text as HTML.
+    expect(description!.querySelector('span.whitespace-pre-wrap')!.children).toHaveLength(0);
   });
 
   it('neutralizes attack payloads via the Angular sanitizer', async () => {
