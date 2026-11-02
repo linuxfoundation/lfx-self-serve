@@ -328,6 +328,7 @@ export class MeetingJoinComponent implements OnInit {
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
   public showAiSummaryBadge: Signal<boolean>;
+  public displayStartTime: Signal<string | undefined>;
   public mobileTimezoneAbbreviation: Signal<string>;
   public mobileScheduledTimezoneLabel: Signal<string>;
   public mobileContextLabel: Signal<string>;
@@ -536,6 +537,7 @@ export class MeetingJoinComponent implements OnInit {
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
     this.showAiSummaryBadge = this.initializeShowAiSummaryBadge();
+    this.displayStartTime = this.initializeDisplayStartTime();
     this.mobileTimezoneAbbreviation = this.initializeMobileTimezoneAbbreviation();
     this.mobileScheduledTimezoneLabel = this.initializeMobileScheduledTimezoneLabel();
     this.mobileContextLabel = this.initializeMobileContextLabel();
@@ -1585,10 +1587,15 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => this.hasAiCompanion() && this.isPastMeeting());
   }
 
+  // The start the page displays: the current occurrence's, else the meeting's own.
+  private initializeDisplayStartTime(): Signal<string | undefined> {
+    return computed(() => this.currentOccurrence()?.start_time || this.meeting()?.start_time || undefined);
+  }
+
   // Compact mobile meta summary (#4861): viewer-local zone abbreviation next to the time.
   private initializeMobileTimezoneAbbreviation(): Signal<string> {
     return computed(() => {
-      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const startTime = this.displayStartTime();
       const timezone = this.userTimezone();
       return startTime && timezone ? getTimezoneAbbreviation(startTime, timezone) : '';
     });
@@ -1598,7 +1605,7 @@ export class MeetingJoinComponent implements OnInit {
   // zone (title tooltips are unreachable on touch and by keyboard).
   private initializeMobileScheduledTimezoneLabel(): Signal<string> {
     return computed(() => {
-      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const startTime = this.displayStartTime();
       const scheduledZone = this.meeting()?.timezone;
       if (!startTime || !scheduledZone || scheduledZone === this.userTimezone()) {
         return '';

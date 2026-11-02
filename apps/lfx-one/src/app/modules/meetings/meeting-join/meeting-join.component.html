@@ -211,7 +211,7 @@
 
                   <!-- Compact meta summary (mobile only): date · time · zone, foundation · project, organizer. Desktop keeps the pills below. -->
                   <div class="flex flex-col gap-1 text-sm text-gray-700 md:hidden" data-testid="meeting-meta-mobile">
-                    @if (currentOccurrence()?.start_time || meeting().start_time; as mobileStartTime) {
+                    @if (displayStartTime(); as mobileStartTime) {
                       @if (userTimezone(); as tz) {
                         <p class="font-medium text-gray-900" data-testid="meeting-meta-mobile-datetime">
                           {{ mobileStartTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz }}
