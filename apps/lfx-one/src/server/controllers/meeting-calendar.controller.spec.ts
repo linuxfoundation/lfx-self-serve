@@ -168,7 +168,7 @@ describe('MeetingCalendarController.getMeetingCalendarIcs', () => {
     expect(res.send).not.toHaveBeenCalled();
   });
 
-  it('builds the page URL from configuration, not the request, and falls back when unconfigured', async () => {
+  it('builds the page URL from configuration, not the request, and uses the server default when unconfigured', async () => {
     delete process.env['PCC_BASE_URL'];
     meetingSvc.getMeetingById.mockResolvedValue(SENSITIVE_MEETING);
     const { res } = makeRes();
@@ -177,7 +177,7 @@ describe('MeetingCalendarController.getMeetingCalendarIcs', () => {
     await controller.getMeetingCalendarIcs(req, res, next);
 
     const body = res.send.mock.calls[0][0] as string;
-    expect(body).toContain('URL:https://app.lfx.dev/meetings/92867066227');
+    expect(body).toContain('URL:http://localhost:4000/meetings/92867066227');
     expect(body).not.toContain('evil.example');
   });
 });

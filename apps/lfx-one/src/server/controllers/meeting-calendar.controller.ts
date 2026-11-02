@@ -11,12 +11,12 @@ import { getStringQueryParam, validateUidParameter } from '../helpers/validation
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 
-/** LFX One's own origin from configuration; never derived from the request's Host header. */
+/** LFX One's own origin from `PCC_BASE_URL` (same default as server.ts); never derived from the request's Host header. */
 function resolveLfxOrigin(): string {
   try {
-    return new URL(process.env['PCC_BASE_URL'] || '').origin;
+    return new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').origin;
   } catch {
-    return 'https://app.lfx.dev';
+    return 'http://localhost:4000';
   }
 }
 

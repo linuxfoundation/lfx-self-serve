@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MEETING_CALENDAR_DEFAULT_DURATION_MINUTES } from '../constants/meeting.constants';
 import type { Meeting, MeetingCalendarEvent } from '../interfaces/meeting.interface';
 import { getActiveOccurrences, getCurrentOrNextOccurrence } from './meeting.utils';
 import { slugify } from './string.utils';
@@ -8,7 +9,6 @@ import { slugify } from './string.utils';
 const ICS_PRODID = '-//The Linux Foundation//LFX One//EN';
 const ICS_UID_DOMAIN = 'lfx.dev';
 const ICS_MAX_LINE_OCTETS = 75;
-const DEFAULT_DURATION_MINUTES = 60;
 const GOOGLE_CALENDAR_RENDER_URL = 'https://calendar.google.com/calendar/render';
 
 /**
@@ -44,7 +44,13 @@ export function resolveMeetingCalendarOccurrence(
   if (!start || Number.isNaN(Date.parse(start))) {
     return null;
   }
-  return { start, durationMinutes: duration && duration > 0 ? duration : meeting.duration > 0 ? meeting.duration : DEFAULT_DURATION_MINUTES, occurrenceId };
+  return { start, durationMinutes: pickPositiveDuration(duration, meeting.duration), occurrenceId };
+}
+
+// First strictly positive duration, else the shared default; kept as statements (no nested ternary).
+function pickPositiveDuration(...candidates: (number | undefined | null)[]): number {
+  const positive = candidates.find((value): value is number => typeof value === 'number' && value > 0);
+  return positive ?? MEETING_CALENDAR_DEFAULT_DURATION_MINUTES;
 }
 
 /** `20261105T190000Z` — an instant in the iCalendar/Google UTC basic format. */
@@ -70,7 +76,7 @@ function stripControlCharacters(value: string): string {
 function escapeIcsText(value: string): string {
   return stripControlCharacters(value)
     .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\;')
+    .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r\n|\r|\n/g, '\\n');
 }

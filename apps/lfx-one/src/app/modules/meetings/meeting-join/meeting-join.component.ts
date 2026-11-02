@@ -276,34 +276,10 @@ export class MeetingJoinComponent implements OnInit {
   private readonly calendarUnavailable = signal<boolean>(false);
   protected readonly calendarDownloading = signal<boolean>(false);
   // The occurrence the page shows, as a calendar event. Built from the same start the page displays.
-  private readonly calendarEvent: Signal<MeetingCalendarEvent | null> = computed(() => {
-    const meeting = this.meeting();
-    const occurrence = this.currentOccurrence();
-    const start = occurrence?.start_time || meeting?.start_time;
-    if (!meeting?.id || !start || Number.isNaN(Date.parse(start))) {
-      return null;
-    }
-    return {
-      uid: meeting.id,
-      occurrenceId: occurrence?.occurrence_id ?? null,
-      title: meeting.title,
-      start,
-      durationMinutes: occurrence?.duration || meeting.duration || MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
-      projectName: meeting.project_name || this.project()?.name,
-      joinUrl: `${environment.urls.home}/meetings/${meeting.id}`,
-    };
-  });
+  private readonly calendarEvent: Signal<MeetingCalendarEvent | null> = this.initCalendarEvent();
   // Signed-in viewers with full access to an upcoming or in-progress meeting only: anonymous and password-only guests never
   // learn the start time (the public projection strips it), so nothing time-related may be shown to them.
-  protected readonly showStickyBar: Signal<boolean> = computed(
-    () =>
-      this.authenticated() &&
-      this.liveMeetingFullAccess() &&
-      !this.loadedViaPastMeetingId() &&
-      !this.calendarUnavailable() &&
-      !!this.calendarEvent() &&
-      !this.isPastMeeting()
-  );
+  protected readonly showStickyBar: Signal<boolean> = this.initShowStickyBar();
   // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
   protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
   protected readonly googleCalendarUrl: Signal<string> = computed(() => {
@@ -312,21 +288,7 @@ export class MeetingJoinComponent implements OnInit {
   });
   // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
   // (resolved after first render) so server and client markup agree.
-  protected readonly joinUnlockLabel: Signal<string> = computed(() => {
-    const event = this.calendarEvent();
-    const timezone = this.userTimezone();
-    if (!event || !timezone) {
-      return 'Join Meeting';
-    }
-    const unlockMs = Date.parse(event.start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
-    const day = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric' }).format(ms);
-    const time = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(unlockMs);
-    if (day(unlockMs) === day(this.clock())) {
-      return `Join opens ${time}`;
-    }
-    const date = new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric' }).format(unlockMs);
-    return `Join opens ${date}, ${time}`;
-  });
+  protected readonly joinUnlockLabel: Signal<string> = this.initJoinUnlockLabel();
   // Bumped immediately when a guest is added so the count in the RSVP card doesn't lag the
   // async query-service indexing. Floored back to 0 once the registrants refetch absorbs the
   // newly-added rows (see additionalRegistrantsCount computed below).
@@ -1276,6 +1238,56 @@ export class MeetingJoinComponent implements OnInit {
 
     const stated = (history.state as { password?: unknown } | null)?.password;
     return typeof stated === 'string' && stated ? stated : null;
+  }
+
+  private initCalendarEvent(): Signal<MeetingCalendarEvent | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const occurrence = this.currentOccurrence();
+      const start = occurrence?.start_time || meeting?.start_time;
+      if (!meeting?.id || !start || Number.isNaN(Date.parse(start))) {
+        return null;
+      }
+      return {
+        uid: meeting.id,
+        occurrenceId: occurrence?.occurrence_id ?? null,
+        title: meeting.title,
+        start,
+        durationMinutes: occurrence?.duration || meeting.duration || MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
+        projectName: meeting.project_name || this.project()?.name,
+        joinUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
+      };
+    });
+  }
+
+  private initShowStickyBar(): Signal<boolean> {
+    return computed(
+      () =>
+        this.authenticated() &&
+        this.liveMeetingFullAccess() &&
+        !this.loadedViaPastMeetingId() &&
+        !this.calendarUnavailable() &&
+        !!this.calendarEvent() &&
+        !this.isPastMeeting()
+    );
+  }
+
+  private initJoinUnlockLabel(): Signal<string> {
+    return computed(() => {
+      const event = this.calendarEvent();
+      const timezone = this.userTimezone();
+      if (!event || !timezone) {
+        return 'Join Meeting';
+      }
+      const unlockMs = Date.parse(event.start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
+      const day = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric' }).format(ms);
+      const time = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(unlockMs);
+      if (day(unlockMs) === day(this.clock())) {
+        return `Join opens ${time}`;
+      }
+      const date = new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric' }).format(unlockMs);
+      return `Join opens ${date}, ${time}`;
+    });
   }
 
   // Ticks the wall-clock signal. Also on tab focus/visibility: mobile browsers freeze timers in the background, so the

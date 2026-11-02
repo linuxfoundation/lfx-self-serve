@@ -76,9 +76,14 @@ describe('buildMeetingIcs', () => {
   it('escapes TEXT and cannot be injected with extra properties', () => {
     const ics = buildMeetingIcs({ ...FIXTURE, title: 'A, B; C\\D\r\nATTENDEE:mailto:x@example.com', projectName: 'P\nDTSTART:19700101T000000Z' }, NOW);
     const { lines, props } = parseIcs(ics);
-    expect(props['SUMMARY']).toBe('A\\, B\; C\\\\D\\nATTENDEE:mailto:x@example.com');
+    expect(props['SUMMARY']).toBe('A\\, B\\; C\\\\D\\nATTENDEE:mailto:x@example.com');
     expect(lines.some((l) => l.startsWith('ATTENDEE'))).toBe(false);
     expect(lines.filter((l) => l.startsWith('DTSTART'))).toHaveLength(1);
+  });
+
+  it('escapes a semicolon in TEXT as backslash-semicolon (RFC 5545 section 3.3.11)', () => {
+    const { props } = parseIcs(buildMeetingIcs({ ...FIXTURE, title: 'TSC; Weekly' }, NOW));
+    expect(props['SUMMARY']).toBe(String.raw`TSC\; Weekly`);
   });
 
   it('folds long lines at 75 octets without splitting multi-byte characters', () => {

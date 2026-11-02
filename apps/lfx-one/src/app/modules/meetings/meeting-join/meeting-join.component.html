@@ -1000,6 +1000,7 @@
         <lfx-meeting-join-sticky-bar
           [canJoin]="canJoinMeeting()"
           [joinHref]="fetchedJoinUrl()"
+          [joinUnavailable]="joinUrlError() !== null || showGuestForm()"
           [unlockLabel]="joinUnlockLabel()"
           [googleCalendarUrl]="googleCalendarUrl()"
           [calendarBusy]="calendarDownloading()"

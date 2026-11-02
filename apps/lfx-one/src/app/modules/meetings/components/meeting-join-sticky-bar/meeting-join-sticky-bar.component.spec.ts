@@ -73,6 +73,26 @@ describe('MeetingJoinStickyBarComponent', () => {
     expect(anchor.rel).toContain('noopener');
   });
 
+  it('keeps Join disabled but not loading when the join URL cannot be resolved', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('canJoin', true);
+    fixture.componentRef.setInput('joinUnavailable', true);
+    await fixture.whenStable();
+
+    const button = testId(fixture, 'sticky-join')?.querySelector('button');
+    expect(button?.disabled).toBe(true);
+    expect(testId(fixture, 'sticky-join')?.querySelector('.p-button-loading, .pi-spinner, [class*="spin"]')).toBeNull();
+  });
+
+  it.each(['javascript:alert(1)', 'data:text/html,x', '//evil.example/x'])('never binds a non-http(s) join URL (%s) to the anchor', async (href) => {
+    const fixture = await create();
+    fixture.componentRef.setInput('canJoin', true);
+    fixture.componentRef.setInput('joinHref', href);
+    await fixture.whenStable();
+
+    expect(testId(fixture, 'sticky-join')?.querySelector('a')).toBeNull();
+  });
+
   it('omits the Google link when none is supplied', async () => {
     const fixture = await create();
 
@@ -129,6 +149,23 @@ describe('MeetingJoinStickyBarComponent', () => {
       fixture.componentRef.setInput('suppressed', false);
       await fixture.whenStable();
       expect(overlayState.stickyBarVisible()).toBe(true);
+    });
+
+    it('gives the launcher back when the viewport grows past phone width (rotation)', async () => {
+      let onChange: ((event: MediaQueryListEvent) => void) | undefined;
+      window.matchMedia = vi.fn(() => ({
+        matches: true,
+        addEventListener: (_type: string, handler: (event: MediaQueryListEvent) => void) => (onChange = handler),
+        removeEventListener: vi.fn(),
+      })) as unknown as typeof window.matchMedia;
+      const fixture = await create();
+      const overlayState = TestBed.inject(OverlayStateService);
+      expect(overlayState.stickyBarVisible()).toBe(true);
+
+      onChange?.({ matches: false } as MediaQueryListEvent);
+      await fixture.whenStable();
+
+      expect(overlayState.stickyBarVisible()).toBe(false);
     });
 
     it('never writes it during server rendering', async () => {

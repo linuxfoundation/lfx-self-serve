@@ -2191,6 +2191,15 @@ describe('MeetingJoinComponent', () => {
       expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
     });
 
+    it('does not leave the bar spinning when the join URL cannot be resolved (the inline error explains why)', async () => {
+      getPublicMeetingJoinUrl.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Not on the guest list' } })));
+      const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
+
+      const join = part(fixture, 'sticky-join');
+      expect(join?.querySelector('button')?.disabled).toBe(true);
+      expect(join?.querySelector('[class*="spin"]')).toBeNull();
+    });
+
     it('hides the inline Join button on phones while the bar offers it, so there is one Join', async () => {
       const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
 
