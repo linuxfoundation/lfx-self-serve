@@ -73,7 +73,7 @@ A mentee can hold only one accepted mentorship at a time, so the undo is refused
 
 If an application was declined or withdrawn by mistake, pick **Re-open** on its row and confirm. The application goes back to review, as **Applied** or **Tasks Completed**, and you can decide on it again. No email is sent.
 
-A re-opened application is checked like a new one: it can't be re-opened while the program is hidden, once the term is closed, or while the mentee already has three applications under review. Its prerequisite tasks are updated to the program's current prerequisites; work the mentee already submitted is kept.
+A re-opened application is checked like a new one: it can't be re-opened while the program is hidden, once the term is closed, or while the mentee already has three applications under review. Its existing tasks stay as they were, and if the program added a prerequisite while it was closed, a task for it is added.
 
 ## Troubleshooting
 
