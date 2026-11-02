@@ -27,8 +27,13 @@ import {
   MENTORSHIP_ADMIN_MENTEES_LOAD_ERROR_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
+  MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE,
+  MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE,
+  MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE,
   MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE,
   MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE,
+  MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE,
+  MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE,
   MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE,
   MENTORSHIP_ALL_OPEN_TERMS_OPTION_LABEL,
   MENTORSHIP_ALL_STATUSES_OPTION_LABEL,
@@ -65,6 +70,7 @@ import {
   mentorshipApplicantDisplayStatus,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
@@ -97,8 +103,8 @@ import { RowActionsComponent } from '../../../../components/row-actions/row-acti
  * time. Search, status and term filters go upstream, and any change of them, or a page change, reads that page
  * again. View Tasks reads an application's tasks on the first click only; the result stays cached until the table
  * next reloads, so collapsing and expanding a row makes no request. Row actions depend on the status. Accept
- * (with an attendance type), Decline, Withdraw, Graduate and Decline by Term write through the BFF; each
- * reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
+ * (with an attendance type), Decline, Withdraw, Graduate, Undo graduation, Re-open and Decline by Term write through the BFF;
+ * each reloads the page and tells the parent to refresh the tab counts, and a 409 or 422 answers with its own
  * message. Graduate always confirms, warning from the row's task counts without reading any task. Create task
  * opens the task form and then creates through the BFF like the other writes, reloading even on a failure, which may
  * still have created the task; an expanded row stays expanded across the reload and re-reads its tasks once, a
@@ -299,6 +305,25 @@ export class CurrentMenteesTabComponent {
       case 'graduate':
         this.onGraduate(mentee, action.label);
         return;
+      case 'undo-graduation':
+        this.confirmDecision({
+          header: action.label,
+          message: MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE,
+          acceptLabel: action.label,
+          danger: false,
+          // No attendance type: upstream keeps the one the mentee was accepted with.
+          accept: () => this.decide(this.mentorshipAdminService.updateApplicationStatus(mentee.id, { status: 'accepted' }), 'ungraduated'),
+        });
+        return;
+      case 'reopen':
+        this.confirmDecision({
+          header: action.label,
+          message: MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE,
+          acceptLabel: action.label,
+          danger: false,
+          accept: () => this.decide(this.mentorshipAdminService.updateApplicationStatus(mentee.id, { status: 'pending' }), 'reopened'),
+        });
+        return;
       default:
         this.comingSoon.notify(`${action.label} ${mentee.name}`);
     }
@@ -422,10 +447,21 @@ export class CurrentMenteesTabComponent {
     });
   }
 
-  /** Runs one decision write; on success reloads the page and has the parent refresh the counts. Only an accept reads a 422 as a closed term. */
+  /**
+   * Runs one decision write; on success reloads the page and has the parent refresh the counts. An accept, an undone
+   * graduation and a re-open give a 422 their own message; any other decision shows the generic copy. A re-open also
+   * gives a 409 its own message, since it may mean the mentee has applied to the term again.
+   */
   private decide(write: Observable<void>, outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): void {
-    const termClosedMessage = outcome === 'accepted' ? MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE : undefined;
-    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), termClosedMessage);
+    const conflictMessage = outcome === 'reopened' ? MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE : undefined;
+    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), this.unprocessableMessage(outcome), conflictMessage);
+  }
+
+  private unprocessableMessage(outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): string | undefined {
+    if (outcome === 'accepted') return MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE;
+    if (outcome === 'ungraduated') return MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE;
+    if (outcome === 'reopened') return MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE;
+    return undefined;
   }
 
   private declinePendingForTerm(termId: string): void {
@@ -444,7 +480,7 @@ export class CurrentMenteesTabComponent {
    * A write that lands after the tab is gone still toasts and refreshes the parent's counts, but skips the table
    * reload; the next tab render reads the page afresh.
    */
-  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, termClosedMessage?: string): void {
+  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, unprocessableMessage?: string, conflictMessage?: string): void {
     if (this.decisionInFlight()) {
       this.showPleaseWait();
       return;
@@ -459,24 +495,25 @@ export class CurrentMenteesTabComponent {
       },
       error: (err: unknown) => {
         this.decisionInFlight.set(false);
-        this.onDecisionError(err, termClosedMessage);
+        this.onDecisionError(err, unprocessableMessage, conflictMessage);
       },
     });
   }
 
   /**
-   * 409 means the application moved on, so the page reloads; a 422 on an accept means the term closed (any other
-   * 422 gets the generic copy); an impersonation 403 shows the server's text.
+   * 409 means the application moved on, so the page reloads, with the decision's own message when it has one; a 422
+   * shows the decision's own message when it has one (any other 422 gets the generic copy); an impersonation 403 shows
+   * the server's text.
    */
-  private onDecisionError(err: unknown, termClosedMessage?: string): void {
+  private onDecisionError(err: unknown, unprocessableMessage?: string, conflictMessage?: string): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 409) {
       if (!this.destroyed) this.reloadCount.update((count) => count + 1);
-      this.showFailure(MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE);
+      this.showFailure(conflictMessage ?? MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE);
       return;
     }
-    if (status === 422 && termClosedMessage) {
-      this.showFailure(termClosedMessage);
+    if (status === 422 && unprocessableMessage) {
+      this.showFailure(unprocessableMessage);
       return;
     }
     if (status === 403 && (err as HttpErrorResponse).error?.code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
@@ -680,14 +717,27 @@ export class CurrentMenteesTabComponent {
           statusLabel: MENTORSHIP_APPLICANT_STATUS_LABELS[mentorshipApplicantDisplayStatus(application)],
         })),
       ...mentorshipNoteDisplay({}, person, MENTORSHIP_ADD_NOTE_LABEL),
-      actions: mentorshipRowActions(
-        MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
-        MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
-        MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
-      ),
+      actions: this.rowActions(person),
       hasTasks: mentorshipApplicantHasTasks(person),
       tasksStatus: tasksState?.status ?? null,
       taskRows: mentorshipApplicantTaskRows(tasksState?.tasks ?? []),
     };
+  }
+
+  /**
+   * The row's actions for its status. Contact Mentee is a `mailto:` link rather than a handled action, so it is
+   * dropped when the mentee has no address that is safe to put in one.
+   */
+  private rowActions(person: MentorshipProgramApplicant): MentorshipRowAction[] {
+    const contactValue: MentorshipCurrentMenteeAction = 'contact-mentee';
+    const contactUrl = mentorshipContactMenteeUrl(person.email);
+    return mentorshipRowActions(
+      MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[person.status],
+      MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
+      MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS
+    ).flatMap((action) => {
+      if (action.value !== contactValue) return [action];
+      return contactUrl ? [{ ...action, url: contactUrl }] : [];
+    });
   }
 }

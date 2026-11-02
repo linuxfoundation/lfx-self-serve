@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator, InteractivityChecker, ListKeyManager } from '@angular/cdk/a11y';
-import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import { CdkConnectedOverlay, CdkOverlayOrigin } from '@angular/cdk/overlay';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
   afterNextRender,
@@ -30,6 +30,8 @@ import { UiInputSize, UiOption } from '@lfx-one/shared/interfaces';
 import { UiErrorComponent } from '../error/error.component';
 import { UiOptionHost } from './option-host';
 import { UiOptionComponent } from './option.component';
+import { revealRowInList } from './reveal-row';
+import { UiSelectSlotDirective } from './select-slot.directive';
 import { UiSelectValueDirective } from './select-value.directive';
 
 /**
@@ -47,7 +49,8 @@ import { UiSelectValueDirective } from './select-value.directive';
  * Slots, by attribute: `lfxUiSelectPrefix` (content before the value in the trigger, such as an icon or an avatar), `lfxUiSelectHeader` (the top
  * of the panel, such as a search field; the first focusable element in it takes focus when the panel opens, Escape closes and returns focus to the
  * trigger, and Arrow Down hands focus back to the list) and `<ng-template lfxUiSelectValue let-option>` (what the trigger shows for the picked
- * option, instead of its label). Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows,
+ * option, instead of its label) and `lfxUiSelectEmpty` (the message for a search that matches nothing, shown in a live region below the list; the page
+ * projects it only while no row matches). Import `UiSelectSlotDirective` where you project the header or empty slot, so a select with no options can still open. Filtering the options from a search field is up to the page: render only the matching `lfx-ui-option` rows,
  * and reset the query from `openChange`. The trigger keeps showing the picked option while a filter hides its row.
  *
  * Built to the WAI-ARIA select-only combobox pattern: the list is a `listbox` and the highlighted row is announced with `aria-activedescendant`.
@@ -77,6 +80,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   protected readonly origin = viewChild.required(CdkOverlayOrigin);
   protected readonly overlay = viewChild.required(CdkConnectedOverlay);
   protected readonly valueTemplate = contentChild(UiSelectValueDirective);
+  private readonly slot = contentChild(UiSelectSlotDirective);
   protected readonly optionComponents = contentChildren(UiOptionComponent, { descendants: true });
   /** The projected options, in document order, groups included. */
   protected readonly options: Signal<UiOption[]> = computed(() => this.optionComponents().map((option) => option.item));
@@ -91,7 +95,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   public readonly error = input<string>('');
   /** Text shown while nothing is picked. */
   public readonly placeholder = input<string>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair with a button of the same size. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
@@ -111,10 +115,6 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   protected readonly listboxId = `${this.baseId}-listbox`;
   protected readonly hintId = `${this.baseId}-hint`;
   protected readonly errorId = `${this.baseId}-error`;
-  protected readonly positions: ConnectedPosition[] = [
-    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-  ];
   protected readonly open = signal(false);
   // The highlighted option by identity, so it survives the options changing under it.
   protected readonly activeItem = signal<UiOption | null>(null);
@@ -369,8 +369,9 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
 
   // Opens on the chosen row, or on the first one that can be picked (the active option falls back to it).
   private openPanel(typed?: string): void {
-    if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
+    // With no options, header or empty message, the panel would be an empty box.
+    if (this.isDisabled() || this.open() || (this.options().length === 0 && !this.slot())) return;
+    this.panelWidth.set(this.origin().elementRef.nativeElement.offsetWidth);
     this.open.set(true);
     this.activeItem.set(this.options()[this.selectedIndex()] ?? null);
     this.syncKeyManager();
@@ -405,15 +406,10 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
     this.closePanel();
   }
 
-  // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
   private revealActive(): void {
     const row = this.document.getElementById(this.activeOption()?.id ?? '');
     const list = row?.closest<HTMLElement>('[role="listbox"]');
-    if (!row || !list) return;
-    const rowBox = row.getBoundingClientRect();
-    const listBox = list.getBoundingClientRect();
-    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
+    if (row && list) revealRowInList(row, list);
   }
 
   private panelHolds(node: EventTarget | null): boolean {

@@ -93,20 +93,6 @@ export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
- * Dark-launch gate for the Mentorship module — the `/mentorship` route tree (admin list and the
- * enroll-a-program wizard) and its Me Lens sidebar section. Default false: a missing LaunchDarkly
- * flag keeps the module invisible. The route guard fails open like `myClasEnabledGuard` when the
- * provider is not ready, so a slow or blocked LaunchDarkly never bounces testers away; before
- * go-live anything a non-tester writes in that window is replaced by the final data import.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
- * SDK and never runs server-side, so it cannot gate an Express handler. The mentorship BFF routes
- * stay reachable by a direct API caller while this is off; add a `ServerFeatureFlag` counterpart if
- * the write paths ever need a kill switch of their own.
- */
-export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
-
-/**
  * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings
  * list). Default false: `foundation/health-metrics` keeps rendering the existing card-based page
  * until this is on. **UI-only**, evaluated through `FeatureFlagService.getBooleanFlag` inside

@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
-last_updated: 2026-10-29
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
+last_updated: 2026-11-02
 intercom_collection: Account
 ---
 
@@ -39,6 +39,14 @@ Go to [**Profile & Account**](/profile) and use the **Work history & Affiliation
 ## What are affiliations, and how are my contributions attributed?
 
 Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+
+## Why don't my GitHub contributions show up?
+
+LFX shows contributions to open source projects that LFX tracks, such as the projects you can find in LFX Insights. Commits, pull requests and issues in a personal repository, or in any project LFX doesn't track, are not counted, even when your GitHub account is linked and verified.
+
+For contributions to a tracked project to appear, the GitHub account or email address you contributed with must be a **verified** identity on the **Identities** tab (`/profile/identities`). Your contributions are listed under **Project Involvement** on the **Work history & Affiliations** tab (`/profile/attributions`).
+
+Your public profile settings don't affect this. They only control what other people see at `app.lfx.dev/u/<username>`. See [Do I need a public profile to see my own contributions?](../../profile/faq/#do-i-need-a-public-profile-to-see-my-own-contributions).
 
 ## How do I link a GitHub or social account?
 
@@ -102,7 +110,13 @@ Your transaction history includes all purchases made through the LFX platform un
 
 ## Can I download a receipt or invoice?
 
-Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download. For an event registration, download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. For anything else, or if you can't find the email, contact LFX support. See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
+Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download.
+
+- **Training courses, certification exams, bundles, and subscriptions** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID.
+- **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact LFX support.
+- **Anything else** — contact LFX support.
+
+See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
 
 ## Why is a purchase missing from my transaction history?
 
@@ -110,7 +124,7 @@ Recent purchases may take up to 48 hours to appear in LFX Self Serve. If a purch
 
 ## Can I request a refund through LFX Self Serve?
 
-No — there is no refund request in LFX Self Serve. To request a refund, contact LFX support with your order confirmation.
+No — there is no refund request in LFX Self Serve. For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) with your order ID. For other purchases, contact LFX support with your order confirmation.
 
 ## Who can see my transactions?
 
@@ -118,7 +132,7 @@ You can only see your own transactions. Other users and project administrators c
 
 ## I was charged incorrectly. Who do I contact?
 
-Contact LFX support. Include the transaction date, amount, and item name so the support team can investigate.
+For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
 
 ## How do I delete my account or personal data?
 

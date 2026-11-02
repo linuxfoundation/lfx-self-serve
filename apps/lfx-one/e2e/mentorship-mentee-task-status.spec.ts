@@ -24,7 +24,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -112,10 +112,6 @@ async function openTasksTab(page: Page): Promise<void> {
 }
 
 test.describe('Mentee My Tasks — status change', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('starting a to-do task saves In Progress, toasts success and re-reads the tasks', async ({ page }) => {
     let releaseRead!: () => void;
     const heldRead = new Promise<void>((resolve) => (releaseRead = resolve));

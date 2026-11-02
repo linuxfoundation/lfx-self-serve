@@ -15,6 +15,7 @@ import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
 import { authenticatedMatchGuard } from './shared/guards/authenticated-match.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
@@ -36,7 +37,6 @@ import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
-import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
@@ -257,6 +257,16 @@ export const routes: Routes = [
     pathMatch: 'full',
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
+  },
+  // Anonymous SSR of the newsletter permalink (#4940): a chrome-less share preview whose Open Graph tags
+  // carry the issue subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page. The
+  // guard matches only on the server for a signed-out request; browsers fall through to the shell below.
+  {
+    path: 'newsletters/:projectSlug/:id',
+    pathMatch: 'full',
+    canMatch: [newsletterAnonymousSsrMatchGuard],
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-share-preview/newsletter-share-preview.component').then((m) => m.NewsletterSharePreviewComponent),
   },
   {
     path: '',
@@ -835,7 +845,6 @@ export const routes: Routes = [
         path: 'mentorship',
         title: 'Mentorship',
         data: { lens: 'me' },
-        canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
       },
       {

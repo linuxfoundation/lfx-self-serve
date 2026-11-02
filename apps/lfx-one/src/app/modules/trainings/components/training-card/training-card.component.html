@@ -30,6 +30,13 @@
             {{ training().level }}
           </span>
         }
+        @if (isActiveExam()) {
+          <span
+            class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200"
+            data-testid="training-card-exam-tag-mobile">
+            Certification Exam
+          </span>
+        }
         @if (isOngoing() && !isActiveEnrollment()) {
           <span
             class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 border border-red-200 text-red-700"
@@ -56,6 +63,13 @@
                 {{ training().level }}
               </span>
             }
+            @if (isActiveExam()) {
+              <span
+                class="hidden md:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-50 text-gray-700 border border-gray-200"
+                data-testid="training-card-exam-tag">
+                Certification Exam
+              </span>
+            }
           </div>
           <p class="text-sm text-gray-500" data-testid="training-card-issued-by">{{ training().issuedBy }}</p>
         </div>
@@ -68,7 +82,7 @@
                 severity="primary"
                 size="small"
                 styleClass="whitespace-nowrap"
-                label="Continue Learning"
+                [label]="isActiveExam() ? 'Go to Exam' : 'Continue Learning'"
                 [href]="continueLearningUrl()"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -126,8 +140,8 @@
         </div>
       }
 
-      <!-- Meta row for ongoing/expired variant: time spent · course status -->
-      @if (isOngoing() && (timeSpent() || (showStatus() && statusLabel()))) {
+      <!-- Meta row for ongoing/expired variant: course status · time spent · enrolled date -->
+      @if (isOngoing() && (enrolledDate() || timeSpent() || (showStatus() && statusLabel()))) {
         <div class="border-t border-gray-100 pt-3" data-testid="training-card-meta-row">
           <div class="flex flex-wrap items-center gap-x-8 gap-y-1.5 text-xs" data-testid="training-card-meta">
             @if (showStatus() && statusLabel()) {
@@ -144,6 +158,12 @@
                 <span class="font-medium text-gray-700" data-testid="training-card-time-spent">{{ timeSpent() }}</span>
               </div>
             }
+            @if (enrolledDate()) {
+              <div class="flex flex-col gap-0.5">
+                <span class="text-gray-400">Enrolled</span>
+                <span class="font-medium text-gray-700" data-testid="training-card-enrolled-date">{{ enrolledDate() | date: 'MMM d, y' }}</span>
+              </div>
+            }
           </div>
         </div>
       }
@@ -156,7 +176,7 @@
               severity="primary"
               size="small"
               styleClass="whitespace-nowrap"
-              label="Continue Learning"
+              [label]="isActiveExam() ? 'Go to Exam' : 'Continue Learning'"
               [href]="continueLearningUrl()"
               target="_blank"
               rel="noopener noreferrer"

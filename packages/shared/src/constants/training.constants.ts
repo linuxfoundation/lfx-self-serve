@@ -85,3 +85,34 @@ export const CONTINUE_LEARNING_URL = 'https://trainingportal.linuxfoundation.org
 export const COURSE_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/learn/course/';
 export const ENROLL_AGAIN_URL = 'https://trainingportal.linuxfoundation.org/courses';
 export const ENROLL_AGAIN_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/courses/';
+
+// ─── Enrollment window (lfx-self-serve#4288) ───────────────────────────────
+
+/**
+ * Length of the enrollment window the Certifications tab, its rosters, the person detail and the All Employees expanded
+ * row apply to training enrollments. People › Trainees has its own range selector instead. Certificates are never
+ * windowed. The SQL predicate and the copy below both derive from this value so a label cannot drift from the query.
+ */
+export const ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS = 12;
+
+const ORG_TRAINING_ENROLLMENT_WINDOW_LABEL = `last ${ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS} months`;
+
+/**
+ * Note above the Certifications table; the Certified figure counts people. Expired certificates are dropped upstream, not in this
+ * repo's queries: lf-dbt `platinum_lfx_one_org_people_training` (ORG_PEOPLE_TRAINING) skips certificates the source flags
+ * `is_deleted`, which is how the source marks expiry. The flag is set by the source, not derived from `expiration_date`, so a
+ * certificate past its expiration date can still be listed until the source flags it.
+ */
+export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no current certificate for the course. Certified counts people with a current certificate, issued at any time; expired certificates are not counted.`;
+
+/** Note in the Certifications In Progress roster drawer. */
+export const ORG_CERT_IN_PROGRESS_WINDOW_NOTE = `Enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}, with no current certificate for this course.`;
+
+/** Note on the person detail Training tab. Expired certificates are dropped upstream, see ORG_CERTIFICATIONS_WINDOW_NOTE. */
+export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Current certificates, issued at any time; expired ones are not listed. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;
+
+/** Note on the All Employees expanded row, whose course count follows the page's time range while this list does not. */
+export const ORG_ALL_EMPLOYEES_TRAINING_WINDOW_NOTE = `${PERSON_DETAIL_TRAINING_WINDOW_NOTE} The course count on the row follows the page's time range.`;
+
+/** Empty state of the windowed person detail and All Employees training lists. */
+export const PERSON_DETAIL_TRAINING_EMPTY_NOTE = `No current certificates, and no enrollments in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}.`;

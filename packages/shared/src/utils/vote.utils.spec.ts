@@ -47,6 +47,7 @@ import {
   canVoterFetchVoteResults,
   buildVoteSummarySendNotice,
   compareVotesByRecency,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   countVoteParticipationByStatus,
@@ -215,6 +216,24 @@ for (const [name, build] of voteRequestBuilders) {
       expect('allow_abstain' in request).toBe(true);
     });
 
+    it.each([
+      ['plain text with indentation and blank lines', '\n  First paragraph\n\n\n    - indented  bullet\n1.  numbered\n'],
+      ['rich HTML', '<p>One</p>\n<ul><li>A<ul><li>B</li></ul></li></ul>'],
+    ])('preserves the description exactly for %s', (_label, description) => {
+      expect(build(formValue({ description }), 'project-uid').description).toBe(description);
+    });
+
+    it.each([[''], ['   \n  '], [undefined], [null]])('emits an empty description for %j', (description) => {
+      expect(build(formValue({ description: description as string }), 'project-uid').description).toBe('');
+    });
+
+    it('still trims the title but not the description', () => {
+      const request = build(formValue({ title: '  Title  ', description: '  keep  ' }), 'project-uid');
+
+      expect(request.name).toBe('Title');
+      expect(request.description).toBe('  keep  ');
+    });
+
     // v2 requires end_time_timezone on every vote mutation — the builders must never omit it.
     it('always emits end_time_timezone (required by the v2 vote mutation contract)', () => {
       const request = build(formValue({ timezone: 'America/New_York' }), 'project-uid');
@@ -306,6 +325,15 @@ describe('mapVoteToFormValue', () => {
 
   it('defaults allow_abstain to false when the vote predates the field', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
+  });
+
+  it.each([
+    ['form', mapVoteToFormValue],
+    ['clone form', mapVoteToCloneFormValue],
+  ])('keeps the stored description untouched in the %s value', (_label, map) => {
+    const description = '  Indented\n\n\n<p>Rich</p>  ';
+
+    expect(map(vote({ description })).description).toBe(description);
   });
 
   it('hydrates close time and zone from end_time in the stored timezone', () => {
@@ -2010,5 +2038,37 @@ describe('buildVoteSummarySendNotice', () => {
     expect(notice.severity).toBe('info');
     expect(notice.summary).toBe('No summaries sent');
     expect(notice.detail).toContain('no invited voters have an email address');
+  });
+});
+
+describe('computeParticipationSegments', () => {
+  const stats = (eligibleVoters: number, totalResponses: number) => ({
+    eligibleVoters,
+    totalResponses,
+    participationRate: 0,
+    abstainedVoters: 0,
+    abstainedRate: 0,
+  });
+
+  it('puts every response in the voted segment when nobody abstained', () => {
+    expect(computeParticipationSegments(stats(10, 4), 0)).toEqual({ voted: 40, abstained: 0 });
+  });
+
+  it('separates abstentions from substantive ballots', () => {
+    expect(computeParticipationSegments(stats(10, 5), 2)).toEqual({ voted: 30, abstained: 20 });
+  });
+
+  it('returns zeros when there are no eligible voters', () => {
+    expect(computeParticipationSegments(stats(0, 0), 0)).toEqual({ voted: 0, abstained: 0 });
+  });
+
+  it('caps combined participation when overcounted responses include abstentions', () => {
+    expect(computeParticipationSegments(stats(5, 9), 2)).toEqual({ voted: 60, abstained: 40 });
+  });
+
+  it('clamps inconsistent counts into 0-100', () => {
+    expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
+    expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
+    expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
   });
 });

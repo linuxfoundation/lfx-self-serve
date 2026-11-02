@@ -95,4 +95,14 @@ describe('OrgProfileComponent', () => {
     expect(el.querySelector('[data-testid="org-profile-summary-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-profile-name"]')).toBeNull();
   });
+
+  it('shows "No logo" instead of an initials avatar when the org has no logo', async () => {
+    fixture.componentInstance['record'].set({ ...record, logoUrl: null });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="org-profile-logo-empty"]')?.textContent?.trim()).toBe('No logo');
+    expect(el.querySelector('[data-testid="org-profile-logo-image"]')).toBeNull();
+  });
 });

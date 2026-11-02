@@ -97,12 +97,12 @@
           <div class="flex flex-col gap-4" data-testid="vote-cast-drawer-details">
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
             <!-- Description is poll-creator-authored rich HTML (PCC editor); Angular's [innerHTML] sanitizer applies. Matches the vote detail page's description card. -->
-            <!-- whitespace-pre-line is intentional: preserves line breaks in legacy plain-text descriptions (GH-2326). -->
+            <!-- voteDescription preserves plain-text spacing; normal HTML whitespace avoids extra lines between rich-text blocks (GH-2326, #4727). -->
             <!-- Phones: cap the description so the ballot starts in view; it scrolls inside its own focusable region (Submit is pinned either way). -->
             <div
-              class="text-sm text-slate-700 whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
+              class="prose prose-sm max-w-none text-sm text-slate-700 whitespace-normal break-words [&_a]:text-blue-600 [&_a]:underline max-sm:max-h-[40dvh] max-sm:overflow-y-auto"
               lfxExternalLinks
-              [innerHTML]="voteData.description | linkifyHtml"
+              [innerHTML]="voteData.description | voteDescription | linkifyHtml"
               [attr.tabindex]="0"
               role="region"
               aria-label="Vote description"

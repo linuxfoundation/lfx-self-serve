@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, linkedSignal, model, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -14,8 +14,18 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { NEWSLETTER_INVITE_QUERY_PARAM } from '@lfx-one/shared/constants';
-import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsState, MyNewsletterRow, NewsletterInviteDialogData } from '@lfx-one/shared/interfaces';
-import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import {
+  MyNewsletter,
+  MyNewsletterFoundation,
+  MyNewsletterFoundationsState,
+  MyNewsletterRow,
+  NewsletterInviteDialogData,
+  MyNewsletterFoundationsResponse,
+  NewsletterShareEvent,
+  NewsletterShareTally,
+  NewsletterShareTarget,
+} from '@lfx-one/shared/interfaces';
+import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
@@ -45,6 +55,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     ButtonComponent,
     CardComponent,
     DatePipe,
+    DecimalPipe,
     EmptyStateComponent,
     InputTextComponent,
     NewsletterInviteLandingComponent,
@@ -87,6 +98,12 @@ export class MyNewslettersComponent {
   protected readonly previewBody = signal<string>('');
   protected readonly searchTerm = signal<string>('');
   protected readonly projectFilter = signal<string | null>(null);
+  /** Shares accepted on this page, by newsletter id — override the row's server count until the feed next loads. */
+  private readonly shareTallies = linkedSignal<MyNewsletterFoundationsResponse | null, Record<string, NewsletterShareTally>>({
+    // A new feed response (load, Retry) brings fresh server counts, so local tallies start over.
+    source: () => this.state().data,
+    computation: () => ({}),
+  });
 
   // === Route Signals ===
   protected readonly foundationSlug: Signal<string> = toSignal(this.route.paramMap.pipe(map((m) => m.get('foundationSlug') ?? '')), {
@@ -120,7 +137,7 @@ export class MyNewslettersComponent {
    * template function per row (frontend-checklist.md § 4).
    */
   protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
-    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter) }))
+    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter), shareCount: this.shareCountOf(newsletter) }))
   );
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.projectFilter()));
@@ -128,6 +145,18 @@ export class MyNewslettersComponent {
   protected readonly drawerSubtitle: Signal<string> = computed(() => {
     const sentAt = this.selected()?.sent_at;
     return sentAt ? `Sent ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
+  });
+  /** Share count for the drawer's Share button — the same number the selected row shows. */
+  protected readonly selectedShareCount: Signal<number | null> = computed(() => {
+    const selected = this.selected();
+    if (!selected) return null;
+    // Prefer the current feed row: `selected` is a snapshot from when the drawer opened.
+    return this.shareCountOf(this.myNewsletters().find((row) => row.id === selected.id) ?? selected);
+  });
+  /** The issue the drawer shows, for binding its shares. */
+  protected readonly selectedShareTarget: Signal<NewsletterShareTarget | null> = computed(() => {
+    const selected = this.selected();
+    return selected ? { projectUid: selected.project_uid, newsletterId: selected.id } : null;
   });
   /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
   protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
@@ -204,6 +233,24 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
+  /**
+   * A share was made from the drawer: record it and, once the server accepts it, bump that issue's count.
+   * Not tied to the component's lifetime, so leaving the page doesn't abort the write (`recordShare`
+   * completes after one emission). The baseline comes from the whole feed, not this foundation's slice,
+   * so a response that lands after switching foundations keeps the issue's real server count.
+   */
+  protected onShared(event: NewsletterShareEvent): void {
+    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
+      if (!accepted) return;
+      this.shareTallies.update((tallies) => {
+        const serverCount = this.state().data?.newsletters.find((row) => row.id === event.newsletterId)?.share_count ?? null;
+        const current = tallies[event.newsletterId] ?? { count: serverCount, channels: [] };
+        const next = addShareToTally(current, event.channel);
+        return next === current ? tallies : { ...tallies, [event.newsletterId]: next };
+      });
+    });
+  }
+
   /**
    * Relative permalink href for a row's subject anchor — lets modified clicks,
    * middle-click, and right-click ("Open in new tab") reach the reader page
@@ -377,5 +424,12 @@ export class MyNewslettersComponent {
 
       return filtered;
     });
+  }
+
+  // === Private Helpers ===
+  /** Displayed share count: this page's tally when the user shared here, else the server's (null when unknown). */
+  private shareCountOf(newsletter: MyNewsletter): number | null {
+    const tally = this.shareTallies()[newsletter.id];
+    return tally ? tally.count : (newsletter.share_count ?? null);
   }
 }

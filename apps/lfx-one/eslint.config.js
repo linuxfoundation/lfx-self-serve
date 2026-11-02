@@ -154,8 +154,9 @@ module.exports = defineConfig([
     },
   },
   {
-    // Stories are linted with their own project, not compiled as application inputs.
-    files: ['src/app/shared/uikit/**/*.stories.ts'],
+    // Reuse one Storybook project for the uikit and the explicit recovery harness,
+    // avoiding a duplicate TypeScript program. Stories are not application inputs.
+    files: ['src/app/shared/uikit/**/*.stories.ts', 'src/app/shared/components/chunk-load-recovery/chunk-load-recovery-drawer.stories.ts'],
     languageOptions: {
       parserOptions: {
         project: './.storybook/tsconfig.json',

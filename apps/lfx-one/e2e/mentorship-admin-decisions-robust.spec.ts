@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import { ADMIN_PROGRAM_URL, adminApplicationId, stubAdminMentees, stubAdminProgramPage, stubAdminTasks } from './helpers/mentorship-admin-program.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -30,7 +30,6 @@ const PENDING_ID = adminApplicationId(1);
 const ACCEPTED_ID = adminApplicationId(3);
 
 async function open(page: Page): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, { mentees: [], tasks: [] });
   await stubAdminTasks(page, { mentees: [], tasks: [] });

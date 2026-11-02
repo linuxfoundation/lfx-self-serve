@@ -7356,7 +7356,7 @@ export class ProjectService {
   }
 
   /**
-   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid).
+   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid, logo_url).
    * Resolves every referenced project in one batched query-service lookup (`getProjectsByIds`,
    * 100 uids per `filters_or` query, fail-soft per batch) instead of fanning out to per-project
    * `getProjectById` calls — and ungated, so callers without a direct project viewer relation
@@ -7366,7 +7366,7 @@ export class ProjectService {
     req: Request,
     items: T[],
     options?: ApiRequestOptions
-  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
+  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string; project_logo_url: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
     logger.debug(req, 'enrich_with_project_data', 'Enriching items with project metadata', {
@@ -7393,6 +7393,7 @@ export class ProjectService {
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
         parent_project_uid: project?.parent_uid || (item as any).parent_project_uid || '',
+        project_logo_url: project?.logo_url || (item as any).project_logo_url || '',
       };
     });
   }

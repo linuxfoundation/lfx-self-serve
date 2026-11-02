@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Votes
 ---
 
@@ -18,9 +18,11 @@ This article explains the vote's page, which shows how a vote is going and how i
 
 The page header shows the vote's title, status, whether ballots are named or pseudo-anonymous, its group, voting method, close date and how many voters were invited. Select **Votes** at the top to go back to the list.
 
-Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Existing rich-text formatting and links are preserved. The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
+Web links in the vote's description are blue and underlined, including plain-text addresses starting with `http://` or `https://`. Selecting one opens it in a new tab, leaving the vote's page open. Supported HTML formatting and links are preserved; descriptions mixing unsupported placeholders and HTML use the [literal fallback](../create-vote/#description-formatting). The same applies in the ballot drawer and on a personalized ballot link; your current ballot choices stay in place. Email and phone links keep their usual behavior.
 
 If a vote closed early, **Closed** in the header uses the recorded early-close time rather than the scheduled deadline, and its notice gives the early-close date. If no early-close time is recorded, the header uses the scheduled deadline. That notice does not mean every invited voter responded; use the participation figures to check how many did.
+
+The vote's description keeps its paragraphs, line breaks, and lists, the same as in the cast drawer.
 
 ## If you manage the vote
 
@@ -33,7 +35,11 @@ The page opens on the **Overview** tab and has these tabs:
 
 A tab shows no count when there is nothing to count.
 
-Summary cards below the tab strip show how many people have responded and how many comments there are. Select a card to jump to the matching tab, or select the not-voted card to send a reminder.
+Summary cards below the tab strip show participation:
+
+- **Responded** shows how many invited people have responded, with a progress bar that shows abstentions as a separate segment. While results are held, the bar shows overall participation without an abstention breakdown. Select the card to open the **Voters** tab.
+- **Comments** shows how many written comments voters have left. This is a different count from **Responded**, because not every voter writes a comment. Select the card to open the **Comments** tab.
+- **Not voted yet** shows how many people haven't voted. On an active vote with people left to vote it has a **Send reminder** button, which opens the reminder dialog, and a **View voters** button, which opens the **Voters** tab. Once everyone has voted it says **Everyone has voted** and the reminder button is gone. If there are no eligible voters, it says **No eligible voters** and keeps **View voters** without a reminder button. On an ended vote, the card is called **Did not vote** and only has **View voters**.
 
 The buttons at the top right depend on the vote's status:
 

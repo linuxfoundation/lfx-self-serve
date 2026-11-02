@@ -12,7 +12,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -23,7 +22,7 @@ import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -89,10 +88,6 @@ async function saveNoteFromMentees(page: Page, note: string): Promise<void> {
 }
 
 test.describe('Mentor reviewer notes', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('saves a note and shows it on the mentee and applicant rows', async ({ page }) => {
     await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(detailWith()) }));
     const sent = await stubNoteSave(page, 204);

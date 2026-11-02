@@ -11,8 +11,10 @@ import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
+import { SupportLauncherComponent } from '@components/support-launcher/support-launcher.component';
 import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
 import { MeetingComposerService } from './modules/meetings/meeting-composer/meeting-composer.service';
+import { ChunkLoadRecoveryComponent } from './shared/components/chunk-load-recovery/chunk-load-recovery.component';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
@@ -36,7 +38,7 @@ const ACCESS_DENIED_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent],
+  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent, SupportLauncherComponent, ChunkLoadRecoveryComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })

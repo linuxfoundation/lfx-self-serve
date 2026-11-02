@@ -1743,11 +1743,9 @@ export class CampaignController {
       // left to campaign-service: either date may be sent alone, and a bad one fails the platform
       // job there, so this predicate is not its rule to borrow.
       //
-      // Google DOES carry one (`googleFlightWindow`) and is still excluded, because its test is a
-      // DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
+      // Google carries one too (`googleFlightWindow`) but is judged separately below, because its
+      // test is a DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
       // `!end.After(start)`, so Google accepts a same-day flight that Meta and Reddit refuse.
-      // Judging it with this predicate would refuse a create Google would have taken — and it
-      // refuses malformed and reversed windows itself, before its first mutate, naming the value.
       //
       // Meta additionally refuses a start date already in the past, which is NOT replicated: it
       // compares against the pod's current UTC calendar day, so a create submitted near the date
@@ -1765,6 +1763,39 @@ export class CampaignController {
           ServiceValidationError.forField(
             'endDate',
             `the campaign end date must be after its start date, and ${platform === 'meta-ads' ? 'Meta' : 'Reddit'} will refuse this flight. Set an end date at least one day after the start date and create again.`,
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+
+      // Google (#4848): campaign-service's `validateFlightWindow` refuses an end BEFORE the start,
+      // before its first mutate, but the operator saw only the orchestrator's "platform campaign
+      // creation failed". A same-day flight is legal there, so it stays legal here. The window is
+      // the request's top-level pair, which is what `googleFlightWindow` forwards.
+      if (cutoverOn && platforms.includes('google-ads') && this.isReversedFlightWindow(body?.startDate, body?.endDate, { sameDayAllowed: true })) {
+        next(
+          ServiceValidationError.forField(
+            'endDate',
+            `the campaign end date (${String(body.endDate).trim()}) is before its start date (${String(body.startDate).trim()}), and Google will refuse this flight. Set an end date on or after the start date and create again.`,
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+
+      // Google Search with no keyword left (#4848). The builder drops blank terms, so a list of
+      // only blanks arrives here empty. campaign-service accepts an empty list but creates an ad
+      // group with no criteria, which never serves, and its activation gate refuses it later
+      // ("at least one keyword criterion is required"). The Implement tab refuses this case with
+      // `googleSearchKeywordsError`, and this keeps an older bundle or a direct call from creating
+      // the shell. Judged on the built config, so it covers exactly what would be dispatched.
+      const googleSearchConfig = configEnvelope['googleAdsConfig'] as { channel?: unknown; keywords?: unknown } | undefined;
+      if (cutoverOn && googleSearchConfig?.channel === 'search' && Array.isArray(googleSearchConfig.keywords) && googleSearchConfig.keywords.length === 0) {
+        next(
+          ServiceValidationError.forField(
+            'keywords',
+            'Google Search needs at least one keyword to serve, and this create has none. Add a keyword to the brief, or choose another campaign type, and create again.',
             { operation: 'campaign_create', service: 'campaign_controller' }
           )
         );
@@ -3571,10 +3602,27 @@ export class CampaignController {
     const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
 
     try {
+      // A sentinel of its own, not `null`: the API client answers `null` for an empty success, which
+      // must still fail the 502 check below rather than read as a refusal.
+      const refused = Symbol('refused');
       const [payload, connection] = await Promise.all([
-        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug),
+        // Both reads sit behind campaign-service's `campaign_manager` rule, so a ROOT writer without the
+        // project's role is refused on both (#4837). The list's 403 is caught to `refused` rather than
+        // failing the whole read, so the answer is the connection's `forbidden` — named as the missing
+        // role on the tab — not an HTTP 403 the tab would read as the shared-account restriction.
+        this.campaignServiceClient.listTwitterAdsAccounts(req, projectSlug).catch((error: unknown) => {
+          if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) return refused;
+          throw error;
+        }),
         this.readMonitorConnection(req, projectSlug, 'twitter-ads'),
       ]);
+      // `refused` is the only symbol the list read can settle with; `typeof` is what narrows the union.
+      if (typeof payload === 'symbol') {
+        const forbiddenResult: TwitterAdsAccountsResult = { accounts: [], connection: { state: 'forbidden', accountId: null, label: null } };
+        logger.success(req, operation, startTime, { count: 0, connection: 'forbidden' });
+        res.json(forbiddenResult);
+        return;
+      }
       // `accounts` is required upstream; reading its absence as an empty list would say the
       // credential reaches nothing, so an unreadable body fails the read instead.
       if (!Array.isArray(payload?.accounts)) {
@@ -4825,9 +4873,9 @@ export class CampaignController {
   }
 
   /**
-   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's
-   * own 404 is `no_connection`, and anything else — a gateway 404, a 403, a transport failure — is
-   * `unavailable`, because only the service's typed 404 says the connection does not exist.
+   * One provider's connection as the Monitor tab's picker state. Never throws: campaign-service's own
+   * 404 is `no_connection`, its 403 is `forbidden`, and anything else — a gateway 404, a transport
+   * failure — is `unavailable`, because only the service's typed 404 says the connection does not exist.
    */
   private async readMonitorConnection(
     req: Request,
@@ -4840,6 +4888,12 @@ export class CampaignController {
     } catch (error) {
       if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return { state: 'no_connection', accountId: null, label: null };
+      }
+      // campaign-service authorizes every connection read with the project's `campaign_manager`
+      // relation, which a ROOT writer admitted by this app's guards (`requireGoogleMonitorAccess`,
+      // and `requireCampaignManager`'s ROOT writer branch) need not hold (#4837). A standing refusal.
+      if (error instanceof MicroserviceError && !error.transportFailure && error.statusCode === 403) {
+        return { state: 'forbidden', accountId: null, label: null };
       }
       logger.warning(req, operation, 'campaign-service connection read failed; reporting the platform as unavailable', {
         provider,
@@ -5367,12 +5421,13 @@ export class CampaignController {
   }
 
   /**
-   * Whether a flight window is one Meta and Reddit will refuse for ending on or before its start.
+   * Whether a flight window is one Meta and Reddit will refuse for ending on or before its start,
+   * or, with `sameDayAllowed`, one Google will refuse for ending before it.
    *
-   * Answers only the question those two platforms' `CreateCampaign` asks — `!endDate.After(
-   * startDate)` — and answers `false` for anything it cannot judge with certainty. That asymmetry
-   * is the point: a `true` here refuses an operator's create, so it is returned ONLY for a window
-   * whose two ends are both unambiguous and genuinely reversed.
+   * Answers only the question those platforms ask — Meta's and Reddit's `!endDate.After(startDate)`,
+   * Google's `end.Before(start)` (#4848) — and answers `false` for anything it cannot judge with
+   * certainty. That asymmetry is the point: a `true` here refuses an operator's create, so it is
+   * returned ONLY for a window whose two ends are both unambiguous and genuinely reversed.
    *
    * Hence the deliberately narrow accept: both values must be strings matching `YYYY-MM-DD` with
    * real calendar components (the round-trip check rejects `2026-02-31`, which `new Date` would
@@ -5385,7 +5440,7 @@ export class CampaignController {
    * Once both ends are known-valid zero-padded ISO dates, a lexicographic comparison orders them
    * identically to the `time.Time` comparison upstream, so no date arithmetic is needed.
    */
-  private isReversedFlightWindow(rawStart: unknown, rawEnd: unknown): boolean {
+  private isReversedFlightWindow(rawStart: unknown, rawEnd: unknown, options: { sameDayAllowed?: boolean } = {}): boolean {
     const asCalendarDate = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
       const trimmed = value.trim();
@@ -5400,7 +5455,7 @@ export class CampaignController {
     const end = asCalendarDate(rawEnd);
     if (start === null || end === null) return false;
 
-    return end <= start;
+    return options.sameDayAllowed === true ? end < start : end <= start;
   }
 
   /**
@@ -5735,7 +5790,11 @@ export class CampaignController {
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
       // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
       // dispatcher has no field for.
-      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+      // A blank term is dropped, as the Implement tab drops it (#4848): campaign-service refuses it,
+      // and the operator would see only the generic failure.
+      keywords: (body.keywords ?? [])
+        .filter((k) => typeof k?.term === 'string' && k.term.trim() !== '')
+        .map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
       // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
@@ -6481,8 +6540,8 @@ export class CampaignController {
    * first mutate — named, with the offending value in the message, and with no budget stranded.
    * Judging the shape here could only turn that named refusal into this method's vaguer one, or
    * refuse a value Go would have taken. Note also that Google's comparison is `end.Before(start)`,
-   * NOT the strict `!end.After(start)` Meta and Reddit use, so `isReversedFlightWindow` is the
-   * wrong test for this platform: a same-day flight is legal here and that guard would refuse it.
+   * NOT the strict `!end.After(start)` Meta and Reddit use, so `createCampaign` judges this window
+   * with `isReversedFlightWindow`'s `sameDayAllowed` form: a same-day flight is legal here.
    *
    * An absent or blank value omits the key, matching how `geoTargets` reaches its upstream default.
    */

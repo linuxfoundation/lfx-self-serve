@@ -76,6 +76,7 @@ export {
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
   computeResultPercentage,
+  computeParticipationSegments,
   computeVoteParticipationStats,
   isRankedPollType,
   votePermalinkPath,
@@ -452,6 +453,11 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
   return formValue.timezone || LEGACY_VOTE_TIMEZONE;
 }
 
+/** Keeps a non-empty description byte-for-byte (indentation, blank lines) so display surfaces can preserve it; blank-only becomes ''. */
+function normalizeDescription(description: string | null | undefined): string {
+  return description?.trim() ? description : '';
+}
+
 /**
  * Builds a CreateVoteRequest from form values
  * @param formValue - The vote form values
@@ -461,7 +467,7 @@ function resolveDraftEndTimeTimezone(formValue: VoteFormValue): string {
 export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: string): CreateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
@@ -480,7 +486,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
 
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,
@@ -501,7 +507,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
 export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: string): UpdateVoteRequest {
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: formValue.close_date ? combineDateTime(formValue.close_date, formValue.close_time, formValue.timezone) : '',
     end_time_timezone: formValue.timezone,
     project_uid: projectUid,
@@ -520,7 +526,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
 
   return {
     name: formValue.title.trim(),
-    description: formValue.description?.trim() || '',
+    description: normalizeDescription(formValue.description),
     end_time: resolveDraftEndTime(formValue),
     end_time_timezone: resolveDraftEndTimeTimezone(formValue),
     project_uid: projectUid,

@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import {
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
@@ -40,6 +41,7 @@ import {
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
@@ -97,6 +99,9 @@ beforeEach(() => {
  * fall-through to the legacy path. So a user who submits during that window used to be told
  * "brief has not been saved yet" about a brief that was being saved as they clicked.
  */
+/** One usable keyword, so a Search create is not held for having none (#4848). */
+const SEED_KEYWORD = { term: 'cloud native conference', matchType: 'Phrase', intentLevel: 'High', notes: '' };
+
 describe('ImplementationTabComponent submit gate', () => {
   let fixture: ComponentFixture<ImplementationTabComponent>;
 
@@ -114,12 +119,15 @@ describe('ImplementationTabComponent submit gate', () => {
   function makeOtherwiseValid(): void {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -284,12 +292,15 @@ describe('ImplementationTabComponent submit gate', () => {
   it('blocks submit when Google is selected with only a hidden DemandGen checked', async () => {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -1892,12 +1903,15 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
   function makeOtherwiseValid(): void {
     const c = fixture.componentInstance as unknown as {
       selectedPlatforms: { set(v: string[]): void };
+      briefKeywords: { set(v: unknown[]): void };
       campaignForm: {
         controls: Record<string, { setValue(v: unknown): void }>;
         get(name: string): { controls: { setValue(v: unknown): void }[] } | null;
       };
     };
     c.selectedPlatforms.set(['google-ads']);
+    // A Search create needs a keyword (#4848).
+    c.briefKeywords.set([SEED_KEYWORD]);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://events.example.com/kubecon-eu-2026');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
@@ -4446,6 +4460,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4480,6 +4495,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4506,6 +4522,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4557,6 +4574,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -4637,6 +4655,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   }
@@ -4758,6 +4777,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   }
@@ -4820,6 +4840,7 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
 
@@ -5185,6 +5206,7 @@ describe('ImplementationTabComponent create failure messaging', () => {
     fixture.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     fixture.detectChanges();
   };
@@ -5301,6 +5323,8 @@ function seedChannel(fixture: ComponentFixture<ImplementationTabComponent>, patc
   fixture.componentRef.setInput('briefData', {
     eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
     selectedPlatforms: ['google-ads'],
+    // One keyword, so a Search create is not held for having none (#4848).
+    keywords: [SEED_KEYWORD],
   } as unknown as CampaignBriefOutput);
   fixture.detectChanges();
 
@@ -5813,6 +5837,7 @@ const DISPLAY_COMPLETE = {
   descriptions: 'A description',
   businessName: 'Acme',
   marketingImages: 'https://example.com/a.png',
+  squareMarketingImages: 'https://example.com/square.png',
 };
 
 /**
@@ -5889,22 +5914,76 @@ describe('ImplementationTabComponent google creative minimums', () => {
   });
 
   /**
-   * The either-or, which no per-field bound can state: `min: 1` on both members would refuse the
-   * half upstream takes, and on one member would name the wrong field. Both assertions matter —
-   * the first alone passes against a rule that fires even when a marketing image IS supplied.
+   * Display requires BOTH marketing shapes (#4848): Google's `ResponsiveDisplayAdInfo` refuses an ad
+   * with only one, after the budget and the campaign exist. Each missing shape is named on its own.
    */
-  it('requires one of the two marketing arrays, and accepts either', () => {
+  it.each([
+    { missing: 'marketingImages', present: 'squareMarketingImages' },
+    { missing: 'squareMarketingImages', present: 'marketingImages' },
+  ] as const)('refuses a display creative without $missing, even with $present', ({ missing }) => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls.displayCreative.patchValue({ ...DISPLAY_COMPLETE, [missing]: '' });
+    const spec = creativeSpec('display', missing);
+
+    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative needs at least 1 entry in ${spec.label} — 0 given.`);
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** Demand Gen's pair stays reciprocal: either shape alone satisfies it. */
+  it('accepts a demand gen creative with either marketing shape', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    const group = c['campaignForm'].controls.demandGenCreative;
+    const base = { headlines: 'One headline', descriptions: 'A description', businessName: 'Acme', logoImages: 'https://example.com/logo.png' };
+
+    group.patchValue({ ...base, marketingImages: 'https://example.com/a.png', squareMarketingImages: '' });
+    expect(c['googleCreativeError']()).toBeNull();
+
+    group.patchValue({ marketingImages: '', squareMarketingImages: 'https://example.com/square.png' });
+    expect(c['googleCreativeError']()).toBeNull();
+
+    group.patchValue({ squareMarketingImages: '' });
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} creative ${GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'][0].message}`
+    );
+  });
+
+  /**
+   * A ceiling shared across fields (#4848): three landscape and three square logos each sit under
+   * their own cap of five, and together sit over the five upstream allows across both.
+   */
+  it('refuses display logos over the cap the two logo fields share', () => {
     const c = seedChannel(fixture, { includeDisplay: true });
     const group = c['campaignForm'].controls.displayCreative;
-    group.patchValue({ ...DISPLAY_COMPLETE, marketingImages: '' });
+    const urls = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${prefix}${i}.png`).join('\n');
+    group.patchValue({ ...DISPLAY_COMPLETE, logoImages: urls('logo', 3), squareLogoImages: urls('square-logo', 3) });
 
-    expect(c['googleCreativeError']()).toBe(`${GOOGLE_CREATIVE_SECTION_TITLES.display} creative ${GOOGLE_CREATIVE_EITHER_OR_RULES.display[0].message}`);
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} creative has 6 logo images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 5.`
+    );
+    expect(c['canSubmit']()).toBe(false);
 
-    group.patchValue({ squareMarketingImages: 'https://example.com/square.png' });
+    group.patchValue({ squareLogoImages: urls('square-logo', 2) });
     expect(c['googleCreativeError']()).toBeNull();
+  });
 
-    group.patchValue({ squareMarketingImages: '', marketingImages: 'https://example.com/a.png' });
-    expect(c['googleCreativeError']()).toBeNull();
+  /** The same check on Demand Gen's four marketing shapes, which share twenty between them. */
+  it('refuses demand gen marketing images over the cap the four shapes share', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+    const urls = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `https://example.com/${prefix}${i}.png`).join('\n');
+    c['campaignForm'].controls.demandGenCreative.patchValue({
+      headlines: 'One headline',
+      descriptions: 'A description',
+      businessName: 'Acme',
+      logoImages: 'https://example.com/logo.png',
+      marketingImages: urls('m', 6),
+      squareMarketingImages: urls('s', 5),
+      portraitImages: urls('p', 5),
+      tallPortraitImages: urls('t', 5),
+    });
+
+    expect(c['googleCreativeError']()).toBe(
+      `${GOOGLE_CREATIVE_SECTION_TITLES['demand-gen']} creative has 21 marketing images across its fields (pasted URLs and stored images together) — 1 over the shared cap of 20.`
+    );
   });
 
   /** Performance Max states its two marketing requirements separately, so it carries no rule. */
@@ -8247,6 +8326,7 @@ describe('ImplementationTabComponent google extension seeding', () => {
     const next = {
       eventDetails: { name: 'Open Source Summit', slug: 'oss-na-2026', registrationUrl: 'https://example.com/oss', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
       structuredCopy: { google_search: { headlines: ['Attend OSS'], descriptions: ['Join us in Denver'] } },
     } as unknown as CampaignBriefOutput;
     fixture.componentRef.setInput('draft', null);
@@ -12404,6 +12484,7 @@ describe('ImplementationTabComponent google stored images', () => {
     f.componentRef.setInput('briefData', {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
       selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
     } as unknown as CampaignBriefOutput);
     f.detectChanges();
     const c = f.componentInstance as unknown as Record<string, any>;
@@ -12629,6 +12710,7 @@ describe('ImplementationTabComponent google stored images', () => {
     display.descriptions.setValue('D1');
     display.businessName.setValue('LF');
     display.marketingImages.setValue('https://cdn.example.org/m.png');
+    display.squareMarketingImages.setValue('https://cdn.example.org/sq.png');
     c['onGoogleImagePick'](SLOT, WIDE_LOGO);
     display.logoImages.setValue(['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n'));
 
@@ -12639,7 +12721,14 @@ describe('ImplementationTabComponent google stored images', () => {
   });
 
   const FIVE_LOGO_URLS = ['1', '2', '3', '4', '5'].map((n) => `https://cdn.example.org/${n}.png`).join('\n');
-  const DISPLAY_COPY = { headlines: 'H1', longHeadline: 'Long', descriptions: 'D1', businessName: 'LF', marketingImages: 'https://cdn.example.org/m.png' };
+  const DISPLAY_COPY = {
+    headlines: 'H1',
+    longHeadline: 'Long',
+    descriptions: 'D1',
+    businessName: 'LF',
+    marketingImages: 'https://cdn.example.org/m.png',
+    squareMarketingImages: 'https://cdn.example.org/sq.png',
+  };
 
   /** A draft can carry an over-cap slot the controls could not have produced; Create must still refuse it. */
   it('refuses a restored draft whose slot is over its cap', async () => {
@@ -12848,6 +12937,38 @@ describe('ImplementationTabComponent google stored images', () => {
 
       expect(logos(c)).toEqual([{ imageAssetId: WIDE_LOGO }]);
       expect(c['googleSuggestedApplyResult']()).toBe('Nothing to fill: every image field with a suggestion already has images.');
+    });
+
+    /** The slot grid reads the library only; the tab tells it what the form already holds, by plan slot (#4833). */
+    it('counts pasted URLs and images held for the open brief per plan slot, for the grid', async () => {
+      const { c } = await mount(true);
+      expect(c['googleFormFilledSlots']()).toEqual({});
+
+      c['campaignForm'].controls.displayCreative.controls.logoImages.setValue('https://cdn.example.org/a.png\nhttps://cdn.example.org/b.png');
+      c['onGoogleImagePick']('displayCreative.logoImages', WIDE_LOGO);
+      c['onGoogleImagePick']('displayCreative.squareLogoImages', SQUARE_LOGO);
+      // Held for another brief: not sent, so not counted.
+      c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
+        ...held,
+        'displayCreative.marketingImages': [{ id: UPLOADED, name: '', briefId: OTHER_BRIEF }],
+      }));
+
+      expect(c['googleFormFilledSlots']()).toEqual({
+        'google-ads/DISPLAY/logoImages': 3,
+        'google-ads/DISPLAY/squareLogoImages': 1,
+      });
+    });
+
+    /** Pasted URLs fill a slot whatever the library answers; held images count only where the request would send them. */
+    it('counts pasted URLs with the library off, and ignores held images it would not send', async () => {
+      const { c } = await mount(false);
+      c['campaignForm'].controls.displayCreative.controls.marketingImages.setValue('https://cdn.example.org/wide.png');
+      c['googleHeldImages'].update((held: Record<string, unknown[]>) => ({
+        ...held,
+        'displayCreative.logoImages': [{ id: WIDE_LOGO, name: '', briefId: BRIEF_ID }],
+      }));
+
+      expect(c['googleFormFilledSlots']()).toEqual({ 'google-ads/DISPLAY/marketingImages': 1 });
     });
 
     /** Performance Max names its slots by Google asset field type; the table maps them onto the request's fields. */
@@ -13600,6 +13721,16 @@ describe('ImplementationTabComponent x create', () => {
       expect(q(fixture, 'implementation-twitter-account-retry')).not.toBeNull();
     });
 
+    /** A refusal for lack of the project's `campaign_manager` role (#4837) is standing: named, with no Retry. */
+    it('names the missing project role when campaign-service refused to read the X connection', async () => {
+      getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'forbidden', accountId: null, label: null }));
+      const { fixture } = await mount(true);
+
+      expect(q(fixture, 'implementation-twitter-account-forbidden')?.textContent).toContain('Your account needs the campaign manager role on this project');
+      expect(q(fixture, 'implementation-twitter-account-retry')).toBeNull();
+      expect(q(fixture, 'implementation-twitter-account-error')).toBeNull();
+    });
+
     it('says the LF shared account is used when the project has no X connection, and lets Create through', async () => {
       getTwitterAdsAccounts.mockReturnValue(accounts({ state: 'no_connection', accountId: null, label: null }));
       const { fixture } = await mount(true);
@@ -14340,5 +14471,510 @@ describe('ImplementationTabComponent performance max prefill', () => {
 
     const notice = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-prefill-notice-performance-max"]');
     expect(notice?.textContent).toContain('filled in from the brief');
+  });
+});
+
+/**
+ * Pasted Google image URLs are checked in the browser when the operator leaves the field: an
+ * advisory line only, since campaign-service downloads and checks every pasted URL before anything
+ * is created. jsdom never loads an image, so `Image` is a controllable fake.
+ */
+describe('ImplementationTabComponent pasted Google image URL check', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let images: FakeImage[];
+
+  class FakeImage {
+    public onload: (() => void) | null = null;
+    public onerror: (() => void) | null = null;
+    public naturalWidth = 0;
+    public naturalHeight = 0;
+    public src = '';
+    public referrerPolicy = '';
+    public constructor() {
+      images.push(this);
+    }
+    public load(width: number, height: number): void {
+      this.naturalWidth = width;
+      this.naturalHeight = height;
+      this.onload?.();
+    }
+    public fail(): void {
+      this.onerror?.();
+    }
+  }
+
+  const group = GOOGLE_CREATIVE_REQUEST_KEYS.display;
+  const key = `${group}.marketingImages`;
+  const marketingField = (): Record<string, unknown> =>
+    GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'marketingImages') as Record<string, unknown>;
+
+  function setUrls(c: Record<string, any>, value: string): void {
+    c['campaignForm'].controls[group].controls['marketingImages'].setValue(value);
+  }
+
+  function warning(c: Record<string, any>): string | undefined {
+    return (c['googleTypedImageWarnings']() as Record<string, string>)[key];
+  }
+
+  beforeEach(async () => {
+    images = [];
+    vi.stubGlobal('Image', FakeImage);
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('names a pasted image that misses the slot shape, with its measured size', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images.map((i) => i.src)).toEqual(['https://cdn.example.com/square.png']);
+    expect(warning(c)).toBeUndefined();
+
+    images[0].load(300, 300);
+
+    expect(warning(c)).toContain('Measured here as not 1.91:1');
+    expect(warning(c)).toContain('https://cdn.example.com/square.png (300x300)');
+    // "Likely": a browser applies EXIF rotation that campaign-service's decoder does not.
+    expect(warning(c)).toContain('Create will likely be refused for it;');
+    expect(images[0]).toMatchObject({ referrerPolicy: 'no-referrer' });
+  });
+
+  it('says nothing about a pasted image that fits', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(1200, 628);
+
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('reports an image that will not load as unchecked, not as wrong', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hotlinked.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+
+    expect(warning(c)).toBe('Could not be loaded here, so not checked: https://cdn.example.com/hotlinked.png. campaign-service checks it again at Create.');
+  });
+
+  it('gives up on a slow host after the timeout, as unchecked', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS - 1);
+    expect(warning(c)).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(warning(c)).toContain('Could not be loaded here');
+    // A late load after the timeout changes nothing.
+    images[0].load(300, 300);
+    expect(warning(c)).not.toContain('Measured here as not');
+  });
+
+  it('drops the warning when the URL is removed', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toBeDefined();
+
+    setUrls(c, '');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  /**
+   * A settled URL is probed again, so a host that answers differently now is heard. In a real browser a
+   * same-URL replacement may still come back from the cache, which is why this is best effort; here the
+   * fake answers whatever the test loads.
+   */
+  it('probes a settled URL again on the next blur and shows the newer answer', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/hero.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    expect(warning(c)).toContain('(300x300)');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    // The last answer stays up while the URL is checked again, rather than blanking until it settles.
+    expect(warning(c)).toContain('(300x300)');
+    // Still in flight, so leaving the field again starts no third probe.
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(images).toHaveLength(2);
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('retries a URL that could not be loaded', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://flaky.example.com/a.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].fail();
+    expect(warning(c)).toContain('Could not be loaded here');
+
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[1].load(1200, 628);
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('starts one probe for a URL pasted on two lines', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/twice.png\nhttps://cdn.example.com/twice.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  /** The line appears after focus has left the field, so an always-mounted region announces it. */
+  it('announces the line in a live region that is mounted empty, naming the section and field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    fixture.detectChanges();
+    const region = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-google-image-url-check-live"]');
+    expect(region()).not.toBeNull();
+    expect(region()?.textContent?.trim()).toBe('');
+    expect(region()?.getAttribute('role')).toBe('status');
+
+    setUrls(c, 'https://cdn.example.com/square.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const marketingLabel = (marketingField() as { label: string }).label;
+    expect(region()?.textContent?.trim()).toContain(`${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here as not 1.91:1`);
+    // The visible line carries no role, so the text is read once.
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]')?.getAttribute('role')
+    ).toBeNull();
+  });
+
+  it('does not start a second probe while one for the same URL is still loading', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/slow.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+  });
+
+  it('names every misfit and every unchecked URL in one line, in the plural', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/a.png\nhttps://cdn.example.com/b.png\nhttps://down.example.com/c.png\nhttps://down.example.com/d.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    images[0].load(300, 300);
+    images[1].load(100, 52);
+    images[2].fail();
+    images[3].fail();
+
+    const line = warning(c) ?? '';
+    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52). Create will likely be refused for them;');
+    expect(line).toContain('not checked: https://down.example.com/c.png, https://down.example.com/d.png. campaign-service checks them again at Create.');
+  });
+
+  it('probes nothing for a non-image field or a value that is not an http(s) URL', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['campaignForm'].controls[group].controls['headlines'].setValue('https://cdn.example.com/a.png');
+    c['onGoogleImageFieldBlur'](
+      group,
+      GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'headlines')
+    );
+    setUrls(c, 'not a url\nftp://files.example.com/a.png\nlfx-asset:1234');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(0);
+  });
+
+  /** The browser would send the operator's session cookie with it, so a route such as `/logout` would act on the session. */
+  it("never probes a URL on the application's own host, whatever its scheme, port or trailing dot", () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const host = window.location.hostname;
+    setUrls(
+      c,
+      `${window.location.origin}/logout\nhttp://${host}/logout\nhttps://${host}:8443/logout\nhttps://${host.toUpperCase()}./logout\nhttps://cdn.example.com/hero.png`
+    );
+    c['onGoogleImageFieldBlur'](group, marketingField());
+
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toBe('https://cdn.example.com/hero.png');
+    expect(warning(c)).toBeUndefined();
+  });
+
+  it('probes on leaving the textarea and renders the line under the field', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://cdn.example.com/square.png');
+    fixture.detectChanges();
+    const textarea = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="implementation-creative-display-marketingImages"]'
+    ) as HTMLTextAreaElement;
+    textarea.dispatchEvent(new Event('blur'));
+    images[0].load(300, 300);
+    fixture.detectChanges();
+
+    const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]');
+    expect(line?.textContent).toContain('(300x300)');
+  });
+});
+
+/**
+ * The Google budget is DAILY (#4847). campaign-service creates it with no period, which Google treats
+ * as daily, so the brief's planning TOTAL is divided over the flight the tab opens with, and the
+ * flight total the daily figure implies is shown beside it.
+ */
+describe('ImplementationTabComponent google daily budget', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  let c: Record<string, any>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    c = fixture.componentInstance as unknown as Record<string, any>;
+  });
+
+  /** Mount a brief through the real `populateFromBrief` path, with no draft to restore over it. */
+  function mountBrief(patch: Record<string, unknown>): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      ...patch,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  const text = (testId: string): string | null =>
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+  it('labels the field as a daily budget', () => {
+    mountBrief({ totalBudget: 900 });
+
+    const label = (fixture.nativeElement as HTMLElement).querySelector('label[for="implementation-budget"]');
+    expect(label?.textContent?.trim()).toBe('Google Ads Daily Budget');
+  });
+
+  it("seeds the daily budget from the brief's total divided over the opening flight", () => {
+    mountBrief({ totalBudget: 900 });
+
+    // The tab opens on today to today + 30: 31 days with both ends counted, and 900 / 31 = 29.03 rounded down.
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(29.03);
+    expect(text('implementation-budget-hint')).toBe(
+      "An average daily amount, in the ad account's currency. About 899.93 over 31 days, start and end days included. The brief plans 900 in total."
+    );
+  });
+
+  it.each([[null], [undefined], [0], [-50]])('opens on the default daily budget when the brief total is %j', (totalBudget) => {
+    mountBrief({ totalBudget });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(DEFAULT_GOOGLE_DAILY_BUDGET_USD);
+    expect(c['googleBriefTotalBudget']()).toBeNull();
+    expect(text('implementation-budget-hint')).not.toContain('The brief plans');
+  });
+
+  it('keeps a seeded daily figure below one rather than rounding it up past the plan', () => {
+    mountBrief({ totalBudget: 10 });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(text('implementation-budget-error')).toBe('Enter a daily budget of at least 1.');
+  });
+
+  it('recomputes the flight total as the budget and dates change', () => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd: 10, startDate: '2026-12-01', endDate: '2026-12-10' });
+    fixture.detectChanges();
+    expect(text('implementation-budget-hint')).toContain('About 100 over 10 days, start and end days included.');
+
+    c['campaignForm'].patchValue({ endDate: '2026-12-01' });
+    fixture.detectChanges();
+    expect(text('implementation-budget-hint')).toContain('About 10 over 1 day, start and end days included.');
+  });
+
+  it.each([
+    ['an emptied budget', { budgetUsd: null }],
+    ['an end before the start', { startDate: '2026-12-10', endDate: '2026-12-01' }],
+    ['an emptied date', { endDate: '' }],
+  ])('drops the flight total for %s', (_label, patch) => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue(patch);
+    fixture.detectChanges();
+
+    expect(c['googleBudgetFlight']()).toBeNull();
+    expect(text('implementation-budget-hint')).not.toContain('About');
+  });
+
+  it.each([[null], [0], [0.5]])('names the minimum under the field for a daily budget of %j', (budgetUsd) => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd });
+    fixture.detectChanges();
+
+    expect(text('implementation-budget-error')).toBe('Enter a daily budget of at least 1.');
+  });
+
+  it('shows no budget error at the minimum', () => {
+    mountBrief({ totalBudget: 900 });
+
+    c['campaignForm'].patchValue({ budgetUsd: 1 });
+    fixture.detectChanges();
+
+    expect(text('implementation-budget-error')).toBeNull();
+  });
+
+  it("drops the previous brief's planned total when a brief without one is handed over", () => {
+    mountBrief({ totalBudget: 900 });
+    expect(text('implementation-budget-hint')).toContain('The brief plans 900 in total.');
+
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'OSS NA 2027', slug: 'oss-na-2027', registrationUrl: 'https://example.org', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(DEFAULT_GOOGLE_DAILY_BUDGET_USD);
+    expect(text('implementation-budget-hint')).not.toContain('The brief plans');
+  });
+
+  it('shows neither the field nor its error when Google is not selected', () => {
+    // A total this small seeds a daily figure below the minimum, which would show the error.
+    mountBrief({ totalBudget: 10, selectedPlatforms: ['meta-ads'] });
+
+    expect(c['campaignForm'].controls.budgetUsd.value).toBe(0.32);
+    expect(text('implementation-budget-hint')).toBeNull();
+    expect(text('implementation-budget-error')).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-budget"]')).toBeNull();
+  });
+
+  it('sends the daily figure on screen, not the brief total', () => {
+    const seeded = seedChannel(fixture, { includeSearch: true });
+    seeded['campaignForm'].patchValue({ budgetUsd: 29.03 });
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+    seeded['submit']();
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0]).toMatchObject({ budgetUsd: 29.03 });
+  });
+
+  /** The error is announced with the field, not only shown under it (#4848, review of #4852). */
+  it('ties the budget error to the field only while it shows', () => {
+    mountBrief({ totalBudget: 900 });
+    const input = (): HTMLElement => (fixture.nativeElement as HTMLElement).querySelector('#implementation-budget') as HTMLElement;
+
+    expect(input().getAttribute('aria-describedby')).toBe('implementation-budget-hint');
+    expect(input().getAttribute('aria-invalid')).toBeNull();
+
+    c['campaignForm'].patchValue({ budgetUsd: 0 });
+    fixture.detectChanges();
+    expect(input().getAttribute('aria-describedby')).toBe('implementation-budget-hint implementation-budget-error');
+    expect(input().getAttribute('aria-invalid')).toBe('true');
+    expect((fixture.nativeElement as HTMLElement).querySelector('#implementation-budget-error')?.textContent?.trim()).toBe(
+      'Enter a daily budget of at least 1.'
+    );
+  });
+});
+
+describe('ImplementationTabComponent google flight and keywords', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const text = (testId: string): string | null =>
+    (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`)?.textContent?.replace(/\s+/g, ' ').trim() ?? null;
+
+  /** #4848: Google refuses an end before the start, and the operator saw only the generic failure. */
+  it('names an end date before the start and holds Create', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    expect(c['canSubmit']()).toBe(true);
+
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-09' });
+    fixture.detectChanges();
+
+    expect(text('implementation-google-flight-error')).toBe('Google needs the end date (2026-12-09) on or after the start date (2026-12-10).');
+    expect(c['canSubmit']()).toBe(false);
+    const end = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-end-date"]') as HTMLElement;
+    expect(end.getAttribute('aria-describedby')).toBe('implementation-google-flight-error');
+    expect(end.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  /** Google accepts a same-day flight, so it is not refused here. */
+  it('accepts a same-day flight', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-10' });
+    fixture.detectChanges();
+
+    expect(c['googleFlightError']()).toBeNull();
+    expect(text('implementation-google-flight-error')).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** The Google rule only: the other platforms judge the window by their own rules. */
+  it('says nothing about the flight when Google is not selected', () => {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['meta-ads'],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['campaignForm'].patchValue({ startDate: '2026-12-10', endDate: '2026-12-09' });
+    fixture.detectChanges();
+
+    expect(c['googleFlightError']()).toBeNull();
+    expect(text('implementation-google-flight-error')).toBeNull();
+  });
+
+  /** #4848: zero keywords creates a Search campaign that can never serve. */
+  it.each([
+    ['no keywords', []],
+    [
+      'only blank keywords',
+      [
+        { ...SEED_KEYWORD, term: '   ' },
+        { ...SEED_KEYWORD, term: '' },
+      ],
+    ],
+  ])('holds a Search create whose brief has %s, and says why', (_label, keywords) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['briefKeywords'].set(keywords);
+    fixture.detectChanges();
+
+    expect(text('implementation-google-search-keywords-error')).toBe(
+      'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.'
+    );
+    expect(c['canSubmit']()).toBe(false);
+  });
+
+  /** Only Search carries keywords upstream, so another type is not held for having none. */
+  it('does not hold a non-Search create for having no keywords', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    c['briefKeywords'].set([]);
+    c['campaignForm'].controls.displayCreative.patchValue(DISPLAY_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['googleSearchKeywordsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+  });
+
+  /** A blank term is dropped from the request rather than refused upstream with the generic failure. */
+  it('sends only the keywords with a term', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['briefKeywords'].set([{ ...SEED_KEYWORD, term: ' ' }, SEED_KEYWORD]);
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+    c['submit']();
+
+    expect(createCampaign).toHaveBeenCalledTimes(1);
+    expect(createCampaign.mock.calls[0][0]).toMatchObject({ keywords: [SEED_KEYWORD] });
   });
 });

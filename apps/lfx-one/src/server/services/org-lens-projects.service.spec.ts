@@ -3,11 +3,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, proxyRequest, cacheValues } = vi.hoisted(() => ({
+const { execute, proxyRequest, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
   execute: vi.fn(),
   proxyRequest: vi.fn(),
   cacheValues: new Map<string, string>(),
+  resolveOrgScope: vi.fn(),
 }));
+
+// The organization scope (lfx-self-serve-ops#1219) resolves to `all` (an account without an Insights organization)
+// unless a test says otherwise, so the scope row read never touches the cache the projects tests inspect.
+vi.mock('../helpers/org-scope.helper', () => ({ resolveOrgScope }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -79,6 +84,8 @@ beforeEach(() => {
   vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
   cacheValues.clear();
   ValkeyService.resetInstance();
+  resolveOrgScope.mockReset();
+  resolveOrgScope.mockResolvedValue('all');
 });
 
 afterEach(() => {
@@ -575,7 +582,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // change, so the guard has to reject the shape too — decoding one would read `projects.k`/
     // `projects.r` off an array and serve an empty page for the whole TTL.
     const legacy = { orgSlug: 'acme', orgName: ORG_NAME, dataUpdatedAt: '2026-01-01T00:00:00.000Z', projects: [{ slug: 'k8s', name: 'Kubernetes' }] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__`)!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!, JSON.stringify(legacy));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
@@ -686,5 +693,50 @@ describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)',
       ([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES')
     )!;
     expect(peopleSql).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'");
+  });
+});
+
+describe('OrgLensProjectsService.getProjects organization scope (lfx-self-serve-ops#1219)', () => {
+  const service = new OrgLensProjectsService();
+
+  const peopleSql = (): string =>
+    String(execute.mock.calls.find(([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES'))![0]);
+
+  beforeEach(() => {
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow()] };
+      return { rows: [] };
+    });
+  });
+
+  it('lists only Insights-scoped contributors under insights, participants unscoped, under a key ending in the scope', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights');
+
+    expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'insights');
+
+    expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer' AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE))\n");
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:insights`)!)).toBe(true);
+  });
+
+  it("reads today's people SQL under all", async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all');
+
+    expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'\n");
+    expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
+    expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'all');
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!)).toBe(true);
+  });
+
+  it('serves all to an account without an Insights organization', async () => {
+    resolveOrgScope.mockResolvedValue('all');
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights');
+
+    expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all`)!)).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PLATFORMS, GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS } from '@lfx-one/shared/constants';
 import type {
   CampaignPlatform,
   CreativeSlotCoverageGroup,
@@ -24,6 +24,7 @@ const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> 
 
 /**
  * Which of a brief's stored images fill which platform image slots, and what is still missing.
+ * A slot the host's form already fills (`formFilled`) reads as filled in the form instead (#4833).
  *
  * Reads `get-asset-plan` itself rather than taking a plan as an input: the plan is derived from the
  * library and the platform selection, both of which change while the operator is on this tab, and a
@@ -75,6 +76,12 @@ export class CreativeSlotGridComponent {
    * whose text does not change announces nothing, so this is what makes the second one heard.
    */
   public readonly applySeq = input(0);
+  /**
+   * How many images each slot already has IN THE FORM — pasted URLs plus picked library images —
+   * keyed by `slot_key` (#4833). The plan reads only the stored library, so without this a slot the
+   * operator filled by hand would still read as missing while the form above it is satisfied.
+   */
+  public readonly formFilled = input<Readonly<Record<string, number>>>({});
 
   // === Outputs ===
   /**
@@ -215,7 +222,7 @@ export class CreativeSlotGridComponent {
         const gap = slotGaps.get(assignment.slotKey);
         emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
-        this.push(groups, assignment.platform, assignment.channel, {
+        this.pushRow(groups, assignment.platform, assignment.channel, assignment.minCount, [assignment.slotKey], {
           key: assignment.slotKey,
           label: assignment.label,
           requirement: assignment.requirement,
@@ -239,7 +246,9 @@ export class CreativeSlotGridComponent {
           continue;
         }
         emitted.add(key);
-        this.push(groups, gap.platform, gap.channel, {
+        // A cross-slot rule is matched against the form through its member slots, summed.
+        const formKeys = slotKey === '' ? (GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS[`${gap.platform}/${gap.channel ?? ''}`] ?? []) : [slotKey];
+        this.pushRow(groups, gap.platform, gap.channel, gap.need, formKeys, {
           key,
           label: gap.label,
           requirement: '',
@@ -372,6 +381,32 @@ export class CreativeSlotGridComponent {
       rows: [row],
       openCount: 0,
     });
+  }
+
+  /**
+   * Push a row, read against the form first: a slot whose field already holds at least the images it
+   * requires (and at least one) is covered for THIS campaign whatever the library holds, so it reads
+   * "Filled in the form" with its count, needs nothing more, and is not open. `formKeys` names the
+   * slots whose form counts apply: the row's own slot, or a cross-slot rule's member slots summed
+   * (`GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS`); a rule with no known members never matches.
+   */
+  private pushRow(
+    groups: Map<string, CreativeSlotCoverageGroup>,
+    platform: string,
+    channel: string | undefined,
+    required: number,
+    formKeys: readonly string[],
+    row: CreativeSlotCoverageRow
+  ): void {
+    const filled = this.formFilled();
+    const inForm = formKeys.reduce((total, key) => total + (filled[key] ?? 0), 0);
+    const covered = inForm > 0 && inForm >= required;
+    this.push(
+      groups,
+      platform,
+      channel,
+      covered ? { ...row, status: 'filled', statusLabel: 'Filled in the form', countText: `${inForm} in the form`, reason: '', need: 0 } : row
+    );
   }
 
   private statusOf(filled: number, short: boolean): CreativeSlotCoverageRow['status'] {

@@ -63,8 +63,8 @@ export class UiSplitButtonComponent {
   public readonly menu = input.required<TemplateRef<unknown>>();
   /** `primary` is the accent fill; `secondary` is the neutral one. Never destructive. */
   public readonly variant = input<UiSplitButtonVariant>('primary');
-  /** `tiny` is 24px tall, `small` 32px and `medium` 40px. Both halves share it; the chevron half is a square. */
-  public readonly size = input<UiButtonSize>('medium');
+  /** `small` is 24px tall, `default` 32px and `large` 40px. Both halves share it; the chevron half is a square. */
+  public readonly size = input<UiButtonSize>('default');
   /** Font Awesome class string for a leading icon on the main action, e.g. `fa-light fa-rocket`. */
   public readonly icon = input<string>('');
   /** Accessible name of the chevron half. Defaults to "More options for" and the `label`. */
@@ -104,22 +104,23 @@ export class UiSplitButtonComponent {
 
   private initChevronClasses(): Signal<string> {
     return computed(() => {
+      // Exact px: the button's 4px ui-accent-100 focus halo.
       const base =
-        'relative inline-flex aspect-square shrink-0 items-center justify-center rounded-l-none p-0 leading-none transition-[background-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:z-10 focus-visible:shadow-focus focus-visible:outline-none hover:z-10';
-      // Same heights and corner radii as the matching lfx-ui-button size. Exact px: the 8px and 10px radii have no ui-* utility; 12px glyph on tiny, 16px otherwise.
+        'relative inline-flex aspect-square shrink-0 items-center justify-center rounded-l-none border p-0 leading-none transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:z-10 focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] hover:z-10';
+      // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 8px and 10px radii have no ui-* utility.
       const sizes = {
-        tiny: 'h-ui-tiny rounded-r-[8px] text-[12px]',
-        small: 'h-ui-small rounded-r-[10px] text-[16px]',
-        medium: 'h-ui-medium rounded-r-ui-sm text-[16px]',
+        small: 'h-ui-tiny rounded-r-[8px] text-[12px]',
+        default: 'h-ui-small rounded-r-[10px] text-[14px]',
+        large: 'h-ui-medium rounded-r-ui-sm text-[16px]',
       };
-      // The rings of two neighbouring halves overlap by 1px; the primary fill has no ring and gets a divider instead.
+      // The borders of two neighbouring halves overlap by 1px; the primary fill has a transparent border and gets a divider instead.
       // shortcut: hover/active mixes spelled out with var(), matching lfx-ui-button. revisit: when the library ships hover/active mix tokens.
       const variants = {
         primary:
-          'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
-        secondary: '-ml-px bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
+          'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
+        secondary: '-ml-px border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
       };
-      const disabled = '-ml-px pointer-events-none bg-ui-neutral-50 text-ui-neutral-500 edge';
+      const disabled = '-ml-px pointer-events-none border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
       return [base, sizes[this.size()], this.disabled() ? disabled : `cursor-pointer ${variants[this.variant()]}`].join(' ');
     });
   }

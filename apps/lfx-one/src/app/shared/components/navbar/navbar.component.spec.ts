@@ -5,8 +5,9 @@ import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router } from '@angular/router';
-import { ALL_LENSES, NAVBAR_PEEK_CLOSE_DELAY_MS, NAVBAR_PEEK_RECHECK_DELAY_MS, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
+import { ALL_LENSES, CREATABLE_ARTIFACTS, NAVBAR_PEEK_CLOSE_DELAY_MS, NAVBAR_PEEK_RECHECK_DELAY_MS, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
 import type {
+  CreatableArtifactConfig,
   Lens,
   LensOption,
   NavbarMenuBlock,
@@ -21,6 +22,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { AppService } from '@services/app.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ChangelogService } from '@services/changelog.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -63,6 +65,7 @@ interface NavbarView {
   headTooltipPlacement: Signal<string>;
   onToggleClick(event: MouseEvent): void;
   brandMenuOpen: WritableSignal<boolean>;
+  openCreateDialog(artifact: CreatableArtifactConfig): void;
 }
 
 /**
@@ -98,6 +101,7 @@ const createLensServiceFake = (lens: Lens, lenses: LensOption[]) => {
 };
 
 const retryMenuLookups = vi.fn();
+const openCreateArtifactDialog = vi.fn();
 
 const createNavbarFixture = async (
   items: SidebarMenuItem[],
@@ -176,6 +180,7 @@ const createNavbarFixture = async (
         useValue: { sidebarItemsPending: signal(itemsPending), menuLookupFailed: signal(lookupFailed), menuRetryPending: signal(retrying), retryMenuLookups },
       },
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
+      { provide: CreateArtifactDialogService, useValue: { open: openCreateArtifactDialog } },
     ],
   });
   TestBed.overrideComponent(NavbarComponent, { set: { template, imports: [], providers: [] } });
@@ -278,6 +283,15 @@ describe('NavbarComponent', () => {
     expect((await createNavbar([], [], {}, { url: '/docs/meetings/schedule-meeting' })).isDocsActive()).toBe(true);
     expect((await createNavbar([], [], {}, { url: '/docs' })).isDocsActive()).toBe(true);
     expect((await createNavbar([], [], {}, { url: '/meetings' })).isDocsActive()).toBe(false);
+  });
+
+  it('opens the create dialog for the picked artifact type through the shared dialog service', async () => {
+    const navbar = await createNavbar([]);
+    openCreateArtifactDialog.mockClear();
+
+    navbar.openCreateDialog(CREATABLE_ARTIFACTS.find((artifact) => artifact.type === 'vote') as CreatableArtifactConfig);
+
+    expect(openCreateArtifactDialog).toHaveBeenCalledWith('vote');
   });
 
   it('closes its body-level overlays as soon as the mobile drawer starts closing', async () => {

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { NgTemplateOutlet } from '@angular/common';
 import { booleanAttribute, ChangeDetectionStrategy, Component, computed, contentChildren, input, model, output, Signal } from '@angular/core';
 import { UiTableColumn, UiTableColumnView, UiTableSort } from '@lfx-one/shared/interfaces';
@@ -21,6 +22,8 @@ import { UiTableCellDirective } from './table-cell.directive';
   imports: [NgTemplateOutlet],
   templateUrl: './table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // The host is the scroll container; CdkScrollable lets overlays opened from a cell follow it.
+  hostDirectives: [CdkScrollable],
   host: {
     '[class]': 'hostClasses()',
     '[attr.aria-label]': 'label()',
@@ -90,8 +93,9 @@ export class UiTableComponent {
 
   private initColumnViews(): Signal<UiTableColumnView[]> {
     return computed(() => {
-      // Exact px: 12px cell padding with 16px on the outer columns, and 13px header type, are library steps below the ui spacing scale.
-      const pad = 'px-[12px] first:pl-[16px] last:pr-[16px]';
+      // Exact px: 12px cell padding, 16px on the outer columns and 13px header type are library steps below the ui spacing scale.
+      // py-0 resets the browser's 1px cell padding.
+      const pad = 'px-[12px] py-0 first:pl-[16px] last:pr-[16px]';
       const rule = 'border-b border-ui-neutral-alpha-200';
       const hover = this.interactive() ? 'group-hover:bg-ui-neutral-alpha-50' : '';
       const sort = this.sort();
@@ -103,7 +107,7 @@ export class UiTableComponent {
         const ariaSorts = { asc: 'ascending', desc: 'descending' } as const;
         return {
           column,
-          headClasses: `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 font-medium text-ui-neutral-600`,
+          headClasses: `h-[40px] ${pad} ${align} ${rule} align-middle whitespace-nowrap bg-ui-background-200 label-13 leading-[20px] font-medium text-ui-neutral-600`,
           bodyClasses: `h-ui-row ${pad} ${align} ${rule} align-middle ${column.muted ? 'text-ui-neutral-600' : 'text-ui-neutral-900'} ${hover}`,
           footClasses: `h-ui-row ${pad} ${align} align-middle bg-ui-background-200 font-medium text-ui-neutral-900`,
           ariaSort: sorted ? ariaSorts[sorted] : null,
@@ -116,8 +120,8 @@ export class UiTableComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
-      const ring = this.bordered() ? 'rounded-ui-sm shadow-border' : '';
-      return `block w-full overflow-x-auto copy-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus ${ring}`;
+      const ring = this.bordered() ? 'rounded-ui-sm edge' : '';
+      return `block w-full overflow-x-auto copy-14 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ui-focus ${ring}`;
     });
   }
 

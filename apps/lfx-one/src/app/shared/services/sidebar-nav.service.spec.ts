@@ -12,7 +12,6 @@ import {
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
-  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
@@ -43,7 +42,6 @@ describe('SidebarNavService', () => {
   const lfStaff = signal(false);
   const impersonating = signal(false);
   const orgSegment = signal<string | null>(null);
-  const mentorshipEnabled = signal(false);
   const akritesEnabled = signal(false);
   const formationEnabled = signal(false);
   const activeProjectStage = signal<string | null>(null);
@@ -91,7 +89,6 @@ describe('SidebarNavService', () => {
     lfStaff.set(false);
     impersonating.set(false);
     orgSegment.set(null);
-    mentorshipEnabled.set(false);
     akritesEnabled.set(false);
     formationEnabled.set(false);
     activeProjectStage.set(null);
@@ -125,7 +122,6 @@ describe('SidebarNavService', () => {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
-              if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
@@ -440,27 +436,16 @@ describe('SidebarNavService', () => {
     expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
     expect(engagementLinks).not.toContain('/documents');
     expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/surveys') + 1);
-    // The section gates keep filtering independently of the new item gate.
+    // The section gate keeps filtering independently of the new item gate.
     expect(labels(items)).not.toContain('Security');
-    expect(labels(items)).not.toContain('Mentorship');
   });
 
-  it('hides the Mentorship section from the Me lens while its flag is off', () => {
+  it('shows the Mentorship section on the Me lens with no flag', () => {
     activeLens.set('me');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(labels(items)).not.toContain('Mentorship');
-    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toBeUndefined();
-  });
-
-  it('shows the Mentorship section on the Me lens when its flag is on', () => {
-    activeLens.set('me');
-    mentorshipEnabled.set(true);
-
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-
-    // Akrites stays off here: the two dark-launch gates on this lens must filter independently.
+    // Akrites stays off here: its section gate must not take Mentorship with it.
     expect(labels(items)).not.toContain('Security');
     expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toEqual(
       expect.objectContaining({ label: 'Admin', routerLink: '/mentorship/admin' })
@@ -470,7 +455,6 @@ describe('SidebarNavService', () => {
   it('puts the Security section last on the Me lens when its flag is on', () => {
     activeLens.set('me');
     akritesEnabled.set(true);
-    mentorshipEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
@@ -600,6 +584,20 @@ describe('SidebarNavService', () => {
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+  });
+
+  // lfx-self-serve-ops#1219: only the pages with an organization scope picker carry it; the Dashboard always shows the default.
+  it('carries the organization scope to Projects, People and Code Contributions, and not to the Dashboard', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagement = sectionItems(items, 'Organization Engagement');
+
+    expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
+    expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope']);
+    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'orgScope']);
+    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope']);
   });
 
   it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization with the flag on', () => {

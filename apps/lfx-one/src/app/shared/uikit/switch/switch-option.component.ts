@@ -58,23 +58,26 @@ export class UiSwitchOptionComponent {
   private initSegmentClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: 14px root. Segment radius is the track radius minus its padding (9, 7 and 6px: no ui-* utility); padding and gap are library steps.
+      // leading-[20px]: the library keeps a 20px line at every size.
+      // forced-colors:transition-none keeps a half-faded label off screen when the colours swap.
       const base =
-        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
+        'inline-flex items-center whitespace-nowrap transition-[color,background-color] duration-ui-base ease-ui-standard motion-reduce:transition-none forced-colors:transition-none peer-focus-visible:shadow-focus forced-colors:peer-focus-visible:outline forced-colors:peer-focus-visible:outline-2 forced-colors:peer-focus-visible:outline-offset-2 forced-colors:peer-focus-visible:outline-[color:CanvasText]';
       const sizes = {
-        tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12',
-        small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium',
+        tiny: 'gap-[4px] rounded-[6px] px-[8px] button-12 leading-[20px]',
+        small: 'gap-[6px] rounded-[7px] px-[8px] label-13 font-medium leading-[20px]',
         medium: 'gap-[6px] rounded-[9px] px-[12px] button-14',
       };
       // The checked segment is raised; in the dark theme it is neutral-200 because background-100 is the track's neighbour there.
-      // forced-colors: fills and shadows vanish, so a checked segment gets a border (Highlight plus fill, GrayText if disabled) and focus an outline.
-      const forcedChecked = this.isDisabled()
-        ? 'forced-colors:border forced-colors:border-[color:GrayText]'
-        : 'forced-colors:border forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText]';
-      const fill = this.isChecked() ? `bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200 ${forcedChecked}` : '';
+      const fill = this.isChecked() ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200" : '';
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
-      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400 forced-colors:text-[color:GrayText]';
+      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';
-      return `${base} ${sizes[this.group.size()]} ${fill} ${ink}`;
+      // forced-colors: no fill (it gets a Canvas backplate); a 2px border marks the choice.
+      let forcedBorder = 'forced-colors:border-[color:Canvas]';
+      if (this.isChecked()) forcedBorder = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:Highlight]';
+      const forcedInk = this.isDisabled() ? 'forced-colors:text-[color:GrayText]' : 'forced-colors:text-[color:CanvasText]';
+      const forced = `forced-colors:border-2 ${forcedBorder} ${forcedInk}`;
+      return `${base} ${sizes[this.group.size()]} ${fill} ${ink} ${forced}`;
     });
   }
 }

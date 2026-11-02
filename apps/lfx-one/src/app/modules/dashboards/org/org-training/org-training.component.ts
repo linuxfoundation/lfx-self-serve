@@ -17,6 +17,7 @@ import {
   DESCENDING_DEFAULT_ORG_TRAINING_SORT_FIELDS,
   EMPTY_ORG_CERTIFICATIONS_RESPONSE,
   EMPTY_ORG_TRAININGS_RESPONSE,
+  ORG_CERTIFICATIONS_WINDOW_NOTE,
   ORG_TRAINING_LEVEL_OPTIONS,
   ORG_TRAINING_TABS,
   VALID_ORG_TRAINING_TAB_IDS,
@@ -81,6 +82,7 @@ export class OrgTrainingComponent {
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into mutable arrays for the component inputs that expect them.
+  protected readonly certificationsWindowNote = ORG_CERTIFICATIONS_WINDOW_NOTE;
   protected readonly tabs = [...ORG_TRAINING_TABS];
   protected readonly levelOptions = [...ORG_TRAINING_LEVEL_OPTIONS];
 

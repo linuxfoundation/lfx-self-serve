@@ -90,7 +90,13 @@ export class PersonDetailDrawerService {
         const range = request.context?.range;
         const codeFilters = request.context?.codeFilters;
         const teamMembers = request.context?.teamMembers;
-        const params = { ...(range ? { range } : {}), ...(codeFilters ?? {}), ...(codeFilters && teamMembers ? { teamMembers } : {}) };
+        const orgScope = request.context?.orgScope;
+        const params = {
+          ...(range ? { range } : {}),
+          ...(codeFilters ?? {}),
+          ...(codeFilters && teamMembers ? { teamMembers } : {}),
+          ...(codeFilters && orgScope ? { orgScope } : {}),
+        };
         return this.http.get<OrgAllEmployeeDetail | null>(`${path}/detail`, { params }).pipe(
           map((detail) => ({ request, detail, error: false })),
           catchError((err: unknown) => {

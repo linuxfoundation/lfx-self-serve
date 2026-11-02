@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiMenuItemComponent } from '../menu/menu-item.component';
+import { UiMenuComponent } from '../menu/menu.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiButtonComponent } from './button.component';
 
@@ -45,6 +48,19 @@ class BothTooltipsHostComponent {}
   template: `<lfx-ui-button lfxUiTooltip="Copy link" ariaLabel="Copy" [iconOnly]="true" icon="fa-light fa-copy" />`,
 })
 class TooltipHostComponent {}
+
+// Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
+const MENU_HOST_TEMPLATE = `
+  <lfx-ui-button [menu]="actions" ariaLabel="Project actions">Actions</lfx-ui-button>
+  <ng-template #actions>
+    <lfx-ui-menu ariaLabel="Project actions"><lfx-ui-menu-item>Edit</lfx-ui-menu-item></lfx-ui-menu>
+  </ng-template>
+`;
+
+@Component({ selector: 'lfx-ui-button-menu-host', template: '' })
+class MenuHostComponent {
+  public readonly busy = signal(false);
+}
 
 describe('UiButtonComponent', () => {
   let fixture: ComponentFixture<UiButtonComponent>;
@@ -86,32 +102,64 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['secondary', true],
-    ['secondary-accent', false],
-    ['tertiary', false],
-    ['primary', false],
-  ])('gives the %s variant the neutral edge ring: %s', async (variant, ring) => {
+    ['primary', 'border-transparent'],
+    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary-accent', 'border-ui-accent-500'],
+    ['tertiary', 'border-transparent'],
+    ['tertiary-accent', 'border-transparent'],
+    ['danger', 'border-transparent'],
+    ['danger-tertiary', 'border-transparent'],
+    ['recording', 'border-transparent'],
+  ])('gives the %s variant a real 1px border in %s', async (variant, border) => {
     await set('variant', variant);
-    expect(el().classList.contains('edge')).toBe(ring);
+    expect(el().classList).toContain('border');
+    expect(el().classList).toContain(border);
+    expect(el().classList).not.toContain('edge');
   });
 
   it.each([
-    ['tiny', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12'],
-    ['small', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14'],
-    ['medium', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14'],
-  ])('sizes %s with height, radius, padding and type role', async (size, height, radius, padding, type) => {
-    await set('size', size);
-    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type]));
+    ['secondary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    [
+      'secondary-accent',
+      [
+        'hover:bg-ui-accent-50',
+        'hover:text-ui-accent-700',
+        'hover:border-ui-accent-700',
+        'active:bg-ui-accent-100',
+        'active:text-ui-accent-800',
+        'active:border-ui-accent-800',
+      ],
+    ],
+    ['tertiary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    ['tertiary-accent', ['hover:bg-ui-accent-50', 'hover:text-ui-accent-700', 'active:bg-ui-accent-100', 'active:text-ui-accent-800']],
+  ])('gives the %s variant the library hover and pressed states', async (variant, states) => {
+    await set('variant', variant);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(states));
   });
 
-  it('defaults to the medium 40px size', () => {
-    expect(el().classList).toContain('h-ui-medium');
+  it('shows the 4px accent halo on keyboard focus only', () => {
+    expect(Array.from(el().classList)).toEqual(
+      expect.arrayContaining(['focus:outline-none', 'focus-visible:shadow-[0_0_0_4px]', 'focus-visible:shadow-ui-accent-100'])
+    );
+  });
+
+  it.each([
+    ['small', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['default', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
+    ['large', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14', '[&>i]:text-[16px]'],
+  ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
+    await set('size', size);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type, icon]));
+  });
+
+  it('defaults to the 32px default size', () => {
+    expect(el().classList).toContain('h-ui-small');
   });
 
   it('renders the leading icon before the label', async () => {
     await set('icon', 'fa-light fa-plus');
     const icon = el().querySelector('i');
-    expect(icon?.className).toBe('fa-light fa-plus');
+    expect(icon?.className).toBe('ui-icon fa-light fa-plus');
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -157,7 +205,7 @@ describe('UiButtonComponent', () => {
     await set('iconOnly', true);
     expect(el().classList).toContain('aspect-square');
     expect(el().classList).toContain('rounded-ui-full');
-    expect(el().classList).not.toContain('px-[16px]');
+    expect(el().classList).not.toContain('px-[10px]');
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 
@@ -169,11 +217,18 @@ describe('UiButtonComponent', () => {
     expect(el().classList).not.toContain('bg-ui-accent-500');
   });
 
-  it('keeps a disabled tertiary button transparent without a ring', async () => {
+  it('gives a disabled bordered button the neutral border', async () => {
+    await set('variant', 'secondary-accent');
+    await set('disabled', true);
+    expect(el().classList).toContain('border-ui-neutral-alpha-200');
+    expect(el().classList).not.toContain('border-ui-accent-500');
+  });
+
+  it('keeps a disabled tertiary button transparent without a border', async () => {
     await set('variant', 'tertiary');
     await set('disabled', true);
     expect(el().classList).toContain('bg-transparent');
-    expect(el().classList).not.toContain('edge');
+    expect(el().classList).toContain('border-transparent');
   });
 
   it('accepts boolean attributes written as plain attributes', async () => {
@@ -237,7 +292,7 @@ describe('UiButtonComponent', () => {
       expect(el().querySelector('i[aria-hidden="true"].fa-plus')).toBeNull();
       const spinner = el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement;
       expect(spinner.classList).toContain('text-current');
-      expect(spinner.style.width).toBe('16px');
+      expect(spinner.style.width).toBe('14px');
       expect(el().getAttribute('aria-busy')).toBe('true');
     });
 
@@ -246,10 +301,13 @@ describe('UiButtonComponent', () => {
       expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).getAttribute('aria-hidden')).toBe('true');
     });
 
-    it('uses a 12px spinner on a tiny button', async () => {
-      await set('size', 'tiny');
+    it.each([
+      ['small', '12px'],
+      ['large', '16px'],
+    ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
+      await set('size', size);
       await set('loading', true);
-      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe('12px');
+      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe(width);
     });
 
     it('has no aria-busy and no spinner when idle', () => {
@@ -334,6 +392,24 @@ describe('UiButtonComponent', () => {
     });
   });
 
+  describe('focus', () => {
+    afterEach(() => fixture.nativeElement.remove());
+
+    it('focuses the inner button', () => {
+      document.body.appendChild(fixture.nativeElement);
+      fixture.componentInstance.focus();
+      expect(document.activeElement).toBe(el());
+    });
+
+    it('focuses the inner link when the button is a link', async () => {
+      await set('link', '/meetings');
+      document.body.appendChild(fixture.nativeElement);
+      fixture.componentInstance.focus();
+      expect(el().tagName).toBe('A');
+      expect(document.activeElement).toBe(el());
+    });
+  });
+
   describe('tooltip forwarding', () => {
     it('does not attach a second tooltip to the wrapper when the directive is imported next to it', async () => {
       const host = TestBed.createComponent(BothTooltipsHostComponent);
@@ -354,5 +430,91 @@ describe('UiButtonComponent', () => {
       expect(document.getElementById(describedBy as string)?.textContent).toBe('Copy link');
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
     });
+  });
+});
+
+describe('UiButtonComponent menu', () => {
+  const hosts: ComponentFixture<unknown>[] = [];
+  const settle = async (host: ComponentFixture<unknown>): Promise<void> => {
+    await host.whenStable();
+    await vi.advanceTimersByTimeAsync(20);
+  };
+  // Tracked so afterEach destroys every host, even when an assertion fails first.
+  const mount = async (template: string): Promise<ComponentFixture<MenuHostComponent>> => {
+    TestBed.overrideComponent(MenuHostComponent, { set: { imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent], template } });
+    const host = TestBed.createComponent(MenuHostComponent);
+    hosts.push(host);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    return host;
+  };
+
+  beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+
+  afterEach(() => {
+    hosts.splice(0).forEach((host) => host.destroy());
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('makes the inner button the menu trigger and returns focus to it on Escape', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE);
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    expect(inner.getAttribute('aria-haspopup')).toBe('menu');
+    expect(inner.getAttribute('aria-expanded')).toBe('false');
+
+    inner.click();
+    await settle(host);
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+    expect(container.querySelector('[data-testid="ui-menu"]')).not.toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBe('true');
+
+    // CDK Menu reads `keyCode`, so the synthetic event carries it.
+    (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(inner);
+  });
+
+  it('opens no menu while loading, by click or ArrowDown', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button [loading]="true" '));
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+
+    inner.click();
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+
+    inner.focus();
+    inner.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }));
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+  });
+
+  it('closes an open menu when the button turns busy', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button [loading]="busy()" '));
+    const inner = host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement;
+    const container = TestBed.inject(OverlayContainer).getContainerElement();
+
+    inner.click();
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).not.toBeNull();
+    expect(container.contains(document.activeElement)).toBe(true);
+
+    host.componentInstance.busy.set(true);
+    await settle(host);
+    expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBeNull();
+    expect(document.activeElement).toBe(inner);
+  });
+
+  it('adds no popup semantics without a menu', async () => {
+    const plain = TestBed.createComponent(UiButtonComponent);
+    await plain.whenStable();
+    const inner = plain.nativeElement.querySelector('[data-testid="ui-button"]') as HTMLElement;
+    expect(inner.getAttribute('aria-haspopup')).toBeNull();
+    expect(inner.getAttribute('aria-expanded')).toBeNull();
   });
 });

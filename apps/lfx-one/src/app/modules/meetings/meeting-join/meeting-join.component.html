@@ -36,7 +36,8 @@
       <div class="container mx-auto py-6 px-8">
         <div class="max-w-[900px] mx-auto flex flex-col">
           <!-- Project Logo (fallback to LFX logo) -->
-          <div class="flex items-center justify-center mb-6">
+          <!-- Hidden below md so the meeting title lands in the first viewport on phones; the header bar still shows the LFX logo. -->
+          <div class="hidden md:flex items-center justify-center mb-6" data-testid="meeting-hero-logo">
             @if (project()?.logo_url) {
               <img [src]="project()?.logo_url" [alt]="project()?.name" class="w-auto h-10 md:h-14" />
             } @else {
@@ -166,7 +167,7 @@
 
                   <!-- Foundation / Project / Committee Context Chips -->
                   @if (parentProject()?.name || project()?.name || meeting().project_name || (meeting().committees && meeting().committees.length > 0)) {
-                    <div class="flex flex-wrap items-center gap-2" data-testid="meeting-context">
+                    <div class="hidden md:flex flex-wrap items-center gap-2" data-testid="meeting-context">
                       @if (parentProject()?.name; as foundationName) {
                         <button
                           type="button"
@@ -208,9 +209,32 @@
                     </div>
                   }
 
+                  <!-- Compact meta summary (mobile only): date · time · zone, foundation · project, organizer. Desktop keeps the pills below. -->
+                  <div class="flex flex-col gap-1 text-sm text-gray-700 md:hidden" data-testid="meeting-meta-mobile">
+                    @if (currentOccurrence()?.start_time || meeting().start_time; as mobileStartTime) {
+                      @if (userTimezone(); as tz) {
+                        <p class="font-medium text-gray-900" data-testid="meeting-meta-mobile-datetime">
+                          {{ mobileStartTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz }}
+                          <span data-testid="meeting-meta-mobile-timezone">{{ mobileTimezoneAbbreviation() }}</span>
+                        </p>
+                        @if (mobileScheduledTimezoneLabel(); as scheduledLabel) {
+                          <p class="text-xs text-gray-500" data-testid="meeting-meta-mobile-scheduled-zone">{{ scheduledLabel }}</p>
+                        }
+                      } @else {
+                        <p-skeleton width="14rem" height="1.25rem" animation="wave" data-testid="meeting-meta-mobile-datetime-skeleton" />
+                      }
+                    }
+                    @if (mobileContextLabel(); as contextLabel) {
+                      <p data-testid="meeting-meta-mobile-context">{{ contextLabel }}</p>
+                    }
+                    @if (authenticated()) {
+                      <p class="break-words" data-testid="meeting-meta-mobile-organizer">Organized by {{ mobileOrganizerLabel() }}</p>
+                    }
+                  </div>
+
                   <!-- Date/Time Badge -->
                   @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-                    <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-3" data-testid="meeting-meta-desktop">
                       @if (userTimezone(); as tz) {
                         <lfx-tag
                           [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz"
@@ -299,7 +323,7 @@
                     }
 
                     <!-- AI Summary Badge -->
-                    @if (hasAiCompanion()) {
+                    @if (showAiSummaryBadge()) {
                       <lfx-tag
                         value="AI Summary"
                         severity="secondary"
@@ -340,10 +364,24 @@
 
                   <!-- Total Invitees -->
                   @if (totalInvitees() > 0 && !isPastMeeting()) {
-                    <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
-                      <i class="fa-light fa-users"></i>
-                      <span>{{ totalInvitees() }} invited</span>
-                    </div>
+                    @if (authenticated() && canViewGuests()) {
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                        data-testid="total-invitees"
+                        aria-haspopup="dialog"
+                        [attr.aria-expanded]="showRegistrants()"
+                        [attr.aria-label]="totalInvitees() + ' invited, show guest list'"
+                        (click)="onRegistrantsToggle()">
+                        <i class="fa-light fa-users" aria-hidden="true"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </button>
+                    } @else {
+                      <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
+                        <i class="fa-light fa-users"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </div>
+                    }
                   }
                 </div>
 
@@ -899,7 +937,7 @@
       <p-drawer
         [(visible)]="showRegistrants"
         [position]="drawerPosition()"
-        styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+        styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full max-sm:!h-[100dvh] max-sm:!max-h-[100dvh]"
         [modal]="true"
         [showCloseIcon]="false"
         data-testid="meeting-registrants-drawer">

@@ -28,7 +28,8 @@ export class UiTooltipPanelComponent {
   private initHostClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem; 14px root. 8px radius has no rounded-ui-* step.
-      const base = 'max-w-[240px] rounded-[8px] bg-ui-neutral-900 text-ui-background-100 shadow-tooltip label-12 font-medium';
+      const base =
+        'max-w-[240px] rounded-[8px] bg-ui-neutral-900 text-ui-background-100 shadow-tooltip label-12 font-medium forced-colors:border forced-colors:border-[color:CanvasText]';
       return this.heading() ? `${base} flex flex-col items-start gap-[2px] px-[10px] py-[6px]` : `${base} inline-flex items-center gap-[6px] px-[8px] py-[4px]`;
     });
   }

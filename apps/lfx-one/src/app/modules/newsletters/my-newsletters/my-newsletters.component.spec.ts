@@ -9,7 +9,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsResponse, NewsletterGroupJoinStatus } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
 import { SelectComponent } from '@components/select/select.component';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -70,9 +70,10 @@ describe('MyNewslettersComponent', () => {
     getNewsletter: vi.fn(),
     getNewsletterGroupJoinStatus: vi.fn(),
     joinNewsletterGroupByInvite: vi.fn(),
+    recordShare: vi.fn(),
   };
   const messages = { add: vi.fn() };
-  const clipboard = { copyLink: vi.fn() };
+  const shareDialog = { open: vi.fn() };
   const dialog = { open: vi.fn() };
   const find = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   // PrimeNG moves the drawer overlay outside the fixture into document.body.
@@ -141,7 +142,7 @@ describe('MyNewslettersComponent', () => {
           useValue: { paramMap: routeParams, queryParamMap: params, snapshot: { paramMap: routeParams.value } },
         },
         { provide: MessageService, useValue: messages },
-        { provide: ClipboardShareService, useValue: clipboard },
+        { provide: ShareDialogService, useValue: shareDialog },
       ],
     })
       .overrideComponent(MyNewslettersComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
@@ -509,8 +510,10 @@ describe('MyNewslettersComponent', () => {
       expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
     );
     expect(overlay('newsletter-preview-drawer-header')!.textContent).toContain('Sent Aug 13, 2026');
-    overlay('newsletter-preview-drawer-copy-link')!.click();
-    expect(clipboard.copyLink).toHaveBeenCalledWith(expect.stringContaining('/newsletters/child-slug/issue'), 'Newsletter link copied to clipboard.');
+    overlay('newsletter-preview-drawer-share')!.click();
+    expect(shareDialog.open).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('/newsletters/child-slug/issue'), copiedMessage: 'Newsletter link copied to clipboard.' })
+    );
     expect(overlay('newsletter-preview-drawer-open-new-tab')!.getAttribute('target')).toBe('_blank');
     overlay('newsletter-preview-drawer-close')!.click();
     await settle();
@@ -524,6 +527,59 @@ describe('MyNewslettersComponent', () => {
     params.next(convertToParamMap({}));
     await settle();
     expect(fixture.componentInstance['previewVisible']()).toBe(false);
+  });
+  it('shows share counts in the table and drawer, and counts a drawer share once per channel (#4958)', async () => {
+    gateway.recordShare.mockReturnValue(of(true));
+    await respond(
+      feedOf([row({ share_count: 3 }), row({ id: 'quiet', subject: 'Quiet news' }), row({ id: 'none', subject: 'Unshared', share_count: 0 })], true)
+    );
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('3');
+    expect(find('my-newsletters-shares-quiet')!.textContent!.trim()).toBe('—');
+    expect(find('my-newsletters-shares-none')!.textContent!.trim()).toBe('—');
+
+    find('my-newsletters-open-issue')!.click();
+    await settle();
+    expect(overlay('newsletter-preview-drawer-share-count')!.textContent!.trim()).toBe('· 3');
+
+    overlay('newsletter-preview-drawer-share')!.click();
+    const { onShare } = shareDialog.open.mock.calls[0][0];
+    onShare('reddit');
+    onShare('reddit');
+    await settle();
+
+    expect(gateway.recordShare).toHaveBeenCalledWith('child', 'issue', 'reddit');
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
+    expect(overlay('newsletter-preview-drawer-share-count')!.textContent!.trim()).toBe('· 4');
+    // A fresh feed response brings the server's count, replacing the local tally.
+    feed.next(feedOf([row({ share_count: 10 }), row({ id: 'quiet', subject: 'Quiet news' })], true));
+    await settle();
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
+  });
+  it('keeps the server count as the baseline when a share lands after switching foundation (#4958)', async () => {
+    const accepted = new Subject<boolean>();
+    gateway.recordShare.mockReturnValue(accepted);
+    await respond(
+      feedOf(
+        [row({ share_count: 3 }), row({ id: 'elsewhere', subject: 'Other news', foundation_uid: 'other', foundation_slug: 'other-slug', share_count: 1 })],
+        true,
+        [card(), card({ uid: 'other', slug: 'other-slug', name: 'Other Foundation' })]
+      )
+    );
+    find('my-newsletters-open-issue')!.click();
+    await settle();
+    overlay('newsletter-preview-drawer-share')!.click();
+    shareDialog.open.mock.calls[0][0].onShare('linkedin');
+
+    // The response arrives while another foundation's slice is shown.
+    routeParams.next(convertToParamMap({ foundationSlug: 'other' }));
+    await settle();
+    expect(fixture.componentInstance.myNewsletters().map((newsletter) => newsletter.id)).toEqual(['elsewhere']);
+    accepted.next(true);
+    accepted.complete();
+    routeParams.next(convertToParamMap({ foundationSlug: 'foundation-slug' }));
+    await settle();
+
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
   });
   it('preserves canonical absence fallback and body-fetch error handling', async () => {
     await respond(feedOf([row()], true));

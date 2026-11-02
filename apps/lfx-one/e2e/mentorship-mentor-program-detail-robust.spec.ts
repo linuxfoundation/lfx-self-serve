@@ -18,7 +18,7 @@ import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -81,7 +81,6 @@ async function stubDetail(page: Page, body: MentorshipMentorProgramDetail): Prom
 
 test.describe('Mentor program detail — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, POPULATED);
     await openMentorPage(page, DETAIL_URL);
   });
@@ -141,7 +140,6 @@ test.describe('Mentor program detail — structure', () => {
 
 test.describe('Mentor program detail — structural states', () => {
   test('shows the loading state while the detail read is in flight', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => (release = resolve));
     await page.route(DETAIL_ROUTE, async (route) => {
@@ -157,7 +155,6 @@ test.describe('Mentor program detail — structural states', () => {
   });
 
   test('shows only the not-found state on a 404', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) }));
     await openMentorPage(page, DETAIL_URL);
 
@@ -167,7 +164,6 @@ test.describe('Mentor program detail — structural states', () => {
   });
 
   test('shows only the error state when the detail read fails', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
     await openMentorPage(page, DETAIL_URL);
 

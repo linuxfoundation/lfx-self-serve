@@ -5,7 +5,7 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -26,10 +26,12 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -315,6 +317,34 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
     });
 
+    it('makes the invited count a button that opens the guest drawer when the viewer can see the guests (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).toBe('BUTTON');
+      count.click();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(true);
+    });
+
+    it('leaves the invited count as plain text when the guest list is hidden from the viewer (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }), project: buildProject() })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).not.toBe('BUTTON');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 
@@ -327,6 +357,92 @@ describe('MeetingJoinComponent', () => {
 
       expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
       expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+  });
+
+  describe('support launcher overlay state (#4865)', () => {
+    // These tests open the real PrimeNG drawer, whose template needs the animation providers.
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideNoopAnimations()] }));
+
+    const renderWithRoster = async (): Promise<ComponentFixture<MeetingJoinComponent>> => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+    const drawer = (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.debugElement.query(By.css('[data-testid="meeting-registrants-drawer"]'));
+
+    const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+
+    it('registers the guests drawer as open when it opens', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      expect(overlayState.anyOpen()).toBe(true);
+    });
+
+    it.each([
+      ['the header close button', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.onDrawerHide()],
+      [
+        'PrimeNG closing it (Esc or mask click)',
+        (fixture: ComponentFixture<MeetingJoinComponent>) => drawer(fixture).triggerEventHandler('visibleChange', false),
+      ],
+      ['a programmatic close', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.showRegistrants.set(false)],
+    ])('clears the registration when closed via %s, without relying on onHide', async (_label, close) => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      close(fixture);
+      await settle();
+
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('clears the registration when the page is destroyed with the drawer still open, so navigation never strands the launcher hidden', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      fixture.destroy();
+
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('closes the guests drawer and releases the launcher when the route moves in place to another meeting (#4857)', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: 'another-meeting-id' }));
+      await settle();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(false);
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('gives the guests drawer a full-height class on mobile only, leaving the desktop width chain untouched (#4857)', async () => {
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      const panel = document.querySelector('.p-drawer') as HTMLElement | null;
+      expect(panel).not.toBeNull();
+      expect(panel?.classList.contains('max-sm:!h-[100dvh]')).toBe(true);
+      expect(panel?.classList.contains('xl:w-[45%]')).toBe(true);
+      expect(panel?.classList.contains('h-[100dvh]')).toBe(false);
     });
   });
 
@@ -1881,6 +1997,114 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
       expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
       expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
+    });
+  });
+
+  // #4859 Session B: mobile polish on the meeting detail page.
+  describe('mobile polish (#4860, #4861, #4863)', () => {
+    const PAST_START_TIME = '2020-01-01T00:00:00.000Z';
+
+    const renderPage = async (overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting(overrides), project: buildProject() }));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the hero logo below md and keeps it on desktop (#4860)', async () => {
+      const page = await renderPage();
+
+      const hero = page.querySelector('[data-testid="meeting-hero-logo"]');
+      expect(hero).not.toBeNull();
+      expect(hero?.classList.contains('hidden')).toBe(true);
+      expect(hero?.classList.contains('md:flex')).toBe(true);
+    });
+
+    it('renders no AI Summary chip for a future meeting even when summaries are enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: FUTURE_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    it('still renders the AI Summary chip for a past meeting with summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).not.toBeNull();
+    });
+
+    it('renders no AI Summary chip for a past meeting without summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: false, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    describe('compact meta summary (#4861)', () => {
+      const LONG_NAME = 'Maximilian Alexander Featherstonehaugh-Montgomery';
+
+      it('keeps the desktop pills and hides them below md', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const desktopRow = page.querySelector('[data-testid="meeting-meta-desktop"]');
+        const mobile = page.querySelector('[data-testid="meeting-meta-mobile"]');
+        expect(desktopRow?.classList.contains('hidden')).toBe(true);
+        expect(desktopRow?.classList.contains('md:flex')).toBe(true);
+        expect(mobile?.classList.contains('md:hidden')).toBe(true);
+      });
+
+      it('shows the viewer timezone abbreviation next to the time', async () => {
+        const page = await renderPage();
+
+        const abbreviation = page.querySelector('[data-testid="meeting-meta-mobile-timezone"]');
+        expect(abbreviation?.textContent?.trim()).toBe(getTimezoneAbbreviation(FUTURE_START_TIME, getUserTimezone()));
+      });
+
+      it('names the scheduled zone as visible text when it differs from the viewer zone', async () => {
+        const scheduledZone = getUserTimezone() === 'Asia/Tokyo' ? 'America/New_York' : 'Asia/Tokyo';
+        const page = await renderPage({ timezone: scheduledZone });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')?.textContent).toContain(`Scheduled in ${scheduledZone}`);
+      });
+
+      it('omits the scheduled zone line when it matches the viewer zone', async () => {
+        const page = await renderPage({ timezone: getUserTimezone() });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')).toBeNull();
+      });
+
+      it('still shows foundation and project when the guest projection has no start_time', async () => {
+        const page = await renderPage({ start_time: undefined as unknown as string });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows foundation and project on one line', async () => {
+        const page = await renderPage();
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows the full organizer name without truncating it', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const organizer = page.querySelector('[data-testid="meeting-meta-mobile-organizer"]');
+        expect(organizer?.textContent).toContain(`Organized by ${LONG_NAME}`);
+        expect(organizer?.querySelector('.truncate')).toBeNull();
+        expect(organizer?.classList.contains('truncate')).toBe(false);
+      });
+
+      it('falls back to Linux Foundation when the meeting was created by a service account', async () => {
+        const page = await renderPage({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')?.textContent).toContain('Organized by Linux Foundation');
+      });
+
+      it('does not show the organizer to unauthenticated viewers', async () => {
+        authenticated.set(false);
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')).toBeNull();
+      });
     });
   });
 });

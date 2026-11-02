@@ -62,6 +62,7 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicNewslettersRouter from './routes/public-newsletters.route';
 import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
@@ -392,6 +393,7 @@ app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
 });
 
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/newsletters', publicNewslettersRouter);
 app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
