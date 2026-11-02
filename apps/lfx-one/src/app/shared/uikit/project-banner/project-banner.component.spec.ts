@@ -73,7 +73,7 @@ describe('UiProjectBannerComponent', () => {
     fixture.componentRef.setInput('icon', 'fa-light fa-credit-card');
     await fixture.whenStable();
 
-    expect(host.querySelector('i')?.className).toBe('fa-light fa-credit-card');
+    expect(host.querySelector('i')?.className).toBe('ui-icon fa-light fa-credit-card');
   });
 
   it('projects the sentence and one action after it', async () => {

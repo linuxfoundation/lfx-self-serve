@@ -12,7 +12,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the programs read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -24,7 +23,7 @@ import { MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -78,7 +77,6 @@ async function stubPrograms(page: Page, body: MentorshipMentorProgramsResponse, 
 
 test.describe('Mentor My Programs — loaded', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
   });
@@ -119,7 +117,6 @@ test.describe('Mentor My Programs — loaded', () => {
 
 test.describe('Mentor My Programs — empty state', () => {
   test('shows the empty state when the mentor has no programs', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, { data: [], total: 0 });
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 
@@ -132,7 +129,6 @@ test.describe('Mentor My Programs — empty state', () => {
 
 test.describe('Mentor My Programs — error state', () => {
   test('shows the error state and loads the programs on Retry', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED, 503);
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 

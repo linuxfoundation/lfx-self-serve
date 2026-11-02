@@ -148,9 +148,9 @@ export class UiToastComponent {
         'flex min-h-[56px] w-[420px] max-w-[calc(100vw-32px)] items-center gap-[12px] rounded-ui-md py-[12px] pl-[16px] pr-[12px] shadow-modal copy-14';
       const variants = {
         default: 'bg-ui-background-100 text-ui-neutral-900',
-        success: 'bg-ui-success-600 text-white',
+        success: 'bg-ui-success-600 text-ui-white',
         warning: 'bg-ui-warning-500 text-ui-neutral-900',
-        error: 'bg-ui-danger-600 text-white',
+        error: 'bg-ui-danger-600 text-ui-white',
       };
       return `${base} ${variants[this.variant()]}`;
     });
@@ -165,7 +165,7 @@ export class UiToastComponent {
           const shape = `${this.buttonBase()} gap-[6px] rounded-[10px] px-[10px] button-14`;
           // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
           const primary =
-            'bg-ui-accent-500 text-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]';
+            'bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]';
           const accent = action.primary && this.variant() === 'default';
           return { action, classes: `${shape} ${accent ? primary : this.quietInk()}` };
         })
@@ -214,10 +214,10 @@ export class UiToastComponent {
     return 'inline-flex h-ui-small cursor-pointer items-center justify-center whitespace-nowrap transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
   }
 
-  // Success and error toasts get white ink and a translucent white hover; the rule has no token, so the 16% white is written out.
+  // shortcut: literal white at 16% for the hover on success and error toasts. revisit: when the library ships a white-alpha token.
   private quietInk(): string {
     return this.variant() === 'success' || this.variant() === 'error'
-      ? 'bg-transparent text-white hover:bg-[rgba(255,255,255,0.16)]'
+      ? 'bg-transparent text-ui-white hover:bg-[rgba(255,255,255,0.16)]'
       : 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200';
   }
 }

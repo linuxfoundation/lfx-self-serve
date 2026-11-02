@@ -1,14 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px, not rem; 14px root: 280px wide, 12px gaps, 2px row gap, 36px days, 28px weekday row. -->
+<!-- Exact px, not rem; 14px root: 280px wide, 12px gaps, 2px row gap, 36px days, 28px weekday row, 20px weekday line. -->
 <div class="flex w-[280px] flex-col gap-[12px]" data-testid="ui-calendar">
   <div class="flex items-center justify-between">
     <lfx-ui-button
       variant="tertiary"
       size="small"
       [iconOnly]="true"
-      [disabled]="formDisabled()"
+      [disabled]="isDisabled()"
       icon="fa-light fa-chevron-left"
       ariaLabel="Previous month"
       (click)="shiftMonth(-1)"
@@ -18,7 +18,7 @@
       variant="tertiary"
       size="small"
       [iconOnly]="true"
-      [disabled]="formDisabled()"
+      [disabled]="isDisabled()"
       icon="fa-light fa-chevron-right"
       ariaLabel="Next month"
       (click)="shiftMonth(1)"
@@ -26,7 +26,7 @@
   </div>
   <div
     role="grid"
-    [attr.aria-disabled]="formDisabled() ? 'true' : null"
+    [attr.aria-disabled]="isDisabled() ? 'true' : null"
     class="flex flex-col gap-[2px]"
     [attr.aria-labelledby]="ariaLabel() ? null : titleId"
     [attr.aria-label]="ariaLabel() || null"
@@ -34,7 +34,10 @@
     data-testid="ui-calendar-grid">
     <div role="row" class="grid grid-cols-7">
       @for (weekday of weekdays(); track weekday.long) {
-        <div role="columnheader" class="grid h-[28px] place-items-center label-12 uppercase text-ui-neutral-600" [attr.aria-label]="weekday.long">
+        <div
+          role="columnheader"
+          class="grid h-[28px] place-items-center label-12 uppercase leading-[20px] text-ui-neutral-600"
+          [attr.aria-label]="weekday.long">
           {{ weekday.short }}
         </div>
       }
@@ -46,8 +49,8 @@
             <button
               type="button"
               [class]="day.classes"
-              [disabled]="formDisabled()"
-              [attr.tabindex]="!formDisabled() && day.key === focusedKey() ? 0 : -1"
+              [disabled]="isDisabled()"
+              [attr.tabindex]="!isDisabled() && day.key === focusedKey() ? 0 : -1"
               [attr.aria-label]="day.label"
               [attr.aria-current]="day.today ? 'date' : null"
               [attr.aria-disabled]="day.disabled ? 'true' : null"

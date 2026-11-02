@@ -23,6 +23,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { UiCommandGroup, UiCommandGroupView, UiCommandItem } from '@lfx-one/shared/interfaces';
 
 import { UiKeyboardInputComponent } from '../keyboard-input/keyboard-input.component';
+import { revealRowInList } from '../select/reveal-row';
 
 /**
  * The command palette: one search field that filters a grouped list of places and actions. It is the content of a modal, so open it
@@ -130,17 +131,9 @@ export class UiCommandMenuComponent {
     this.dialogRef?.close(item);
   }
 
-  // Scrolls the list only: scrollIntoView would also move the page or the dialog around it.
   private revealRow(id: string): void {
     const row = this.document.getElementById(id);
-    const list = this.scroller().nativeElement;
-    if (!row) return;
-    const rowBox = row.getBoundingClientRect();
-    const listBox = list.getBoundingClientRect();
-    // The dialog scales in, so the boxes are scaled and scrollTop is not: undo the scale (offsetHeight is untransformed).
-    const scale = list.offsetHeight ? listBox.height / list.offsetHeight : 1;
-    if (rowBox.top < listBox.top) list.scrollTop -= (listBox.top - rowBox.top) / scale;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += (rowBox.bottom - listBox.bottom) / scale;
+    if (row) revealRowInList(row, this.scroller().nativeElement);
   }
 
   private initVisibleGroups(): Signal<UiCommandGroupView[]> {

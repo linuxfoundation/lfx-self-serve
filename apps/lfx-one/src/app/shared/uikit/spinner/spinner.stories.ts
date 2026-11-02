@@ -20,7 +20,7 @@ export const Size16: Story = { args: { size: 16 } };
 export const Size32: Story = { args: { size: 32 } };
 export const WithStatusLine: Story = {
   render: () => ({
-    template: `<span class="inline-flex items-center gap-2 text-copy-14 text-ui-neutral-900"><lfx-ui-spinner [size]="16" label="Loading" /> Fetching members</span>`,
+    template: `<span class="inline-flex items-center gap-2 text-copy-14 text-ui-neutral-600"><lfx-ui-spinner [size]="16" label="Loading" /> Fetching members</span>`,
   }),
 };
 export const InsideButton: Story = {

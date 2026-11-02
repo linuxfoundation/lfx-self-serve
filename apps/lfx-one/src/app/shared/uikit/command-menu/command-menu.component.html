@@ -6,7 +6,7 @@
 <div
   class="flex h-[56px] shrink-0 items-center gap-[12px] px-[16px] text-[16px] text-ui-neutral-600 shadow-[inset_0_-1px_0_theme(colors.ui.neutral-alpha.200)]"
   data-testid="ui-command-menu-search">
-  <i class="fa-light fa-magnifying-glass" aria-hidden="true"></i>
+  <i class="ui-icon fa-light fa-magnifying-glass" aria-hidden="true"></i>
   <input
     type="text"
     role="combobox"
@@ -48,7 +48,7 @@
                 <span
                   class="inline-flex w-[16px] shrink-0 justify-center text-[14px] text-ui-neutral-600 group-aria-disabled:text-ui-neutral-500"
                   data-testid="ui-command-menu-item-icon">
-                  <i [class]="view.item.icon" aria-hidden="true"></i>
+                  <i class="ui-icon" [class]="view.item.icon" aria-hidden="true"></i>
                 </span>
               }
               <!-- Rows are not focusable (aria-activedescendant), so a native title is the practical way to show a truncated label. -->

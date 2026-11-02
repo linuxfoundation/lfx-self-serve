@@ -26,7 +26,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -125,10 +125,6 @@ async function openTasksTab(page: Page): Promise<void> {
 }
 
 test.describe('Mentee My Tasks — submission file', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('uploading a file sends the raw bytes with its name, toasts success and unlocks Submitted', async ({ page }) => {
     const stub = await stubFileFlow(page, { status: 'in_progress', hasFile: false }, 201, { status: 'in_progress', hasFile: true });
     await openTasksTab(page);

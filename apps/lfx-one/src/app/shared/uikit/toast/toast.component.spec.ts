@@ -4,6 +4,7 @@
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
 import { UiToastAction, UiToastVariant } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -312,7 +313,7 @@ describe('UiToastComponent', () => {
       await flush();
       const action = toast().querySelector('[data-testid="ui-toast-action"]') as HTMLElement;
       expect(action.classList).not.toContain('bg-ui-accent-500');
-      expect(action.classList).toContain('text-white');
+      expect(action.classList).toContain('text-ui-white');
     });
   });
 });
@@ -354,6 +355,10 @@ describe('UiToastService', () => {
     const pane = region()?.closest('.cdk-overlay-pane') as HTMLElement;
     expect(pane.style.marginBottom).toBe('16px');
     expect(pane.style.marginRight).toBe('16px');
+  });
+
+  it('marks the pane with the toast pane class so a popover does not treat a click on it as outside', () => {
+    expect((region()?.closest('.cdk-overlay-pane') as HTMLElement).classList.contains(UI_TOAST_PANE_CLASS)).toBe(true);
   });
 
   it('shows toasts newest first', async () => {

@@ -1676,7 +1676,7 @@ export class MktgDocumentViewComponent {
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
   private clearAeoPrint(): void {
     if (this.aeoPrintRequested) {
-      this.printService.clear(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+      this.printService.clear();
       this.aeoPrintRequested = false;
     }
   }

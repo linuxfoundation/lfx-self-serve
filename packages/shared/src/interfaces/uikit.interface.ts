@@ -21,17 +21,35 @@ export interface UiTabItem {
   disabledReason?: string;
 }
 
+/** Two-step density shared by the uikit tabs, collapse and note: `default`, or `small` for dense places. */
+export type UiDensitySize = 'default' | 'small';
+
 /** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
-export type UiTabsSize = 'default' | 'small';
+export type UiTabsSize = UiDensitySize;
 
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
 export type UiTabsVariant = 'default' | 'secondary';
 
+/** Height of a uikit form control: `tiny` 24px, `small` 32px, `medium` 40px. Shared by the button, switch and text input. */
+export type UiControlSize = 'tiny' | 'small' | 'medium';
+
+/** The six colour roles of the LFX UI Library. */
+export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
-export type UiBadgeTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+export type UiBadgeTone = UiTone;
+
+/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, or the neutral `outline` ring. */
+export type UiBadgeVariant = 'subtle' | 'solid' | 'outline';
+
+/** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
+export type UiBadgeSize = 'sm' | 'md';
+
+/** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
+export type UiChipVariant = 'subtle' | 'outline';
 
 /** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
-export type UiAvatarTone = 'neutral' | 'accent' | 'feature' | 'success' | 'warning' | 'danger';
+export type UiAvatarTone = UiTone;
 
 /** A person, organization or bot shown in a uikit avatar group. */
 export interface UiAvatarItem {
@@ -57,6 +75,24 @@ export interface UiModalConfig<D = unknown> {
   describedBy?: boolean;
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
+}
+
+/** Edge of the window a uikit drawer is anchored to. */
+export type UiDrawerSide = 'left' | 'right';
+
+/** Options for `UiDrawerService.open`. Every field is optional. Takes the modal options, except `role`: a drawer is always a `dialog`. */
+export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'role'> {
+  /** Edge the drawer slides in from. Defaults to `right`. */
+  side?: UiDrawerSide;
+  /** Width in px. Defaults to 600; it never exceeds the window and fills it at 640px and narrower. */
+  width?: number;
+  /**
+   * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
+   * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
+   * never settles blocks dismissal until `ref.close()`. A throw or a rejection is logged and keeps the drawer open.
+   * `DialogRef.close()` does not ask: call it once the work is saved or discarded.
+   */
+  canClose?: () => boolean | Promise<boolean>;
 }
 
 /** One day button in a uikit calendar month grid. */
@@ -102,7 +138,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
 /** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
-export type UiInputSize = 'tiny' | 'small' | 'medium';
+export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
 export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'search';
@@ -171,16 +207,16 @@ export interface UiTableColumnView {
 }
 
 /** Size of a uikit collapse group: `default` has 20px headings, `small` 14px headings and tighter padding. */
-export type UiCollapseSize = 'default' | 'small';
+export type UiCollapseSize = UiDensitySize;
 
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
 /** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiButtonSize = 'tiny' | 'small' | 'medium';
+export type UiButtonSize = UiControlSize;
 
 /** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiSwitchSize = 'tiny' | 'small' | 'medium';
+export type UiSwitchSize = UiControlSize;
 
 /** Whether a uikit choicebox group picks one tile (`radio`) or any number of tiles (`checkbox`). A group never mixes the two. */
 export type UiChoiceboxType = 'radio' | 'checkbox';
@@ -317,4 +353,19 @@ export interface UiCommandGroupView {
   label: string;
   /** The commands that match the search. */
   items: UiCommandItemView[];
+}
+
+/** Anything that can take focus, such as an element or an `lfx-ui-button`. */
+export interface UiFocusable {
+  /** Moves focus to it. */
+  focus(): void;
+}
+
+/** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */
+export type UiPopoverPadding = 'default' | 'none';
+
+/** What a uikit popover passes to its template: `<ng-template let-close="close">` closes the popover from inside, such as a Done button. */
+export interface UiPopoverContext {
+  /** Closes the popover and returns focus to the trigger. */
+  close: () => void;
 }

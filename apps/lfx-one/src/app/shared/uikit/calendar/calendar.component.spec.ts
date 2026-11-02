@@ -111,6 +111,33 @@ describe('UiCalendarComponent', () => {
     expect(day('2026-10-12').className).toContain('cursor-not-allowed');
   });
 
+  it('keeps the selected day and today distinguishable in forced colours', async () => {
+    await set('value', new Date(2026, 9, 12));
+
+    const selected = day('2026-10-12').className;
+    expect(selected).toContain('forced-color-adjust-none');
+    expect(selected).toContain('forced-colors:bg-[color:Highlight]');
+    expect(selected).toContain('forced-colors:text-[color:HighlightText]');
+    const other = day('2026-10-13').className;
+    expect(other).not.toContain('forced-colors:bg-[color:Highlight]');
+    expect(other).not.toContain('forced-color-adjust-none');
+    // Today is the dot: CanvasText on a plain day, HighlightText on the Highlight fill.
+    expect(day('2026-10-29').className).toContain('forced-colors:after:bg-[color:CanvasText]');
+    await set('value', new Date(2026, 9, 29));
+    expect(day('2026-10-29').className).toContain('forced-colors:after:bg-[color:HighlightText]');
+    expect(day('2026-10-13').className).toContain('forced-colors:focus-visible:outline-[color:CanvasText]');
+  });
+
+  it('draws the selected day in GrayText in forced colours when the calendar is disabled', async () => {
+    await set('value', new Date(2026, 9, 12));
+    await set('disabled', true);
+
+    const selected = day('2026-10-12').className;
+    expect(selected).toContain('forced-colors:bg-[color:GrayText]');
+    expect(selected).toContain('forced-colors:text-[color:Canvas]');
+    expect(selected).not.toContain('forced-colors:bg-[color:Highlight]');
+  });
+
   it('opens on the selected date month and keeps one tab stop on it', async () => {
     await set('value', new Date(2026, 4, 20));
 
@@ -194,6 +221,45 @@ describe('UiCalendarComponent', () => {
 
     expect(fixture.componentInstance.value()).toBeNull();
     expect(sunday.getAttribute('tabindex')).toBe('0');
+  });
+
+  describe('disabled input', () => {
+    it('makes the whole grid inert and refuses to select', async () => {
+      await set('disabled', true);
+
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+      expect((host.querySelector('[data-testid="ui-calendar-prev"] button') as HTMLButtonElement).disabled).toBe(true);
+      expect(day('2026-10-20').disabled).toBe(true);
+      expect(host.querySelectorAll('[data-testid="ui-calendar-day"][tabindex="0"]').length).toBe(0);
+
+      day('2026-10-20').click();
+      await fixture.whenStable();
+      expect(fixture.componentInstance.value()).toBeNull();
+    });
+
+    it('ignores keys', async () => {
+      await set('disabled', true);
+      (host.querySelector('[role="grid"]') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+      await fixture.whenStable();
+
+      expect(title()).toBe('October 2026');
+    });
+
+    it('accepts the bare attribute form and the string "false"', async () => {
+      await set('disabled', '');
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+
+      await set('disabled', 'false');
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('stays disabled when the form control enables it again', async () => {
+      await set('disabled', true);
+      fixture.componentInstance.setDisabledState(false);
+      await fixture.whenStable();
+
+      expect(host.querySelector('[role="grid"]')?.getAttribute('aria-disabled')).toBe('true');
+    });
   });
 
   describe('with a reactive form control', () => {

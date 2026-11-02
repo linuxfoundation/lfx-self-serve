@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, isPlatformBrowser, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, PLATFORM_ID, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -130,11 +130,13 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   DEFAULT_LINKEDIN_BUDGET_USD,
   DEFAULT_LINKEDIN_TARGETING_PROFILE,
   DEFAULT_META_BUDGET_USD,
@@ -215,6 +217,8 @@ import type {
   GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
+  GoogleBudgetFlight,
+  GoogleBudgetInputs,
   GoogleCampaignChannel,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
@@ -224,6 +228,7 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleCreativeSharedCap,
   GoogleTypedImageProbe,
   LinkedInAccount,
   LinkedInCreativeVariant,
@@ -243,7 +248,9 @@ import type {
 import {
   campaignBiddingError,
   campaignBiddingPayload,
+  campaignFlightDays,
   codePointLength,
+  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
   googleAdsToUpperCode,
@@ -254,6 +261,7 @@ import {
   googlePriceExtensionRefusal,
   isHttpUrl,
   googlePromotionRefusal,
+  isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -309,6 +317,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     InputTextComponent,
     SelectComponent,
     TextareaComponent,
+    DecimalPipe,
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
@@ -808,7 +817,9 @@ export class ImplementationTabComponent implements OnInit {
     eventSlug: [''],
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
-    budgetUsd: [500, [Validators.required, Validators.min(1)]],
+    // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
+    // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -1046,6 +1057,16 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The brief's keywords a Google create sends (#4848): a blank term is dropped, as a blank headline
+   * line is, because campaign-service refuses it and the operator saw only the generic failure.
+   */
+  protected readonly googleSearchKeywords = computed(() => this.briefKeywords().filter((k) => typeof k.term === 'string' && k.term.trim() !== ''));
+  /**
+   * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
+   * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
+   */
+  protected readonly googleSearchKeywordsError: Signal<string | null> = this.initGoogleSearchKeywordsError();
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -1484,6 +1505,12 @@ export class ImplementationTabComponent implements OnInit {
    * `resetGoogleFields`.
    */
   private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
+  /**
+   * The brief's planning total the Google daily budget was divided from (#4847), shown beside the
+   * field so the operator can compare it with the flight total. Null when the brief has no positive
+   * total. Set by every brief seed, so a brief switch never shows the previous brief's figure.
+   */
+  protected readonly googleBriefTotalBudget = signal<number | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -3025,6 +3052,10 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
+    // An end date before the start, which Google refuses (#4848); the message is under End Date.
+    if (googleSelected && this.googleFlightError() !== null) return false;
+    // Search with no keyword, which creates a campaign that can never serve (#4848).
+    if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3212,6 +3243,22 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
+  /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
+  private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
+  protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
+  /**
+   * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
+   * field, because on a Google create the same validator holds Create disabled and nothing else on
+   * screen says why. The field renders only for a Google selection, so the message never shows
+   * under a budget nothing else reads.
+   */
+  protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
+  /**
+   * Why Google will refuse the flight on screen, or `null` (#4848). campaign-service refuses an end
+   * date BEFORE the start, before anything is created, but the operator saw only "platform campaign
+   * creation failed". A same-day flight is legal on Google, so it is not refused here.
+   */
+  protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
@@ -4903,7 +4950,7 @@ export class ImplementationTabComponent implements OnInit {
       searchBudgetPct: form.searchBudgetPct,
       startDate: form.startDate,
       endDate: form.endDate,
-      keywords: this.briefKeywords(),
+      keywords: this.googleSearchKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
@@ -6900,12 +6947,19 @@ export class ImplementationTabComponent implements OnInit {
     this.resetTwitterFields();
     this.biddingDrafts.set({});
     const details = brief.eventDetails;
+    // The brief's budget is a TOTAL for the flight and Google's is DAILY (#4847), so the total is
+    // divided over the flight this seed opens with. Sending the total unchanged made every LFX
+    // Google budget the whole plan per day.
+    const briefTotal = brief.totalBudget ?? null;
+    const flightDays = campaignFlightDays(this.todayDate, this.defaultEndDate);
+    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
       eventSlug: details.slug,
       countryCode: details.countryCode || 'US',
       registrationUrl: details.registrationUrl,
-      budgetUsd: brief.totalBudget ?? 500,
+      budgetUsd: seededDailyBudget ?? DEFAULT_GOOGLE_DAILY_BUDGET_USD,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
       // The X fields are typed, never generated, so a new brief starts them blank. A same-event
@@ -7049,7 +7103,8 @@ export class ImplementationTabComponent implements OnInit {
       this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
-    this.briefKeywords.set(brief.keywords);
+    // A stored brief can lack the list; every reader maps or filters it (#4848).
+    this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7273,6 +7328,50 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: 100 - CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct }
     );
+  }
+
+  private initGoogleBudgetInputs(): Signal<GoogleBudgetInputs> {
+    const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
+    const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
+    return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleFlightError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.selectedPlatforms().includes('google-ads')) return null;
+      const { start, end } = this.googleBudgetInputs();
+      if (!isReversedCampaignFlight(start, end)) return null;
+      return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  private initGoogleSearchKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+      return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
+    });
+  }
+
+  private initGoogleBudgetInvalid(): Signal<boolean> {
+    return computed(() => {
+      const { daily } = this.googleBudgetInputs();
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+    });
+  }
+
+  /**
+   * What the Google daily budget spends over the flight on screen (#4847), or `null` while the
+   * budget or either date cannot be counted. Recomputed from the controls on every change, so the
+   * figure beside the field always matches what Create would send.
+   */
+  private initGoogleBudgetFlight(): Signal<GoogleBudgetFlight | null> {
+    return computed(() => {
+      const { daily, start, end } = this.googleBudgetInputs();
+      const days = campaignFlightDays(start, end);
+      if (days === null || typeof daily !== 'number' || !Number.isFinite(daily) || daily <= 0) return null;
+      return { days, total: Math.round(daily * days * 100) / 100 };
+    });
   }
 
   private initCampaignName(): Signal<string> {
@@ -8481,9 +8580,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
-   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
@@ -8520,6 +8622,16 @@ export class ImplementationTabComponent implements OnInit {
         return Array.isArray(value) && value.length > 0;
       });
       if (!satisfied) return rule.message;
+    }
+    const caps: readonly GoogleCreativeSharedCap[] = GOOGLE_CREATIVE_SHARED_CAPS[channel];
+    for (const cap of caps) {
+      const count = cap.controls.reduce((sum, control) => {
+        const value = creative[control];
+        return sum + (Array.isArray(value) ? value.length : 0);
+      }, 0);
+      if (count > cap.max) {
+        return `has ${count} ${cap.label} across its fields (pasted URLs and stored images together) — ${count - cap.max} over the shared cap of ${cap.max}.`;
+      }
     }
     return null;
   }

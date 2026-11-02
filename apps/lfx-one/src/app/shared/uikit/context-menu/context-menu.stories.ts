@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { type Meta, moduleMetadata, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiMenuItemComponent } from '../menu/menu-item.component';
 import { UiMenuSeparatorComponent } from '../menu/menu-separator.component';
 import { UiMenuComponent } from '../menu/menu.component';
@@ -13,7 +13,7 @@ import { UiContextMenuDirective } from './context-menu.directive';
 const meta: Meta<UiContextMenuDirective> = {
   title: 'Uikit/ContextMenu',
   component: UiContextMenuDirective,
-  decorators: [moduleMetadata({ imports: [CdkMenuTrigger, UiContextMenuDirective, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent] })],
+  decorators: [moduleMetadata({ imports: [UiButtonComponent, UiContextMenuDirective, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent] })],
   parameters: { layout: 'padded' },
   // Aliased CDK context menu trigger inputs and outputs; Compodoc cannot see host-directive aliases.
   argTypes: {
@@ -55,10 +55,7 @@ export const MirrorsTheMoreMenu: Story = {
       <div class="edge flex h-ui-row w-[320px] items-center gap-[8px] rounded-ui-md bg-ui-background-100 pl-[16px] pr-[4px] label-14 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none"
         tabindex="0" [lfxUiContextMenu]="menu">
         Kubernetes
-        <!-- Exact px, not rem; 14px root. No w-ui-* width utility, so the square matches h-ui-small by hand. -->
-        <button type="button" aria-label="More actions" class="ml-auto inline-flex h-ui-small w-[32px] items-center justify-center rounded-[10px] text-ui-neutral-600 hover:bg-ui-neutral-alpha-50 focus-visible:shadow-focus focus-visible:outline-none" [cdkMenuTriggerFor]="menu">
-          <i class="fa-light fa-ellipsis" aria-hidden="true"></i>
-        </button>
+        <lfx-ui-button class="ml-auto" variant="tertiary" size="small" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">

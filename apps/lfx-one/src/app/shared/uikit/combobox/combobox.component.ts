@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator, ListKeyManager } from '@angular/cdk/a11y';
-import { CdkConnectedOverlay, CdkOverlayOrigin, ConnectedPosition } from '@angular/cdk/overlay';
+import { CdkConnectedOverlay, CdkOverlayOrigin } from '@angular/cdk/overlay';
 import { DOCUMENT } from '@angular/common';
 import {
   afterRenderEffect,
@@ -27,6 +27,7 @@ import { UiInputSize, UiOption } from '@lfx-one/shared/interfaces';
 import { UiErrorComponent } from '../error/error.component';
 import { UiOptionHost } from '../select/option-host';
 import { UiOptionComponent } from '../select/option.component';
+import { revealRowInList } from '../select/reveal-row';
 
 /**
  * A text field that narrows a list of suggestions as you type, with an optional label, hint and error. The suggestions are the same projected
@@ -98,10 +99,6 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   protected readonly listboxId = `${this.baseId}-listbox`;
   protected readonly hintId = `${this.baseId}-hint`;
   protected readonly errorId = `${this.baseId}-error`;
-  protected readonly positions: ConnectedPosition[] = [
-    { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-    { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-  ];
   protected readonly open = signal(false);
   /** The text the user typed, or `null` while the field shows the picked option's label. */
   protected readonly query = signal<string | null>(null);
@@ -322,7 +319,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   // Opens on the chosen row when it matches, or on the first one that can be picked.
   private openPanel(): void {
     if (this.isDisabled() || this.open()) return;
-    this.panelWidth.set(this.origin().elementRef.nativeElement.getBoundingClientRect().width);
+    this.panelWidth.set(this.origin().elementRef.nativeElement.offsetWidth);
     this.open.set(true);
     const chosen = this.selected();
     this.activeItem.set(chosen && this.navigable().includes(chosen) ? chosen : this.firstPickable());
@@ -345,14 +342,9 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     this.keyManager.updateActiveItem(this.navigable().findIndex((option) => option === active));
   }
 
-  // Scrolls the list only: scrollIntoView would also move the page or a dialog around it.
   private revealActive(): void {
     const row = this.document.getElementById(this.activeOption()?.id ?? '');
     const list = row?.closest<HTMLElement>('[role="listbox"]');
-    if (!row || !list) return;
-    const rowBox = row.getBoundingClientRect();
-    const listBox = list.getBoundingClientRect();
-    if (rowBox.top < listBox.top) list.scrollTop -= listBox.top - rowBox.top;
-    else if (rowBox.bottom > listBox.bottom) list.scrollTop += rowBox.bottom - listBox.bottom;
+    if (row && list) revealRowInList(row, list);
   }
 }

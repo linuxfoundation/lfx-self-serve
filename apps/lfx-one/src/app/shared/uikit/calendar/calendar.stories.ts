@@ -19,6 +19,7 @@ type Story = StoryObj<UiCalendarComponent>;
 
 export const Default: Story = {};
 export const WithSelectedDate: Story = { args: { value: new Date(2026, 9, 12) } };
+export const Disabled: Story = { args: { value: new Date(2026, 9, 12), disabled: true } };
 export const MondayFirst: Story = { args: { weekStartsOn: 1 } };
 // Function inputs are bound by hand: Storybook's controls do not carry function args through argsToTemplate.
 export const WeekendsDisabled: Story = {

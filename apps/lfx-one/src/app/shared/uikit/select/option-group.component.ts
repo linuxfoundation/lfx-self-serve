@@ -8,7 +8,7 @@ import { UiOptionHost } from './option-host';
 import { UiOptionComponent } from './option.component';
 
 /**
- * A labelled group of `lfx-ui-option` rows inside a select or combobox. It is a `role="group"` named by its title; the rows stay in one arrow-key
+ * A labelled group of `lfx-ui-option` rows inside a select, combobox or multi-select. It is a `role="group"` named by its title; the rows stay in one arrow-key
  * order. A combobox hides a group whose rows are all filtered out, title included; a select shows every row, so its groups stay.
  */
 @Component({
