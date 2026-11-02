@@ -1482,7 +1482,6 @@ export class MktgDocumentViewComponent {
         return null;
       }
       if ((view.approvedCurrent?.revisionId ?? '') !== firstApprovedId) approvalMoved = true;
-      if (view.approvedCurrent?.revisionId === view.revision.id && firstApprovedId !== view.revision.id) return null;
       const approved = view.revisions.find(
         (row) => row.id === view.approvedCurrent?.revisionId && row.id !== view.revision.id && (approvalMoved || row.id !== firstApprovedId)
       );

@@ -4081,6 +4081,54 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['view']()?.revision.id).toBe(first.id);
   });
 
+  it('announces later production after the viewed revision becomes approved current', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const approval = { approvedAt: '2026-11-02T13:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    const viewed = revision(1);
+    const current = revision(3, { latest: true, approval });
+    let metadata: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions: [current, viewed],
+      current: { revisionId: current.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: current.id, number: current.number },
+    };
+    store.getDocument.mockImplementation(() => of(metadata));
+    store.getRevision.mockReturnValue(of({ ...metadata, revision: viewed, approval: null, markdown: '# Viewed v1', sidecar: null }));
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(query('mktg-document-view-new-approval')).toBeNull();
+    const reads = store.getRevision.mock.calls.length;
+    metadata = {
+      ...metadata,
+      revisions: [
+        { ...current, latest: false },
+        { ...viewed, latest: true, approval },
+      ],
+      current: { revisionId: viewed.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: viewed.id, number: viewed.number },
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-new-approval')).toBeNull();
+    expect(component['view']()?.revision.id).toBe(viewed.id);
+    const produced = revision(4, { latest: true, author: { name: 'Synthetic writer' } });
+    metadata = {
+      ...metadata,
+      revisions: [produced, ...metadata.revisions.map((row) => ({ ...row, latest: false }))],
+      current: { revisionId: produced.id, changedAt: approval.approvedAt, changedBy: { name: 'Synthetic writer' } },
+    };
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    const line = query('mktg-document-view-new-approval');
+    expect(line?.textContent).toContain('v4 was produced by Synthetic writer');
+    expect(query('mktg-document-view-new-approval-open')?.getAttribute('href')).toContain(`revision=${produced.id}`);
+    expect(component['view']()?.markdown).toBe('# Viewed v1');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-new-approval')).toBe(line);
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
+  });
+
   it('announces an older approval once without replacing the viewed body', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const history = mockNineRevisionHistory(3);
