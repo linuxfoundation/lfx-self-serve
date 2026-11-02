@@ -378,6 +378,21 @@ describe('MeetingJoinComponent', () => {
       expect(overlayState.anyOpen()).toBe(false);
     });
 
+    it('clears the registration when the route id changes in place, even if the next meeting fails to load', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+
+      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 500 })));
+      paramMap$.next(convertToParamMap({ id: 'another-meeting' }));
+      await settle();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(false);
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
     it('clears the registration when the page is destroyed with the drawer still open, so navigation never strands the launcher hidden', async () => {
       const overlayState = TestBed.inject(OverlayStateService);
       const fixture = await renderWithRoster();

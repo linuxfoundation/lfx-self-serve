@@ -977,6 +977,10 @@ export class MeetingJoinComponent implements OnInit {
         // error branch immediately, before this attempt's fetch even starts (cursor review on #2046).
         if (meetingId !== previousRouteId) {
           this.meetingLoadFailed.set(false);
+          // The component is reused across `/meetings/:id` param changes, and the guests drawer only
+          // renders while `meetingMatchesRoute()`. Close it here so its launcher registration is
+          // released instead of lingering when the next fetch fails and no drawer is left to close.
+          this.showRegistrants.set(false);
         }
       }),
       debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled

@@ -10,8 +10,8 @@ import { OverlayStateService } from '@services/overlay-state.service';
 // binds to it through `custom_launcher_selector` (see IntercomService) and opens the messenger itself;
 // the button has no click handler of its own. It steps aside while an
 // overlay registered with OverlayStateService is open (today the meeting-join guests drawer) or a page
-// reports a sticky bottom bar, so it never covers row actions. The account menu's
-// Support row remains the always-available fallback.
+// reports a sticky bottom bar, so it never covers row actions. The account menu's Support row is the
+// fallback on main-layout routes; /meetings/:id has none (#4922).
 @Component({
   selector: 'lfx-support-launcher',
   templateUrl: './support-launcher.component.html',
