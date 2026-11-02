@@ -1130,9 +1130,12 @@ export const CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN =
 /**
  * What the create flow says for {@link CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN}. Retrying from
  * this tab cannot clear it: the brief on screen is not the one stored, so the remedy is a refresh.
+ *
+ * States the fact and names another tab only as the likely cause, because the 400 also follows an
+ * approval in this tab that failed or never finished, and another person can replace the brief too.
  */
 export const CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE =
-  'This brief changed in another tab or window since this page loaded it, so nothing was created. Refresh the page and open the brief again before creating campaigns.';
+  'This brief is no longer the approved version this page loaded (it may have been edited in another tab or window), so nothing was created. Refresh the page and open the brief again before creating campaigns.';
 
 /**
  * The paid save refusal `unowned-brief-exists`, worded for the Implement tab, which offers both ways

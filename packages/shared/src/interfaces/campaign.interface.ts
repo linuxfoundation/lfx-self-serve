@@ -1502,14 +1502,26 @@ export interface CampaignBriefLoadResult {
 /**
  * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
  *
- * Emitted by both the restore offer and its Open to edit action (#4983). `readAt` is the
- * `savedBriefRefreshToken` the offer's lookup was dispatched under; see `restoreSavedBriefRequested`.
+ * Emitted by both the restore offer and its Open to edit action (#4983).
  */
 export interface CampaignSavedBriefOffer {
   brief: CampaignBriefOutput;
   briefId: string;
   etag: string | null;
   approved: boolean;
+  /**
+   * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
+   *
+   * The page keeps its own record of the row and has to decide, on every restore, whether that record
+   * or this offer is the newer account. Neither is reliably newer on its own: the offer loses to a
+   * record written by an approval the Plan tab's cache has not seen, and the record loses to a read
+   * that happened after it. The id cannot separate those, since it is the same row in both.
+   *
+   * This token can, because the page bumps it on every write it makes to the row. An offer carrying a
+   * token ABOVE the one stamped on the record was read after that write and is the newer account; one
+   * at or below it is a replay of what the page already held. Emitted rather than inferred, because
+   * only the Plan tab knows which token its cached answer belongs to.
+   */
   readAt: number;
 }
 

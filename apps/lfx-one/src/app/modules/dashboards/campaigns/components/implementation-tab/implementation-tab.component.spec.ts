@@ -14311,6 +14311,19 @@ describe('ImplementationTabComponent edit brief', () => {
     expect(emitted).toHaveBeenCalledTimes(1);
   });
 
+  it('is not offered on the unowned-brief refusal, where Open to edit and Replace are the ways out', () => {
+    fixture.componentRef.setInput('briefPersistence', {
+      status: 'error',
+      briefId: '',
+      message: 'refused',
+      approved: false,
+      conflict: 'unowned-brief-exists',
+    } as CampaignBriefPersistenceState);
+    fixture.detectChanges();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-edit-brief-btn"]')).toBeNull();
+  });
+
   it('is disabled, with the reason beside it, while a create job is polling', () => {
     (fixture.componentInstance as unknown as { step: WritableSignal<string> }).step.set('creating');
     fixture.detectChanges();

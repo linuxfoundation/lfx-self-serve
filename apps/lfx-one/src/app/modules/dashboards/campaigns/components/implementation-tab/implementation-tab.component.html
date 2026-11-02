@@ -217,7 +217,7 @@
   the stored brief and approves it again. Disabled while a create job is polling, with the reason in
   the line beside it, since a disabled button alone says nothing.
 -->
-@if (briefData()) {
+@if (showEditBrief()) {
   <div class="mb-4 flex flex-wrap items-center gap-3" data-testid="implementation-edit-brief">
     <lfx-button
       label="Edit brief"
@@ -231,7 +231,7 @@
       data-testid="implementation-edit-brief-btn" />
     <span class="text-xs text-gray-500" data-testid="implementation-edit-brief-hint">
       @if (canEditBrief()) {
-        Change the copy or keywords in the Plan tab. Saving it there replaces the saved brief.
+        Opens this brief in the Plan tab to change its copy and keywords. Changes made on this tab are not carried over.
       } @else {
         Available once campaign creation finishes.
       }

@@ -3486,20 +3486,80 @@ describe('CampaignsComponent brief persistence', () => {
       expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
     });
 
-    it('conditions the save on the offer when the content changed after the record (a newer save by this session)', async () => {
+    it("re-reads the row instead of opening an offer older than this session's last save", async () => {
       persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
       restore(brief, 'stored-1', true, 'W/"3"');
       proceed();
       await fixture.whenStable();
 
-      // An offer read BEFORE that save holds the older bytes, so its own ETag is the precondition and
-      // the server answers with the stale-brief warning instead of the save overwriting unseen.
+      // Planning's offer was read BEFORE that save, so it holds bytes this session already replaced.
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
       openFromOffer(offer(0, 'W/"3"'));
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+      expect(editRequest()?.brief, 'the stale offer was opened instead of the stored brief').toBe(current);
+
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed(current);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(current, 'foundation-a', 'stored-1', 'W/"9"', false);
+    });
+
+    it('waits for a save still running, then re-reads, rather than opening the offer under it', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+
+      openFromOffer(offer(0, 'W/"0"'));
+      await fixture.whenStable();
+      expect(loadBrief, 'the row was read before the running save landed').not.toHaveBeenCalled();
+      expect(editRequest()).toBeNull();
+
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await fixture.whenStable();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief).toBe(current);
+    });
+
+    it('keeps an approval still in flight for the same row, so its new ETag is the precondition', async () => {
+      const approval = new Subject<CampaignBriefApproveResult>();
+      approveBrief.mockReturnValueOnce(approval);
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Open to edit on the same, unchanged content while the approval is out.
+      openFromOffer(offer(0, 'W/"3"'));
+      approval.next({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true });
+      approval.complete();
+      await fixture.whenStable();
+
       persistBrief.mockReturnValueOnce(NEVER);
       proceed();
       await fixture.whenStable();
+      expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
 
-      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"3"', false);
+    it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
+      const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
+      persistBrief.mockReturnValueOnce(NEVER);
+      // A proceed clears the flag, so the next one would carry the X fields over.
+      proceed();
+      expect(flag()).toBe(false);
+
+      openFromOffer(offer());
+      expect(flag(), 'the X draft of the brief on Implement would ride onto the stored brief').toBe(true);
     });
 
     it('drops the edit request when Planning discards its brief, and on a restore', () => {

@@ -171,9 +171,10 @@ export class PlanningTabComponent implements OnInit {
    * editor. Opening here directly would let a save leave before the page could name the row it
    * replaces, and that save is refused as `unowned-brief-exists`.
    *
-   * Applied once per `requestId`, so a planner re-created by a program change does not re-open a
-   * request it (or its predecessor) already handled. The parent clears it whenever the brief is
-   * discarded.
+   * Applied once per `requestId` by THIS instance. A planner re-created by a program change reads the
+   * current request afresh, which is how Open to edit reaches the planner for the brief's own program;
+   * a stale one never reaches it because the parent clears the request whenever the brief is discarded
+   * or restored.
    */
   public readonly editRequest = input<CampaignBriefEditRequest | null>(null);
 
@@ -219,28 +220,7 @@ export class PlanningTabComponent implements OnInit {
    * restored one came out of storage and must NOT be written back. Emitting both through one
    * channel would leave the parent guessing which it received.
    */
-  public readonly restoreSavedBriefRequested = output<{
-    brief: CampaignBriefOutput;
-    briefId: string;
-    etag: string | null;
-    approved: boolean;
-    /**
-     * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
-     *
-     * The parent keeps its own record of the row and has to decide, on every restore, whether
-     * that record or this offer is the newer account. Neither is reliably newer on its own: the
-     * offer loses to a record written by an approval the cache has not seen, and the record loses
-     * to a read that happened after it (a different editor moved the row and this tab looked
-     * again). The id cannot separate those — it is the same row in both.
-     *
-     * This token can, because the parent bumps it on every write it makes to the row. An offer
-     * carrying a token ABOVE the one the parent stamped on its record was read after that write
-     * and is therefore the newer account; one at or below it is a replay of what this tab already
-     * held. Emitted rather than inferred, because only this tab knows which token its cached
-     * answer belongs to.
-     */
-    readAt: number;
-  }>();
+  public readonly restoreSavedBriefRequested = output<CampaignSavedBriefOffer>();
 
   /**
    * The saved brief on offer, to be opened in this planner's editor rather than handed to Implement
@@ -1947,7 +1927,9 @@ export class PlanningTabComponent implements OnInit {
       this.selectedPlatforms.set(new Set(brief.selectedPlatforms));
     }
     this.briefForm.patchValue({
-      campaignGoal: brief.campaignGoal ?? 'conversions',
+      // '' rather than a default: Proceed sends `|| null`, so a brief stored without a goal stays
+      // without one instead of gaining 'conversions' nobody chose.
+      campaignGoal: brief.campaignGoal ?? '',
       totalBudget: brief.totalBudget === null ? '' : String(brief.totalBudget),
       driveFolderUrl: brief.driveFolderUrl,
     });
@@ -1961,7 +1943,12 @@ export class PlanningTabComponent implements OnInit {
     this.editBase = brief;
     this.editingExistingBrief.set(true);
     this.step.set('review');
-    this.enterEditMode();
+    // The editor edits Google copy and keywords only, and Proceed writes its fields back whenever it is
+    // open. So it opens by itself only when there is something there for it; a LinkedIn-, Reddit- or
+    // Meta-only brief opens read-only rather than gaining empty Google blocks on save.
+    if (this.getSearchCopy() !== null || this.getDisplayCopy() !== null || this.keywords().length > 0) {
+      this.enterEditMode();
+    }
   }
 
   /** Leave existing-brief mode: the event and its URL become editable again. */

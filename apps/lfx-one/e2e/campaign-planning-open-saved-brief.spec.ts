@@ -69,7 +69,7 @@ test.describe('Campaigns Planning tab — open the saved brief to edit (#4983)',
 
     // In the editor, on the saved copy, with the event shown read-only.
     await expect(panel.getByTestId('planning-review-step')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(panel.getByTestId('planning-success-banner')).toContainText('Editing the saved brief');
+    await expect(panel.getByTestId('planning-success-banner')).toContainText("Editing this event's brief");
     await expect(panel.getByTestId('planning-edit-existing-url')).toHaveText(EVENT_URL);
     await expect(panel.getByTestId('planning-save-proceed-btn')).toBeVisible();
 

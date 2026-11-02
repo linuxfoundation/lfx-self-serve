@@ -875,6 +875,7 @@ describe('PlanningTabComponent editing an existing brief', () => {
     editingExistingBrief(): boolean;
     keywords(): { term: string }[];
     editSearchHeadlines: { set(v: string[]): void };
+    eventDetails: { set(v: unknown): void };
     briefForm: FormGroup;
     openSavedBriefToEdit(): void;
     onUrlInput(): void;
@@ -951,7 +952,7 @@ describe('PlanningTabComponent editing an existing brief', () => {
         .keywords()
         .map((k) => k.term)
     ).toEqual(['kubecon']);
-    expect(el('planning-success-banner')?.textContent).toContain('Editing the saved brief');
+    expect(el('planning-success-banner')?.textContent).toContain("Editing this event's brief");
   });
 
   it('holds the event fixed while editing: the URL is read-only and Proceed keeps the stored slug', async () => {
@@ -963,6 +964,8 @@ describe('PlanningTabComponent editing an existing brief', () => {
     const proceeded: CampaignBriefOutput[] = [];
     fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
     internals().editSearchHeadlines.set(['Edited headline']);
+    // Whatever the planner holds as the event, Proceed files the brief under the STORED event.
+    internals().eventDetails.set({ ...storedBrief.eventDetails, slug: 'some-other-event' });
     internals().onProceedToImplementation();
 
     expect(proceeded).toHaveLength(1);
@@ -972,6 +975,29 @@ describe('PlanningTabComponent editing an existing brief', () => {
     expect(proceeded[0].redditCopy).toEqual(storedBrief.redditCopy);
     expect(proceeded[0].googleCallouts, 'an emptied callout list came back as absent').toEqual([]);
     expect(proceeded[0].hsUtm).toBe('utm-stored');
+  });
+
+  it('opens a brief with no Google copy read-only, so Proceed adds no empty Google blocks, and keeps an absent goal absent', async () => {
+    const redditOnly = {
+      ...storedBrief,
+      structuredCopy: { reddit_ads: { variants: [{ headline: 'Stored reddit headline' }] } },
+      keywords: [],
+      campaignGoal: null,
+      selectedPlatforms: ['reddit-ads'],
+    } as unknown as CampaignBriefOutput;
+    fixture.componentRef.setInput('editRequest', { brief: redditOnly, requestId: 7 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().step()).toBe('review');
+    expect(internals().isEditing(), 'the Google-only editor opened on a brief with no Google copy').toBe(false);
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().onProceedToImplementation();
+
+    expect(proceeded[0].structuredCopy?.['google_search']).toBeUndefined();
+    expect(proceeded[0].campaignGoal, 'a goal nobody chose was stored').toBeNull();
   });
 
   it('frees the event again on New Brief', async () => {

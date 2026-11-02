@@ -42,6 +42,7 @@ import type {
   CampaignAudience,
   CampaignBriefApproveResult,
   CampaignBriefEditRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignTwitterDraft,
   CampaignCapabilityReadState,
@@ -87,7 +88,7 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { finalize, firstValueFrom, skip, Subscription, take } from 'rxjs';
+import { finalize, firstValueFrom, from, skip, Subscription, switchMap, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
@@ -2836,12 +2837,21 @@ export class CampaignsComponent {
    * the save is an If-Match replace of this row (which resets it to `draft`) followed by the approval
    * `saveBrief` already performs. Without the record the save would be refused as
    * `unowned-brief-exists`, which is the dead end this action exists to remove.
+   *
+   * When the offer may be older than what this session last wrote (see `recordEditOwnership`), the
+   * row is read again instead and THAT is opened, so nobody edits bytes this session already replaced.
    */
   protected onOpenSavedBriefToEdit(offer: CampaignSavedBriefOffer): void {
     this.adoptBriefProgram(offer.brief);
+    // The X fields typed on Implement belong to the brief that was there, not to the stored one.
+    this.twitterCarryDiscarded = true;
     const key = this.ownershipKey(this.activeFoundationSlug(), offer.brief);
-    if (key !== null) {
-      this.recordEditOwnership(key, offer);
+    if (key !== null && !this.recordEditOwnership(key, offer)) {
+      this.readAndOpenSavedBrief(offer.brief, () => {
+        // Nothing to open from a fresh read: let Planning re-read so its offer shows what is stored.
+        this.savedBriefRefreshToken.update((token) => token + 1);
+      });
+      return;
     }
     this.openInPlanningEditor(offer.brief);
   }
@@ -2863,81 +2873,47 @@ export class CampaignsComponent {
   /**
    * Open to edit, from the `unowned-brief-exists` refusal on the Implement tab (#4983).
    *
-   * The refusal withholds the stored row's id by design, so this READS it, exactly as
-   * `onReplaceSavedBrief` does, and records ownership from that read before opening the stored brief
-   * in Planning's editor. The brief this page generated is left as it is: proceeding from the editor
-   * replaces it, and Replace saved brief stays on offer until then.
-   *
-   * Recorded with `contentChanged` and Planning refreshed, for `onReplaceSavedBrief`'s reason: this
-   * read may be newer than the offer Planning cached, and a later Restore of that offer must read as
-   * superseded rather than pair its older content with this newer validator.
+   * The refusal withholds the stored row's id by design, so the row is READ, exactly as
+   * `onReplaceSavedBrief` does, and the stored brief is opened in Planning's editor. The brief this
+   * page generated is left as it is: proceeding from the editor replaces it, and Replace saved brief
+   * stays on offer until then.
    */
   protected onOpenSavedBriefFromImplement(): void {
     const brief = this.briefOutput();
-    const projectSlug = this.activeFoundationSlug();
-    const key = brief === null ? null : this.ownershipKey(projectSlug, brief);
-    // Unreachable while the button is shown: the refusal it answers needed all three.
-    if (brief === null || projectSlug === '' || key === null) return;
-
-    // A discard or a foundation switch while the read is out makes its answer stale, as in
-    // `onReplaceSavedBrief`.
-    const generation = this.briefPersistenceGeneration;
-    const ownershipAtSend = this.ownershipGeneration;
-    const mayAdopt = (): boolean =>
-      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
-
-    this.campaignService
-      .loadBrief(brief.eventDetails.slug, projectSlug, brief.deliveryType ?? 'paid-marketing', brief.emailStage ?? '')
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (result) => {
-          if (!mayAdopt()) return;
-          if (result.status === 'loaded' && result.brief !== null && result.briefId !== null) {
-            const validator = result.etag ?? null;
-            this.adoptBriefProgram(result.brief);
-            const storedKey = this.ownershipKey(projectSlug, result.brief) ?? key;
-            this.ownershipEpochs.set(storedKey, (this.ownershipEpochs.get(storedKey) ?? 0) + 1);
-            this.rememberBriefId(storedKey, {
-              id: result.briefId,
-              etag: validator,
-              contentChanged: true,
-              ...(validator === null ? { absence: 'overwrite' as const } : {}),
-            });
-            this.savedBriefRefreshToken.update((token) => token + 1);
-            this.openInPlanningEditor(result.brief);
-            return;
-          }
-          // Persistence went dark since the refusal: nothing can be opened or saved.
-          if (result.status === 'off') {
-            this.briefPersistence.set(this.idlePersistence);
-            return;
-          }
-          // `none`: the row went away, so there is nothing to open and the next Proceed simply
-          // creates. `unreadable`: it exists but cannot be shown, so replacing it is the only way on.
-          // Both keep Create blocked with `briefId: ''`, as the refusal did.
-          this.briefPersistence.set({
-            status: 'error',
-            briefId: '',
-            message:
-              result.status === 'none'
-                ? 'The saved brief no longer exists, so there is nothing to open. Go back to Planning and proceed again to save this brief.'
-                : 'The saved brief could not be opened. Replace it with this one instead.',
-            approved: false,
-            ...(result.status === 'none' ? {} : { conflict: 'unowned-brief-exists' as const }),
-          });
-        },
-        error: (err: unknown) => {
-          console.error('[campaigns] Failed to read the saved brief to open it', err);
-          if (!mayAdopt()) return;
-          this.briefPersistence.set({
-            status: 'error',
-            briefId: '',
-            message: 'The saved brief could not be read, so it was not opened. Try Open to edit again, or replace the saved brief with this one.',
-            approved: false,
-            conflict: 'unowned-brief-exists',
-          });
-        },
-      });
+    // Unreachable while the button is shown: the refusal it answers needed a brief.
+    if (brief === null) return;
+    this.twitterCarryDiscarded = true;
+    this.readAndOpenSavedBrief(
+      brief,
+      (status) => {
+        // Persistence went dark since the refusal: nothing can be opened or saved.
+        if (status === 'off') {
+          this.briefPersistence.set(this.idlePersistence);
+          return;
+        }
+        // `none`: the row went away, so there is nothing to open and the next Proceed simply
+        // creates. `unreadable`: it exists but cannot be shown, so replacing it is the only way on.
+        // Both keep Create blocked with `briefId: ''`, as the refusal did.
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: '',
+          message:
+            status === 'none'
+              ? 'The saved brief no longer exists, so there is nothing to open. Go back to Planning and proceed again to save this brief.'
+              : 'The saved brief could not be opened. Replace it with this one instead.',
+          approved: false,
+          ...(status === 'none' ? {} : { conflict: 'unowned-brief-exists' as const }),
+        });
+      },
+      () =>
+        this.briefPersistence.set({
+          status: 'error',
+          briefId: '',
+          message: 'The saved brief could not be read, so it was not opened. Try Open to edit again, or replace the saved brief with this one.',
+          approved: false,
+          conflict: 'unowned-brief-exists',
+        })
+    );
   }
 
   /**
@@ -6732,11 +6708,6 @@ export class CampaignsComponent {
   }
 
   /**
-   * The four parts the server keys a brief on -- `(project, event_slug, delivery_type, stage)` --
-   * as one map key. It was the `(foundation, event)` pair until LFXV2-3198 widened the upstream
-   * key; see the body for why all four are load-bearing.
-   */
-  /**
    * Switch the program selector to the brief's own program — see `onRestoreSavedBrief` for why this
    * must happen here and under `adoptingRestoredProgram`. Shared by the restore and both Open to edit
    * paths (#4983), which bring a stored brief onto the page the same way.
@@ -6755,26 +6726,34 @@ export class CampaignsComponent {
   }
 
   /**
-   * Record ownership of an offered brief that is about to be EDITED (#4983).
+   * Record ownership of an offered brief that is about to be EDITED (#4983), or report that the offer
+   * cannot be trusted for that.
    *
-   * Like `onRestoreSavedBrief`'s record, with one rule changed because the next write is a replace of
-   * the content on screen, not a hand-over of it: the recorded validator must name the version whose
-   * bytes the user is editing. So the held record is kept only when it describes the same row AND the
-   * same content as the offer — read no later than it, and no earlier than its last content change —
-   * which is when its validator may be newer (an approval moves the ETag, not the bytes) but is still
-   * a precondition on exactly what is being edited. Otherwise the offer's own read is recorded, and a
-   * row that moved since then answers the save with the `stale-brief` warning rather than being
-   * overwritten unseen.
+   * Like `onRestoreSavedBrief`'s record, with one rule changed because the next write replaces the
+   * content on screen: the recorded validator must name the version whose bytes the user is editing.
    *
-   * The epoch is bumped either way, as a restore bumps it, so a save queued before this cannot inherit
-   * the id.
+   * - Same row and same content as the held record (the offer was read no later than the record and
+   *   no earlier than its last content change): the held record stays as it is. Its validator may be
+   *   newer — an approval moves the ETag, not the bytes — and it is still a precondition on exactly
+   *   what is being edited. No epoch bump either: nothing new arrived, and a bump would discard an
+   *   approval of this same row still in flight (`approveRestoredBrief` files its ETag only while the
+   *   epoch is unchanged).
+   * - Same row, but the content changed after the offer was read, or a save of this session is still
+   *   running: the offer may hold bytes this session already replaced. Returns `false`, and the caller
+   *   re-reads the row instead of opening the offer.
+   * - Otherwise: the offer's own read is recorded, with the epoch bumped as a restore bumps it so a
+   *   save queued before this cannot inherit the id.
    */
-  private recordEditOwnership(key: string, offer: CampaignSavedBriefOffer): void {
-    this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
+  private recordEditOwnership(key: string, offer: CampaignSavedBriefOffer): boolean {
     const held = this.knownBriefIds.get(key);
-    if (held !== undefined && held.id === offer.briefId && offer.readAt <= held.readAt && offer.readAt >= held.contentAt) {
-      return;
+    const sameRow = held !== undefined && held.id === offer.briefId;
+    if (this.briefSaveInFlight() || (sameRow && offer.readAt < held.contentAt)) {
+      return false;
     }
+    if (sameRow && offer.readAt <= held.readAt) {
+      return true;
+    }
+    this.ownershipEpochs.set(key, (this.ownershipEpochs.get(key) ?? 0) + 1);
     // Normalised as in `onRestoreSavedBrief`: an older pod omits the field and JSON yields `undefined`.
     const validator = offer.etag ?? null;
     this.rememberBriefId(key, {
@@ -6784,6 +6763,65 @@ export class CampaignsComponent {
       contentAt: offer.readAt,
       ...(validator === null ? { absence: 'overwrite' as const } : {}),
     });
+    return true;
+  }
+
+  /**
+   * Read the stored brief for `seed`'s event and open THAT in Planning's editor (#4983), recording
+   * ownership from the read.
+   *
+   * Runs after every queued save has settled, so the read sees this session's own last write rather
+   * than racing it. Recorded with `contentChanged` and Planning refreshed, for `onReplaceSavedBrief`'s
+   * reason: this read may be newer than the offer Planning cached, and a later Restore of that offer
+   * must read as superseded rather than pair its older content with this newer validator.
+   *
+   * A discard or a foundation switch while the read is out makes its answer stale, as in
+   * `onReplaceSavedBrief`, and it is then dropped.
+   */
+  private readAndOpenSavedBrief(
+    seed: CampaignBriefOutput,
+    onUnavailable: (status: CampaignBriefLoadResult['status']) => void,
+    onError: () => void = (): void => undefined
+  ): void {
+    const projectSlug = this.activeFoundationSlug();
+    if (projectSlug === '' || this.ownershipKey(projectSlug, seed) === null) return;
+    const generation = this.briefPersistenceGeneration;
+    const ownershipAtSend = this.ownershipGeneration;
+    const mayAdopt = (): boolean =>
+      generation === this.briefPersistenceGeneration && ownershipAtSend === this.ownershipGeneration && projectSlug === this.activeFoundationSlug();
+
+    from(this.persistChain)
+      .pipe(
+        switchMap(() => this.campaignService.loadBrief(seed.eventDetails.slug, projectSlug, seed.deliveryType ?? 'paid-marketing', seed.emailStage ?? '')),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (result) => {
+          if (!mayAdopt()) return;
+          const storedKey = result.brief === null ? null : this.ownershipKey(projectSlug, result.brief);
+          if (result.status !== 'loaded' || result.brief === null || result.briefId === null || storedKey === null) {
+            onUnavailable(result.status);
+            return;
+          }
+          const validator = result.etag ?? null;
+          this.adoptBriefProgram(result.brief);
+          this.ownershipEpochs.set(storedKey, (this.ownershipEpochs.get(storedKey) ?? 0) + 1);
+          this.rememberBriefId(storedKey, {
+            id: result.briefId,
+            etag: validator,
+            contentChanged: true,
+            ...(validator === null ? { absence: 'overwrite' as const } : {}),
+          });
+          this.savedBriefRefreshToken.update((token) => token + 1);
+          this.openInPlanningEditor(result.brief);
+        },
+        error: (err: unknown) => {
+          console.error('[campaigns] Failed to read the saved brief to open it', err);
+          if (!mayAdopt()) return;
+          onError();
+        },
+      });
   }
 
   /** Hand a brief to the paid planner's editor and show the Plan tab (#4983). */
@@ -6793,6 +6831,11 @@ export class CampaignsComponent {
     this.selectedTab.set('planning');
   }
 
+  /**
+   * The four parts the server keys a brief on -- `(project, event_slug, delivery_type, stage)` --
+   * as one map key. It was the `(foundation, event)` pair until LFXV2-3198 widened the upstream
+   * key; see the body for why all four are load-bearing.
+   */
   private ownershipKey(projectSlug: string, brief: CampaignBriefOutput): string | null {
     const eventSlug = brief.eventDetails?.slug ?? '';
     // Trim to TEST emptiness, never to build the key — `deriveEventSlug` returns the untrimmed
