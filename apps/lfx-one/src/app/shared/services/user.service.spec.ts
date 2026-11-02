@@ -554,6 +554,17 @@ describe('UserService', () => {
       returning.unsubscribe();
     });
 
+    it("reports the viewer's removed registrations per meeting", () => {
+      service.clearConfirmedMeetingRsvps(indexed.id, 'synthetic-subject', {
+        removed_registrant_ids: ['synthetic-removed-registration'],
+        remaining_registrant_ids: ['synthetic-kept-registration'],
+      });
+
+      expect(service.isMeetingRegistrationEnded(indexed.id, 'synthetic-removed-registration')).toBe(true);
+      expect(service.isMeetingRegistrationEnded(indexed.id, 'synthetic-kept-registration')).toBe(false);
+      expect(service.isMeetingRegistrationEnded('synthetic-other-meeting', 'synthetic-removed-registration')).toBe(false);
+    });
+
     it.each([{ registrantIds: [] }, { registrantIds: ['synthetic-old-registration'] }])(
       'retains a new registration answer through stale registration metadata $registrantIds until indexing catches up',
       ({ registrantIds }) => {

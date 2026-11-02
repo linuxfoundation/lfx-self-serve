@@ -4,8 +4,10 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MeetingDayGroup, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { UserService } from '@services/user.service';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
@@ -17,8 +19,10 @@ describe('MeetingsDayGroupComponent', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
+        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
+        { provide: UserService, useValue: { authenticated: signal(true) } },
       ],
     });
   });

@@ -431,6 +431,12 @@ export class UserService {
     this.confirmedMeetingRsvps$.next(next);
   }
 
+  /** Whether the viewer removed this registration of theirs from the meeting in this session; reads a signal. */
+  public isMeetingRegistrationEnded(meetingId: string, registrantId: string): boolean {
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    return this.endedMeetingRegistrantIds().get(`${subject}\0${meetingId}`)?.has(registrantId) === true;
+  }
+
   /** Reject responses from ended registrations; missing enrichment does not invalidate a confirmation. */
   public isMeetingRsvpCurrent(rsvp: MeetingRsvp, meeting: Meeting, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): boolean {
     const key = `${subject}\0${meeting.id}`;

@@ -128,7 +128,12 @@
         [now]="store.now()"
         [rsvps]="store.nextRowRsvps()"
         [joinable]="store.nextRowJoinable()"
-        [joinUrl]="store.nextRowJoinUrl()" />
+        [joinUrl]="store.nextRowJoinUrl()">
+        <!-- Keyed by row, so a new Next meeting gets a fresh menu and closes the old one's dialog. -->
+        @for (nextRow of nextRows(); track nextRow.key) {
+          <lfx-meeting-home-actions next-meeting-card-menu [row]="nextRow" view="upcoming" />
+        }
+      </lfx-next-meeting-card>
     }
   </section>
   <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->

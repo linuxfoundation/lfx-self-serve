@@ -7,6 +7,7 @@ import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/ro
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
@@ -123,8 +124,10 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
+            isMeetingRegistrationEnded: () => false,
           },
         },
+        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
@@ -292,6 +295,15 @@ describe('MeetingsRedesignComponent', () => {
       );
       expect(rowTitles(fixture)).toEqual(['Meeting 2']);
       expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
+      const menu = (): Element | null | undefined =>
+        query(fixture, 'meetings-home-next-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]');
+      const firstMenu = menu();
+      expect(firstMenu).toBeTruthy();
+
+      upcoming$.next([buildMeeting(2), buildMeeting(3)]);
+      await fixture.whenStable();
+      expect(menu()).toBeTruthy();
+      expect(menu()).not.toBe(firstMenu);
     });
 
     it('shows the empty Next meeting card and no list or empty state for a lone meeting', async () => {
@@ -299,6 +311,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(fixture, []);
       expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.textContent).toContain('Your calendar is clear');
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeNull();
 
       upcoming$.next([buildMeeting(1)]);
       await fixture.whenStable();
