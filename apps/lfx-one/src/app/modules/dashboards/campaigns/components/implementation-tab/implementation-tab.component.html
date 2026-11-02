@@ -253,7 +253,8 @@
                 formControlName="budgetUsd"
                 min="1"
                 step="0.01"
-                aria-describedby="implementation-budget-hint"
+                [attr.aria-describedby]="googleBudgetInvalid() ? 'implementation-budget-hint implementation-budget-error' : 'implementation-budget-hint'"
+                [attr.aria-invalid]="googleBudgetInvalid() ? 'true' : null"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-budget" />
               <span id="implementation-budget-hint" class="text-xs text-gray-400" data-testid="implementation-budget-hint">
@@ -266,7 +267,9 @@
                 }
               </span>
               @if (googleBudgetInvalid()) {
-                <span class="text-xs text-red-600" data-testid="implementation-budget-error">Enter a daily budget of at least 1.</span>
+                <span id="implementation-budget-error" class="text-xs text-red-600" data-testid="implementation-budget-error"
+                  >Enter a daily budget of at least 1.</span
+                >
               }
             </div>
           }
@@ -285,8 +288,13 @@
               type="date"
               formControlName="endDate"
               [min]="todayDate"
+              [attr.aria-describedby]="googleFlightError() ? 'implementation-google-flight-error' : null"
+              [attr.aria-invalid]="googleFlightError() ? 'true' : null"
               class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="implementation-end-date" />
+            @if (googleFlightError(); as error) {
+              <span id="implementation-google-flight-error" class="text-xs text-red-600" data-testid="implementation-google-flight-error">{{ error }}</span>
+            }
           </div>
         </div>
 
@@ -401,6 +409,9 @@
           }
           @if (googleChannelConflict(); as conflict) {
             <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-channel-conflict">{{ conflict }}</p>
+          }
+          @if (googleSearchKeywordsError(); as error) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-search-keywords-error">{{ error }}</p>
           }
         }
       </div>

@@ -3,7 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CampaignPlatform, GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import {
+  CampaignPlatform,
+  GoogleCreativeEitherOrRule,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeSharedCap,
+  RedditObjective,
+} from '../interfaces/campaign.interface';
 import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
 import { lfxColors } from './colors.constants';
 import {
@@ -50,6 +56,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
   MAX_REDDIT_HEADLINE_LENGTH,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
@@ -838,21 +845,61 @@ describe('Google channel enums and creative catalogue', () => {
   });
 
   /**
-   * Demand Gen and Display require a marketing image OR a square one; Performance Max requires
-   * both separately and so carries no rule. An empty list for Performance Max is the point, not an
-   * omission — a rule there would duplicate the two `min: 1` entries and read as an either-or.
+   * Demand Gen requires a marketing image OR a square one; Performance Max and Display require both
+   * separately (#4848) and so carry no rule. An empty list there is the point, not an omission — a
+   * rule would duplicate the two `min: 1` entries and read as an either-or.
    */
   it('states the marketing-image either-or only where upstream states it', () => {
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
-    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display.map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display).toEqual([]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
   });
 
-  /** Performance Max's independent requirement, which is what makes its empty rule list correct. */
-  it('requires both Performance Max marketing arrays separately', () => {
-    const specs = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'] as readonly GoogleCreativeFieldSpec[];
+  /** The independent requirement on Performance Max and Display, which is what makes their empty rule lists correct. */
+  it.each(['performance-max', 'display'] as const)('requires both %s marketing arrays separately', (channel) => {
+    const specs = GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[];
     expect(specs.find((f) => f.control === 'marketingImages')?.min).toBe(1);
     expect(specs.find((f) => f.control === 'squareMarketingImages')?.min).toBe(1);
+  });
+
+  /** Demand Gen's pair is reciprocal, so neither member carries a floor of its own. */
+  it('puts no floor on either Demand Gen marketing array', () => {
+    const specs = GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[];
+    expect(specs.find((f) => f.control === 'marketingImages')?.min).toBeUndefined();
+    expect(specs.find((f) => f.control === 'squareMarketingImages')?.min).toBeUndefined();
+  });
+
+  /**
+   * The shared ceilings upstream refuses (#4848): Demand Gen's four marketing shapes and Performance
+   * Max's three at 20, Display's two at 15, and Display's two logo arrays at 5.
+   */
+  it('states the shared image ceilings upstream enforces', () => {
+    const shape = (channel: keyof typeof GOOGLE_CREATIVE_SHARED_CAPS) =>
+      (GOOGLE_CREATIVE_SHARED_CAPS[channel] as readonly GoogleCreativeSharedCap[]).map((cap) => [[...cap.controls].sort(), cap.max]);
+    expect(shape('demand-gen')).toEqual([[['marketingImages', 'portraitImages', 'squareMarketingImages', 'tallPortraitImages'], 20]]);
+    expect(shape('performance-max')).toEqual([[['marketingImages', 'portraitImages', 'squareMarketingImages'], 20]]);
+    expect(shape('display')).toEqual([
+      [['marketingImages', 'squareMarketingImages'], 15],
+      [['logoImages', 'squareLogoImages'], 5],
+    ]);
+  });
+
+  /**
+   * Every member is an image field of its own channel whose own `max` equals the group's, so a
+   * single field over the ceiling is named by that field's own message before the group's.
+   */
+  it('points every shared ceiling at image fields capped at the same number', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const specs = GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[];
+      for (const cap of GOOGLE_CREATIVE_SHARED_CAPS[channel] as readonly GoogleCreativeSharedCap[]) {
+        expect(cap.controls.length).toBeGreaterThan(1);
+        for (const control of cap.controls) {
+          const field = specs.find((f) => f.control === control);
+          expect(field?.image).toBeDefined();
+          expect(field?.max).toBe(cap.max);
+        }
+      }
+    }
   });
 
   /** Every rule names fields that exist on its own channel, and names at least two of them. */
