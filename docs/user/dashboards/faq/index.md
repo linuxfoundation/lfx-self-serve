@@ -30,6 +30,29 @@ Access comes only from your organization's Organization Lens administrators. Ask
 
 The dashboard adapts to your roles and the active project context. If you and your colleague have different roles or have selected different projects, your dashboards will look different.
 
+## What does “Part of this page couldn't load” mean?
+
+A page dependency could not load, for example after a release or a connection interruption.
+For recognized download failures, Self Serve tries one automatic refresh within a
+60-second window when browser storage is available. If recovery cannot proceed, or a
+deferred component fails for an unknown reason, a persistent message offers **Reload
+page** and **Contact support**.
+
+Check your connection and save or copy any unsaved work before choosing **Reload
+page**: refreshing can discard changes. The recovery message does not close your
+current page or forms. It refreshes the current address, so retry your intended
+navigation afterwards if necessary. If it still fails, choose **Contact support**.
+If you cancel a browser confirmation to leave the page, the recovery actions become
+available again after a short wait.
+The message does not take keyboard focus from a field you are editing. If focus was
+lost or on a menu control, it moves to the message rather than the reload button;
+use Tab to reach **Reload page** and **Contact support**. An open mobile menu stays
+open without trapping focus away from recovery.
+If a drawer or dialog is open, the message and its actions appear inside the active
+panel so you can reach them with Tab without closing it or losing your draft. When
+you close that panel, the message remains available on the underlying page or panel.
+Background preloading failures do not refresh the page while you are working.
+
 ## How do I change the project I'm viewing?
 
 Use the project context picker in the top navigation when you are in the **Projects** or **Foundation** lens. Select a different project or foundation to update the entire page.
