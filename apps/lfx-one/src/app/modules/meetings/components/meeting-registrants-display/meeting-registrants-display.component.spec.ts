@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrantWithState, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -504,5 +505,84 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
     component.onToggleHost(registrant('optimistic-1', false));
 
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', () => {
+  const registrant = (overrides: Partial<MeetingRegistrant>): MeetingRegistrant =>
+    ({
+      uid: 'r-1',
+      email: 'secret@acme-motors.example',
+      first_name: 'Ada',
+      last_name: 'Byron',
+      type: 'direct',
+      invite_accepted: null,
+      rsvp: null,
+      ...overrides,
+    }) as MeetingRegistrant;
+
+  async function mount(registrants: MeetingRegistrant[]) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1', is_invite_responses_enabled: true });
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  const text = (fixture: Awaited<ReturnType<typeof mount>>, testId: string): string[] =>
+    Array.from((fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${testId}"]`)).map((el) => (el.textContent ?? '').trim());
+
+  it('shows a non-empty name for a registrant with no first or last name, without revealing their email', async () => {
+    const fixture = await mount([registrant({ uid: 'blank', first_name: '', last_name: '' })]);
+
+    expect(text(fixture, 'registrant-display-name')).toEqual(['Guest']);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('secret@acme-motors.example');
+  });
+
+  it('labels an invite decline differently from an RSVP decline', async () => {
+    const fixture = await mount([
+      registrant({ uid: 'invite', invite_accepted: false }),
+      registrant({ uid: 'rsvp', invite_accepted: null, rsvp: { response_type: 'declined' } as MeetingRegistrant['rsvp'] }),
+    ]);
+
+    expect(text(fixture, 'registrant-status-label').sort()).toEqual(['Declined', 'Invite declined']);
+  });
+
+  it('offers the overflow menu the same actions as the desktop buttons', async () => {
+    const fixture = await mount([registrant({ uid: 'r-1' })]);
+    const component = fixture.componentInstance as unknown as {
+      buildRowActionMenuItems: (r: MeetingRegistrant) => { label: string }[];
+    };
+
+    const desktopButtons = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-testid^="registrant-display-resend-"], [data-testid^="registrant-display-host-toggle-"], [data-testid^="registrant-display-remove-"]'
+    );
+    const menuLabels = component.buildRowActionMenuItems(registrant({ uid: 'r-1' })).map((item) => item.label);
+
+    expect(desktopButtons.length).toBe(3);
+    expect(menuLabels).toEqual(['Resend invite', 'Make host', 'Remove']);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="registrant-display-actions-r-1"]')).not.toBeNull();
   });
 });

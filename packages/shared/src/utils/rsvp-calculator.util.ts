@@ -7,6 +7,7 @@ import {
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRsvp,
+  RegistrantStatusLabel,
   RsvpCounts,
 } from '../interfaces/meeting.interface';
 
@@ -299,6 +300,33 @@ export function getRegistrantAttendanceStatus(
   if (registrant.invite_accepted === true) return 'accepted';
   if (registrant.invite_accepted === false) return 'declined';
   return 'pending';
+}
+
+/**
+ * Text label for the status returned by {@link getRegistrantAttendanceStatus}.
+ * The status collapses an RSVP decline and an invite decline into `declined`;
+ * the label separates them: a `declined` status with no RSVP response and
+ * `invite_accepted === false` is an invite decline.
+ */
+export function getRegistrantStatusLabel(
+  registrant: {
+    rsvp?: { response_type?: string | null } | null;
+    invite_accepted?: boolean | null;
+  },
+  options?: { inviteResponsesEnabled?: boolean }
+): RegistrantStatusLabel {
+  const status = getRegistrantAttendanceStatus(registrant, options);
+  const rsvpResponse = registrant.rsvp?.response_type;
+  const hasRsvpResponse = rsvpResponse === 'accepted' || rsvpResponse === 'declined' || rsvpResponse === 'maybe';
+  const labels: Record<Exclude<RegistrantAttendanceStatus, 'declined'>, RegistrantStatusLabel> = {
+    accepted: 'Accepted',
+    maybe: 'Maybe',
+    pending: 'Pending',
+  };
+  if (status !== 'declined') {
+    return labels[status];
+  }
+  return !hasRsvpResponse && registrant.invite_accepted === false ? 'Invite declined' : 'Declined';
 }
 
 /**
