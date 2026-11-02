@@ -339,10 +339,8 @@ export interface NewsletterInviteResult {
 /** What the newsletter reader page looks up to decide whether to show the invite CTA. */
 export interface NewsletterInviteLookup {
   projectUid: string;
-  /** The issue project's parent (its foundation, for a sub-project issue). */
-  parentUid: string | null;
   newsletterId: string;
-  /** The reader was just added to the group by the member benefit. */
+  /** The member benefit just added the reader to the group (or found them already on it). */
   joined: boolean;
 }
 

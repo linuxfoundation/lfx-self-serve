@@ -270,7 +270,8 @@ export class NewsletterReaderComponent {
       () => {
         const { loading, error, project, newsletter, access } = this.state();
         if (loading || error || !project || !newsletter || !access || access.access === 'denied') return null;
-        return { projectUid: project.uid, parentUid: project.parent_uid || null, newsletterId: newsletter.id, joined: this.joinState().status === 'added' };
+        const joinStatus = this.joinState().status;
+        return { projectUid: project.uid, newsletterId: newsletter.id, joined: joinStatus === 'added' || joinStatus === 'already_member' };
       },
       { equal: (a, b) => a?.projectUid === b?.projectUid && a?.newsletterId === b?.newsletterId && a?.joined === b?.joined }
     );
@@ -291,14 +292,16 @@ export class NewsletterReaderComponent {
     );
   }
 
-  /** Same grouping rule as the My Newsletters drill-down: the feed row's foundation, else the issue's project or its parent. */
+  /**
+   * The issue's foundation card, keyed the way the server grouped the feed: the issue's own row, else
+   * any row from the same project (both carry the server-resolved `foundation_uid`), else the project's
+   * own card. Never guesses a parent — the server only maps a project to its parent when that parent
+   * is a foundation, and a wrong guess would invite to another newsletter group.
+   */
   private findInviteFoundation(response: MyNewsletterFoundationsResponse, target: NewsletterInviteLookup): MyNewsletterFoundation | null {
-    const row = response.newsletters.find((entry) => entry.id === target.newsletterId);
-    const candidates = row ? [row.foundation_uid ?? row.project_uid] : [target.projectUid, target.parentUid];
-    for (const uid of candidates) {
-      const foundation = uid ? response.foundations.find((entry) => entry.uid === uid) : undefined;
-      if (foundation) return foundation;
-    }
-    return null;
+    const row =
+      response.newsletters.find((entry) => entry.id === target.newsletterId) ?? response.newsletters.find((entry) => entry.project_uid === target.projectUid);
+    const foundationUid = row ? (row.foundation_uid ?? row.project_uid) : target.projectUid;
+    return response.foundations.find((entry) => entry.uid === foundationUid) ?? null;
   }
 }

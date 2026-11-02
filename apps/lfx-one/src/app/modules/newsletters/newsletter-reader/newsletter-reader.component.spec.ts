@@ -7,7 +7,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MyNewsletterFoundation, MyNewsletterFoundationsResponse, Newsletter, NewsletterJoinResult, Project } from '@lfx-one/shared/interfaces';
 import { NEWSLETTER_INVITE_RELOOKUP_DELAY_MS } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -476,6 +476,9 @@ describe('NewsletterReaderComponent', () => {
   });
 
   describe('invite a colleague', () => {
+    // Restore even when an assertion throws mid-test, so fake timers never leak into later tests.
+    afterEach(() => vi.useRealTimers());
+
     function render(): HTMLElement {
       fixture = TestBed.createComponent(NewsletterReaderComponent);
       component = fixture.componentInstance;
@@ -516,16 +519,34 @@ describe('NewsletterReaderComponent', () => {
       expect(component['inviteFoundation']()?.uid).toBe('found-1');
     });
 
-    it('falls back to the project parent when the issue is not in the feed', () => {
+    it('resolves through another feed row of the same project when the issue is not in the feed', () => {
       vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', parent_uid: 'found-1' })));
-      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'auditor', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
       vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
-        of(makeFoundationsResponse({ foundations: [makeFoundation({ uid: 'found-1' })] }))
+        of(
+          makeFoundationsResponse({
+            foundations: [makeFoundation({ uid: 'found-1' })],
+            newsletters: [{ id: 'news-older', project_uid: 'sub-1', foundation_uid: 'found-1' } as MyNewsletterFoundationsResponse['newsletters'][number]],
+          })
+        )
       );
 
       render();
 
       expect(component['inviteFoundation']()?.uid).toBe('found-1');
+    });
+
+    it('never guesses the parent card when the server has not grouped the project under it', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', parent_uid: 'other-parent' })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'auditor', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(makeFoundationsResponse({ foundations: [makeFoundation({ uid: 'other-parent' })] }))
+      );
+
+      const el = render();
+
+      expect(component['inviteFoundation']()).toBeNull();
+      expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
     });
 
     it('hides the CTA when the foundation does not allow inviting', () => {
@@ -565,6 +586,39 @@ describe('NewsletterReaderComponent', () => {
       expect(newsletterService.getMyNewsletterFoundations).not.toHaveBeenCalled();
     });
 
+    it('also re-checks after a retried join reports the reader is already on the list', () => {
+      vi.useFakeTimers();
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+        of({
+          access: 'eligible',
+          newsletter: makeNewsletter(),
+          qualifying_email: 'jane@acme-motors.example',
+          company_name: 'Acme Motors',
+          committee_name: 'LF Weekly',
+        })
+      );
+      vi.mocked(newsletterService.joinNewsletterGroup)
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })))
+        .mockReturnValueOnce(of({ status: 'already_member', email: '', committee_name: 'LF Weekly', company_name: '' }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations)
+        .mockReturnValueOnce(of(makeFoundationsResponse({ foundations: [] })))
+        .mockReturnValue(of(makeFoundationsResponse()));
+
+      const el = render();
+      expect(component['joinState']().status).toBe('failed');
+
+      component['retryJoin']();
+      TestBed.tick();
+      vi.advanceTimersByTime(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS);
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(component['joinState']().status).toBe('already_member');
+      expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
+      expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).not.toBeNull();
+    });
+
     it('looks up again, after the index delay, once the member benefit adds the reader to the group', () => {
       vi.useFakeTimers();
       vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
@@ -599,7 +653,6 @@ describe('NewsletterReaderComponent', () => {
       vi.advanceTimersByTime(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS);
       TestBed.tick();
       fixture.detectChanges();
-      vi.useRealTimers();
 
       expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
       expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).not.toBeNull();
