@@ -41,6 +41,8 @@ export class CommitteeVotesComponent {
    *  every tab switch, which previously dropped the confirmed deadline (per @audigregorie, GH-3823
    *  review). */
   public readonly voteExtended = output<Vote>();
+  /** Relays votes-table's voteClosed output to committee-view for the same reason as voteExtended. */
+  public readonly voteClosed = output<Vote>();
 
   // State
   public creating = signal(false);
@@ -71,6 +73,11 @@ export class CommitteeVotesComponent {
    *  destroyed/recreated on tab switches (per @audigregorie, GH-3823 review). */
   protected onVoteExtended(vote: Vote): void {
     this.voteExtended.emit(vote);
+  }
+
+  /** votes-table's voteClosed output, relayed so the ended status survives tab switches. */
+  protected onVoteClosed(vote: Vote): void {
+    this.voteClosed.emit(vote);
   }
 
   protected onCreateVote(): void {

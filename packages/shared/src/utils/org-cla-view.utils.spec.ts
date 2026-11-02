@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
 import {
+  orgClaCatalogueGroup,
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
@@ -135,6 +136,12 @@ describe('orgClaPreviewGroup', () => {
   // none, because it has no signature for them to hang off.
   it('reports no managers and no approval criteria, rather than reporting nothing', () => {
     expect(orgClaPreviewGroup(selection)).toMatchObject({ claManagersCount: 0, approvalCriteriaCount: 0, needsClaManager: false });
+  });
+});
+
+describe('orgClaCatalogueGroup', () => {
+  it('heads the overview with the CLA Group id when the catalogue names neither group nor project', () => {
+    expect(orgClaCatalogueGroup({ claGroupId: 'cla-group-uuid-1', matchTypes: [], organizations: [] }).claGroupName).toBe('cla-group-uuid-1');
   });
 });
 

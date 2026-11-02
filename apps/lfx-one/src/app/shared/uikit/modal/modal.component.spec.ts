@@ -3,6 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
+import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { Component, inject, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
@@ -53,6 +54,9 @@ class TestContentComponent {
   public readonly ref = inject(DialogRef);
 }
 
+// True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
+const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
+
 describe('UiModalComponent and UiModalService', () => {
   let fixture: ComponentFixture<TestHostComponent>;
   let container: HTMLElement;
@@ -94,14 +98,22 @@ describe('UiModalComponent and UiModalService', () => {
     await open();
 
     expect(dialog()?.getAttribute('role')).toBe('dialog');
-    expect(dialog()?.getAttribute('aria-modal')).toBe('true');
+    // aria-modal stays off so overlay panes opened from inside (Select, Menu) remain exposed.
+    expect(dialog()?.getAttribute('aria-modal')).not.toBe('true');
     const title = container.querySelector('[data-testid="ui-modal-title"]') as HTMLElement;
     expect(title.textContent).toBe('Create Committee');
+    expect(Array.from(title.classList)).toEqual(expect.arrayContaining(['heading-24', 'text-[20px]', 'leading-[28px]']));
     expect(dialog()?.getAttribute('aria-labelledby')).toBe(title.id);
     expect(container.querySelector('[data-testid="ui-modal-subtitle"]')?.textContent).toBe('Committees get their own meetings.');
     expect(container.querySelector('[data-testid="ui-modal-body"] #name')).not.toBeNull();
+    // Registered with the CDK so a Select or Menu opened from the body follows its scrolling.
+    expect(registered(container.querySelector('[data-testid="ui-modal-body"]') as Element)).toBe(true);
     expect(container.querySelector('[data-testid="ui-modal-inset"] #inset')).not.toBeNull();
     expect(container.querySelector('[data-testid="ui-modal-actions"] #create')).not.toBeNull();
+    // Rules are inset shadows, not borders, so the panel keeps the library's height.
+    expect(container.querySelector('[data-testid="ui-modal-inset"]')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(container.querySelector('[data-testid="ui-modal-actions"]')?.className).toContain('shadow-ui-neutral-alpha-200');
+    expect(container.querySelector('[data-testid="ui-modal-actions"]')?.className).not.toContain('border-t');
   });
 
   it('dims the page with the ui-overlay backdrop', async () => {
@@ -176,6 +188,15 @@ describe('UiModalComponent and UiModalService', () => {
   it('ignores Escape pressed with a modifier key', async () => {
     await open();
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, shiftKey: true, bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
+  it('ignores an Escape that cancels an IME composition', async () => {
+    await open();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, isComposing: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true }));
     await settle();
 
     expect(dialog()).not.toBeNull();

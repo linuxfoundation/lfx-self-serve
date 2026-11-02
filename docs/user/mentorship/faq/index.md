@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [faq, mentorship, mentee, mentor, program-admin, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
@@ -34,7 +34,7 @@ Prerequisite tasks are part of your application and come before a decision. Task
 
 ### Can I undo a withdrawal?
 
-No, a withdrawal cannot be undone. You would have to apply again, and the term may have closed in the meantime.
+Not yourself. Ask a Program Admin of the program: they can re-open the application, which puts it back under review. Otherwise you would have to apply again, and the term may have closed in the meantime.
 
 ### Where do I actually apply?
 
@@ -47,7 +47,7 @@ Find the program at [mentorship.linuxfoundation.org](https://mentorship.linuxfou
 There are two ways onto a program, and they do not work the same:
 
 - **A Program Admin invites you.** Accepting the invitation puts you straight onto the program; no further approval is needed.
-- **You raise a request yourself**, from **Mentor Profile → Edit Mentor Profile → Select LFX Mentorship**. That one waits for a Program Admin to approve it.
+- **You raise a request yourself.** Pick the program under **Select LFX Mentorship** on the registration form at [app.lfx.dev/mentorship/mentor](https://app.lfx.dev/mentorship/mentor), or later from **Mentor Profile → Edit Mentor Profile → Select LFX Mentorship**. That one waits for a Program Admin to approve it.
 
 You cannot request a program from **My Programs** — that tab only lists the programs you already mentor.
 
@@ -71,7 +71,7 @@ Every Program Admin and mentor on that program can see your note. The mentee can
 
 ### When do I invite mentors?
 
-You invite mentors after the program is approved, from the **Mentors** tab. Enrolling a program does not invite mentors.
+You invite mentors after the program is approved, from the **Mentors** tab. Search for the person in **Search and select mentors...** by name, LF username or full email address, pick them, and select **Invite**. Enrolling a program does not invite mentors. See [Manage a Program's Mentors](../manage-mentors/).
 
 ### How many open terms can a program have?
 
@@ -79,7 +79,7 @@ A program can have up to four open terms at a time.
 
 ### What does "Decline by Term" do?
 
-It declines every **pending** application in the term you pick. Accepted mentees are not affected, and it cannot be undone.
+It declines every **pending** application in the term you pick. Accepted mentees are not affected. There is no bulk undo; you can **Re-open** each application on its own row. See [Review Applications and Decide](../review-applications/#re-opening-an-application).
 
 ### What happens if I graduate a mentee with unfinished tasks?
 
@@ -91,7 +91,15 @@ The application had already changed before your decision was saved — either so
 
 ### Why does my logo upload fail?
 
-A logo is rejected when it is the wrong format, the wrong size, or too large a file. It must be JPG or PNG, 420 × 420 px, and 2 MB or smaller. SVG is not accepted. If the program saved but the logo did not, add it later from the program card.
+A logo is rejected when it is the wrong format, the wrong size, or too large a file. It must be JPG or PNG, 420 × 420 px, and 2 MB or smaller. SVG is not accepted. If the program saved but the logo did not, add it later with **Add logo** on the program card. See [Your Programs (Program Admin)](../admin-programs/).
+
+### How do I see my program's public page?
+
+Open the program from [app.lfx.dev/mentorship/admin](https://app.lfx.dev/mentorship/admin) and select **View Public Page**. It opens the program's page on [mentorship.linuxfoundation.org](https://mentorship.linuxfoundation.org) in a new tab.
+
+### How do I hide a program from the public site?
+
+Open the program and select **Hide Program** from the **⋯** menu. Only an **Open** or **Completed** program can be hidden, and not while it has active applications. Select **Unhide Program** on a **Hidden** program to show it again. See [Hide or Show a Program](../program-visibility/).
 
 ## Statuses
 

@@ -3,7 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_TABS } from '../constants/health-metrics-engagement.constants';
+import {
+  HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+  HEALTH_METRICS_TABS,
+} from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
@@ -118,12 +123,14 @@ describe('buildHealthMetricsOverviewBlankCopy', () => {
 
 describe('HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS', () => {
   const sections: Record<string, readonly { key: string }[]> = {
+    engagement: HEALTH_METRICS_ENGAGEMENT_SECTIONS,
     members: HEALTH_METRICS_MEMBERS_SECTIONS,
     'non-members': HEALTH_METRICS_NON_MEMBERS_SECTIONS,
     events: HEALTH_METRICS_EVENTS_SECTIONS,
     training: HEALTH_METRICS_TRAINING_SECTIONS,
   };
   const params: Record<string, readonly string[]> = {
+    engagement: Object.values(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS),
     members: Object.values(HEALTH_METRICS_MEMBERS_QUERY_PARAMS),
     'non-members': Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS),
   };

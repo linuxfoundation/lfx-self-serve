@@ -1486,6 +1486,7 @@
               [googleGeoSearchEnabled]="briefCampaignsGoogleGeoSearchEnabled()"
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
+              (replaceSavedBriefRequested)="onReplaceSavedBrief()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

@@ -4,11 +4,6 @@
 # Build stage
 FROM node:22-alpine AS builder
 
-# Set build environment
-ARG BUILD_ENV=production
-ARG APP_VERSION=development
-ENV APP_VERSION=${APP_VERSION}
-
 # Enable Corepack for Yarn
 RUN corepack enable
 
@@ -26,8 +21,17 @@ RUN yarn install --immutable
 # NOW copy source code (changes here won't invalidate the dependency layer)
 COPY . .
 
+# Select the environment only after installation, so release builds can reuse
+# the dependency cache exported by main's dev-cluster builds.
+ARG BUILD_ENV=production
+
 # Build shared package first
 RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
+
+# Inject the version only when compiling the app, so new release tags do not
+# invalidate dependency installation or the version-independent shared build.
+ARG APP_VERSION=development
+ENV APP_VERSION=${APP_VERSION}
 
 # Build the Angular application
 # Note: Client IDs (LaunchDarkly, DataDog RUM) are now injected at runtime

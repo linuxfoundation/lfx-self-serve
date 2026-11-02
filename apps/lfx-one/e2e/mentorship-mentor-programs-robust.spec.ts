@@ -17,7 +17,7 @@ import { MentorshipMentorProgramsResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -60,7 +60,6 @@ async function stubPrograms(page: Page, body: MentorshipMentorProgramsResponse):
 
 test.describe('Mentor My Programs — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
   });
@@ -92,7 +91,6 @@ test.describe('Mentor My Programs — structure', () => {
 
 test.describe('Mentor My Programs — structural states', () => {
   test('shows the loading state while the programs read is in flight', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let release: () => void = () => undefined;
     const held = new Promise<void>((resolve) => (release = resolve));
     await page.route(PROGRAMS_ROUTE, async (route) => {
@@ -108,7 +106,6 @@ test.describe('Mentor My Programs — structural states', () => {
   });
 
   test('shows only the empty state when there are no programs', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, { data: [], total: 0 });
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 
@@ -118,7 +115,6 @@ test.describe('Mentor My Programs — structural states', () => {
   });
 
   test('shows only the error state when the programs read fails', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(PROGRAMS_ROUTE, (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
     await openMentorPage(page, MENTOR_PROGRAMS_URL);
 

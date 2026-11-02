@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LowerCasePipe, SlicePipe } from '@angular/common';
+import { DecimalPipe, LowerCasePipe, SlicePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -113,6 +113,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_NAME_TOKENS,
@@ -128,8 +130,12 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
+  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  DEFAULT_GOOGLE_DAILY_BUDGET_USD,
   DEFAULT_LINKEDIN_BUDGET_USD,
   DEFAULT_LINKEDIN_TARGETING_PROFILE,
   DEFAULT_META_BUDGET_USD,
@@ -203,12 +209,15 @@ import type {
   CreativeAssetLibraryState,
   CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
+  CreativeSlotAssignment,
   GoogleAdsGeoTargetOption,
   GoogleAdsGeoTargetSearchState,
   GoogleAdsGeoTargetSuggestion,
   GoogleAdsRadiusUnit,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
+  GoogleBudgetFlight,
+  GoogleBudgetInputs,
   GoogleCampaignChannel,
   GoogleCreativeChannel,
   GoogleCreativeEitherOrRule,
@@ -218,6 +227,7 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleCreativeSharedCap,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -236,7 +246,9 @@ import type {
 import {
   campaignBiddingError,
   campaignBiddingPayload,
+  campaignFlightDays,
   codePointLength,
+  dailyBudgetFromTotal,
   defaultCampaignBiddingDraft,
   describeCampaignDispatchFailure,
   googleAdsToUpperCode,
@@ -246,6 +258,7 @@ import {
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -301,6 +314,7 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     InputTextComponent,
     SelectComponent,
     TextareaComponent,
+    DecimalPipe,
     LowerCasePipe,
     SlicePipe,
     CampaignBiddingControlComponent,
@@ -633,6 +647,12 @@ export class ImplementationTabComponent implements OnInit {
   public readonly retryCreateCapabilities = output<void>();
 
   /**
+   * Asks the parent to save the brief on screen over the stored one, after an `unowned-brief-exists`
+   * refusal (#4731). Offered only on that refusal — see `canReplaceSavedBrief`.
+   */
+  public readonly replaceSavedBriefRequested = output<void>();
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -642,6 +662,17 @@ export class ImplementationTabComponent implements OnInit {
    * keeps the parent's copy ahead of the teardown and needs no lifecycle hook at all.
    */
   public readonly draftChange = output<CampaignImplementationDraft>();
+
+  /**
+   * Whether the save banner offers "Replace saved brief".
+   *
+   * Only on `unowned-brief-exists`: that is the one refusal Retry cannot clear and Restore escapes
+   * only by discarding this brief. Hidden while a save is in flight, so a second click cannot queue
+   * a second replace behind the first.
+   */
+  protected readonly canReplaceSavedBrief = computed(
+    () => this.briefPersistence().status === 'error' && this.briefPersistence().conflict === 'unowned-brief-exists' && !this.briefSaveInFlight()
+  );
 
   /**
    * Text for the always-present live region in the template.
@@ -657,16 +688,18 @@ export class ImplementationTabComponent implements OnInit {
       case 'saving':
         return 'Saving this brief.';
       case 'saved':
-        // Must carry the SAME information as the visible banner, which tells the user to re-enter
-        // the event URL after a reload. Announcing only "Brief saved." gives screen-reader users
-        // the reassurance without the instruction — and the instruction is the part they cannot
-        // recover on their own, since nothing else on the page says the brief needs a URL to come
-        // back.
+        // Must carry the SAME information as the visible banner, which says where the brief is
+        // after a reload. Announcing only "Brief saved." gives screen-reader users the reassurance
+        // without the instruction.
+        //
+        // A reload keeps the event URL in the page address (`?event=`, #4756), so Planning prefills
+        // it and offers the saved brief; the user no longer has to re-enter it. "Restore saved
+        // brief" is that offer's button label, so the sentence names a control that is there.
         //
         // The unapproved message, when there is one, is appended rather than replacing this: the
         // brief IS saved and the reload instruction still applies, so dropping either half would
         // leave a screen-reader user with less than the visible banner shows.
-        return `Brief saved. After a reload, re-enter the event URL to restore it.${
+        return `Brief saved. After a reload, choose Restore saved brief on the Plan tab to reopen it.${
           this.briefPersistence().message === null ? '' : ` ${this.briefPersistence().message}`
         }`;
       default:
@@ -710,6 +743,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaMessengerInboxReason = META_MESSENGER_INBOX_RETIRED_REASON;
   protected readonly videoCreateUnsupportedReason = GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON;
   protected readonly googleCreativeNotice = GOOGLE_CREATIVE_REQUIRED_NOTICE;
+  protected readonly performanceMaxPrefillNotice = GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE;
   protected readonly redditMaxBudget = REDDIT_MAX_BUDGET_USD;
   protected readonly redditObjectiveLabels = REDDIT_OBJECTIVE_LABELS;
   /**
@@ -779,7 +813,9 @@ export class ImplementationTabComponent implements OnInit {
     eventSlug: [''],
     countryCode: ['US'],
     registrationUrl: ['', [Validators.required]],
-    budgetUsd: [500, [Validators.required, Validators.min(1)]],
+    // The Google DAILY budget (#4847): campaign-service creates it with no period, which Google
+    // treats as daily. Seeded from the brief's total divided over the flight, never the total itself.
+    budgetUsd: [DEFAULT_GOOGLE_DAILY_BUDGET_USD as number, [Validators.required, Validators.min(1)]],
     // Typed `number`, not inferred. `CAMPAIGN_BUDGET_DEFAULTS` is `as const`, so the inferred
     // control type was the literal `70` — which is wrong for a slider the user drags, and made
     // any other value a type error to patch in (LFXV2-3229).
@@ -1017,6 +1053,16 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The brief's keywords a Google create sends (#4848): a blank term is dropped, as a blank headline
+   * line is, because campaign-service refuses it and the operator saw only the generic failure.
+   */
+  protected readonly googleSearchKeywords = computed(() => this.briefKeywords().filter((k) => typeof k.term === 'string' && k.term.trim() !== ''));
+  /**
+   * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
+   * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
+   */
+  protected readonly googleSearchKeywordsError: Signal<string | null> = this.initGoogleSearchKeywordsError();
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -1449,6 +1495,18 @@ export class ImplementationTabComponent implements OnInit {
    * judgements is mirrored on the add path so a refusal arrives while the text is still in the box.
    */
   protected readonly googleCallouts = signal<string[]>([]);
+  /**
+   * The Performance Max copy the brief seeded (#4784), kept so the section's prefill notice can tell
+   * whether what is on screen is still that copy. Null when nothing was seeded; cleared by
+   * `resetGoogleFields`.
+   */
+  private readonly performanceMaxSeed = signal<Record<string, string> | null>(null);
+  /**
+   * The brief's planning total the Google daily budget was divided from (#4847), shown beside the
+   * field so the operator can compare it with the flight total. Null when the brief has no positive
+   * total. Set by every brief seed, so a brief switch never shows the previous brief's figure.
+   */
+  protected readonly googleBriefTotalBudget = signal<number | null>(null);
   protected readonly googleMaxCallouts = GOOGLE_ADS_MAX_CALLOUTS;
   protected readonly googleMaxCalloutRunes = GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES;
   /**
@@ -1570,6 +1628,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaPlacements = signal<MetaPlacement>({ ...META_DEFAULT_PLACEMENTS });
   /** Meta Pixel id. Only read — and only required — under the `conversions` objective. */
   protected readonly metaPixelId = signal('');
+  /** What the last "Use suggested images" did, and for which brief, so the line never outlives a brief switch (#4825). */
+  private readonly googleSuggestedApply = signal<{ briefId: string; message: string; seq: number } | null>(null);
 
   // === Computed Signals ===
   protected readonly activeFoundationSlug = computed(() => this.projectContextService.activeContext()?.slug ?? '');
@@ -1804,6 +1864,43 @@ export class ImplementationTabComponent implements OnInit {
    * meantime (the add guards cannot see held ids). Create waits rather than letting the BFF refuse it.
    */
   protected readonly googleGeoTargetsOverCap = computed(() => this.googleGeoTargetCount() > GOOGLE_ADS_MAX_GEO_TARGETS);
+
+  /**
+   * Whether the "one type per create" note under the Google type row is shown (#4755): only on the
+   * campaign-service road, and only when there is more than one type to choose between.
+   *
+   * One signal for the note AND for the checkboxes' `aria-describedby`, so a box never points at a
+   * note that is not rendered. The description is what tells a screen-reader user why ticking one
+   * type unticks the others.
+   */
+  protected readonly googleChannelNoteShown = computed(() => this.googleCreativeAvailable() && (this.demandGenAvailable() || this.googleChannelsAvailable()));
+
+  /**
+   * Why Create waits when more than one Google campaign type is ticked on the campaign-service road
+   * (#4755), or null when it does not.
+   *
+   * That road creates ONE type per create: `canSubmit` returns false for a pair because
+   * `createCampaigns` refuses every one. `onGoogleChannelPicked` keeps a click from ticking a second
+   * type once that road is known, so two routes remain: a restored draft saved with several, and a
+   * pair ticked while the capability was still unanswered (`null` reads as the legacy road, where a
+   * pair is allowed) that then resolves to this one. Without this the button sits disabled with
+   * nothing on screen saying why. Named rather than cleared: dropping a restored choice unseen would
+   * decide for the operator which campaign to make.
+   */
+  protected readonly googleChannelConflict = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    // No `showGoogleSection` test: the one consumer renders inside that section's own `@if`.
+    if (!this.googleCreativeAvailable()) return null;
+    const channels = this.selectedGoogleChannels();
+    if (channels.length < 2) return null;
+    const labels = channels.map((channel) => GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]);
+    const listed = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+    // The BFF refusal's first sentence (`createCampaigns`), and like that refusal it does NOT promise a
+    // second type can then be added to the same brief: that depends on the campaign-service version
+    // deployed, and a retry into a refusal after the first create has spent budget is worse than
+    // saying nothing.
+    return `${listed} cannot be created together. Keep one selected to create it.`;
+  });
 
   /** The postal-code box's text as the add would judge it — trimmed with Go's rules, as the callout. */
   private readonly googlePostalGeoDraftText = computed(() => googleAdsTrimSpace(this.googlePostalGeoDraft()));
@@ -2689,6 +2786,30 @@ export class ImplementationTabComponent implements OnInit {
   /** Each rendered Google image slot's library controls, keyed `<request key>.<control>`. */
   protected readonly googleImageSlots: Signal<Record<string, GoogleCreativeImageSlotView>> = this.initGoogleImageSlots();
   /**
+   * The asset-plan slots "Use suggested images" can fill, as `platform/CHANNEL/slot` in the plan's own
+   * vocabulary: one per plan slot name that maps onto a Google image field on screen. The grid offers
+   * the button only when the plan suggests an image for one of these, so it never promises a fill the
+   * tab cannot make. Empty while no image field is rendered, which `googleImageSlots` already limits to
+   * an explicit library yes.
+   */
+  protected readonly googleSuggestionTargets: Signal<string[]> = this.initGoogleSuggestionTargets();
+  /** Bumped on every apply, so the grid announces a repeated result again; 0 when the last apply was for another brief. */
+  protected readonly googleSuggestedApplySeq: Signal<number> = computed(() => {
+    const result = this.googleSuggestedApply();
+    return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.seq : 0;
+  });
+  /**
+   * How many images each on-screen Google image field holds — pasted lines plus library images held
+   * for the open brief — keyed by every plan `slot_key` that maps onto it, for the slot grid (#4833).
+   * Only fields holding something appear.
+   */
+  protected readonly googleFormFilledSlots: Signal<Record<string, number>> = this.initGoogleFormFilledSlots();
+  /** The last apply's result for the brief now open, or `''`. */
+  protected readonly googleSuggestedApplyResult: Signal<string> = computed(() => {
+    const result = this.googleSuggestedApply();
+    return result !== null && result.briefId === (this.briefPersistence().briefId ?? '') ? result.message : '';
+  });
+  /**
    * Why Create is blocked for a stored Google image the request cannot carry, or that
    * campaign-service would refuse, or `null` — `metaImageAssetBlock`'s sibling.
    */
@@ -2912,6 +3033,10 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
+    // An end date before the start, which Google refuses (#4848); the message is under End Date.
+    if (googleSelected && this.googleFlightError() !== null) return false;
+    // Search with no keyword, which creates a campaign that can never serve (#4848).
+    if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3099,7 +3224,24 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Reactive Signals (from form valueChanges) ===
   protected readonly displayBudgetPct: Signal<number> = this.initDisplayBudgetPct();
+  /** The Google budget and flight controls as a signal, so the two readings below recompute on any edit (#4847). */
+  private readonly googleBudgetInputs: Signal<GoogleBudgetInputs> = this.initGoogleBudgetInputs();
+  protected readonly googleBudgetFlight: Signal<GoogleBudgetFlight | null> = this.initGoogleBudgetFlight();
+  /**
+   * Whether the Google daily budget is missing or below the control's minimum of 1. Shown under the
+   * field, because on a Google create the same validator holds Create disabled and nothing else on
+   * screen says why. The field renders only for a Google selection, so the message never shows
+   * under a budget nothing else reads.
+   */
+  protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
+  /**
+   * Why Google will refuse the flight on screen, or `null` (#4848). campaign-service refuses an end
+   * date BEFORE the start, before anything is created, but the operator saw only "platform campaign
+   * creation failed". A same-day flight is legal on Google, so it is not refused here.
+   */
+  protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
+  protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
   protected readonly googleCreativeSections: Signal<GoogleCreativeSection[]> = this.initGoogleCreativeSections();
   /**
@@ -3854,6 +3996,62 @@ export class ImplementationTabComponent implements OnInit {
     this.selectedPlatforms.update((platforms) => platforms.filter((p) => p !== 'twitter-ads'));
   }
 
+  /**
+   * Take the asset plan's suggestions into the Google image fields (#4825): "upload once, auto-assign".
+   *
+   * Only EMPTY fields are filled — no held image, no pasted URL and no upload still running — so
+   * whatever the operator chose stays, and pressing again after more uploads fills only what is
+   * still empty. Only fields on
+   * screen are touched (the plan covers every Google channel; the tab renders one), each up to its
+   * own catalogued `max`, and only for the open brief. The combined marketing-image cap is not
+   * re-checked here, as it is not for a manual pick: campaign-service refuses an over-cap creative
+   * before anything is created.
+   */
+  protected onApplySuggestedGoogleImages(assignments: readonly CreativeSlotAssignment[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (!briefId) return;
+    const slots = this.googleImageSlots();
+    const held = this.googleHeldImages();
+    let filled = 0;
+    let kept = 0;
+    for (const assignment of assignments) {
+      if (assignment.platform !== 'google-ads' || assignment.assetIds.length === 0) continue;
+      const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_ADS_CHANNEL_TYPE_ENUMS[candidate] === assignment.channel);
+      if (!channel) continue;
+      // The plan names the slot in the platform layer's vocabulary, not the request's; see the table.
+      const control = GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel][assignment.slot];
+      if (!control) continue;
+      const groupName = GOOGLE_CREATIVE_REQUEST_KEYS[channel];
+      const key = `${groupName}.${control}`;
+      if (!slots[key]) continue;
+      const raw = this.campaignForm.controls[groupName].getRawValue() as Record<string, string | null | undefined>;
+      // An upload still running counts as filled: the file it is sending is held when it lands
+      // (`followGoogleImageUpload`), and filling the field meanwhile would put it over its max.
+      if (slots[key].uploading || (held[key] ?? []).length > 0 || this.splitCreativeLines(raw[control]).length > 0) {
+        kept += 1;
+        continue;
+      }
+      const fields: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS[channel];
+      const max = fields.find((field) => field.control === control)?.max ?? assignment.assetIds.length;
+      for (const assetId of assignment.assetIds.slice(0, max)) {
+        this.holdGoogleImage(key, { id: assetId, name: '', briefId });
+      }
+      filled += 1;
+    }
+    const slotWord = (n: number): string => (n === 1 ? 'slot' : 'slots');
+    let message = 'No suggested images to apply: no Google image field on screen has a suggestion.';
+    if (filled > 0) {
+      message = `Filled ${filled} empty image ${slotWord(filled)} with suggested images.`;
+    } else if (kept > 0) {
+      message = 'Nothing to fill: every image field with a suggestion already has images.';
+    }
+    if (filled > 0 && kept > 0) {
+      message += ` Left ${kept} ${slotWord(kept)} you had already filled as ${kept === 1 ? 'it was' : 'they were'}.`;
+    }
+    this.googleSuggestedApply.update((previous) => ({ briefId, message, seq: (previous?.seq ?? 0) + 1 }));
+    if (filled > 0) this.emitDraft();
+  }
+
   /** Hold a library image in a Google image slot. The picker offers only images that fit the slot. */
   protected onGoogleImagePick(slotKey: string, assetId: string): void {
     const briefId = this.briefPersistence().briefId ?? '';
@@ -4237,6 +4435,25 @@ export class ImplementationTabComponent implements OnInit {
   protected removeGoogleProximityTarget(index: number): void {
     this.googleProximityTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
+  }
+
+  /**
+   * Keep a Google campaign-type tick exclusive on the campaign-service road (#4755).
+   *
+   * That road creates one type per create and refuses any pair, so ticking a second type unticks the
+   * first instead of silently disabling Create; the note under the row says each type is created on
+   * its own. Only on a tick, never an untick, and never on the legacy road, which still creates
+   * Search and Demand Gen together. Video is constructed disabled and is not part of the choice.
+   */
+  protected onGoogleChannelPicked(channel: GoogleCampaignChannel, event: Event): void {
+    if (!this.googleCreativeAvailable()) return;
+    if (!(event.target instanceof HTMLInputElement) || !event.target.checked) return;
+    this.campaignForm.patchValue({
+      includeSearch: channel === 'search',
+      includeDemandGen: channel === 'demand-gen',
+      includePerformanceMax: channel === 'performance-max',
+      includeDisplay: channel === 'display',
+    });
   }
 
   /**
@@ -4714,7 +4931,7 @@ export class ImplementationTabComponent implements OnInit {
       searchBudgetPct: form.searchBudgetPct,
       startDate: form.startDate,
       endDate: form.endDate,
-      keywords: this.briefKeywords(),
+      keywords: this.googleSearchKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
@@ -5453,11 +5670,12 @@ export class ImplementationTabComponent implements OnInit {
           if (!offered || slug === '') return of(idle);
           return this.campaignService.getTwitterAdsAccounts(slug).pipe(
             // A connection campaign-service could not read comes back inside a 200 as
-            // `unavailable`; it is a failed read, so it gets the error state and its Retry.
-            map(
-              (result): CampaignTwitterAccountState =>
-                result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result }
-            ),
+            // `unavailable`; it is a failed read, so it gets the error state and its Retry. One it
+            // REFUSED to read (`forbidden`, #4837) is a standing refusal and gets no Retry.
+            map((result): CampaignTwitterAccountState => {
+              if (result.connection?.state === 'forbidden') return { status: 'forbidden', result: null };
+              return result.connection?.state === 'unavailable' ? { status: 'error', result: null } : { status: 'loaded', result };
+            }),
             catchError((err: unknown) =>
               of<CampaignTwitterAccountState>({ status: err instanceof HttpErrorResponse && err.status === 403 ? 'restricted' : 'error', result: null })
             ),
@@ -6353,6 +6571,88 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Prefill the Performance Max copy from the brief's generated copy (#4784).
+   *
+   * Performance Max was the one Google channel whose copy a person still had to write, although the
+   * brief already holds copy of the right shape: Search headlines fit its headlines (both 30 wide),
+   * Demand Gen headlines (40) fit its long headlines (90), Search and Demand Gen descriptions fit its
+   * descriptions (90), and Demand Gen's business name is the business name. Images are never
+   * generated, so they stay the operator's.
+   *
+   * Every value is held to its field's own catalogue bounds (`GOOGLE_CREATIVE_FIELD_SPECS`): trimmed,
+   * measured with `codePointLength` as the field validators measure it, de-duplicated and capped at
+   * the field's `max`, so the seed never puts a value on screen its own validator refuses. One
+   * description short enough for Google's short slot is kept in the set whenever the brief has one.
+   *
+   * A brief with none of this copy leaves the group as `resetGoogleFields` left it, empty.
+   */
+  private seedPerformanceMaxCreative(brief: CampaignBriefOutput): void {
+    const search = this.generatedCopy(brief, ['google_search']);
+    // `google_display` is the Demand Gen key the generator writes, and `demand_gen` the older one;
+    // `getDisplayCopy` on the Planning tab reads both, at the top level and under `platforms`.
+    const demandGen = this.generatedCopy(brief, ['google_display', 'demand_gen']);
+    // Typed as the shared spec, as `initGoogleCreativeSections` reads it: not every catalogue entry
+    // declares `width` or `max`, and the literal tuple type would refuse the lookup.
+    const specs: readonly GoogleCreativeFieldSpec[] = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'];
+    const fitting = (control: string, values: unknown): string[] => {
+      const spec = specs.find((field) => field.control === control);
+      if (spec === undefined || !Array.isArray(values)) return [];
+      // A line break inside one generated value would split it into extra entries of a one-per-line
+      // field, past the width and count it was checked against, so it is folded into a space.
+      const unique = [
+        ...new Set(values.filter((value): value is string => typeof value === 'string').map((value) => value.replace(/\s*[\r\n]+\s*/g, ' ').trim())),
+      ];
+      return unique.filter((value) => value !== '' && (spec.width === undefined || codePointLength(value) <= spec.width));
+    };
+    const capped = (control: string, values: string[]): string[] => values.slice(0, specs.find((field) => field.control === control)?.max ?? values.length);
+
+    const headlines = capped('headlines', fitting('headlines', search?.['headlines']));
+    const longHeadlines = capped('longHeadlines', fitting('longHeadlines', demandGen?.['headlines']));
+    const descriptionPool = fitting('descriptions', [...this.asArray(search?.['descriptions']), ...this.asArray(demandGen?.['descriptions'])]);
+    const descriptions = capped('descriptions', descriptionPool);
+    const isShort = (value: string): boolean => codePointLength(value) <= GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH;
+    const short = descriptionPool.find(isShort);
+    if (short !== undefined && !descriptions.some(isShort)) {
+      descriptions[descriptions.length - 1] = short;
+    }
+    const businessName = fitting('businessName', [demandGen?.['business_name']])[0] ?? '';
+
+    if (headlines.length === 0 && longHeadlines.length === 0 && descriptions.length === 0 && businessName === '') return;
+    const seeded = {
+      headlines: headlines.join('\n'),
+      longHeadlines: longHeadlines.join('\n'),
+      descriptions: descriptions.join('\n'),
+      businessName,
+    };
+    this.performanceMaxSeed.set(seeded);
+    this.campaignForm.controls.performanceMaxCreative.patchValue(seeded);
+  }
+
+  /**
+   * One platform's generated copy from the brief, by the first key present, at the top level or
+   * nested under `platforms` — the shapes `getSearchCopy` and `getDisplayCopy` on the Planning tab
+   * read. Shared by the Search seed and the Performance Max seed so the two cannot disagree about
+   * where a brief keeps its copy.
+   */
+  private generatedCopy(brief: CampaignBriefOutput, keys: readonly string[]): Record<string, unknown> | undefined {
+    const copy = brief.structuredCopy;
+    if (!copy) return undefined;
+    const nested = copy['platforms'] as Record<string, unknown> | undefined;
+    for (const source of [copy, nested]) {
+      for (const key of keys) {
+        const found = source?.[key];
+        if (found !== null && typeof found === 'object') return found as Record<string, unknown>;
+      }
+    }
+    return undefined;
+  }
+
+  /** The value as an array when it is one, else empty: generated copy is untyped JSON. */
+  private asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  /**
    * Rebuild one copy FormArray from a list, preserving the validators the field carries.
    *
    * Shared by the draft restore and the brief seed so the two cannot drift — an earlier revision
@@ -6602,12 +6902,19 @@ export class ImplementationTabComponent implements OnInit {
     this.resetTwitterFields();
     this.biddingDrafts.set({});
     const details = brief.eventDetails;
+    // The brief's budget is a TOTAL for the flight and Google's is DAILY (#4847), so the total is
+    // divided over the flight this seed opens with. Sending the total unchanged made every LFX
+    // Google budget the whole plan per day.
+    const briefTotal = brief.totalBudget ?? null;
+    const flightDays = campaignFlightDays(this.todayDate, this.defaultEndDate);
+    const seededDailyBudget = briefTotal !== null && flightDays !== null ? dailyBudgetFromTotal(briefTotal, flightDays) : null;
+    this.googleBriefTotalBudget.set(seededDailyBudget === null ? null : briefTotal);
     this.campaignForm.patchValue({
       eventName: details.name,
       eventSlug: details.slug,
       countryCode: details.countryCode || 'US',
       registrationUrl: details.registrationUrl,
-      budgetUsd: brief.totalBudget ?? 500,
+      budgetUsd: seededDailyBudget ?? DEFAULT_GOOGLE_DAILY_BUDGET_USD,
       startDate: this.todayDate,
       endDate: this.defaultEndDate,
       // The X fields are typed, never generated, so a new brief starts them blank. A same-event
@@ -6640,7 +6947,7 @@ export class ImplementationTabComponent implements OnInit {
       this.selectedPlatforms.set(brief.selectedPlatforms.filter((p) => selectable.has(p)));
     }
 
-    const searchCopy = brief.structuredCopy?.['google_search'] as Record<string, unknown> | undefined;
+    const searchCopy = this.generatedCopy(brief, ['google_search']);
     if (searchCopy) {
       const headlines = (searchCopy['headlines'] as string[]) ?? [];
       const descriptions = (searchCopy['descriptions'] as string[]) ?? [];
@@ -6674,6 +6981,10 @@ export class ImplementationTabComponent implements OnInit {
     if (brief.googleSitelinks !== undefined) {
       this.googleSitelinks.set(brief.googleSitelinks.map((s) => ({ ...s })));
     }
+
+    // After `resetGoogleFields` emptied the creative groups, like the Search copy above; the draft
+    // restore runs after this seed, so an operator's own Performance Max copy still wins (#4784).
+    this.seedPerformanceMaxCreative(brief);
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
@@ -6747,7 +7058,8 @@ export class ImplementationTabComponent implements OnInit {
       this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
-    this.briefKeywords.set(brief.keywords);
+    // A stored brief can lack the list; every reader maps or filters it (#4848).
+    this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -6847,6 +7159,7 @@ export class ImplementationTabComponent implements OnInit {
    * sub-forms: they reach neither the draft nor a create until an entry is added.
    */
   private resetGoogleFields(): void {
+    this.performanceMaxSeed.set(null);
     this.campaignForm.patchValue({
       searchBudgetPct: CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct,
       includeSearch: true,
@@ -6916,6 +7229,25 @@ export class ImplementationTabComponent implements OnInit {
 
   // === Private Initializers ===
   /**
+   * Whether the Performance Max prefill notice is true right now (#4784): some field still holds the
+   * copy the brief seeded into it.
+   *
+   * Derived rather than latched. A restored draft overwrites the seed after it runs, and an operator
+   * may clear or rewrite the copy, so a flag set at seed time would go on saying "filled in from the
+   * brief" over empty fields or over copy they wrote. A draft saved straight from the seeded state —
+   * the ordinary tab round trip — restores the same values, so the notice survives that.
+   */
+  private initPerformanceMaxPrefillShown(): Signal<boolean> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      const seed = this.performanceMaxSeed();
+      if (seed === null) return false;
+      const raw = this.campaignForm.controls.performanceMaxCreative.getRawValue() as Record<string, string>;
+      return Object.entries(seed).some(([field, value]) => value !== '' && raw[field] === value);
+    });
+  }
+
+  /**
    * Whether the budget-split slider changes anything the user is about to create.
    *
    * It only ever has, for exactly one pair. On the LEGACY in-process road,
@@ -6927,7 +7259,9 @@ export class ImplementationTabComponent implements OnInit {
    * Google create outright (one config, one channel), so no selection reaches a platform with a
    * split applied.
    *
-   * So the slider is shown for Search + Demand Gen and withheld otherwise. Previously it rendered
+   * So the slider is shown for Search + Demand Gen on the LEGACY road only, and withheld otherwise —
+   * including that same pair on the cutover road, where it would offer a split nothing applies
+   * (#4755). Previously it rendered
    * for every Google selection and labelled its second half "Display" — a channel the split has
    * never funded, next to real Display and Performance Max boxes that it does not fund either.
    * The control is left in the form regardless; hiding it must not drop a restored draft's value.
@@ -6935,6 +7269,7 @@ export class ImplementationTabComponent implements OnInit {
   private initBudgetSplitApplies(): Signal<boolean> {
     return computed(() => {
       void this.campaignFormRevision();
+      if (this.googleCreativeAvailable()) return false;
       const channels = this.selectedGoogleChannels();
       return channels.includes('search') && channels.includes('demand-gen');
     });
@@ -6948,6 +7283,50 @@ export class ImplementationTabComponent implements OnInit {
       ),
       { initialValue: 100 - CAMPAIGN_BUDGET_DEFAULTS.searchBudgetPct }
     );
+  }
+
+  private initGoogleBudgetInputs(): Signal<GoogleBudgetInputs> {
+    const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
+    const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
+    return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleFlightError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.selectedPlatforms().includes('google-ads')) return null;
+      const { start, end } = this.googleBudgetInputs();
+      if (!isReversedCampaignFlight(start, end)) return null;
+      return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  private initGoogleSearchKeywordsError(): Signal<string | null> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+      return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
+    });
+  }
+
+  private initGoogleBudgetInvalid(): Signal<boolean> {
+    return computed(() => {
+      const { daily } = this.googleBudgetInputs();
+      return typeof daily !== 'number' || !Number.isFinite(daily) || daily < 1;
+    });
+  }
+
+  /**
+   * What the Google daily budget spends over the flight on screen (#4847), or `null` while the
+   * budget or either date cannot be counted. Recomputed from the controls on every change, so the
+   * figure beside the field always matches what Create would send.
+   */
+  private initGoogleBudgetFlight(): Signal<GoogleBudgetFlight | null> {
+    return computed(() => {
+      const { daily, start, end } = this.googleBudgetInputs();
+      const days = campaignFlightDays(start, end);
+      if (days === null || typeof daily !== 'number' || !Number.isFinite(daily) || daily <= 0) return null;
+      return { days, total: Math.round(daily * days * 100) / 100 };
+    });
   }
 
   private initCampaignName(): Signal<string> {
@@ -7197,6 +7576,46 @@ export class ImplementationTabComponent implements OnInit {
         }
       }
       return views;
+    });
+  }
+
+  private initGoogleSuggestionTargets(): Signal<string[]> {
+    return computed(() => {
+      const targets: string[] = [];
+      for (const key of Object.keys(this.googleImageSlots())) {
+        const [groupName, control] = key.split('.');
+        const channel = GOOGLE_CHANNELS_WITH_CREATIVE.find((candidate) => GOOGLE_CREATIVE_REQUEST_KEYS[candidate] === groupName);
+        if (!channel) continue;
+        targets.push(...this.googlePlanSlotKeysFor(channel, control));
+      }
+      return targets;
+    });
+  }
+
+  private initGoogleFormFilledSlots(): Signal<Record<string, number>> {
+    return computed(() => {
+      void this.campaignFormRevision();
+      // Walks the RENDERED image fields, not `googleImageSlots`: those exist only while the library is
+      // an explicit yes, and pasted URLs are offered — and fill a slot — whatever it answers. Held
+      // images count only where the request would send them (`googleImageRefsFor`).
+      const briefId = this.briefPersistence().briefId ?? '';
+      const libraryOn = this.googleAssetUploadAvailable();
+      const held = this.googleHeldImages();
+      const filled: Record<string, number> = {};
+      for (const section of this.googleCreativeSections()) {
+        const raw = this.campaignForm.controls[GOOGLE_CREATIVE_REQUEST_KEYS[section.channel]].getRawValue() as Record<string, string | null | undefined>;
+        for (const field of section.fields) {
+          if (!field.image) continue;
+          const key = `${section.groupName}.${field.control}`;
+          const heldCount = libraryOn ? (held[key] ?? []).filter((image) => image.briefId === briefId).length : 0;
+          const count = this.splitCreativeLines(raw[field.control]).length + heldCount;
+          if (count === 0) continue;
+          for (const slotKey of this.googlePlanSlotKeysFor(section.channel, field.control)) {
+            filled[slotKey] = count;
+          }
+        }
+      }
+      return filled;
     });
   }
 
@@ -8053,9 +8472,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
-   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
@@ -8092,6 +8514,16 @@ export class ImplementationTabComponent implements OnInit {
         return Array.isArray(value) && value.length > 0;
       });
       if (!satisfied) return rule.message;
+    }
+    const caps: readonly GoogleCreativeSharedCap[] = GOOGLE_CREATIVE_SHARED_CAPS[channel];
+    for (const cap of caps) {
+      const count = cap.controls.reduce((sum, control) => {
+        const value = creative[control];
+        return sum + (Array.isArray(value) ? value.length : 0);
+      }, 0);
+      if (count > cap.max) {
+        return `has ${count} ${cap.label} across its fields (pasted URLs and stored images together) — ${count - cap.max} over the shared cap of ${cap.max}.`;
+      }
     }
     return null;
   }
@@ -8900,6 +9332,17 @@ export class ImplementationTabComponent implements OnInit {
       if (typeof value !== 'string') continue;
       this.campaignForm.controls[field].setValue(value, { emitEvent: false });
     }
+  }
+
+  /**
+   * Every asset-plan `slot_key` that maps onto one Google image field: `google-ads/CHANNEL/slot`, in the
+   * plan's own vocabulary (`GOOGLE_ASSET_PLAN_SLOT_CONTROLS`). The one place that mapping is walked, so the
+   * grid's suggestion targets and its form counts cannot drift apart.
+   */
+  private googlePlanSlotKeysFor(channel: GoogleCreativeChannel, control: string): string[] {
+    return Object.entries(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel])
+      .filter(([, mapped]) => mapped === control)
+      .map(([planSlot]) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${planSlot}`);
   }
 
   /**

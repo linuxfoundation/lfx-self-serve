@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
+  HEALTH_METRICS_NEWSLETTER_VIEWS,
   HEALTH_METRICS_OVERVIEW_BOARD_COHORT,
   HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES,
@@ -52,8 +53,6 @@ const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE
 const BOARD_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE';
 const BOARD_MEMBERS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE_MEMBERS';
 const OVERVIEW_KPIS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS';
-const NEWSLETTER_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY';
-const NEWSLETTER_BY_NEWSLETTER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER';
 
 /** Upper-cased Snowflake keys; period columns are aliased `<COLUMN>_<RANGE>`. */
 type WideRow = Record<string, unknown>;
@@ -399,7 +398,7 @@ export class HealthMetricsOverviewService {
     const summarySql = `
       SELECT
         ${columns.join(',\n        ')}
-      FROM ${NEWSLETTER_SUMMARY_VIEW}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.summary}
       WHERE foundation_slug = ?
       -- One row per foundation_slug, so LIMIT 1 has nothing to pick between.
       LIMIT 1
@@ -411,7 +410,7 @@ export class HealthMetricsOverviewService {
         sent_date,
         open_rate,
         click_rate
-      FROM ${NEWSLETTER_BY_NEWSLETTER_VIEW}
+      FROM ${HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter}
       WHERE foundation_slug = ?
         AND has_engagement_data = TRUE
       -- Latest first, so a capped read keeps the newest; the card puts them back in date order.
@@ -421,12 +420,12 @@ export class HealthMetricsOverviewService {
 
     const [summary, sends] = await Promise.all([
       executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, summarySql, [query.foundationSlug], {
-        view: NEWSLETTER_SUMMARY_VIEW,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.summary,
         operation: 'get_overview_newsletters',
         clientMessage: 'Newsletter engagement is unavailable right now.',
       }),
       executeSnowflakeViewRead<WideRow>(this.snowflakeService, req, newslettersSql, [query.foundationSlug], {
-        view: NEWSLETTER_BY_NEWSLETTER_VIEW,
+        view: HEALTH_METRICS_NEWSLETTER_VIEWS.byNewsletter,
         operation: 'get_overview_newsletters',
         clientMessage: 'Newsletter engagement is unavailable right now.',
       }),

@@ -154,6 +154,15 @@ module.exports = defineConfig([
     },
   },
   {
+    // Stories are linted with their own project, not compiled as application inputs.
+    files: ['src/app/shared/uikit/**/*.stories.ts'],
+    languageOptions: {
+      parserOptions: {
+        project: './.storybook/tsconfig.json',
+      },
+    },
+  },
+  {
     // The uikit is a PrimeNG-free library with its own namespace, distinct from the app's `lfx-*` wrappers.
     files: ['src/app/shared/uikit/**/*.ts'],
     rules: {

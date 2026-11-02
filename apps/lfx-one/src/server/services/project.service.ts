@@ -374,13 +374,15 @@ export class ProjectService {
 
   /**
    * Fetches a single project by ID
+   * @param strictWriter Propagate writer-check failures instead of returning a false denial (opt-in).
    */
   public async getProjectById(
     req: Request,
     uid: string,
     access: boolean = true,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
@@ -393,7 +395,12 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addProjectWriterToResource(req, project);
+      const writerProject = strictWriter
+        ? {
+            ...project,
+            writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'writer_guard' }),
+          }
+        : await this.accessCheckService.addProjectWriterToResource(req, project);
       // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
       // resolved from `writer_guard`, and every `writer_guard` holder also holds `auditor_guard`
       // (bare `writer` composes into `auditor`, `global_writer` into `auditor_guard`). Independently,
@@ -694,7 +701,8 @@ export class ProjectService {
     req: Request,
     projectSlug: string,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
     const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
       req,
@@ -704,7 +712,7 @@ export class ProjectService {
     );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor);
+    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor, strictWriter);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
@@ -7348,7 +7356,7 @@ export class ProjectService {
   }
 
   /**
-   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid).
+   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid, logo_url).
    * Resolves every referenced project in one batched query-service lookup (`getProjectsByIds`,
    * 100 uids per `filters_or` query, fail-soft per batch) instead of fanning out to per-project
    * `getProjectById` calls — and ungated, so callers without a direct project viewer relation
@@ -7358,7 +7366,7 @@ export class ProjectService {
     req: Request,
     items: T[],
     options?: ApiRequestOptions
-  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
+  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string; project_logo_url: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
     logger.debug(req, 'enrich_with_project_data', 'Enriching items with project metadata', {
@@ -7385,6 +7393,7 @@ export class ProjectService {
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
         parent_project_uid: project?.parent_uid || (item as any).parent_project_uid || '',
+        project_logo_url: project?.logo_url || (item as any).project_logo_url || '',
       };
     });
   }

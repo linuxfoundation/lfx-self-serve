@@ -131,6 +131,8 @@ describe.each([
   ['/engagement-attendance-trend', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
+  ['/engagement-newsletter-performance', 'foundationSlug'],
+  ['/engagement-newsletter-recipients', 'foundationSlug'],
   ['/engagement-non-member-participation', 'foundationSlug'],
   ['/engagement-org-participation', 'foundationSlug'],
   ['/engagement-representatives', 'foundationSlug'],

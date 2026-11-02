@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
+import { DecimalPipe, NgClass } from '@angular/common';
 import { Component, ElementRef, inject, input, output, signal } from '@angular/core';
 
 import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
@@ -12,7 +12,7 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-health-metrics-l2-sub-nav',
-  imports: [NgClass],
+  imports: [DecimalPipe, NgClass],
   templateUrl: './health-metrics-l2-sub-nav.component.html',
   styleUrl: './health-metrics-l2-sub-nav.component.scss',
   // The host is the flex item, so it is what sticks; a sticky child would have no room to travel in it.

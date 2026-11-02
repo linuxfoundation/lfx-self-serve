@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, overview, applications, status, history]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
@@ -47,8 +47,9 @@ Applications that did not lead to a place are not shown as cards. They appear un
 | ---------------- | --------------------------------------------- |
 | **Not selected** | The program did not take you on for this term |
 | **Withdrawn**    | You pulled the application                    |
+| **On Hold**      | The program has parked the application        |
 
-**Application History** on [Mentee Profile](../mentee-profile/) is a separate, fuller list, and labels the same applications differently: **In Review**, **Accepted**, **Not Selected**, **Withdrawn** and **Graduated**.
+**Application History** on [Mentee Profile](../mentee-profile/) is a separate, fuller list, and labels the same applications differently: **In Review**, **Accepted**, **Not Selected**, **Withdrawn**, **Graduated** and **On Hold**.
 
 If you have not applied to anything yet, the tab says so and points you at **Find a Program**.
 

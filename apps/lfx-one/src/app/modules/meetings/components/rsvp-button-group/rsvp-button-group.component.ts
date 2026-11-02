@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   computed,
@@ -20,19 +19,17 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
-import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
+import { Meeting, MeetingRsvp, MeetingRsvpSubmitError, RsvpResponse, RsvpScope, User } from '@lfx-one/shared/interfaces';
 import {
   formatMeetingOccurrenceLabel,
   isMeetingInviteResponsesEnabled,
   isSameOccurrenceId,
   occurrenceIdToMs,
-  occurrenceIdToSeconds,
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
-import { RSVP_RESPONSES } from '@lfx-one/shared/constants';
-import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -47,10 +44,10 @@ import { catchError, combineLatest, finalize, map, of, switchMap, take, tap } fr
 export class RsvpButtonGroupComponent {
   // Injected services
   private readonly meetingService = inject(MeetingService);
+  private readonly meetingRsvpService = inject(MeetingRsvpService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
-  private readonly lensService = inject(LensService);
   private readonly destroyRef = inject(DestroyRef);
 
   // User data
@@ -157,46 +154,15 @@ export class RsvpButtonGroupComponent {
     if (this.isLoading() || this.disabled() || !this.inviteResponsesEnabled()) {
       return;
     }
-    const currentUser = this.user();
-    const subject = currentUser?.sub || this.userService.viewerUsername() || currentUser?.email || '';
-    const meetingUid = this.meetingUid();
-    const meeting = this.meeting();
     const context = this.rsvpContext();
-    const generation = this.userService.meetingRegistrationGeneration(meeting.id, subject);
-    const scopedOccurrenceId = scope === 'all' ? undefined : (occurrenceIdToSeconds(occurrenceId) ?? undefined);
-    if (scope !== 'all' && !scopedOccurrenceId) {
-      this.reportFailure('This meeting date could not be resolved. Please reload the meeting and try again.');
-      return;
-    }
-    const scopeLabel = this.isRecurring() ? this.formatScope(scope, scopedOccurrenceId) : 'This meeting';
+    const scopeLabel = this.isRecurring() ? this.formatScope(scope, occurrenceId) : 'This meeting';
     const successDetail = `${this.meeting().title} — ${scopeLabel}`;
     this.isLoading.set(true);
 
-    const request: CreateMeetingRsvpRequest = {
-      response,
-      scope,
-      email: currentUser?.email,
-    };
-
-    if (scopedOccurrenceId) {
-      request.occurrence_id = scopedOccurrenceId;
-    }
-
-    this.meetingService
-      .createMeetingRsvp(meetingUid, request)
+    this.meetingRsvpService
+      .submit$(this.meeting(), occurrenceId, response, scope)
       .pipe(
-        tap((rsvp: MeetingRsvp) => {
-          const acknowledged = {
-            ...rsvp,
-            // The acknowledgement can omit or mangle the answer; the submitted response is what the user chose.
-            response_type: RSVP_RESPONSES.includes(rsvp.response_type) ? rsvp.response_type : response,
-            occurrence_id: rsvp.occurrence_id || scopedOccurrenceId,
-            // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
-            updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),
-          };
-          // Use the retained copy so every view orders this answer after the confirmations it follows.
-          const savedRsvp = this.userService.recordConfirmedMeetingRsvp(acknowledged, subject, generation) ?? acknowledged;
-          if (!this.userService.isMeetingRsvpCurrent(savedRsvp, meeting, subject)) return;
+        tap((savedRsvp: MeetingRsvp) => {
           // The successful POST is authoritative. Never replace it with a stale/null
           // query-service refetch while the new response is still being indexed.
           if (this.confirmedContext() !== context) {
@@ -213,19 +179,9 @@ export class RsvpButtonGroupComponent {
             });
           }
           if (this.rsvpContext() === context) this.rsvpChanged.emit(savedRsvp);
-          // Defer personal refetches outside Me without keeping a stale replay on return.
-          this.userService.refreshUserMeetings(this.lensService.activeLens() === 'me');
         }),
-        catchError((error: HttpErrorResponse) => {
-          let errorMessage = 'Failed to update RSVP. Please try again.';
-
-          if (error.status === 404) {
-            errorMessage = 'Only invited users are allowed to RSVP to this meeting.';
-          } else if (error?.error?.error) {
-            errorMessage = error.error.error;
-          }
-
-          this.reportFailure(errorMessage);
+        catchError((error: MeetingRsvpSubmitError) => {
+          this.reportFailure(error.message);
           return of(null);
         }),
         finalize(() => {

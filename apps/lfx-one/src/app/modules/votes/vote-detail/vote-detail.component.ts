@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Params, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { ShareSlideComponent } from '@components/share-slide/share-slide.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
@@ -56,11 +57,13 @@ import {
   votePermalinkPath,
   votePresenterPath,
 } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
-import { exportVoteSlide, voteSlideFileName, voteSlideToast } from '@shared/utils/vote-slide.util';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
+import { exportSlideImage, voteSlideFileName, voteSlideToast } from '@shared/utils/slide-export.util';
 import { resolveVoteCanManage } from '@shared/utils/write-access.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -80,7 +83,6 @@ import { VoteOptionResultsComponent } from '../components/vote-option-results/vo
 import { VoteParticipationCardComponent } from '../components/vote-participation-card/vote-participation-card.component';
 import { VoteRankedQuestionResultsComponent } from '../components/vote-ranked-question-results/vote-ranked-question-results.component';
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
-import { VoteSlideComponent } from '../components/vote-slide/vote-slide.component';
 import { VoteVotersComponent } from '../components/vote-voters/vote-voters.component';
 
 /**
@@ -113,6 +115,8 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     NgTemplateOutlet,
     ButtonComponent,
     CardComponent,
+    ExternalLinksDirective,
+    LinkifyHtmlPipe,
     NotFoundComponent,
     SkeletonModule,
     StatCardGridComponent,
@@ -127,7 +131,7 @@ import { VoteVotersComponent } from '../components/vote-voters/vote-voters.compo
     VoteOptionResultsComponent,
     VoteParticipationCardComponent,
     VoteRankedQuestionResultsComponent,
-    VoteSlideComponent,
+    ShareSlideComponent,
     VoteVotersComponent,
   ],
   providers: [DialogService],
@@ -244,7 +248,7 @@ export class VoteDetailComponent {
   );
   protected readonly slideLink: Signal<string> = computed(() => toAbsoluteUrl(votePermalinkPath(this.vote()?.uid ?? ''), isPlatformBrowser(this.platformId)));
   private readonly slideRef = viewChild<ElementRef<HTMLElement>>('slide');
-  private readonly slideComponent = viewChild(VoteSlideComponent);
+  private readonly slideComponent = viewChild(ShareSlideComponent);
 
   /** Results (and comments) render for a manager, or for a voter once the vote closed; every other voter gets a state panel. */
   protected readonly showsResults: Signal<boolean> = computed(
@@ -368,7 +372,7 @@ export class VoteDetailComponent {
     if (!element || !name || this.slideBusy()) return;
     this.slideBusy.set(true);
     // The QR is generated asynchronously; capturing before it renders would copy a slide with a blank code.
-    const result = (await this.slideComponent()?.whenQrReady()) ? await exportVoteSlide(element, voteSlideFileName(name)) : 'failed';
+    const result = (await this.slideComponent()?.whenQrReady()) ? await exportSlideImage(element, voteSlideFileName(name)) : 'failed';
     this.slideBusy.set(false);
     this.messageService.add(voteSlideToast(result));
   }
@@ -648,7 +652,10 @@ export class VoteDetailComponent {
       if (!this.showVoteDetails()) return VOTE_DETAIL_TABS.filter((tab) => tab.key === VOTE_DETAIL_DEFAULT_TAB);
       const hasPrompts = this.commentPromptCount() > 0;
       const showVoters = this.showVotersTab();
-      return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters));
+      return VOTE_DETAIL_TABS.filter((tab) => (tab.key !== 'comments' || hasPrompts) && (tab.key !== 'voters' || showVoters)).map((tab) => ({
+        ...tab,
+        ...this.tabCount(tab.key),
+      }));
     });
   }
 
@@ -763,6 +770,21 @@ export class VoteDetailComponent {
   }
 
   // === Private Helpers ===
+  /** Badge for a tab, or nothing: Comments waits for loaded, un-held results; zero and unknown counts show no badge (#4768). */
+  private tabCount(key: VoteDetailTab): Pick<VoteDetailTabOption, 'count' | 'countLabel'> {
+    if (key === 'comments') {
+      const count = this.commentCount();
+      if (!this.hasLoadedResults() || this.resultsHeld() || count <= 0) return {};
+      return { count, countLabel: `${count} ${count === 1 ? 'comment' : 'comments'}` };
+    }
+    if (key === 'voters') {
+      const count = this.vote()?.total_voting_request_invitations ?? 0;
+      if (count <= 0) return {};
+      return { count, countLabel: `${count} invited ${count === 1 ? 'voter' : 'voters'}` };
+    }
+    return {};
+  }
+
   private navigateToTab(queryParams: Params): void {
     void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
   }

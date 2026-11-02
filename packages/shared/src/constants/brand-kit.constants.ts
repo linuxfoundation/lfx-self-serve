@@ -363,6 +363,15 @@ export const BRAND_KIT_PRINT_BODY_CLASS = 'lfx-print-brand-kit';
 export const BRAND_KIT_PRINT_ONLY_CLASS = 'lfx-brand-kit-print-only';
 
 /**
+ * The class of the kit's portrait print document (`lfx-mktg-brand-kit-print`,
+ * on the shared `mktg-framework` page), as against the legacy landscape book:
+ * `body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait)` switches the page
+ * setup in mktg-family-print.scss, and the print frame picks its `@page` rule
+ * by the same test. The template and the stylesheets carry the literal.
+ */
+export const BRAND_KIT_PORTRAIT_PRINT_CLASS = 'lfx-brand-kit-portrait';
+
+/**
  * A logo file's stem (its name without the extension and a `-838x203` size
  * suffix) that names nothing a reader would recognise: a long hex hash, a
  * UUID, or a long run of letters and digits with no separator — what CDNs

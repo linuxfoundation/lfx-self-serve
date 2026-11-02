@@ -3,15 +3,18 @@
 
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CODE_METRIC_OPTIONS,
   ORG_COMMIT_SCOPE_OPTIONS,
   ORG_PROJECT_SCOPE_OPTIONS,
+  ORG_SCOPE_OPTIONS,
+  ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_OPTIONS,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
 } from '@lfx-one/shared/constants';
-import type { OrgCommitFilters, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
-import { parseOrgCodeMetric, parseOrgCommitScope, parseOrgProjectScope, parseOrgTeamMembersFilter } from '@lfx-one/shared/utils';
+import type { OrgCommitFilters, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import { parseOrgCodeMetric, parseOrgCommitScope, parseOrgProjectScope, parseOrgScopeFilter, parseOrgTeamMembersFilter } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -41,6 +44,11 @@ export function parseOptionalOrgCommitFilters(req: Request, operation: string): 
 /** Validate the `teamMembers` query param (lfx-self-serve#4685): missing → the default (exclude); an unknown value → 400 before any SQL is built. */
 export function parseOrgTeamMembers(req: Request, operation: string): OrgTeamMembersFilter {
   return parseParam(req, ORG_TEAM_MEMBERS_QUERY_PARAM, parseOrgTeamMembersFilter, ORG_TEAM_MEMBERS_OPTIONS, DEFAULT_ORG_TEAM_MEMBERS, operation);
+}
+
+/** Validate the `orgScope` query param (lfx-self-serve-ops#1219): missing → the default (insights); an unknown value → 400 before any SQL is built. */
+export function parseOrgScope(req: Request, operation: string): OrgScopeFilter {
+  return parseParam(req, ORG_SCOPE_QUERY_PARAM, parseOrgScopeFilter, ORG_SCOPE_OPTIONS, DEFAULT_ORG_SCOPE, operation);
 }
 
 function parseParam<T extends string>(

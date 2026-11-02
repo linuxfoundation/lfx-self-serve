@@ -58,6 +58,7 @@
   ],
   "resolutions": {
     "@tailwindcss/typography/postcss-selector-parser": "^6.1.5",
+    "webpack-dev-middleware@npm:^6.1.2": "^7.4.6",
     "webpack@npm:5": "5.112.0"
   },
   "lint-staged": {

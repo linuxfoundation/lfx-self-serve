@@ -2,27 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 import { _IdGenerator } from '@angular/cdk/a11y';
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { DialogRef } from '@angular/cdk/dialog';
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 
 /**
  * The layout of a modal: a title and optional subtitle, a body, an optional inset band and an actions footer. Make it the root of
  * the content you open with `UiModalService`; the title labels the dialog and the service handles focus, Escape and the backdrop.
  *
- * Project the body as plain content, an inset band with `modalInset` and the buttons with `modalActions`:
+ * Give projected `<p>`/`<label>` a type role; the app base layer otherwise sets 14/21.
+ *
+ * Project the body as plain content, an inset band with `modalInset` and the default-size buttons with `modalActions`:
  *
  * ```html
  * <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings.">
  *   <input ... />
  *   <div modalInset>Create a mailing list for this committee</div>
- *   <ng-container modalActions><lfx-ui-button variant="outline-neutral">Cancel</lfx-ui-button> ...</ng-container>
+ *   <ng-container modalActions><lfx-ui-button variant="secondary">Cancel</lfx-ui-button> ...</ng-container>
  * </lfx-ui-modal>
  * ```
  */
 @Component({
   selector: 'lfx-ui-modal',
-  imports: [NgTemplateOutlet],
+  imports: [NgTemplateOutlet, CdkScrollable],
   templateUrl: './modal.component.html',
   styleUrl: './modal.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,9 +44,9 @@ export class UiModalComponent {
   /** `md` is 540px wide, `sm` is 420px for short confirmations. Both shrink to fit the window. */
   public readonly size = input<'sm' | 'md'>('md');
   /** Keeps the title in place while a long body scrolls under it. The actions footer always stays in place. */
-  public readonly sticky = input<boolean>(false);
+  public readonly sticky = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Stretches the one button in the actions footer to the full width. */
-  public readonly singleAction = input<boolean>(false);
+  public readonly singleAction = input<boolean, unknown>(false, { transform: booleanAttribute });
 
   /** Id of the title; `UiModalService` points `aria-labelledby` at it. Inside a service-opened modal it derives from the dialog id. */
   protected readonly titleId: string = this.dialogRef ? `${this.dialogRef.id}-title` : inject(_IdGenerator).getId('lfx-ui-modal-title-');
@@ -70,7 +73,8 @@ export class UiModalComponent {
 
   private initActionsClasses(): Signal<string> {
     return computed(() => {
-      const base = 'flex items-center justify-between gap-[12px] border-t border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden';
+      const base =
+        'flex items-center justify-between gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200 empty:hidden';
       // The button component's inner button is content-width unless told otherwise, so stretch it too.
       return this.singleAction() ? `${base} [&>*]:flex-1 [&_a]:w-full [&_button]:w-full` : base;
     });

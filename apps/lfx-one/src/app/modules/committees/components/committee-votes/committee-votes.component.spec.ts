@@ -5,7 +5,7 @@ import { Component, NO_ERRORS_SCHEMA, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { MessageService } from 'primeng/api';
@@ -18,6 +18,7 @@ import { CommitteeVotesComponent } from './committee-votes.component';
 class VotesTableStubComponent {
   public readonly viewVote = output<string>();
   public readonly viewResults = output<string>();
+  public readonly voteClosed = output<Vote>();
 }
 
 describe('CommitteeVotesComponent', () => {
@@ -48,6 +49,16 @@ describe('CommitteeVotesComponent', () => {
     table().viewVote.emit(uid);
 
     expect(navigate).toHaveBeenLastCalledWith(['/votes', uid]);
+  });
+
+  it('relays a row-menu close to the parent so it can hold the ended status (#4744)', () => {
+    const closed = vi.fn();
+    fixture.componentInstance.voteClosed.subscribe(closed);
+    const vote = { uid: 'vote-1', status: 'ended' } as Vote;
+
+    table().voteClosed.emit(vote);
+
+    expect(closed).toHaveBeenCalledWith(vote);
   });
 
   it.each(['vote-ended', 'vote/invalid', 'vote?invalid', 'vote#invalid'])('opens Results with %s as one vote-id segment', (uid) => {

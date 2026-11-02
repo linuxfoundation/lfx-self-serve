@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   MENTOR_ACTIVE_ID,
   MENTOR_DECLINED_ID,
@@ -39,7 +39,6 @@ const rowActions = (page: Page, id: string) => page.getByTestId(`mentorship-ment
 
 test.describe('Admin Mentors tab actions — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, { mentees: [], tasks: [] });
     await stubAdminTasks(page, { mentees: [], tasks: [] });

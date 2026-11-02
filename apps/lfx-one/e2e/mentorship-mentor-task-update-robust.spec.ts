@@ -18,7 +18,7 @@ import { MentorshipApplicantTask, MentorshipMentorProgramDetail } from '@lfx-one
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -83,7 +83,6 @@ const DETAIL: MentorshipMentorProgramDetail = {
 };
 
 async function open(page: Page, tab: 'mentees' | 'applicants'): Promise<string> {
-  await enableMentorshipFlag(page);
   await page.route(`**/api/mentorship/mentor/programs/${PROGRAM_ID}`, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(DETAIL) })
   );

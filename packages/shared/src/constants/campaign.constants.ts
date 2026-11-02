@@ -42,6 +42,7 @@ import type {
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
+  GoogleCreativeSharedCap,
   KeywordActionOutcome,
   KeywordActionPlatform,
   LinkedInGeoTarget,
@@ -167,6 +168,14 @@ export const DEFAULT_META_BUDGET_USD = 500;
 export const DEFAULT_LINKEDIN_BUDGET_USD = 500;
 export const DEFAULT_MICROSOFT_BUDGET_USD = 500;
 
+/**
+ * The Google daily budget the Implementation tab starts from when the brief carries no total to
+ * divide over the flight (#4847). A DAILY figure, like the Microsoft budget and the Meta and LinkedIn
+ * budgets in their default mode, and unlike Reddit's lifetime cap: campaign-service creates the
+ * Google budget with no period, which Google treats as an average daily budget.
+ */
+export const DEFAULT_GOOGLE_DAILY_BUDGET_USD = 500;
+
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
@@ -257,6 +266,18 @@ export const CAMPAIGN_CHAR_LIMITS = {
   sitelinkHeadline: 25,
   sitelinkDescription: 35,
 } as const;
+
+/**
+ * The query parameter the paid campaigns page keeps the event URL in (#4756), so a reload, a second
+ * tab or a shared link can prefill Planning and offer the saved brief again instead of opening blank.
+ */
+export const CAMPAIGN_EVENT_URL_QUERY_PARAM = 'event';
+
+/**
+ * The longest `?event=` value Planning will take from the address. The parameter is caller-supplied
+ * input, so it is bounded before it is parsed or put in the form; real event URLs are far shorter.
+ */
+export const CAMPAIGN_EVENT_URL_MAX_LENGTH = 2048;
 
 export const CAMPAIGN_BUDGET_DEFAULTS = {
   searchBudgetPct: 70,
@@ -4171,6 +4192,53 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
+ * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
+ * Implement tab's creative control it fills (#4825). An explicit table, not an identity, because the
+ * plan's slot is the PLATFORM layer's name: Performance Max uses Google's asset field types
+ * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
+ * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
+ * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
+ * Display's names already match. A slot absent here is not applied.
+ */
+export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
+  'performance-max': {
+    MARKETING_IMAGE: 'marketingImages',
+    SQUARE_MARKETING_IMAGE: 'squareMarketingImages',
+    PORTRAIT_MARKETING_IMAGE: 'portraitImages',
+    LOGO: 'logoImages',
+    LANDSCAPE_LOGO: 'landscapeLogoImages',
+  },
+  'demand-gen': {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    portraitMarketingImages: 'portraitImages',
+    tallPortraitMarketingImages: 'tallPortraitImages',
+    logoImages: 'logoImages',
+  },
+  display: {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    logoImages: 'logoImages',
+    squareLogoImages: 'squareLogoImages',
+  },
+};
+
+/**
+ * The member `slot_key`s of each Google channel's cross-slot "any of" rule, keyed `platform/CHANNEL`
+ * (#4833). campaign-service reports a shortfall on such a rule with no `slot_key` (it spans several
+ * slots), so the slot grid needs the members to tell whether the form already satisfies it. Mirrors
+ * the `AnyOf` rules in `internal/platform/googleads/slot_catalog.go`: Demand Gen needs a landscape OR
+ * a square marketing image; Performance Max has no such rule. Display's entry is for campaign-service
+ * releases before lfx-v2-campaign-service#437, which still report Display's pair as an "any of";
+ * from that release on Display requires each shape on its own slot and reports no such rule, so the
+ * entry is never matched (#4848). A channel absent here has no rule the form can be matched against.
+ */
+export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'google-ads/DEMAND_GEN': ['google-ads/DEMAND_GEN/marketingImages', 'google-ads/DEMAND_GEN/squareMarketingImages'],
+  'google-ads/DISPLAY': ['google-ads/DISPLAY/marketingImages', 'google-ads/DISPLAY/squareMarketingImages'],
+};
+
+/**
  * The Google channels that accept campaign ad extensions — the six this application collects
  * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
  * does not collect yet.
@@ -4240,12 +4308,12 @@ export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/
  * - `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display. Same name, two
  *   shapes — which is why {@link GoogleCreativeFieldSpec} carries `kind` rather than letting a
  *   caller infer the shape from the name.
- * - The marketing-image arrays are reciprocal on Demand Gen and on Display (either one satisfies
- *   the requirement, so neither carries a `min`) and BOTH required on Performance Max (so both do).
+ * - The marketing-image arrays are reciprocal on Demand Gen (either one satisfies the requirement,
+ *   so neither carries a `min`) and BOTH required on Performance Max and Display (so both do, #4848).
  * - `max` on a marketing-image field is that channel's COMBINED cap across its marketing arrays,
- *   not a per-array allowance; logos are capped per array and never count toward the marketing
- *   total. Stating the combined cap on each field is the permissive direction — the upstream
- *   preflight still enforces the real sum.
+ *   not a per-array allowance; logos never count toward the marketing total, and Display's two logo
+ *   arrays share a cap of their own. Stating the combined cap on each field is the permissive
+ *   direction; {@link GOOGLE_CREATIVE_SHARED_CAPS} checks the real sum, as upstream's preflight does.
  * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
  *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
  *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
@@ -4400,19 +4468,36 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       control: 'marketingImages',
       label: 'Marketing images (1.91:1)',
       kind: 'list',
+      min: 1,
       max: 15,
-      hint: 'One image URL per line. Google requires each marketing array when the other is absent. The cap of 15 is shared across both.',
+      hint: 'One image URL per line. Required, as on Performance Max: a responsive display ad needs a landscape and a square marketing image. The cap of 15 is shared across both.',
       image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
     },
     {
       control: 'squareMarketingImages',
       label: 'Square marketing images (1:1)',
       kind: 'list',
+      min: 1,
       max: 15,
+      hint: 'Also required.',
       image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
     },
-    { control: 'logoImages', label: 'Logo images (4:1)', kind: 'list', max: 5, image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 } },
-    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } },
+    {
+      control: 'logoImages',
+      label: 'Logo images (4:1)',
+      kind: 'list',
+      max: 5,
+      hint: 'Optional. The cap of 5 is shared with the square logos.',
+      image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 },
+    },
+    {
+      control: 'squareLogoImages',
+      label: 'Square logo images (1:1)',
+      kind: 'list',
+      max: 5,
+      hint: 'Optional. The cap of 5 is shared with the landscape logos.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
 
@@ -4434,14 +4519,17 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 /**
  * The "at least one of" rules a channel's creative carries, which no per-field bound can state.
  *
- * Demand Gen and Display each require a marketing image OR a square marketing image, refusing a
- * creative that has neither and accepting one that has either (`demandgen_creative.go`,
- * `display_creative.go`). Putting `min: 1` on both members would refuse the half upstream takes,
- * and putting it on one would name the wrong field — so the rule lives here, over the pair.
+ * Demand Gen requires a marketing image OR a square marketing image, refusing a creative that has
+ * neither and accepting one that has either (`demandgen_creative.go`). Putting `min: 1` on both
+ * members would refuse the half upstream takes, and putting it on one would name the wrong field —
+ * so the rule lives here, over the pair.
  *
- * Performance Max is deliberately empty: it requires both marketing arrays SEPARATELY
- * (`pmax_creative.go`), which its two `min: 1` catalogue entries already express. An empty list is
- * the honest statement of that, and it keeps every creative-bearing channel indexable here.
+ * Performance Max and Display are deliberately empty: each requires both marketing arrays
+ * SEPARATELY, which their two `min: 1` catalogue entries already express (#4848). The authority
+ * for Display is Google's `ResponsiveDisplayAdInfo`, which refuses an ad missing either shape;
+ * campaign-service mirrors it in `display_creative.go` from the release carrying
+ * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty
+ * list is the honest statement of that, and it keeps every creative-bearing channel indexable here.
  *
  * The messages are clauses, completed by the channel's section title at the point of use, so one
  * sentence names both the channel and what it is missing.
@@ -4454,13 +4542,29 @@ export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
     },
   ],
   'performance-max': [],
-  display: [
-    {
-      controls: ['marketingImages', 'squareMarketingImages'],
-      message: 'needs at least one marketing image or one square marketing image.',
-    },
-  ],
+  display: [],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeEitherOrRule[]>;
+
+/**
+ * The ceilings Google states across several of a channel's image fields (#4848), which no
+ * per-field `max` can state: every field can sit under its own cap while the group is over this
+ * one. Google states each, and campaign-service refuses each before the budget mutate
+ * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`;
+ * Display's shared `maxDisplayLogos` from the release carrying lfx-v2-campaign-service#437, before
+ * which Google refuses the ad itself), so the operator would otherwise learn of it only as a
+ * failed create.
+ *
+ * Each member's own `max` in {@link GOOGLE_CREATIVE_FIELD_SPECS} equals its group's ceiling, so a
+ * single field over it is reported there first, under that field's name.
+ */
+export const GOOGLE_CREATIVE_SHARED_CAPS = {
+  'demand-gen': [{ controls: ['marketingImages', 'squareMarketingImages', 'portraitImages', 'tallPortraitImages'], max: 20, label: 'marketing images' }],
+  'performance-max': [{ controls: ['marketingImages', 'squareMarketingImages', 'portraitImages'], max: 20, label: 'marketing images' }],
+  display: [
+    { controls: ['marketingImages', 'squareMarketingImages'], max: 15, label: 'marketing images' },
+    { controls: ['logoImages', 'squareLogoImages'], max: 5, label: 'logo images' },
+  ],
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeSharedCap[]>;
 
 /**
  * The `CampaignCreateRequest` key each channel's creative is sent under.
@@ -4490,6 +4594,21 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'performance-max': 'Performance Max',
   display: 'Display',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+
+/**
+ * The short-description width Performance Max needs at least one description to fit: Google renders
+ * it in a short slot the other channels do not have (see the `descriptions` hint in
+ * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
+ */
+export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
+ * (#4784). That copy makes the creative a started one, which Google refuses without its required
+ * images, so the note says both ways forward.
+ */
+export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
+  'Headlines, long headlines, descriptions and the business name are filled in from the brief where it has them. Add the required images below to create this asset group, or clear the copy to create the campaign without one.';
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.

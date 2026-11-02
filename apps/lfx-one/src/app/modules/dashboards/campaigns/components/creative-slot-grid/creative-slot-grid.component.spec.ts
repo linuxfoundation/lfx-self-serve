@@ -310,4 +310,132 @@ describe('CreativeSlotGridComponent', () => {
     render({ platforms: ['reddit-ads', 'google-ads'] });
     expect(getCreativeAssetPlan).toHaveBeenCalledTimes(1);
   });
+
+  /** "Use suggested images" (#4825): the grid hands the plan to its host, which decides what to apply. */
+  describe('suggested images', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const TARGETS = ['google-ads/PERFORMANCE_MAX/MARKETING_IMAGE', 'google-ads/PERFORMANCE_MAX/LOGO', 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO'];
+
+    it('offers no button while the host can fill no slot', () => {
+      render(ready);
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    /** Suggestions only for slots the host cannot fill — another channel, another platform — would make a button that fills nothing. */
+    it('offers no button when every suggestion is for a slot the host cannot fill', () => {
+      render({ ...ready, suggestionTargets: ['google-ads/DISPLAY/logoImages'] });
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('offers no button for a plan that suggests no image', async () => {
+      await build({ ...PLAN, assignments: PLAN.assignments.map((a) => ({ ...a, assetIds: [] })) });
+      render({ ...ready, suggestionTargets: TARGETS });
+      expect(q('creative-slot-grid-apply')).toBeNull();
+    });
+
+    it('hands over only the assignments that name an image for a slot the host can fill', async () => {
+      await build({
+        ...PLAN,
+        assignments: [
+          ...PLAN.assignments,
+          { ...PLAN.assignments[0], slotKey: 'google-ads/PERFORMANCE_MAX/LANDSCAPE_LOGO', slot: 'LANDSCAPE_LOGO', assetIds: [] },
+          { ...PLAN.assignments[0], slotKey: 'google-ads/DISPLAY/logoImages', channel: 'DISPLAY', slot: 'logoImages', assetIds: ['a-3'] },
+        ],
+      });
+      render({ ...ready, suggestionTargets: TARGETS });
+      const emitted: unknown[] = [];
+      fixture.componentInstance.applySuggested.subscribe((assignments) => emitted.push(assignments));
+
+      q('creative-slot-grid-apply')?.click();
+
+      expect(emitted).toEqual([PLAN.assignments]);
+    });
+
+    /** The region is filled a tick after the render that empties it, so every apply is a change a reader announces. */
+    const tick = async (): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+    };
+
+    it("shows the host's result and announces it in a region that was mounted empty", async () => {
+      render({ ...ready, suggestionTargets: TARGETS });
+      expect(q('creative-slot-grid-apply-live')?.textContent?.trim()).toBe('');
+      expect(q('creative-slot-grid-apply-result')).toBeNull();
+
+      render({ applyResult: 'Filled 2 empty image slots with suggested images.', applySeq: 1 });
+      await tick();
+
+      expect(text('creative-slot-grid-apply-result')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(text('creative-slot-grid-apply-live')).toBe('Filled 2 empty image slots with suggested images.');
+      expect(q('creative-slot-grid-apply-result')?.getAttribute('role')).toBeNull();
+    });
+
+    /** A polite region speaks only on change, so a second apply with the same sentence must empty it first. */
+    it('announces a second apply that ends in the same sentence', async () => {
+      const sentence = 'Filled 1 empty image slot with suggested images.';
+      render({ ...ready, suggestionTargets: TARGETS, applyResult: sentence, applySeq: 1 });
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
+
+      render({ applySeq: 2 });
+      expect(text('creative-slot-grid-apply-live')).toBe('');
+      // The visible line does not blink while the region is refilled.
+      expect(text('creative-slot-grid-apply-result')).toBe(sentence);
+
+      await tick();
+      expect(text('creative-slot-grid-apply-live')).toBe(sentence);
+    });
+  });
+
+  /** The plan reads only the library; a slot the form already fills is covered for this campaign (#4833). */
+  describe('slots filled in the form', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const PORTRAIT = 'google-ads/PERFORMANCE_MAX/PORTRAIT_MARKETING_IMAGE';
+    const LOGO = 'google-ads/PERFORMANCE_MAX/LOGO';
+
+    it('reads a missing slot the form fills as filled in the form, and no longer counts it open', () => {
+      render(ready);
+      expect(text('creative-slot-grid-open-count')).toContain('2 slots still need an image');
+
+      render({ formFilled: { [PORTRAIT]: 1 } });
+
+      const row = text(`creative-slot-row-${PORTRAIT}`);
+      expect(row).toContain('Filled in the form');
+      expect(row).toContain('1 in the form');
+      expect(row).not.toContain('No stored image is 4:5.');
+      expect(text('creative-slot-grid-open-count')).toContain('1 slot still needs an image');
+    });
+
+    it('keeps a slot short while the form holds fewer images than the slot requires', () => {
+      render({ ...ready, formFilled: { [LOGO]: 1 } });
+      expect(text(`creative-slot-row-${LOGO}`)).toContain('Partly covered');
+
+      render({ formFilled: { [LOGO]: 2 } });
+      expect(text(`creative-slot-row-${LOGO}`)).toContain('Filled in the form');
+    });
+
+    it('reads every open slot as covered once the form fills them all', () => {
+      render({ ...ready, formFilled: { [PORTRAIT]: 1, [LOGO]: 2 } });
+      expect(q('creative-slot-grid-complete')).not.toBeNull();
+    });
+
+    /** Display's only required marketing row is an "any of" rule with no slot_key; its member slots are summed (#4833). */
+    it('reads a cross-slot rule as filled once one of its member slots holds an image in the form', async () => {
+      const rule = { platform: 'google-ads', channel: 'DISPLAY', label: 'Display marketing image, landscape or square', need: 1, reason: 'None stored.' };
+      await build({ ...PLAN, gaps: [...PLAN.gaps, rule] });
+      render({ ...ready, formFilled: { 'google-ads/DISPLAY/squareMarketingImages': 1 } });
+
+      const row = text('creative-slot-row-rule:google-ads/DISPLAY/Display marketing image, landscape or square');
+      expect(row).toContain('Filled in the form');
+      expect(row).toContain('1 in the form');
+      expect(row).not.toContain('None stored.');
+    });
+
+    it('leaves a cross-slot rule with no known members on its library reading', async () => {
+      await build({ ...PLAN, gaps: [...PLAN.gaps, { platform: 'google-ads', channel: 'VIDEO', label: 'Video rule', need: 1, reason: 'None stored.' }] });
+      render({ ...ready, formFilled: { 'google-ads/VIDEO/anything': 3 } });
+
+      expect(text('creative-slot-row-rule:google-ads/VIDEO/Video rule')).toContain('Missing');
+    });
+  });
 });

@@ -307,6 +307,13 @@ export class VotesDashboardComponent {
     }
   }
 
+  /** votes-table's voteClosed output: the shared refresh, plus refresh$ so the status-tab counts and paginator total
+   *  (which fetch$ does not drive in the project and foundation lenses) are re-read. Keeps the current page. */
+  protected onVoteClosed(): void {
+    this.onVoteExtended();
+    if (!this.isMeLens()) this.refresh$.next();
+  }
+
   protected onPageChange(event: { first: number; rows: number }): void {
     if (event.rows !== this.rowsPerPage()) {
       this.pageTokens = [];

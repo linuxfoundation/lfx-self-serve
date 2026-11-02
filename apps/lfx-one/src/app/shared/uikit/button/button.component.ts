@@ -1,50 +1,121 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, input, isDevMode, Signal } from '@angular/core';
+import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
+import {
+  afterRenderEffect,
+  booleanAttribute,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  isDevMode,
+  Signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { UiButtonSize, UiButtonVariant, UiPopoverContext, UiPopoverPadding, UiTooltipSide } from '@lfx-one/shared/interfaces';
+
+import { UiPopoverDirective } from '../popover/popover.directive';
+import { UiSpinnerComponent } from '../spinner/spinner.component';
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
- * Supports a leading and a trailing Font Awesome icon, an icon-only mode, and full width.
+ * Button with eight variants and three sizes (small 24px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
+ * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
+ *
+ * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
+ * `lfxUiTooltipDisabled`) on `<lfx-ui-button>` and the button forwards them to its inner `<button>`, where the spoken description belongs.
+ * `UiTooltipDirective` never attaches to `<lfx-ui-button>` itself, so importing it for other elements in the same template is safe.
+ * A disabled button gets no pointer events, so a tooltip that explains why it is off needs a wrapper element that carries the directive.
+ *
+ * Menu: pass an `lfx-ui-menu` template to `menu` and the inner `<button>` becomes its trigger (`aria-haspopup`, `aria-expanded`, focus returns
+ * to the button on close). A button rendered as a link (`link`) does not open a menu.
+ *
+ * Popover: pass an `<ng-template>` to `popover` and the inner `<button>` opens it as a non-modal dialog (`aria-haspopup="dialog"`, `aria-expanded`,
+ * `aria-controls`, focus returns to the button on close). `popoverLabel` names the dialog, `popoverWidth` fixes its width in px and `popoverPadding="none"` drops its 16px padding; see `lfxUiPopover`.
+ * A link does not open one, and `menu` wins when both are set.
  */
 @Component({
   selector: 'lfx-ui-button',
-  imports: [NgTemplateOutlet, RouterLink],
+  imports: [NgTemplateOutlet, RouterLink, CdkMenuTrigger, UiPopoverDirective, UiSpinnerComponent, UiTooltipDirective],
   templateUrl: './button.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.inline-block]': '!fullWidth()',
     '[class.block]': 'fullWidth()',
-    '[class.pointer-events-none]': 'disabled()',
+    '[class.pointer-events-none]': 'disabled() || loading()',
   },
 })
 export class UiButtonComponent {
-  /** Visual style. `recording` is the green variant. */
-  public readonly variant = input<
-    'primary' | 'outline-neutral' | 'outline-accent' | 'ghost-neutral' | 'ghost-accent' | 'destructive' | 'ghost-destructive' | 'recording'
-  >('primary');
-  /** `sm` is 24px tall (8px radius), `md` 32px (12px radius), `lg` 40px (16px radius). */
-  public readonly size = input<'sm' | 'md' | 'lg'>('md');
-  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. */
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+
+  /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
+  public readonly variant = input<UiButtonVariant>('primary');
+  /** `small` is 24px tall, `default` 32px and `large` 40px. Pair `large` with a 40px input, `default` with a 32px one and `small` with a 24px one. */
+  public readonly size = input<UiButtonSize>('default');
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Replaced by a spinner while `loading`. */
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, e.g. `fa-light fa-chevron-right`. Independent of `icon`. */
   public readonly trailingIcon = input<string>('');
-  /** Renders a square, icon-only button. Pair it with `ariaLabel`. */
-  public readonly iconOnly = input<boolean>(false);
+  /** Renders a circular, icon-only button. Pair it with `ariaLabel` and a tooltip. */
+  public readonly iconOnly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Accessible name; required for icon-only buttons. */
   public readonly ariaLabel = input<string>('');
+  /** Writes `aria-expanded` on the inner element for a button that shows or hides content, such as `lfx-ui-show-more`. Leave `null` for no attribute. Not used with `menu` or `popover`, whose triggers set it. */
+  public readonly ariaExpanded = input<boolean | null>(null);
+  /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. Not used with `menu` or `popover`. */
+  public readonly ariaControls = input<string>('');
   /** Disables the button (or the link, when `link` is set). */
-  public readonly disabled = input<boolean>(false);
+  public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Swaps the leading icon for a spinner, keeps the label and sets `aria-busy`. The button ignores clicks until it is cleared. */
+  public readonly loading = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Stretches the button to the width of its container. */
-  public readonly fullWidth = input<boolean>(false);
+  public readonly fullWidth = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native button type; ignored when `link` is set. */
   public readonly type = input<'button' | 'submit' | 'reset'>('button');
+  /** Template reference of an `lfx-ui-menu` to open from the button, such as `#actions`. Ignored when `link` is set. */
+  public readonly menu = input<TemplateRef<unknown> | null>(null);
+  /** Template reference of the content to open from the button as a popover, such as `#filters`. Ignored when `link` or `menu` is set. */
+  public readonly popover = input<TemplateRef<UiPopoverContext> | null>(null);
+  /** Accessible name of the popover dialog. Without one the button names it. */
+  public readonly popoverLabel = input<string>('');
+  /** Fixed width of the popover in px. Without it the panel is as wide as its content. */
+  public readonly popoverWidth = input<number | null>(null);
+  /** `none` removes the popover panel's 16px padding for content that runs edge to edge. */
+  public readonly popoverPadding = input<UiPopoverPadding>('default');
   /** When set, renders a router link instead of a button. Accepts a path or a commands array. */
   public readonly link = input<string | unknown[] | null>(null);
+  /* eslint-disable @angular-eslint/no-input-rename -- the aliases are the public input names of UiTooltipDirective, which this button forwards to its inner element. */
+  /** Tooltip text, forwarded to the inner button. An empty value shows nothing. See `lfxUiTooltip` for the full contract. */
+  public readonly tooltip = input<string>('', { alias: 'lfxUiTooltip' });
+  /** Bold first line of the rich tooltip layout. */
+  public readonly tooltipTitle = input<string>('', { alias: 'lfxUiTooltipTitle' });
+  /** Keys shown as key caps after the tooltip text, such as `['⌘', 'K']`. */
+  public readonly tooltipShortcut = input<string[]>([], { alias: 'lfxUiTooltipShortcut' });
+  /** Preferred tooltip side; it flips when it does not fit. */
+  public readonly tooltipSide = input<UiTooltipSide>('top', { alias: 'lfxUiTooltipSide' });
+  /** Milliseconds between hover or keyboard focus and the tooltip appearing. */
+  public readonly tooltipDelay = input<number>(300, { alias: 'lfxUiTooltipDelay' });
+  /** Turns the tooltip off without removing it. */
+  public readonly tooltipDisabled = input<boolean, unknown>(false, { alias: 'lfxUiTooltipDisabled', transform: booleanAttribute });
 
+  /* eslint-enable @angular-eslint/no-input-rename */
+
+  /** Icon and spinner size in px: 12 on a small button, 14 on a default one and 16 on a large one. */
+  protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
+  /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
+  protected readonly linkTabIndex: Signal<number | null> = this.initLinkTabIndex();
+
+  private readonly menuTrigger = viewChild(CdkMenuTrigger);
+  private readonly menuButton = viewChild(CdkMenuTrigger, { read: ElementRef });
 
   public constructor() {
     effect(() => {
@@ -52,46 +123,85 @@ export class UiButtonComponent {
         console.warn('lfx-ui-button: an icon-only button needs an ariaLabel.');
       }
     });
+    // Dropping the trigger's template does not close a menu that is already open, so close it when the button turns busy.
+    // `close()` does not restore focus, so a focus that was inside the menu moves back to the button.
+    afterRenderEffect(() => {
+      const trigger = this.menuTrigger();
+      if (!this.loading() || !trigger?.isOpen()) return;
+      const hadFocus = trigger.getMenu()?.nativeElement.contains(this.document.activeElement);
+      trigger.close();
+      if (hadFocus) this.menuButton()?.nativeElement.focus();
+    });
+  }
+
+  /** Focuses the inner `<button>` or `<a>`, for a caller that returns focus to this button, such as a chip whose neighbour was removed. */
+  public focus(): void {
+    this.host.querySelector<HTMLElement>('button, a')?.focus();
+  }
+
+  // A busy button keeps focus and its look, so keyboard activation is stopped here instead of with `disabled`.
+  // A disabled link has no native `disabled` either, so a programmatic click is stopped the same way.
+  protected onClick(event: Event): void {
+    if (!this.loading() && !(this.link() !== null && this.disabled())) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  private initIconSize(): Signal<number> {
+    return computed(() => ({ small: 12, default: 14, large: 16 })[this.size()]);
+  }
+
+  private initLinkTabIndex(): Signal<number | null> {
+    return computed(() => {
+      if (this.disabled()) return -1;
+      return this.loading() ? 0 : null;
+    });
   }
 
   private initClasses(): Signal<string> {
     return computed(() => {
+      // Exact px: the library's 4px ui-accent-100 focus halo; forced-colors drops shadows, so an outline marks focus there.
       const base =
-        'inline-flex items-center justify-center whitespace-nowrap border font-medium no-underline cursor-pointer transition duration-150 active:scale-[.97] motion-reduce:transition-none motion-reduce:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50';
+        'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline border transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
+      // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
       const variants = {
-        primary: 'bg-blue-500 text-white hover:bg-blue-600 hover:shadow active:bg-blue-700 active:shadow-none',
-        'outline-neutral': 'border-gray-200 text-gray-700 hover:bg-gray-100 hover:border-gray-300 hover:text-gray-900 hover:shadow-sm active:bg-gray-200',
-        'outline-accent':
-          'border-blue-300 text-blue-500 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600 hover:shadow-sm active:bg-blue-100 active:text-blue-700',
-        'ghost-neutral': 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 active:bg-gray-200',
-        'ghost-accent': 'text-blue-500 hover:bg-blue-100 hover:text-blue-600 active:bg-blue-200 active:text-blue-700',
-        destructive: 'bg-red-700 text-white hover:bg-red-800 hover:shadow active:bg-red-900 active:shadow-none',
-        'ghost-destructive': 'text-red-700 hover:bg-red-50 hover:text-red-800 active:bg-red-100',
-        recording: 'bg-emerald-600 text-white hover:bg-emerald-700 hover:shadow active:bg-emerald-800 active:shadow-none',
+        primary:
+          'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
+        secondary: 'border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        'secondary-accent':
+          'border-ui-accent-500 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-700 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:border-ui-accent-800 active:bg-ui-accent-100 active:text-ui-accent-800',
+        tertiary: 'border-transparent bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        'tertiary-accent':
+          'border-transparent bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100 active:text-ui-accent-800',
+        danger:
+          'border-transparent bg-ui-danger-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
+        'danger-tertiary': 'border-transparent bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
+        // Not in the library: the epic's proposed green action, styled like primary on the success steps.
+        recording:
+          'border-transparent bg-ui-success-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
       };
-      // Exact px (8/12/16 radius steps): rem undershoots the design at the 14px root.
+      // Disabled looks the same for every variant; the tertiary family stays transparent and borderless.
+      const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());
+      const disabled = flat ? 'border-transparent bg-transparent text-ui-neutral-500' : 'border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
+      // Exact px: the 8px and 10px radii, the 4/6/8px gaps, the 8/10/16px padding and the 12/14/16px icons are library steps with no ui-* utility at the 14px root.
       const sizes = {
-        sm: {
-          text: 'h-[24px] gap-[4px] rounded-[8px] text-[12px] leading-[16px] [&>i]:text-[13px] [&>i]:leading-none',
-          pad: 'px-[6px]',
-          square: 'w-[24px] px-0',
-        },
-        md: {
-          text: 'h-[32px] gap-[8px] rounded-[12px] text-[14px] leading-[20px] [&>i]:text-[14px] [&>i]:leading-none',
-          pad: 'px-[12px]',
-          square: 'w-[32px] px-0',
-        },
-        lg: {
-          text: 'h-[40px] gap-[8px] rounded-[16px] text-[16px] leading-[24px] [&>i]:text-[15px] [&>i]:leading-none',
-          pad: 'px-[16px]',
-          square: 'w-[40px] px-0',
-        },
+        small: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[8px]', pad: 'px-[8px]' },
+        default: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[14px]', radius: 'rounded-[10px]', pad: 'px-[10px]' },
+        large: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[16px]', radius: 'rounded-ui-sm', pad: 'px-[16px]' },
       };
       const size = sizes[this.size()];
-      const width = this.fullWidth() ? 'w-full' : '';
-      // Tailwind emits border-transparent after border colors, so outline variants must omit it.
-      const border = this.variant().startsWith('outline') ? '' : 'border-transparent';
-      return [base, border, variants[this.variant()], size.text, this.iconOnly() ? size.square : size.pad, width].filter(Boolean).join(' ');
+      // Icon-only is a circle: square from the height, no padding.
+      const shape = this.iconOnly() ? 'aspect-square rounded-ui-full' : `${size.radius} ${size.pad}`;
+      return [
+        base,
+        this.disabled() ? disabled : variants[this.variant()],
+        size.box,
+        shape,
+        this.fullWidth() ? 'w-full' : '',
+        this.disabled() || this.loading() ? 'pointer-events-none' : 'cursor-pointer',
+      ]
+        .filter(Boolean)
+        .join(' ');
     });
   }
 }
