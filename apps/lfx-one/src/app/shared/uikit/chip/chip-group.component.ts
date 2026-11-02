@@ -39,6 +39,7 @@ export class UiChipGroupComponent extends UiChipHost {
   public successorOf(chip: UiChipComponent): UiChipComponent | null {
     const live = this.chips().filter((other) => other === chip || (other.dismissible() && !other.dismissing()));
     const index = live.indexOf(chip);
+    if (index < 0) return null;
     return live[index + 1] ?? live[index - 1] ?? null;
   }
 

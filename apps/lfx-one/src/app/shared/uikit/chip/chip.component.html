@@ -17,9 +17,11 @@
       type="button"
       [class]="dismissClasses()"
       [attr.aria-label]="removeLabel()"
-      (click)="onDismiss(dismissButton)"
+      (click)="onDismiss()"
       (keydown)="onKeydown($event)"
       (mousedown)="onMouseDown($event)"
+      (focus)="onFocus()"
+      (blur)="onBlur($event)"
       #dismissButton
       data-testid="ui-chip-dismiss">
       <i class="fa-light fa-xmark" aria-hidden="true"></i>

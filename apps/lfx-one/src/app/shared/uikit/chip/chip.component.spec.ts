@@ -140,6 +140,16 @@ describe('UiChipComponent', () => {
     expect(dismissed).toHaveBeenCalledTimes(2);
   });
 
+  it('leaves other keys alone: Tab keeps the pending state and a held Tab is not cancelled', () => {
+    dismiss()?.click();
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', repeat: true, bubbles: true, cancelable: true });
+    dismiss()?.dispatchEvent(tab);
+    dismiss()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+
+    expect(tab.defaultPrevented).toBe(false);
+    expect(fixture.componentInstance.dismissing()).toBe(true);
+  });
+
   it('swallows the repeats of a held key on the ×, and not the first press', () => {
     const first = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
     const repeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
@@ -172,11 +182,12 @@ describe('UiChipComponent', () => {
 });
 
 describe('UiChipComponent long label', () => {
+  let fixture: ComponentFixture<UiChipComponent>;
   const mount = async (truncated: boolean) => {
     vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(truncated ? 300 : 80);
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
     await TestBed.configureTestingModule({ imports: [UiChipComponent] }).compileComponents();
-    const fixture = TestBed.createComponent(UiChipComponent);
+    fixture = TestBed.createComponent(UiChipComponent);
     fixture.componentRef.setInput('label', 'Project: The Linux Foundation Core Infrastructure Initiative');
     await fixture.whenStable();
     return fixture.nativeElement.querySelector('[data-testid="ui-chip-label"]') as HTMLElement;
@@ -194,6 +205,15 @@ describe('UiChipComponent long label', () => {
     const label = await mount(false);
     expect(label.getAttribute('aria-describedby')).toBeNull();
     expect(label.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it('measures again when the label changes without the box changing size', async () => {
+    const label = await mount(false);
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(300);
+    fixture.componentRef.setInput('label', 'A longer label that no longer fits');
+    await fixture.whenStable();
+
+    expect(label.getAttribute('tabindex')).toBe('0');
   });
 });
 
@@ -328,6 +348,14 @@ describe('UiChipGroupComponent', () => {
 
       expect(document.activeElement).toBe(document.getElementById('filters'));
     });
+  });
+
+  it('moves focus on when the parent removes the chip whose × holds focus without it being used', async () => {
+    dismiss(1).focus();
+    fixture.componentInstance.filters.update((list) => list.filter((item) => item !== 'Meeting type: Committee'));
+    await fixture.whenStable();
+
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove RSVP: Going');
   });
 
   it('moves focus to the row itself when there is no fallback', async () => {

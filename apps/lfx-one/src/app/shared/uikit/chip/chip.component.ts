@@ -4,6 +4,7 @@
 import { DOCUMENT } from '@angular/common';
 import {
   afterNextRender,
+  afterRenderEffect,
   booleanAttribute,
   ChangeDetectionStrategy,
   Component,
@@ -72,20 +73,22 @@ export class UiChipComponent {
   protected readonly tooltipOff: Signal<boolean> = computed(() => !this.truncated());
   protected readonly dismissClasses: Signal<string> = this.initDismissClasses();
 
-  // Set when the × held focus as it was activated; focus is restored only if the chip's destruction then left it nowhere.
+  // True while the × holds focus; focus is restored on destroy only if it is still there or the destruction left it nowhere.
   private heldFocus = false;
   private successor: UiChipComponent | null = null;
 
   public constructor() {
+    // The label's box changes with the container's width; a new label or size can overflow without changing the box.
     afterNextRender(() => {
-      const label = this.labelElement().nativeElement;
-      const measure = (): void => this.truncated.set(label.scrollWidth > label.clientWidth);
-      measure();
       if (typeof ResizeObserver === 'undefined') return;
-      // The label's box changes with the container's width and the label itself.
-      const observer = new ResizeObserver(measure);
-      observer.observe(label);
+      const observer = new ResizeObserver(() => this.measure());
+      observer.observe(this.labelElement().nativeElement);
       this.destroyRef.onDestroy(() => observer.disconnect());
+    });
+    afterRenderEffect(() => {
+      this.label();
+      this.size();
+      this.measure();
     });
     this.destroyRef.onDestroy(() => this.restoreFocus());
   }
@@ -98,18 +101,29 @@ export class UiChipComponent {
     return true;
   }
 
-  protected onDismiss(button: HTMLElement): void {
+  protected onDismiss(): void {
     if (this.dismissing()) return;
     this.dismissing.set(true);
-    this.heldFocus = this.document.activeElement === button;
     this.successor = this.group?.successorOf(this) ?? null;
     this.dismissed.emit();
   }
 
   // Holding Enter repeats keydown, and each repeat would click the × of whichever chip took focus next. A fresh press is a new activation.
   protected onKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
     if (event.repeat) event.preventDefault();
     else this.dismissing.set(false);
+  }
+
+  // The neighbour is picked now: by the time the chip is destroyed the group's list may no longer hold it.
+  protected onFocus(): void {
+    this.heldFocus = true;
+    this.successor = this.group?.successorOf(this) ?? null;
+  }
+
+  // A blur to another control is the user's; a blur to nowhere also happens when the focused × is removed.
+  protected onBlur(event: FocusEvent): void {
+    if (event.relatedTarget) this.heldFocus = false;
   }
 
   // The first mouse down of a click starts a new activation; the second of a double-click does not.
@@ -128,6 +142,11 @@ export class UiChipComponent {
         'focus-visible:shadow-focus focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
       return `relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-ui-full text-current transition-colors duration-ui-fast ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 motion-reduce:transition-none ${sizes[this.size()]} ${hit} ${focus}`;
     });
+  }
+
+  private measure(): void {
+    const label = this.labelElement().nativeElement;
+    this.truncated.set(label.scrollWidth > label.clientWidth);
   }
 
   // Focus moves while the × still holds it or has already lost it: with animations the renderer removes the node after this hook runs.
