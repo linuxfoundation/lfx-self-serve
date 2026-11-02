@@ -338,7 +338,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
     const shareCount = () => el.querySelector('[data-testid="newsletter-reader-share-count"]')?.textContent?.trim();
-    expect(shareCount()).toBe('· 7');
+    expect(shareCount()).toBe('7');
 
     el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
     const { onShare } = vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0];
@@ -349,7 +349,36 @@ describe('NewsletterReaderComponent', () => {
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'linkedin');
     expect(newsletterService.recordShare).toHaveBeenCalledTimes(3);
-    expect(shareCount()).toBe('· 9');
+    expect(shareCount()).toBe('9');
+  });
+
+  it('shows views from total_opens on the engagement rail, beside the issue rather than in the header', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+      of({ access: 'group_member', newsletter: makeNewsletter({ total_opens: 1248, share_count: 4 }) })
+    );
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="newsletter-reader-views-count"]')!.textContent!.trim()).toBe('1,248');
+    expect(el.querySelector('[data-testid="newsletter-reader-views"]')!.getAttribute('aria-label')).toBe('Viewed 1,248 times');
+    const rail = el.querySelector('[data-testid="newsletter-reader-engagement-rail"]')!;
+    expect(rail.querySelector('[data-testid="newsletter-reader-share"]')).not.toBeNull();
+    expect(el.querySelector('lfx-newsletter-share-button')).toBeNull();
+  });
+
+  it('hides views while total_opens is unknown but keeps the Share button', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="newsletter-reader-views"]')).toBeNull();
+    expect(el.querySelector('[data-testid="newsletter-reader-share"]')).not.toBeNull();
   });
 
   it('records a share against the issue the dialog opened for, even after Back/Forward', () => {
@@ -375,7 +404,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'reddit');
-    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('7');
   });
 
   it('leaves the count alone when the server does not accept the share', () => {
@@ -391,7 +420,7 @@ describe('NewsletterReaderComponent', () => {
     fixture.detectChanges();
 
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'x');
-    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('7');
   });
 
   describe('member benefit (#3469)', () => {
