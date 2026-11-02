@@ -557,6 +557,12 @@ export class MailingListManageComponent {
     // auto-sync would silently start against a committee nobody configured it for (#4880 review).
     const previousCommitteeUid = this.mailingList()?.committees?.[0]?.uid ?? null;
     const sameCommittee = !!committeeUid && committeeUid === previousCommitteeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = this.mailingList()?.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
 
     return {
       name: groupName,
@@ -567,7 +573,7 @@ export class MailingListManageComponent {
       service_id: service.uid,
       committee_uid: committeeUid,
       title: formValue.group_name,
-      sync_mode: sameCommittee ? this.mailingList()?.sync_mode : committeeUid ? MailingListSyncMode.MANUAL : undefined,
+      sync_mode: syncMode,
     };
   }
 
