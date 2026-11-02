@@ -51,6 +51,7 @@ describe('MeetingHomeActionsComponent', () => {
   let copy: ReturnType<typeof vi.fn>;
   let resendOwn$: ReturnType<typeof vi.fn>;
   let remove$: ReturnType<typeof vi.fn>;
+  let refreshUserMeetings: ReturnType<typeof vi.fn>;
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -86,6 +87,7 @@ describe('MeetingHomeActionsComponent', () => {
     toastShow = vi.fn();
     copy = vi.fn().mockReturnValue(true);
     resendOwn$ = vi.fn().mockReturnValue(of({ message: 'ok' }));
+    refreshUserMeetings = vi.fn();
     remove$ = vi.fn().mockReturnValue(of({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] }));
 
     TestBed.configureTestingModule({
@@ -93,7 +95,7 @@ describe('MeetingHomeActionsComponent', () => {
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removedIds } },
-        { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: UserService, useValue: { authenticated: signal(true), refreshUserMeetings } },
         {
           provide: MeetingInviteResendService,
           useValue: { resendOwn$, isResendingOwn: () => resending(), describeOwnResendFailure: () => 'Unable to resend the invitation. Please try again.' },
@@ -220,6 +222,7 @@ describe('MeetingHomeActionsComponent', () => {
 
       expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(find('meetings-home-row-actions-remove-info')?.textContent).toContain('Synthetic sync');
+      expect(find('meetings-home-row-actions-remove-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
       expect(find('meetings-home-row-actions-remove-message')?.textContent?.trim()).toBe(
         'Remove yourself from "Synthetic sync"? You will no longer be invited to any occurrence and will lose your RSVP. ' +
           "You stay in the committee, but it won't invite you to this meeting again."
@@ -244,6 +247,7 @@ describe('MeetingHomeActionsComponent', () => {
       expect(remove$).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
       expect(overlay.querySelector('[role="alertdialog"]')).toBeNull();
       expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Removed', description: 'You have been removed from this meeting.' });
+      expect(refreshUserMeetings).not.toHaveBeenCalled();
     });
 
     it('keeps the dialog open and busy until the removal settles', async () => {
@@ -265,6 +269,7 @@ describe('MeetingHomeActionsComponent', () => {
       await confirmRemoval();
 
       expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', position: 'bottom-center', message: 'Removal incomplete' }));
+      expect(refreshUserMeetings).toHaveBeenCalledWith();
     });
 
     it('reports a failed removal', async () => {

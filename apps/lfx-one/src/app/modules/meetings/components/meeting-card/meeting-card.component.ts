@@ -919,7 +919,10 @@ export class MeetingCardComponent implements OnInit {
 
     this.selfRemoval
       .remove$(meetingId, 'meeting-card')
-      .pipe(finalize(() => this.leavingMeeting.set(false)))
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
       .subscribe({
         next: (result) => {
           if (this.meeting().id !== meetingId) return;

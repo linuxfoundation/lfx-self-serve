@@ -5,10 +5,14 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
 import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, TemplateRef, viewChild } from '@angular/core';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { MeetingType } from '@lfx-one/shared/enums';
-import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowType } from '@lfx-one/shared/interfaces';
-import { getMeetingRecurrenceTooltip, getMeetingSelfRemovalMessage, getPastMeetingResourceId } from '@lfx-one/shared/utils';
+import { MeetingDashboardView, MeetingHomeRow, MeetingHomeRowProject, MeetingHomeRowType } from '@lfx-one/shared/interfaces';
+import {
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
+  getMeetingRecurrenceTooltip,
+  getMeetingSelfRemovalMessage,
+  getPastMeetingResourceId,
+} from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
@@ -21,10 +25,10 @@ import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { finalize } from 'rxjs';
+import { finalize, take } from 'rxjs';
 
 /**
- * The ⋯ menu of a meetings home row or card: Copy Link, and for upcoming meetings Resend Invite and Remove Myself.
+ * The ⋯ menu of a meetings home row: Copy Link, and for upcoming meetings Resend Invite and Remove Myself.
  * @description Resend and Remove follow the legacy meeting card's gates. Feedback is uikit toasts at the bottom centre.
  */
 @Component({
@@ -60,7 +64,8 @@ export class MeetingHomeActionsComponent {
   /** "Thu, Oct 1 · 6:30 AM PDT" for the dialog's meeting card. */
   protected readonly when: Signal<string> = this.initWhen();
   protected readonly recurring: Signal<boolean> = computed(() => getMeetingRecurrenceTooltip(this.row().meeting, this.row().occurrence) !== null);
-  protected readonly meetingType: Signal<MeetingHomeRowType | null> = this.initMeetingType();
+  protected readonly project: Signal<MeetingHomeRowProject | null> = computed(() => getMeetingHomeRowProject(this.row().meeting));
+  protected readonly meetingType: Signal<MeetingHomeRowType | null> = computed(() => getMeetingHomeRowType(this.row().meeting));
 
   private readonly invited: Signal<boolean> = computed(
     () => !!this.row().meeting.invited && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
@@ -94,10 +99,13 @@ export class MeetingHomeActionsComponent {
   }
 
   protected resendInvite(): void {
-    this.inviteResend.resendOwn$(this.row().meeting.id, this.row().occurrenceId).subscribe({
-      next: () => this.toast.show({ variant: 'dark', message: 'Invitation Sent', description: 'We sent the meeting invitation to your email.' }),
-      error: (error: unknown) => this.showError('Error', this.inviteResend.describeOwnResendFailure(error)),
-    });
+    this.inviteResend
+      .resendOwn$(this.row().meeting.id, this.row().occurrenceId)
+      .pipe(take(1))
+      .subscribe({
+        next: () => this.toast.show({ variant: 'dark', message: 'Invitation Sent', description: 'We sent the meeting invitation to your email.' }),
+        error: (error: unknown) => this.showError('Error', this.inviteResend.describeOwnResendFailure(error)),
+      });
   }
 
   protected confirmRemove(): void {
@@ -110,6 +118,7 @@ export class MeetingHomeActionsComponent {
     this.selfRemoval
       .remove$(this.row().meeting.id, 'meetings-home')
       .pipe(
+        take(1),
         finalize(() => {
           this.removing.set(false);
           ref?.close();
@@ -118,6 +127,8 @@ export class MeetingHomeActionsComponent {
       .subscribe({
         next: (result) => {
           if (result.remaining_registrant_ids.length > 0) {
+            // The home list has no per-meeting refetch, so reload the feed to show what is left.
+            this.userService.refreshUserMeetings();
             this.toast.show({
               variant: 'warning',
               position: 'bottom-center',
@@ -130,10 +141,6 @@ export class MeetingHomeActionsComponent {
         },
         error: (error: unknown) => this.showError('Error', this.selfRemoval.describeFailure(error)),
       });
-  }
-
-  private showError(message: string, description: string): void {
-    this.toast.show({ variant: 'error', position: 'bottom-center', message, description });
   }
 
   private initCanRemove(): Signal<boolean> {
@@ -150,12 +157,7 @@ export class MeetingHomeActionsComponent {
     });
   }
 
-  private initMeetingType(): Signal<MeetingHomeRowType | null> {
-    return computed(() => {
-      const type = this.row().meeting.meeting_type?.trim();
-      if (!type || type === MeetingType.NONE) return null;
-      const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
-      return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
-    });
+  private showError(message: string, description: string): void {
+    this.toast.show({ variant: 'error', position: 'bottom-center', message, description });
   }
 }
