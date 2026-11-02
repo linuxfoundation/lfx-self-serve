@@ -28,6 +28,7 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { MailingListSyncPreviewDialogComponent } from '../mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -252,6 +253,17 @@ export class CommitteeSettingsTabComponent {
         },
         error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to verify your access. Please try again.' }),
       });
+  }
+
+  public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
+    this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name },
+    });
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {

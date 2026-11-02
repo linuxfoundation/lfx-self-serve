@@ -5,6 +5,7 @@ import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
+  SyncApplyRequest,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -376,6 +377,77 @@ export class MailingListController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Committee ↔ Mailing List Sync Endpoints
+  // ============================================
+
+  /**
+   * GET /mailing-lists/:id/sync-diff
+   */
+  public async getSyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'get_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const diff = await this.mailingListService.getSyncDiff(req, id);
+
+      logger.success(req, 'get_sync_diff', startTime, {
+        mailing_list_id: id,
+      });
+
+      res.json(diff);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-apply
+   */
+  public async applySyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'apply_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'apply_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const applyRequest: SyncApplyRequest = req.body;
+      const result = await this.mailingListService.applySyncDiff(req, id, applyRequest);
+
+      logger.success(req, 'apply_sync_diff', startTime, {
+        mailing_list_id: id,
+      });
+
+      res.json(result);
     } catch (error) {
       next(error);
     }

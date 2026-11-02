@@ -10,6 +10,8 @@ import type {
   MailingListMemberType,
   MailingListSyncMode,
   MailingListType,
+  SyncApplyOutcome,
+  SyncMemberType,
 } from '../enums/mailing-list.enum';
 import type { CommitteeReference } from './committee.interface';
 import type { UserInfo } from './project.interface';
@@ -336,4 +338,138 @@ export interface MailingListTableRowVm extends GroupsIOMailingList {
   canJoin: boolean;
   /** Precomputed display label for the My Subscription column (avoids a template-bound lookup) */
   mySubscriptionLabel: string;
+}
+
+/**
+ * A member proposed for addition by a sync-diff (either direction)
+ * @description Mirrors the upstream `SyncDiffAdd` model
+ */
+export interface SyncDiffAdd {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /**
+   * Display name from the source roster, carried through unchanged.
+   * NOTE: this is NOT a fuzzy/name-match suggestion against the other side's roster — that
+   * PCC-1604 parity gap is tracked separately and blocked on ITX; see linuxfoundation/lfx-self-serve#4364.
+   */
+  name?: string;
+}
+
+/**
+ * A member proposed for removal by a sync-diff (either direction)
+ * @description Mirrors the upstream `SyncDiffRemove` model
+ */
+export interface SyncDiffRemove {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+}
+
+/**
+ * A member present on both sides with mismatched emails — neither added nor removed automatically
+ * @description Mirrors the upstream `SyncDiffConflict` model
+ */
+export interface SyncDiffConflict {
+  /** Email on the committee side */
+  committee_email: string;
+  /** Email on the mailing list side */
+  mailing_list_email: string;
+  /** Display name, when available */
+  name?: string;
+}
+
+/**
+ * Preview of the pending changes between a committee's roster and its linked mailing list
+ * @description Returned by `GET /groupsio/mailing-lists/{mailing_list_uid}/sync-diff`
+ */
+export interface SyncDiff {
+  /** Mailing list UID this diff was computed for */
+  mailing_list_id: string;
+  /** Linked committee UID this diff was computed against */
+  committee_uid: string;
+  /** Sync direction/mode in effect when this diff was computed */
+  sync_mode: MailingListSyncMode;
+  /** Members proposed for addition */
+  adds: SyncDiffAdd[];
+  /** Members proposed for removal */
+  removes: SyncDiffRemove[];
+  /** Members present on both sides with mismatched emails, requiring manual resolution */
+  conflicts: SyncDiffConflict[];
+}
+
+/**
+ * Result of applying one proposed add during sync-apply
+ * @description Mirrors the upstream `SyncApplyAddResult` model
+ */
+export interface SyncApplyAddResult {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /** What actually happened when this add was applied */
+  outcome: SyncApplyOutcome;
+  /**
+   * Display name from the source roster, carried through unchanged — shown alongside an
+   * `invited` outcome so the admin can see who the invite was sent for. NOT a fuzzy name-match
+   * suggestion; see the `name` field doc on `SyncDiffAdd` and linuxfoundation/lfx-self-serve#4364.
+   */
+  name_hint?: string;
+  /** Error detail when `outcome` is `failed` */
+  error?: string;
+}
+
+/**
+ * Result of applying one proposed removal during sync-apply
+ * @description Mirrors the upstream `SyncApplyRemoveResult` model
+ */
+export interface SyncApplyRemoveResult {
+  /** Member's email address */
+  email: string;
+  /** Source-side member identifier (committee member UID or mailing list member ID) */
+  member_id: string;
+  /** Which side of the sync this member originates from */
+  member_type: SyncMemberType;
+  /** What actually happened when this removal was applied */
+  outcome: SyncApplyOutcome;
+  /** Error detail when `outcome` is `failed` */
+  error?: string;
+}
+
+/**
+ * Outcome of applying a sync-diff
+ * @description Returned by `POST /groupsio/mailing-lists/{mailing_list_uid}/sync-apply`
+ */
+export interface SyncApplyResult {
+  /** Mailing list UID the apply was run against */
+  mailing_list_id: string;
+  /** Linked committee UID the apply was run against */
+  committee_uid: string;
+  /** Results of each applied addition */
+  added: SyncApplyAddResult[];
+  /** Results of each applied removal */
+  removed: SyncApplyRemoveResult[];
+}
+
+/**
+ * Request payload for sync-apply
+ * @description The admin-approved subset of a `SyncDiff`'s adds/removes to actually apply.
+ * `committee_uid` is rejected with a 409 Conflict if the mailing list is no longer linked to it
+ * (guards against the committee being relinked between preview and apply).
+ */
+export interface SyncApplyRequest {
+  /** Linked committee UID the diff was previewed against */
+  committee_uid: string;
+  /** Approved subset of the diff's proposed adds */
+  adds: SyncDiffAdd[];
+  /** Approved subset of the diff's proposed removes */
+  removes: SyncDiffRemove[];
 }

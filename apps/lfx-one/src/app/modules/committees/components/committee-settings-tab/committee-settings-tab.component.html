@@ -99,18 +99,31 @@
               </div>
               @if (canEdit()) {
                 @let removable = ml.writer === true;
-                <lfx-button
-                  [icon]="removingMlUid() === ml.uid ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-xmark'"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  styleClass="!text-gray-400 hover:!text-red-500"
-                  [disabled]="!!removingMlUid() || !removable"
-                  [ariaLabel]="'Remove mailing list ' + ml.group_name"
-                  [tooltip]="removable ? 'Remove mailing list ' + ml.group_name : 'You need Manage access to this mailing list to unlink it.'"
-                  (onClick)="removeMailingList(ml)"
-                  [attr.data-testid]="'settings-remove-ml-' + ml.uid"></lfx-button>
+                <div class="flex items-center gap-1 flex-shrink-0">
+                  <lfx-button
+                    label="Sync Now"
+                    icon="fa-light fa-arrows-rotate"
+                    [text]="true"
+                    size="small"
+                    severity="secondary"
+                    styleClass="!text-gray-500 hover:!text-blue-600"
+                    [ariaLabel]="'Sync mailing list ' + ml.group_name"
+                    [tooltip]="'Preview and apply committee sync for ' + ml.group_name"
+                    (onClick)="openSyncPreviewDialog(ml)"
+                    [attr.data-testid]="'settings-sync-now-ml-' + ml.uid"></lfx-button>
+                  <lfx-button
+                    [icon]="removingMlUid() === ml.uid ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-xmark'"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    styleClass="!text-gray-400 hover:!text-red-500"
+                    [disabled]="!!removingMlUid() || !removable"
+                    [ariaLabel]="'Remove mailing list ' + ml.group_name"
+                    [tooltip]="removable ? 'Remove mailing list ' + ml.group_name : 'You need Manage access to this mailing list to unlink it.'"
+                    (onClick)="removeMailingList(ml)"
+                    [attr.data-testid]="'settings-remove-ml-' + ml.uid"></lfx-button>
+                </div>
               }
             </div>
           }
