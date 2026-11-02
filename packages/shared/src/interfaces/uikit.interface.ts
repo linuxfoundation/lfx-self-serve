@@ -39,6 +39,12 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
 
+/** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
+export type UiBadgeSize = 'sm' | 'md';
+
+/** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
+export type UiChipVariant = 'subtle' | 'outline';
+
 /** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
 export type UiAvatarTone = UiTone;
 

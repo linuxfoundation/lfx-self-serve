@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
-import { UiBadgeTone } from '@lfx-one/shared/interfaces';
+import { UiBadgeSize, UiBadgeTone } from '@lfx-one/shared/interfaces';
 
 /**
  * Small pill that labels a status, category or plan, such as "Beta", "Secure" or "Gold". Project the text as content.
@@ -23,7 +23,7 @@ export class UiBadgeComponent {
   /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. */
   public readonly variant = input<'subtle' | 'solid' | 'outline'>('subtle');
   /** `sm` is 20px tall with 11px text; `md` is 24px tall with 12px text. */
-  public readonly size = input<'sm' | 'md'>('md');
+  public readonly size = input<UiBadgeSize>('md');
   /** Shows a 6px status dot before the text in the given role colour, for plain status badges such as "Active". */
   public readonly dot = input<UiBadgeTone | null>(null);
 
