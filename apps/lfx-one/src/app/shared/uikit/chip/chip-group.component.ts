@@ -36,16 +36,16 @@ export class UiChipGroupComponent extends UiChipHost {
   /** Where focus goes when the last chip is removed: an element or an `lfx-ui-button`, anything with `focus()`. Without it the row itself takes focus, which is lost if the parent then hides the row. */
   public readonly fallbackFocus = input<{ focus(): void } | null>(null);
 
-  public successorOf(chip: UiChipComponent): UiChipComponent | null {
+  public successorsOf(chip: UiChipComponent): UiChipComponent[] {
     const live = this.chips().filter((other) => other === chip || (other.dismissible() && !other.dismissing()));
     const index = live.indexOf(chip);
-    if (index < 0) return null;
-    return live[index + 1] ?? live[index - 1] ?? null;
+    if (index < 0) return [];
+    return [...live.slice(index + 1), ...live.slice(0, index).reverse()];
   }
 
-  public restoreFocus(preferred: UiChipComponent | null): void {
-    for (const chip of [preferred, ...this.chips()]) {
-      if (chip?.focusDismiss()) return;
+  public restoreFocus(candidates: UiChipComponent[]): void {
+    for (const chip of [...candidates, ...this.chips()]) {
+      if (chip.focusDismiss()) return;
     }
     (this.fallbackFocus() ?? this.host).focus();
   }

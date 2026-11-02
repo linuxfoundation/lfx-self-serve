@@ -5,7 +5,7 @@
   <ng-content select="[slot=icon]" />
   <span
     #labelElement
-    class="min-w-0 truncate focus-visible:shadow-focus focus-visible:outline-none"
+    class="min-w-0 truncate focus-visible:shadow-focus focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
     [attr.tabindex]="truncated() ? 0 : null"
     [lfxUiTooltip]="label()"
     [lfxUiTooltipDisabled]="tooltipOff()"
@@ -17,7 +17,7 @@
       type="button"
       [class]="dismissClasses()"
       [attr.aria-label]="removeLabel()"
-      (click)="onDismiss()"
+      (click)="onDismiss($event)"
       (keydown)="onKeydown($event)"
       (mousedown)="onMouseDown($event)"
       (focus)="onFocus()"

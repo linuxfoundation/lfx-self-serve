@@ -75,7 +75,7 @@ export class UiChipComponent {
 
   // True while the × holds focus; focus is restored on destroy only if it is still there or the destruction left it nowhere.
   private heldFocus = false;
-  private successor: UiChipComponent | null = null;
+  private successors: UiChipComponent[] = [];
 
   public constructor() {
     // The label's box changes with the container's width; a new label or size can overflow without changing the box.
@@ -101,10 +101,11 @@ export class UiChipComponent {
     return true;
   }
 
-  protected onDismiss(): void {
-    if (this.dismissing()) return;
+  // The second click of a double-click is a repeat; a click from assistive technology or code has no click count and always counts.
+  protected onDismiss(event: MouseEvent): void {
+    if (this.dismissing() && event.detail > 1) return;
     this.dismissing.set(true);
-    this.successor = this.group?.successorOf(this) ?? null;
+    this.successors = this.group?.successorsOf(this) ?? [];
     this.dismissed.emit();
   }
 
@@ -115,15 +116,16 @@ export class UiChipComponent {
     else this.dismissing.set(false);
   }
 
-  // The neighbour is picked now: by the time the chip is destroyed the group's list may no longer hold it.
+  // The neighbours are picked now: by the time the chip is destroyed the group's list may no longer hold it.
   protected onFocus(): void {
     this.heldFocus = true;
-    this.successor = this.group?.successorOf(this) ?? null;
+    this.successors = this.group?.successorsOf(this) ?? [];
   }
 
-  // A blur to another control is the user's; a blur to nowhere also happens when the focused × is removed.
+  // Removing the focused × also blurs it with no target, and the destroy hook runs before this microtask; any other blur is the user leaving.
   protected onBlur(event: FocusEvent): void {
     if (event.relatedTarget) this.heldFocus = false;
+    else queueMicrotask(() => (this.heldFocus = false));
   }
 
   // The first mouse down of a click starts a new activation; the second of a double-click does not.
@@ -155,6 +157,6 @@ export class UiChipComponent {
     if (!this.heldFocus || !this.group) return;
     const active = this.document.activeElement;
     if (active && active !== this.document.body && !this.host.contains(active)) return;
-    this.group.restoreFocus(this.successor);
+    this.group.restoreFocus(this.successors);
   }
 }

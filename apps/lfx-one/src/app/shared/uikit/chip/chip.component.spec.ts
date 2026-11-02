@@ -112,22 +112,32 @@ describe('UiChipComponent', () => {
     expect(dismiss()?.className).toContain('shrink-0');
   });
 
-  it('ignores a second activation while the removal is pending, and allows a fresh click again', () => {
+  it('ignores the second click of a double-click while the removal is pending', () => {
     const dismissed = vi.fn();
     fixture.componentInstance.dismissed.subscribe(dismissed);
 
-    dismiss()?.click();
-    dismiss()?.click();
+    dismiss()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    dismiss()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
     expect(dismissed).toHaveBeenCalledTimes(1);
     expect(fixture.componentInstance.dismissing()).toBe(true);
 
     // The second mouse down of a double-click does not start a new activation; a fresh click does.
     dismiss()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 2 }));
-    dismiss()?.click();
+    dismiss()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
     expect(dismissed).toHaveBeenCalledTimes(1);
 
     dismiss()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 1 }));
+    dismiss()?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(dismissed).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a click without a click count retry, as assistive technology sends it', () => {
+    const dismissed = vi.fn();
+    fixture.componentInstance.dismissed.subscribe(dismissed);
+
     dismiss()?.click();
+    dismiss()?.click();
+
     expect(dismissed).toHaveBeenCalledTimes(2);
   });
 
@@ -325,7 +335,7 @@ describe('UiChipGroupComponent', () => {
     it('leaves focus on the × and the chip in place when the parent never removes it', async () => {
       dismiss(1).focus();
       dismiss(1).click();
-      dismiss(1).click();
+      dismiss(1).dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
       await fixture.whenStable();
 
       expect(fixture.componentInstance.removed()).toEqual(['Meeting type: Committee']);
@@ -335,6 +345,34 @@ describe('UiChipGroupComponent', () => {
       dismiss(1).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 1 }));
       dismiss(1).click();
       expect(fixture.componentInstance.removed()).toHaveLength(2);
+    });
+
+    it('goes to the next chip still there when the one first in line is removed meanwhile', async () => {
+      fixture.componentInstance.filters.set(['A', 'B', 'C', 'D', 'E']);
+      await fixture.whenStable();
+
+      dismiss(2).focus();
+      dismiss(2).click();
+      fixture.componentInstance.flush(['D']);
+      await fixture.whenStable();
+      expect(remaining()).toEqual(['A', 'B', 'C', 'E']);
+
+      fixture.componentInstance.flush(['C']);
+      await fixture.whenStable();
+
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove E');
+    });
+
+    it('does not move focus once the user left the × for the page', async () => {
+      dismiss(1).focus();
+      dismiss(1).click();
+      dismiss(1).blur();
+      await fixture.whenStable();
+
+      fixture.componentInstance.flush();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(document.body);
     });
 
     it('does not move focus that the user already took elsewhere', async () => {
