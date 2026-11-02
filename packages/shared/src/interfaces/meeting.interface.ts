@@ -213,6 +213,9 @@ export interface MeetingOrganizerChipModel {
   overflow: MeetingOrganizerLink[];
 }
 
+/** Visible status wording for a guest row. `Invite declined` is a calendar/Zoom invite decline, not an RSVP. */
+export type RegistrantStatusLabel = 'Accepted' | 'Declined' | 'Invite declined' | 'Maybe' | 'Pending';
+
 /** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
 export type MeetingGuestRole = 'organizer' | 'host' | null;
 

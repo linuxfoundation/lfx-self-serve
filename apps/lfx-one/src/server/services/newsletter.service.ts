@@ -21,6 +21,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterShareRequest,
   NewsletterStatusCounts,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
@@ -283,6 +284,10 @@ export class NewsletterService {
 
   public listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.newsletterClient.listOptOuts(req, projectUid);
+  }
+
+  public recordShare(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterShareRequest): Promise<void> {
+    return this.newsletterClient.recordShare(req, projectUid, newsletterUid, payload);
   }
 
   public deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {

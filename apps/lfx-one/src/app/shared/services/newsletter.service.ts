@@ -27,10 +27,12 @@ import {
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterStatusCounts,
+  SocialShareChannel,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { PlausibleService } from '@services/plausible.service';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -48,6 +50,7 @@ import { catchError, Observable, take, throwError } from 'rxjs';
 })
 export class NewsletterService {
   private readonly http = inject(HttpClient);
+  private readonly plausible = inject(PlausibleService);
 
   public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
     return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
@@ -132,6 +135,24 @@ export class NewsletterService {
   /** Member benefit: add the caller's qualifying work email to the issue's newsletter group (server re-checks eligibility). */
   public joinNewsletterGroup(projectUid: string, newsletterUid: string): Observable<NewsletterJoinResult> {
     return this.http.post<NewsletterJoinResult>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/join`, {}).pipe(take(1));
+  }
+
+  /**
+   * Records an in-app share of a sent issue (#4958) and, once the server accepts it, sends the matching
+   * Plausible event — so Plausible and `total_shares` count the same accepted shares. Emits `true` when
+   * the server accepted the share, `false` when it did not (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: sharing must not fail because tracking did.
+   */
+  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): Observable<boolean> {
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel }).pipe(
+      take(1),
+      tap(() => this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel })),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter share', error);
+        return of(false);
+      })
+    );
   }
 
   /**

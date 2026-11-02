@@ -39,4 +39,9 @@ router.post('/groups/:committeeUid/join', blockDuringImpersonation, (req, res, n
 router.get('/:projectUid/:newsletterUid/reader', (req, res, next) => newsletterReaderController.getReaderAccess(req, res, next));
 router.post('/:projectUid/:newsletterUid/join', blockDuringImpersonation, (req, res, next) => newsletterReaderController.joinNewsletterGroup(req, res, next));
 
+// In-app share recording (#4958): any reader can record that they shared a sent issue. A write
+// attributed to the caller, so it is blocked while impersonating — an admin testing as a member
+// must not inflate the count.
+router.post('/:projectUid/:newsletterUid/share', blockDuringImpersonation, (req, res, next) => newsletterController.recordShare(req, res, next));
+
 export default router;
