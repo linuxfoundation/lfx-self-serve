@@ -117,7 +117,7 @@ describe('MentorMenteesTabComponent', () => {
   it('renders the header card, group-create action, and mentee columns', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-heading"]')?.textContent?.trim()).toBe('Current Mentees');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-create-group-task"]')).not.toBeNull();
-    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Task']);
+    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Actions']);
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Current mentees');
   });
 
@@ -193,6 +193,21 @@ describe('MentorMenteesTabComponent', () => {
 
   it('offers no task create on a graduated mentee', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')).toBeNull();
+  });
+
+  it('offers Contact Mentee as a mailto: link on accepted and graduated mentees, in a new tab', () => {
+    for (const id of ['mnt_1', 'mnt_2']) {
+      expect(element().querySelector(`[data-testid="mentorship-mentor-mentee-contact-${id}"] a`)?.getAttribute('href')).toBe('mailto:alex.rivera@example.com');
+    }
+    const link = element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"] a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('aria-label')).toBe('Contact Mentee: Alex Rivera');
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    setup([mentee({ email: 'alex@example.com%0D%0ABcc:other@example.com' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"]')).toBeNull();
   });
 
   it('opens group create with every accepted mentee preselected', () => {
