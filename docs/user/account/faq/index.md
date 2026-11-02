@@ -3,7 +3,7 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
 last_updated: 2026-11-02
 intercom_collection: Account
 ---
@@ -39,6 +39,14 @@ Go to [**Profile & Account**](/profile) and use the **Work history & Affiliation
 ## What are affiliations, and how are my contributions attributed?
 
 Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+
+## Why don't my GitHub contributions show up?
+
+LFX shows contributions to open source projects that LFX tracks, such as the projects you can find in LFX Insights. Commits, pull requests and issues in a personal repository, or in any project LFX doesn't track, are not counted, even when your GitHub account is linked and verified.
+
+For contributions to a tracked project to appear, the GitHub account or email address you contributed with must be a **verified** identity on the **Identities** tab (`/profile/identities`). Your contributions are listed under **Project Involvement** on the **Work history & Affiliations** tab (`/profile/attributions`).
+
+Your public profile settings don't affect this. They only control what other people see at `app.lfx.dev/u/<username>`. See [Do I need a public profile to see my own contributions?](../../profile/faq/#do-i-need-a-public-profile-to-see-my-own-contributions).
 
 ## How do I link a GitHub or social account?
 
