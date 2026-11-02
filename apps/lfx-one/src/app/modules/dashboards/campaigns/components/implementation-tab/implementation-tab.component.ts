@@ -130,6 +130,7 @@ import {
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
   GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
   GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
@@ -226,6 +227,7 @@ import type {
   GoogleCreativeImageShape,
   GoogleCreativeImageSlotView,
   GoogleCreativeSection,
+  GoogleCreativeSharedCap,
   LinkedInAccount,
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
@@ -256,6 +258,7 @@ import {
   googleCreativeImageRequirement,
   googlePriceExtensionRefusal,
   googlePromotionRefusal,
+  isReversedCampaignFlight,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -1050,6 +1053,20 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The brief's keywords a Google create sends (#4848): a blank term is dropped, as a blank headline
+   * line is, because campaign-service refuses it and the operator saw only the generic failure.
+   */
+  protected readonly googleSearchKeywords = computed(() => this.briefKeywords().filter((k) => typeof k.term === 'string' && k.term.trim() !== ''));
+  /**
+   * Why a Search create would make a campaign that can never serve, or `null` (#4848). With no
+   * keyword the create succeeds and LFX activation then refuses the campaign, so Create waits.
+   */
+  protected readonly googleSearchKeywordsError = computed<string | null>(() => {
+    void this.campaignFormRevision();
+    if (!this.selectedGoogleChannels().includes('search') || this.googleSearchKeywords().length > 0) return null;
+    return 'Search needs at least one keyword to serve, and this brief has none filled in. Choose another campaign type, or give the brief keywords first.';
+  });
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
@@ -3020,6 +3037,10 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && this.googleLocationsCapabilityBlock() !== null) return false;
     // Countries and postal ids together over upstream's 60 — see `googleGeoTargetsOverCap`.
     if (googleSelected && this.googleGeoTargetsOverCap()) return false;
+    // An end date before the start, which Google refuses (#4848); the message is under End Date.
+    if (googleSelected && this.googleFlightError() !== null) return false;
+    // Search with no keyword, which creates a campaign that can never serve (#4848).
+    if (googleSelected && this.googleSearchKeywordsError() !== null) return false;
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return false;
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return false;
     if (linkedInSelected && this.linkedInVariants().length === 0) return false;
@@ -3217,6 +3238,12 @@ export class ImplementationTabComponent implements OnInit {
    * under a budget nothing else reads.
    */
   protected readonly googleBudgetInvalid: Signal<boolean> = this.initGoogleBudgetInvalid();
+  /**
+   * Why Google will refuse the flight on screen, or `null` (#4848). campaign-service refuses an end
+   * date BEFORE the start, before anything is created, but the operator saw only "platform campaign
+   * creation failed". A same-day flight is legal on Google, so it is not refused here.
+   */
+  protected readonly googleFlightError: Signal<string | null> = this.initGoogleFlightError();
   protected readonly budgetSplitApplies: Signal<boolean> = this.initBudgetSplitApplies();
   protected readonly performanceMaxPrefillShown: Signal<boolean> = this.initPerformanceMaxPrefillShown();
   protected readonly searchCopyApplies: Signal<boolean> = this.initSearchCopyApplies();
@@ -4908,7 +4935,7 @@ export class ImplementationTabComponent implements OnInit {
       searchBudgetPct: form.searchBudgetPct,
       startDate: form.startDate,
       endDate: form.endDate,
-      keywords: this.briefKeywords(),
+      keywords: this.googleSearchKeywords(),
       headlines: (form.headlines as string[]).filter((h) => h.trim()),
       descriptions: (form.descriptions as string[]).filter((d) => d.trim()),
       // The SAME derivation the Google section previews, for the reason `metaEffectiveGeoTargets`
@@ -7035,7 +7062,8 @@ export class ImplementationTabComponent implements OnInit {
       this.metaGeoTargets.set(this.acceptedMetaGeos(brief.metaCopy.recommendedGeos));
     }
 
-    this.briefKeywords.set(brief.keywords);
+    // A stored brief can lack the list; every reader maps or filters it (#4848).
+    this.briefKeywords.set(Array.isArray(brief.keywords) ? brief.keywords : []);
 
     // Microsoft's seed (LFXV2-3312). The brief's own keywords feed it DIRECTLY, with no
     // translation: `CampaignKeyword.matchType` is already the PascalCase vocabulary
@@ -7265,6 +7293,15 @@ export class ImplementationTabComponent implements OnInit {
     const { budgetUsd, startDate, endDate } = this.campaignForm.controls;
     const read = (): GoogleBudgetInputs => ({ daily: budgetUsd.value, start: startDate.value, end: endDate.value });
     return toSignal(merge(budgetUsd.valueChanges, startDate.valueChanges, endDate.valueChanges).pipe(startWith(null), map(read)), { initialValue: read() });
+  }
+
+  private initGoogleFlightError(): Signal<string | null> {
+    return computed(() => {
+      if (!this.selectedPlatforms().includes('google-ads')) return null;
+      const { start, end } = this.googleBudgetInputs();
+      if (!isReversedCampaignFlight(start, end)) return null;
+      return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
   }
 
   private initGoogleBudgetInvalid(): Signal<boolean> {
@@ -8431,9 +8468,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Three rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, and the
-   * either-or pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
@@ -8470,6 +8510,16 @@ export class ImplementationTabComponent implements OnInit {
         return Array.isArray(value) && value.length > 0;
       });
       if (!satisfied) return rule.message;
+    }
+    const caps: readonly GoogleCreativeSharedCap[] = GOOGLE_CREATIVE_SHARED_CAPS[channel];
+    for (const cap of caps) {
+      const count = cap.controls.reduce((sum, control) => {
+        const value = creative[control];
+        return sum + (Array.isArray(value) ? value.length : 0);
+      }, 0);
+      if (count > cap.max) {
+        return `has ${count} ${cap.label} across its fields (pasted URLs and stored images together) — ${count - cap.max} over the shared cap of ${cap.max}.`;
+      }
     }
     return null;
   }

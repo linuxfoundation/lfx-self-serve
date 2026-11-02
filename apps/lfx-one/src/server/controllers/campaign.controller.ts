@@ -1743,11 +1743,9 @@ export class CampaignController {
       // left to campaign-service: either date may be sent alone, and a bad one fails the platform
       // job there, so this predicate is not its rule to borrow.
       //
-      // Google DOES carry one (`googleFlightWindow`) and is still excluded, because its test is a
-      // DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
+      // Google carries one too (`googleFlightWindow`) but is judged separately below, because its
+      // test is a DIFFERENT one: `validateFlightWindow` refuses on `end.Before(start)`, not on
       // `!end.After(start)`, so Google accepts a same-day flight that Meta and Reddit refuse.
-      // Judging it with this predicate would refuse a create Google would have taken — and it
-      // refuses malformed and reversed windows itself, before its first mutate, naming the value.
       //
       // Meta additionally refuses a start date already in the past, which is NOT replicated: it
       // compares against the pod's current UTC calendar day, so a create submitted near the date
@@ -1765,6 +1763,21 @@ export class CampaignController {
           ServiceValidationError.forField(
             'endDate',
             `the campaign end date must be after its start date, and ${platform === 'meta-ads' ? 'Meta' : 'Reddit'} will refuse this flight. Set an end date at least one day after the start date and create again.`,
+            { operation: 'campaign_create', service: 'campaign_controller' }
+          )
+        );
+        return;
+      }
+
+      // Google (#4848): campaign-service's `validateFlightWindow` refuses an end BEFORE the start,
+      // before its first mutate, but the operator saw only the orchestrator's "platform campaign
+      // creation failed". A same-day flight is legal there, so it stays legal here. The window is
+      // the request's top-level pair, which is what `googleFlightWindow` forwards.
+      if (cutoverOn && platforms.includes('google-ads') && this.isReversedFlightWindow(body?.startDate, body?.endDate, { sameDayAllowed: true })) {
+        next(
+          ServiceValidationError.forField(
+            'endDate',
+            `the campaign end date (${String(body.endDate).trim()}) is before its start date (${String(body.startDate).trim()}), and Google will refuse this flight. Set an end date on or after the start date and create again.`,
             { operation: 'campaign_create', service: 'campaign_controller' }
           )
         );
@@ -5390,10 +5403,12 @@ export class CampaignController {
   }
 
   /**
-   * Whether a flight window is one Meta and Reddit will refuse for ending on or before its start.
+   * Whether a flight window is one Meta and Reddit will refuse for ending on or before its start,
+   * or, with `sameDayAllowed`, one Google will refuse for ending before it.
    *
-   * Answers only the question those two platforms' `CreateCampaign` asks — `!endDate.After(
-   * startDate)` — and answers `false` for anything it cannot judge with certainty. That asymmetry
+   * Answers only the question those platforms ask — Meta's and Reddit's `!endDate.After(startDate)`,
+   * Google's `end.Before(start)` (#4848) — and answers `false` for anything it cannot judge with
+   * certainty. That asymmetry
    * is the point: a `true` here refuses an operator's create, so it is returned ONLY for a window
    * whose two ends are both unambiguous and genuinely reversed.
    *
@@ -5408,7 +5423,7 @@ export class CampaignController {
    * Once both ends are known-valid zero-padded ISO dates, a lexicographic comparison orders them
    * identically to the `time.Time` comparison upstream, so no date arithmetic is needed.
    */
-  private isReversedFlightWindow(rawStart: unknown, rawEnd: unknown): boolean {
+  private isReversedFlightWindow(rawStart: unknown, rawEnd: unknown, options: { sameDayAllowed?: boolean } = {}): boolean {
     const asCalendarDate = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
       const trimmed = value.trim();
@@ -5423,7 +5438,7 @@ export class CampaignController {
     const end = asCalendarDate(rawEnd);
     if (start === null || end === null) return false;
 
-    return end <= start;
+    return options.sameDayAllowed === true ? end < start : end <= start;
   }
 
   /**
@@ -5758,7 +5773,11 @@ export class CampaignController {
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
       // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
       // dispatcher has no field for.
-      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+      // A blank term is dropped, as the Implement tab drops it (#4848): campaign-service refuses it,
+      // and the operator would see only the generic failure.
+      keywords: (body.keywords ?? [])
+        .filter((k) => typeof k?.term === 'string' && k.term.trim() !== '')
+        .map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
       // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
@@ -6504,8 +6523,8 @@ export class CampaignController {
    * first mutate — named, with the offending value in the message, and with no budget stranded.
    * Judging the shape here could only turn that named refusal into this method's vaguer one, or
    * refuse a value Go would have taken. Note also that Google's comparison is `end.Before(start)`,
-   * NOT the strict `!end.After(start)` Meta and Reddit use, so `isReversedFlightWindow` is the
-   * wrong test for this platform: a same-day flight is legal here and that guard would refuse it.
+   * NOT the strict `!end.After(start)` Meta and Reddit use, so `createCampaign` judges this window
+   * with `isReversedFlightWindow`'s `sameDayAllowed` form: a same-day flight is legal here.
    *
    * An absent or blank value omits the key, matching how `geoTargets` reaches its upstream default.
    */

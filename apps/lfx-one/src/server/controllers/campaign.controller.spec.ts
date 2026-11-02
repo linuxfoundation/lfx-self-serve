@@ -979,6 +979,22 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  it('drops a blank keyword term rather than forwarding one campaign-service refuses', async () => {
+    // #4848: the Implement tab drops them too; a blank row saved from a Planning edit failed the
+    // whole create with only the generic message.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+    const keyword = (term: string) => ({ term, matchType: 'Exact', intentLevel: 'high', notes: 'n' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ keywords: [keyword('  '), keyword('kubernetes'), keyword('')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['keywords']).toEqual([{ text: 'kubernetes', matchType: 'EXACT' }]);
+  });
+
   it('funds Google with the SEARCH share when demand-gen is also selected', async () => {
     // The dispatcher composes a "Search Campaign" and creates exactly one Search campaign, so the
     // combined budget would spend the demand-gen half on Search.
@@ -1191,14 +1207,33 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * A malformed or reversed window travels on to Go rather than being judged here, for the reason
-   * `isReversedFlightWindow` records: `validateFlightWindow` refuses it BEFORE the first mutate,
-   * names the offending value, and strands no budget. Judging it locally could only replace that
-   * named refusal with a vaguer one — or refuse a window Google accepts, since Google's test is
-   * `end.Before(start)` and a SAME-DAY flight is legal there while Meta and Reddit refuse it.
+   * A reversed window is refused here (#4848): `validateFlightWindow` refuses it before the first
+   * mutate too, but the operator saw only the orchestrator's generic failure. The message names both
+   * dates, which are known-valid calendar days whenever this guard answers.
+   */
+  it('refuses a Google end date before its start, naming both dates', async () => {
+    await controller.createCampaign(buildReq(googleBody({ startDate: '2026-04-30', endDate: '2026-04-01' }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    // The operator-facing reason is `validationErrors[0]`; `error.message` is the wire prefix.
+    const [reason] = error.validationErrors;
+    expect(reason.field).toBe('endDate');
+    expect(reason.message).toContain('(2026-04-01)');
+    expect(reason.message).toContain('(2026-04-30)');
+    expect(reason.message).toContain('Google');
+  });
+
+  /**
+   * A same-day or unreadable window travels on to Go rather than being judged here. Google's test
+   * is `end.Before(start)`, so a SAME-DAY flight is legal there while Meta and Reddit refuse it; and
+   * a shape this cannot read is refused upstream with a message that names the value, which
+   * judging it locally could only replace with a vaguer one.
    */
   it.each([
-    ['a reversed window', '2026-04-30', '2026-04-01'],
     ['a same-day window Google accepts', '2026-04-01', '2026-04-01'],
     ['a shape this cannot read', '2026-4-1', 'next friday'],
   ])('forwards %s to Go rather than refusing it here', async (_label, startDate, endDate) => {

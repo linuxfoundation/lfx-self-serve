@@ -241,6 +241,19 @@ export function campaignFlightDays(startDate: string, endDate: string): number |
 }
 
 /**
+ * Whether a flight ends BEFORE it starts, which Google refuses (#4848). A same-day flight is not
+ * reversed: Google's test is campaign-service `validateFlightWindow`'s `end.Before(start)`.
+ *
+ * `false` for a date that is not a real `YYYY-MM-DD` calendar day, because this answers only the
+ * reversed question; a blank date is the required validator's to report.
+ */
+export function isReversedCampaignFlight(startDate: string, endDate: string): boolean {
+  const start = calendarDayNumber(startDate);
+  const end = calendarDayNumber(endDate);
+  return start !== null && end !== null && end < start;
+}
+
+/**
  * The daily budget that spends a total over a flight, rounded DOWN to the cent (#4847).
  *
  * Rounded down so the daily figure times the flight never exceeds the total it came from.
@@ -252,5 +265,9 @@ export function campaignFlightDays(startDate: string, endDate: string): number |
 export function dailyBudgetFromTotal(total: number, days: number): number | null {
   if (!Number.isFinite(total) || total <= 0 || !Number.isInteger(days) || days < 1) return null;
   // Divides a whole number of cents, so the floor works on cents rather than on a float of dollars.
-  return Math.floor(Math.round(total * 100) / days) / 100;
+  // A total holding a fraction of a cent rounds UP here (31.309 to 3131), and dividing that would
+  // overspend it, so step back to the cent below the total.
+  let cents = Math.round(total * 100);
+  if (cents / 100 > total) cents -= 1;
+  return Math.floor(cents / days) / 100;
 }
