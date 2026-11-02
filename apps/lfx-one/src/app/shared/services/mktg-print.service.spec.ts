@@ -13,6 +13,7 @@ import {
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FRAME_LINGER_MS,
+  MKTG_PRINT_FRAME_PAPER_IN,
 } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgPrintService } from './mktg-print.service';
@@ -93,8 +94,11 @@ describe('MktgPrintService isolated frame', () => {
     const frame = currentFrame();
     expect(frame.style.display).not.toBe('none');
     expect(frame.style.position).toBe('fixed');
-    expect(frame.style.width).toBe('1px');
+    // Paper-sized, not 1px: WebKit resolves the print document's vh against the frame's own viewport.
+    expect(frame.style.width).toBe(`${MKTG_PRINT_FRAME_PAPER_IN.width}in`);
+    expect(frame.style.height).toBe(`${MKTG_PRINT_FRAME_PAPER_IN.height}in`);
     expect(frame.style.opacity).toBe('0');
+    expect(frame.style.pointerEvents).toBe('none');
     expect(frame.getAttribute('aria-hidden')).toBe('true');
     expect(frame.contentDocument?.body.classList.contains(bodyClass)).toBe(true);
     expect(frame.contentDocument?.querySelector('[data-testid="synthetic-print"]')?.textContent).toBe('Synthetic print');

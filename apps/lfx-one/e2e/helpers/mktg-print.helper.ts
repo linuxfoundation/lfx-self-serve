@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, FrameLocator, Page } from '@playwright/test';
+import { MKTG_PRINT_FRAME_PAPER_IN } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
 const PRINT_FRAME_TIMEOUT_MS = 10_000;
 
-/** US Letter at CSS pixels: the initial containing block the print geometry is measured against. */
-export const PRINT_FRAME_LETTER = { width: 8.5 * 96, height: 11 * 96 };
+/** US Letter at CSS pixels: the production frame's viewport, the initial containing block the print geometry is measured against. */
+export const PRINT_FRAME_LETTER = { width: MKTG_PRINT_FRAME_PAPER_IN.width * 96, height: MKTG_PRINT_FRAME_PAPER_IN.height * 96 };
 
 export function mktgPrintFrame(page: Page): FrameLocator {
   return page.frameLocator('[data-testid="lfx-print-frame"]');
@@ -42,22 +43,35 @@ export async function expectMktgPrintFrame(page: Page, bodyClass: string, docume
   await expect(frame.locator('script')).toHaveCount(0);
   // document.open() gave the frame the page's address (not about:blank), so default headers/footers print it.
   expect(await frame.locator('html').evaluate((root) => root.ownerDocument.location.href)).toBe(page.url().split('#')[0]);
+  // The paper-sized frame is fixed, transparent and inert: it takes no pointer events and adds no
+  // scrollable overflow, whatever the viewport, so the page under it keeps working while the dialog is open.
+  const overlay = await page.getByTestId('lfx-print-frame').evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const root = element.ownerDocument.documentElement;
+    return {
+      hit: element.ownerDocument.elementFromPoint(rect.left + 4, rect.top + 4) === element,
+      addsScroll: root.scrollWidth > root.clientWidth && root.scrollWidth >= rect.right,
+    };
+  });
+  expect(overlay).toEqual({ hit: false, addsScroll: false });
   await expect(frame.locator('html')).toHaveAttribute('data-mktg-frame-printed', 'yes', { timeout: PRINT_FRAME_TIMEOUT_MS });
 }
 
 /**
- * Lay the printed frame out for measurement: production keeps it at 1px and
- * transparent, so give the frame element a paper-sized, visible viewport and
- * put the page under print media (the frame inherits the emulation). The
- * document inside is untouched: what is measured is the production layout.
+ * Lay the printed frame out for measurement: production already gives it a
+ * paper-sized viewport (asserted here, so the geometry below is production's),
+ * but keeps it transparent. Make the frame element visible, on top, and put the
+ * page under print media (the frame inherits the emulation). The document
+ * inside is untouched: what is measured is the production layout.
  */
-export async function layoutMktgPrintFrame(page: Page, paper = PRINT_FRAME_LETTER): Promise<FrameLocator> {
-  await page.getByTestId('lfx-print-frame').evaluate((element, size) => {
-    element.style.width = `${size.width}px`;
-    element.style.height = `${size.height}px`;
+export async function layoutMktgPrintFrame(page: Page): Promise<FrameLocator> {
+  const frame = page.getByTestId('lfx-print-frame');
+  const box = await frame.boundingBox();
+  expect(box && { width: Math.round(box.width), height: Math.round(box.height) }).toEqual(PRINT_FRAME_LETTER);
+  await frame.evaluate((element) => {
     element.style.opacity = '1';
     element.style.zIndex = '2147483647';
-  }, paper);
+  });
   await page.emulateMedia({ media: 'print' });
   return mktgPrintFrame(page);
 }

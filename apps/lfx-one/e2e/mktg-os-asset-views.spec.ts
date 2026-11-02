@@ -219,7 +219,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
     await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
     // Media emulation does not paginate or apply @page margins. Measure the frame's own layout
     // against a paper-sized initial containing block: that is the document the dialog prints.
-    const frame = await layoutMktgPrintFrame(page, PRINT_FRAME_LETTER);
+    const frame = await layoutMktgPrintFrame(page);
     const print = frame.getByTestId(testId);
     await expect(print).toBeVisible();
     // Only the print-only wrapper was cloned: none of the screen shell travels into the frame.

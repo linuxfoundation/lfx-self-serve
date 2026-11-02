@@ -14,6 +14,7 @@ import {
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FONT_WEIGHTS,
   MKTG_PRINT_FRAME_LINGER_MS,
+  MKTG_PRINT_FRAME_PAPER_IN,
 } from '@lfx-one/shared/constants';
 
 /**
@@ -35,6 +36,13 @@ import {
  * body class reveals (`*-print-only`, from the shared constants). The parent
  * body is never marked: the existing print CSS keeps applying inside the
  * frame, whose body carries the class instead.
+ *
+ * The frame is paper-sized (US Letter), fixed, transparent and inert. WebKit
+ * lays a subframe out at the frame's own size and resolves `vh` there, so a
+ * 1px frame collapsed the covers' viewport-height boxes and shifted the page
+ * breaks; Chromium paginates against the page box either way. A fixed box adds
+ * no scrollable overflow and `pointer-events: none` lets clicks through, so
+ * the page under it is unchanged while the dialog is open.
  *
  * The brand's typeface is loaded before the dialog opens, in the page (ahead
  * of the click) and again in the frame, and only after its Google Fonts
@@ -86,7 +94,7 @@ export class MktgPrintService {
     frame.setAttribute('aria-hidden', 'true');
     frame.setAttribute('title', 'Print document');
     frame.tabIndex = -1;
-    frame.style.cssText = 'position:fixed;width:1px;height:1px;left:0;top:0;opacity:0;pointer-events:none;border:0';
+    frame.style.cssText = `position:fixed;width:${MKTG_PRINT_FRAME_PAPER_IN.width}in;height:${MKTG_PRINT_FRAME_PAPER_IN.height}in;left:0;top:0;opacity:0;pointer-events:none;border:0`;
     this.document.body.appendChild(frame);
     const doc = frame.contentDocument;
     const view = frame.contentWindow;

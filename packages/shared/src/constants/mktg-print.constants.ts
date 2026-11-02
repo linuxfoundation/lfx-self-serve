@@ -69,6 +69,16 @@ export const MKTG_PRINT_FONT_WAIT_MS = 3000;
 export const MKTG_PRINT_FRAME_LINGER_MS = 5 * 60 * 1000;
 
 /**
+ * The hidden print frame's viewport, US Letter in CSS inches. WebKit lays a
+ * subframe out at the frame's own size and resolves its viewport units there
+ * (Chromium paginates against the page box whatever the frame measures), so a
+ * 1px frame collapsed every `100vh` cover and shifted the page breaks. Letter
+ * is the smaller common paper: a cover sized from these units fills a Letter
+ * page and never spills a blank sheet on A4.
+ */
+export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 11 } as const;
+
+/**
  * The weights the framework print sets the brand's typeface in, loaded before
  * the print dialog opens: the body (400), the headings, tagline and key
  * numbers (`font-medium`, 500) and the labels (`font-semibold`, 600).
