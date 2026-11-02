@@ -128,7 +128,11 @@
         [now]="store.now()"
         [rsvps]="store.nextRowRsvps()"
         [joinable]="store.nextRowJoinable()"
-        [joinUrl]="store.nextRowJoinUrl()" />
+        [joinUrl]="store.nextRowJoinUrl()">
+        @if (store.nextRow(); as nextRow) {
+          <lfx-meeting-home-actions next-meeting-card-menu [row]="nextRow" view="upcoming" />
+        }
+      </lfx-next-meeting-card>
     }
   </section>
   <!-- A failed feed hides the card rather than claiming the viewer has no past meetings. -->

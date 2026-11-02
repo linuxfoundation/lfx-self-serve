@@ -32,6 +32,7 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
+import { MeetingHomeActionsComponent } from './components/meeting-home-actions/meeting-home-actions.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
@@ -61,6 +62,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     UiChipGroupComponent,
     UiChipComponent,
     MeetingsDayGroupComponent,
+    MeetingHomeActionsComponent,
     MeetingsFiltersComponent,
     LastMeetingCardComponent,
     NextMeetingCardComponent,

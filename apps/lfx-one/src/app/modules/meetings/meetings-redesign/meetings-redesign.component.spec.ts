@@ -124,7 +124,6 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
-            authenticated: signal(true),
           },
         },
         { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
@@ -295,6 +294,7 @@ describe('MeetingsRedesignComponent', () => {
       );
       expect(rowTitles(fixture)).toEqual(['Meeting 2']);
       expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
+      expect(query(fixture, 'meetings-home-next-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeTruthy();
     });
 
     it('shows the empty Next meeting card and no list or empty state for a lone meeting', async () => {
@@ -302,6 +302,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(fixture, []);
       expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.textContent).toContain('Your calendar is clear');
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeNull();
 
       upcoming$.next([buildMeeting(1)]);
       await fixture.whenStable();
