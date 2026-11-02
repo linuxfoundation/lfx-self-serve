@@ -82,9 +82,11 @@ export class MeetingRsvpControlsComponent {
 
   private initVisible(): Signal<boolean> {
     return computed(() => {
-      const { meeting } = this.row();
+      const { meeting, myRsvp } = this.row();
+      // Unloaded RSVPs (undefined) could hide an earlier answer, and without a registration a save cannot resolve a registrant.
+      const answerable = myRsvp !== undefined && meeting.my_registrant_ids?.length !== 0;
       // Organizers keep their rows after removing their own registration, but can no longer answer.
-      return meeting.invited && isMeetingInviteResponsesEnabled(meeting) && !this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
+      return meeting.invited && answerable && isMeetingInviteResponsesEnabled(meeting) && !this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
     });
   }
 

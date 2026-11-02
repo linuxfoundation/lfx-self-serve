@@ -103,6 +103,20 @@ describe('MeetingRsvpControlsComponent', () => {
       expect(query(fixture, 'meetings-home-rsvp')).toBeNull();
     });
 
+    it('renders nothing while the RSVPs are not loaded', async () => {
+      const fixture = await render(buildRow(buildMeeting(), { myRsvp: undefined }));
+      expect(query(fixture, 'meetings-home-rsvp')).toBeNull();
+    });
+
+    it('renders nothing without a registration to answer for, but keeps the controls when the list is unknown', async () => {
+      const fixture = await render(buildRow(buildMeeting({ my_registrant_ids: [] })));
+      expect(query(fixture, 'meetings-home-rsvp')).toBeNull();
+
+      fixture.componentRef.setInput('row', buildRow(buildMeeting({ my_registrant_ids: undefined })));
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
+    });
+
     it('renders nothing once the viewer removed their own registration', async () => {
       removed.set(new Set(['synthetic-meeting']));
       const fixture = await render(buildRow(buildMeeting({ organizer: true })));

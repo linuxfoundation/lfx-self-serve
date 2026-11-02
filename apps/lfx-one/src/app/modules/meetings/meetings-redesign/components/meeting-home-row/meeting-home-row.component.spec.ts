@@ -199,7 +199,7 @@ describe('MeetingHomeRowComponent', () => {
 
   describe('RSVP', () => {
     it('shows the RSVP controls on upcoming rows without opening the row on a click', async () => {
-      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true })));
+      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
 
       expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
       query(fixture, 'meetings-home-rsvp')?.click();
