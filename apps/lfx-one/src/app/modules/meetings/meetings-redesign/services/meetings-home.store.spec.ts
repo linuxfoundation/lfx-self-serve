@@ -203,6 +203,9 @@ describe('MeetingsHomeStore', () => {
       removed.set(new Set(['attendee', 'organized']));
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['organized']);
+      const [organized] = store.upcomingRows();
+      expect(organized.meeting).toMatchObject({ invited: false, my_registrant_ids: [], my_rsvp: null });
+      expect(organized.myRsvp ?? null).toBeNull();
     });
 
     it('shows an answer confirmed this session on the date it applies to', () => {

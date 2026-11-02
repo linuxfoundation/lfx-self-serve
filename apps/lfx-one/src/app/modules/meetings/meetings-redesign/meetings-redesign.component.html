@@ -129,7 +129,8 @@
         [rsvps]="store.nextRowRsvps()"
         [joinable]="store.nextRowJoinable()"
         [joinUrl]="store.nextRowJoinUrl()">
-        @if (store.nextRow(); as nextRow) {
+        <!-- Keyed by row, so a new Next meeting gets a fresh menu and closes the old one's dialog. -->
+        @for (nextRow of nextRows(); track nextRow.key) {
           <lfx-meeting-home-actions next-meeting-card-menu [row]="nextRow" view="upcoming" />
         }
       </lfx-next-meeting-card>

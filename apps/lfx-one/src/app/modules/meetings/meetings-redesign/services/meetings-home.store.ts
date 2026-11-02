@@ -301,9 +301,10 @@ export class MeetingsHomeStore {
   private initUpcomingRows(): Signal<MeetingHomeRow[]> {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
-      // Organizers keep their meetings after removing their own registration.
+      // Organizers keep their meetings after removing their own registration, without the registration.
       const meetings = this.upcomingMeetings()
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
+        .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
     });

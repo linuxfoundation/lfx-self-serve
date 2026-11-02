@@ -294,7 +294,15 @@ describe('MeetingsRedesignComponent', () => {
       );
       expect(rowTitles(fixture)).toEqual(['Meeting 2']);
       expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
-      expect(query(fixture, 'meetings-home-next-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeTruthy();
+      const menu = (): Element | null | undefined =>
+        query(fixture, 'meetings-home-next-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]');
+      const firstMenu = menu();
+      expect(firstMenu).toBeTruthy();
+
+      upcoming$.next([buildMeeting(2), buildMeeting(3)]);
+      await fixture.whenStable();
+      expect(menu()).toBeTruthy();
+      expect(menu()).not.toBe(firstMenu);
     });
 
     it('shows the empty Next meeting card and no list or empty state for a lone meeting', async () => {

@@ -19,7 +19,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -107,6 +107,11 @@ export class MeetingsRedesignComponent {
   /** True once the tabs bar has reached its sticky position; the fade then sits under it instead of the header. */
   protected readonly tabsStuck: WritableSignal<boolean> = signal(false);
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  /** The Next meeting as a one-item list, so its menu is keyed by row. */
+  protected readonly nextRows: Signal<MeetingHomeRow[]> = computed(() => {
+    const row = this.store.nextRow();
+    return row ? [row] : [];
+  });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
   /** The active tab has meetings, but none match the search and filters. */
