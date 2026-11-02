@@ -555,6 +555,32 @@ describe('MyNewslettersComponent', () => {
     await settle();
     expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
   });
+  it('keeps the server count as the baseline when a share lands after switching foundation (#4958)', async () => {
+    const accepted = new Subject<boolean>();
+    gateway.recordShare.mockReturnValue(accepted);
+    await respond(
+      feedOf(
+        [row({ share_count: 3 }), row({ id: 'elsewhere', subject: 'Other news', foundation_uid: 'other', foundation_slug: 'other-slug', share_count: 1 })],
+        true,
+        [card(), card({ uid: 'other', slug: 'other-slug', name: 'Other Foundation' })]
+      )
+    );
+    find('my-newsletters-open-issue')!.click();
+    await settle();
+    overlay('newsletter-preview-drawer-share')!.click();
+    shareDialog.open.mock.calls[0][0].onShare('linkedin');
+
+    // The response arrives while another foundation's slice is shown.
+    routeParams.next(convertToParamMap({ foundationSlug: 'other' }));
+    await settle();
+    expect(fixture.componentInstance.myNewsletters().map((newsletter) => newsletter.id)).toEqual(['elsewhere']);
+    accepted.next(true);
+    accepted.complete();
+    routeParams.next(convertToParamMap({ foundationSlug: 'foundation-slug' }));
+    await settle();
+
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
+  });
   it('preserves canonical absence fallback and body-fetch error handling', async () => {
     await respond(feedOf([row()], true));
     params.next(convertToParamMap({ issue: 'absent', project: 'other' }));
