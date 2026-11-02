@@ -18,7 +18,10 @@ import { OrgLensTrainingService } from './org-lens-training.service';
 
 const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 const REQ = {} as Request;
-const ENROLLED_WINDOW = "t.ACTIVITY_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND t.ACTIVITY_TS::date < CURRENT_DATE()";
+const ENROLLED_WINDOW = "s.LAST_ENROLLED_TS::date >= DATEADD('MONTH', -12, CURRENT_DATE()) AND s.LAST_ENROLLED_TS::date < CURRENT_DATE()";
+const STATUS_TABLE = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS s';
+// Only people on the org's people list count: learners outside it may have rows in the training models.
+const PEOPLE_LIST_JOIN = /INNER JOIN ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL p\s+ON p\.ACCOUNT_ID = s\.ACCOUNT_ID AND p\.PERSON_KEY = s\.PERSON_KEY/;
 
 function sqls(): string[] {
   return execute.mock.calls.map(([sql]) => sql as string);
@@ -33,56 +36,63 @@ beforeEach(() => {
   service = new OrgLensTrainingService();
 });
 
-// ORG_PEOPLE_TRAINING holds enrollments of any age (the People › Trainees ranges read them), so the Certifications tab
-// has to keep its own 12-month enrollment window or old enrollments would inflate In Progress and list courses nobody
-// at the org is working on.
+// The status table holds courses of any age (the window is the consumer's), so the Certifications tab keeps its own
+// 12-month enrollment window or old enrollments would inflate In Progress and list courses nobody at the org is
+// working on.
 describe('OrgLensTrainingService — Certifications tab window', () => {
   it('counts certificates of any age and only enrollments from the last 12 months', async () => {
     await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
 
     expect(execute).toHaveBeenCalledTimes(2);
     for (const sql of sqls()) {
-      expect(sql).toContain(`AND (t.STATUS = 'Certified' OR (${ENROLLED_WINDOW}))`);
+      expect(sql).toContain(`AND (s.STATUS = 'Certified' OR (${ENROLLED_WINDOW}))`);
     }
   });
 
-  it('lists in-progress employees from the same 12-month window, without anyone certified in the course', async () => {
+  it('lists in-progress employees from the same 12-month window', async () => {
     await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
 
-    expect(sqls()[0]).toContain(`AND (t.STATUS = 'Certified' OR (${ENROLLED_WINDOW}))`);
-    expect(sqls()[0]).toMatch(/GROUP BY p\.PERSON_KEY, p\.NAME, p\.TITLE\s+HAVING COUNT_IF\(t\.STATUS = 'Certified'\) = 0/);
+    expect(sqls()[0]).toContain(`AND s.STATUS = 'Enrolled' AND (${ENROLLED_WINDOW})`);
   });
 
   it('lists certified employees without a window', async () => {
     await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'certified');
 
-    expect(sqls()[0]).toContain("AND t.STATUS = 'Certified'");
-    expect(sqls()[0]).not.toContain('ACTIVITY_TS');
-    expect(sqls()[0]).not.toContain('HAVING');
+    expect(sqls()[0]).toContain("AND s.STATUS = 'Certified'");
+    expect(sqls()[0]).not.toContain('LAST_ENROLLED_TS');
   });
 });
 
-// Since lf-dbt#3118 a person can carry a certificate row and a later re-enrollment row for one course: they count,
-// and are listed, as certified only.
-describe('OrgLensTrainingService — one status per person and course', () => {
-  it('counts in progress as the people in the course minus the certified ones', async () => {
+// lf-dbt resolves one status per (person, course), Certified winning over a re-enrollment (lfx-self-serve#4439); the
+// tab reads it instead of re-deriving it, so a certified person who re-enrolled counts, and is listed, as certified only.
+describe('OrgLensTrainingService — status resolved in lf-dbt', () => {
+  it('counts each status from ORG_PEOPLE_TRAINING_COURSE_STATUS, people on the people list only', async () => {
     await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
 
     for (const sql of sqls()) {
-      expect(sql).toMatch(/COUNT\(DISTINCT CASE WHEN t\.STATUS = 'Certified' THEN t\.PERSON_KEY END\)\s+AS CERTIFIED_COUNT/);
-      expect(sql).toMatch(
-        /COUNT\(DISTINCT t\.PERSON_KEY\) - COUNT\(DISTINCT CASE WHEN t\.STATUS = 'Certified' THEN t\.PERSON_KEY END\)\s+AS IN_PROGRESS_COUNT/
-      );
-      expect(sql).not.toContain("IS DISTINCT FROM 'Certified'");
+      expect(sql).toContain(STATUS_TABLE);
+      expect(sql).toMatch(PEOPLE_LIST_JOIN);
+      expect(sql).toMatch(/COUNT_IF\(s\.STATUS = 'Certified'\)\s+AS CERTIFIED_COUNT/);
+      expect(sql).toMatch(/COUNT_IF\(s\.STATUS = 'Enrolled'\)\s+AS IN_PROGRESS_COUNT/);
+      expect(sql).not.toContain('ORG_PEOPLE_TRAINING t');
     }
   });
 
-  it('caches under the v3 keys, so counts stored before the change miss', async () => {
+  it.each(['certified', 'in-progress'] as const)('lists %s employees by their resolved status, people on the people list only', async (status) => {
+    await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', status);
+
+    expect(sqls()[0]).toContain(STATUS_TABLE);
+    expect(sqls()[0]).toMatch(PEOPLE_LIST_JOIN);
+    expect(sqls()[0]).not.toContain('HAVING');
+    expect(sqls()[0]).not.toContain('ORG_PEOPLE_TRAINING t');
+  });
+
+  it('caches under the v4 keys, so entries computed from ORG_PEOPLE_TRAINING miss', async () => {
     await service.getOrgCertifications(REQ, ACCOUNT, { level: null, pageSize: 10, offset: 0, sortField: 'COURSE_NAME', sortOrder: 'ASC' });
     await service.getCertificationEmployees(REQ, ACCOUNT, 'course-1', 'in-progress');
 
     const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-    expect(keys[0].startsWith('certifications:v3:')).toBe(true);
-    expect(keys[1].startsWith('certification-employees:v3:')).toBe(true);
+    expect(keys[0].startsWith('certifications:v4:')).toBe(true);
+    expect(keys[1].startsWith('certification-employees:v4:')).toBe(true);
   });
 });

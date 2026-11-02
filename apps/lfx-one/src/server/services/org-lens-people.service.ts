@@ -109,12 +109,10 @@ interface EventRow {
   FOUNDATION_NAME: string | null;
 }
 
+/** One row per course, its status resolved in lf-dbt (ORG_PEOPLE_TRAINING_COURSE_STATUS). */
 interface TrainingRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  COURSE_OR_CERT_ID: string;
+  COURSE_ID: string;
   STATUS: string | null;
-  COURSE_ID: string | null;
   COURSE_NAME: string | null;
 }
 
@@ -367,7 +365,7 @@ export class OrgLensPeopleService {
     const eventsCount = eventRows.length;
     const events = eventRows.map((row) => this.mapEventRow(row, eventsCount));
 
-    const training = this.collapseTrainingRows(trainingRows);
+    const training = this.mapTrainingRows(trainingRows);
 
     return {
       personKey,
@@ -798,14 +796,14 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Committee, event and training rows. `v5`: the code rows moved to their own reads, which follow the opener's code
-   * filters (lfx-self-serve#4404), so a `v4` entry must miss.
+   * Committee, event and training rows. `v6`: the training rows are one per course, read from
+   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     return this.withPersonCache(
       accountId,
       personKey,
-      `people-detail:v5:${personKey}`,
+      `people-detail:v6:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );
@@ -1093,19 +1091,19 @@ export class OrgLensPeopleService {
     return result.rows;
   }
 
-  /** Certificates of any age, enrollments from the last 12 months only (the window the drawer has always shown). */
+  /**
+   * One row per course with its status resolved in lf-dbt (Certified wins over a re-enrollment): certificates of any
+   * age, in progress only when enrolled in the last 12 months (the window the drawer has always shown).
+   */
   private async fetchTrainingRows(accountId: string, personKey: string): Promise<TrainingRow[]> {
     const query = `
       SELECT
-        ACCOUNT_ID,
-        PERSON_KEY,
-        COURSE_OR_CERT_ID,
-        STATUS,
         COURSE_ID,
+        STATUS,
         COURSE_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS
       WHERE ACCOUNT_ID = ? AND PERSON_KEY = ?
-        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate()}))
+        AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS')}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<TrainingRow>(query, [accountId, personKey]);
@@ -1136,33 +1134,17 @@ export class OrgLensPeopleService {
     };
   }
 
-  /**
-   * One drawer row per course (`COURSE_ID`, else `COURSE_OR_CERT_ID`), Certified superseding Enrolled: since
-   * lf-dbt#3118 a person can carry a certificate row and a later re-enrollment row for the same course. Counts are
-   * over the collapsed rows, so they match what renders.
-   */
-  private collapseTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
-    const byCourse = new Map<string, TrainingRow>();
-    for (const row of trainingRows) {
-      const courseId = row.COURSE_ID ?? row.COURSE_OR_CERT_ID;
-      if (!courseId) {
-        continue;
-      }
-      const kept = byCourse.get(courseId);
-      if (!kept || (kept.STATUS !== 'Certified' && row.STATUS === 'Certified')) {
-        byCourse.set(courseId, row);
-      }
-    }
-    const rows = [...byCourse.values()];
-    const certificationsCount = rows.filter((row) => row.STATUS === 'Certified').length;
-    return rows.map((row) => this.mapTrainingRow(row, rows.length, certificationsCount));
+  /** Counts are over the rows shown, so they match what renders. */
+  private mapTrainingRows(trainingRows: TrainingRow[]): OrgAllEmployeeTraining[] {
+    const certificationsCount = trainingRows.filter((row) => row.STATUS === 'Certified').length;
+    return trainingRows.map((row) => this.mapTrainingRow(row, trainingRows.length, certificationsCount));
   }
 
   private mapTrainingRow(row: TrainingRow, coursesCount: number, certificationsCount: number): OrgAllEmployeeTraining {
     const status: OrgAllEmployeeTrainingStatus = row.STATUS === 'Certified' ? 'Certified' : 'Enrolled';
     return {
-      courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-      courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+      courseId: row.COURSE_ID,
+      courseName: row.COURSE_NAME ?? row.COURSE_ID,
       status,
       certificationsCount,
       coursesCount,
