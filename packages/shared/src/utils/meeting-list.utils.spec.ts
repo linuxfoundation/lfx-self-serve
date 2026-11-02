@@ -6,7 +6,7 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
+import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
 import { MeetingVisibility, MeetingVisibilityKind, RecurrenceType } from '../enums';
 import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '../interfaces';
 import {
@@ -17,6 +17,8 @@ import {
   formatMeetingTimeRange,
   getMeetingDayBucket,
   getMeetingHomeRowLink,
+  getMeetingHomeRowProject,
+  getMeetingHomeRowType,
   getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
   getMeetingStartsInLabel,
@@ -610,5 +612,32 @@ describe('getMeetingProjectUrl', () => {
 
   it('has no link without a slug', () => {
     expect(getMeetingProjectUrl({ project_slug: undefined, is_foundation: true })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowProject', () => {
+  it('names the project with its initial, logo, link and accessible label', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' cncf ', project_logo_url: 'logo.svg', project_slug: 'cncf', is_foundation: true })).toEqual({
+      name: 'cncf',
+      initial: 'C',
+      logo: 'logo.svg',
+      url: '/foundation/overview?project=cncf',
+      label: 'Jump to foundation: cncf',
+    });
+  });
+
+  it('is null without a project name', () => {
+    expect(getMeetingHomeRowProject({ project_name: ' ' })).toBeNull();
+  });
+});
+
+describe('getMeetingHomeRowType', () => {
+  it.each<[string | null, { label: string; icon: string } | null]>([
+    ['Technical', { label: 'Technical', icon: MEETING_TYPE_CONFIGS['technical'].icon }],
+    ['Custom', { label: 'Custom', icon: DEFAULT_MEETING_TYPE_CONFIG.icon }],
+    ['None', null],
+    [null, null],
+  ])('%s → %j', (type, expected) => {
+    expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
   });
 });

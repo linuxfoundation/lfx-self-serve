@@ -11,7 +11,7 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
@@ -118,11 +118,13 @@ describe('MeetingsRedesignComponent', () => {
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
             getUserLatestPastMeetings: () => latestPast$,
+            authenticated: signal(true),
+            meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
           },
         },
-        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
+        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate } },
@@ -272,7 +274,36 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
       expect(query(fixture, 'ui-tab-past')?.textContent).toContain('0');
       expect(query(fixture, 'meetings-home-day-group-label')?.textContent?.trim()).toBeTruthy();
-      expect(rowTitles(fixture)).toEqual(['Meeting 1', 'Meeting 2']);
+      expect(rowTitles(fixture)).toEqual(['Meeting 2']);
+    });
+
+    it('shows the soonest date in the Next meeting card instead of the list, still counting it on the tab', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-next-card')).toBeNull();
+      expect(query(fixture, 'meetings-home-next-card-empty')).toBeNull();
+
+      await loadFeeds(fixture, [buildMeeting(2), buildMeeting(1)]);
+
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-next-card-title"]')?.textContent).toBe(
+        'Meeting 1'
+      );
+      expect(rowTitles(fixture)).toEqual(['Meeting 2']);
+      expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
+    });
+
+    it('shows the empty Next meeting card and no list or empty state for a lone meeting', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, []);
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.textContent).toContain('Your calendar is clear');
+
+      upcoming$.next([buildMeeting(1)]);
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-empty-upcoming')).toBeNull();
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
     });
 
     it('shows a header skeleton until the persona loads', async () => {
@@ -292,7 +323,7 @@ describe('MeetingsRedesignComponent', () => {
     it('filters rows by the search text', async () => {
       const fixture = render();
       await fixture.whenStable();
-      await loadFeeds(fixture, [buildMeeting(1, { title: 'Board Review' }), buildMeeting(2, { title: 'Tech Sync' })]);
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1, { title: 'Board Review' }), buildMeeting(2, { title: 'Tech Sync' })]);
 
       const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
       input.value = 'board';
@@ -307,7 +338,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(
         fixture,
-        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) => buildMeeting(index))
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 6 }, (_, index) => buildMeeting(index))
       );
 
       expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
@@ -335,7 +366,7 @@ describe('MeetingsRedesignComponent', () => {
 
       upcoming$ = new Subject();
       (query(fixture, 'meetings-home-error-retry')?.querySelector('button') as HTMLButtonElement).click();
-      await loadFeeds(fixture, [buildMeeting(1)]);
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
 
       expect(query(fixture, 'meetings-home-error')).toBeNull();
       expect(rowTitles(fixture)).toEqual(['Meeting 1']);
@@ -357,10 +388,23 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('Your past meetings will appear here.');
     });
 
+    it('shows no "No results" when the search matches only the Next meeting card', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(0, { title: 'Board Review' }), buildMeeting(1)]);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'board';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+    });
+
     it('shows no results with a reset that clears the search', async () => {
       const fixture = render();
       await fixture.whenStable();
-      await loadFeeds(fixture, [buildMeeting(1)]);
+      await loadFeeds(fixture, [buildMeeting(0), buildMeeting(1)]);
       const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
       input.value = 'nothing matches';
       input.dispatchEvent(new Event('input'));
@@ -391,6 +435,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
     };
     const meetings = (): Meeting[] => [
+      buildMeeting(0),
       buildMeeting(1, { title: 'Board Review', created_by: { username: 'viewer', email: 'viewer@example.test' } }),
       buildMeeting(2, { title: 'Tech Sync' }),
     ];

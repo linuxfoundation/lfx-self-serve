@@ -19,7 +19,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { MeetingDashboardView, MeetingsRailBlock, UiTabItem } from '@lfx-one/shared/interfaces';
+import { MeetingDashboardView, UiTabItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -34,6 +34,7 @@ import { EMPTY, Observable, switchMap } from 'rxjs';
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
+import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -62,6 +63,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     MeetingsDayGroupComponent,
     MeetingsFiltersComponent,
     LastMeetingCardComponent,
+    NextMeetingCardComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore],
@@ -90,7 +92,6 @@ export class MeetingsRedesignComponent {
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 
   protected readonly idPrefix = 'meetings-redesign';
-  protected readonly railBlocks: MeetingsRailBlock[] = [{ key: 'next-meeting', label: 'Next meeting' }];
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */
@@ -107,7 +108,7 @@ export class MeetingsRedesignComponent {
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
   /** The active tab has meetings, but none match the search and filters. */
-  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.filteredRows().length === 0);
+  protected readonly noResults: Signal<boolean> = computed(() => !this.store.loading() && !this.tabEmpty() && this.store.matchingRows().length === 0);
   /** "All N meetings loaded" once every row of a list longer than one page is shown. */
   protected readonly allLoaded: Signal<boolean> = computed(
     () => !this.store.loading() && !this.store.hasMore() && this.store.filteredRows().length > MEETINGS_HOME_PAGE_SIZE
