@@ -42,7 +42,7 @@ import { revealRowInList } from '../select/reveal-row';
   host: {
     // Exact px, not rem; 14px root. The library's 640px width and 440px height have no Tailwind utility; both shrink to fit the window, with the modal's 32px margins.
     class:
-      'flex max-h-[min(440px,calc(100vh-64px))] w-[640px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-ui-lg bg-ui-background-100 shadow-modal',
+      'flex max-h-[min(440px,calc(100vh-64px))] w-[640px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-ui-lg bg-ui-background-100 shadow-modal forced-colors:border forced-colors:border-[color:CanvasText]',
     'data-testid': 'ui-command-menu',
   },
 })
