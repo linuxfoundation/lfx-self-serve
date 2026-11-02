@@ -26,10 +26,10 @@ const meta: Meta<UiSplitButtonComponent> = {
   // Compodoc cannot read the shared union aliases, so the selects are declared here; `menu` is a template, not a control.
   argTypes: {
     variant: { control: 'select', options: ['primary', 'secondary'] },
-    size: { control: 'select', options: ['tiny', 'small', 'medium'] },
+    size: { control: 'select', options: ['small', 'default', 'large'] },
     menu: { table: { disable: true } },
   },
-  args: { label: 'Deploy', variant: 'primary', size: 'medium', icon: '', menuLabel: '', disabled: false },
+  args: { label: 'Deploy', variant: 'primary', size: 'default', icon: '', menuLabel: '', disabled: false },
   render: (args) => ({
     props: args,
     template: `<lfx-ui-split-button ${argsToTemplate(args, { exclude: ['menu'] })} [menu]="deployMenu" />${menuTemplate}`,
@@ -41,12 +41,12 @@ type Story = StoryObj<UiSplitButtonComponent>;
 /** The accent split button. Try Enter or Space on the chevron, the arrow keys, Home, End, a typed letter and Escape. */
 export const Primary: Story = {};
 
-/** The neutral split button; the two rings overlap by 1px instead of a divider. */
+/** The neutral split button; the two borders overlap by 1px instead of a divider. */
 export const Secondary: Story = { args: { variant: 'secondary', label: 'Export CSV' } };
 
-export const Small: Story = { args: { variant: 'secondary', size: 'small', label: 'Export CSV' } };
+export const Large: Story = { args: { variant: 'secondary', size: 'large', label: 'Export CSV' } };
 
-export const Tiny: Story = { args: { variant: 'secondary', size: 'tiny', label: 'Export' } };
+export const Small: Story = { args: { variant: 'secondary', size: 'small', label: 'Export' } };
 
 export const WithIcon: Story = { args: { icon: 'fa-light fa-rocket' } };
 
@@ -57,12 +57,12 @@ export const Sizes: Story = {
   render: () => ({
     template: `
       <div class="flex flex-col items-start gap-[16px]">
+        <lfx-ui-split-button size="large" label="Deploy" [menu]="deployMenu" />
         <lfx-ui-split-button label="Deploy" [menu]="deployMenu" />
         <lfx-ui-split-button label="Deploy" size="small" [menu]="deployMenu" />
-        <lfx-ui-split-button label="Deploy" size="tiny" [menu]="deployMenu" />
+        <lfx-ui-split-button size="large" label="Export CSV" variant="secondary" [menu]="deployMenu" />
         <lfx-ui-split-button label="Export CSV" variant="secondary" [menu]="deployMenu" />
         <lfx-ui-split-button label="Export CSV" variant="secondary" size="small" [menu]="deployMenu" />
-        <lfx-ui-split-button label="Export CSV" variant="secondary" size="tiny" [menu]="deployMenu" />
       </div>${menuTemplate}`,
   }),
 };

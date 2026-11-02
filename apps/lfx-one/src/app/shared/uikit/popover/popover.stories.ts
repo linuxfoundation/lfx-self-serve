@@ -52,7 +52,7 @@ const meta: Meta<UiPopoverDirective> = {
     props: { cfg: args },
     template: `
       <div class="flex min-h-[320px] justify-center pt-[48px]">
-        <lfx-ui-button variant="secondary" icon="fa-light fa-circle-info" [popover]="info" [popoverLabel]="cfg.label" [popoverWidth]="cfg.width" [popoverPadding]="cfg.padding">Details</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-circle-info" [popover]="info" [popoverLabel]="cfg.label" [popoverWidth]="cfg.width" [popoverPadding]="cfg.padding">Details</lfx-ui-button>
         <ng-template #info>
           <div class="flex flex-col gap-[8px]">
             <p class="label-14 text-ui-neutral-900">Release cadence</p>
@@ -75,7 +75,7 @@ export const NoPadding: Story = {
     props: { cfg: args },
     template: `
       <div class="flex min-h-[320px] justify-center pt-[48px]">
-        <lfx-ui-button variant="secondary" icon="fa-light fa-bell" [popover]="inbox" [popoverPadding]="cfg.padding" [popoverWidth]="280">Inbox</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-bell" [popover]="inbox" [popoverPadding]="cfg.padding" [popoverWidth]="280">Inbox</lfx-ui-button>
         <ng-template #inbox>
           <ul class="m-0 list-none divide-y divide-ui-neutral-alpha-200 p-0">
             <li class="px-[16px] py-[12px] label-14 text-ui-neutral-900">Budget review moved to Friday</li>
@@ -95,7 +95,7 @@ export const FiltersPanel: Story = {
   render: () => ({
     template: `
       <div class="flex min-h-[520px] justify-start pt-[48px]">
-        <lfx-ui-button variant="secondary" size="small" icon="fa-light fa-sliders" [popover]="filters" popoverLabel="Meeting filters" [popoverWidth]="300">Filters</lfx-ui-button>
+        <lfx-ui-button variant="secondary" icon="fa-light fa-sliders" [popover]="filters" popoverLabel="Meeting filters" [popoverWidth]="300">Filters</lfx-ui-button>
         <ng-template #filters let-close="close">
           <div class="flex flex-col gap-[16px]" data-testid="story-filters">
             <lfx-ui-select label="Project" size="small" value="all">
@@ -118,8 +118,8 @@ export const FiltersPanel: Story = {
             <lfx-ui-toggle label="Organized by me" />
             <lfx-ui-toggle label="Hide declined meeting series" />
             <div class="flex items-center justify-between pt-[4px]">
-              <lfx-ui-button variant="tertiary" size="small" icon="fa-light fa-rotate-left" (click)="close()">Reset filters</lfx-ui-button>
-              <lfx-ui-button size="small" (click)="close()">Done</lfx-ui-button>
+              <lfx-ui-button variant="tertiary" icon="fa-light fa-rotate-left" (click)="close()">Reset filters</lfx-ui-button>
+              <lfx-ui-button (click)="close()">Done</lfx-ui-button>
             </div>
           </div>
         </ng-template>
@@ -133,7 +133,7 @@ export const FlipsAtTheEdge: Story = {
   render: () => ({
     template: `
       <div class="flex h-[100vh] items-end justify-end p-[16px]">
-        <lfx-ui-button variant="secondary" icon="fa-light fa-circle-info" [popover]="info" [popoverWidth]="280">Details</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-circle-info" [popover]="info" [popoverWidth]="280">Details</lfx-ui-button>
         <ng-template #info>
           <p class="copy-14 text-ui-neutral-600">Opened below and to the start edge first; with no room there it opens above, then from the end edge.</p>
         </ng-template>
@@ -156,7 +156,7 @@ export const OnNativeButton: Story = {
         <ng-template #share let-close="close">
           <div class="flex items-center gap-[8px]">
             <span class="copy-14 text-ui-neutral-600">https://lfx.dev/projects/cncf</span>
-            <lfx-ui-button size="small" variant="secondary" icon="fa-light fa-copy" (click)="close()">Copy</lfx-ui-button>
+            <lfx-ui-button variant="secondary" icon="fa-light fa-copy" (click)="close()">Copy</lfx-ui-button>
           </div>
         </ng-template>
       </div>`,
@@ -168,11 +168,11 @@ export const OverlaysInside: Story = {
   render: () => ({
     template: `
       <div class="flex min-h-[420px] justify-center pt-[48px]">
-        <lfx-ui-button variant="secondary" icon="fa-light fa-ellipsis" [popover]="panel" popoverLabel="Project settings" [popoverWidth]="280">Settings</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-ellipsis" [popover]="panel" popoverLabel="Project settings" [popoverWidth]="280">Settings</lfx-ui-button>
         <ng-template #panel>
           <div class="flex gap-[8px]">
-            <lfx-ui-button variant="secondary" size="small" trailingIcon="fa-light fa-chevron-down" [menu]="actions">Actions</lfx-ui-button>
-            <lfx-ui-button variant="secondary" size="small" [lfxStoryOpensModal]="dialog">Rename</lfx-ui-button>
+            <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="actions">Actions</lfx-ui-button>
+            <lfx-ui-button variant="secondary" [lfxStoryOpensModal]="dialog">Rename</lfx-ui-button>
           </div>
         </ng-template>
         <ng-template #actions>
