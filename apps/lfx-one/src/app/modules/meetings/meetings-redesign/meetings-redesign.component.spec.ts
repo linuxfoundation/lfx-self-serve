@@ -8,6 +8,7 @@ import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-on
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -125,6 +126,7 @@ describe('MeetingsRedesignComponent', () => {
           },
         },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
+        { provide: MeetingRsvpService, useValue: {} },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate } },

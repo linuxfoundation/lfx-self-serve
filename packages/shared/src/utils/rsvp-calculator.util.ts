@@ -75,7 +75,7 @@ export function isSameOccurrenceId(a: string | null | undefined, b: string | nul
  * silently dropping and degrading the chip to the `invite_accepted` fallback
  * (LFXV2-2864).
  */
-function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_and_occurrence_id'>): string | null {
+export function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_and_occurrence_id'>): string | null {
   const direct = rsvp.occurrence_id;
   if (typeof direct === 'string' && direct.length > 0) return direct;
   const composite = rsvp.meeting_and_occurrence_id;
