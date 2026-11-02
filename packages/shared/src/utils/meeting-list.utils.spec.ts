@@ -640,6 +640,8 @@ describe('getMeetingHomeRowType', () => {
     [null, null],
   ])('%s → %j', (type, expected) => {
     expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
+  });
+});
 
 describe('getMeetingRsvpScopeLabel', () => {
   const seconds = String(NOW.getTime() / 1000);

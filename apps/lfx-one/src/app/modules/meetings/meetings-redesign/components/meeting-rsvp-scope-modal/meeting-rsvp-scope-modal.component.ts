@@ -4,10 +4,9 @@
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { formatDate } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS, MEETINGS_HOME_RSVP_CHOICES } from '@lfx-one/shared/constants';
-import { MeetingType } from '@lfx-one/shared/enums';
-import { MeetingHomeRowType, MeetingRsvpScopeDialogData, MeetingRsvpScopeOption, RsvpScope } from '@lfx-one/shared/interfaces';
-import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MEETINGS_HOME_RSVP_CHOICES } from '@lfx-one/shared/constants';
+import { MeetingHomeRowProject, MeetingHomeRowType, MeetingRsvpScopeDialogData, MeetingRsvpScopeOption, RsvpScope } from '@lfx-one/shared/interfaces';
+import { formatMeetingTimeRange, getMeetingHomeRowProject, getMeetingHomeRowType } from '@lfx-one/shared/utils';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
@@ -29,9 +28,9 @@ export class MeetingRsvpScopeModalComponent {
   private readonly data = inject<MeetingRsvpScopeDialogData>(DIALOG_DATA);
 
   protected readonly row = this.data.row;
-  protected readonly projectName = this.row.meeting.project_name?.trim() ?? '';
+  protected readonly project: MeetingHomeRowProject | null = getMeetingHomeRowProject(this.row.meeting);
   protected readonly when = `${formatDate(this.row.startTime, 'EEE, MMM d', 'en-US')} · ${formatMeetingTimeRange(this.row.startTime, this.row.durationMinutes)}`;
-  protected readonly meetingType: MeetingHomeRowType | null = this.initMeetingType();
+  protected readonly meetingType: MeetingHomeRowType | null = getMeetingHomeRowType(this.row.meeting);
   protected readonly responseLabel = MEETINGS_HOME_RSVP_CHOICES.find((choice) => choice.response === this.data.response)?.label ?? '';
   protected readonly canSelectOccurrence = !!this.row.occurrenceId;
   protected readonly options: MeetingRsvpScopeOption[] = this.initOptions();
@@ -44,13 +43,6 @@ export class MeetingRsvpScopeModalComponent {
   protected confirm(): void {
     const scope = this.options.find((option) => option.value === this.scope())?.value;
     if (scope) this.dialogRef.close(scope);
-  }
-
-  private initMeetingType(): MeetingHomeRowType | null {
-    const type = this.row.meeting.meeting_type?.trim();
-    if (!type || type === MeetingType.NONE) return null;
-    const config = MEETING_TYPE_CONFIGS[type.toLowerCase()];
-    return { label: config?.label ?? type, icon: (config ?? DEFAULT_MEETING_TYPE_CONFIG).icon };
   }
 
   private initOptions(): MeetingRsvpScopeOption[] {
