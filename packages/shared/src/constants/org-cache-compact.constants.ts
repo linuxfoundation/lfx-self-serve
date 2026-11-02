@@ -13,8 +13,6 @@ import type {
   OrgPeopleEventRow,
   OrgPeopleFoundationOptionRow,
   OrgPeopleTrainingRow,
-  TraineeCourseOptionRow,
-  TraineeFoundationOptionRow,
 } from '../interfaces';
 
 /**
@@ -141,6 +139,10 @@ export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
   'COURSE_NAME',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
+  'PROJECT_ID',
+  'PROJECT_NAME',
+  'COURSE_LEVEL',
+  'COURSE_FORMAT',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
 /** `CompactOrgTraineesRawCache.details` — what genuinely varies per (person, course-or-cert) row. */
@@ -150,12 +152,6 @@ export const ORG_TRAINEE_DETAIL_COLUMNS = [
   'COURSE_OR_CERT_ID',
   'ACTIVITY_TS',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
-
-/** `CompactOrgTraineesRawCache.foundationRows`. */
-export const ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof TraineeFoundationOptionRow)[];
-
-/** `CompactOrgTraineesRawCache.courseRows`. */
-export const ORG_TRAINEE_COURSE_OPTION_COLUMNS = ['COURSE_ID', 'COURSE_NAME'] as const satisfies readonly (keyof TraineeCourseOptionRow)[];
 
 /** `CompactOrgContributorRowsCache.projects` — the project-level columns lifted out of every aggregate row. */
 export const ORG_CONTRIBUTOR_PROJECT_COLUMNS = [

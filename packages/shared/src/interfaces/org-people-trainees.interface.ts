@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgDropdownOption } from './org-memberships.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Status badge on a per-(person, course) detail row — mirrors `STATUS` column on `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING`. */
@@ -21,6 +22,12 @@ export interface OrgTraineeDetailRow {
   courseName: string;
   foundationId: string | null;
   foundationName: string | null;
+  projectId: string | null;
+  projectName: string | null;
+  /** Beginner, Intermediate, Advanced, Executive; null for courses without a level. */
+  courseLevel: string | null;
+  /** Instruction type (E-Learning, Instructor Led, …). Set on Enrolled rows only: certificates carry no format upstream. */
+  courseFormat: string | null;
   /** ISO timestamp — union of `enrollment_ts` (Enrolled rows) and `issued_ts` (Certified rows); the BFF windows on it and it breaks Most Recent Course ties. */
   activityTs: string;
 }
@@ -35,18 +42,6 @@ export interface OrgTraineeRow {
   email: string | null;
 }
 
-/** Foundation dropdown option — only foundations the org has trainee rows for in the range. */
-export interface OrgTraineeFoundationOption {
-  foundationId: string;
-  foundationName: string;
-}
-
-/** Course dropdown option — keyed on `COURSE_ID`; label is course name. Only courses with rows in the range. */
-export interface OrgTraineeCourseOption {
-  courseId: string;
-  courseName: string;
-}
-
 /** Stats-card shape for the Trainees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
 export interface OrgTraineeStatsBaseline {
   trainees: number;
@@ -56,6 +51,19 @@ export interface OrgTraineeStatsBaseline {
   completionRate: number;
 }
 
+/**
+ * Trainees dropdowns, each built from the detail rows the response ships, so every option has rows in the range. Values:
+ * foundation and project ids; course name (several course ids can share a name, and one entry must cover them all);
+ * level and format as stored.
+ */
+export interface OrgTraineeFilterOptions {
+  foundations: OrgDropdownOption[];
+  projects: OrgDropdownOption[];
+  courses: OrgDropdownOption[];
+  levels: OrgDropdownOption[];
+  formats: OrgDropdownOption[];
+}
+
 /** GET response for `/api/orgs/:orgUid/lens/people/trainees?range=…` — only enrollments and certificates dated in the range. */
 export interface OrgTraineesResponse {
   accountId: string;
@@ -63,8 +71,7 @@ export interface OrgTraineesResponse {
   timeRange: OrgLensTimeRange;
   trainees: OrgTraineeRow[];
   details: OrgTraineeDetailRow[];
-  foundationOptions: OrgTraineeFoundationOption[];
-  courseOptions: OrgTraineeCourseOption[];
+  filterOptions: OrgTraineeFilterOptions;
   /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */
   asOf: string | null;
 }
@@ -122,18 +129,10 @@ export interface OrgPeopleTrainingRow {
   ACTIVITY_TS: Date | string | null;
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
-}
-
-/** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` row from the foundation-options query (trainees). */
-export interface TraineeFoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
-
-/** Distinct `(COURSE_ID, COURSE_NAME)` row from the course-options query. */
-export interface TraineeCourseOptionRow {
-  COURSE_ID: string;
-  COURSE_NAME: string;
+  PROJECT_ID: string | null;
+  PROJECT_NAME: string | null;
+  COURSE_LEVEL: string | null;
+  COURSE_FORMAT: string | null;
 }
 
 /** `MAX(DBT_RUN_AT)` of the account's `ORG_PEOPLE_TRAINING` rows. */

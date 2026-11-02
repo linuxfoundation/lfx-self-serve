@@ -53,7 +53,7 @@ const ACCOUNT = SYNTHETIC_ORG_ACCOUNT_ID;
 
 let service: OrgPeopleTraineesService;
 
-/** Two people on the same course plus a second course, so the course dictionary is actually exercised. */
+/** Two people on the same course (one also re-enrolled after the certificate) plus a row with no course, so the course dictionary is actually exercised. */
 function mockWarehouse(): void {
   execute.mockImplementation(async (query: string) => {
     if (query.includes('ORG_PEOPLE_ALL')) {
@@ -63,12 +63,6 @@ function mockWarehouse(): void {
           { PERSON_KEY: 'person-two', LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null },
         ],
       };
-    }
-    if (query.includes('SELECT DISTINCT FOUNDATION_ID')) {
-      return { rows: [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }] };
-    }
-    if (query.includes('SELECT DISTINCT COURSE_ID')) {
-      return { rows: [{ COURSE_ID: 'course-one', COURSE_NAME: 'Project Fundamentals' }] };
     }
     if (query.includes('MAX(DBT_RUN_AT)')) {
       return { rows: [{ AS_OF: '2026-10-30 04:15:00' }] };
@@ -84,6 +78,10 @@ function mockWarehouse(): void {
           ACTIVITY_TS: '2026-04-12 10:30:00',
           FOUNDATION_ID: 'foundation-one',
           FOUNDATION_NAME: 'Foundation One',
+          PROJECT_ID: 'project-one',
+          PROJECT_NAME: 'Project One',
+          COURSE_LEVEL: 'Beginner',
+          COURSE_FORMAT: null,
         },
         {
           PERSON_KEY: 'person-two',
@@ -94,6 +92,24 @@ function mockWarehouse(): void {
           ACTIVITY_TS: '2026-03-01 08:00:00',
           FOUNDATION_ID: 'foundation-one',
           FOUNDATION_NAME: 'Foundation One',
+          PROJECT_ID: 'project-one',
+          PROJECT_NAME: 'Project One',
+          COURSE_LEVEL: 'Beginner',
+          COURSE_FORMAT: 'E-Learning',
+        },
+        {
+          PERSON_KEY: 'person-one',
+          STATUS: 'Enrolled',
+          COURSE_OR_CERT_ID: 'enroll-one-again',
+          COURSE_ID: 'course-one',
+          COURSE_NAME: 'Project Fundamentals',
+          ACTIVITY_TS: '2026-05-01 08:00:00',
+          FOUNDATION_ID: 'foundation-one',
+          FOUNDATION_NAME: 'Foundation One',
+          PROJECT_ID: 'project-one',
+          PROJECT_NAME: 'Project One',
+          COURSE_LEVEL: 'Beginner',
+          COURSE_FORMAT: 'E-Learning',
         },
         {
           PERSON_KEY: 'person-two',
@@ -104,6 +120,10 @@ function mockWarehouse(): void {
           ACTIVITY_TS: '2026-02-01 08:00:00',
           FOUNDATION_ID: null,
           FOUNDATION_NAME: null,
+          PROJECT_ID: null,
+          PROJECT_NAME: null,
+          COURSE_LEVEL: null,
+          COURSE_FORMAT: 'Instructor Led',
         },
       ],
     };
@@ -159,14 +179,19 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       courseName: 'Project Fundamentals',
       foundationId: 'foundation-one',
       foundationName: 'Foundation One',
+      projectId: 'project-one',
+      projectName: 'Project One',
+      courseLevel: 'Beginner',
+      courseFormat: null,
       activityTs: '2026-04-12T10:30:00.000Z',
     });
-    expect(details.map((row) => row.courseId)).toEqual(['course-one', 'course-one', 'enroll-two']);
-    // Two of the three detail rows share a course, so the stored dictionary has to be shorter than
+    expect(details[3]).toMatchObject({ courseId: 'enroll-two', projectId: null, courseLevel: null, courseFormat: 'Instructor Led' });
+    expect(details.map((row) => row.courseId)).toEqual(['course-one', 'course-one', 'course-one', 'enroll-two']);
+    // Two of the four detail rows share every course-level column, so the stored dictionary has to be shorter than
     // the detail table — a `keyOf` regression that stopped collapsing them would not be.
     const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgTraineesRawCache;
-    expect(stored.courses.r.length).toBe(2);
-    expect(stored.details.r.length).toBe(3);
+    expect(stored.courses.r.length).toBe(3);
+    expect(stored.details.r.length).toBe(4);
   });
 
   it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
@@ -251,9 +276,6 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       if (query.includes('ORG_PEOPLE_ALL')) {
         return { rows: [{ PERSON_KEY: null, LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
       }
-      if (query.includes('SELECT DISTINCT')) {
-        return { rows: [] };
-      }
       return {
         rows: [
           {
@@ -265,6 +287,10 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
             ACTIVITY_TS: '2026-02-01 08:00:00',
             FOUNDATION_ID: null,
             FOUNDATION_NAME: null,
+            PROJECT_ID: null,
+            PROJECT_NAME: null,
+            COURSE_LEVEL: null,
+            COURSE_FORMAT: null,
           },
         ],
       };
@@ -303,7 +329,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
 });
 
 // ORG_PEOPLE_TRAINING holds enrollments of any age; the Trainees tab reads only the selected range's rows, so the stat
-// cards, table and both dropdowns describe that range.
+// cards, table and every dropdown describe that range.
 describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   const queries = (): string[] => execute.mock.calls.map(([sql]) => sql as string);
   const rangedQueries = (): string[] => queries().filter((sql) => !sql.includes('MAX(DBT_RUN_AT)'));
@@ -317,7 +343,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     const response = await service.getTrainees(ACCOUNT, range);
 
     expect(response.timeRange).toBe(range);
-    expect(rangedQueries()).toHaveLength(4);
+    expect(rangedQueries()).toHaveLength(2);
     for (const sql of rangedQueries()) {
       expect(sql).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
     }
@@ -326,7 +352,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   it('reads all time without a date predicate', async () => {
     await service.getTrainees(ACCOUNT, 'all');
 
-    expect(execute).toHaveBeenCalledTimes(5);
+    expect(execute).toHaveBeenCalledTimes(3);
     for (const sql of queries()) {
       expect(sql).not.toContain('ACTIVITY_TS >=');
     }
@@ -379,8 +405,113 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '365d');
     await service.getTrainees(ACCOUNT, '30d');
 
-    expect(execute).toHaveBeenCalledTimes(10);
+    expect(execute).toHaveBeenCalledTimes(6);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:30d')!)).toBe(true);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!)).toBe(true);
+  });
+});
+
+describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => {
+  /** A training row as the warehouse returns it; the fake honours the range predicate the way Snowflake would. */
+  const trainingRow = (personKey: string, courseOrCertId: string, overrides: Record<string, string | null>, activityTs: string) => ({
+    PERSON_KEY: personKey,
+    STATUS: 'Enrolled',
+    COURSE_OR_CERT_ID: courseOrCertId,
+    COURSE_ID: courseOrCertId,
+    COURSE_NAME: courseOrCertId,
+    ACTIVITY_TS: activityTs,
+    FOUNDATION_ID: 'foundation-one',
+    FOUNDATION_NAME: 'Foundation One',
+    PROJECT_ID: 'project-one',
+    PROJECT_NAME: 'Project One',
+    COURSE_LEVEL: null,
+    COURSE_FORMAT: null,
+    ...overrides,
+  });
+  const recent = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
+  const old = '2020-01-15 00:00:00';
+  const rows = [
+    // Two course ids under one name (course versions): one dropdown entry.
+    trainingRow('person-one', 'course-v1', { COURSE_NAME: 'Cloud Basics', COURSE_LEVEL: 'Beginner', COURSE_FORMAT: 'E-Learning' }, recent),
+    trainingRow('person-two', 'course-v2', { COURSE_NAME: 'Cloud Basics', COURSE_LEVEL: 'Beginner', COURSE_FORMAT: 'Instructor Led' }, old),
+    // A certificate: level, no format.
+    trainingRow('person-two', 'cert-one', { STATUS: 'Certified', COURSE_ID: 'course-v2', COURSE_NAME: 'Cloud Basics', COURSE_LEVEL: 'Advanced' }, old),
+    trainingRow(
+      'person-three',
+      'course-x',
+      {
+        PROJECT_ID: 'project-two',
+        PROJECT_NAME: 'Another Project',
+        FOUNDATION_ID: 'foundation-two',
+        FOUNDATION_NAME: 'Foundation Two',
+        COURSE_FORMAT: 'MicroCourse',
+      },
+      old
+    ),
+  ];
+
+  beforeEach(() => {
+    execute.mockImplementation(async (query: string) => {
+      if (query.includes('ORG_PEOPLE_ALL') || query.includes('MAX(DBT_RUN_AT)')) return { rows: [] };
+      return { rows: /ACTIVITY_TS >= DATEADD\(day, -30,/.test(query) ? rows.filter((row) => row.ACTIVITY_TS === recent) : rows };
+    });
+  });
+
+  it('reads the project, level and format of every row', async () => {
+    await service.getTrainees(ACCOUNT, 'all');
+
+    const detailRead = execute.mock.calls.map(([sql]) => sql as string).find((sql) => sql.includes('COURSE_OR_CERT_ID'))!;
+    for (const column of ['PROJECT_ID', 'PROJECT_NAME', 'COURSE_LEVEL', 'COURSE_FORMAT']) {
+      expect(detailRead).toContain(column);
+    }
+  });
+
+  it('builds every dropdown from the rows it ships: one course entry per name, formats from enrollments, no empty values', async () => {
+    const { filterOptions } = await service.getTrainees(ACCOUNT, 'all');
+
+    expect(filterOptions).toEqual({
+      foundations: [
+        { label: 'Foundation One', value: 'foundation-one' },
+        { label: 'Foundation Two', value: 'foundation-two' },
+      ],
+      projects: [
+        { label: 'Another Project', value: 'project-two' },
+        { label: 'Project One', value: 'project-one' },
+      ],
+      courses: [
+        { label: 'Cloud Basics', value: 'Cloud Basics' },
+        { label: 'course-x', value: 'course-x' },
+      ],
+      levels: [
+        { label: 'Advanced', value: 'Advanced' },
+        { label: 'Beginner', value: 'Beginner' },
+      ],
+      formats: [
+        { label: 'E-Learning', value: 'E-Learning' },
+        { label: 'Instructor Led', value: 'Instructor Led' },
+        { label: 'MicroCourse', value: 'MicroCourse' },
+      ],
+    });
+  });
+
+  it('offers only what the range holds', async () => {
+    const { filterOptions, details } = await service.getTrainees(ACCOUNT, '30d');
+
+    expect(details.map((row) => row.courseOrCertId)).toEqual(['course-v1']);
+    expect(filterOptions.projects.map((option) => option.value)).toEqual(['project-one']);
+    expect(filterOptions.levels.map((option) => option.value)).toEqual(['Beginner']);
+    expect(filterOptions.formats.map((option) => option.value)).toEqual(['E-Learning']);
+    expect(filterOptions.courses.map((option) => option.value)).toEqual(['Cloud Basics']);
+  });
+
+  it('lets each pick match exactly the rows that carry it, so the per-value counts add up to the rows with a value', async () => {
+    const { details, filterOptions } = await service.getTrainees(ACCOUNT, 'all');
+
+    const count = (options: { value: string }[], field: 'courseLevel' | 'courseFormat' | 'projectId' | 'courseName') =>
+      options.reduce((sum, option) => sum + details.filter((row) => row[field] === option.value).length, 0);
+    expect(count(filterOptions.levels, 'courseLevel')).toBe(details.filter((row) => row.courseLevel).length);
+    expect(count(filterOptions.formats, 'courseFormat')).toBe(details.filter((row) => row.status === 'Enrolled').length);
+    expect(count(filterOptions.projects, 'projectId')).toBe(details.length);
+    expect(count(filterOptions.courses, 'courseName')).toBe(details.length);
   });
 });
