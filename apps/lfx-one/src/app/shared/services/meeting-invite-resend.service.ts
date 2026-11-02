@@ -16,7 +16,8 @@ import { defer, EMPTY, finalize, Observable, take } from 'rxjs';
  * so the host passes it in. Upstream enforces the organizer relation; hosts gate the button on the
  * meeting's `organizer` flag. Registrants resend to themselves from a meeting card or the join page
  * (`resendOwn`): the server resolves which registrant that is, and upstream verifies it is theirs.
- * In-flight tracking and success/error toasts live here so the surfaces stay consistent.
+ * In-flight tracking and success/error toasts live here so the surfaces stay consistent; `resendOwn$` leaves
+ * feedback to surfaces that show their own.
  */
 @Injectable({ providedIn: 'root' })
 export class MeetingInviteResendService {

@@ -19,7 +19,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
-import { Meeting, MeetingRsvp, MeetingRsvpSubmitError, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
+import { Meeting, MeetingRsvp, MeetingRsvpSubmitError, RsvpResponse, RsvpScope, User } from '@lfx-one/shared/interfaces';
 import {
   formatMeetingOccurrenceLabel,
   isMeetingInviteResponsesEnabled,
