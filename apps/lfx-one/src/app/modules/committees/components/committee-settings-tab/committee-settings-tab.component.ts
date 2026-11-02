@@ -551,6 +551,9 @@ export class CommitteeSettingsTabComponent {
       subject_tag: ml.subject_tag,
       writers: ml.writers,
       auditors: ml.auditors,
+      // Preserve the existing sync direction (#4024) — detaching/reattaching a committee is a
+      // full-resource PUT, so omitting this would silently reset it to manual.
+      sync_mode: committeeUid ? ml.sync_mode : undefined,
     };
   }
 
