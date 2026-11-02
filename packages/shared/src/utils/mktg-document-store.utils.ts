@@ -8,8 +8,16 @@
 // every sha with node:crypto.
 
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
-import type { MktgDocumentRunProgress, MktgStartedRunRecord, MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_QUESTIONS_ID_REGEX } from '../constants/mktg-run.constants';
+import { MKTG_ONE_OFF_STOPPED_MESSAGE } from '../constants/mktg-one-off.constants';
+import { MEMBER_360_FAILURE_MESSAGES } from '../constants/member-360.constants';
+import type { Member360FailureReason } from '../interfaces/member-360.interface';
+import type {
+  MktgDocumentRunProgress,
+  MktgStartedRunRecord,
+  MktgStoredDocumentRunState,
+  MktgRunPendingQuestions,
+} from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_ID_REGEX,
@@ -18,6 +26,7 @@ import {
   MKTG_LEGACY_REVISION_ID_PREFIX,
   MKTG_STARTED_RUN_ATTEMPT_ID_REGEX,
   MKTG_REVISION_GENERATED_LABEL,
+  MKTG_REVISION_ID_REGEX,
   MKTG_REVISION_KEY_SUFFIX,
   MKTG_REVISION_NAME_UNAVAILABLE_LABEL,
   MKTG_REVISION_SEQUENCE_DIGITS,
@@ -30,7 +39,7 @@ import type {
   MktgRevisionSummary,
   ParsedMktgRevisionKey,
 } from '../interfaces/mktg-document-store.interface';
-import type { MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
+import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 
 /** Normalize the artifact receipt's snake-case location for camel-case UI/progress models. */
 export function mktgDocumentLocationOfReceipt(receipt?: MktgRunPersistReceipt): MktgDocumentLocation | undefined {
@@ -155,25 +164,114 @@ export function describeMktgRevision(
 }
 
 /** Pure run membership, validation and public projection shared by the durable reader. */
-export function findMktgRunIntake(key: string) {
+export function findMktgRunIntake(key: string, includeOneOff = false) {
   const type = findMktgDocumentType(key);
   const id = type?.catalogAgentId;
-  return type?.kind === 'living' && id && MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active') ? MKTG_AGENT_INTAKES[id] : undefined;
+  const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
+  return id &&
+    (type?.kind === 'living' || (includeOneOff && intake?.tracksDocumentRun)) &&
+    MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active')
+    ? intake
+    : undefined;
 }
 
-/** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
-export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText): MktgDocumentRunProgress | null {
-  if (run.state === 'completed' || run.state === 'superseded') {
+/** Absent legacy turns are allowed; present turns contain only the existing typed question payload. */
+export function isMktgRunPendingQuestions(value: unknown): value is MktgRunPendingQuestions {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const turn = value as Record<string, unknown>;
+  return (
+    typeof turn['questionsId'] === 'string' &&
+    MKTG_RUN_QUESTIONS_ID_REGEX.test(turn['questionsId']) &&
+    typeof turn['askedAt'] === 'string' &&
+    Number.isFinite(Date.parse(turn['askedAt'])) &&
+    Array.isArray(turn['questions']) &&
+    turn['questions'].every((value: unknown) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+      const question = value as Record<string, unknown>;
+      return (
+        ['key', 'label', 'question', 'why', 'suggestedAnswer'].every((key) => typeof question[key] === 'string') &&
+        Array.isArray(question['basis']) &&
+        question['basis'].every((basis: unknown) => typeof basis === 'string')
+      );
+    })
+  );
+}
+
+/** Build a claim only for the exact unclaimed turn; the store commits it with the observed ETag. */
+export function mktgRunClaimAnswers(run: MktgStartedRunRecord, questionsId: string, answeredBy: string, answeredAt: string): MktgStartedRunRecord | null {
+  if (
+    run.state !== 'questions' ||
+    run.pendingQuestions?.questionsId !== questionsId ||
+    run.answeredQuestionsId === questionsId ||
+    !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId) ||
+    !answeredBy.trim() ||
+    !Number.isFinite(Date.parse(answeredAt))
+  )
+    return null;
+  return {
+    ...run,
+    state: 'writing',
+    pendingQuestions: undefined,
+    answeredQuestionsId: questionsId,
+    answeredBy,
+    answeredAt,
+    retryAt: mktgRunRenewAt(run, Date.parse(answeredAt)),
+    persistRetries: 0,
+  };
+}
+
+/** Explicit public projection: no session capabilities, subjects or private coverage. Closed markers opt in only for selected details. */
+export function mktgRunProgress(
+  run: MktgStartedRunRecord,
+  fullReply = run.failureText,
+  activity?: MktgRunActivity[],
+  readerSubject?: string,
+  readerIsWriter = false,
+  includeClosed = false
+): MktgDocumentRunProgress | null {
+  const closed = run.state === 'superseded' || run.state === 'discarded';
+  const completed = run.state === 'completed';
+  const producedRevisionId =
+    completed && run.result?.agentKey === run.agentKey && run.result.documentId === run.documentId && MKTG_REVISION_ID_REGEX.test(run.result.revisionId)
+      ? run.result.revisionId
+      : undefined;
+  if ((completed && (!includeClosed || !producedRevisionId)) || (closed && !includeClosed)) {
     return null;
   }
+  // Agent prose can contain private source data; unknown creators fail closed.
+  const genericFailure = run.agentKey === 'member-360' ? MEMBER_360_FAILURE_MESSAGES[run.failureReason ?? 'agent_stopped'] : MKTG_ONE_OFF_STOPPED_MESSAGE;
+  const failureText = !run.creatorSubject || readerSubject !== run.creatorSubject ? genericFailure : fullReply;
+  const state = run.state === 'questions' && !!run.answeredQuestionsId && run.pendingQuestions?.questionsId === run.answeredQuestionsId ? 'writing' : run.state;
   const progress: MktgDocumentRunProgress = {
     runId: run.runId,
     project: run.project,
     agentKey: run.agentKey,
     documentId: run.documentId,
     startedAt: run.startedAt,
-    state: run.state,
-    ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
+    state,
+    ...(closed && run.closedAt && Number.isFinite(Date.parse(run.closedAt)) && { closedAt: run.closedAt }),
+    ...(producedRevisionId && { producedRevisionId }),
+    ...(!closed && !completed && activity && { activity }),
+    ...(readerIsWriter &&
+      state === 'questions' &&
+      isMktgRunPendingQuestions(run.pendingQuestions) &&
+      MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living') && {
+        pendingQuestions: {
+          questionsId: run.pendingQuestions.questionsId,
+          askedAt: run.pendingQuestions.askedAt,
+          questions: run.pendingQuestions.questions.map(({ key, label, question, why, suggestedAnswer, basis }) => ({
+            key,
+            label,
+            question,
+            why,
+            suggestedAnswer,
+            basis,
+          })),
+        },
+      }),
+    ...(run.state === 'failed' && failureText !== undefined && { failureText }),
+    ...(run.state === 'failed' && run.failureReason && { failureReason: run.failureReason }),
+    ...(run.state === 'failed' && (run.persistRetries ?? 0) >= MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS && { persistenceFailed: true }),
   };
   return progress;
 }
@@ -187,7 +285,7 @@ export function mktgRunRenewAt(run: MktgStartedRunRecord, now: number): string {
 }
 
 export function isMktgRunClosed(state: MktgStoredDocumentRunState): boolean {
-  return state === 'completed' || state === 'superseded';
+  return state === 'completed' || state === 'superseded' || state === 'discarded';
 }
 
 export function isMktgRunTerminal(state: MktgStoredDocumentRunState): boolean {
@@ -196,6 +294,11 @@ export function isMktgRunTerminal(state: MktgStoredDocumentRunState): boolean {
 
 export function isMktgRunAttemptId(value: string): boolean {
   return typeof value === 'string' && MKTG_STARTED_RUN_ATTEMPT_ID_REGEX.test(value);
+}
+
+/** Host-classified record metadata only, never arbitrary strings or agent prose. */
+export function isMktgRunFailureReason(value: unknown): value is Member360FailureReason {
+  return typeof value === 'string' && Object.hasOwn(MEMBER_360_FAILURE_MESSAGES, value);
 }
 
 export function mktgRunIdFromKey(key: string): string {

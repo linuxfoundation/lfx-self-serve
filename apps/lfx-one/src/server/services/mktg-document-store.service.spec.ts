@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
+import { aeoGeoEnvelopeFixture } from '../../../../../packages/shared/src/utils/aeo-geo.fixture';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
@@ -71,6 +73,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/linkedin-post.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
@@ -278,7 +281,28 @@ describe('MktgDocumentStoreService', () => {
     expect(view?.current?.revisionId).toBe(saved.id);
     expect(view?.revision.approval).toBeNull();
     expect(view?.member360).toEqual(mode === 'valid' ? member360 : undefined);
-    expect(view?.sidecar?.['member360']).toEqual(mode === 'valid' ? member360 : undefined);
+    expect(view?.sidecar).not.toHaveProperty('member360');
+  });
+
+  it('keeps research provenance in storage, never in the revision payload', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'member-360');
+    if (!type) throw new Error('Missing fixture type');
+    const member360 = member360Fixture();
+    const research = {
+      searches: ['synthetic-contact@example.test'],
+      fetches: [{ url: 'https://profile.example/synthetic-contact', ok: true, status: 200, final_url: 'https://profile.example/synthetic-contact' }],
+      lfx_reads: [],
+      questions: [],
+      answers: [],
+    };
+    const generated = { ...envelope('# Report'), member360: { ...member360, inputs: { ...member360.inputs, research } } };
+    const saved = await service.recordGeneration(req, type, PROJECT, generated, 'private-research');
+    const view = await service.getRevision(req, PROJECT, type, saved.record.documentId, saved.id);
+    expect(view?.member360?.inputs).not.toHaveProperty('research');
+    expect(view?.member360?.tabs).toEqual(member360.tabs);
+    expect(view?.sidecar).not.toHaveProperty('member360');
+    expect(JSON.stringify(view)).not.toContain('synthetic-contact');
+    expect(storedRecord(revisionKeys()[0]).bundle.sidecar?.['member360']).toMatchObject({ inputs: { research } });
   });
 
   it.each([false, true])('fails strict Member 360 listing on an unreadable newest run (older readable=%s)', async (older) => {
@@ -1832,6 +1856,38 @@ describe('MktgDocumentStoreService', () => {
   });
 
   describe('one-off runs', () => {
+    it.each(['project', 'domain'] as const)('records concurrent %s audit polls once and reopens the validated typed sidecar', async (kind) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
+      if (!type) throw new Error('Audit document type missing.');
+      const report = aeoGeoEnvelopeFixture(kind);
+      await Promise.all([1, 2, 3].map(() => service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], report, PROJECT, 'audit-a')));
+      const legacy = aeoGeoEnvelopeFixture(kind);
+      delete legacy.report;
+      legacy.agent.agent_version = '1.0.0';
+      await service.persistGeneration(req, MKTG_ARTIFACT_SPECS['aeo-geo'], legacy, PROJECT, 'audit-b');
+      const group = (await service.listDocuments(req, PROJECT)).groups.find((entry) => entry.type.agentKey === 'aeo-geo');
+      if (!group) throw new Error('Audit group missing.');
+      expect(group.documents).toHaveLength(2);
+      expect(group.documents.map((document) => document.revisionCount)).toEqual([1, 1]);
+      for (const [sessionId, expected] of [
+        ['audit-a', report],
+        ['audit-b', legacy],
+      ] as const) {
+        const document = group.documents.find((entry) => entry.documentId === service.runDocumentId(sessionId));
+        if (!document) throw new Error('Audit document missing.');
+        const reopened = await service.getRevision(req, PROJECT, type, document.documentId, document.latestRevisionId);
+        expect(reopened).toMatchObject({
+          markdown: expected.document_markdown,
+          aeoGeoReport: {
+            verdict: expected.verdict,
+            scores: expected.scores,
+            report_filename: expected.report_filename,
+            auditCounts: { keyPagesNamed: expected.inputs.key_pages_count ?? 0, pagesAudited: expected.inputs.pages_audited.length },
+          },
+        });
+        expect(reopened?.aeoGeoReport?.report).toEqual(expected.report);
+      }
+    });
     it('publishes exactly one revision when result polls overlap', async () => {
       const generated = envelope('# One run');
       const [first, second] = await Promise.all([

@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import {
   MentorshipUpstreamAdministeredProgram,
   MentorshipUpstreamMemberManagementRow,
@@ -184,6 +186,13 @@ describe('mapMentorshipAdminMentorRow', () => {
 
   it.each([undefined, 'active', 'mystery', 'constructor'])('reads the unknown status %s as pending and flags it', (status) => {
     expect(mapMentorshipAdminMentorRow(memberRow({ status }))).toMatchObject({ mentor: { status: 'pending' }, unknownStatus: true });
+  });
+
+  it("keeps the mentor's user id only when it is a UUID", () => {
+    expect(mapMentorshipAdminMentorRow(memberRow({ user_id: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890' })).mentor.userId).toBe(
+      '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'
+    );
+    expect(mapMentorshipAdminMentorRow(memberRow()).mentor).not.toHaveProperty('userId');
   });
 
   it('falls back from name to username to email to empty, and drops an absent avatar', () => {

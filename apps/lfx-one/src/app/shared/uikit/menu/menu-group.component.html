@@ -1,0 +1,8 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (label()) {
+  <!-- Exact px, not rem; 14px root. -->
+  <span [id]="labelId" class="label-12 px-[10px] pb-[4px] pt-[8px] text-ui-neutral-600" data-testid="ui-menu-group-label">{{ label() }}</span>
+}
+<ng-content />

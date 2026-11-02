@@ -113,7 +113,7 @@ sharding. This CI partitioning leaves the local `yarn test` wrapper unchanged.
 App specs go through the **`@angular/build:unit-test`** builder rather than a hand-rolled Vite +
 Angular plugin setup. The builder is released by the Angular team alongside the framework and
 carries the framework's compatibility contract — not a promise that the two resolve to the same
-version (`@angular/build` is 20.3.13 here against a 20.3.15 framework; they are independent
+version (`@angular/build` is 20.3.42 here against a 20.3.34 framework; they are independent
 packages) — and it reuses the application build (`buildTarget: lfx-one:build:development`) —
 which is what makes `templateUrl`, `styleUrls`, and the `@lfx-one/shared/*` path aliases resolve
 in specs exactly as they do in the app. Nothing about the module graph is re-described in a
@@ -123,24 +123,27 @@ second config file, so nothing about it can drift.
 > That is expected. The API surface used here is small — `buildTarget`, `tsConfig`, `runner`,
 > `providersFile`, `include` — and all of it is the documented shape.
 
-### Why `apps/lfx-one` is on Vitest 3
+### Why `apps/lfx-one` runs Vitest 4 under Angular 20
 
-The builder does not bundle Vitest — it imports Vitest's Node API from the workspace — so the
+The builder does not bundle Vitest. It imports Vitest's Node API from the workspace, so the
 version it runs against is a real compatibility constraint, not a formality.
-`@angular/build@20.3.13` declares `"vitest": "^3.1.1"`. Support for Vitest 4 first appears in
-`@angular/build@21.x`, which is an Angular major upgrade and not something a test harness gets to
-drag in. So `apps/lfx-one` pins **`vitest: ^3.2.4`**, satisfying the range the builder actually
-declares.
+`@angular/build@20.x` declares `"vitest": "^3.1.1"`, and support for Vitest 4 first appears in
+`@angular/build@21.x`.
 
-The peer dependency is marked optional, so nothing fails the install if you ignore it — which is
-exactly why this is written down. A green sample run on Vitest 4 is not evidence of
-compatibility; it is evidence that the parts those two specs touch happen to line up.
+Both workspaces are on **`vitest: ^4.1.12`** anyway. Vitest 3 depends on `tinypool` 1.x, which
+has no patched release for its critical advisories, so staying on Vitest 3 would have kept those
+Dependabot alerts open until the Angular 21 upgrade. The move was validated by running the whole
+app suite on Vitest 4.1.12 (about 13,300 specs), not a sample.
 
-`packages/shared` stays on Vitest 4 deliberately. It runs its own suite with plain `vitest run`,
-has no Angular builder in the path, and therefore no reason to be held back by one. The two
-workspaces resolve independently. **When this app moves to Angular 21, raise this pin back to
-`^4` in the same change** — leaving it behind would pin the whole app to a runner two majors
-old for no remaining reason.
+Expect yarn to print a peer warning that `vitest` 4.1.12 doesn't satisfy what `@angular/build`
+requests. That warning is known and intended, so don't silence it with `packageExtensions` or
+`peerDependencyRules`; it stays visible until the upgrade removes it. The remaining risk is a
+later 20.x patch of `@angular/build` that relies on a Vitest 3 internal, such as the runner or
+pool API. **If a `@angular/build` bump breaks `yarn test:app` with an unfamiliar runner error,
+check this mismatch first.**
+
+The Angular 21 upgrade, where the builder's peer range covers Vitest 4 and this section goes
+away, is tracked in linuxfoundation/lfx-self-serve-ops#1199.
 
 `browsers` is deliberately **omitted**, which selects jsdom on Node. That keeps unit tests free
 of a browser download and a browser's startup cost; real-browser coverage is the E2E suite's job

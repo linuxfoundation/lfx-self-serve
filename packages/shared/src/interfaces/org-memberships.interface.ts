@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgLensFoundationProject } from './org-lens.interface';
+
 export interface OrgMembershipsSummary {
   activeMemberships: number;
   renewingWithin90Days: number;
@@ -28,6 +30,23 @@ export interface OrgActiveMembershipsResponse {
   accountId: string;
   summary: OrgMembershipsSummary;
   memberships: OrgActiveMembership[];
+}
+
+/**
+ * One project the org is involved in for a given foundation, as listed by the
+ * Org Projects side panel on the memberships table.
+ *
+ * Shares the shape of the foundations-and-projects detail rows because both read the
+ * same upstream model (ORG_LENS_FOUNDATION_PROJECTS_DETAIL) — the panel's row count is
+ * the same COUNT(DISTINCT project_id) that produces `OrgActiveMembership.orgProjects`.
+ */
+export type OrgMembershipProject = OrgLensFoundationProject;
+
+/** Response envelope for GET /api/orgs/:orgUid/lens/memberships/:foundationId/projects. */
+export interface OrgMembershipProjectsResponse {
+  accountId: string;
+  foundationId: string;
+  projects: OrgMembershipProject[];
 }
 
 export interface OrgExpiredMembership {

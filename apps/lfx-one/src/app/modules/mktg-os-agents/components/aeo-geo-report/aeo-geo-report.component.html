@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<article class="flex min-w-0 flex-col gap-6 break-words" data-testid="mktg-aeo-typed-report">
+  @if (showHeadline()) {
+    <h2 class="text-2xl font-bold text-gray-900">{{ report().headline }}</h2>
+  }
+  <section aria-label="Scorecard" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-scorecard">
+    <h3 class="text-xl font-semibold">Scorecard</h3>
+    @for (row of report().scorecard; track row.key) {
+      <div class="grid grid-cols-[1fr_auto] gap-2 border-b border-gray-200 pb-3" [attr.data-testid]="'mktg-aeo-typed-score-' + row.key">
+        <h4 class="font-semibold">{{ row.label }}</h4>
+        <span class="font-mono">{{ row.score }}/10</span>
+        <p class="col-span-2 text-gray-700">{{ row.summary }}</p>
+      </div>
+    }
+  </section>
+  <section aria-label="Findings" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-findings">
+    <h3 class="text-xl font-semibold">Findings</h3>
+    @for (finding of findings(); track $index; let findingIndex = $index) {
+      <div class="flex flex-col gap-2">
+        <h4 class="font-semibold">{{ finding.title }}</h4>
+        <p class="whitespace-pre-line">{{ finding.detail }}</p>
+        <ul class="list-disc pl-5">
+          @for (evidence of finding.evidence; track $index) {
+            <li>
+              @if (evidence.href) {
+                <a
+                  [href]="evidence.href"
+                  [attr.data-testid]="'mktg-aeo-typed-evidence-link-' + findingIndex + '-' + $index"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="break-all text-blue-600 underline"
+                  >{{ evidence.text }}</a
+                >
+              } @else {
+                {{ evidence.text }}
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  </section>
+  <section aria-label="Recommendations" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-recommendations">
+    <h3 class="text-xl font-semibold">Recommendations (priority order)</h3>
+    @for (item of report().recommendations; track item.priority) {
+      <div>
+        <h4 class="font-semibold">{{ item.priority }}. {{ item.title }}</h4>
+        <p class="whitespace-pre-line">{{ item.detail }}</p>
+      </div>
+    }
+  </section>
+  <section aria-label="Caveats" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-caveats">
+    <h3 class="text-xl font-semibold">Caveats &amp; unverified items</h3>
+    <ul class="list-disc pl-5">
+      @for (caveat of report().caveats; track $index) {
+        <li>{{ caveat }}</li>
+      }
+    </ul>
+  </section>
+  <section aria-label="Sources" class="flex flex-col gap-3" data-testid="mktg-aeo-typed-sources">
+    <h3 class="text-xl font-semibold">Sources</h3>
+    <ul class="list-disc pl-5">
+      @for (source of sources(); track $index) {
+        <li>
+          @if (source.href) {
+            <a
+              [href]="source.href"
+              [attr.data-testid]="'mktg-aeo-typed-source-link-' + $index"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="break-all text-blue-600 underline"
+              >{{ source.url }}</a
+            >
+          } @else {
+            {{ source.url }}
+          }
+          <span class="text-sm text-gray-500">({{ source.role }})</span>
+        </li>
+      }
+    </ul>
+  </section>
+</article>

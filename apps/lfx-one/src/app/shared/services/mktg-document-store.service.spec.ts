@@ -41,6 +41,22 @@ describe('MktgDocumentStoreService', () => {
     request.flush({ project: 'proj-1', groups: [] });
   });
 
+  it('opts into a viewer-owned roster without transporting a creator identity', () => {
+    service.listDocuments('proj-1', true, true).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
+    expect(request.request.params.keys().sort()).toEqual(['ownRuns', 'poll', 'project']);
+    expect(request.request.params.get('ownRuns')).toBe('1');
+    request.flush({ project: 'proj-1', groups: [], runs: [] });
+  });
+  it('requests creator-scoped run discovery with the existing safe DTO, without a caller subject', () => {
+    service.listDocuments('proj-1', true, true).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
+    expect(request.request.params.get('ownRuns')).toBe('1');
+    expect(request.request.params.get('poll')).toBe('1');
+    expect(request.request.params.keys().sort()).toEqual(['ownRuns', 'poll', 'project']);
+    request.flush({ project: 'proj-1', groups: [], runs: [] });
+  });
+
   it('reads one document and one revision under the document’s path', () => {
     service.getDocument('proj-1', 'brand-kit', 'living').subscribe();
     service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID).subscribe();
@@ -51,6 +67,16 @@ describe('MktgDocumentStoreService', () => {
     const revision = http.expectOne((candidate) => candidate.url === `/api/mktg-agents/documents/brand-kit/living/revisions/${REVISION_ID}`);
     expect(revision.request.params.get('project')).toBe('proj-1');
     revision.flush({});
+  });
+
+  it('carries a selected run on detail timer reads without requesting a failure refresh', () => {
+    const runId = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', true, undefined, false, runId).subscribe();
+    const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents/brand-kit/living');
+    expect(request.request.params.get('run')).toBe(runId);
+    expect(request.request.params.get('poll')).toBe('1');
+    expect(request.request.params.has('refreshRun')).toBe(false);
+    request.flush({});
   });
 
   function approvedRevision(): MktgRevisionResponse {
@@ -191,6 +217,16 @@ describe('MktgDocumentStoreService', () => {
     refresh.flush({});
   });
 
+  it.each([false, true])('forwards the selected opaque run for closed-state reads without forcing a retry (poll=%s)', (poll) => {
+    const id = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', poll, undefined, true, id).subscribe();
+    const selected = http.expectOne((request) => request.params.get('run') === id);
+    expect(selected.request.params.get('project')).toBe('proj-1');
+    expect(selected.request.params.has('refreshRun')).toBe(false);
+    expect(selected.request.params.has('poll')).toBe(poll);
+    selected.flush({});
+  });
+
   it('retries the exact recorded run without a Generate or Restore request', () => {
     const id = 'b'.repeat(64);
     service.retryRun('proj-1', 'brand-kit', 'living', id).subscribe();
@@ -198,6 +234,49 @@ describe('MktgDocumentStoreService', () => {
     expect(retry.request.method).toBe('POST');
     expect(retry.request.body).toEqual({ project: 'proj-1' });
     retry.flush({});
+  });
+
+  it.each([true, false])('rethrows a document 404 but logs it only when expectedPending is false (%s)', (expectedPending) => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi.fn();
+    try {
+      service.getDocument('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, expectedPending).subscribe({ error });
+      http.expectOne((request) => request.url.endsWith('/run-012345678901234567890123')).flush('missing', { status: 404, statusText: 'Not Found' });
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
+      if (expectedPending) {
+        expect(consoleError).not.toHaveBeenCalled();
+      } else {
+        expect(consoleError).toHaveBeenCalledWith('Failed to load a Marketing OS document', expect.objectContaining({ status: 404 }));
+      }
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+  it('keeps logging non-404 failures even for a matching pending document', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = vi.fn();
+    try {
+      service.getDocument('proj-1', 'aeo-geo', 'run-012345678901234567890123', false, undefined, true).subscribe({ error });
+      http.expectOne((request) => request.url.endsWith('/run-012345678901234567890123')).flush('unavailable', { status: 503, statusText: 'Unavailable' });
+      expect(error).toHaveBeenCalledWith(expect.objectContaining({ status: 503 }));
+      expect(consoleError).toHaveBeenCalledWith('Failed to load a Marketing OS document', expect.objectContaining({ status: 503 }));
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+  it('logs only status and code, never the private error response', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      service.listDocuments('proj-1').subscribe({ error: () => undefined });
+      http
+        .expectOne((request) => request.url === '/api/mktg-agents/documents')
+        .flush({ code: 'RUN_ALREADY_STARTED', startedBy: 'synthetic-person@example.test', details: 'private reply' }, { status: 409, statusText: 'Conflict' });
+      expect(consoleError).toHaveBeenCalledWith('Failed to load Marketing OS documents', { status: 409, code: 'RUN_ALREADY_STARTED' });
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('synthetic-person');
+      expect(JSON.stringify(consoleError.mock.calls)).not.toContain('private reply');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {

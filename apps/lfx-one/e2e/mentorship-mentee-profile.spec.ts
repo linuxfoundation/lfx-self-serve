@@ -20,7 +20,7 @@ import { MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/consta
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -28,7 +28,6 @@ test.setTimeout(60_000);
 
 test.describe('Mentee Profile — empty states', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) =>
       route.fulfill({
         status: 200,
@@ -66,7 +65,6 @@ test.describe('Mentee Profile — empty states', () => {
 
 test.describe('Mentee Profile — error state', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
     await openMenteeProfile(page);
   });
@@ -92,7 +90,6 @@ const POPULATED_PROFILE = {
 
 test.describe('Mentee Profile — edit drawer golden path', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) =>
       route.fulfill({
         status: 200,

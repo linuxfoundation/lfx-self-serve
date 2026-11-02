@@ -35,8 +35,8 @@ export class EngagementAttendanceTrendComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -58,6 +58,8 @@ export class EngagementAttendanceTrendComponent {
   protected readonly summary: Signal<HealthMetricsEngagementAttendanceTrendSummaryView> = computed(() =>
     buildHealthMetricsEngagementAttendanceTrendSummary(this.response().months, this.today())
   );
+  /** No attendance was recorded in the window; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.summary().state === 'empty');
   protected readonly chartData: Signal<ChartData<'line'>> = computed(() => this.buildChart(this.points()));
   protected readonly chartLabel = computed(
     () => `All-meeting attendance over the last ${this.points().length} months, oldest first. The following table lists the same values.`
@@ -116,13 +118,15 @@ export class EngagementAttendanceTrendComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               // The response's window rolls with the run date, so the in-progress month is judged now.
               this.today.set(new Date());
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(!this.loadFailed() && buildHealthMetricsEngagementAttendanceTrendSummary(response.months, this.today()).state === 'empty');
+              }
             })
           )
         )

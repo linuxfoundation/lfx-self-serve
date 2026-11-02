@@ -4,17 +4,17 @@ description: View your donation history, manage payment methods, and manage recu
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, recurring, payment methods, history]
-last_updated: 2026-06-16
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
-The Donations page shows all contributions you have made to crowdfunding initiatives. It provides a summary stats bar, a list of your active recurring donations, a saved payment methods section, and a full donation history table.
+The Donations page shows all contributions you have made to crowdfunding initiatives. It provides a summary stats bar, a list of your recurring donations, a full donation history table, and a saved payment methods section.
 
 ## What you can do
 
 - View your total donations and the number of initiatives you have supported
-- Browse your active recurring donation subscriptions and one-time donations
-- Open a recurring donation detail page to review charge history or cancel the subscription
+- Browse your recurring donation subscriptions (active, paused, and canceled) and one-time donations
+- Open a recurring donation detail page to review charge history, or cancel a subscription from the list or its detail page
 - Add or remove saved payment methods
 
 ## Navigation

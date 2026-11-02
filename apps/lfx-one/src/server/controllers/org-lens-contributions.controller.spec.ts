@@ -11,8 +11,12 @@ const { getContributions, logger } = vi.hoisted(() => ({
 }));
 
 // validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
-// The real page parsing is what runs here.
-vi.mock('@lfx-one/shared/utils', () => ({}));
+// The real commit-filter parsers stand in for the barrel (vi.mock factories are hoisted, so the module loads dynamically).
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
+}));
 vi.mock('../services/org-contributions.service', () => ({
   OrgContributionsService: class {
     public getContributions = getContributions;
@@ -93,5 +97,150 @@ describe('OrgLensContributionsController filter lists', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getContributions.mock.calls[0][1]).toMatchObject({ projects: ['same-project', 'other'] });
+  });
+
+  // lfx-self-serve#4559 — one foundation id, matched exactly as on People → Contributors.
+  it.each([
+    [{ foundation: ' f-cncf ' }, 'f-cncf'],
+    [{ foundation: 'f'.repeat(255) }, 'f'.repeat(255)],
+    [{}, ''],
+    [{ foundation: '' }, ''],
+    [{ foundation: ['f-cncf', 'f-lfai'] }, ''],
+  ])('reads foundation from %o as %j', async (params, expected) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq(params), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ foundation: expected });
+  });
+
+  it('rejects a foundation longer than 255 characters with a 400 before the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ foundation: 'f'.repeat(256) }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController commit filters', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('passes the defaults to the service when the params are missing: LF and non-LF projects, all code contributions (lfx-self-serve#4694, #4559)', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ projectScope: 'all', commitScope: 'all', metric: 'code' });
+  });
+
+  it.each([[{ projectScope: 'non_lf', commitScope: 'merged', metric: 'code' }], [{ projectScope: 'lf', commitScope: 'all', metric: 'commits' }]])(
+    'passes valid values through: %o',
+    async (query) => {
+      const next = vi.fn();
+
+      await controller.getContributions(buildReq(query), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(getContributions.mock.calls[0][1]).toMatchObject(query);
+    }
+  );
+
+  it.each([
+    ['projectScope', 'foundation'],
+    ['commitScope', 'main'],
+    ['metric', 'activities'],
+  ])('rejects %s=%s with a 400 before the service', async (field, value) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ [field]: value }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController range', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing range to Past 2 years', async () => {
+    await controller.getContributions(buildReq({}), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '730d' });
+  });
+
+  it.each(['30d', '90d', '365d', '730d', 'all'])('passes range=%s through', async (range) => {
+    await controller.getContributions(buildReq({ range }), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: range });
+  });
+
+  it('reads the legacy 12mo, still sent by tabs opened before the new ranges, as 365d', async () => {
+    await controller.getContributions(buildReq({ range: '12mo' }), buildRes(), vi.fn());
+
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ dateRange: '365d' });
+  });
+
+  it.each(['12m', '2y', 'ALL'])('rejects the unknown range=%s with a 400', async (range) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ range }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('OrgLensContributionsController team members', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
+  });
+
+  it('defaults a missing teamMembers to exclude', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'exclude' });
+  });
+
+  it('passes teamMembers=include through to the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'include' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][1]).toMatchObject({ teamMembers: 'include' });
+  });
+
+  it('rejects an unknown teamMembers with a 400 before the service', async () => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ teamMembers: 'only' }), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400 });
   });
 });

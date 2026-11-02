@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import type { MentorshipUpstreamMentorDetail, MentorshipUpstreamMentorMentee, MentorshipUpstreamMentorProgram } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -203,5 +205,21 @@ describe('mapMentorshipMentoringHistory', () => {
     );
 
     expect(history.map((row) => row.id)).toEqual(['alpha-now', 'beta-now', 'gamma-old', 'beta-old', 'history-5']);
+  });
+
+  it("sets the program id when exactly one of the mentor's programs has the row's name and a UUID id", () => {
+    const term = { id: 'fall', name: 'Fall 2026', status: 'closed' as const, start_date_time: '2026-03-01T00:00:00Z' };
+    const history = mapMentorshipMentoringHistory(
+      detail({
+        programs: [{ ...program('GridFlow', [term]), id: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890' }, program('Beta', [{ ...term, id: 'beta-fall' }])],
+        current_mentees: [],
+        graduated_mentees: [mentee('m1', 'Gone', 'Fall 2025', 'graduated')],
+      }),
+      NOW
+    );
+
+    expect(history.find((row) => row.programName === 'GridFlow')?.programId).toBe('6f1c2d3e-4a5b-4c6d-8e7f-901234567890');
+    expect(history.find((row) => row.programName === 'Beta')).not.toHaveProperty('programId');
+    expect(history.find((row) => row.programName === 'Gone')).not.toHaveProperty('programId');
   });
 });

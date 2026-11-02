@@ -31,10 +31,13 @@ import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag, stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
 test.setTimeout(120_000);
-test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+test.beforeEach(async ({ page }) => {
+  await suppressCookieBanner(page);
+  await stubMeetingsRedesignFlag(page);
+});
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const ELEMENT_TIMEOUT = 10_000;

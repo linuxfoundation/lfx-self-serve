@@ -374,13 +374,15 @@ export class ProjectService {
 
   /**
    * Fetches a single project by ID
+   * @param strictWriter Propagate writer-check failures instead of returning a false denial (opt-in).
    */
   public async getProjectById(
     req: Request,
     uid: string,
     access: boolean = true,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
@@ -393,7 +395,12 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addProjectWriterToResource(req, project);
+      const writerProject = strictWriter
+        ? {
+            ...project,
+            writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'writer_guard' }),
+          }
+        : await this.accessCheckService.addProjectWriterToResource(req, project);
       // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
       // resolved from `writer_guard`, and every `writer_guard` holder also holds `auditor_guard`
       // (bare `writer` composes into `auditor`, `global_writer` into `auditor_guard`). Independently,
@@ -694,7 +701,8 @@ export class ProjectService {
     req: Request,
     projectSlug: string,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
     const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
       req,
@@ -704,7 +712,7 @@ export class ProjectService {
     );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor);
+    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor, strictWriter);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
@@ -3999,6 +4007,47 @@ export class ProjectService {
       });
       return null;
     }
+  }
+
+  /**
+   * Resolves a project uid to its slug over NATS (`lfx.projects-api.get_slug`), or `null` when no project
+   * has that uid. The lookup is project metadata the service answers without a user permission check, so
+   * a caller authorized on a project by a marketing grant can name it by uid without also holding
+   * `viewer` on it (#4507). Unlike {@link getProjectIdBySlug}, a failure never reads as a miss: the
+   * caller is about to authorize on the answer, so a lost answer is a 503 and an unusable one a 502.
+   */
+  public async getProjectSlugByUid(req: Request, uid: string): Promise<string | null> {
+    const errorOptions = { operation: 'get_project_slug_by_uid', service: 'project_service', path: '/nats/project-get-slug' };
+    const codec = this.natsService.getCodec();
+
+    let reply: string;
+    try {
+      const response = await this.natsService.request(NatsSubjects.PROJECT_GET_SLUG, codec.encode(uid), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      reply = codec.decode(response.data).trim();
+    } catch (error) {
+      // 503 + transport marker, not a miss: a lost answer (timeout, no responder, closed connection)
+      // says nothing about whether the project exists.
+      throw new MicroserviceError('The project lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        ...errorOptions,
+        originalError: error instanceof Error ? error : undefined,
+        transportFailure: true,
+      });
+    }
+
+    // A miss is answered with the service's JSON error envelope, {"error":"not_found",...}.
+    const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+    if (replyError === 'not_found') {
+      logger.debug(req, 'get_project_slug_by_uid', 'Project uid not found via NATS', { uid });
+      return null;
+    }
+    if (replyError !== null || !reply) {
+      // 502, not a miss: the service answered, but with nothing usable as a slug.
+      throw new MicroserviceError('The project service returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
+        ...errorOptions,
+        originalError: new Error(`Project uid lookup failed: ${replyError ?? 'empty reply'}`),
+      });
+    }
+    return reply;
   }
 
   /**

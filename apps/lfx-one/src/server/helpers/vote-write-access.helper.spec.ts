@@ -18,7 +18,7 @@ vi.mock('../services/logger.service', () => ({
   logger: { warning },
 }));
 
-import { assertVoteWrite } from './vote-write-access.helper';
+import { assertVoteWrite, hasVoteWrite } from './vote-write-access.helper';
 
 const req = {} as unknown as Request;
 
@@ -59,5 +59,29 @@ describe('assertVoteWrite', () => {
     await assertVoteWrite(req, 'vote-1', 'get_vote_reminder_recipients');
 
     expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'vote', id: 'vote-1', access: 'writer' });
+  });
+});
+
+describe('hasVoteWrite', () => {
+  beforeEach(() => {
+    checkSingleAccessStrict.mockReset();
+    warning.mockReset();
+  });
+
+  it.each([true, false])('resolves %s from the vote writer check', async (granted) => {
+    checkSingleAccessStrict.mockResolvedValueOnce(granted);
+
+    await expect(hasVoteWrite(req, 'vote-1', 'get_vote_results')).resolves.toBe(granted);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'vote', id: 'vote-1', access: 'writer' });
+  });
+
+  it('throws a 503 ACCESS_CHECK_UNAVAILABLE error when the access-check call fails, and logs a warning', async () => {
+    checkSingleAccessStrict.mockRejectedValueOnce(new Error('upstream down'));
+
+    await expect(hasVoteWrite(req, 'vote-1', 'get_vote_results')).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'ACCESS_CHECK_UNAVAILABLE',
+    });
+    expect(warning).toHaveBeenCalledOnce();
   });
 });

@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { BRAND_KIT_INTAKE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DRIVE_SHARING_HINT } from '@lfx-one/shared/constants';
 import { MktgIntakeLogoFilesConfig } from '@lfx-one/shared/interfaces';
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -90,6 +90,13 @@ describe('MktgIntakeLogoFilesComponent', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     expect(globalThis.FileReader).toBe(realFileReader);
+  });
+
+  it('describes the logo link input with the shared LF-wide Drive sharing guidance before typing', () => {
+    const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-logo-files-link-input"]');
+    const hint = host().querySelector('#mktg-intake-logo-files-link-hint');
+    expect(hint?.textContent?.trim()).toBe(MKTG_DRIVE_SHARING_HINT);
+    expect(input?.getAttribute('aria-describedby')).toBe(hint?.id);
   });
 
   it('reads an SVG as its text and lists it as sent as text', async () => {

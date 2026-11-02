@@ -110,7 +110,7 @@ describe('OverviewBoardCardComponent', () => {
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
-    expect(query('overview-board-empty')?.textContent).toContain('No board meetings recorded yet');
-    expect(query('overview-board-empty-add-meeting')).not.toBeNull();
+    expect(query('overview-board-empty-title')?.textContent).toBe(`No board meetings in ${new Date().getFullYear() - 1}`);
+    expect(query('overview-board-empty-add-meeting')?.textContent?.trim()).toContain('Add Past Meeting');
   });
 });

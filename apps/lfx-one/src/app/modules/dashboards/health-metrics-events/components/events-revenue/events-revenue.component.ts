@@ -37,8 +37,8 @@ export class EventsRevenueComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the revenue settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -56,6 +56,8 @@ export class EventsRevenueComponent {
   protected readonly view: Signal<HealthMetricsEventsRevenueView> = computed(() =>
     buildHealthMetricsEventsRevenueView(this.response(), this.chrome.selectedRange())
   );
+  /** Nothing to show for the period (unmeasured, or $0 with no event and no unconverted revenue); the shell shows the empty state. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -91,10 +93,11 @@ export class EventsRevenueComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsRevenueView(response, this.chrome.selectedRange())));
             })
           )
         )
@@ -107,6 +110,11 @@ export class EventsRevenueComponent {
   private onRangeChange(): void {
     if (this.loadFailed() || this.loading()) return;
 
-    this.settled.emit();
+    this.settled.emit(isEmptyView(this.view()));
   }
+}
+
+/** Whether the period has nothing to show: never measured, or no event, no non-zero figure and no unconverted revenue. */
+function isEmptyView(view: HealthMetricsEventsRevenueView): boolean {
+  return !view.foundationMeasured || !view.measured || !view.hasRevenue;
 }

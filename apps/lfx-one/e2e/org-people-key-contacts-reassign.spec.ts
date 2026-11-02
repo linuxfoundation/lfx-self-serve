@@ -418,3 +418,77 @@ test.describe('Org People → Key Contacts — Reassign Key Contact Roles modal 
     await expect(page.getByTestId('org-people-key-contacts-toast-success')).toBeHidden();
   });
 });
+
+// #4402 — the tab already holds every assignment, so the drawer renders them straight from the opener's
+// context rather than re-deriving the person from an identity lookup.
+test.describe('Org People → Key Contacts — person-detail drawer Key Contacts tab (#4402)', () => {
+  test("opens on the Key Contacts tab with the row's roles and makes no roles request", async ({ page }) => {
+    await stubAccountContext(page);
+    await stubKeyContactsList(page);
+    await stubEmployees(page);
+    let roleCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/**/key-contacts*', (route) => {
+      // The org-wide list read ends in /people/key-contacts and is stubbed above; anything else is the
+      // per-person read this path must never make.
+      if (/\/people\/key-contacts$/.test(new URL(route.request().url()).pathname)) return route.fallback();
+      roleCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected per-person roles fetch' });
+    });
+
+    await gotoKeyContactsTab(page);
+    await page.getByTestId(`org-people-key-contacts-name-${MOCK_PERSON_EMAIL}`).click();
+
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ada Tester');
+    await expect(page.getByTestId('person-detail-drawer-tab-key-contacts')).toHaveAttribute('aria-selected', 'true');
+
+    // All three fixture roles render, each against the foundation it is held for, sorted by foundation.
+    const list = page.getByTestId('person-detail-drawer-key-contacts-list');
+    await expect(list.locator('li')).toHaveCount(3);
+    await expect(list.locator('li').first()).toContainText('Marketing Contact');
+    await expect(list.locator('li').first()).toContainText('Cloud Native Computing Foundation');
+    await expect(list).toContainText('Legal Contact');
+    await expect(list).toContainText('eBPF Foundation');
+
+    expect(roleCalls).toBe(0);
+  });
+
+  // Rows are grouped by address, so one person holding roles under two addresses is two rows. The drawer
+  // is about the person, so it shows every role their username holds, whichever row was clicked.
+  test('gathers every role an agreed username holds, across both of their address rows', async ({ page }) => {
+    const SECOND_EMAIL = 'ada.tester+ops@example.com';
+    // Deliberately mixed case: `agreedUsername` hands back the source spelling, so an all-lowercase
+    // fixture would pass even when the gather compares against a lowercased key.
+    const USERNAME = 'ATester';
+    const withUsername = (assignment: Record<string, unknown>) => ({ ...assignment, username: USERNAME });
+    await stubAccountContext(page);
+    await stubKeyContactsList(page, {
+      ...MOCK_KEY_CONTACTS_RESPONSE,
+      assignments: [
+        ...MOCK_KEY_CONTACTS_RESPONSE.assignments.map(withUsername),
+        withUsername({
+          contactUid: 'kc-pr-ebpf',
+          membershipUid: 'msp-ebpf',
+          email: SECOND_EMAIL,
+          firstName: 'Ada',
+          lastName: 'Tester',
+          displayName: 'Ada Tester',
+          title: 'Director, Open Source',
+          role: 'PR Contact',
+          foundationSlug: 'ebpf',
+          foundationName: 'eBPF Foundation',
+        }),
+      ],
+    });
+    await stubEmployees(page);
+
+    await gotoKeyContactsTab(page);
+    // Click the row for the FIRST address; the fourth role sits on the second one.
+    await page.getByTestId(`org-people-key-contacts-name-${MOCK_PERSON_EMAIL}`).click();
+
+    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    const list = page.getByTestId('person-detail-drawer-key-contacts-list');
+    await expect(list.locator('li')).toHaveCount(4);
+    await expect(list).toContainText('PR Contact');
+  });
+});

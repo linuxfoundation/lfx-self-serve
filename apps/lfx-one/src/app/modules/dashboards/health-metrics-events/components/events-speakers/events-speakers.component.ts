@@ -50,8 +50,8 @@ export class EventsSpeakersComponent {
 
   /** The sub-nav note ("down N% YoY"); empty while a read is pending or failed. */
   public readonly noteChange = output<string>();
-  /** Fires once the section settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -67,6 +67,8 @@ export class EventsSpeakersComponent {
   protected readonly view: Signal<HealthMetricsEventsSpeakersView> = computed(() =>
     buildHealthMetricsEventsSpeakersView(this.response(), this.chrome.selectedRange(), this.tab())
   );
+  /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   // Keyed on the response alone, so a period or tab change does not rebuild the chart.
   protected readonly years: Signal<HealthMetricsEventsSpeakersYearView[]> = computed(() => buildHealthMetricsEventsSpeakersYears(this.response()));
@@ -116,7 +118,7 @@ export class EventsSpeakersComponent {
 
     this.tab.set(option.id);
     // The list's length moves with the tab, and every anchor below with it.
-    if (!this.loadFailed() && !this.loading()) this.settled.emit();
+    if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
   }
 
   private initResponse(): Signal<HealthMetricsEventsSpeakers> {
@@ -149,7 +151,8 @@ export class EventsSpeakersComponent {
               this.loading.set(!foundationSeen);
               this.noteChange.emit(this.loadFailed() ? '' : buildHealthMetricsEventsSpeakersNote(response, this.chrome.selectedRange()));
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsSpeakersView(response, this.chrome.selectedRange(), this.tab())));
             })
           )
         )
@@ -163,7 +166,7 @@ export class EventsSpeakersComponent {
     if (this.loadFailed() || this.loading()) return;
 
     this.noteChange.emit(buildHealthMetricsEventsSpeakersNote(this.response(), this.chrome.selectedRange()));
-    this.settled.emit();
+    this.settled.emit(isEmptyView(this.view()));
   }
 
   /** Proposals submitted per year; an unmeasured year stays `null` so its slot is empty, and the open year is drawn lighter. */
@@ -183,4 +186,9 @@ export class EventsSpeakersComponent {
       ],
     } as ChartData<'bar'>;
   }
+}
+
+/** Whether the period has nothing to show: the foundation or the period was never measured. */
+function isEmptyView(view: HealthMetricsEventsSpeakersView): boolean {
+  return !view.foundationMeasured || !view.measured;
 }

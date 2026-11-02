@@ -3,26 +3,38 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_TABS } from '../constants/health-metrics-engagement.constants';
+import {
+  HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+  HEALTH_METRICS_TABS,
+} from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
-import { HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_OVERVIEW_EMPTY_COPY, HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
 import {
   buildHealthMetricsOverviewAddPastMeetingUrl,
   buildHealthMetricsOverviewBalanceView,
+  buildHealthMetricsOverviewBlankCopy,
   buildHealthMetricsOverviewBoardView,
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
+  buildHealthMetricsOverviewNewsletterView,
+  buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventMeta,
   buildHealthMetricsOverviewEventsView,
   buildHealthMetricsOverviewNpsView,
   buildHealthMetricsOverviewOrgsView,
   buildHealthMetricsOverviewTrainingView,
+  buildHealthMetricsOverviewPastTrendView,
+  buildHealthMetricsOverviewTrendMeta,
   buildHealthMetricsOverviewTrendView,
   buildHealthMetricsYtdRangeLabel,
   sortHealthMetricsOverviewBoardRows,
+  toHealthMetricsOverviewKpiStripLayout,
+  toHealthMetricsOverviewPastYear,
   toHealthMetricsOverviewRange,
 } from './health-metrics-overview.utils';
 
@@ -33,6 +45,8 @@ import type {
   HealthMetricsOverviewChurn,
   HealthMetricsOverviewChurnTotals,
   HealthMetricsOverviewCode,
+  HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewEvent,
   HealthMetricsOverviewEvents,
   HealthMetricsOverviewNps,
@@ -55,14 +69,68 @@ describe('toHealthMetricsOverviewRange', () => {
   });
 });
 
+describe('toHealthMetricsOverviewPastYear', () => {
+  it('names the calendar year a completed period stands for, and none for YTD', () => {
+    const thisYear = new Date().getFullYear();
+
+    expect(toHealthMetricsOverviewPastYear('YTD')).toBeNull();
+    expect(toHealthMetricsOverviewPastYear('COMPLETED_YEAR')).toBe(thisYear - 1);
+    expect(toHealthMetricsOverviewPastYear('COMPLETED_YEAR_3')).toBe(thisYear - 3);
+  });
+});
+
+describe('buildHealthMetricsOverviewEmptyCopy', () => {
+  it('uses the YTD words, or a past year with the year filled in, as a sentence or a list of reasons', () => {
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps, null)).toEqual({
+      icon: 'fa-light fa-clipboard-list',
+      title: 'No responses yet',
+      text: '',
+      reasons: ['The score comes from your latest member satisfaction survey', 'No survey has closed yet this year', 'Send a survey to hear how members feel'],
+    });
+    expect(buildHealthMetricsOverviewEmptyCopy(HEALTH_METRICS_OVERVIEW_EMPTY_COPY.nps, 2024)).toMatchObject({
+      title: 'No survey in 2024',
+      text: 'No member satisfaction survey closed this year. Each survey counts toward the year it closes.',
+      reasons: [],
+    });
+  });
+
+  it('names the year in every past-year title, while the balance, a snapshot of today, keeps its present-tense words', () => {
+    const { balance, ...periodCards } = HEALTH_METRICS_OVERVIEW_EMPTY_COPY;
+    for (const copy of Object.values(periodCards)) {
+      expect(copy.ytd.title).not.toContain('{Y}');
+      expect(buildHealthMetricsOverviewEmptyCopy(copy, 2023).title).toMatch(/ in 2023$/);
+      expect(Boolean(copy.ytd.text) !== copy.ytd.reasons.length > 0).toBe(true);
+      expect(Boolean(copy.past.text) !== copy.past.reasons.length > 0).toBe(true);
+    }
+    expect(buildHealthMetricsOverviewEmptyCopy(balance, 2023).title).toBe('All invoices paid');
+  });
+});
+
+describe('buildHealthMetricsOverviewBlankCopy', () => {
+  it('words the blank Overview for YTD or for a past year', () => {
+    expect(buildHealthMetricsOverviewBlankCopy(null)).toMatchObject({ title: 'No health data yet' });
+    expect(buildHealthMetricsOverviewBlankCopy(2024)).toEqual({
+      title: 'No health data for 2024',
+      lead: 'Nothing was recorded for the foundation in 2024.',
+      reasons: [
+        'The foundation may not have launched yet',
+        'Its activity may have been recorded under a parent foundation',
+        'A later year may have data to compare',
+      ],
+    });
+  });
+});
+
 describe('HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS', () => {
   const sections: Record<string, readonly { key: string }[]> = {
+    engagement: HEALTH_METRICS_ENGAGEMENT_SECTIONS,
     members: HEALTH_METRICS_MEMBERS_SECTIONS,
     'non-members': HEALTH_METRICS_NON_MEMBERS_SECTIONS,
     events: HEALTH_METRICS_EVENTS_SECTIONS,
     training: HEALTH_METRICS_TRAINING_SECTIONS,
   };
   const params: Record<string, readonly string[]> = {
+    engagement: Object.values(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS),
     members: Object.values(HEALTH_METRICS_MEMBERS_QUERY_PARAMS),
     'non-members': Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS),
   };
@@ -110,22 +178,58 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Low', '0', '0%'],
     ]);
     expect(nonMembers.rows[0].pctLabel).toBe('<1%');
-    expect(nonMembers.lowPctLabel).toBe('100%');
   });
 
-  it('draws a ring per level with organizations, offset so the round caps never touch', () => {
-    const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
+  /** Each segment's start on the ring and its drawn length. */
+  function spans(donut: { dashArray: string; dashOffset: string }[]): { start: number; length: number }[] {
+    return donut.map((segment) => ({ start: Math.abs(Number(segment.dashOffset)), length: Number(segment.dashArray.split(' ')[0]) }));
+  }
 
-    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium']);
-    expect(donut[0].dashOffset).toBe('-4.00');
-    expect(Number(donut[1].dashOffset)).toBeLessThan(-4);
+  /** Every segment ends at least 2px before the next one starts, and the last one ends before the ring closes. */
+  function expectNoOverlap(drawn: { start: number; length: number }[]): void {
+    drawn.forEach((span, index) => {
+      const next = drawn[index + 1]?.start ?? 2 * Math.PI * 36;
+      expect(span.start + span.length + 2).toBeLessThanOrEqual(next + 0.01);
+    });
+  }
+
+  it('draws every level on the 36px ring, 2px short of the next, giving a zero share its own visible 1.5px sliver', () => {
+    const { donut } = buildHealthMetricsOverviewOrgsView(orgs, 'YTD').halves[0];
+    const shared = 2 * Math.PI * 36 - 3.5;
+    const drawn = spans(donut);
+
+    expect(donut.map((segment) => segment.key)).toEqual(['high', 'medium', 'low']);
+    expect(drawn[0]).toEqual({ start: 0, length: Number(((64 / 228) * shared - 2).toFixed(2)) });
+    expect(drawn[2].length).toBe(1.5);
+    expectNoOverlap(drawn);
+  });
+
+  it('gives a tiny non-zero share a full sliver and gap, so the next segment never paints over it', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 1, mediumCount: 998, lowCount: 1, highPct: null, mediumPct: null, lowPct: null } };
+    const drawn = spans(buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves[0].donut);
+
+    expect(drawn.map((span) => span.length)).toEqual([1.5, expect.any(Number), 1.5]);
+    expectNoOverlap(drawn);
+  });
+
+  it('leaves an unmeasured level off the ring', () => {
+    const partial = { ...period, memberEngagement: { highCount: 100, mediumCount: null, lowCount: null, highPct: null, mediumPct: null, lowPct: null } };
+    const { donut } = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(partial) }, 'YTD').halves[0];
+
+    expect(donut.map((segment) => segment.key)).toEqual(['high']);
+  });
+
+  it('reads a share between 0.5% and 1% as "<1%", as the design does', () => {
+    const tiny = { ...period, memberEngagement: { highCount: 7, mediumCount: 993, lowCount: 0, highPct: null, mediumPct: null, lowPct: null } };
+    const [members] = buildHealthMetricsOverviewOrgsView({ measured: true, periods: everyPeriod(tiny) }, 'YTD').halves;
+
+    expect(members.rows.map((row) => row.pctLabel)).toEqual(['<1%', '99%', '0%']);
   });
 
   it('leaves the split unmeasured for a period the view does not model', () => {
     const half = buildHealthMetricsOverviewOrgsView(orgs, 'COMPLETED_YEAR_2').halves[0];
 
     expect(half.donut).toEqual([]);
-    expect(half.lowPctLabel).toBe('—');
     expect(half.rows.map((row) => row.countLabel)).toEqual(['—', '—', '—']);
   });
 
@@ -156,7 +260,11 @@ describe('buildHealthMetricsOverviewNpsView', () => {
   it('reads the survey, the change against the previous wave and the response split', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.subtitle).toBe('Last survey: Q2 2026 · 15 of 22 responded (68%)');
+    expect(view.meta).toEqual([
+      { label: 'Latest NPS:', value: 'Q2 2026' },
+      { label: 'Audience:', value: 'Board' },
+      { label: 'Responses:', value: '15 of 22 (68%)' },
+    ]);
     expect(view.scoreLabel).toBe('80');
     expect(view.delta).toEqual({ label: '12 pts vs Q4 2025', direction: 'up', good: true });
     expect(view.rows.map((row) => [row.label, row.range, row.countLabel, row.pctLabel])).toEqual([
@@ -168,14 +276,18 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     expect(view.ariaLabel).toBe('Net Promoter Score 80 on a scale from -100 to 100');
   });
 
-  it('lights only the band the score falls in and points the needle at it', () => {
+  it('lights only the band the score falls in, mixing the rest toward white, and points the needle at it', () => {
     const view = buildHealthMetricsOverviewNpsView(nps, 'YTD');
 
-    expect(view.segments.map((segment) => [segment.key, segment.opacity])).toEqual([
-      ['very-low', 0.22],
-      ['low', 0.22],
-      ['medium', 0.22],
-      ['high', 1],
+    expect(view.segments.map((segment) => [segment.key, segment.stroke])).toEqual([
+      ['very-low', '#FFDDDE'],
+      ['low', '#FFDDDE'],
+      ['medium', '#FFF0C7'],
+      ['high', '#00BC7D'],
+    ]);
+    expect(view.caps.map((cap) => [cap.key, cap.fill])).toEqual([
+      ['start', '#FFDDDE'],
+      ['end', '#00BC7D'],
     ]);
     expect(view.needle).not.toBeNull();
     expect(Number(view.needle?.x)).toBeGreaterThan(66);
@@ -186,7 +298,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
     const view = buildHealthMetricsOverviewNpsView(fell, 'YTD');
 
     expect(view.delta).toEqual({ label: '1 pt', direction: 'down', good: false });
-    expect(view.segments.find((segment) => segment.opacity === 1)?.key).toBe('low');
+    expect(view.segments.find((segment) => segment.stroke === '#FF6467')?.key).toBe('low');
   });
 
   it('is empty for a period with no survey sent', () => {
@@ -194,7 +306,7 @@ describe('buildHealthMetricsOverviewNpsView', () => {
 
     expect(view.isEmpty).toBe(true);
     expect(view.needle).toBeNull();
-    expect(view.segments.every((segment) => segment.opacity === 0.22)).toBe(true);
+    expect(view.segments.map((segment) => segment.stroke)).toEqual(['#FFDDDE', '#FFDDDE', '#FFF0C7', '#C7F0E2']);
   });
 });
 
@@ -308,8 +420,6 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       registrations: 328,
       registrationsGoal: 1000,
       compScore: 'medium',
-      goalMet: null,
-      paceStatus: null,
       acceptedTalks: 0,
       totalProposals: 185,
       cfpStatus: 'Review Complete',
@@ -354,96 +464,153 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       event({ eventId: 'e3', compScore: 'high', totalProposals: 0, cfpStatus: 'No CFPs Received' }),
     ],
     past: [
-      event({ eventId: 'p1', compScore: null, goalMet: true, paceStatus: 'healthy', registrations: 900, registrationsGoal: 800, ranges: ['COMPLETED_YEAR'] }),
-      event({ eventId: 'p2', compScore: null, goalMet: false, paceStatus: 'needs_attention', ranges: ['COMPLETED_YEAR'] }),
+      event({ eventId: 'p1', compScore: null, registrations: 900, registrationsGoal: 800, acceptedTalks: 64, totalProposals: 310, ranges: ['COMPLETED_YEAR'] }),
+      event({ eventId: 'p2', compScore: null, registrations: 850, ranges: ['COMPLETED_YEAR'] }),
+      event({ eventId: 'p4', compScore: null, registrations: 200, registrationsGoal: null, ranges: ['COMPLETED_YEAR'] }),
       event({ eventId: 'p3', compScore: null, ranges: ['COMPLETED_YEAR_2'] }),
     ],
     truncated: false,
   };
 
-  // The view's change covers held events only, so it belongs on a past year's total, not on one that adds upcoming events.
-  it('counts upcoming events into the YTD total without the held-only change', () => {
-    const view = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD', 'YTD');
+  it('splits the total into held and upcoming events, with the change in every period', () => {
+    const view = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD');
 
     expect(view.total).toEqual({
-      key: 'total',
-      label: 'Total events',
       value: '22',
-      delta: null,
-      note: '20 held · 2 upcoming',
-    });
-    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR', '2025').total.delta).toEqual({
-      label: '24% vs last year',
-      direction: 'down',
-      good: false,
+      delta: { label: '24% vs last year', direction: 'down', good: false },
+      pastLabel: '20',
+      upcomingLabel: '2',
+      pastPct: expect.closeTo(90.9, 1),
+      upcomingPct: expect.closeTo(9.1, 1),
     });
     expect(view.listTitle).toBe('Upcoming events');
-    expect(view.rows.map((row) => row.eventId)).toEqual(['e1', 'e2', 'e3']);
-    expect(view.rows.every((row) => row.clickable)).toBe(true);
-  });
-
-  it("badges an upcoming event's registrations by its pace, and only when it has a goal", () => {
-    const [atRisk, noGoal, onTrack] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD', 'YTD').rows;
-
-    expect(atRisk.meta).toBe('Springfield · Dec 8–10, 2026');
-    expect(atRisk.registrations).toMatchObject({
-      countLabel: '328',
-      hasGoal: true,
-      goalLabel: '1,000',
-      pctLabel: '33%',
-      barClass: 'bg-amber-400',
-      badge: { label: 'At risk', className: 'bg-amber-50 text-amber-700' },
-    });
-    expect(atRisk.registrations.widthPct).toBeCloseTo(32.8, 5);
-    expect(noGoal.registrations.hasGoal).toBe(false);
-    expect(noGoal.registrations.badge).toBeNull();
-    expect(onTrack.registrations.badge?.label).toBe('On track');
-  });
-
-  it('shows accepted talks against proposals, or the call for proposals stage without any', () => {
-    const [withProposals, inReview, none] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD', 'YTD').rows;
-
-    expect(withProposals.talks).toMatchObject({ hasProposals: true, acceptedLabel: '0', totalLabel: '185', widthPct: 0 });
-    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP in review' });
-    expect(none.talks.note).toBe('No call for proposals');
-  });
-
-  it("lists a past year's events with the Events tab's outcome, and none of them open the trend", () => {
-    const view = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR', '2025');
-
-    expect(view.listTitle).toBe('Events in 2025');
-    expect(view.total.value).toBe('20');
-    expect(view.total.note).toBe('20 held');
-    expect(view.rows.map((row) => [row.eventId, row.clickable, row.registrations.badge?.label])).toEqual([
-      ['p1', false, 'Hit goal'],
-      ['p2', false, 'Just missed'],
+    expect(view.listInfo).toContain('start date in the future');
+    expect(view.rows.map((row) => [row.eventId, row.isPast])).toEqual([
+      ['e1', false],
+      ['e2', false],
+      ['e3', false],
     ]);
   });
 
+  it("colors an upcoming event's registrations bar by its pace, with a neutral outlined bar and no status without a goal", () => {
+    const [atRisk, noGoal, onTrack] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD').rows;
+
+    expect(atRisk.meta).toBe('Springfield · Dec 8–10, 2026');
+    expect(atRisk.registrations).toEqual({
+      countLabel: '328',
+      sideLabel: 'Goal:',
+      sideValue: '1,000',
+      widthPct: expect.closeTo(32.8, 5),
+      barClass: 'bg-amber-400',
+      neutral: false,
+      statusLabel: 'At risk',
+    });
+    expect(noGoal.registrations).toEqual({
+      countLabel: '328',
+      sideLabel: 'No goal set',
+      sideValue: '',
+      widthPct: 0,
+      barClass: '',
+      neutral: true,
+      statusLabel: null,
+    });
+    expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track' });
+  });
+
+  it('keeps an upcoming event with a goal but no pace blue', () => {
+    const unscored = { ...events, upcoming: [event({ compScore: null })] };
+
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, unscored, 'YTD').rows[0].registrations).toMatchObject({
+      barClass: 'bg-blue-500',
+      statusLabel: null,
+    });
+  });
+
+  it('shows accepted speaking proposals against those received, or the call for proposals stage without any', () => {
+    const [withProposals, inReview, none] = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD').rows;
+
+    expect(withProposals.talks).toEqual({
+      hasProposals: true,
+      countLabel: '0',
+      sideLabel: 'Received:',
+      sideValue: '185',
+      widthPct: 0,
+      barClass: 'bg-blue-500',
+      neutral: false,
+      note: 'N/A',
+    });
+    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review' });
+    expect(none.talks.note).toBe('N/A');
+  });
+
+  it("lists a past year's events, colored by their share of the goal, with green submitted proposals", () => {
+    const view = buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR');
+
+    expect(view.listTitle).toBe('Past events');
+    expect(view.listInfo).toContain('selected time period');
+    expect(view.total).toMatchObject({ value: '20', pastLabel: '20', upcomingLabel: '0', pastPct: 100, upcomingPct: 0 });
+    expect(view.rows.map((row) => [row.eventId, row.isPast, row.registrations.sideLabel, row.registrations.sideValue, row.registrations.barClass])).toEqual([
+      ['p1', true, 'Goal:', '800', 'bg-emerald-500'],
+      ['p2', true, 'Goal:', '1,000', 'bg-amber-400'],
+      ['p4', true, 'No goal set', '', ''],
+    ]);
+    expect(view.rows[0].talks).toMatchObject({ countLabel: '64', sideLabel: 'Received:', sideValue: '310', barClass: 'bg-emerald-500' });
+  });
+
+  it('turns a past event under 80% of its goal red', () => {
+    const missed = { ...events, past: [event({ compScore: null, registrations: 799, ranges: ['COMPLETED_YEAR'] })] };
+
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, missed, 'COMPLETED_YEAR').rows[0].registrations).toMatchObject({
+      barClass: 'bg-red-400',
+      statusLabel: 'Action required',
+    });
+  });
+
+  it('leaves a past event with no registration count grey and without a status, never missed', () => {
+    const unmeasured = { ...events, past: [event({ compScore: null, registrations: null, ranges: ['COMPLETED_YEAR'] })] };
+
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, unmeasured, 'COMPLETED_YEAR').rows[0].registrations).toEqual({
+      countLabel: '—',
+      sideLabel: 'Goal:',
+      sideValue: '1,000',
+      widthPct: 0,
+      barClass: 'bg-gray-300',
+      neutral: false,
+      statusLabel: null,
+    });
+  });
+
   it("tracks sponsorship against the period's goal, computing progress where the view has none", () => {
-    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD', 'YTD').sponsorship).toEqual({
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'YTD').sponsorship).toEqual({
       valueLabel: '$3M',
       hasGoal: true,
       goalLabel: '$3.5M',
       widthPct: 85.7,
+      barClass: 'bg-blue-500',
       progressLabel: '86% reached · $500K to goal',
     });
-    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR', '2025').sponsorship.widthPct).toBeCloseTo(85.71, 1);
-    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR_2', '2024').sponsorship).toMatchObject({
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR').sponsorship.widthPct).toBeCloseTo(85.71, 1);
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR_2').sponsorship).toMatchObject({
       hasGoal: false,
       progressLabel: 'No goal set',
     });
   });
 
+  it('turns the sponsorship bar green once the goal is reached', () => {
+    const reached = { periods: sponsorship.periods.map((period) => ({ ...period, revenueUsd: 4000000, progressToGoal: null })) };
+
+    expect(buildHealthMetricsOverviewEventsView(glance, reached, events, 'YTD').sponsorship).toMatchObject({ barClass: 'bg-emerald-500', widthPct: 100 });
+  });
+
   it('leaves the change out for a period the view does not compare', () => {
-    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR_2', '2024').total.delta).toBeNull();
+    expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, events, 'COMPLETED_YEAR_2').total.delta).toBeNull();
   });
 
   it('is empty with no events, no list and no sponsorship', () => {
     const quiet = { ...glance, upcomingEvents: 0, periods: glance.periods.map((period) => ({ ...period, pastEvents: 0 })) };
     const unsold = { periods: sponsorship.periods.map((period) => ({ ...period, revenueUsd: null })) };
 
-    expect(buildHealthMetricsOverviewEventsView(quiet, unsold, { upcoming: [], past: [], truncated: false }, 'YTD', 'YTD').isEmpty).toBe(true);
+    expect(buildHealthMetricsOverviewEventsView(quiet, unsold, { upcoming: [], past: [], truncated: false }, 'YTD').isEmpty).toBe(true);
   });
 });
 
@@ -455,6 +622,16 @@ describe('buildHealthMetricsOverviewEventMeta', () => {
     [{ city: 'Napa', startDate: null, endDate: null }, 'Napa'],
   ])('formats %o as %s', (event, expected) => {
     expect(buildHealthMetricsOverviewEventMeta(event)).toBe(expected);
+  });
+});
+
+describe('buildHealthMetricsOverviewTrendMeta', () => {
+  it.each([
+    [{ city: 'Yokohama', startDate: '2026-12-15' }, 'Yokohama · Starts Dec 15, 2026'],
+    [{ city: null, startDate: '2026-11-30' }, 'Starts Nov 30, 2026'],
+    [{ city: 'Napa', startDate: null }, 'Napa'],
+  ])('formats %o as %s', (event, expected) => {
+    expect(buildHealthMetricsOverviewTrendMeta(event)).toBe(expected);
   });
 });
 
@@ -559,6 +736,147 @@ describe('buildHealthMetricsOverviewCodeView', () => {
   });
 });
 
+describe('buildHealthMetricsOverviewNewsletterView', () => {
+  const year = new Date().getFullYear();
+  const period: HealthMetricsOverviewNewsletterPeriod = {
+    subscribers: 1458,
+    subscribersGrowth: 0.39,
+    growthBaselineDate: `${year}-01-05`,
+    newslettersSent: 10,
+    avgOpenRate: 0.43,
+    avgClickToOpenRate: 0.09,
+    highEngagement: 175,
+    mediumEngagement: 496,
+    lowEngagement: 787,
+    highEngagementShare: 0.12,
+    mediumEngagementShare: 0.34,
+    lowEngagementShare: 0.54,
+    newslettersConsidered: 10,
+    mostEngagingName: 'Monthly: Protocol ships',
+    mostEngagingClickToOpenRate: 0.12,
+  };
+  const send = (key: string, sentDate: string, openRate: number | null, clickRate: number | null) => ({
+    key,
+    name: `Newsletter ${key}`,
+    sentDate,
+    openRate,
+    clickRate,
+  });
+  const newsletters: HealthMetricsOverviewNewsletters = {
+    measured: true,
+    periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(period),
+    // Latest first, as the read returns them.
+    newsletters: [
+      send('n4', `${year}-09-21`, 0.5, 0.06),
+      send('n3', `${year}-08-24`, 0.4, null),
+      send('n2', `${year}-08-03`, 0.3, 0.03),
+      send('unrated', `${year}-07-30`, null, null),
+      send('old', `${year - 1}-12-01`, 0.6, 0.2),
+    ],
+  };
+
+  it('reads the period summary into the KPI strip, with growth since the baseline month', () => {
+    const view = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD');
+
+    expect(view.isEmpty).toBe(false);
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
+      ['Subscribers', '1,458'],
+      ['Newsletters sent', '10'],
+      ['Avg. open rate', '43%'],
+      ['Avg. click-to-open rate', '9%'],
+    ]);
+    expect(view.kpis[0]?.delta).toEqual({ label: '39% since Jan', direction: 'up', good: true });
+    expect(view.engagementBasis).toBe('Based on opens and clicks across the last 10 newsletters');
+    expect(view.mostEngaging).toEqual({ name: 'Monthly: Protocol ships', rateLabel: '12% click-to-open' });
+  });
+
+  it('charts the period’s newsletters oldest first, evenly spaced, with the view’s open and click rates', () => {
+    const chart = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').chart;
+
+    expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
+    expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
+    // Tooltips at either end open inward.
+    expect(chart?.points.map((point) => point.tipAlign)).toEqual(['start', 'center', 'end']);
+    // The scale tops out at 50%, the highest open rate rounded up to the next 10%.
+    expect(chart?.points.map((point) => point.openYPct)).toEqual(['40.00', '20.00', '0.00']);
+    expect(chart?.points[0]?.clickYPct).toBe('94.00');
+    expect(chart?.points[1]?.clickYPct).toBe('');
+    expect(chart?.points[2]?.label).toBe(`Newsletter n4 · Sep 21, ${year} · open 50%, click 6%`);
+    expect(chart?.points[1]?.label).toBe(`Newsletter n3 · Aug 24, ${year} · open 40%, click —`);
+    expect(chart?.ticks).toEqual([
+      { label: 'Aug', xPct: '0.00' },
+      { label: 'Sep', xPct: '100.00' },
+    ]);
+    // The click line skips the newsletter without a click rate rather than drawing it at zero.
+    expect(chart?.clickPath.split('L')).toHaveLength(2);
+    expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
+  });
+
+  it('scales to a click rate above every open rate, so neither line is clipped', () => {
+    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.2, 0.4)] };
+    expect(buildHealthMetricsOverviewNewsletterView(clicky, 'YTD').chart?.points[0]).toMatchObject({ openYPct: '50.00', clickYPct: '0.00' });
+  });
+
+  it('tops the scale out at an exact tenth rather than the next one', () => {
+    const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.07), send('n2', `${year}-04-02`, 0.35, 0.03)] };
+    expect(buildHealthMetricsOverviewNewsletterView(exact, 'YTD').chart?.points.map((point) => point.openYPct)).toEqual(['0.00', '50.00']);
+  });
+
+  it('centres a lone newsletter and has no chart when none in the period has an open rate', () => {
+    const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.05)] };
+    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
+
+    const unrated = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null)] };
+    expect(buildHealthMetricsOverviewNewsletterView(unrated, 'YTD').chart).toBeNull();
+  });
+
+  it('splits subscribers by engagement with the view’s shares, keeping a sliver for a level too small to see', () => {
+    const engagement = buildHealthMetricsOverviewNewsletterView(newsletters, 'YTD').engagement;
+
+    expect(engagement.map((row) => [row.label, row.description, row.countLabel, row.pctLabel])).toEqual([
+      ['High', 'Opened 7+ newsletters and clicked a link', '175', '12%'],
+      ['Medium', 'Opened 3–6 newsletters', '496', '34%'],
+      ['Low', 'Opened 2 newsletters or fewer', '787', '54%'],
+    ]);
+
+    const tiny = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, highEngagement: 1, highEngagementShare: 0.0001 }),
+    };
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.widthPct).toBe(1.5);
+    expect(buildHealthMetricsOverviewNewsletterView(tiny, 'YTD').engagement[0]?.pctLabel).toBe('<1%');
+  });
+
+  it('is empty when nothing was sent in the period or the foundation is unmeasured', () => {
+    const none = { ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, newslettersSent: 0 }) };
+
+    expect(buildHealthMetricsOverviewNewsletterView(none, 'YTD').isEmpty).toBe(true);
+    expect(buildHealthMetricsOverviewNewsletterView({ ...newsletters, measured: false }, 'YTD').isEmpty).toBe(true);
+    expect(
+      buildHealthMetricsOverviewNewsletterView({ ...newsletters, periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>(null) }, 'YTD').isEmpty
+    ).toBe(true);
+  });
+
+  it('names the baseline year when it is not the period’s', () => {
+    const earlier = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: `${year - 1}-03-09` }),
+    };
+    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.label).toBe(`39% since Mar ${year - 1}`);
+  });
+
+  it('drops the growth month and the basis when the view gives neither', () => {
+    const bare = {
+      ...newsletters,
+      periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: null, newslettersConsidered: null }),
+    };
+    const view = buildHealthMetricsOverviewNewsletterView(bare, 'YTD');
+
+    expect(view.kpis[0]?.delta?.label).toBe('39%');
+    expect(view.engagementBasis).toBe('');
+  });
+});
+
 describe('buildHealthMetricsOverviewBoardView', () => {
   const board: HealthMetricsOverviewBoard = {
     periods: everyPeriod({ meetings: 3, meetingsChangePct: 0.25, avgAttendancePct: 0.6, avgAttendanceChangePct: -0.1 }, { COMPLETED_YEAR_3: null }),
@@ -655,8 +973,6 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     registrations: 328,
     registrationsGoal: 1000,
     compScore: 'medium',
-    goalMet: null,
-    paceStatus: null,
     acceptedTalks: null,
     totalProposals: null,
     cfpStatus: null,
@@ -688,15 +1004,35 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     points: [point(-200, 10, null, 5), point(-90, 200, null, 180), point(-46, 330, null, 300), point(-20, null, 500, 420), point(0, null, 620, 600)],
   };
 
-  it('reads the headline figures, falling back to the list row without a forecast', () => {
-    expect(buildHealthMetricsOverviewTrendView(row, headline, series).kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
-      ['Current', '330'],
-      ['Same point last year', '300'],
-      ['Predicted', '620'],
-      ['Registration goal', '1,000'],
-      ['Days left', '46'],
+  it('reads the headline figures, with the predicted range beside the prediction, falling back to the list row without a forecast', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value, kpi.range])).toEqual([
+      ['Current', '330', null],
+      ['Same point last year', '300', null],
+      ['Predicted', '620', { high: '680', low: '560' }],
     ]);
-    expect(buildHealthMetricsOverviewTrendView(row, null, null).kpis.map((kpi) => kpi.value)).toEqual(['328', '—', '—', '1,000', '—']);
+    expect([view.goalLabel, view.daysTitle, view.daysLabel]).toEqual(['1,000', 'Days left', '46']);
+    const fallback = buildHealthMetricsOverviewTrendView(row, null, null);
+    expect([...fallback.kpis.map((kpi) => kpi.value), fallback.goalLabel, fallback.daysLabel]).toEqual(['328', '—', '—', '1,000', '—']);
+    expect(fallback.kpis[2].range).toBeNull();
+  });
+
+  it('rounds the scale up to at most 5 even steps, with ticks every 30 days', () => {
+    const view = buildHealthMetricsOverviewTrendView(row, headline, series);
+
+    // The goal of 1,000 plus 5% headroom rounds up to 5 steps of 250.
+    expect(view.yTicks.map((tick) => tick.label)).toEqual(['1,250', '1,000', '750', '500', '250', '0']);
+    expect(view.yTicks[1]).toMatchObject({ pct: '20.00', y: '44.0' });
+    expect(view.xTicks.map((tick) => tick.label)).toEqual(['180', '150', '120', '90', '60', '30', '0']);
+    expect(view.xTicks[6].pct).toBe('100.00');
+  });
+
+  it('keeps whole-number steps on a small scale', () => {
+    const small = { format: 'In Person', points: [point(-30, 1, null, 2), point(-10, 3, null, null)] };
+    const view = buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, null, small);
+
+    expect(view.yTicks.map((tick) => tick.label)).toEqual(['4', '3', '2', '1', '0']);
   });
 
   it('plots the last 180 days, joining the prediction to the last actual figure at today', () => {
@@ -705,16 +1041,89 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.currentPath.startsWith('M300.0')).toBe(true);
     expect(view.currentPath.split('L')).toHaveLength(2);
     expect(view.predictedPath.startsWith('M446.7')).toBe(true);
-    // The goal is the tallest figure, so it sets the scale with 8% headroom.
-    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1080) * 220).toFixed(1)}`)).toBe(true);
+    expect(view.predictedPath.endsWith(`600.0 ${(220 - (620 / 1250) * 220).toFixed(1)}`)).toBe(true);
     expect(view.bandPath.endsWith(' Z')).toBe(true);
-    expect(view.todayX).toBe('446.7');
+    expect([view.todayX, view.todayPct]).toEqual(['446.7', '74.44']);
+    expect(view.goalY).toBe('44.0');
+  });
+
+  it('draws no goal line without a goal', () => {
+    expect(buildHealthMetricsOverviewTrendView({ ...row, registrationsGoal: null }, { ...headline, goal: null }, series).goalY).toBeNull();
   });
 
   it('draws only what it has without a curve', () => {
     const view = buildHealthMetricsOverviewTrendView(row, headline, null);
 
     expect([view.currentPath, view.predictedPath, view.bandPath, view.lastYearPath, view.todayX]).toEqual(['', '', '', '', null]);
+  });
+});
+
+describe('buildHealthMetricsOverviewPastTrendView', () => {
+  const row: HealthMetricsOverviewEvent = {
+    eventId: 'p1',
+    eventName: 'Acme Summit',
+    startDate: '2026-06-02',
+    endDate: null,
+    city: null,
+    registrations: 512,
+    registrationsGoal: 500,
+    compScore: null,
+    acceptedTalks: null,
+    totalProposals: null,
+    cfpStatus: null,
+    ranges: ['YTD'],
+  };
+  const point = (daysToEvent: number, actual: number, priorYear: number | null) => ({
+    daysToEvent,
+    actual,
+    forecastAvg: null,
+    forecastLow: null,
+    forecastHigh: null,
+    priorYear,
+  });
+  const inPerson = { format: 'In Person', points: [point(-120, 40, 30), point(-30, 300, 260), point(0, 480, 410)] };
+  const virtual = { format: 'Virtual', points: [point(-30, 10, null), point(0, 30, 20)] };
+  const curve = { eventId: 'p1', formats: [inPerson, virtual] };
+
+  it("reads the event's final count against last year's, which adds each format's last day", () => {
+    const view = buildHealthMetricsOverviewPastTrendView(row, curve, inPerson);
+
+    expect(view.kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
+      ['Current', '512'],
+      ['Same point last year', '430'],
+      ['Final', '512'],
+    ]);
+    expect([view.goalLabel, view.daysTitle, view.daysLabel, view.todayPct]).toEqual(['500', 'Event held', '0', null]);
+  });
+
+  it('draws the history and last year with no forecast or today line', () => {
+    const view = buildHealthMetricsOverviewPastTrendView(row, curve, inPerson);
+
+    expect(view.currentPath.split('L')).toHaveLength(3);
+    expect(view.lastYearPath).not.toBe('');
+    expect([view.predictedPath, view.bandPath, view.todayX]).toEqual(['', '', null]);
+    expect(view.goalY).not.toBeNull();
+  });
+
+  it('leaves last year out without a curve', () => {
+    expect(buildHealthMetricsOverviewPastTrendView(row, null, null).kpis[1].value).toBe('—');
+  });
+});
+
+describe('toHealthMetricsOverviewKpiStripLayout', () => {
+  it('keeps a row while every item has 170px, and before the strip is measured', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(null, 4)).toBe('row');
+    expect(toHealthMetricsOverviewKpiStripLayout(340, 2)).toBe('row');
+  });
+
+  it('stacks a narrower strip in one column', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('stack');
+  });
+
+  it('makes four items a 2 × 2 grid while two columns still have 170px each, and stacks them below that', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 4)).toBe('stack');
   });
 });
 

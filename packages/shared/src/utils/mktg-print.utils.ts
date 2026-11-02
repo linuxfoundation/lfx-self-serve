@@ -6,6 +6,10 @@
 // templates bind properties only and the layout is unit-testable without a
 // browser.
 
+import type { MktgBoilerplatesAsset, MktgFaqAsset } from '../interfaces/mktg-run.interface';
+import type { BoilerplatesPrintView, FaqPrintView } from '../interfaces/mktg-print.interface';
+import { boilerplatesLengthRows } from './boilerplates.utils';
+import { faqGroupViews } from './faq.utils';
 import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
@@ -37,6 +41,15 @@ import {
   foundationMessageNumberRows,
   foundationMessagePillarViews,
 } from './foundation-message.utils';
+
+/** Reuse the asset views' labels, order and unanswered/source policy. */
+export function buildBoilerplatesPrintView(asset: MktgBoilerplatesAsset, brand: MktgPrintBrand): BoilerplatesPrintView {
+  return { brand, lengths: boilerplatesLengthRows(asset) };
+}
+
+export function buildFaqPrintView(asset: MktgFaqAsset, brand: MktgPrintBrand): FaqPrintView {
+  return { brand, groups: faqGroupViews(asset.content) };
+}
 
 /** The LF look, for a project with no Brand Kit. */
 function lfPrintBrand(): MktgPrintBrand {

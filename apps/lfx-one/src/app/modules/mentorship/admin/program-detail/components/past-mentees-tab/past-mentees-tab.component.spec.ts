@@ -5,8 +5,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { environment } from '@environments/environment';
 import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTEE_STATUSES } from '@lfx-one/shared/constants';
 import { MentorshipAdminMenteesQuery, MentorshipAdminMenteesResponse, MentorshipAdminTermOption, MentorshipProgramApplicant } from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
@@ -20,6 +22,7 @@ describe('PastMenteesTabComponent', () => {
   const mentee = (overrides: Partial<MentorshipProgramApplicant> = {}): MentorshipProgramApplicant => ({
     id: 'app_1',
     name: 'Ifeoma Adeyemi',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'ifeoma.adeyemi@example.com',
     status: 'graduated',
     termId: 'trm_Spring 2026',
@@ -65,6 +68,7 @@ describe('PastMenteesTabComponent', () => {
 
     fixture = TestBed.createComponent(PastMenteesTabComponent);
     fixture.componentRef.setInput('programId', 'prog_1');
+    fixture.componentRef.setInput('programPublished', true);
     fixture.componentRef.setInput('terms', [term('Fall 2026', 'open'), term('Spring 2026', 'closed'), term('Winter 2025', 'closed')]);
     settle();
   });
@@ -76,6 +80,15 @@ describe('PastMenteesTabComponent', () => {
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const rowText = (id: string): string => (element().querySelector(`[data-testid="mentorship-past-mentee-row-${id}"]`)?.textContent ?? '').replace(/\s+/g, ' ');
   const lastQuery = (): MentorshipAdminMenteesQuery => getProgramMentees.mock.calls[getProgramMentees.mock.calls.length - 1][1];
+
+  it("links the mentee's name to the public mentee page, and not when the program is not published", () => {
+    const link = element().querySelector('[data-testid="mentorship-past-mentee-link-app_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+
+    fixture.componentRef.setInput('programPublished', false);
+    fixture.detectChanges();
+    expect(element().querySelector('[data-testid="mentorship-past-mentee-link-app_1"]')).toBeNull();
+  });
 
   it('renders the three read-only columns and no row actions', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());

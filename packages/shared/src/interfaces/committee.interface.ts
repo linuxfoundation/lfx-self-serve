@@ -16,6 +16,18 @@ export interface CommitteeWriterProbeResult {
   transientFailure: boolean;
 }
 
+/** Router target for a group's edit wizard — tier-aware commands plus the `?project=` query param when the group carries a project slug. */
+export interface GroupEditLink {
+  commands: string[];
+  queryParams: Record<string, string>;
+}
+
+/** Option for the parent-group select; `value: null` is the "No Parent" choice. */
+export interface ParentCommitteeOption {
+  label: string;
+  value: string | null;
+}
+
 /** Pre-computed link target for the "Mailing list associated" Channels entry on My Groups rows/cards. */
 export interface CommitteeMailingListLink {
   /** Router commands: the single list's detail page, or the group's page when several lists are associated. */
@@ -738,7 +750,9 @@ export interface CommitteeCreateData {
  * Data for updating existing committee
  * @description Partial update payload allowing any field from create data to be modified
  */
-export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
+export interface CommitteeUpdateData extends Partial<Omit<CommitteeCreateData, 'parent_uid'>> {
+  /** Re-parent the committee, or `null` to detach it from its parent */
+  parent_uid?: string | null;
   /** Update or clear mailing list email */
   mailing_list?: string | null;
   /** Update or clear chat channel */

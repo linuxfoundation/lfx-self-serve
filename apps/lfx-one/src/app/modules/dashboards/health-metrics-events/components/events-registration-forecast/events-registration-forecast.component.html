@@ -27,14 +27,7 @@
       data-testid="events-registration-forecast-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-registration-forecast-loading" aria-hidden="true" />
-  } @else if (response().events.length === 0) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-line"
-      title="No upcoming events to forecast"
-      subtitle="There are no upcoming events to forecast. Once an event is scheduled, its projection appears here."
-      data-testid="events-registration-forecast-empty" />
-  } @else {
+  } @else if (!empty()) {
     @if (selectedEvent()) {
       <!-- Pills carry the name only; the selected event's date sits at the row's end. -->
       <div class="flex flex-wrap items-center gap-[10px]">

@@ -168,15 +168,15 @@ export class OrgPeopleEventAttendeesService {
   }
 
   private async fetchEventOptions(accountId: string): Promise<EventAttendeeEventOptionRow[]> {
-    // R2.3 — most-recent-first, matches the prototype's flat list. Distinct on (EVENT_ID, EVENT_NAME, EVENT_END_DATE)
-    // to keep the EVENT_END_DATE column available for ORDER BY without forcing a re-aggregation.
+    // R2.3 — most-recent-first, matches the prototype's flat list. Start-only events sort by their start date,
+    // consistent with the warehouse and the client.
     const query = `
-      SELECT DISTINCT EVENT_ID, EVENT_NAME, EVENT_END_DATE
+      SELECT DISTINCT EVENT_ID, EVENT_NAME, EVENT_END_DATE, EVENT_START_DATE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS
       WHERE ACCOUNT_ID = ?
         AND EVENT_ID IS NOT NULL
         AND EVENT_NAME IS NOT NULL
-      ORDER BY EVENT_END_DATE DESC NULLS LAST, EVENT_NAME ASC
+      ORDER BY COALESCE(EVENT_END_DATE, EVENT_START_DATE) DESC NULLS LAST, EVENT_NAME ASC
     `;
     const result = await this.snowflakeService.execute<EventAttendeeEventOptionRow>(query, [accountId]);
     return result.rows;

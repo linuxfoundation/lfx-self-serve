@@ -2,12 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6" data-testid="org-people-contributors">
-  <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" data-testid="org-people-contributors-filter-bar">
-    <div class="flex-1">
+  <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-contributors-filter-bar">
+    <div class="flex-1 md:min-w-56">
       <lfx-input-text
         [form]="filterForm"
         control="search"
         placeholder="Search contributors..."
+        ariaLabel="Search contributors"
         icon="fa-light fa-magnifying-glass"
         styleClass="w-full"
         size="small"
@@ -49,7 +50,62 @@
         ariaLabel="Filter by time range"
         dataTest="org-people-contributors-time-range-filter" />
     </div>
+    <div class="w-full md:w-44">
+      <lfx-select
+        [form]="filterForm"
+        control="projectScope"
+        size="small"
+        [options]="projectScopeOptions"
+        styleClass="w-full"
+        [ariaLabel]="projectScopeLabel"
+        dataTest="org-people-contributors-project-scope-filter" />
+    </div>
+    <div class="w-full md:w-52">
+      <lfx-select
+        [form]="filterForm"
+        control="metric"
+        size="small"
+        [options]="metricOptions"
+        styleClass="w-full"
+        ariaLabel="Count all commits, only main branch commits or all code contributions"
+        dataTest="org-people-contributors-metric-filter" />
+    </div>
+    <div class="w-full md:w-48">
+      <lfx-select
+        [form]="filterForm"
+        control="employment"
+        size="small"
+        [options]="employmentOptions"
+        styleClass="w-full"
+        [ariaLabel]="employmentLabel"
+        dataTest="org-people-contributors-employment-filter" />
+    </div>
+    <div class="w-full md:w-52">
+      <lfx-select
+        [form]="filterForm"
+        control="teamMembers"
+        size="small"
+        [options]="teamMembersOptions"
+        styleClass="w-full"
+        [ariaLabel]="teamMembersLabel"
+        [tooltip]="teamMembersTooltip"
+        tooltipPosition="top"
+        dataTest="org-people-contributors-team-members-filter" />
+    </div>
+    @if (canClearFilters()) {
+      <button
+        type="button"
+        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+        data-testid="org-people-contributors-clear-filters"
+        (click)="clearFilters()">
+        Clear filters
+      </button>
+    }
   </div>
+
+  @if (response().teamMembersUnavailable) {
+    <p class="text-xs text-gray-500" role="status" data-testid="org-people-contributors-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+  }
 
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-contributors-error">
@@ -73,12 +129,36 @@
         }
       } @else {
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-maintainers">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.maintainers | number }}</div>
-          <div class="mt-1 text-xs text-gray-500">Maintainers</div>
+          <div class="text-2xl font-semibold leading-none text-gray-900">{{ (response().stats.maintainerRoles | number) ?? '—' }}</div>
+          <div class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+            {{ maintainerRolesLabel }}
+            <button
+              type="button"
+              class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="How maintainer roles are counted"
+              [pTooltip]="maintainerRolesTooltip"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              data-testid="org-people-contributors-stat-maintainers-info">
+              <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-contributors">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.contributors | number }}</div>
-          <div class="mt-1 text-xs text-gray-500">Contributors</div>
+          <div class="mt-1 flex items-center gap-1 text-xs text-gray-500">
+            Contributors
+            <button
+              type="button"
+              class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              aria-label="Who is counted"
+              [pTooltip]="contributorsTooltip()"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              data-testid="org-people-contributors-stat-contributors-info">
+              <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+            </button>
+          </div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-contributors-stat-projects">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ response().stats.projects | number }}</div>
@@ -115,7 +195,11 @@
             <p class="text-sm text-gray-700">No contributors match the current filters.</p>
             <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
           } @else {
-            <p class="text-sm text-gray-700">No contributors found for this organization.</p>
+            <p class="text-sm text-gray-700">No contributors found for this organization in the {{ timeRangeLabel() }}.</p>
+            <p class="text-xs text-gray-500">Choose All time to include older contributions.</p>
+            @if (!response().teamMembersUnavailable) {
+              <p class="text-xs text-gray-500" data-testid="org-people-contributors-empty-team-members">{{ teamMembersEmptyHint }}</p>
+            }
           }
         </div>
       } @else {
@@ -147,8 +231,13 @@
                 <button
                   type="button"
                   class="inline-flex w-full items-center gap-1 bg-transparent p-0 text-left text-xs font-medium uppercase tracking-wide text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  [pTooltip]="countTooltip()"
+                  tooltipPosition="top"
+                  tooltipEvent="both"
+                  data-testid="org-people-contributors-count-header-info"
                   (click)="onSort('commits')">
-                  Commits
+                  <span data-testid="org-people-contributors-count-header">{{ countLabel() }}</span>
+                  <i class="fa-light fa-circle-info text-gray-400" aria-hidden="true"></i>
                   <i [class]="icons.commits" aria-hidden="true"></i>
                 </button>
               </th>
@@ -211,7 +300,19 @@
                   </button>
                 </td>
                 <td class="px-4 py-3 align-middle">
-                  @if (row.role === 'Maintainer') {
+                  @if (maintainerRolesUnavailable()) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded bg-transparent p-0 text-xs text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                      [pTooltip]="maintainerRolesUnavailableHint"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-role-unavailable'"
+                      (click)="$event.stopPropagation()">
+                      &mdash;
+                    </button>
+                  } @else if (row.role === 'Maintainer') {
                     <span
                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 whitespace-nowrap">
                       Maintainer
@@ -223,7 +324,7 @@
                     </span>
                   }
                 </td>
-                <td class="px-4 py-3 align-middle font-medium text-gray-800">{{ row.commits | number }}</td>
+                <td class="px-4 py-3 align-middle font-medium text-gray-800">{{ row.count | number }}</td>
                 <td class="px-4 py-3 align-middle text-gray-800">
                   @if (row.lastActiveTs) {
                     {{ row.lastActiveLabel }}
@@ -253,7 +354,7 @@
                             <tr class="text-left text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">
                               <th class="border-b border-gray-200 px-3 py-2">Project</th>
                               <th class="w-32 border-b border-gray-200 px-3 py-2">Role</th>
-                              <th class="w-24 border-b border-gray-200 px-3 py-2 text-right">Commits</th>
+                              <th class="w-24 border-b border-gray-200 px-3 py-2 text-right">{{ countLabel() }}</th>
                               <th class="w-36 border-b border-gray-200 px-3 py-2">Last Active</th>
                             </tr>
                           </thead>
@@ -267,7 +368,18 @@
                                   }
                                 </td>
                                 <td class="px-3 py-2.5">
-                                  @if (sub.role === 'Maintainer') {
+                                  @if (maintainerRolesUnavailable()) {
+                                    <button
+                                      type="button"
+                                      class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                      [attr.aria-label]="maintainerRolesUnavailableHint"
+                                      [pTooltip]="maintainerRolesUnavailableHint"
+                                      tooltipPosition="top"
+                                      tooltipEvent="both"
+                                      [attr.data-testid]="'org-people-contributors-row-' + row.personKey + '-' + sub.projectId + '-role-unavailable'">
+                                      &mdash;
+                                    </button>
+                                  } @else if (sub.role === 'Maintainer') {
                                     <span
                                       class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                       Maintainer
@@ -279,7 +391,7 @@
                                     </span>
                                   }
                                 </td>
-                                <td class="px-3 py-2.5 text-right text-[12.5px] font-medium text-gray-700">{{ sub.commits | number }}</td>
+                                <td class="px-3 py-2.5 text-right text-[12.5px] font-medium text-gray-700">{{ sub.count | number }}</td>
                                 <td class="px-3 py-2.5 text-[12.5px] text-gray-700">
                                   @if (sub.lastActiveTs) {
                                     {{ sub.lastActiveLabel }}
@@ -321,7 +433,7 @@
     </div>
 
     <p class="text-xs text-gray-400" data-testid="org-people-contributors-sources">
-      Source: CDP (Crowd.dev) code-contribution activity, with declared maintainer flags from silver_dim_maintainers; retired projects excluded
+      Source: CDP (Crowd.dev) code-contribution activity, with maintainer roles from project governance files; retired projects excluded
     </p>
   }
 </div>

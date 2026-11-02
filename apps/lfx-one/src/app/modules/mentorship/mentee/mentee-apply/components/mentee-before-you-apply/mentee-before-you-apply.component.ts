@@ -4,18 +4,10 @@
 import { ChangeDetectionStrategy, Component, computed } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
+import { ComplianceConfirmationComponent } from '@app/modules/mentorship/components/compliance-confirmation/compliance-confirmation.component';
 import { TermsAcknowledgementComponent } from '@app/modules/mentorship/components/terms-acknowledgement/terms-acknowledgement.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
-import {
-  MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL,
-  MENTORSHIP_MENTEE_APPLY_BEFORE_INTRO,
-  MENTORSHIP_MENTEE_APPLY_BEFORE_TITLE,
-  MENTORSHIP_MENTEE_APPLY_PUBLICITY_NOTE,
-  MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL,
-  MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL,
-  MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
-  MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
-} from '@lfx-one/shared/constants';
+import { MenteeEligibilityChecksComponent } from '@app/modules/mentorship/mentee/mentee-eligibility-checks/mentee-eligibility-checks.component';
+import { MENTORSHIP_MENTEE_APPLY_BEFORE_INTRO, MENTORSHIP_MENTEE_APPLY_BEFORE_TITLE, MENTORSHIP_MENTEE_APPLY_PUBLICITY_NOTE } from '@lfx-one/shared/constants';
 import { startWith } from 'rxjs';
 
 /**
@@ -24,18 +16,13 @@ import { startWith } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-before-you-apply',
-  imports: [CheckboxComponent, TermsAcknowledgementComponent],
+  imports: [ComplianceConfirmationComponent, MenteeEligibilityChecksComponent, TermsAcknowledgementComponent],
   templateUrl: './mentee-before-you-apply.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeBeforeYouApplyComponent {
   protected readonly title = MENTORSHIP_MENTEE_APPLY_BEFORE_TITLE;
   protected readonly intro = MENTORSHIP_MENTEE_APPLY_BEFORE_INTRO;
-  protected readonly ageLabel = MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL;
-  protected readonly workAuthorizedLabel = MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL;
-  protected readonly noDuplicateProfileLabel = MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL;
-  protected readonly complianceLead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
-  protected readonly complianceItems = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;
   protected readonly publicityNote = MENTORSHIP_MENTEE_APPLY_PUBLICITY_NOTE;
 
   protected readonly form = new FormGroup({

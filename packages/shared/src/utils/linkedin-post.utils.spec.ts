@@ -10,11 +10,21 @@ import {
 } from '../constants/linkedin-post.constants';
 import type { LinkedinForm, LinkedinSetup, LinkedinQuestionItem } from '../interfaces/linkedin-post.interface';
 import { isLinkedinProfile } from './linkedin-post-envelope.utils';
-import { linkedinProfileGapIds, linkedinProfileFromSetup, renderLinkedinProfileMarkdown, renderLinkedinProfileGaps, singleLine } from './linkedin-post.utils';
+import {
+  linkedinProfileGapIds,
+  linkedinProfileFromSetup,
+  parseLinkedinContentSource,
+  renderLinkedinProfileMarkdown,
+  renderLinkedinProfileGaps,
+  singleLine,
+} from './linkedin-post.utils';
 import { parseLinkedinQuestions, renderLinkedinAnswers, validLinkedinAnswers } from './linkedin-post-run.utils';
 
 const setup: LinkedinSetup = { name: 'Example author', role: 'Maintainer', focus_areas: 'Open source', primary_audience: 'Developers' };
 describe('LinkedIn profile and bounded gaps', () => {
+  it.each(['text', 'url', 'file', 'invalid', 'https://source.example/private', undefined])('allow-lists public source navigation: %s', (value) => {
+    expect(parseLinkedinContentSource(value)).toBe(value === 'url' || value === 'file' ? value : 'text');
+  });
   it('normalizes 100k tabs in bounded time without changing single-line output', () => {
     const tabs = '\t'.repeat(100000);
     const started = performance.now();

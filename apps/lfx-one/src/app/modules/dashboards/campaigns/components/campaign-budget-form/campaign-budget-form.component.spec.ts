@@ -5,13 +5,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED } from '@lfx-one/shared/constants';
 import { CampaignBudgetChange } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { CampaignBudgetFormComponent } from './campaign-budget-form.component';
 
 describe('CampaignBudgetFormComponent', () => {
   let fixture: ComponentFixture<CampaignBudgetFormComponent>;
-  let submitted: ReturnType<typeof vi.fn>;
+  let submitted: Mock;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({

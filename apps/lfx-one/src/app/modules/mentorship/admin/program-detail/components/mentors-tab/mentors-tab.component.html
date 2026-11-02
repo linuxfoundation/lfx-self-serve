@@ -129,7 +129,19 @@
                   [styleClass]="row.avatarStyleClass"
                   [ariaLabel]="row.name" />
                 <div class="flex flex-col min-w-0">
-                  <span class="text-sm font-medium text-gray-900 truncate" [title]="row.name">{{ row.name }}</span>
+                  @if (row.hasPublicPage && row.userId) {
+                    <a
+                      class="text-sm font-medium text-blue-600 truncate transition-colors hover:text-blue-700 hover:underline"
+                      [href]="row.userId | mentorshipPublicUrl: 'mentors'"
+                      [title]="row.name"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.data-testid]="'mentorship-mentor-link-' + row.id">
+                      {{ row.name }}
+                    </a>
+                  } @else {
+                    <span class="text-sm font-medium text-gray-900 truncate" [title]="row.name">{{ row.name }}</span>
+                  }
                 </div>
               </div>
             </td>

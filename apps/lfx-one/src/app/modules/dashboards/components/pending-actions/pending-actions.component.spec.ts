@@ -70,6 +70,7 @@ async function render(
           user: signal(null),
           authenticated: signal(false),
           viewerUsername: signal(null),
+          impersonating: signal(false),
           meetingRegistrationGeneration: vi.fn(() => 0),
           recordConfirmedMeetingRsvp: vi.fn(),
           isMeetingRsvpCurrent: vi.fn(() => true),
@@ -577,6 +578,31 @@ describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)'
     expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
   });
 
+  it('renders the inline ballot read-only during impersonation without submitting or dismissing the action', async () => {
+    hiddenActions.hideAction.mockClear();
+    hiddenActions.dismissAction.mockClear();
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const submitMyResponse = vi.fn();
+    const fixture = await render([voteRow('vote-1')], true, { getVote, submitMyResponse });
+    TestBed.inject(UserService).impersonating.set(true);
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-readonly')?.textContent).toContain('Ballots are read-only');
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-submit')).toBeNull();
+    byTestId(fixture, 'dashboard-pending-actions-vote-readonly-close')!.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeNull();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-button')).not.toBeNull();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+  });
+
   it('falls back to the cast drawer for a ranked-choice vote', async () => {
     const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE })));
     const fixture = await render([voteRow('vote-1')], true, { getVote });
@@ -589,5 +615,74 @@ describe('PendingActionsComponent — vote dispatch by poll_type (#4076 review)'
 
     expect(castVoteRequested).toHaveBeenCalledWith('vote-1');
     expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeNull();
+  });
+
+  // #4148: at phone width the inline ballot stacks 44px choice rows and is taller than the row's 12rem
+  // max-height, so the row's overflow:hidden clipped it to its first lines (prompt text only, no choices
+  // or Submit). The expanded row lifts the cap; a collapsed row and a drawer-bound vote keep it.
+  it('lifts the row height cap only while the inline ballot is expanded', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+    const row = (): HTMLElement => fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-item-Vote"]');
+
+    expect(row().classList).not.toContain('is-vote-expanded');
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+    expect(row().classList).toContain('is-vote-expanded');
+  });
+
+  it('does not lift the cap for a drawer-bound vote', async () => {
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.INSTANT_RUNOFF_VOTE })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-item-Vote"]').classList).not.toContain('is-vote-expanded');
+  });
+
+  // #4148: Cancel on the inline ballot only collapses it. The row goes back to its Cast Vote state, still
+  // actionable and still unresolved: no dismiss/hide cookie, no completion fade, and reopening reuses the cached vote.
+  it('collapses back to the Cast Vote state on Cancel without dismissing the action', async () => {
+    hiddenActions.hideAction.mockClear();
+    hiddenActions.dismissAction.mockClear();
+    const getVote = vi.fn().mockReturnValue(of(singleQuestionVote({ poll_type: PollType.MAJORITY })));
+    const fixture = await render([voteRow('vote-1')], true, { getVote });
+    const row = (): HTMLElement => byTestId(fixture, 'dashboard-pending-actions-item-Vote')!;
+
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeTruthy();
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-button')).toBeNull();
+
+    byTestId(fixture, 'dashboard-pending-actions-vote-cancel')!.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-ballot')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeNull();
+    const castButton = byTestId(fixture, 'dashboard-pending-actions-vote-button');
+    expect(castButton).toBeTruthy();
+    expect(castButton!.textContent).toContain('Vote now');
+    expect(castButton!.querySelector<HTMLButtonElement>('button')!.disabled).toBe(false);
+    expect(byTestId(fixture, 'dashboard-pending-actions-vote-loading')).toBeNull();
+    expect(row()).toBeTruthy();
+    expect(row().classList).not.toContain('is-completing');
+    expect(row().classList).not.toContain('is-vote-expanded');
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+
+    // Reopening shows the ballot again from the cached vote, with no second fetch.
+    clickVoteButton(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('lfx-vote-ballot-inline')).toBeTruthy();
+    expect(getVote).toHaveBeenCalledTimes(1);
   });
 });

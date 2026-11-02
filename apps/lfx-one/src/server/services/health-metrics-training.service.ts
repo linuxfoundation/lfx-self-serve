@@ -26,8 +26,6 @@ import type {
   HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentTotals,
-  HealthMetricsTrainingPresence,
-  HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -76,24 +74,6 @@ export class HealthMetricsTrainingService {
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
-  }
-
-  /** Whether LF Education has any training rows for the foundation; none means it runs no programme. */
-  public async getPresence(req: Request, query: HealthMetricsTrainingPresenceQuery): Promise<HealthMetricsTrainingPresence> {
-    const sql = `
-      SELECT 1 AS present
-      FROM ${TRAINING_SUMMARY_VIEW}
-      WHERE foundation_slug = ?
-      LIMIT 1
-    `;
-
-    const { rows } = await executeSnowflakeViewRead<{ PRESENT: number }>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      operation: 'get_training_presence',
-      view: TRAINING_SUMMARY_VIEW,
-      clientMessage: 'Training is unavailable right now.',
-    });
-
-    return { hasProgramme: rows.length > 0 };
   }
 
   /** Every period's KPI strip and by-type split from the summary, plus enrollments for every year, in one read. */

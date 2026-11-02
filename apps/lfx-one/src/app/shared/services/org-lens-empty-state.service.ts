@@ -25,8 +25,9 @@ import { PersonaService } from './persona.service';
  *      AND caller holds nothing loaded                          → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
- *   6. caller holds nothing                                     → `no-organization`
- *   7. otherwise (a selection is pending)                       → `null`
+ *   6. caller holds nothing, but works for an LF member org     → `affiliated-no-grant` (#4225)
+ *   7. caller holds nothing                                     → `no-organization`
+ *   8. otherwise (a selection is pending)                       → `null`
  *
  * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
  * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
@@ -35,8 +36,9 @@ import { PersonaService } from './persona.service';
  *
  * Rule 1 before 2/3 is the #2216 blocking fix ("direct grants must not fail when only group expansion
  * fails") — a held-but-degraded caller keeps their page and the switcher shows the FR-010 notice
- * instead (DR-002). Rule 4 before 5–6 is the epic's never-fall-through rule (FR-011): a failed team check
- * must not read as the contractor or employee copy.
+ * instead (DR-002). Rule 4 before 5–7 is the epic's never-fall-through rule (FR-011): a failed team check
+ * must not read as the contractor or employee copy. Rule 6 keeps it too: the employer verdict is
+ * rendered only when the server says it completed, never inferred from its absence.
  *
  * The addressed-but-unheld states (FR-007 / FR-008) are not decided here: `orgPathParamGuard` already
  * lands every unheld or unknown address on `/org/not-found`, which picks between them (research R6) —
@@ -154,7 +156,11 @@ export class OrgLensEmptyStateService {
       return null;
     }
     if (!holdsAnything) {
-      return 'no-organization';
+      // #4225 — rule 6 splits on the caller's own employer. Someone who works for a member company
+      // and was simply never granted access is not missing an affiliation, and must not be sent to
+      // add one: that is the one action guaranteed not to help them. False whenever the server could
+      // not establish it, so an outage or an older server keeps the wording below.
+      return this.roleGrants.affiliatedToMember() ? 'affiliated-no-grant' : 'no-organization';
     }
     return null;
   });

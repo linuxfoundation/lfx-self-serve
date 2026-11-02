@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-10-06
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
@@ -36,6 +36,15 @@ Select **New Initiative** in the page header to open the creation flow in LFX Cr
 
 When you have no initiatives, the empty list also offers **New Initiative**. If you already have initiatives but the selected status filter has no matches, the list shows that filter's empty message without an in-panel creation action. You can switch filters or use **New Initiative** in the header.
 
+## Initiatives under other lenses
+
+The same page appears under the **Project**, **Foundation**, and **Org** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected entity. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity, and it can show two extra states:
+
+- **You don't have access to these initiatives** — only writers on the project, foundation, or organization can see the initiatives run on its behalf.
+- **Initiatives couldn't be loaded** — LFX Crowdfunding is temporarily unavailable. Select **Try again**.
+
+See [Lens-scoped Initiatives](../lens-initiatives/) for who can see these pages.
+
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
@@ -57,3 +66,4 @@ The initiative detail page opens, where you can review financials and manage the
 
 - [Manage Initiatives](../manage-initiatives/) — edit settings, archive, or activate an initiative from its detail page
 - [Initiatives](../my-initiatives/) — overview of the Initiatives section
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization

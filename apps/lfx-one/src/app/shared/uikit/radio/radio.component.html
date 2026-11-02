@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<label [class]="labelClasses()" data-testid="ui-radio-label">
+  <span class="relative inline-flex shrink-0">
+    <input
+      type="radio"
+      [class]="circleClasses()"
+      [name]="group.groupName()"
+      [value]="value()"
+      [checked]="isChecked()"
+      [disabled]="isDisabled()"
+      (change)="onChange()"
+      data-testid="ui-radio-input" />
+    @if (isChecked()) {
+      <span [class]="dotClasses()" data-testid="ui-radio-dot"></span>
+    }
+  </span>
+  <span data-testid="ui-radio-text">{{ label() }}</span>
+</label>

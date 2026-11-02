@@ -475,6 +475,11 @@ export interface SidebarMenuItem {
   activeOnSubpaths?: boolean;
   /** Further paths that also highlight this item, matched with the same options as `routerLink` */
   activeAliases?: string[];
+  /**
+   * Query parameters this link copies from the current address, only while the current page is an item that carries the
+   * same parameter — e.g. the Org Lens range between People and Code Contributions. Absent ones are not added.
+   */
+  carryQueryParams?: readonly string[];
   /** External URL */
   url?: string;
   /** Target for external links */
@@ -900,3 +905,6 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/** Neutral Marketing OS loading shapes; never a guessed domain state. */
+export type MktgSkeletonVariant = 'run-page' | 'header' | 'card' | 'rows';

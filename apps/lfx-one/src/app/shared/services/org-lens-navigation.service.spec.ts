@@ -22,6 +22,7 @@ describe('OrgLensNavigationService', () => {
   let selectedAccount: WritableSignal<Account>;
   /** Derived exactly as `AccountContextService` derives it (slug, else SFID; reserved names fall back). */
   let selectedUrlSegment: Signal<string | null>;
+  let isAddressedSelection: WritableSignal<boolean>;
   let service: OrgLensNavigationService;
   let router: Router;
   let navigate: MockInstance<Router['navigate']>;
@@ -30,9 +31,10 @@ describe('OrgLensNavigationService', () => {
   beforeEach(() => {
     selectedAccount = signal<Account>(acme);
     selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
+    isAddressedSelection = signal(false);
     currentUrl = '/';
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment } }],
+      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment, isAddressedSelection } }],
     });
     router = TestBed.inject(Router);
     Object.defineProperty(router, 'url', { get: () => currentUrl });
@@ -56,6 +58,28 @@ describe('OrgLensNavigationService', () => {
     });
   });
 
+  describe('orgLensLandingLink', () => {
+    it("addresses the overview of a selection carrying the index slug, the menu's Dashboard link", () => {
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'acme-inc', 'overview']);
+    });
+
+    it('addresses a uid-only selection once it is pinned, by an address or by the org list', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_A });
+      isAddressedSelection.set(true);
+      expect(service.orgLensLandingLink()).toEqual(['/org', UID_A, 'overview']);
+    });
+
+    it('lands an unconfirmed uid-only stub restored from the cookie on the legacy overview, for the org list to re-address', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_A });
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
+    });
+
+    it('lands on the legacy overview while nothing is selected', () => {
+      selectedAccount.set(placeholder);
+      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
+    });
+  });
+
   describe('isOnAddressedPage', () => {
     it.each([
       ['/org/acme-inc/overview', true],
@@ -72,13 +96,15 @@ describe('OrgLensNavigationService', () => {
   });
 
   describe('navigateToSelectedOrg', () => {
-    it('swaps the organization and keeps the page, query and fragment on an addressed page', () => {
-      currentUrl = '/org/other-org/projects/k8s?card=contributors#top';
+    it('swaps the organization and keeps the page, query and fragment on an addressed page, dropping only ?employees=', () => {
+      currentUrl = '/org/other-org/projects/k8s?card=contributors&employees=p-1#top';
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/projects/k8s');
       // Pushed, not replaced: a switch is a user intent, and Back must return to the pre-switch
       // organization and page (US2 scenario 3).
-      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
+      expect(navigate.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'merge', queryParams: { employees: null }, preserveFragment: true })
+      );
     });
 
     // DR-004 exemption ended (lfx-self-serve#2743): EasyCLA pages re-address like every other page.
@@ -100,7 +126,9 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
       service.navigateToSelectedOrg('switch');
       expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
-      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+      expect(navigate.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, org: null, signed: null } })
+      );
     });
 
     // A gated return (`/org/{A}/easycla/{g}?signed=1`) is the same trip on the other mount: the
@@ -110,15 +138,18 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/easycla/abc-123?signed=1&org=0014100000MgbBBBBB&sig=s1';
       service.navigateToSelectedOrg('switch');
       expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
-      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+      expect(navigate.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, org: null, signed: null } })
+      );
     });
 
-    it('preserves the query on a switch between organization-addressed non-EasyCLA pages', () => {
-      currentUrl = '/org/other-org/projects?range=90d';
+    // An Employees selection came from the previous organization's roster, so a switch drops it on
+    // every Org Lens page; the rest of the query still describes the page and is merged through.
+    it('drops ?employees=, and only that, on a switch between organization-addressed non-EasyCLA pages', () => {
+      currentUrl = '/org/other-org/contributions?range=90d&employees=p-1';
       service.navigateToSelectedOrg('switch');
-      expect(navigatedTo()).toBe('/org/acme-inc/projects');
-      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'preserve' }));
-      expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
+      expect(navigatedTo()).toBe('/org/acme-inc/contributions');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null } }));
     });
 
     // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
@@ -200,6 +231,7 @@ describe('OrgLensNavigationService', () => {
       service.navigateToSelectedOrg('default');
       expect(navigatedTo()).toBe('/org/acme-inc/people');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true }));
+      expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
     });
 
     it('lands on the overview from the bare /org', () => {

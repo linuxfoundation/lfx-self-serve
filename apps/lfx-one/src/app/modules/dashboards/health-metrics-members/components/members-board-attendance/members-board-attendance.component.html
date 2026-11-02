@@ -28,6 +28,8 @@
       data-testid="members-board-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-board-loading" aria-hidden="true" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else if (!loading() && noMeetings()) {
     <lfx-empty-state
       variant="compact"

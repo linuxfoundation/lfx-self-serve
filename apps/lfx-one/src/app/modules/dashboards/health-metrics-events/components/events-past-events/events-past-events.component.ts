@@ -40,8 +40,8 @@ export class EventsPastEventsComponent {
 
   /** The sub-nav badge: events closed in the selected period; `null` while a read is pending or failed, and `0` for a foundation with none. */
   public readonly countChange = output<number | null>();
-  /** Fires once the event list settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
   /** The cross-link back to the forecast; the L2 shell owns scrolling, so a repeat click still lands. */
@@ -55,6 +55,8 @@ export class EventsPastEventsComponent {
   }));
   protected readonly response: Signal<HealthMetricsEventsPast> = this.initResponse();
   protected readonly view: Signal<HealthMetricsEventsPastView> = computed(() => buildHealthMetricsEventsPastView(this.response(), this.chrome.selectedRange()));
+  /** No event closed in the period, or it was never measured; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().rows.length === 0);
 
   protected readonly closedLabel = computed(() => formatHealthMetricsEventsPastClosedLabel(this.view().eventCount));
   protected readonly registrationsLabel = computed(() => formatHealthMetricsEventsCount(this.view().registrations));
@@ -106,7 +108,8 @@ export class EventsPastEventsComponent {
                 this.countChange.emit(buildHealthMetricsEventsPastView(response, this.chrome.selectedRange()).eventCount);
               }
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && buildHealthMetricsEventsPastView(response, this.chrome.selectedRange()).rows.length === 0);
             })
           )
         )
@@ -121,6 +124,6 @@ export class EventsPastEventsComponent {
     if (this.loadFailed() || this.loading()) return;
 
     this.countChange.emit(this.view().eventCount);
-    this.settled.emit();
+    this.settled.emit(this.view().rows.length === 0);
   }
 }

@@ -1,17 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Project Lens → Participating Organizations (#2091). Time-range options are shared with
-// Org Lens → Code Contributions (CONTRIBUTIONS_DATE_RANGE_OPTIONS / CONTRIBUTIONS_DEFAULT_DATE_RANGE).
+// Project Lens → Participating Organizations (#2091).
 
 import type { MembershipTierClass } from '../interfaces/org-lens.interface';
 import type {
   ProjectParticipatingOrgChangeTone,
   ProjectParticipatingOrgsContributionFilter,
   ProjectParticipatingOrgsPage,
+  ProjectParticipatingOrgsRange,
+  ProjectParticipatingOrgsRangeOption,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
 } from '../interfaces/project-participating-orgs.interface';
+
+/** `time_range` values of the PROJECT_PARTICIPATING_ORGS{,_SUMMARY} tables; also the BFF's allow-list. */
+export const PROJECT_PARTICIPATING_ORGS_RANGES = ['12mo', '90d', '30d', 'all'] as const;
+
+export const PROJECT_PARTICIPATING_ORGS_DEFAULT_RANGE: ProjectParticipatingOrgsRange = '12mo';
+
+export const PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly ProjectParticipatingOrgsRangeOption[] = [
+  { label: 'Past 12 Months', value: '12mo' },
+  { label: 'Past 90 Days', value: '90d' },
+  { label: 'Past 30 Days', value: '30d' },
+  { label: 'All Time', value: 'all' },
+];
 
 export const PROJECT_PARTICIPATING_ORGS_SEGMENTS = ['all', 'members', 'non_members'] as const;
 

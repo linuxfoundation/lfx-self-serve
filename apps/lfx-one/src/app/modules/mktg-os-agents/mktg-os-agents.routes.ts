@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
+import type { MktgKitTabPath } from '@lfx-one/shared/interfaces';
 import { authGuard } from '@shared/guards/auth.guard';
 
 export const MKTG_OS_AGENTS_ROUTES: Routes = [
@@ -21,14 +22,14 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
   {
     path: 'requests',
     title: 'Marketing requests',
-    data: { title: 'Requests' },
+    data: { title: 'Requests', tab: 'requests' satisfies MktgKitTabPath },
     loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
     canActivate: [authGuard],
   },
   {
     path: 'access',
     title: 'Marketing access',
-    data: { title: 'Access' },
+    data: { title: 'Access', tab: 'access' satisfies MktgKitTabPath },
     loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
     canActivate: [authGuard],
   },

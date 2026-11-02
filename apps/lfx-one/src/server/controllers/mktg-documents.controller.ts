@@ -123,7 +123,10 @@ export class MktgDocumentsController {
       const progress = await this.documentRuns.readProgress(req, project, undefined, undefined, req.query['poll'] === '1');
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
-      res.json({ ...documents, ...progress });
+      const ownRuns = req.query['ownRuns'] === '1';
+      const selected = ownRuns ? await this.documentRuns.ownProgress(req, project, progress) : progress;
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ ...documents, ...selected, ...(ownRuns ? { creatorScoped: true } : {}) });
     } catch (error) {
       next(error);
     }
@@ -139,6 +142,11 @@ export class MktgDocumentsController {
     }
 
     const poll = req.query['poll'] === '1';
+    const selectedRun = req.query['run'];
+    if (selectedRun !== undefined && (typeof selectedRun !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(selectedRun))) {
+      next(this.invalidField(req, operation, 'run', 'run must name one recorded run'));
+      return;
+    }
     const refreshRun = req.query['refreshRun'];
     if (refreshRun !== undefined && (poll || typeof refreshRun !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(refreshRun))) {
       next(this.invalidField(req, operation, 'refreshRun', 'refreshRun must name one run on an explicit detail read'));
@@ -156,7 +164,8 @@ export class MktgDocumentsController {
         () => this.documentStore.getDocument(req, project, params.type, params.documentId),
         progress,
         poll,
-        typeof refreshRun === 'string' ? refreshRun : undefined
+        typeof refreshRun === 'string' ? refreshRun : undefined,
+        typeof selectedRun === 'string' ? selectedRun : undefined
       );
       if (!response) {
         throw new ResourceNotFoundError('Marketing OS document', params.documentId, {

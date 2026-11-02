@@ -26,6 +26,38 @@ describe('isMissingObjectError', () => {
     expect(isMissingObjectError('Object X does not exist or not authorized.')).toBe(true);
     expect(isMissingObjectError({ some: 'object' })).toBe(false);
   });
+
+  describe('with an expected object', () => {
+    const missing = (object: string) =>
+      new Error(`Snowflake query execution failed: SQL compilation error: Object '${object}' does not exist or not authorized.`);
+
+    it('matches the blamed object by its unqualified name', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+      expect(isMissingObjectError(missing('ORG_PEOPLE_COMPANY_EMAILS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+    });
+
+    // The whole point of the argument: a core table going missing in the same statement must not be
+    // exempted by a caller that only expects its own optional table to be absent.
+    it('does not match a different missing object', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+      expect(isMissingObjectError(missing('ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+    });
+
+    it('requires a dot at the qualified-name boundary', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.SILVER_FACT.LEGACY_EVENT_REGISTRATIONS'), 'EVENT_REGISTRATIONS')).toBe(false);
+    });
+
+    it('does not match when Snowflake names no object', () => {
+      const unnamed = new Error('SQL compilation error: Object does not exist or not authorized.');
+      expect(isMissingObjectError(unnamed)).toBe(true);
+      expect(isMissingObjectError(unnamed, 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+    });
+
+    it('ignores case and quoting on both sides', () => {
+      expect(isMissingObjectError(missing('analytics.platinum_lfx_one.org_people_company_emails'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+      expect(isMissingObjectError(new Error('Table "ORG_PEOPLE_COMPANY_EMAILS" does not exist or not authorized.'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+    });
+  });
 });
 
 describe('isInvalidIdentifierError', () => {
@@ -58,6 +90,18 @@ describe('isInvalidIdentifierError', () => {
   it('does not match a longer identifier that shares the expected prefix', () => {
     const error = new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS_VALUE'");
     expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(false);
+  });
+
+  // An aliased column comes back qualified with its alias, as written in the query (lfx-self-serve#4685).
+  it('matches a qualified identifier on its last part', () => {
+    const error = Object.assign(new Error("SQL compilation error: error line 9 at position 46\ninvalid identifier 'R.IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
+    expect(isInvalidIdentifierError(error, 'TEAM_MEMBER')).toBe(false);
+  });
+
+  it('matches a quoted qualified identifier', () => {
+    const error = new Error('SQL compilation error: invalid identifier \'R."IS_CDP_TEAM_MEMBER"\'');
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
   });
 
   it('does not accept an identifier-specific fallback from error code alone', () => {

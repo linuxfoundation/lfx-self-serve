@@ -59,7 +59,9 @@ import {
 } from '../interfaces/boilerplates.interface';
 import { FoundationMessageQuestion } from '../interfaces/foundation-message.interface';
 import { MktgBoilerplatesAsset, MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface';
-import { foundationMessageBasisLinks, foundationMessageQuestionLabel, isFoundationMessageAnswerSubstantive } from './foundation-message.utils';
+import { foundationMessageBasisLinks, foundationMessageQuestionLabel } from './foundation-message.utils';
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -391,7 +393,7 @@ export function validateBoilerplatesAnswers(answers: unknown): BoilerplatesValid
   }
   const errors: string[] = [];
   if (answers.length === 0 || answers.length > BOILERPLATES_MAX_QUESTIONS) {
-    errors.push(`answers takes 1 to ${BOILERPLATES_MAX_QUESTIONS} entries`);
+    errors.push(answers.length === 0 ? MKTG_ANSWERS_INCOMPLETE_MESSAGE : `answers takes 1 to ${BOILERPLATES_MAX_QUESTIONS} entries`);
   }
   const seen = new Set<string>();
   answers.forEach((entry: unknown, index) => {
@@ -413,9 +415,10 @@ export function validateBoilerplatesAnswers(answers: unknown): BoilerplatesValid
       seen.add(key);
     }
     const text = entry['text'];
-    if (typeof text !== 'string' || !isFoundationMessageAnswerSubstantive(text)) {
-      errors.push(`${at}.text must be an answer — not empty, not a skip, not a TBD`);
-    } else if (text.length > BOILERPLATES_ANSWER_MAX_CHARS) {
+    const problem = mktgAnswerProblem(text);
+    if (problem) {
+      errors.push(`${problem}: ${typeof key === 'string' ? key : at}`);
+    } else if (typeof text === 'string' && text.length > BOILERPLATES_ANSWER_MAX_CHARS) {
       errors.push(`${at}.text must be at most ${BOILERPLATES_ANSWER_MAX_CHARS} characters`);
     }
     if (!(FOUNDATION_MESSAGE_ANSWER_ORIGINS as readonly string[]).includes(entry['origin'] as string)) {

@@ -54,15 +54,52 @@ describe('InsightsTokenCreateDialogComponent', () => {
     expect(component['form'].controls.name.hasError('maxCodePoints')).toBe(true);
   });
 
-  it('creates with the trimmed name and closes with the response', () => {
+  it('creates with the trimmed name and the default 90-day expiration, and closes with the response', () => {
     const created = { token: { uid: 't-1' }, secret: 'lfi_x' };
     service.createToken.mockReturnValue(of(created));
     component['form'].controls.name.setValue('  ci-pipeline  ');
 
     component['submit']();
 
-    expect(service.createToken).toHaveBeenCalledWith('ci-pipeline');
+    expect(service.createToken).toHaveBeenCalledWith('ci-pipeline', '90d');
     expect(dialogRef.close).toHaveBeenCalledWith(created);
+  });
+
+  it('creates with the chosen expiration', () => {
+    service.createToken.mockReturnValue(of({ token: { uid: 't-1' }, secret: 'lfi_x' }));
+    component['form'].controls.name.setValue('ci-pipeline');
+    component['form'].controls.expiration.setValue('none');
+
+    component['submit']();
+
+    expect(service.createToken).toHaveBeenCalledWith('ci-pipeline', 'none');
+  });
+
+  describe('expiry preview', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2026, 8, 7, 10, 30));
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    it.each([
+      ['30d', new Date(2026, 9, 7, 10, 30)],
+      ['60d', new Date(2026, 10, 6, 10, 30)],
+      ['90d', new Date(2026, 11, 6, 10, 30)],
+      ['1y', new Date(2027, 8, 7, 10, 30)],
+    ] as const)('shows the date a %s token expires on, counted from now', (expiration, expected) => {
+      const dialog = TestBed.createComponent(InsightsTokenCreateDialogComponent).componentInstance;
+      dialog['form'].controls.expiration.setValue(expiration);
+
+      expect(dialog['expiresOn']()).toEqual(expected);
+    });
+
+    it('has no date for a token that never expires', () => {
+      component['form'].controls.expiration.setValue('none');
+
+      expect(component['expiresOn']()).toBeNull();
+    });
   });
 
   it.each(['token_name_taken', 'token_limit_reached', 'not_enabled'] as const)('maps upstream code %s to its inline message', (code) => {

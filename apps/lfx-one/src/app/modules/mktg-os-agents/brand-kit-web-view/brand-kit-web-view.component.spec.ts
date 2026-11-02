@@ -7,15 +7,16 @@ import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ProjectContextService } from '@services/project-context.service';
-import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
+import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { BrandKitWebViewComponent } from './brand-kit-web-view.component';
 
@@ -27,13 +28,14 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
  * page, the book for print): the framework view's header and keyboard tabs,
  * each tab rendered from a fixture kit, the built-from text with no URL, the
  * book in its print-only wrapper (never on screen), and Download PDF printing
- * it — the print class on the body, cleared after the print and on destroy,
- * never on the server.
+ * it in an isolated frame, cleared after the print and on destroy, never
+ * on the server.
  */
 describe('BrandKitWebViewComponent', () => {
+  const activeContext = signal({ slug: 'synthetic', name: 'Synthetic project' });
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
@@ -46,6 +48,7 @@ describe('BrandKitWebViewComponent', () => {
   };
 
   const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision(), url = '/'): Promise<void> => {
+    activeContext.set({ slug: 'synthetic', name: 'Synthetic project' });
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
@@ -55,7 +58,7 @@ describe('BrandKitWebViewComponent', () => {
       imports: [BrandKitWebViewComponent],
       providers: [
         provideRouter([{ path: '**', children: [] }]),
-        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+        { provide: ProjectContextService, useValue: { activeContext } },
         provideNoopAnimations(),
         provideMktgCommentsStub({
           loaded: signal(true),
@@ -175,7 +178,26 @@ describe('BrandKitWebViewComponent', () => {
       expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
       expect(query('mktg-slides-export-running')).not.toBeNull();
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
-      expect(query('brand-kit-web-view-footer')?.textContent).toContain('Export to Google Slides builds the kit as a deck');
+      expect(query('brand-kit-web-view-footer')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'PDF in portrait pages: logo, colour, typography, visual and voice. Export to Google Slides builds the kit as a deck in Google Drive, in the kit’s colours, typeface and logo.'
+      );
+    });
+
+    it('replaces draft exports with a quiet explanation and restores Slides then solid PDF on approval', async () => {
+      fixture.componentRef.setInput('viewingDraft', true);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-required')?.textContent).toBe('Export is available once this version is approved');
+      expect(button('brand-kit-web-view-download-pdf')).toBeNull();
+      expect(button('brand-kit-web-view-export-slides')).toBeNull();
+      fixture.componentRef.setInput('viewingDraft', false);
+      await fixture.whenStable();
+      const actions = query('brand-kit-web-view-actions');
+      expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
+        'Export to Google Slides',
+        'Download PDF',
+      ]);
+      expect(button('brand-kit-web-view-export-slides')?.classList.contains('p-button-outlined')).toBe(true);
+      expect(button('brand-kit-web-view-download-pdf')?.classList.contains('p-button-outlined')).toBe(false);
     });
 
     it('heads the page as the framework view does: the title, the kit’s version, the mode, and the actions', async () => {
@@ -192,8 +214,8 @@ describe('BrandKitWebViewComponent', () => {
       await fixture.whenStable();
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
       // Viewing a new Draft does not relabel the independently approved print target.
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
+      expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
     });
 
     it('prints approved kit bytes while the screen renders a different Draft', async () => {
@@ -203,7 +225,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-title')?.textContent).toContain('Synthetic draft only');
       expect(query('brand-kit-web-view-print')?.textContent).toContain('Project One');
       expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('mktg-brand-kit-print')?.getAttribute('data-revision')).toBe('V1.0');
     });
 
     it('omits the book and guards Download PDF when no approved kit is supplied', async () => {
@@ -234,13 +256,27 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
-    it('keeps the book in its print-only wrapper — never on screen — and wraps every text block', () => {
+    it('prints the active project identity and local chapter numbers, not kit-content identity or family prefixes', async () => {
+      const wrapper = query('brand-kit-web-view-print');
+      const head = () => wrapper?.querySelector('[data-testid="mktg-print-running-head"]')?.textContent;
+      expect(head()).toContain('Synthetic project Brand kit');
+      expect(head()).not.toContain('Project One');
+      expect(Array.from(wrapper?.querySelectorAll('h2 > span') ?? []).map((span) => span.textContent?.trim())).toEqual(['1', '2', '3', '4', '5']);
+      activeContext.set({ slug: 'synthetic', name: 'Updated project context' });
+      await fixture.whenStable();
+      expect(head()).toContain('Updated project context Brand kit');
+      expect(wrapper?.querySelector('[data-testid="mktg-brand-kit-print"]')?.getAttribute('data-revision')).toBe('V1.0');
+    });
+
+    it('keeps the shared native portrait chapters in the print-only wrapper without changing screen content', () => {
       const wrapper = query('brand-kit-web-view-print');
       expect(wrapper?.classList.contains(BRAND_KIT_PRINT_ONLY_CLASS)).toBe(true);
-      // The book is inside it, and nowhere else on the page.
-      expect(wrapper?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('brand-kit-book'))).toBe(true);
+      expect(wrapper?.classList.contains(FOUNDATION_MESSAGE_PRINT_ONLY_CLASS)).toBe(true);
+      expect(wrapper?.querySelector('.lfx-framework-print.lfx-brand-kit-portrait')).not.toBeNull();
+      expect(wrapper?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
+      expect(wrapper?.querySelectorAll('.kit-chapter > thead [data-testid="mktg-print-running-head"]')).toHaveLength(5);
+      expect(host().querySelectorAll('.lfx-brand-kit-page')).toHaveLength(0);
+      expect(host().querySelector(`.${BRAND_KIT_PRINT_ONLY_CLASS}`)?.contains(query('mktg-brand-kit-print'))).toBe(true);
       // The book brings no toolbar of its own: the actions are the web view's.
       expect(query('brand-kit-view-toolbar')).toBeNull();
       expect(query('brand-kit-web-view')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
@@ -286,7 +322,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-panel-overview')?.getAttribute('aria-labelledby')).toBe('brand-kit-web-view-tab-overview');
     });
 
-    it('Overview: what the kit is built from, the brand at a glance, and the six chapters, each opening its tab', async () => {
+    it('Overview: six plain chapter cards, with navigation only through the tabs', async () => {
       expect(query('brand-kit-web-view-built-from')?.textContent).toContain('Built from the logo file logo.svg, the messaging framework');
       expect(query('brand-kit-web-view-glance')?.querySelector('img')?.getAttribute('alt')).toBe('Primary lockup — logo.svg');
       const chapters = Array.from(query('brand-kit-web-view-chapters')?.querySelectorAll('article') ?? []);
@@ -295,11 +331,12 @@ describe('BrandKitWebViewComponent', () => {
       );
       expect(query('brand-kit-web-view-chapter-color')?.textContent).toContain('Charcoal and white carry the brand.');
 
-      query('brand-kit-web-view-open-color')?.click();
+      expect(host().querySelector('[data-testid^="brand-kit-web-view-open-"]')).toBeNull();
+      tab('color').click();
       await fixture.whenStable();
       expect(tab('color').getAttribute('aria-selected')).toBe('true');
       expect(query('brand-kit-web-view-panel-color')).not.toBeNull();
-      // The clicked Overview shortcut leaves with its panel; focus moves to the new panel's start.
+      // Selecting a chapter tab moves focus to the new panel's start.
       expect(document.activeElement).toBe(query('brand-kit-web-view-panel-color'));
     });
 
@@ -403,7 +440,7 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-panel-voice')?.textContent).toContain('From the messaging framework');
     });
 
-    it('Sources and gaps: the framework view’s treatment, opened by Report with the count of gaps and failures', async () => {
+    it('Sources and gaps stays reachable through its tab without a duplicate Report control', async () => {
       const kit = brandKitTestRevision();
       kit.report = {
         sources_read: ['https://one.example.org', 'logo.svg'],
@@ -413,9 +450,10 @@ describe('BrandKitWebViewComponent', () => {
       };
       fixture.componentRef.setInput('kit', kit);
       await fixture.whenStable();
-      expect(query('brand-kit-web-view-report')?.querySelector('.p-badge')?.textContent?.trim()).toBe('3');
+      expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (3)');
 
-      button('brand-kit-web-view-report')?.click();
+      tab('sources').click();
       await fixture.whenStable();
 
       expect(tab('sources').getAttribute('aria-selected')).toBe('true');
@@ -425,8 +463,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-report-notes')?.querySelectorAll('li')).toHaveLength(2);
     });
 
-    it('says so where the run left nothing to report, and shows no count on Report', async () => {
-      expect(query('brand-kit-web-view-report')?.querySelector('.p-badge')).toBeNull();
+    it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {
+      expect(query('brand-kit-web-view-report')).toBeNull();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps');
       await open('sources');
 
       expect(query('brand-kit-web-view-sources-failed-empty')).not.toBeNull();
@@ -434,48 +473,54 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-notes-empty')).not.toBeNull();
     });
 
-    it('Download PDF marks the body for the print, asks the browser to print the book, and clears the mark when the print ends', async () => {
+    it('Download PDF creates the isolated print frame in the click task and clears it when printing ends', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
-      await fixture.whenStable();
+      const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
+      expect(frame?.contentDocument?.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
+      expect(frame?.contentDocument?.querySelector('lfx-mktg-brand-kit-print')).not.toBeNull();
+      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
+      expect(print).not.toHaveBeenCalled();
 
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
-      expect(print).toHaveBeenCalledTimes(1);
-
-      window.dispatchEvent(new Event('afterprint'));
+      frame?.contentWindow?.dispatchEvent(new Event('afterprint'));
+      expect(frame?.isConnected).toBe(false);
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
 
-    it('Download PDF waits for the kit’s typeface in the kit’s weights before the dialog opens: the book is never laid out on screen', async () => {
-      const load = vi.fn(() => Promise.resolve([]));
-      Object.defineProperty(document, 'fonts', { value: { load }, configurable: true });
+    it('prepares the kit typeface ahead of creating the PDF frame in the click task', async () => {
+      const prepare = vi.spyOn(TestBed.inject(MktgPrintService), 'prepare').mockResolvedValue(undefined);
       try {
-        button('brand-kit-web-view-download-pdf')?.click();
+        const kit = brandKitTestRevision();
+        fixture.componentRef.setInput('approvedKit', { ...kit, chapters: { ...kit.chapters, type: { ...kit.chapters.type, family: 'Synthetic Font' } } });
         await fixture.whenStable();
-
-        expect(load.mock.calls).toEqual([['400 1em "Montserrat"'], ['700 1em "Montserrat"']]);
-        expect(print).toHaveBeenCalledTimes(1);
+        expect(print).not.toHaveBeenCalled();
+        expect(prepare).toHaveBeenCalledWith('Synthetic Font', [400, 700]);
+        button('brand-kit-web-view-download-pdf')?.click();
+        expect(document.querySelector('[data-testid="lfx-print-frame"]')).not.toBeNull();
+        expect(print).not.toHaveBeenCalled();
       } finally {
-        delete (document as unknown as Record<string, unknown>)['fonts'];
+        prepare.mockRestore();
       }
     });
 
-    it('clears the print mark when the view is destroyed with the dialog still up', async () => {
+    it('clears the isolated print frame when the view is destroyed with the dialog still up', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();
-      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
+      expect(document.querySelector('[data-testid="lfx-print-frame"]')).not.toBeNull();
+      expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
 
       fixture.destroy();
 
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
+      expect(document.querySelector('[data-testid="lfx-print-frame"]')).toBeNull();
     });
   });
 
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and the print-only book, and never prints', async () => {
+    it('renders the page and hidden portrait chapters, and never prints on the server', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('lfx-mktg-brand-kit-print .kit-chapter')).toHaveLength(5);
 
       button('brand-kit-web-view-download-pdf')?.click();
       await fixture.whenStable();

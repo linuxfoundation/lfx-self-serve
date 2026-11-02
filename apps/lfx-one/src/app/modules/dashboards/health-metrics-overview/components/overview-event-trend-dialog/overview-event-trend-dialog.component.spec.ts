@@ -22,8 +22,6 @@ const EVENT: HealthMetricsOverviewEvent = {
   registrations: 328,
   registrationsGoal: 1000,
   compScore: 'medium',
-  goalMet: null,
-  paceStatus: null,
   acceptedTalks: 0,
   totalProposals: 185,
   cfpStatus: 'Review Complete',
@@ -54,9 +52,11 @@ const point = (daysToEvent: number, actual: number | null, forecast: number | nu
 describe('OverviewEventTrendDialogComponent', () => {
   let fixture: ComponentFixture<OverviewEventTrendDialogComponent>;
   let close: ReturnType<typeof vi.fn>;
+  let history: ReturnType<typeof vi.fn>;
 
-  async function render(curve: HealthMetricsEventsForecastCurve | Error): Promise<void> {
+  async function render(curve: HealthMetricsEventsForecastCurve | Error, isPast = false): Promise<void> {
     close = vi.fn();
+    history = vi.fn().mockReturnValue(curve instanceof Error ? throwError(() => curve) : of(curve));
     await TestBed.configureTestingModule({
       imports: [OverviewEventTrendDialogComponent],
       providers: [
@@ -65,11 +65,12 @@ describe('OverviewEventTrendDialogComponent', () => {
           useValue: {
             getEventsRegistrationForecast: vi.fn().mockReturnValue(of({ events: [HEADLINE] })),
             getEventsRegistrationForecastCurve: vi.fn().mockReturnValue(curve instanceof Error ? throwError(() => curve) : of(curve)),
+            getEventsRegistrationHistory: history,
           },
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { event: EVENT } } },
+        { provide: DynamicDialogConfig, useValue: { data: { event: EVENT, isPast } } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(OverviewEventTrendDialogComponent);
@@ -82,6 +83,10 @@ describe('OverviewEventTrendDialogComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function labels(testId: string): string[] {
+    return [...(query(testId)?.children ?? [])].map((child) => child.textContent?.trim() ?? '');
+  }
+
   const oneFormat: HealthMetricsEventsForecastCurve = {
     eventId: 'e1',
     formats: [{ format: 'In Person', points: [point(-90, 100, null), point(-46, 330, null), point(0, null, 620)] }],
@@ -91,11 +96,25 @@ describe('OverviewEventTrendDialogComponent', () => {
     await render(oneFormat);
 
     expect(fixture.nativeElement.querySelector(`#${OverviewEventTrendDialogComponent.headingId}`)?.textContent?.trim()).toBe('Acme Summit');
-    expect(query('overview-trend-dialog')?.textContent).toContain('Springfield · Dec 8–10, 2026');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Springfield · Starts Dec 8, 2026');
     expect(query('overview-trend-kpi-current')?.textContent).toContain('330');
     expect(query('overview-trend-kpi-predicted')?.textContent).toContain('620');
+    expect(labels('overview-trend-kpi-predicted-range')).toEqual(['680 high', '560 low']);
+    expect(query('overview-trend-kpi-goal')?.textContent).toContain('1,000');
+    expect(query('overview-trend-kpi-days-left')?.textContent).toContain('46');
     expect(query('overview-trend-chart')?.querySelectorAll('path').length).toBeGreaterThanOrEqual(3);
     expect(query('overview-trend-format')).toBeNull();
+  });
+
+  it('draws the goal line, the axis ticks and the Today marker, and names every line, the range and the goal in its legend', async () => {
+    await render(oneFormat);
+
+    expect(query('overview-trend-goal')).not.toBeNull();
+    expect(labels('overview-trend-y-ticks')).toEqual(['1,250', '1,000', '750', '500', '250', '0']);
+    expect(labels('overview-trend-x-ticks')).toEqual(['180', '150', '120', '90', '60', '30', '0']);
+    expect(query('overview-trend-today')?.textContent?.trim()).toBe('Today');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Predicted range');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
   });
 
   it('offers a format toggle only when the event has both, opening on the larger', async () => {
@@ -109,6 +128,27 @@ describe('OverviewEventTrendDialogComponent', () => {
 
     expect(query('overview-trend-format')).not.toBeNull();
     expect(fixture.componentInstance['format']()).toBe('In Person');
+  });
+
+  it("shows a past event's history with its final count and no forecast", async () => {
+    await render({ eventId: 'e1', formats: [{ format: 'In Person', points: [point(-90, 100, null), point(0, 328, null)] }] }, true);
+
+    expect(history).toHaveBeenCalledWith({ foundationSlug: 'acme', eventId: 'e1' });
+    expect(query('overview-trend-kpi-final')?.textContent).toContain('328');
+    expect(query('overview-trend-kpi-days-left')?.textContent).toContain('Event held');
+    expect(query('overview-trend-kpi-predicted')).toBeNull();
+    expect(query('overview-trend-dialog')?.textContent).not.toContain('Predicted');
+    expect(query('overview-trend-dialog')?.textContent).toContain('Registration goal');
+    expect(query('overview-trend-chart')?.querySelector('line[stroke-dasharray="3 3"]')).toBeNull();
+    expect(query('overview-trend-today')).toBeNull();
+  });
+
+  it('says so in place of an empty chart when a past event has no history', async () => {
+    await render({ eventId: '', formats: [] }, true);
+
+    expect(query('overview-trend-empty')?.textContent).toContain('No registration history for this event yet.');
+    expect(query('overview-trend-chart')).toBeNull();
+    expect(query('overview-trend-kpi-final')).not.toBeNull();
   });
 
   it('opens with focus on its title rather than the close button', async () => {

@@ -15,7 +15,7 @@ import { deniedOverview } from './mktg-os-agents-enabled.guard';
  * `crowdfunding-attribution-step` flag, shared with the Crowdfunding app. SSR defers to the browser,
  * a local override decides before the provider is consulted, and an unready provider fails closed. A denial
  * lands on the lens overview with `?project=` kept, not on `/` (the Me lens); on the Org Lens, on the addressed
- * organization's overview, derived from the URL being recognized as `orgLensRoiEnabledGuard` does.
+ * organization's overview, derived from the URL being recognized as `orgLensLfStaffOnlyGuard` does.
  */
 export const crowdfundingAttributionEnabledGuard: CanMatchFn = async (route) => {
   const platformId = inject(PLATFORM_ID);

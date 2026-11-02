@@ -436,8 +436,10 @@ export class ProfileAffiliationsComponent {
           this.lfxSlugs.set(lfxSlugs);
           this.workExperience.set(workExperiences);
           // Count only user-connected identities: exclude the base LFID account and hidden entries,
-          // matching how ProfileIdentitiesComponent defines a "connected" identity.
-          this.connectedIdentities.set(identities.filter((id) => id.platform !== 'lfid' && id.displayState !== 'hidden'));
+          // matching how ProfileIdentitiesComponent defines a "connected" identity. The primary email
+          // is always listed there, so it counts only when backed by a linked login (auth0UserId) —
+          // otherwise every user would skip the "connect your identities" onboarding copy.
+          this.connectedIdentities.set(identities.filter((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && !(id.isPrimary && !id.auth0UserId)));
           this.loading.set(false);
           return this.transformToProjectGroups(cdpAffiliations, lfxSlugs);
         }),

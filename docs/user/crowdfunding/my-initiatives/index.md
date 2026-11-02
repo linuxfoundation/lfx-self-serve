@@ -4,7 +4,7 @@ description: View and manage the crowdfunding initiatives you have created in LF
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, funding]
-last_updated: 2026-06-16
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
@@ -16,6 +16,8 @@ The Initiatives page lists all crowdfunding initiatives you have created, groupe
 - Monitor high-level stats: active initiative count, total raised, and total sponsors
 - Open an initiative detail page to view financials, edit settings, or change its status
 
+Initiatives run on behalf of a project, foundation, or organization also appear under that entity's lens for its writers — see [Lens-scoped Initiatives](../lens-initiatives/).
+
 ## Navigation
 
 Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/initiatives) or select **Crowdfunding → Initiatives** from the left navigation sidebar.
@@ -24,6 +26,7 @@ Go to [app.lfx.dev/crowdfunding/initiatives](https://app.lfx.dev/crowdfunding/in
 
 - [View Initiatives](../view-initiatives/) — list and stats for all your initiatives
 - [Manage Initiatives](../manage-initiatives/) — open a detail page, edit settings, and archive or activate an initiative
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
 
 ## Related
 

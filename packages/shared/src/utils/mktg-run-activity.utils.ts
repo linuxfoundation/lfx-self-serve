@@ -21,6 +21,7 @@
 // Specific-file imports, not the barrels (see activity-feed.utils.ts).
 import {
   MKTG_RUN_ACTIVITY_AGENT_TOOLS,
+  MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES,
   MKTG_RUN_ACTIVITY_DETAIL_MAX_CHARS,
   MKTG_RUN_ACTIVITY_DONE_STATUSES,
   MKTG_RUN_ACTIVITY_FAILED_STATUSES,
@@ -41,7 +42,7 @@ import { LINKEDIN_QUESTIONS_CONTRACT } from '../constants/linkedin-post.constant
 import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.constants';
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
 import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
-import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
+import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus, MktgRunActivityToolDefinition } from '../interfaces';
 import { isMktgReasoningEvent } from './mktg-session-event.utils';
 
 type UnknownRecord = Record<string, unknown>;
@@ -136,6 +137,7 @@ function platformStep(toolName: string, input: UnknownRecord, startedAt: string,
   if (toolName === MKTG_RUN_ACTIVITY_TOOLS.fetch) {
     return { kind: 'reading', label: mktgRunActivityReadingLabel(asString(input['url'])), ...timing };
   }
+  if (toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearchJina) return { kind: 'search', label: MKTG_RUN_ACTIVITY_LABELS.searchingWeb, ...timing };
   if (toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearch) {
     const body = isRecord(input['body']) ? input['body'] : input;
     const query = clip(asString(body['query']), MKTG_RUN_ACTIVITY_DETAIL_MAX_CHARS);
@@ -158,10 +160,17 @@ function platformStep(toolName: string, input: UnknownRecord, startedAt: string,
 }
 
 /** Research calls prevent a mixed finalize response from authorizing the asset handoff. */
-function isResearchTool(toolName: string): boolean {
+function isResearchTool(toolName: string, agentTools?: Readonly<Record<string, MktgRunActivityToolDefinition>>): boolean {
+  const definition = agentTools?.[toolName] ?? Object.values(MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES).find((table) => table[toolName])?.[toolName];
+  if (definition) return definition.kind === 'reading' || definition.kind === 'search' || definition.kind === 'lfx';
   if (toolName === MKTG_RUN_ACTIVITY_TOOLS.inspectLogos) return true;
   if (MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(toolName) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(toolName)) return false;
-  return toolName === MKTG_RUN_ACTIVITY_TOOLS.fetch || toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearch || toolName.startsWith(MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX);
+  return (
+    toolName === MKTG_RUN_ACTIVITY_TOOLS.fetch ||
+    toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearch ||
+    toolName === MKTG_RUN_ACTIVITY_TOOLS.webSearchJina ||
+    toolName.startsWith(MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX)
+  );
 }
 
 /** Tool names in one model response, for classification only — never feed labels. */
@@ -190,7 +199,7 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
  * payloads (chronological). Pure: the same payloads always give the same
  * feed, and ids are positional, so they stay stable while the run appends.
  */
-export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
+export function buildMktgRunActivity(payloads: string[], agentTools?: Readonly<Record<string, MktgRunActivityToolDefinition>>): MktgRunActivity[] {
   const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null && !isMktgReasoningEvent(event));
 
   const finishedTasks = new Set<string>();
@@ -228,6 +237,77 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   const identifyLinkedin = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingLinkedinPost, MKTG_RUN_ACTIVITY_LABELS.writingLinkedinPost);
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
+  const toolTables = Object.values(MKTG_RUN_ACTIVITY_AGENT_TOOL_TABLES);
+  /** One continuous writing stretch absorbs fan-out calls; no tool input/output becomes a row. */
+  const appendAgentTool = (
+    name: string,
+    startedAt: string,
+    status: MktgRunActivityStatus,
+    endedAt = '',
+    local = false,
+    checkingAllowed = true,
+    includeRegistered = false
+  ): boolean => {
+    // Existing agent tools retain their exact historical path; tables fill only missing mappings unless explicitly selected.
+    let table = agentTools?.[name] ? agentTools : undefined;
+    if (!table && (includeRegistered || !MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(name))) table = toolTables.find((candidate) => candidate[name]);
+    const definition = table?.[name];
+    if (!definition) return false;
+    if (agentTools || definition.kind === 'writing' || definition.kind === 'checking') {
+      const customLabels = Object.values(table ?? {});
+      identify(
+        customLabels.find((tool) => tool.kind === 'checking')?.label ?? runLabels.checking,
+        customLabels.find((tool) => tool.kind === 'writing')?.label ?? definition.writingLabel ?? MKTG_RUN_ACTIVITY_LABELS.writingGeneric
+      );
+    }
+    if (definition.kind === 'writing') {
+      if (!writingStart) writingStart = startedAt;
+      return true;
+    }
+    if (definition.kind === 'checking') {
+      if (!checkingAllowed) return true;
+      if (!writingStart) writingStart = modelStart || startedAt;
+      if (!firstWritingCheck) firstWritingCheck = startedAt;
+    }
+    const step: Step = {
+      kind: definition.kind,
+      label: definition.label,
+      status,
+      startedAt,
+      ...(status !== 'running' && endedAt ? { endedAt } : {}),
+    };
+    steps.push(step);
+    if (local && status === 'running') openLocal.push(step);
+    return true;
+  };
+
+  /** Unknown work after observed research advances a generic stage, never a tool-name/prose label. */
+  const appendFallback = (name: string, startedAt: string, status: MktgRunActivityStatus, endedAt = '', local = false, checkingAllowed = true): boolean => {
+    if (!name || MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(name) || MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(name) || isResearchTool(name, agentTools))
+      return false;
+    if (name.startsWith('finalize_')) {
+      if (!checkingAllowed) return true;
+      if (!writingStart) writingStart = modelStart || startedAt;
+      if (!firstWritingCheck) firstWritingCheck = startedAt;
+      if (!identified) runLabels.writing = MKTG_RUN_ACTIVITY_LABELS.writingGeneric;
+      const step: Step = {
+        kind: 'checking',
+        label: MKTG_RUN_ACTIVITY_LABELS.checkingGeneric,
+        status,
+        startedAt,
+        ...(status !== 'running' && endedAt ? { endedAt } : {}),
+      };
+      steps.push(step);
+      if (local && status === 'running') openLocal.push(step);
+      return true;
+    }
+    if (checkingAllowed && steps.some((step) => step.kind === 'reading' || step.kind === 'search' || step.kind === 'lfx')) {
+      if (!writingStart) writingStart = startedAt;
+      if (!identified) runLabels.writing = MKTG_RUN_ACTIVITY_LABELS.writingGeneric;
+      return true;
+    }
+    return false;
+  };
 
   for (const [index, event] of events.entries()) {
     const type = asString(event['type']);
@@ -239,33 +319,41 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
       open.endedAt = createdAt || open.startedAt;
     }
 
-    if (type === 'runtime_start' && task && asString(task['entity_type']) === 'EntTaskTool') {
-      const taskId = asString(task['id']);
+    if ((type === 'runtime_start' && task && asString(task['entity_type']) === 'EntTaskTool') || type === 'tool_start' || type === 'tool_call') {
+      const toolTask = task ?? event;
+      const taskId = asString(toolTask['id']) || `event-${index}`;
       if (seenTasks.has(taskId)) {
         continue;
       }
       seenTasks.add(taskId);
       const input = isRecord(event['content']) ? event['content'] : {};
-      const status = taskStatus(asString(task['status']), finishedTasks.has(taskId));
-      const step = platformStep(asString(task['tool_name']), input, asString(task['created_at']) || createdAt, status, asString(task['updated_at']));
-      if (step) {
-        steps.push(step);
-      }
+      const status = taskStatus(asString(toolTask['status']), finishedTasks.has(taskId));
+      const startedAt = asString(toolTask['created_at']) || createdAt;
+      const endedAt = asString(toolTask['updated_at']);
+      const name = asString(toolTask['tool_name']) || asString(event['name']) || asString(event['toolName']);
+      if (appendAgentTool(name, startedAt, status, endedAt, false, true, true)) continue;
+      const step = platformStep(name, input, startedAt, status, endedAt);
+      if (step) steps.push(step);
+      else appendFallback(name, startedAt, status, endedAt);
       continue;
     }
 
     if (type === 'llm_start') {
       modelStart = createdAt;
-      if (questionsAt >= 0 && !writingStart) writingStart = createdAt;
+      if (!agentTools && questionsAt >= 0 && !writingStart) writingStart = createdAt;
       continue;
     }
 
     if (type === 'llm_done') {
       const tools = toolCalls(event);
-      const stillResearching = tools.some(isResearchTool);
+      const stillResearching = tools.some((tool) => isResearchTool(tool, agentTools));
       const asksQuestions = tools.includes(MKTG_RUN_ACTIVITY_TOOLS.askRequester);
       for (const tool of tools) {
-        if (!MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(tool)) continue;
+        if (appendAgentTool(tool, createdAt, 'running', '', true, !stillResearching && !asksQuestions)) continue;
+        if (!MKTG_RUN_ACTIVITY_AGENT_TOOLS.includes(tool)) {
+          appendFallback(tool, createdAt, 'running', '', true, !stillResearching && !asksQuestions);
+          continue;
+        }
         let step: Step;
         if (tool === MKTG_RUN_ACTIVITY_TOOLS.askRequester) {
           step = { kind: 'questions', label: MKTG_RUN_ACTIVITY_LABELS.questions, status: 'running', startedAt: createdAt };
@@ -319,8 +407,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
     }
   }
 
-  // After questions, answers start writing as before. Without questions, only
-  // an observed finalize confirms writing, retroactively for the feed.
+  // Default agents retain the historical questions/finalize rule. An opted-in
+  // agent table can confirm writing at its first explicit scoring/writing call.
   if (writingStart) {
     steps.push({
       kind: 'writing',
@@ -368,19 +456,32 @@ function collapseRepeatedReads(steps: Step[]): Step[] {
   return rows.map(({ step, pages }) => (pages > 1 ? { ...step, detail: `${pages} pages` } : step));
 }
 
-/** The feed header's phases: under way, done, passed over, or not reached yet. */
-export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActivityPhase[] {
+/**
+ * The feed header's phases: under way, done, passed over, or not reached yet.
+ *
+ * The furthest phase the run has reached is under way until a later phase
+ * starts, whether or not one of its steps is running at this instant: an
+ * agent reads its sources in waves (a few pages, a model turn, a few more),
+ * and a phase that went done between waves and active again on the next one
+ * flickered through the whole read (Joan's hand test, 29 Oct 2026). Earlier
+ * phases are done, or passed over when nothing of theirs happened; later
+ * ones pending. A failed step is not the end of a run (a page that returned
+ * 404 is one, and the agent reads on), so only the caller's `ended` closes
+ * the furthest phase: the feed a failed redraft leaves on screen passes it.
+ */
+export function mktgRunActivityPhases(activity: MktgRunActivity[], ended = false): MktgRunActivityPhase[] {
   const phaseOf = (kind: MktgRunActivityKind): number => MKTG_RUN_ACTIVITY_PHASES.findIndex((phase) => phase.kinds.includes(kind));
   const lastReached = Math.max(-1, ...activity.map((step) => phaseOf(step.kind)));
   return MKTG_RUN_ACTIVITY_PHASES.map((phase, position) => {
     const steps = activity.filter((step) => phase.kinds.includes(step.kind));
     let state: MktgRunActivityPhase['state'];
-    if (steps.some((step) => step.status === 'running')) {
-      state = 'active';
-    } else if (steps.length > 0) {
-      state = 'done';
+    if (position === lastReached) {
+      // Only the caller knows the run is over (a failed page read is a step, not the end): `ended` closes the last phase.
+      state = ended ? 'done' : 'active';
+    } else if (position < lastReached) {
+      state = steps.length > 0 ? 'done' : 'skipped';
     } else {
-      state = position < lastReached ? 'skipped' : 'pending';
+      state = 'pending';
     }
     return { id: phase.id, label: phase.label, state };
   });

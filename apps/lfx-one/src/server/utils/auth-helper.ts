@@ -5,6 +5,8 @@ import { Request } from 'express';
 
 import { LfxAccessTokenClaims, AuditUserProfile, ImpersonationUser, User } from '@lfx-one/shared/interfaces';
 
+import { logger } from '../services/logger.service';
+
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
  * Returns the raw username if no prefix is present.
@@ -307,6 +309,41 @@ export async function resolveRealAccessToken(req: Request): Promise<string | nul
 }
 
 /**
+ * Refreshes an expired access token during the SSR document-render path, before the request's
+ * `authenticated` status is decided.
+ *
+ * `req.oidc.isAuthenticated()` only inspects the ID token claims, so a session with a valid
+ * refresh token but an expired access token still reports authenticated — yet the SSR handler
+ * historically also required `!accessToken.isExpired()` before treating the user as signed in,
+ * so an idle session rendered as signed-out on the next full page load even though XHRs (which
+ * already refresh on demand, see `auth.middleware.ts`) saw the same session as valid. That
+ * asymmetry left `FeatureFlagService.initialize()` uncalled on the client (it only runs for an
+ * authenticated SSR user), which kept LaunchDarkly on its anonymous bootstrap context until a
+ * `/login` round-trip re-minted tokens — the root cause behind GH-4179.
+ *
+ * No-ops (and never throws) when there is nothing to refresh: no session, no access token, or an
+ * access token that isn't expired. A failed refresh falls through to the caller's existing
+ * `isExpired()` check, which correctly treats a genuinely dead session as signed-out — but the
+ * failure itself is still logged (mirroring `auth.middleware.ts`'s `extractBearerToken`), so a
+ * dead refresh token shows up in logs instead of silently reading as "page just rendered signed
+ * out".
+ */
+export async function refreshExpiredSsrAccessToken(req: Request): Promise<void> {
+  if (!req.oidc?.isAuthenticated() || !req.oidc.accessToken?.isExpired()) {
+    return;
+  }
+  try {
+    await req.oidc.accessToken.refresh();
+  } catch (error) {
+    logger.warning(req, 'ssr_token_refresh', 'SSR token refresh failed - rendering as signed out', {
+      path: req.path,
+      failure_reason: 'token_refresh_failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+/**
  * Builds the identity-claim override applied to `auth.user` during impersonation. Every
  * username-chain claim is derived from the same `targetUsername` so they can't drift out of
  * sync (a claim falling out of sync — e.g. a stale `preferred_username` — is exactly the
@@ -367,5 +404,4 @@ export function clearImpersonationSession(req: Request): void {
   delete req.appSession['impersonationExpiresAt'];
   delete req.appSession['impersonationUser'];
   delete req.appSession['impersonator'];
-  delete req.appSession['impersonationPersonaContext'];
 }

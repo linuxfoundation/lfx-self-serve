@@ -131,12 +131,15 @@ describe.each([
   ['/engagement-attendance-trend', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
+  ['/engagement-newsletter-performance', 'foundationSlug'],
+  ['/engagement-newsletter-recipients', 'foundationSlug'],
   ['/engagement-non-member-participation', 'foundationSlug'],
   ['/engagement-org-participation', 'foundationSlug'],
   ['/engagement-representatives', 'foundationSlug'],
   ['/events-registration-forecast', 'foundationSlug'],
   // The event id rides ahead of the slug so the gate still reads the foundation it is testing.
   ['/events-registration-forecast-curve', 'eventId=evt-1&foundationSlug'],
+  ['/events-registration-history', 'eventId=evt-1&foundationSlug'],
   ['/events-past', 'foundationSlug'],
   ['/events-at-a-glance', 'foundationSlug'],
   ['/events-registrations-growth', 'foundationSlug'],
@@ -160,7 +163,6 @@ describe.each([
   ['/non-members-orgs', 'foundationSlug'],
   ['/non-members-people', 'foundationSlug'],
   ['/non-members-conversion', 'foundationSlug'],
-  ['/training-presence', 'foundationSlug'],
   ['/training-enrollment', 'foundationSlug'],
   ['/training-courses', 'foundationSlug'],
   ['/overview-participating-orgs', 'foundationSlug'],
@@ -170,6 +172,7 @@ describe.each([
   ['/overview-events', 'foundationSlug'],
   ['/overview-board', 'foundationSlug'],
   ['/overview-code', 'foundationSlug'],
+  ['/overview-newsletters', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });

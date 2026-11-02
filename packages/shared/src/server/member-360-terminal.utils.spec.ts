@@ -35,7 +35,7 @@ describe('Member 360 terminal session facts', () => {
   });
   it('uses the shared tool-task exclusion for runtime errors', () => {
     expect(member360TerminalResult([JSON.stringify({ type: 'runtime_error', task: { entity_type: 'EntTaskTool' } })])).toBeNull();
-    expect(member360TerminalResult([JSON.stringify({ type: 'runtime_error' })])?.status).toBe('failed');
+    expect(member360TerminalResult([JSON.stringify({ type: 'runtime_error' })])).toBeNull();
   });
   it.each(['DONE', 'FAILED', 'ABORTED', 'CANCELLED'])('recognizes a %s session status without reading arbitrary content', (status) => {
     expect(member360TerminalResult([JSON.stringify({ type: 'session_status', session: { status }, content: { text: 'not-final-text' } })])).toEqual({
@@ -61,8 +61,15 @@ describe('Member 360 terminal session facts', () => {
       ])
     ).toBeNull();
   });
-  it.each(['runtime_error', 'llm_failed', 'session_failure'])('classifies %s without echoing its internal body', (type) => {
-    expect(member360TerminalResult([JSON.stringify({ type, content: { message: 'private-internal-details' } })])).toEqual({
+  it.each(['runtime_error', 'llm_failed', 'session_failure'])('keeps %s pending until a session end, without echoing its body', (type) => {
+    const error = JSON.stringify({ type, content: { message: 'private-internal-details' } });
+    expect(member360TerminalResult([error])).toBeNull();
+    expect(member360TerminalResult([error, JSON.stringify({ type: 'session_status', session: { status: 'DONE' } })])).toEqual({
+      status: 'failed',
+      reason: 'agent_stopped',
+      message: 'The agent stopped before producing a result.',
+    });
+    expect(member360TerminalResult([error, JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', parent_task_id: null } })])).toEqual({
       status: 'failed',
       reason: 'agent_stopped',
       message: 'The agent stopped before producing a result.',

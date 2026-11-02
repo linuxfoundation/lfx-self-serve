@@ -67,6 +67,7 @@ import {
   extractMktgArtifactKeySha,
   findMktgDocumentStatus,
   findMktgDocumentType,
+  isAeoGeoEnvelope,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
   readLinkedinDocumentContent,
@@ -475,12 +476,16 @@ export class MktgDocumentStoreService {
     if (!view || type.agentKey !== 'member-360') return view;
     const candidate = view.sidecar?.['member360'];
     const parsed = member360Schema.safeParse(candidate);
+    const inputs = parsed.success ? { ...parsed.data.inputs } : undefined;
+    if (inputs) delete inputs.research;
     const member360 =
-      parsed.success && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
-        ? (candidate as typeof parsed.data)
+      parsed.success && inputs && this.sha256(JSON.stringify((candidate as typeof parsed.data).tabs)) === parsed.data.content_sha256
+        ? { ...(candidate as typeof parsed.data), inputs }
         : undefined;
+    // Research provenance is server-only even when the schema recognizes it.
+    // without modifying the immutable stored envelope or report tabs/hash.
     const sidecar = { ...view.sidecar };
-    if (!member360) delete sidecar['member360'];
+    delete sidecar['member360'];
     return { ...view, sidecar, member360 };
   }
 
@@ -830,6 +835,21 @@ export class MktgDocumentStoreService {
     const linkedinPost = presentation
       ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }
       : null;
+    let report: MktgRevisionResponse['aeoGeoReport'];
+    if (type.agentKey === 'aeo-geo') {
+      const candidate = { ...stored.record.bundle.sidecar, document_markdown: stored.record.bundle.markdown };
+      if (isAeoGeoEnvelope(candidate)) {
+        report = {
+          domain: candidate.domain,
+          report_filename: candidate.report_filename,
+          overall_score: candidate.overall_score,
+          verdict: candidate.verdict,
+          scores: candidate.scores,
+          ...(candidate.report ? { report: candidate.report } : {}),
+          auditCounts: { keyPagesNamed: candidate.inputs.key_pages_count ?? 0, pagesAudited: candidate.inputs.pages_audited.length },
+        };
+      }
+    }
     return {
       ...detail,
       revision: selected,
@@ -837,6 +857,7 @@ export class MktgDocumentStoreService {
       markdown: stored.record.bundle.markdown,
       sidecar: stored.record.bundle.sidecar,
       ...(linkedinPost ? { linkedinPost } : {}),
+      ...(report ? { aeoGeoReport: report } : {}),
     };
   }
 

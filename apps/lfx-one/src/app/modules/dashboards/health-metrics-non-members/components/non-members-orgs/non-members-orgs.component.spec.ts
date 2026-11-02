@@ -44,6 +44,7 @@ describe('NonMembersOrgsComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` every read after it.
   async function render(
@@ -72,7 +73,10 @@ describe('NonMembersOrgsComponent', () => {
     fixture = TestBed.createComponent(NonMembersOrgsComponent);
     fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -95,6 +99,7 @@ describe('NonMembersOrgsComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     counts = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, renders the page, summary and note, and settles', async () => {
@@ -105,6 +110,7 @@ describe('NonMembersOrgsComponent', () => {
     expect(text('non-members-orgs-count')).toBe('412 organizations · 37 new this period');
     expect(text('non-members-orgs-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(counts).toEqual([null, 412]);
   });
 
@@ -308,10 +314,11 @@ describe('NonMembersOrgsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: null, nonPage: 4 } }));
   });
 
-  it('shows the empty state when no non-member organization is active in the period', async () => {
+  it('settles empty, with no body, when no non-member organization is active in the period', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 }));
 
-    expect(query('non-members-orgs-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('non-members-orgs-controls')).toBeNull();
     expect(query('non-members-orgs-table')).toBeNull();
   });
 
@@ -320,6 +327,8 @@ describe('NonMembersOrgsComponent', () => {
 
     expect(text('non-members-orgs-no-match')).toBe('No organization matches “zeta”.');
     expect(query('non-members-orgs-controls')).not.toBeNull();
+    // A filter miss is not an empty period, so the shell must not take the section over.
+    expect(verdicts).toEqual([false]);
   });
 
   it('says the filter matches nothing when no search is set', async () => {
@@ -339,9 +348,9 @@ describe('NonMembersOrgsComponent', () => {
     await settle();
 
     expect(query('non-members-orgs-error')).not.toBeNull();
-    expect(query('non-members-orgs-empty')).toBeNull();
     expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -352,6 +361,5 @@ describe('NonMembersOrgsComponent', () => {
     expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('non-members-orgs-count')).toBe('—');
-    expect(query('non-members-orgs-empty')).toBeNull();
   });
 });

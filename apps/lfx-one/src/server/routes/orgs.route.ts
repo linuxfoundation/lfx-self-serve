@@ -23,6 +23,7 @@ import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
+import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -116,6 +117,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/discover', (req, res, next) => orgLensMembershipsController.getDiscoverOpportunities(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationSlug', (req, res, next) => orgLensMembershipsController.getMembershipDetail(req, res, next));
+  router.get('/:orgUid/lens/memberships/:foundationId/projects', (req, res, next) => orgLensMembershipsController.getFoundationProjects(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/seats', (req, res, next) => orgLensBoardCommitteeController.getSeats(req, res, next));
   router.get('/:orgUid/lens/memberships/:foundationId/voting-history', (req, res, next) => orgLensBoardCommitteeController.getVotingHistory(req, res, next));
   router.patch('/:orgUid/lens/memberships/:foundationId/committee-seats/:seatId/reassign', (req, res, next) =>
@@ -144,6 +146,8 @@ function buildOrgsRouter(): Router {
     orgLensKeyContactsController.removeKeyContactBySlug(req, res, next)
   );
   router.get('/:orgUid/lens/people/all', (req, res, next) => orgLensPeopleController.getAllEmployees(req, res, next));
+  // lfx-self-serve#4311 — former employees (All Employees "Former employees" view). Same guard rationale as below ('former' must not be consumed as a personKey).
+  router.get('/:orgUid/lens/people/former', (req, res, next) => orgLensPeopleController.getFormerEmployees(req, res, next));
   // Spec 005 (LFXV2-1873) — People → Key Contacts tab (org-wide, read-only). Membership-scoped reads + writes live above on orgLensKeyContactsController.
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   // Spec 027 — People → Committee tab (org-wide committee members). Registered BEFORE the `/:personKey/detail`
@@ -165,11 +169,17 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/by-username/:username/company-emails', (req, res, next) =>
     orgLensPeopleController.getCompanyEmailsByUsername(req, res, next)
   );
+  // The key contact roles one person holds, for the drawer's Key Contacts tab. Registered before the
+  // `:personKey` routes for the same reason as the reads above — 'by-username' must not be consumed as a personKey.
+  router.get('/:orgUid/lens/people/by-username/:username/key-contacts', (req, res, next) =>
+    orgLensPeopleController.getPersonKeyContactsByUsername(req, res, next)
+  );
   // lfx-self-serve-ops#894 — person detail for openers that carry only an LF username (Board/Committee/Key Contact/Access).
   router.get('/:orgUid/lens/people/by-username/:username/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetailByUsername(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
   // Company addresses for a person key; split from `/detail` so the drawer never waits on the address view.
   router.get('/:orgUid/lens/people/:personKey/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmails(req, res, next));
+  router.get('/:orgUid/lens/people/:personKey/key-contacts', (req, res, next) => orgLensPeopleController.getPersonKeyContacts(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).
   router.get('/:orgUid/lens/access/users', (req, res, next) => orgLensAccessController.getUsers(req, res, next));
@@ -198,19 +208,23 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/meetings/spend', (req, res, next) => orgLensMeetingsController.getSpend(req, res, next));
   router.get('/:orgUid/lens/meetings/influence', (req, res, next) => orgLensMeetingsController.getInfluence(req, res, next));
 
-  // LFXV2-2980 — Org Lens ROI Metrics.
+  // LFXV2-2980 — Org Lens ROI Metrics. LF staff only (`requireOrgLensRoiAudience`), ahead of each handler.
   // Keep every literal /roi/* segment below ahead of any parameterized matcher added at the same
   // depth, or the literal gets captured as the parameter — the trap the /lens/projects/search
   // comment further down records.
-  router.get('/:orgUid/lens/roi/summary', (req, res, next) => orgLensRoiController.getSummary(req, res, next));
-  router.get('/:orgUid/lens/roi/coverage', (req, res, next) => orgLensRoiController.getCoverage(req, res, next));
-  router.get('/:orgUid/lens/roi/annual', (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
-  router.get('/:orgUid/lens/roi/investment-breakdown', (req, res, next) => orgLensRoiController.getInvestmentBreakdown(req, res, next));
-  router.get('/:orgUid/lens/roi/projects', (req, res, next) => orgLensRoiController.getProjects(req, res, next));
+  router.get('/:orgUid/lens/roi/summary', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getSummary(req, res, next));
+  router.get('/:orgUid/lens/roi/coverage', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getCoverage(req, res, next));
+  router.get('/:orgUid/lens/roi/annual', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getAnnual(req, res, next));
+  router.get('/:orgUid/lens/roi/investment-breakdown', requireOrgLensRoiAudience, (req, res, next) =>
+    orgLensRoiController.getInvestmentBreakdown(req, res, next)
+  );
+  router.get('/:orgUid/lens/roi/projects', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getProjects(req, res, next));
   // Parameterized, so it stays below every literal above — `investment-breakdown` would otherwise
   // be captured as a project slug.
-  router.get('/:orgUid/lens/roi/projects/:projectSlug/annual', (req, res, next) => orgLensRoiController.getProjectAnnual(req, res, next));
-  router.get('/:orgUid/lens/roi/projects/:projectSlug', (req, res, next) => orgLensRoiController.getProjectDetail(req, res, next));
+  router.get('/:orgUid/lens/roi/projects/:projectSlug/annual', requireOrgLensRoiAudience, (req, res, next) =>
+    orgLensRoiController.getProjectAnnual(req, res, next)
+  );
+  router.get('/:orgUid/lens/roi/projects/:projectSlug', requireOrgLensRoiAudience, (req, res, next) => orgLensRoiController.getProjectDetail(req, res, next));
 
   // LFXV2-1894 — Org Lens Code Contributions page (KPI strip + repositories table + commits feed).
   router.get('/:orgUid/lens/contributions', (req, res, next) => orgLensContributionsController.getContributions(req, res, next));

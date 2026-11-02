@@ -12,14 +12,7 @@
       data-testid="events-at-a-glance-error" />
   } @else if (status() === 'loading') {
     <p-skeleton height="16rem" borderRadius="0.5rem" data-testid="events-at-a-glance-loading" aria-hidden="true" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-question"
-      title="Event reach unavailable for this period"
-      subtitle="Reach for the selected period has not been measured yet. Pick another period to see it."
-      data-testid="events-at-a-glance-unmeasured" />
-  } @else {
+  } @else if (!empty()) {
     <span class="text-[13px] text-gray-500" data-testid="events-at-a-glance-control">{{ view().controlLabel }}</span>
 
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-at-a-glance-hero">

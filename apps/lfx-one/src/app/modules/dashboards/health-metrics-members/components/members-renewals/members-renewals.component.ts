@@ -57,8 +57,11 @@ export class MembersRenewalsComponent {
 
   /** The sub-nav count, renewals in the window; `null` while a foundation reads or when its read fails. */
   public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the section settles; its height changes, moving every anchor below. `false` once renewals are due;
+   * a window with none gives no verdict, keeping its own note and the window pills to widen it.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -178,7 +181,7 @@ export class MembersRenewalsComponent {
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.summary.renewalCount : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.totalRecords === 0 && response.summary.renewalCount === 0 ? null : false);
             })
           )
         )

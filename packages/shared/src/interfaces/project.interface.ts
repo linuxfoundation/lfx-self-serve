@@ -351,3 +351,14 @@ export interface WriterSummary {
   hasWriterFoundation: boolean;
   hasWriterProject: boolean;
 }
+
+/**
+ * Response of GET /public/api/projects/:identifier/summary: the branding the login-free vote page shows.
+ * Allowlisted fields only; no user data, and nothing that maps a vote to a project.
+ */
+export interface PublicProjectSummary {
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  is_foundation: boolean;
+}

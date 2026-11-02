@@ -11,11 +11,14 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { stubMeetingsRedesignFlag } from './helpers/meetings-v2-flag.helper';
+
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';
 const FUTURE_START = '2099-03-04T15:00:00Z';
 
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => stubMeetingsRedesignFlag(page));
 
 const GUEST = {
   uid: 'guest-rsvp-1',

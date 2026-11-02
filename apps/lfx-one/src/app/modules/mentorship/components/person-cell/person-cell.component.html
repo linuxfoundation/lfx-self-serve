@@ -4,7 +4,19 @@
 <div class="flex items-center gap-3 min-w-0 w-full">
   <lfx-avatar [image]="avatarUrl() ?? ''" [label]="initials()" shape="circle" size="normal" [styleClass]="avatarStyleClass()" [ariaLabel]="name()" />
   <div class="flex flex-col min-w-0 w-[calc(100%-2rem)]">
-    <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="name()">{{ name() }}</span>
+    @if (href(); as url) {
+      <a
+        class="max-w-full block truncate text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+        [href]="url"
+        [title]="name()"
+        target="_blank"
+        rel="noopener noreferrer"
+        [attr.data-testid]="linkTestId()">
+        {{ name() }}
+      </a>
+    } @else {
+      <span class="max-w-full block truncate text-sm font-medium text-blue-600" [title]="name()">{{ name() }}</span>
+    }
     @if (noteLabel(); as label) {
       <button
         type="button"

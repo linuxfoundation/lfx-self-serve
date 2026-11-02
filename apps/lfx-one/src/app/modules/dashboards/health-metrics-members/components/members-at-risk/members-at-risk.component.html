@@ -12,13 +12,8 @@
       data-testid="members-at-risk-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-at-risk-loading" aria-hidden="true" />
-  } @else if (!loading() && noneAtRisk()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-check"
-      title="No members at risk"
-      subtitle="No member is 60 or more days overdue on dues. At-risk members appear here as balances age past 60 days."
-      data-testid="members-at-risk-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
       <lfx-filter-pills

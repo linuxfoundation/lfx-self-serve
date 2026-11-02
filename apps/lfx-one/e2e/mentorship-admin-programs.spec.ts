@@ -12,8 +12,7 @@
  * nothing is ever sent to a real bucket.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the read is made by the browser and
- * the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs. The module is
- * behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -25,7 +24,7 @@ import { MentorshipProgram, MentorshipProgramsResponse } from '@lfx-one/shared/i
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -71,7 +70,6 @@ async function stubPrograms(page: Page, body: MentorshipProgramsResponse): Promi
 
 test.describe('Admin programs list — real programs', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, POPULATED);
     await openMentorPage(page, ADMIN_URL);
   });
@@ -109,7 +107,6 @@ test.describe('Admin programs list — search, status filter and load more', () 
   const card = (page: Page, id: string) => page.getByTestId(`mentorship-program-card-${id}`);
 
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(PROGRAMS_ROUTE, (route) => {
       const params = new URL(route.request().url()).searchParams;
       if (params.get('search') === 'Hidden') return fulfillJson(route, pageOf(POPULATED.data[3]));
@@ -150,7 +147,6 @@ test.describe('Admin programs list — search, status filter and load more', () 
 
 test.describe('Admin programs list — failed load', () => {
   test('shows an inline error with Retry, and lists the programs once Retry succeeds', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let failing = true;
     await page.route(PROGRAMS_ROUTE, (route) =>
       failing ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'down' }) }) : fulfillJson(route, POPULATED)
@@ -208,7 +204,6 @@ test.describe('Admin programs list — logo missing', () => {
   }
 
   test('shows the hint on a pending or published program without a logo, and on no other', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, rows());
     await openMentorPage(page, ADMIN_URL);
     await expect(card(page, PENDING_NO_LOGO_ID)).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
@@ -224,7 +219,6 @@ test.describe('Admin programs list — logo missing', () => {
   });
 
   test('Add logo uploads the picked PNG, stays on the list, and the reloaded list drops the hint', async ({ page }) => {
-    await enableMentorshipFlag(page);
     let logoAdded = false;
     await page.route(PROGRAMS_ROUTE, (route) => fulfillJson(route, rows(logoAdded)));
     const logoRequests: string[] = [];
@@ -247,7 +241,6 @@ test.describe('Admin programs list — logo missing', () => {
   });
 
   test('a 403 shows the permission message once, with no back-off, and keeps the hint', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubPrograms(page, rows());
     let logoRequests = 0;
     await page.route(LOGO_ROUTE, (route) => {

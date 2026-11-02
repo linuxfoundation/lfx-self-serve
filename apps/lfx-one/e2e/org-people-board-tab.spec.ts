@@ -3,11 +3,9 @@
 
 /** People → Board tab E2E (read + filter/expand/sort). Deterministic via route mocks. Inverted-filter sibling of org-people-committee-tab.spec.ts. */
 
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const PEOPLE_BOARD_URL = '/org/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -368,44 +366,10 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey: the username-keyed detail and company-emails are requested together, and only the
-  // company-emails request is flag-gated (activity is not). Jordan carries a username, so only the OFF flag can stop it.
-  test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
-    await stubAccountContext(page);
-    await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
-    let detailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) => {
-      detailCalls += 1;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-    });
-    let companyEmailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route) => {
-      companyEmailCalls += 1;
-      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
-    });
-
-    await gotoBoardTab(page);
-    await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
-    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-
-    // Wait for the null answer to land (Events turns not-available) before asserting the address lookup never fired.
-    await expect.poll(() => detailCalls).toBeGreaterThan(0);
-    await page.getByTestId('person-detail-drawer-tab-events').click();
-    await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
-
-    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
-    expect(companyEmailCalls).toBe(0);
-  });
-
   // "failed" / "not available" must never collapse into "none on record": that would assert, from a
   // lookup that never succeeded, that a person holds no company address. Identity comes from the
   // seat's username, never from the row's email.
   test('renders each company-email state from its own response', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await stubAccountContext(page);
     // The username-keyed detail answers null (no single roster person); addresses come from company-emails either way.
     await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) =>
@@ -488,5 +452,96 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-email-not-available')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
     expect(callsWithoutIdentity).toBe(0);
+  });
+
+  // Key Contacts tab (#4402). Same rule as the addresses above: "no key contact roles recorded" is a claim
+  // about a person the lookup identified, and must never stand in for a lookup that never identified anyone.
+  test('renders each key-contacts state from its own response', async ({ page }) => {
+    await stubAccountContext(page);
+    await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
+    );
+
+    let rolesCalls = 0;
+    const openKeyContactsTab = async (): Promise<void> => {
+      await gotoBoardTab(page);
+      await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
+      await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      // The roles read costs a company-address lookup, so it must wait for the tab, not the open.
+      const before = rolesCalls;
+      await page.getByTestId('person-detail-drawer-tab-governance').click();
+      expect(rolesCalls).toBe(before);
+      await page.getByTestId('person-detail-drawer-tab-key-contacts').click();
+    };
+
+    const stubKeyContacts = async (fulfil: Parameters<Page['route']>[1]): Promise<void> => {
+      await page.route('**/api/orgs/*/lens/people/by-username/*/key-contacts*', (route, request) => {
+        rolesCalls += 1;
+        return fulfil(route, request);
+      });
+    };
+
+    const roles = (assignments: unknown[], status = 'resolved') => JSON.stringify({ assignments, status });
+
+    // 1. Identified WITH roles → each role renders with the foundation it is held for.
+    await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
+    await stubKeyContacts((route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: roles([
+          {
+            contactUid: 'kc-billing',
+            membershipUid: 'msp-agl',
+            email: JORDAN_COMPANY_EMAIL,
+            firstName: 'Jordan',
+            lastName: 'Reyes',
+            displayName: 'Jordan Reyes',
+            title: null,
+            role: 'Billing Contact',
+            foundationSlug: 'agl',
+            foundationName: 'Automotive Grade Linux',
+          },
+        ]),
+      })
+    );
+    await openKeyContactsTab();
+    const list = page.getByTestId('person-detail-drawer-key-contacts-list');
+    await expect(list).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(list).toContainText('Billing Contact');
+    await expect(list).toContainText('Automotive Grade Linux');
+
+    // 2. Identified EMPTY → "no key contact roles recorded"; only this state may make that claim.
+    await stubKeyContacts((route) => route.fulfill({ status: 200, contentType: 'application/json', body: roles([]) }));
+    await openKeyContactsTab();
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-unavailable')).toHaveCount(0);
+
+    // 2b. UNIDENTIFIED → "aren't available"; an empty list here is NOT "none recorded".
+    await stubKeyContacts((route) => route.fulfill({ status: 200, contentType: 'application/json', body: roles([], 'unidentified') }));
+    await openKeyContactsTab();
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-unavailable')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-empty')).toHaveCount(0);
+
+    // 3. Server-reported FAILED (200 with a retryable status) → the error state, not either claim above.
+    await stubKeyContacts((route) => route.fulfill({ status: 200, contentType: 'application/json', body: roles([], 'failed') }));
+    await openKeyContactsTab();
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-empty')).toHaveCount(0);
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-unavailable')).toHaveCount(0);
+
+    // 3b. Transport error → same state as 3.
+    await stubKeyContacts((route) => route.fulfill({ status: 500, body: 'transport error' }));
+    await openKeyContactsTab();
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-error')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-empty')).toHaveCount(0);
+
+    // 4. No identity at all → unavailable, with no request; the row's email is never a lookup key.
+    await stubBoardMembers(page);
+    await stubKeyContacts((route) => route.fulfill({ status: 500, body: 'unexpected roles lookup without an identity' }));
+    const callsBeforeNoIdentity = rolesCalls;
+    await openKeyContactsTab();
+    await expect(page.getByTestId('person-detail-drawer-key-contacts-unavailable')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    expect(rolesCalls).toBe(callsBeforeNoIdentity);
   });
 });

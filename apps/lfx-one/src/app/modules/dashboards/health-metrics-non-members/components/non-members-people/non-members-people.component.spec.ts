@@ -42,6 +42,7 @@ describe('NonMembersPeopleComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` every read after it.
   async function render(
@@ -70,7 +71,10 @@ describe('NonMembersPeopleComponent', () => {
     fixture = TestBed.createComponent(NonMembersPeopleComponent);
     fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -93,6 +97,7 @@ describe('NonMembersPeopleComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     counts = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, renders the page, count and note, and settles', async () => {
@@ -103,6 +108,7 @@ describe('NonMembersPeopleComponent', () => {
     expect(text('non-members-people-count')).toBe('388 engaged individuals');
     expect(text('non-members-people-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(counts).toEqual([null, 388]);
   });
 
@@ -263,10 +269,11 @@ describe('NonMembersPeopleComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonPeopleSearch: null, nonPeoplePage: 4 } }));
   });
 
-  it('shows the empty state when no non-member individual attended in the period', async () => {
+  it('settles empty, with no body, when no non-member individual attended in the period', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0 }));
 
-    expect(query('non-members-people-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('non-members-people-controls')).toBeNull();
     expect(query('non-members-people-table')).toBeNull();
   });
 
@@ -274,7 +281,7 @@ describe('NonMembersPeopleComponent', () => {
   it('keeps the rows when the model leaves the total unset', async () => {
     await render(response({ totalRecords: 1, scopeTotal: null }));
 
-    expect(query('non-members-people-empty')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
     expect(text('non-members-people-count')).toBe('Engaged individuals not available');
     expect(counts.at(-1)).toBeNull();
@@ -310,9 +317,9 @@ describe('NonMembersPeopleComponent', () => {
     await settle();
 
     expect(query('non-members-people-error')).not.toBeNull();
-    expect(query('non-members-people-empty')).toBeNull();
     expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -323,6 +330,5 @@ describe('NonMembersPeopleComponent', () => {
     expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('non-members-people-count')).toBe('—');
-    expect(query('non-members-people-empty')).toBeNull();
   });
 });

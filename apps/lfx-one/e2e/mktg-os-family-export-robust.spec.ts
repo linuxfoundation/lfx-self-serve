@@ -11,6 +11,10 @@ for (const width of [1440, 1280, 390]) {
   test(`Family export structure at ${width}px`, async ({ page }, info) => {
     await openFamilyExports(page, { existing: true, stale: true });
     await page.setViewportSize({ width, height: 1000 });
+    if (width === 390) {
+      // #4443: wait for the non-touch shell's rail transition, not the pre-resize desktop gutter.
+      await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', '56px');
+    }
     const slot = page.getByTestId('family-export-actions');
     await expect(slot).toBeVisible();
     await expect(page.locator('lfx-mktg-family-export-actions')).toHaveAttribute('data-family-id', 'positioning-brand');

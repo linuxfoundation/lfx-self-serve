@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" [attr.data-testid]="idPrefix() + '-age-eligible'">
+  <div class="flex items-start gap-3">
+    <lfx-checkbox
+      [form]="form()"
+      control="ageEligible"
+      [inputId]="idPrefix() + '-age-eligible'"
+      [ariaLabelledBy]="idPrefix() + '-age-eligible-text'"
+      [attr.data-testid]="idPrefix() + '-age-eligible-checkbox'" />
+    <span [id]="idPrefix() + '-age-eligible-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+      <span class="text-red-500">*</span> {{ ageLabel }}
+    </span>
+  </div>
+  @if (errors().ageEligible) {
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-age-eligible-error'">{{ errors().ageEligible }}</p>
+  }
+</div>
+
+<div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" [attr.data-testid]="idPrefix() + '-work-authorized'">
+  <div class="flex items-start gap-3">
+    <lfx-checkbox
+      [form]="form()"
+      control="workAuthorized"
+      [inputId]="idPrefix() + '-work-authorized'"
+      [ariaLabelledBy]="idPrefix() + '-work-authorized-text'"
+      [attr.data-testid]="idPrefix() + '-work-authorized-checkbox'" />
+    <span [id]="idPrefix() + '-work-authorized-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+      <span class="text-red-500">*</span> {{ workAuthorizedLabel }}
+    </span>
+  </div>
+  @if (errors().workAuthorized) {
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-work-authorized-error'">{{ errors().workAuthorized }}</p>
+  }
+</div>
+
+<div class="flex flex-col gap-3 rounded-xl border border-gray-200 p-4" [attr.data-testid]="idPrefix() + '-no-duplicate-profile'">
+  <div class="flex items-start gap-3">
+    <lfx-checkbox
+      [form]="form()"
+      control="noDuplicateProfile"
+      [inputId]="idPrefix() + '-no-duplicate-profile'"
+      [ariaLabelledBy]="idPrefix() + '-no-duplicate-profile-text'"
+      [attr.data-testid]="idPrefix() + '-no-duplicate-profile-checkbox'" />
+    <span [id]="idPrefix() + '-no-duplicate-profile-text'" class="min-w-0 flex-1 text-sm text-gray-800 leading-5">
+      <span class="text-red-500">*</span> {{ noDuplicateProfileLabel }}
+    </span>
+  </div>
+  @if (errors().noDuplicateProfile) {
+    <p role="alert" class="text-xs text-red-600" [attr.data-testid]="idPrefix() + '-no-duplicate-profile-error'">{{ errors().noDuplicateProfile }}</p>
+  }
+</div>

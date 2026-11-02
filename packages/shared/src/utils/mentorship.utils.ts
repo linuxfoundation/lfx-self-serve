@@ -99,6 +99,7 @@ import type {
   MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
+  MentorshipPublicPage,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
@@ -220,15 +221,20 @@ export function isMentorshipHttpUrl(value: string): boolean {
 }
 
 /**
- * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
-export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPage, id?: string): string {
   // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
   let end = base.length;
   while (end > 0 && base[end - 1] === '/') end--;
-  const programs = `${base.slice(0, end)}/programs`;
-  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+  const listing = `${base.slice(0, end)}/${page}`;
+  return id ? `${listing}/${encodeURIComponent(id)}` : listing;
+}
+
+/** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  return buildMentorshipPublicUrl(base, 'programs', programId);
 }
 
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
@@ -1630,6 +1636,7 @@ export function buildMentorshipMenteeApplicationView(
   const totalCount = tasks.length;
   return {
     id: app.id,
+    programId: app.programId,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
@@ -1643,7 +1650,6 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
     tasks: tasks
       .map((task) =>
         buildMentorshipMenteeTaskView(
@@ -1683,6 +1689,7 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     if (outcome) {
       past.push({
         id: app.id,
+        programId: app.programId,
         programName: app.programName,
         projectName: app.projectName,
         termName: app.term.name,

@@ -30,14 +30,7 @@
       data-testid="members-nps-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-nps-loading" aria-hidden="true" />
-  } @else if (noSurvey()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-square-poll-horizontal"
-      title="No survey in this period"
-      subtitle="The score appears here once a survey of this foundation's audiences is sent in the selected period."
-      data-testid="members-nps-empty" />
-  } @else {
+  } @else if (!empty()) {
     @if (summary().lowSampleNote) {
       <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="members-nps-low-sample">
         <i class="fa-light fa-circle-half-stroke mr-1" aria-hidden="true"></i>

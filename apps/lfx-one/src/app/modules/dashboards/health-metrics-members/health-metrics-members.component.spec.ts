@@ -24,14 +24,14 @@ import { HealthMetricsMembersComponent } from './health-metrics-members.componen
 /** Stands in for Membership & revenue by tier, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-members-tiers', template: '<div data-testid="members-tiers-stub"></div>' })
 class TiersStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for the membership bridge, which reads separately under the same anchor. */
 @Component({ selector: 'lfx-members-bridge', template: '<div data-testid="members-bridge-stub"></div>' })
 class BridgeStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
   public readonly sectionPicked = output<string>();
 }
@@ -40,7 +40,7 @@ class BridgeStubComponent {
 @Component({ selector: 'lfx-members-directory', template: '<div data-testid="members-directory-stub"></div>' })
 class DirectoryStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -48,21 +48,21 @@ class DirectoryStubComponent {
 @Component({ selector: 'lfx-members-at-risk', template: '<div data-testid="members-at-risk-stub"></div>' })
 class AtRiskStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for the member satisfaction section; the test drives its settle. */
 @Component({ selector: 'lfx-members-nps', template: '<div data-testid="members-nps-stub"></div>' })
 class NpsStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for the churn section; the test drives its settle. */
 @Component({ selector: 'lfx-members-churn', template: '<div data-testid="members-churn-stub"></div>' })
 class ChurnStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -70,7 +70,7 @@ class ChurnStubComponent {
 @Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
 class RenewalsStubComponent {
   public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -78,7 +78,7 @@ class RenewalsStubComponent {
 @Component({ selector: 'lfx-members-board-attendance', template: '<div data-testid="members-board-stub"></div>' })
 class BoardStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -198,59 +198,59 @@ describe('HealthMetricsMembersComponent', () => {
     await setup('churn');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(BridgeStubComponent).settled.emit();
-    stub(DirectoryStubComponent).settled.emit();
+    stub(BridgeStubComponent).settled.emit(false);
+    stub(DirectoryStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(AtRiskStubComponent).settled.emit();
+    stub(AtRiskStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(RenewalsStubComponent).settled.emit();
+    stub(RenewalsStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(BoardStubComponent).settled.emit();
+    stub(BoardStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(NpsStubComponent).settled.emit();
+    stub(NpsStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(ChurnStubComponent).settled.emit();
+    stub(ChurnStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(TiersStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).not.toHaveBeenCalled();

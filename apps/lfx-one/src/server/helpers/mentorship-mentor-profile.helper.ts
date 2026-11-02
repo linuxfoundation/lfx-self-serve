@@ -10,6 +10,7 @@ import {
   MentorshipUpstreamMentorProgramTerm,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 
 import { chooseMentorshipMentorTerm, isMentorshipMentorTermUnderway, mentorshipMentorTermStartMs } from './mentorship-mentor-term.helper';
 import { asRecord, asString, asStringArray } from './mentorship-profile-columns.helper';
@@ -38,7 +39,8 @@ export const mapMentorshipMentorProfileDetails = (profile: MentorshipUpstreamUse
  * and completed otherwise; with no matching term it is in progress while one of its mentees is still
  * current. A row whose matching terms are all open but not started (or undated) is a cohort that has not
  * begun, so it is not listed, even when upstream already lists its accepted mentees as current. The id is the term's when exactly one term matches, and a generated one
- * otherwise. In-progress rows come first, then the latest term start, then the program and term names.
+ * otherwise. The program id is set when exactly one of the mentor's programs has the row's name and its id is a UUID.
+ * In-progress rows come first, then the latest term start, then the program and term names.
  *
  * Upstream lists each mentee at most once as current and once as graduated (its latest term of each),
  * so a mentee who joined more than one term is counted in one of them only.
@@ -78,12 +80,14 @@ export const mapMentorshipMentoringHistory = (detail: MentorshipUpstreamMentorDe
     if (terms.length > 0 && !underway && terms.every((term) => term.status === 'open')) return [];
 
     const status: MentorshipMentoringHistoryStatus = (terms.length > 0 ? underway : entry.hasCurrentMentee) ? 'in-progress' : 'completed';
+    const programs = (detail.programs ?? []).filter((program) => program.name === entry.programName);
+    const programId = programs.length === 1 && isUuid(programs[0].id) ? programs[0].id : undefined;
     const starts = terms.map(mentorshipMentorTermStartMs).filter((start): start is number => start !== undefined);
     return [
       {
         termId: terms.length === 1 ? terms[0].id : undefined,
         startMs: starts.length > 0 ? Math.max(...starts) : undefined,
-        entry: { programName: entry.programName, term: entry.term, menteesCount: entry.menteeIds.size, status },
+        entry: { ...(programId ? { programId } : {}), programName: entry.programName, term: entry.term, menteesCount: entry.menteeIds.size, status },
       },
     ];
   });

@@ -12,9 +12,6 @@
  * forbidden, not found, invalid link, error) renders independently of upstream data and of whether
  * the signed-in test user is on the mentorship approver team.
  *
- * The module is behind the `mentorship-enabled` client flag; the flag is pinned via the localStorage
- * override, the same pattern mentorship-mentor-profile.spec.ts uses.
- *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
@@ -25,7 +22,6 @@ import { expect, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import {
   DECISION_API,
-  enableMentorshipFlag,
   gotoProgramReview,
   openProgramReview,
   PROGRAM_ID,
@@ -40,7 +36,6 @@ test.setTimeout(60_000);
 
 test.describe('Program review — confirm flow', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubProgramReview(page, 200, { status: 'pending' });
   });
 
@@ -92,10 +87,6 @@ test.describe('Program review — confirm flow', () => {
 });
 
 test.describe('Program review — outcome states', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('shows the current status when the program was already decided', async ({ page }) => {
     await stubProgramReview(page, 200, { status: 'published' });
     await openProgramReview(page);

@@ -909,8 +909,11 @@ Solution:
 This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
 queue, it only frees the HALF_OPEN probe slot. Unrecognized value-conversion errors have the same exemption (see §7).
 Every other compilation error still counts — including "does not exist or not authorized", which can mean a revoked
-GRANT — unless the caller passed `expectMissingObject` (or `expectInvalidIdentifier`). `SnowflakeService` then records
-a success, so that caller must alert on the error itself.
+GRANT — unless the caller passed `expectMissingObject` (or `expectInvalidIdentifier`). `SnowflakeService` then treats it
+like the request faults above: the failure count and circuit state are left untouched and only the HALF_OPEN probe slot
+is freed. It does NOT record a success, which would reset the pod-wide count other queries have accumulated — reachable
+whenever an exempt object and a core table are missing together, since Snowflake blames only one of them. That caller
+must alert on the error itself.
 A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
 which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 

@@ -12,14 +12,7 @@
       data-testid="members-tiers-error" />
   } @else if (loading()) {
     <p-skeleton height="28rem" borderRadius="0.5rem" data-testid="members-tiers-loading" aria-hidden="true" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-layer-group"
-      title="No membership tiers recorded yet"
-      subtitle="Once this foundation has members, each tier's members and revenue by year appear here."
-      data-testid="members-tiers-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-tiers-controls">
       <lfx-filter-pills
         variant="track"

@@ -67,8 +67,8 @@ function mockChatResponse(content: string): Response {
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: async () => ({ choices: [{ message: { content } }] }),
-    text: async () => content,
+    // `makeAiRequest` reads the body as text and parses it (#4500), so the body is the JSON text.
+    text: async () => JSON.stringify({ choices: [{ message: { content } }] }),
   } as unknown as Response;
 }
 
@@ -182,6 +182,26 @@ describe('AiService.extractBriefActionItems (LFXV2-3043)', () => {
     fetchMock.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized', text: async () => '{"error":"Invalid API key"}' } as unknown as Response);
 
     await expect(service.extractBriefActionItems(req, { brief_text: 'brief' })).rejects.toThrow(/401 Unauthorized.*Invalid API key/);
+  });
+
+  it('fails cleanly on a 2xx that is not JSON, naming the proxy and redacting the body (#4500)', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => '<html>gateway page echoing Bearer test-key</html>',
+    } as unknown as Response);
+
+    const error: Error = await service.extractBriefActionItems(req, { brief_text: 'brief' }).then(
+      () => {
+        throw new Error('expected a refusal');
+      },
+      (e: unknown) => e as Error
+    );
+
+    expect(error.message).toMatch(/AI proxy returned a response that is not a JSON object \(200\): <html>gateway page echoing Bearer \[redacted\]<\/html>/);
+    expect(error.message).not.toContain('test-key');
+    expect(error.message).not.toMatch(/Unexpected token|is not valid JSON/);
   });
 
   it('bounds the fetch with an AbortSignal timeout, not an unbounded request', async () => {
@@ -496,7 +516,7 @@ describe('AiService.reconcileAttendees (GH-1672 / PCC-1452 port)', () => {
   });
 
   it('throws on a response with no choices', async () => {
-    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', json: async () => ({ choices: [] }) } as unknown as Response);
+    fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: 'OK', text: async () => JSON.stringify({ choices: [] }) } as unknown as Response);
 
     await expect(service.reconcileAttendees(req, { attendees, candidates })).rejects.toThrow(/Failed to reconcile attendees/);
   });
@@ -601,5 +621,58 @@ describe('AiService error bodies from the AI proxy (#3996 parity)', () => {
 
     expect((err as Error).message).toContain('503 Service Unavailable');
     expect((err as Error).message).not.toContain('socket hang up');
+  });
+});
+
+// The guard end to end: the model comes from `AI_MODEL` at runtime, so each case re-imports the
+// service after `vi.resetModules()` — the helper memoizes the model per process, and a fresh
+// module registry is a fresh process as far as that memo is concerned.
+describe('AiService request body per model family (#4460)', () => {
+  const originalEnv = { ...process.env };
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchMock = vi.fn().mockResolvedValue(mockChatResponse(JSON.stringify({ items: [] })));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  async function sentBody(model: string | undefined): Promise<Record<string, unknown>> {
+    process.env = { ...originalEnv, AI_PROXY_URL: 'https://ai-proxy.example.com', AI_API_KEY: 'test-key' };
+    if (model === undefined) delete process.env['AI_MODEL'];
+    else process.env['AI_MODEL'] = model;
+    const { AiService: FreshAiService } = await import('./ai.service');
+    await new FreshAiService().extractBriefActionItems(req, { brief_text: 'The committee met.' });
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  }
+
+  it.each(['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'])('%s gets temperature', async (model) => {
+    const body = await sentBody(model);
+    expect(body['model']).toBe(model);
+    expect(body['temperature']).toBe(AI_REQUEST_CONFIG.TEMPERATURE);
+    expect(body).not.toHaveProperty('top_p');
+  });
+
+  it.each(['claude-opus-4-7', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5', 'amazon-nova-pro'])(
+    '%s gets no sampling parameter',
+    async (model) => {
+      const body = await sentBody(model);
+      expect(body['model']).toBe(model);
+      expect(body).not.toHaveProperty('temperature');
+      expect(body).not.toHaveProperty('top_p');
+    }
+  );
+
+  it('falls back to the AI_MODEL constant when the env var is unset', async () => {
+    // This file mocks the constant to `mock-model`, a name the table does not know — so the
+    // fallback is visible and, by the same rule, is sent no temperature.
+    const body = await sentBody(undefined);
+    expect(body['model']).toBe('mock-model');
+    expect(body).not.toHaveProperty('temperature');
   });
 });

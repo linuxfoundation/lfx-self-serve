@@ -38,6 +38,7 @@ describe('NonMembersConversionComponent', () => {
   let getNonMembersConversion: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsNonMembersConversion | Error = conversion()): Promise<void> {
     getNonMembersConversion = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -54,7 +55,10 @@ describe('NonMembersConversionComponent', () => {
 
     fixture = TestBed.createComponent(NonMembersConversionComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -76,6 +80,7 @@ describe('NonMembersConversionComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation for the period and settles', async () => {
@@ -84,6 +89,7 @@ describe('NonMembersConversionComponent', () => {
     expect(getNonMembersConversion).toHaveBeenCalledTimes(1);
     expect(getNonMembersConversion).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('non-members-conversion-loading')).toBeNull();
   });
 
@@ -146,16 +152,14 @@ describe('NonMembersConversionComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('keeps the hero with a muted dash, and no warmest list, when the foundation has no conversion row', async () => {
+  it('settles empty, with no body, when the foundation has no conversion row', async () => {
     await render(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
-    expect(text('non-members-conversion-pipeline-value')).toBe('—');
-    expect(query('non-members-conversion-pipeline-value')?.classList).toContain('text-gray-400');
-    expect(text('non-members-conversion-pipeline-label')).toBe('Estimated pipeline · not enough data');
-    expect(query('non-members-conversion-warmest')).toBeNull();
-    expect(query('non-members-conversion-warmest-empty')).toBeNull();
-    expect(query('non-members-conversion-footnote')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
+    expect(query('non-members-conversion-hero')).toBeNull();
+    expect(query('non-members-conversion-warmest')).toBeNull();
+    expect(query('non-members-conversion-footnote')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -163,6 +167,7 @@ describe('NonMembersConversionComponent', () => {
 
     expect(query('non-members-conversion-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton without reading or settling until a foundation is selected', async () => {

@@ -2,15 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { environment } from '@environments/environment';
 import { MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES, MENTORSHIP_MENTORING_HISTORY_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipMentoringHistoryEntry } from '@lfx-one/shared/interfaces';
+import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MentoringHistoryComponent } from './mentoring-history.component';
 
 describe('MentoringHistoryComponent', () => {
   const entries: MentorshipMentoringHistoryEntry[] = [
-    { id: 'mh_active', programName: 'GridFlow: Ingestion Pipeline', term: 'Fall 2026', menteesCount: 3, status: 'in-progress' },
+    {
+      id: 'mh_active',
+      programId: '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b',
+      programName: 'GridFlow: Ingestion Pipeline',
+      term: 'Fall 2026',
+      menteesCount: 3,
+      status: 'in-progress',
+    },
     { id: 'mh_single', programName: 'GridFlow: Metrics Exporter', term: 'Spring 2026', menteesCount: 1, status: 'completed' },
   ];
 
@@ -33,6 +42,14 @@ describe('MentoringHistoryComponent', () => {
     setup(entries);
 
     expect(element().querySelector('[data-testid="mentorship-mentoring-history-title"]')?.textContent?.trim()).toBe('Mentoring History');
+  });
+
+  it("links a row's program name to the public program page, and leaves a row without a program id as plain text", () => {
+    setup(entries);
+
+    const link = element().querySelector('[data-testid="mentorship-mentoring-history-link-mh_active"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, '3f2b8c1e-7a44-4d0e-9b55-0c1d2e3f4a5b'));
+    expect(element().querySelector('[data-testid="mentorship-mentoring-history-link-mh_single"]')).toBeNull();
   });
 
   it('renders one row per entry with the program name and term', () => {

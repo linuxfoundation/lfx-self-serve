@@ -79,6 +79,7 @@
               class="pending-action-row"
               [class.is-completing]="completingRowKeys().has(item.rowKey)"
               [class.is-application]="item.type === 'JoinApplication'"
+              [class.is-vote-expanded]="item.isVoteInlineExpanded && !item.voteUsesDrawer"
               [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
               @if (swappingRowKeys().has(item.rowKey)) {
                 <!-- Skeleton placeholder occupying the row slot while the next action takes over -->
@@ -199,7 +200,7 @@
                                 rel="noopener noreferrer"
                                 class="text-xs text-gray-500 hover:text-blue-600"
                                 data-testid="dashboard-pending-actions-vote-pcc-link">
-                                Open in My Votes →
+                                View vote details →
                               </a>
                             }
                           } @else if (item.isVoteLoading || !item.vote) {

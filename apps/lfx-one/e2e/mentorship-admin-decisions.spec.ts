@@ -9,7 +9,7 @@
  * request so a spec asserts the body the browser sent as well as what it rendered. All data is synthetic.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the browser makes the calls and the stubs
- * answer them. The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * answer them.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -19,7 +19,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ADMIN_PROGRAM_ID,
   ADMIN_PROGRAM_URL,
@@ -76,7 +76,6 @@ async function stubWrites(page: Page, decisions: DecisionRequests, stubs: WriteS
 }
 
 async function open(page: Page, requests: AdminProgramRequests, decisions: DecisionRequests, stubs?: WriteStubs): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);

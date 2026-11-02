@@ -9,7 +9,7 @@ import { writerGuard } from '@shared/guards/writer.guard';
 export const MEETING_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./meetings-dashboard/meetings-dashboard.component').then((m) => m.MeetingsDashboardComponent),
+    loadComponent: () => import('./meetings-entry/meetings-entry.component').then((m) => m.MeetingsEntryComponent),
     canActivate: [authGuard],
     data: { preload: true, preloadDelay: 500 },
   },

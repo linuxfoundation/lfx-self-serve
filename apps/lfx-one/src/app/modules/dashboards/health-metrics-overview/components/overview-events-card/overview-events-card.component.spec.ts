@@ -35,7 +35,7 @@ const GLANCE: HealthMetricsEventsAtAGlance = {
     events: 11,
     pastEvents: 11,
     showUpRate: null,
-    changes: null,
+    changes: { registrations: null, attendees: null, organizations: null, speakers: null, countries: null, events: -0.24, showUpRatePts: null },
   })),
   upcomingEvents: 4,
   hasEvents: true,
@@ -63,8 +63,6 @@ function event(eventId: string, overrides: Partial<HealthMetricsOverviewEvent> =
     registrations: 328,
     registrationsGoal: 1000,
     compScore: 'medium',
-    goalMet: null,
-    paceStatus: null,
     acceptedTalks: 0,
     totalProposals: 185,
     cfpStatus: 'Review Complete',
@@ -75,7 +73,10 @@ function event(eventId: string, overrides: Partial<HealthMetricsOverviewEvent> =
 
 const EVENTS: HealthMetricsOverviewEvents = {
   upcoming: Array.from({ length: 7 }, (_, index) => event(`u${index}`)),
-  past: [event('p1', { compScore: null, goalMet: true, paceStatus: 'healthy', registrationsGoal: 300, registrations: 320, ranges: ['COMPLETED_YEAR'] })],
+  past: [
+    event('p1', { compScore: null, registrationsGoal: 300, registrations: 320, totalProposals: 96, acceptedTalks: 38, ranges: ['COMPLETED_YEAR'] }),
+    event('p2', { compScore: null, registrationsGoal: 300, registrations: 250, ranges: ['COMPLETED_YEAR'] }),
+  ],
   truncated: false,
 };
 
@@ -117,68 +118,100 @@ describe('OverviewEventsCardComponent', () => {
   }
 
   function rows(): HTMLElement[] {
-    return [...fixture.nativeElement.querySelectorAll('[data-testid="overview-events-list"] > [data-testid^="overview-events-row-"]')];
+    return [...fixture.nativeElement.querySelectorAll('[data-testid="overview-events-list"] [role="row"][data-testid^="overview-events-row-"]')];
   }
 
-  it('counts upcoming events into YTD and tracks sponsorship against its goal', async () => {
+  function text(testId: string): string {
+    return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+  }
+
+  it('splits the YTD total into past and upcoming events, with its change, and tracks sponsorship against its goal', async () => {
     await render();
 
-    expect(query('overview-events-total')?.textContent).toContain('15');
-    expect(query('overview-events-total')?.textContent).toContain('11 held · 4 upcoming');
-    expect(query('overview-events-sponsorship')?.textContent).toContain('of $3.5M goal');
+    expect(text('overview-events-total-value')).toBe('15');
+    expect(text('overview-events-total-delta')).toBe('Down24% vs last year');
+    expect(text('overview-events-past-count')).toBe('Past 11');
+    expect(text('overview-events-upcoming-count')).toBe('Upcoming 4');
+    expect(query('overview-events-split')?.children).toHaveLength(2);
+    expect(text('overview-events-sponsorship-goal')).toBe('Goal $3.5M');
+    expect(text('overview-events-sponsorship-progress')).toBe('86% reached · $500K to goal');
   });
 
-  it('opens on five upcoming events and loads five more at a time', async () => {
+  it('opens on five upcoming events and shows the rest with View all', async () => {
     await render();
     expect(rows()).toHaveLength(5);
+    expect(text('overview-events-view-all')).toBe('View all (7)');
 
-    query('overview-events-load-more')?.click();
+    query('overview-events-view-all')?.click();
     fixture.detectChanges();
 
     expect(rows()).toHaveLength(7);
-    expect(query('overview-events-load-more')).toBeNull();
+    expect(query('overview-events-view-all')).toBeNull();
   });
 
-  it('badges registrations and shows accepted talks against proposals', async () => {
+  it('colors the registrations bar by status, with no badge, and a legend in the footer', async () => {
     await render();
 
-    const registrations = query('overview-events-row-u0-registrations');
-    expect(registrations?.textContent).toContain('At risk');
-    expect(registrations?.textContent?.replace(/\s+/g, ' ')).toContain('328 / 1,000 · 33%');
-    expect(query('overview-events-row-u0-talks')?.textContent?.replace(/\s+/g, ' ')).toContain('0 / 185');
+    // The count and its goal sit apart in a flex row, so the text runs together.
+    expect(text('overview-events-row-u0-registrations')).toBe('328Goal: 1,000Status: At risk');
+    expect(query('overview-events-row-u0-registrations-bar')?.className).toContain('bg-amber-400');
+    expect(text('overview-events-row-u0-talks')).toBe('0Received: 185');
+    expect(query('overview-events-footer')?.contains(query('overview-events-legend'))).toBe(true);
+    expect(text('overview-events-legend')).toBe('On trackAt riskAction required');
+    expect(text('overview-events-list-title')).toBe('Upcoming events');
   });
 
-  it('opens the registration trend for an upcoming event, by click or keyboard', async () => {
+  it('draws an unfilled outlined track with no status for an event without a goal', async () => {
+    EVENTS.upcoming[0] = event('u0', { registrationsGoal: null });
+    try {
+      await render();
+    } finally {
+      EVENTS.upcoming[0] = event('u0');
+    }
+
+    expect(text('overview-events-row-u0-registrations')).toBe('328No goal set');
+    expect(query('overview-events-row-u0-registrations-track')?.className).toContain('bg-white');
+    expect(query('overview-events-row-u0-registrations-bar')?.style.width).toBe('0%');
+  });
+
+  it('scrolls only the table sideways, and shortens the trend label on narrow screens', async () => {
     await render();
 
-    rows()[1].click();
-    rows()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(query('overview-events-table-scroll')?.className).toContain('overflow-x-auto');
+    expect(text('overview-events-row-u0-trend')).toBe('Registration TrendTrend');
+  });
 
-    expect(open).toHaveBeenCalledTimes(2);
+  it("opens an upcoming event's registration trend from its button", async () => {
+    await render();
+
+    query('overview-events-row-u1-trend')?.click();
+
+    expect(open).toHaveBeenCalledTimes(1);
     expect(open.mock.calls[0][0]).toBe(OverviewEventTrendDialogComponent);
     expect(open.mock.calls[0][1]).toMatchObject({
       showHeader: false,
       modal: true,
       dismissableMask: true,
-      data: { event: expect.objectContaining({ eventId: 'u1' }) },
+      data: { event: expect.objectContaining({ eventId: 'u1' }), isPast: false },
     });
-    expect(open.mock.calls[1][1].data.event.eventId).toBe('u2');
   });
 
-  it("lists a past year's events, back on the first page, none of them opening the trend", async () => {
+  it("lists a past year's events back on the first page, each opening its history", async () => {
     await render();
-    query('overview-events-load-more')?.click();
+    query('overview-events-view-all')?.click();
     fixture.detectChanges();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
-    expect(query('overview-events-list')?.textContent).toContain(`Events in ${new Date().getFullYear() - 1}`);
-    expect(rows()).toHaveLength(1);
-    expect(rows()[0].getAttribute('role')).toBeNull();
-    expect(query('overview-events-row-p1-registrations')?.textContent).toContain('Hit goal');
-    rows()[0].click();
-    expect(open).not.toHaveBeenCalled();
+    expect(text('overview-events-list-title')).toBe('Past events');
+    expect(rows()).toHaveLength(2);
+    expect(query('overview-events-row-p1-registrations-bar')?.className).toContain('bg-emerald-500');
+    expect(query('overview-events-row-p2-registrations-bar')?.className).toContain('bg-amber-400');
+    expect(text('overview-events-row-p1-talks')).toBe('38Received: 96');
+
+    query('overview-events-row-p2-trend')?.click();
+    expect(open.mock.calls[0][1].data).toMatchObject({ event: expect.objectContaining({ eventId: 'p2' }), isPast: true });
   });
 
   it('fails as a whole when any of its reads fails', async () => {

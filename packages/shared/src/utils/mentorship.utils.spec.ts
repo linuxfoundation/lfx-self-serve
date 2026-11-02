@@ -85,6 +85,7 @@ import {
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
+  buildMentorshipPublicUrl,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -876,6 +877,17 @@ describe('toMentorshipEnrollUpdateRequest', () => {
         applicationEndDate: '2030-02-01',
       },
     ]);
+  });
+});
+
+describe('buildMentorshipPublicUrl', () => {
+  it("links a mentee's or mentor's public page, URL-encoding the id", () => {
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org/', 'mentees', 'user-1')).toBe('https://mentorship.example.org/mentees/user-1');
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org', 'mentors', 'a/b')).toBe('https://mentorship.example.org/mentors/a%2Fb');
+  });
+
+  it('links the listing without an id', () => {
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org//', 'mentors')).toBe('https://mentorship.example.org/mentors');
   });
 });
 
@@ -2300,7 +2312,6 @@ function menteeApplication(overrides: Partial<MentorshipMenteeApplication> = {})
     upstreamStatus: 'pending',
     createdOn: '2026-06-01T10:00:00Z',
     updatedOn: '2026-06-02T10:00:00Z',
-    decisionExpectedDate: '2026-08-01',
     tasks: [],
     ...overrides,
   };
@@ -2418,18 +2429,15 @@ describe('buildMentorshipMenteeApplicationView', () => {
     expect(buildMentorshipMenteeApplicationView(app, 'in-progress').lastUpdatedOn).toBe('2026-07-05T10:00:00Z');
   });
 
-  it('reports zero progress and a null decision date when there is nothing to track', () => {
-    const view = buildMentorshipMenteeApplicationView(menteeApplication({ decisionExpectedDate: undefined }), 'awaiting-review');
+  it('reports zero progress when there is nothing to track', () => {
+    const view = buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review');
     expect(view.progressPercent).toBe(0);
     expect(view.progressLabel).toBe('Prerequisite Tasks');
     expect(view.accepted).toBe(false);
-    expect(view.decisionExpectedDate).toBeNull();
   });
 
-  it('drops the decision date once the application is accepted or graduated', () => {
-    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').decisionExpectedDate).toBe('2026-08-01');
-    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'accepted' }), 'active').decisionExpectedDate).toBeNull();
-    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'graduated' }), 'graduated').decisionExpectedDate).toBeNull();
+  it('carries the program id so the card can link the program page', () => {
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').programId).toBe('prog-1');
   });
 
   it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {

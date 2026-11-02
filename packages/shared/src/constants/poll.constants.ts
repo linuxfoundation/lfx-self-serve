@@ -307,3 +307,6 @@ export const DRAFT_VOTE_PLACEHOLDER_QUESTION: CreatePollQuestion = {
   type: 'single_choice',
   choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }],
 };
+
+/** Matches Tailwind's `sm` breakpoint (640px) from below — the width under which voting surfaces switch to their phone layouts. */
+export const VOTES_MOBILE_MEDIA_QUERY = '(max-width: 639.98px)';

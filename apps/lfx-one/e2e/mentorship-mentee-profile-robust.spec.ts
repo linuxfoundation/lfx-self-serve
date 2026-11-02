@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -74,7 +74,6 @@ async function fulfillMenteeProfile(page: Page, body: unknown, delayMs = 0): Pro
 test.describe('Mentee Profile — Robust Tests', () => {
   test.describe('Data-testid presence', () => {
     test.beforeEach(async ({ page }) => {
-      await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, POPULATED_PROFILE);
       await openMenteeProfile(page);
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
@@ -127,7 +126,6 @@ test.describe('Mentee Profile — Robust Tests', () => {
 
   test.describe('Loading state', () => {
     test('shows the loading testid before the details card', async ({ page }) => {
-      await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, POPULATED_PROFILE, 3_000);
       await openMenteeProfile(page);
 
@@ -143,7 +141,6 @@ test.describe('Mentee Profile — Robust Tests', () => {
 
   test.describe('Empty state', () => {
     test.beforeEach(async ({ page }) => {
-      await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, EMPTY_PROFILE);
       await openMenteeProfile(page);
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
@@ -166,7 +163,6 @@ test.describe('Mentee Profile — Robust Tests', () => {
 
   test.describe('Error state', () => {
     test('replaces details and history with the error-state testid', async ({ page }) => {
-      await enableMentorshipFlag(page);
       await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
       await openMenteeProfile(page);
 

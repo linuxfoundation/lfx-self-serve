@@ -55,8 +55,8 @@ export class NonMembersPeopleComponent {
 
   /** Every engaged individual in the period, for the sub-nav badge; `null` while a new foundation or period is read, or after a failed read. */
   public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -101,6 +101,8 @@ export class NonMembersPeopleComponent {
   protected readonly rowViews: Signal<HealthMetricsNonMembersPersonRowView[]> = computed(() => buildHealthMetricsNonMembersPersonRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
+  /** No person took part in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.scopeTotal() === 0);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly summary = computed(() => buildHealthMetricsNonMembersPeopleCountLabel(this.scopeTotal()));
   /** An unset total is not zero, so the search line drops its "of N", and "match" becomes a noun that takes a plural. */
@@ -184,7 +186,7 @@ export class NonMembersPeopleComponent {
               this.loading.set(!foundationSeen);
               this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.scopeTotal === 0);
             })
           )
         )

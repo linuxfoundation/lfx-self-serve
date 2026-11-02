@@ -12,6 +12,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
 import { OverviewCardComponent } from '../overview-card/overview-card.component';
+import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-explore-link.component';
 import { OverviewKpiStripComponent } from '../overview-kpi-strip/overview-kpi-strip.component';
 
 import type { HealthMetricsOverviewBoardRowView, HealthMetricsOverviewBoardSort, HealthMetricsOverviewBoardView } from '@lfx-one/shared/interfaces';
@@ -19,7 +20,7 @@ import type { HealthMetricsOverviewBoardRowView, HealthMetricsOverviewBoardSort,
 /** The board's meetings and average attendance, then every invited member, lowest attendance first. */
 @Component({
   selector: 'lfx-overview-board-card',
-  imports: [OverviewCardComponent, OverviewKpiStripComponent, TooltipModule],
+  imports: [OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent, TooltipModule],
   templateUrl: './overview-board-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })

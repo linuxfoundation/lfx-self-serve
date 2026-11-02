@@ -65,3 +65,22 @@ describe('CampaignMetricsService monitoring query', () => {
     expect(await monitorQuery()).not.toContain(`IN ('SEARCH', 'DEMAND_GEN')`);
   });
 });
+
+/** A failed Google Ads read reaches the Monitor tab as an authored advisory, not a bare 500 (#4526). */
+describe('CampaignMetricsService monitoring read failure', () => {
+  afterEach(() => {
+    gaqlSearch.mockReset();
+    gaqlSearch.mockImplementation(async () => []);
+  });
+
+  it('turns a Google Ads failure into a 502 advisory that names its error code', async () => {
+    gaqlSearch.mockRejectedValueOnce({ errors: [{ error_code: { authentication_error: 'OAUTH_TOKEN_REVOKED' }, message: 'synthetic detail' }] });
+
+    await expect(new CampaignMetricsService().getMonitorData(req, 14)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'SERVICE_ADVISORY',
+      operation: 'campaign_monitor',
+      message: expect.stringContaining('OAUTH_TOKEN_REVOKED'),
+    });
+  });
+});

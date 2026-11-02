@@ -13,7 +13,9 @@ const { exchangeToken, fetchTargetUserProfile, startImpersonation, resolveRealAc
 }));
 
 vi.mock('../services/impersonation.service', () => ({
-  ImpersonationService: vi.fn().mockImplementation(() => ({ exchangeToken, fetchTargetUserProfile, startImpersonation })),
+  ImpersonationService: vi.fn().mockImplementation(function () {
+    return { exchangeToken, fetchTargetUserProfile, startImpersonation };
+  }),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), info: vi.fn(), debug: vi.fn() },
