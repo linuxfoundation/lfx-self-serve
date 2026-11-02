@@ -24,7 +24,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -95,10 +95,6 @@ async function openPendingCard(page: Page): Promise<void> {
 }
 
 test.describe('Mentee Overview — withdraw', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('cancelling the confirm step withdraws nothing', async ({ page }) => {
     const stub = await stubWithdrawFlow(page, 204, 'withdrawn');
     await openPendingCard(page);

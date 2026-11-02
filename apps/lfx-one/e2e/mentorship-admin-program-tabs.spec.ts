@@ -15,7 +15,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the reads are made by the browser and
  * the stubs answer them; a direct `page.goto()` would read the page during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -43,7 +42,7 @@ import {
   stubAdminTasks,
   stubAdminTerms,
 } from './helpers/mentorship-admin-program.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -61,7 +60,6 @@ const PAGE_TWO_LABEL = `Showing 11 to 20 of ${ADMIN_MENTEES_TOTAL}`;
 const offsets = (requests: AdminProgramRequests): string[] => requests.mentees.map((params) => params.get('offset') ?? '');
 
 async function open(page: Page, requests: AdminProgramRequests): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);
@@ -263,7 +261,6 @@ test.describe('Admin program detail — View Tasks', () => {
 test.describe('Admin program detail — failures', () => {
   test('shows the mentees error with Retry, and the rows after Retry succeeds', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, requests, 500);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
@@ -280,7 +277,6 @@ test.describe('Admin program detail — failures', () => {
 
   test('shows a dash for a count that could not be read', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page, { ...ADMIN_PROGRAM_PAGE, tabCounts: { currentMentees: null, pastMentees: 4, mentors: null, terms: 2 } });
     await stubAdminMentees(page, requests);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
@@ -291,7 +287,6 @@ test.describe('Admin program detail — failures', () => {
   });
 
   test('shows the no-access message for a 403', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 403);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -300,7 +295,6 @@ test.describe('Admin program detail — failures', () => {
   });
 
   test('shows the not-found message for a 404', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 404);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -392,7 +386,6 @@ test.describe('Admin program detail — failed tab reads', () => {
 
 test.describe('Admin program detail — empty mentees', () => {
   test('shows Current Mentees empty with a zero count, and Past Mentees empty', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page, { ...ADMIN_PROGRAM_PAGE, tabCounts: { currentMentees: 0, pastMentees: 0, mentors: 0, terms: 2 } });
     await page.route(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_PAGE.program.id}/mentees*`, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [], total: 0 }) })

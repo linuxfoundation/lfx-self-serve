@@ -9,7 +9,7 @@
  * rendered. All data is synthetic. The four-open-term limit and the 409 refusals are shown with the server's reason.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the browser makes the calls and the stubs
- * answer them. The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * answer them.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -20,7 +20,7 @@ import { MENTORSHIP_MAX_OPEN_TERMS_MESSAGE } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import { ADMIN_PROGRAM_ID, ADMIN_PROGRAM_URL, stubAdminMentees, stubAdminProgramPage, stubAdminTasks } from './helpers/mentorship-admin-program.helper';
 import {
   newTermRows,
@@ -50,7 +50,6 @@ function countProgramReads(page: Page): { count: () => number } {
 }
 
 async function open(page: Page, state: TermStubState, writeStatus?: number): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, { mentees: [], tasks: [] });
   await stubAdminTasks(page, { mentees: [], tasks: [] });

@@ -18,7 +18,7 @@ import { MENTORSHIP_MENTEE_TASK_FILE_ACCEPT, MENTORSHIP_MENTEE_TASKS_URL } from 
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -92,7 +92,6 @@ async function attachedActions(page: Page, id: string): Promise<boolean[]> {
 
 test.describe('Mentee task file — Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubApplications(page);
   });
 
