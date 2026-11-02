@@ -74,11 +74,11 @@
                   <lfx-card data-testid="vote-detail-description">
                     <div class="flex flex-col gap-2">
                       <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
-                      <!-- whitespace-pre-line keeps the line breaks of plain-text descriptions, as the cast drawer does (GH-2326). -->
+                      <!-- voteDescription preserves plain-text spacing; normal HTML whitespace and prose restore rich-text paragraphs and lists (GH-2326, #4727). -->
                       <div
-                        class="text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words [&_a]:text-blue-600 [&_a]:underline"
+                        class="prose prose-sm max-w-none text-sm text-gray-700 leading-relaxed whitespace-normal break-words [&_a]:text-blue-600 [&_a]:underline"
                         lfxExternalLinks
-                        [innerHTML]="voteData.description | linkifyHtml"></div>
+                        [innerHTML]="voteData.description | voteDescription | linkifyHtml"></div>
                     </div>
                   </lfx-card>
                 }

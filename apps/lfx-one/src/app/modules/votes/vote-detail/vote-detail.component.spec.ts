@@ -25,6 +25,7 @@ import {
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
+import { VoteDescriptionPipe } from '../pipes/vote-description.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
@@ -132,7 +133,7 @@ describe('VoteDetailComponent', () => {
       // Keep the real page template; opt into real children for composed visibility and interaction assertions.
       .overrideComponent(VoteDetailComponent, {
         set: {
-          imports: [NgTemplateOutlet, LinkifyHtmlPipe, ...realImports],
+          imports: [NgTemplateOutlet, LinkifyHtmlPipe, VoteDescriptionPipe, ...realImports],
           schemas: [NO_ERRORS_SCHEMA],
           providers: [{ provide: DialogService, useValue: dialogService }],
         },
@@ -293,13 +294,44 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-summary')).toBeNull();
     });
 
-    it('keeps the line breaks of a plain-text description', async () => {
-      voteService.fetchVote.mockReturnValue(of(makeVote({ description: 'First paragraph\n\nSecond paragraph' })));
+    it.each([
+      ['voter, active', PollStatus.ACTIVE, false],
+      ['voter, ended', PollStatus.ENDED, false],
+      ['writer, active', PollStatus.ACTIVE, true],
+      ['writer, ended', PollStatus.ENDED, true],
+    ] as const)('preserves description whitespace and typography for the %s view (#4727)', async (_label, status, writer) => {
+      const raw = '  First\n\n\n    - indented  bullet';
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status, description: raw })));
+      projectService.getProjectStrict.mockReturnValue(of({ writer } as Project));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
-      const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-line"]');
-      expect(description?.textContent).toBe('First paragraph\n\nSecond paragraph');
+      const description = testId(fixture, 'vote-detail-description')?.querySelector('div.prose');
+      expect(description?.textContent).toBe(raw);
+      expect(description?.classList.contains('prose')).toBe(true);
+      expect(description?.querySelector('span.whitespace-pre-wrap')).toBeTruthy();
+    });
+
+    it('renders supported description HTML and strips unsafe content (#4727)', async () => {
+      voteService.fetchVote.mockReturnValue(
+        of(makeVote({ description: '<p>One</p><ul><li>A</li></ul><script>alert(1)</script><img src="x" onerror="alert(2)">' }))
+      );
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      const description = testId(fixture, 'vote-detail-description')?.querySelector('div.prose');
+      expect(description?.querySelector('p')?.textContent).toBe('One');
+      expect(description?.querySelector('ul > li')?.textContent).toBe('A');
+      expect(description?.querySelector('script')).toBeNull();
+      expect(description?.innerHTML).not.toContain('onerror');
+    });
+
+    it('adds no description section for an empty description (#4727)', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ description: '' })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-description')).toBeNull();
     });
 
     it.each([
