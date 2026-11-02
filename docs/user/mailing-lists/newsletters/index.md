@@ -38,7 +38,7 @@ See [Create a group](../../committees/create-committee/) for every step. You can
 2. Select **Create Newsletter**.
 3. Work through the three steps: **Audience**, **Content**, and **Send**. Use **Next** and **Previous** to move between them, and **Preview** to see the newsletter as recipients will.
 
-Your draft saves automatically as you work. You can also select **Save as Draft** and come back to it later from the **Drafts** tab.
+Once you have picked an audience and entered both a subject and a body, your draft saves automatically as you work. You can also select **Save as Draft** and come back to it later from the **Drafts** tab. Until all three are filled in, nothing is saved, so if you leave the page earlier your work is lost.
 
 ### Audience
 
@@ -62,7 +62,7 @@ The **Send** step summarizes the audience size, who the newsletter is from, wher
 - Select **Send test** to send a test copy to your own email address only.
 - Choose **Send immediately** and select **Send now**, or choose **Schedule for later**, pick a time, and select **Schedule**. A scheduled time must be at least 35 minutes from now and no more than 72 hours ahead.
 
-A scheduled newsletter can't be edited. To change it, open it from the **Scheduled** tab and select **Cancel schedule**; it goes back to being a draft.
+A scheduled newsletter can't be edited. To change it, open it from the **Scheduled** tab and select **Cancel schedule**; it goes back to being a draft, and the time you picked is kept so you can schedule it again. You can't cancel when it is too close to the send time: you see **Too late to cancel**, and the newsletter goes out as scheduled.
 
 ## Personalization
 
@@ -73,7 +73,7 @@ Newsletters can't be personalized for each recipient. There are no merge fields 
 The **Newsletters** page has four tabs:
 
 - **Drafts**: newsletters you haven't sent yet. Select one to keep editing, or **Delete** it.
-- **Scheduled**: newsletters waiting to go out, with the time they will be sent. **Cancel schedule** turns one back into a draft.
+- **Scheduled**: newsletters waiting to go out, with the time they will be sent. **Cancel schedule** turns one back into a draft, unless it is too close to the send time.
 - **Sent**: newsletters that have gone out, with the number of recipients and the open rate.
 - **Opt-out**: people who unsubscribed from your newsletters, and when.
 
@@ -93,7 +93,7 @@ In the **Me** lens, select **Newsletters** in the sidebar. You see one card per 
 
 If you have no newsletters yet, the page says "No newsletters yet". Newsletters are sent to the members of a Newsletter group, so join the group to receive them.
 
-From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to send an invitation to a colleague's company email. The email must be at a member organization of the foundation.
+From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to invite a colleague to the foundation's newsletter. To send an invitation, you must be a member of the foundation's newsletter group and have a verified email at one of the member organizations named in the invite dialog. Your colleague's company email must also be at one of those member organizations.
 
 If you open a link to a newsletter you can't read, you see a message such as **Restricted Newsletter** or **This newsletter is a member benefit** instead of the newsletter.
 
