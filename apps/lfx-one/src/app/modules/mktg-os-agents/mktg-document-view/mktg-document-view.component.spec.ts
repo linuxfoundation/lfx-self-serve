@@ -2915,7 +2915,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     await render(`/documents/brand-kit/living?revision=${survivor.id}`);
     expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe("You're viewing v1 · no name (stored before names were recorded)");
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe("You're reading v1 (no name (stored before names were recorded))");
     expect(query('mktg-document-view-history-bar-back')).toBeNull();
     query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
@@ -3052,10 +3052,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(2);
     expect(query('mktg-document-view-restore-current')).toBeNull();
     expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(
-      "You're viewing v1 · 13 Oct · no name (stored before names were recorded) · v2 is current"
+      "You're reading v1 (13 Oct, no name (stored before names were recorded)). v2 is the current version."
     );
     expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
     expect(query('mktg-document-view-history-bar-back')?.getAttribute('href')).toBe(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-history-bar-back')?.querySelector('.hidden')?.textContent).toBe('Open v2');
+    expect(query('mktg-document-view-history-bar-back')?.querySelector('.sm\\:hidden')?.textContent).toBe('Open');
+    expect(query('mktg-document-view-history-bar-mobile-summary')?.textContent).toBe('Viewing v1');
     const summary = query('mktg-document-view-history-bar-summary');
     const runAgain = expectTitleCardRunAgain();
     if (!summary) throw new Error('Missing history fixture');
@@ -3326,7 +3329,7 @@ describe('MktgDocumentViewComponent', () => {
     if (!summary) throw new Error('The history summary must be rendered');
     expect(summary.getAttribute('tabindex')).toBe('0');
     expect(summary.hasAttribute('title')).toBe(false);
-    expect(summary.getAttribute('aria-label')).toBe(`You're viewing v1 · 13 Oct · ${name} · v2 is current`);
+    expect(summary.getAttribute('aria-label')).toBe(`You're reading v1 (13 Oct, ${name}). v2 is the current version.`);
     summary.focus();
     await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(summary.textContent));
     summary.blur();
@@ -3340,7 +3343,7 @@ describe('MktgDocumentViewComponent', () => {
     const selected = { ...OLDER, author };
     store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(`You're viewing v1 · 13 Oct · ${label} · v2 is current`);
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(`You're reading v1 (13 Oct, ${label}). v2 is the current version.`);
   });
 
   it('never shows the history bar for a one-off run', async () => {
@@ -3415,7 +3418,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-controls')).toBe('mktg-document-view-revision-list');
     expect(query('mktg-document-view-revision-3')).toBeNull();
     expect(query('mktg-document-view-revision-4')).toBeNull();
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v2 is current');
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v2 is the current version.');
     expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 9 ▾');
     query('mktg-document-view-show-all-revisions')?.click();
     await settle();
@@ -3455,7 +3458,7 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/brand-kit/living?revision=${history.revisions[2].id}`);
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(4);
     expect(query('mktg-document-view-revision-1')).toBeNull();
-    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v9 is current');
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v9 is the current version.');
   });
 
   it('keeps expansion while opening another revision but resets it for another project', async () => {
@@ -3953,7 +3956,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['view']()?.revision.id).toBe(current.id);
   });
 
-  it.each([1, 2])('prefers a newer approved current over a produced draft while viewing v%i, otherwise shows the produced row', async (number) => {
+  it.each([1, 2])('shows the approved current only when it differs from viewed v%i, even with a newer produced draft', async (number) => {
     const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
     const approved = revision(2, { latest: true, approval });
     const produced = revision(3, { author: { name: 'Synthetic writer' } });
@@ -3971,12 +3974,54 @@ describe('MktgDocumentViewComponent', () => {
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['remoteRevisionId'].set(selected.id);
     await settle();
-    const expected = number === 1 ? approved : produced;
-    expect(query('mktg-document-view-new-approval')?.textContent).toContain(
-      number === 1 ? 'v2 was approved by Synthetic reviewer' : 'v3 was produced by Synthetic writer'
-    );
-    expect(query('mktg-document-view-new-approval-open')?.getAttribute('href')).toContain(`revision=${expected.id}`);
+    if (number === 1) {
+      expect(query('mktg-document-view-new-approval')?.textContent).toContain('v2 was approved by Synthetic reviewer');
+      expect(query('mktg-document-view-new-approval-open')?.getAttribute('href')).toContain(`revision=${approved.id}`);
+    } else {
+      expect(component['newlyApprovedRevision']()).toBeNull();
+      expect(query('mktg-document-view-new-approval')).toBeNull();
+    }
     expect(component['view']()?.revision.id).toBe(selected.id);
+  });
+
+  it('announces an older approval once without replacing the viewed body', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const history = mockNineRevisionHistory(3);
+    const older = history.revisions.find((row) => row.number === 1);
+    if (!older) throw new Error('Missing synthetic older revision');
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const viewed = component['view']();
+    if (!viewed) throw new Error('Missing synthetic viewed revision');
+    const reads = store.getRevision.mock.calls.length;
+    const content = query('mktg-document-view-content');
+    expect(query('mktg-document-view-history-bar')).toBeNull();
+    const approval = { approvedAt: '2026-11-02T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    store.getDocument.mockReturnValue(
+      of({
+        ...history,
+        revisions: history.revisions.map((row) => ({ ...row, latest: row.id === older.id, approval: row.id === older.id ? approval : row.approval })),
+        current: { revisionId: older.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: older.id, number: older.number },
+      })
+    );
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    const line = query('mktg-document-view-new-approval');
+    expect(line?.textContent).toContain('v1 was approved by Synthetic reviewer');
+    expect(line?.getAttribute('role')).toBe('status');
+    expect(query('mktg-document-view-new-approval-open')?.getAttribute('href')).toContain(`revision=${older.id}`);
+    expect(component['view']()?.revision.id).toBe(viewed.revision.id);
+    expect(component['view']()?.markdown).toBe(viewed.markdown);
+    expect(query('mktg-document-view-content')).toBe(content);
+    const bar = query('mktg-document-view-history-bar');
+    expect(bar).not.toBeNull();
+    expect(query('mktg-document-view-current-1')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-new-approval')).toBe(line);
+    expect(query('mktg-document-view-history-bar')).toBe(bar);
+    expect(store.getRevision).toHaveBeenCalledTimes(reads);
   });
 
   it('renders the newer-revision line from the initial read and leaves the DOM untouched on no-change polls', async () => {

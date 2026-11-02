@@ -575,12 +575,13 @@
               @let viewedAuthor = viewedAuthorLabel();
               @let viewedDate = current.revision.createdAt | date: 'd MMM';
               @let historySummary =
-                "You're viewing v" +
+                "You're reading v" +
                 current.revision.number +
-                (viewedDate ? ' · ' + viewedDate : '') +
-                ' · ' +
+                ' (' +
+                (viewedDate ? viewedDate + ', ' : '') +
                 viewedAuthor +
-                (active ? ' · v' + active.number + ' is current' : '');
+                ')' +
+                (active ? '. v' + active.number + ' is the current version.' : '');
               <!-- The Revisions slot keeps new navigation out of the content column: the tabs never move. -->
               <div
                 class="flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
@@ -628,8 +629,8 @@
                     [queryParams]="{ revision: active.id }"
                     queryParamsHandling="merge"
                     data-testid="mktg-document-view-history-bar-back">
-                    <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
-                    <span class="sm:hidden">Back</span>
+                    <span class="hidden sm:inline" [textContent]="'Open v' + active.number"></span>
+                    <span class="sm:hidden">Open</span>
                   </a>
                 }
               </div>

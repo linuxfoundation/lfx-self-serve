@@ -1464,13 +1464,12 @@ export class MktgDocumentViewComponent {
   private initNewlyApprovedRevision() {
     return computed(() => {
       const view = this.view();
-      const approved = view?.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
-      const produced = view?.revisions.find((row) => row.number > view.revision.number);
-      const approvedIsNewer = !!view && !!approved && approved.number > view.revision.number;
-      const newer = approvedIsNewer ? approved : produced;
-      if (!view || !newer || newer.number <= view.revision.number) return null;
-      const author = newer.approval ? newer.approval.approvedBy : newer.author;
-      return { ...newer, authorLabel: describeMktgRevisionAuthor(author) };
+      if (!view || view.approvedCurrent?.revisionId === view.revision.id) return null;
+      const approved = view.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
+      const candidate = approved ?? view.revisions.find((row) => row.number > view.revision.number);
+      if (!candidate) return null;
+      const author = candidate.approval ? candidate.approval.approvedBy : candidate.author;
+      return { ...candidate, authorLabel: describeMktgRevisionAuthor(author) };
     });
   }
 
