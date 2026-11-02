@@ -46,7 +46,7 @@
     @if (answersError()) {
       <lfx-message severity="error" [text]="answersError()" data-testid="mktg-run-progress-answers-error" />
     }
-    @if (warning()) {
+    @if (warning() && (runState() !== 'questions' || paused())) {
       <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
     }
     @if (visibleRunActivity(); as activity) {
@@ -102,13 +102,7 @@
       } @else {
         <p class="text-sm text-gray-600">The agent is waiting for answers.</p>
         @if (!answersError()) {
-          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">
-            @if (runPage()) {
-              Answering needs project write access or the browser that started this run. This page keeps checking on its own.
-            } @else {
-              Open the intake form to continue with an available questions block.
-            }
-          </p>
+          <p class="text-sm text-gray-500" data-testid="mktg-run-progress-owner-note">Open the intake form to continue with an available questions block.</p>
         }
       }
     } @else if (state === 'completed') {

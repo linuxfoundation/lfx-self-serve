@@ -331,7 +331,10 @@ current `{ questionsId, questions: MktgRunQuestion[], askedAt }` turn, including
 the existing schema and acquire the field on their next observed question turn. Question-body writes
 retain the existing transition predicate and use the same conditional record replacement as result transitions.
 Any typed one-off turn supplied by its domain adapter shares this private capture, including turns
-with an empty basis; only living-kit writer progress exposes the payload. One-offs retain their dedicated creator path.
+with an empty basis; only living-kit writer progress exposes the payload. That writer check is strict: when it cannot
+be completed (project or access-check outage), the row is returned without the block and the read is marked
+`progressUnavailable`, logged as `mktg_run_questions_access`, so clients keep the questions they already hold rather
+than reading "no questions"; only a verified non-writer gets a complete answer without the block. One-offs retain their dedicated creator path.
 The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
 rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
 Public progress is an explicit projection: opaque run id, project/agent/document,

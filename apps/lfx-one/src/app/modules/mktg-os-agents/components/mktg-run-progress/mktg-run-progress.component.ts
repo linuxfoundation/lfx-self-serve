@@ -130,6 +130,8 @@ export class MktgRunProgressComponent {
   private readonly lastSelectedRunId = signal('');
   private readonly lastSelectedStartedAt = signal('');
   protected readonly warning = signal('');
+  /** True once automatic checks stopped after the poll deadline; only then does the waiting state offer Refresh. */
+  protected readonly paused = signal(false);
   protected readonly readFailure = signal('');
   private readonly reload = signal(0);
   protected readonly answersSending = signal(false);
@@ -324,6 +326,7 @@ export class MktgRunProgressComponent {
           }
           readerScope = key;
           this.warning.set('');
+          this.paused.set(false);
           this.readFailure.set('');
           if (!isPlatformBrowser(this.platformId) || !request.polling || !request.project || !request.agentKey || !request.documentId) return EMPTY;
           if (request.runId && !MKTG_STARTED_RUN_ID_REGEX.test(request.runId)) {
@@ -420,6 +423,7 @@ export class MktgRunProgressComponent {
                   unavailableSince = null;
                   unavailableCount = 0;
                   this.warning.set('');
+                  this.paused.set(false);
                 }
               }),
               catchError((error: unknown) => {
@@ -478,6 +482,7 @@ export class MktgRunProgressComponent {
                 const elapsed = unavailableSince === null ? 0 : Date.now() - unavailableSince;
                 if (unavailableSince !== null && elapsed >= MKTG_RUN_POLL.timeoutMs) {
                   this.warning.set('Automatic checks are paused. Showing the last loaded asset; refresh to check again.');
+                  this.paused.set(true);
                   return EMPTY;
                 }
                 const active =

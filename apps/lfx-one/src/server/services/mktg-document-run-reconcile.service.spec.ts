@@ -611,10 +611,11 @@ describe('MktgDocumentRunService', () => {
       questionsId,
       questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
     });
-    // A verified writer sees the block.
+    // A verified writer sees the block; the writer check is strict so an access-check failure is not read as a denial.
     const verified = await service.readProgress(req, project);
     expect(verified.progressUnavailable).toBeUndefined();
     expect(verified.runs[0]).toMatchObject({ state: 'questions', pendingQuestions: { questionsId } });
+    expect(flows.project).toHaveBeenLastCalledWith(req, project, true, false, false, true);
     // A verified non-writer gets a complete answer without the block.
     flows.project.mockResolvedValue({ uid: project, writer: false });
     const reader = await service.readProgress(req, project);
@@ -633,6 +634,14 @@ describe('MktgDocumentRunService', () => {
       expect.stringContaining('could not be verified'),
       expect.objectContaining({ project, run: hash(session) })
     );
+    // The strict writer check rethrows an access-check outage: the same partial read, not a complete 'no questions'.
+    vi.mocked(logger.warning).mockClear();
+    flows.project.mockRejectedValue(new MicroserviceError('Synthetic access check outage', 503, 'ACCESS_CHECK_UNAVAILABLE'));
+    const accessUnverified = await service.readProgress(req, project);
+    expect(accessUnverified.progressUnavailable).toBe(true);
+    expect(accessUnverified.runs[0].state).toBe('questions');
+    expect(accessUnverified.runs[0].pendingQuestions).toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_questions_access', expect.stringContaining('could not be verified'), expect.anything());
     // The same rule reaches an explicitly selected run whose row was not in the list.
     const detail = { project, type: answerable, documentId: 'living', revisions: [], approvedCurrent: null };
     const selected = await service.detailWithProgress(req, project, answerable, 'living', detail, { runs: [] }, false, undefined, hash(session));

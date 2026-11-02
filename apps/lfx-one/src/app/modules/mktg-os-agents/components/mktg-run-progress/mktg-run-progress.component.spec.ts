@@ -876,7 +876,13 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([waiting])));
     await fixture.whenStable();
     read.mockReturnValue(of({ ...detail([waiting]), progressUnavailable: true }));
-    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.questionsIntervalMs);
+    // While the poll is still retrying, the warning shows but the waiting state offers no Refresh.
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(text()).toContain('retrying');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs);
     await fixture.whenStable();
     expect(text()).toContain('Automatic checks are paused');
     expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();

@@ -918,7 +918,8 @@ export class MktgDocumentRunService {
     let writer = false;
     if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
       try {
-        const project = await this.projects.getProjectById(req, run.project, true);
+        // strictWriter: a failed access check reaches the catch below instead of degrading to a false denial.
+        const project = await this.projects.getProjectById(req, run.project, true, false, false, true);
         writer = project.writer === true && project.uid === run.project;
       } catch (err) {
         // An unverified reader is not a non-writer: the read is partial, so the client keeps the questions it already holds.
