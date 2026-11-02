@@ -1,9 +1,9 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, switch-organization, easycla, cla, ccla, cla-manager]
+tags: [organization, faq, switch-organization, org-overview, dashboard, easycla, cla, ccla, cla-manager]
 last_updated: 2026-11-02
 intercom_collection: Organization
 ---
@@ -11,6 +11,10 @@ intercom_collection: Organization
 ## How do I switch to a different organization?
 
 You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, and the browser's Back button returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
+
+## What does the Org Overview dashboard show?
+
+The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals foundations, projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
 
 ## Why can't I edit this corporate CLA?
 

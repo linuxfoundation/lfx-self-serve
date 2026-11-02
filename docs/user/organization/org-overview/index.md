@@ -1,0 +1,106 @@
+---
+title: Org Overview dashboard
+description: What each card on the Organization lens Dashboard (the Org Overview) shows, how its numbers are counted, and where its links go.
+audience: [all]
+product_area: Organization
+tags: [organization, org, org-lens, dashboard, overview, involvement, foundations, projects, governance, meetings]
+last_updated: 2026-11-02
+intercom_collection: Organization
+---
+
+These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+
+## What is the Org Overview?
+
+The Org Overview is the **Dashboard** of the Organization lens: a one-page summary of how the selected organization takes part in Linux Foundation (LF) foundations and projects. It opens when you select **Organization** in the lens switcher, and from **Dashboard** at the top of the sidebar. Its address is `/org/<organization>/overview`.
+
+The page has three parts, from top to bottom:
+
+1. A heading with the organization's name followed by **Overview**, such as **Acme Overview**, and a label with the organization's Linux Foundation membership tier, when it has one.
+2. **Involvement** — six cards for the organization's contributions, events and training.
+3. **Foundations and Projects** — four summary tiles and a table of every foundation the organization is involved in.
+
+## What do the Involvement cards show?
+
+The Involvement cards count the selected organization's active contributors, maintainer roles, event attendees and speakers, certified employees and training enrollments. The section heading names the organization, such as **Acme's Involvement**, followed by **across N LF foundations**, or **No engagement yet** when the organization is involved in no foundation.
+
+Use the buttons above the cards to show only one group: **All**, **Contribution**, **Event** or **Education**. Use the arrow buttons at the right of the heading to scroll through the cards. The cards are for reading only: selecting one does not open another page.
+
+| Card                     | What it counts                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Active Contributors**  | People with at least one code contribution (a commit, pull request, review or comment) in LF and non-LF projects over the past 2 years. Each person is credited to the employer they had when they did the work, so people who have since left are included. Bots are left out. The card's subtitle reads **LF and non-LF projects, past 2 years, credited to** the organization **at the time of their work**. |
+| **Maintainer roles**     | People named as maintainers in a project's governance files, counted once per project and credited to their current employer, in LF and non-LF projects over the past 2 years. A dash (**—**) in place of a number means the roles cannot be read right now; it does not mean zero.                                                                                                                             |
+| **Event Attendees**      | **Employees at foundation events** — the organization's employees who attended a foundation event.                                                                                                                                                                                                                                                                                                              |
+| **Event Speakers**       | **Employee speakers at events** — the organization's employees who spoke at an event.                                                                                                                                                                                                                                                                                                                           |
+| **Certified Employees**  | The number of employees who hold a certification, shown as **N employees**, with the total number of certifications they hold underneath, such as **12 total certifications**.                                                                                                                                                                                                                                  |
+| **Training Enrollments** | **Training courses enrolled this year** — the organization's employees' enrollments in training courses this year. Its chart adds them up day by day.                                                                                                                                                                                                                                                           |
+
+On **Active Contributors** and **Maintainer roles**, the information icon next to the title gives the full counting rule. Their bar charts show one bar per month for the last 12 months, and the caption under the chart names that window, for example **Per month, Nov 2025 – Oct 2026 to date, LF and non-LF projects**. The current month is counted up to today.
+
+## What do the Foundations and Projects tiles show?
+
+The four tiles at the top of the Foundations and Projects section total the selected organization's involvement shown in the table below them. The section heading names the organization, such as **Acme's Foundations and Projects**. Under each total, a line breaks it down. A category with nothing to count is left off that line, and a dash (**—**) means no category has anything to count.
+
+| Tile                   | What it counts                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Foundations**        | The foundations the organization is involved in, broken down by membership tier, such as **Gold (2), Silver (1)**                                 |
+| **Projects**           | The projects the organization is involved in, broken down by influence: **Leading**, **Contributing**, **Participating** and **Silent**           |
+| **Governance Roles**   | Seats held by the organization's people, broken down into **Board members** and **Committee members**                                             |
+| **Meetings This Week** | This week's meetings in the organization's foundations, broken down into **Board**, **Technical**, **Marketing**, **Working Group** and **Other** |
+
+## What does the foundations table show?
+
+The foundations table lists one row per foundation the selected organization is involved in, with the organization's role in each, plus an **Outside LF** row for its projects that are not part of a Linux Foundation foundation. Each row shows the foundation's logo and name, how many projects the organization is involved in there (such as **3 projects involved**), and a membership label: the tier followed by **Member** (such as **Gold Member**), **Non-member**, or **Outside LF**.
+
+| Column                       | What it shows                                                                                                                                                                                                                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Foundation**               | The foundation's name, logo, project count and membership label                                                                                                                                                                                                                               |
+| **Org Role**                 | **Director**, **Member** or **Non-Member**                                                                                                                                                                                                                                                    |
+| **Voting Status**            | **Voting** or **Observer**. A dash (**—**) means there is no voting status to show                                                                                                                                                                                                            |
+| **Governance Participation** | How often the organization's people attend governance, working group and project meetings: **Active** above 66% attendance, **Partial** from 33% to 66%, and **Inactive** below 33%. Hover over the label to see the exact percentage. A dash (**—**) means there is no attendance to measure |
+
+### How do I see the projects inside a foundation?
+
+Select the arrow at the start of a foundation's row to expand it. The expanded row lists **Projects Involved (N)**, with one line per project:
+
+| Column                       | What it shows                                                                                                                                                                       |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**                  | The project's name, with a colored dot for the organization's influence: dark green for **Leading**, blue for **Contributing**, amber for **Participating** and gray for **Silent** |
+| **LF maintainer roles**      | Maintainer roles the organization's people hold on the project over the past 2 years. Only LF projects are counted, so a project that is not an LF project shows a dash (**—**)     |
+| **Contributors**             | The organization's people who contributed to the project                                                                                                                            |
+| **Collaborators**            | The organization's people who collaborated on the project                                                                                                                           |
+| **Commits (last 12 months)** | Commits the organization's people authored in the last 12 months, on any branch, including pull-request commits not yet merged. Each commit is counted once, and bots are left out  |
+
+If the organization has no active projects in that foundation, the expanded row says **No projects from this foundation are currently active for your org.**
+
+## Where do the links on the Org Overview go?
+
+The Org Overview links to the **Memberships** and **Projects** pages of the same organization. The Involvement cards and the summary tiles do not link anywhere.
+
+1. **View all on Memberships page ›**, at the right of the Foundations and Projects heading, opens the **Memberships** page.
+2. Selecting a foundation's row opens the **Memberships** page. The **Outside LF** row does not open anything.
+3. Selecting a project inside an expanded foundation opens that project's page under **Projects**. Only LF projects open a page; other projects are listed for reference.
+
+On a keyboard, move to a foundation or project row and press Enter or Space to open it.
+
+## Where are the return on investment (ROI) figures?
+
+Return on investment (ROI) figures are not on the Org Overview. They are on the separate **ROI Metrics** page, which only Linux Foundation staff can see. See [ROI metrics](../../dashboards/roi/) for what that page shows and how the figures are estimated.
+
+## What do the messages on the Org Overview mean?
+
+The Org Overview shows a message in place of the page or a section when there is nothing to show or the section did not load.
+
+| Message                                     | What it means and what to do                                                                                                                                                                                                                                                                          |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No organization selected**                | You have no organization to show. Linux Foundation staff see **Search for an organization in the switcher above to view its Org Lens.** — search for one in the organization switcher. Everyone else is asked to double-check their invite status with their admin, or to select **contact support**. |
+| **No foundations or projects yet.**         | The organization is not involved in any foundation or project yet, so the table is empty                                                                                                                                                                                                              |
+| **Couldn't load Foundations and Projects.** | The Foundations and Projects section did not load. Select **Retry**. The Involvement cards above it are not affected                                                                                                                                                                                  |
+
+If the page says **You do not have access to this organization** or another access message instead of the dashboard, see [What happens when a link does not open an organization?](../choose-an-organization/#what-happens-when-a-link-does-not-open-an-organization).
+
+## Related sections
+
+- [Choose and switch an organization](../choose-an-organization/) — pick the organization the Org Overview shows
+- [Organization FAQ](../faq/) — short answers about the Organization lens
+- [ROI metrics](../../dashboards/roi/) — return on investment estimates, for Linux Foundation staff
