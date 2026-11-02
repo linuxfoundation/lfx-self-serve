@@ -2375,24 +2375,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/**
- * Fields needed to describe one meeting occurrence as a calendar event (ICS file or Google Calendar link).
- * @description Deliberately minimal: no registrants, passcode, host key, Zoom links or free-text description.
- */
-export interface MeetingCalendarEvent {
-  /** Meeting id; the ICS UID is `<uid>@lfx.linuxfoundation.org`, or `<uid>-<occurrenceId>@…` for a recurring occurrence (the feeds' scheme) */
-  uid: string;
-  /** Occurrence id of a recurring meeting; keeps each occurrence's calendar event distinct */
-  occurrenceId?: string | null;
-  /** Event title */
-  title: string;
-  /** Start of the occurrence as an RFC3339 instant */
-  start: string;
-  /** Duration in minutes */
-  durationMinutes: number;
-  /** Project name shown in the description, when known */
-  projectName?: string | null;
-  /** LFX meeting page URL (`/meetings/:id`); never a Zoom link */
-  joinUrl: string;
-}

@@ -40,16 +40,67 @@ describe('MeetingJoinStickyBarComponent', () => {
     window.matchMedia = realMatchMedia;
   });
 
-  it('puts Add to calendar before the Google Calendar link and the Join button', async () => {
+  it('puts Resend Invite before the Join button', async () => {
     const fixture = await create();
-    fixture.componentRef.setInput('googleCalendarUrl', 'https://calendar.google.com/calendar/render?action=TEMPLATE');
+    fixture.componentRef.setInput('primaryAction', 'resend');
     await fixture.whenStable();
 
-    const add = testId(fixture, 'sticky-add-to-calendar') as HTMLElement;
-    const google = testId(fixture, 'sticky-google-calendar') as HTMLElement;
+    const resend = testId(fixture, 'sticky-resend-invite') as HTMLElement;
     const join = testId(fixture, 'sticky-join') as HTMLElement;
-    expect(add.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(google.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(resend.textContent).toContain('Resend Invite');
+    expect(resend.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(testId(fixture, 'sticky-subscribe-calendar')).toBeNull();
+  });
+
+  it('shows the resend as in flight (disabled) while the request is pending', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('primaryAction', 'resend');
+    fixture.componentRef.setInput('resending', true);
+    await fixture.whenStable();
+
+    expect(testId(fixture, 'sticky-resend-invite')?.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('emits resendInvite when the primary button is pressed', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('primaryAction', 'resend');
+    await fixture.whenStable();
+    const emitted = vi.fn();
+    fixture.componentInstance.resendInvite.subscribe(emitted);
+
+    fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('links Subscribe to the project feed in a new tab with noopener', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('primaryAction', 'subscribe');
+    fixture.componentRef.setInput('subscribeUrl', 'https://app.example/public/api/projects/p1/calendar.ics');
+    await fixture.whenStable();
+
+    const anchor = testId(fixture, 'sticky-subscribe-calendar')?.querySelector('a') as HTMLAnchorElement;
+    expect(anchor.href).toBe('https://app.example/public/api/projects/p1/calendar.ics');
+    expect(anchor.target).toBe('_blank');
+    expect(anchor.rel).toContain('noopener');
+    expect(testId(fixture, 'sticky-resend-invite')).toBeNull();
+  });
+
+  it.each(['javascript:alert(1)', 'data:text/html,x', ''])('renders no Subscribe link for an unusable feed URL (%s)', async (url) => {
+    const fixture = await create();
+    fixture.componentRef.setInput('primaryAction', 'subscribe');
+    fixture.componentRef.setInput('subscribeUrl', url);
+    await fixture.whenStable();
+
+    expect(testId(fixture, 'sticky-subscribe-calendar')).toBeNull();
+  });
+
+  it('renders only the Join row when there is no primary action', async () => {
+    const fixture = await create();
+
+    expect(testId(fixture, 'sticky-resend-invite')).toBeNull();
+    expect(testId(fixture, 'sticky-subscribe-calendar')).toBeNull();
+    expect(testId(fixture, 'sticky-join')).not.toBeNull();
   });
 
   it('shows the unlock label on a disabled Join until the window opens', async () => {
@@ -91,22 +142,6 @@ describe('MeetingJoinStickyBarComponent', () => {
     await fixture.whenStable();
 
     expect(testId(fixture, 'sticky-join')?.querySelector('a')).toBeNull();
-  });
-
-  it('omits the Google link when none is supplied', async () => {
-    const fixture = await create();
-
-    expect(testId(fixture, 'sticky-google-calendar')).toBeNull();
-  });
-
-  it('emits addToCalendar when the primary button is pressed', async () => {
-    const fixture = await create();
-    const emitted = vi.fn();
-    fixture.componentInstance.addToCalendar.subscribe(emitted);
-
-    fixture.debugElement.query(By.css('[data-testid="sticky-add-to-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
-
-    expect(emitted).toHaveBeenCalledTimes(1);
   });
 
   it('clears the safe area with a max() padding and is phone-only', async () => {

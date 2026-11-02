@@ -701,30 +701,3 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
     expect(attempts).toBe(1);
   });
 });
-
-describe('MeetingService.downloadMeetingCalendar', () => {
-  let service: MeetingService;
-  let get: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    get = vi.fn(() => of(new Blob(['BEGIN:VCALENDAR'])));
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
-    service = TestBed.inject(MeetingService);
-  });
-
-  it('requests the authenticated calendar.ics route as a blob, encoding the id', () => {
-    service.downloadMeetingCalendar('a/b').subscribe();
-
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(get.mock.calls[0][0]).toBe('/api/meetings/a%2Fb/calendar.ics');
-    expect(get.mock.calls[0][1].responseType).toBe('blob');
-    expect(get.mock.calls[0][1].params).toBeUndefined();
-  });
-
-  it('passes the occurrence start the page shows as the occurrence query param', () => {
-    service.downloadMeetingCalendar(MEETING_UID, 1_762_369_200_000).subscribe();
-
-    expect(get.mock.calls[0][1].params.get('occurrence')).toBe('1762369200000');
-  });
-});

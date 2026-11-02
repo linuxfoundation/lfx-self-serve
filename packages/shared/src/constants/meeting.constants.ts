@@ -1177,6 +1177,3 @@ export const MEETING_DURATION_OPTIONS = [
 
 /** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
 export const MEETING_CLOCK_TICK_MS = 5_000;
-
-/** Duration assumed for a calendar event when the meeting payload carries none. */
-export const MEETING_CALENDAR_DEFAULT_DURATION_MINUTES = 60;

@@ -10,6 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { environment } from '@environments/environment';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Meeting,
@@ -187,7 +188,6 @@ describe('MeetingJoinComponent', () => {
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getMeetingRsvpForCurrentUser,
-            downloadMeetingCalendar: vi.fn(),
             getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
             getPastMeetingSummary,
             getPastMeetingRecording,
@@ -2136,16 +2136,18 @@ describe('MeetingJoinComponent', () => {
       return fixture;
     };
 
-    it('shows Add to calendar first and a disabled Join with the unlock time for a future meeting', async () => {
+    it('shows Resend Invite first and a disabled Join with the unlock time to an invitee of a future meeting', async () => {
       const fixture = await render();
 
       expect(bar(fixture)).not.toBeNull();
-      const add = part(fixture, 'sticky-add-to-calendar') as HTMLElement;
+      const resend = part(fixture, 'sticky-resend-invite') as HTMLElement;
       const join = part(fixture, 'sticky-join') as HTMLElement;
-      expect(add).not.toBeNull();
-      expect(add.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(resend).not.toBeNull();
+      expect(resend.textContent).toContain('Resend Invite');
+      expect(resend.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(join.textContent).toContain('Join opens');
       expect(join.querySelector('button')?.disabled ?? join.hasAttribute('disabled')).toBe(true);
+      expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
     });
 
     it('is phone chrome: hidden from sm up', async () => {
@@ -2154,15 +2156,54 @@ describe('MeetingJoinComponent', () => {
       expect(bar(fixture)?.classList.contains('sm:hidden')).toBe(true);
     });
 
-    it('offers a Google Calendar link built from the page occurrence', async () => {
-      const fixture = await render({ start_time: '2099-01-01T00:00:00.000Z', duration: 60 });
+    describe('primary action', () => {
+      it("reuses the page's own self-resend (same handler, same toast), for the occurrence shown", async () => {
+        const fixture = await render();
 
-      const link = part(fixture, 'sticky-google-calendar') as HTMLAnchorElement;
-      const url = new URL(link.href);
-      expect(url.origin).toBe('https://calendar.google.com');
-      expect(url.searchParams.get('text')).toBe('Board Sync');
-      expect(url.searchParams.get('dates')).toBe('20990101T000000Z/20990101T010000Z');
-      expect(link.rel).toContain('noopener');
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('shows the same in-flight state as the page button while the resend is pending', async () => {
+        resendMyMeetingInvitation.mockReturnValue(new Subject());
+        const fixture = await render();
+
+        fixture.debugElement.query(By.css('[data-testid="sticky-resend-invite"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+        await settle();
+
+        expect(fixture.componentInstance.resendingInvite()).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')?.querySelector('button')?.disabled).toBe(true);
+      });
+
+      it('offers a non-registrant a link to the project calendar feed instead, opening in a new tab', async () => {
+        const fixture = await render({ invited: false, organizer: false });
+
+        const link = part(fixture, 'sticky-subscribe-calendar')?.querySelector('a') as HTMLAnchorElement;
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(link.textContent).toContain('Subscribe to calendar');
+        expect(link.href).toBe(`${environment.urls.home}/public/api/projects/project-1/calendar.ics`);
+        expect(link.target).toBe('_blank');
+        expect(link.rel).toContain('noopener');
+      });
+
+      it('offers no calendar action when the meeting is not in the project feed (private) and the viewer is not invited', async () => {
+        const fixture = await render({ invited: false, organizer: false, visibility: MeetingVisibility.PRIVATE });
+
+        expect(bar(fixture)).not.toBeNull();
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        expect(part(fixture, 'sticky-subscribe-calendar')).toBeNull();
+        expect(part(fixture, 'sticky-join')).not.toBeNull();
+      });
+
+      it('never offers a calendar file or a Google Calendar link', async () => {
+        const fixture = await render();
+
+        expect(bar(fixture)?.innerHTML).not.toMatch(/calendar\.google\.com|\.ics|download/i);
+      });
     });
 
     it.each([
@@ -2186,7 +2227,7 @@ describe('MeetingJoinComponent', () => {
       const fixture = await render({ start_time: new Date(Date.now() - 5 * 60_000).toISOString() });
 
       expect(bar(fixture)).not.toBeNull();
-      expect(part(fixture, 'sticky-add-to-calendar')).not.toBeNull();
+      expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
       expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
       expect(part(fixture, 'sticky-join')?.textContent).not.toContain('Join opens');
     });
@@ -2307,58 +2348,6 @@ describe('MeetingJoinComponent', () => {
         advance(2 * 60_000);
         window.dispatchEvent(new Event('focus'));
         expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
-      });
-    });
-
-    describe('Add to calendar', () => {
-      let anchorDownloads: string[];
-
-      beforeEach(() => {
-        anchorDownloads = [];
-        URL.createObjectURL = vi.fn(() => 'blob:ics');
-        URL.revokeObjectURL = vi.fn();
-        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-          anchorDownloads.push(this.download);
-        });
-      });
-      afterEach(() => vi.restoreAllMocks());
-
-      const press = async (fixture: ComponentFixture<MeetingJoinComponent>) => {
-        fixture.debugElement.query(By.css('[data-testid="sticky-add-to-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
-        await settle();
-      };
-
-      it('downloads the ICS under the title-derived file name', async () => {
-        const meetingService = TestBed.inject(MeetingService);
-        vi.mocked(meetingService.downloadMeetingCalendar).mockReturnValue(of(new Blob(['BEGIN:VCALENDAR'], { type: 'text/calendar' })));
-        const fixture = await render();
-
-        await press(fixture);
-
-        expect(meetingService.downloadMeetingCalendar).toHaveBeenCalledWith(MEETING_ID, null);
-        expect(anchorDownloads).toEqual(['board-sync.ics']);
-      });
-
-      it.each([401, 403])('hides the bar when the endpoint answers %i', async (status) => {
-        const meetingService = TestBed.inject(MeetingService);
-        vi.mocked(meetingService.downloadMeetingCalendar).mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
-        const fixture = await render();
-
-        await press(fixture);
-
-        expect(bar(fixture)).toBeNull();
-        expect(toastAdd).not.toHaveBeenCalled();
-      });
-
-      it('keeps the bar and toasts on any other failure', async () => {
-        const meetingService = TestBed.inject(MeetingService);
-        vi.mocked(meetingService.downloadMeetingCalendar).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
-        const fixture = await render();
-
-        await press(fixture);
-
-        expect(bar(fixture)).not.toBeNull();
-        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
       });
     });
   });

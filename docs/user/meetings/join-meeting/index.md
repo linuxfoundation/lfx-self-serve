@@ -28,10 +28,10 @@ If you see an error about your email address, such as that you aren't on the gue
 
 ### On a phone
 
-When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with two ways to put the meeting in your calendar and a **Join Meeting** button.
+When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with a calendar action and a **Join Meeting** button.
 
-- **Add to calendar** downloads an `.ics` file for the meeting. Open it to add the event to Apple Calendar, Outlook or another calendar app. The file holds the title, the project name, the start and end times, and a link back to this join page. It doesn't contain the Zoom link, passcode, host key or guest list. On a recurring meeting it adds the next occurrence.
-- **Google Calendar** opens Google Calendar with the same event filled in.
+- If you're invited, the calendar action is **Resend Invite**. It emails the invitation to your own address again, so the calendar entry stays the one the invitation created and keeps receiving updates.
+- If you aren't invited and the meeting is public, it's **Subscribe to calendar**. It opens the project's calendar feed in a new tab so you can subscribe to it in your calendar app. The feed lists the project's public meetings and keeps itself up to date.
 - **Join Meeting** is greyed out and reads "Join opens" followed by the time in your own time zone, until the join window opens (10 minutes before the start, or earlier if the organizer set a longer early join time). It turns on by itself, with no need to reload the page.
 
 The bar hides while the guest list is open, and it doesn't appear if you aren't signed in, if you joined a private meeting with only its password link, or once the meeting has ended. Larger screens keep the join button and message at the top of the page.

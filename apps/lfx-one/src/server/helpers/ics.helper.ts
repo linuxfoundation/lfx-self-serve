@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Meeting, MeetingCalendarEvent, PaginatedResponse } from '@lfx-one/shared/interfaces';
-import { addMinutesToDate, buildMeetingCalendarDescription } from '@lfx-one/shared/utils';
+import { Meeting, PaginatedResponse } from '@lfx-one/shared/interfaces';
+import { addMinutesToDate } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
 
 /** Host suffix for the globally-unique ICS UID per RFC 5545 §3.8.4.7 — this is LFX's own domain, not a per-meeting value. */
@@ -123,38 +123,6 @@ export function buildVCalendar(events: string[], prodId = '-//LFX//Calendar//EN'
   }
 
   return [...lines, ...events, `END:VCALENDAR`].join('\r\n');
-}
-
-/**
- * Builds the VEVENT for one meeting occurrence (#4862): UTC DTSTART/DTEND, the occurrence-specific UID (same scheme and domain as the committee and project feeds, so a subscribed feed and a download are one event), the title, the
- * project-and-page description and the LFX meeting page URL. The input type has no slot for registrants, passcodes,
- * host keys, Zoom links or the meeting description, so none can reach the file. No RRULE, no VTIMEZONE.
- * @throws RangeError when `event.start` is not a valid instant
- */
-export function buildMeetingVEvent(event: MeetingCalendarEvent, now: Date = new Date()): string {
-  if (Number.isNaN(Date.parse(event.start))) {
-    throw new RangeError('Meeting start is not a valid date');
-  }
-  const uid = event.occurrenceId ? `${event.uid}-${event.occurrenceId}` : event.uid;
-
-  return [
-    'BEGIN:VEVENT',
-    foldLine(`UID:${escapeICSText(uid)}@${ICS_UID_DOMAIN}`),
-    `DTSTAMP:${formatICSDate(now.toISOString())}`,
-    `DTSTART:${formatICSDate(event.start)}`,
-    `DTEND:${formatICSDate(new Date(Date.parse(event.start) + event.durationMinutes * 60_000).toISOString())}`,
-    'SEQUENCE:0',
-    foldLine(`SUMMARY:${escapeICSText(event.title)}`),
-    foldLine(`DESCRIPTION:${escapeICSText(buildMeetingCalendarDescription(event))}`),
-    // eslint-disable-next-line no-control-regex
-    foldLine(`URL:${event.joinUrl.replace(/[\u0000-\u001f\u007f]/g, '')}`),
-    'END:VEVENT',
-  ].join('\r\n');
-}
-
-/** A complete single-event .ics document (CRLF line endings, trailing CRLF). */
-export function buildMeetingIcs(event: MeetingCalendarEvent, now: Date = new Date()): string {
-  return buildVCalendar([buildMeetingVEvent(event, now)], '-//The Linux Foundation//LFX One//EN') + '\r\n';
 }
 
 const MAX_PAGES = 50;

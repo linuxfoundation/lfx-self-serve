@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { HttpErrorResponse } from '@angular/common/http';
 import { DatePipe, isPlatformBrowser, isPlatformServer, NgClass } from '@angular/common';
 import {
   afterNextRender,
@@ -33,12 +32,9 @@ import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { saveBlobAsFile } from '@app/shared/utils/save-blob.util';
 import { environment } from '@environments/environment';
 import {
-  buildGoogleCalendarUrl,
   buildJoinUrlWithParams,
-  buildMeetingIcsFileName,
   buildOccurrenceNavTimeline,
   canJoinMeeting,
   DEFAULT_EARLY_JOIN_TIME,
@@ -54,9 +50,7 @@ import {
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
-  MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
   MEETING_CLOCK_TICK_MS,
-  MeetingCalendarEvent,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingHostCandidate,
@@ -274,20 +268,23 @@ export class MeetingJoinComponent implements OnInit {
   // currentOccurrence: the shown occurrence never rolls over in place, because that would refetch the RSVP and roster.
   // Browser-only, see startClock().
   private readonly clock = signal<number>(Date.now());
-  // Sticky bar (#4862): set when the calendar endpoint answers 401/403 so the actions stop being offered.
-  private readonly calendarUnavailable = signal<boolean>(false);
-  protected readonly calendarDownloading = signal<boolean>(false);
-  // The occurrence the page shows, as a calendar event. Built from the same start the page displays.
-  private readonly calendarEvent: Signal<MeetingCalendarEvent | null> = this.initCalendarEvent();
-  // Signed-in viewers with full access to an upcoming or in-progress meeting only: anonymous and password-only guests never
-  // learn the start time (the public projection strips it), so nothing time-related may be shown to them.
+  // Start of the occurrence the page shows (the same source as its own date and time), or null when there is none.
+  private readonly shownStart: Signal<string | null> = computed(() => {
+    const start = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+    return start && !Number.isNaN(Date.parse(start)) ? start : null;
+  });
+  // Sticky bar (#4862), signed-in viewers with full access to an upcoming or in-progress meeting only: anonymous and
+  // password-only guests never learn the start time (the public projection strips it), so nothing time-related may be shown.
   protected readonly showStickyBar: Signal<boolean> = this.initShowStickyBar();
+  // Primary action in the bar: Resend Invite for an invitee (the page's own self-resend), else Subscribe to the project feed.
+  protected readonly stickyBarAction: Signal<'resend' | 'subscribe' | null> = this.initStickyBarAction();
+  // The project's public calendar feed, built the way the meetings dashboard's iCal Subscribe does.
+  protected readonly projectCalendarFeedUrl: Signal<string> = computed(() => {
+    const projectUid = this.project()?.uid || this.meeting()?.project_uid;
+    return projectUid ? `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectUid)}/calendar.ics` : '';
+  });
   // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
   protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
-  protected readonly googleCalendarUrl: Signal<string> = computed(() => {
-    const event = this.calendarEvent();
-    return event ? buildGoogleCalendarUrl(event) : '';
-  });
   // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
   // (resolved after first render) so server and client markup agree.
   protected readonly joinUnlockLabel: Signal<string> = this.initJoinUnlockLabel();
@@ -681,31 +678,6 @@ export class MeetingJoinComponent implements OnInit {
     if (isPlatformBrowser(this.platformId)) {
       this.startClock();
     }
-  }
-
-  /** Downloads the ICS for the occurrence on screen; hides the calendar actions when the endpoint refuses the viewer. */
-  public onAddToCalendar(): void {
-    const event = this.calendarEvent();
-    if (!isPlatformBrowser(this.platformId) || !event || this.calendarDownloading()) {
-      return;
-    }
-    this.calendarDownloading.set(true);
-    this.meetingService
-      .downloadMeetingCalendar(event.uid, event.occurrenceId ? Date.parse(event.start) : null)
-      .pipe(
-        finalize(() => this.calendarDownloading.set(false)),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
-        next: (blob) => saveBlobAsFile(blob, buildMeetingIcsFileName(event.title)),
-        error: (error: HttpErrorResponse) => {
-          if (error.status === 401 || error.status === 403) {
-            this.calendarUnavailable.set(true);
-            return;
-          }
-          this.messageService.add({ severity: 'error', summary: 'Could not add to calendar', detail: 'Please try again.' });
-        },
-      });
   }
 
   public handleCopyLink(): void {
@@ -1242,46 +1214,34 @@ export class MeetingJoinComponent implements OnInit {
     return typeof stated === 'string' && stated ? stated : null;
   }
 
-  private initCalendarEvent(): Signal<MeetingCalendarEvent | null> {
-    return computed(() => {
-      const meeting = this.meeting();
-      const occurrence = this.currentOccurrence();
-      const start = occurrence?.start_time || meeting?.start_time;
-      if (!meeting?.id || !start || Number.isNaN(Date.parse(start))) {
-        return null;
-      }
-      return {
-        uid: meeting.id,
-        occurrenceId: occurrence?.occurrence_id ?? null,
-        title: meeting.title,
-        start,
-        durationMinutes: occurrence?.duration || meeting.duration || MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
-        projectName: meeting.project_name || this.project()?.name,
-        joinUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
-      };
-    });
-  }
-
   private initShowStickyBar(): Signal<boolean> {
     return computed(
-      () =>
-        this.authenticated() &&
-        this.liveMeetingFullAccess() &&
-        !this.loadedViaPastMeetingId() &&
-        !this.calendarUnavailable() &&
-        !!this.calendarEvent() &&
-        !this.isPastMeeting()
+      () => this.authenticated() && this.liveMeetingFullAccess() && !this.loadedViaPastMeetingId() && !!this.shownStart() && !this.isPastMeeting()
     );
   }
 
+  private initStickyBarAction(): Signal<'resend' | 'subscribe' | null> {
+    return computed(() => {
+      if (this.canResendInvite()) {
+        return 'resend';
+      }
+      // The project feed lists public meetings only (private ones are not in it), so it is offered for those alone.
+      const meeting = this.meeting();
+      const inPublicFeed = meeting?.visibility === 'public' && !meeting?.restricted;
+      return inPublicFeed && this.projectCalendarFeedUrl() ? 'subscribe' : null;
+    });
+  }
+
+  // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the
+  // zone (resolved after first render) so server and client markup agree.
   private initJoinUnlockLabel(): Signal<string> {
     return computed(() => {
-      const event = this.calendarEvent();
+      const start = this.shownStart();
       const timezone = this.userTimezone();
-      if (!event || !timezone) {
+      if (!start || !timezone) {
         return 'Join Meeting';
       }
-      const unlockMs = Date.parse(event.start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
+      const unlockMs = Date.parse(start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
       const day = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric' }).format(ms);
       const time = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(unlockMs);
       if (day(unlockMs) === day(this.clock())) {
