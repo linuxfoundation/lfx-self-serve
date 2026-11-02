@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkMenuTrigger } from '@angular/cdk/menu';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { MEETINGS_HOME_RSVP_CHOICES } from '@lfx-one/shared/constants';
 import {
   MeetingHomeRow,
@@ -45,6 +59,10 @@ export class MeetingRsvpControlsComponent {
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
+  private readonly document = inject(DOCUMENT);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly statusTrigger = viewChild<ElementRef<HTMLButtonElement>>('statusTrigger');
 
   public readonly row = input.required<MeetingHomeRow>();
 
@@ -52,6 +70,8 @@ export class MeetingRsvpControlsComponent {
   protected readonly saving = signal<RsvpResponse | null>(null);
   protected readonly choices = MEETINGS_HOME_RSVP_CHOICES;
   protected readonly iconColor: Record<RsvpResponse, string> = { accepted: 'text-blue-600', declined: 'text-red-600', maybe: 'text-amber-600' };
+  /** This row is saving, or another date of the same series is: a second write could be confirmed out of order. */
+  protected readonly busy: Signal<boolean> = computed(() => !!this.saving() || this.rsvpService.submittingMeetingIds().has(this.row().meeting.id));
   protected readonly visible: Signal<boolean> = this.initVisible();
   protected readonly current: Signal<MeetingRsvpChoice | null> = computed(
     () => this.choices.find((choice) => choice.response === this.row().myRsvp?.response_type) ?? null
@@ -64,7 +84,7 @@ export class MeetingRsvpControlsComponent {
   protected choose(response: RsvpResponse): void {
     const row = this.row();
     // A recurring answer can be re-picked to change the dates it covers.
-    if (this.saving() || (!row.meeting.recurrence && response === this.current()?.response)) return;
+    if (this.busy() || (!row.meeting.recurrence && response === this.current()?.response)) return;
     if (!row.meeting.recurrence) {
       this.submit(row, response, 'all');
       return;
@@ -91,7 +111,7 @@ export class MeetingRsvpControlsComponent {
   }
 
   private submit(row: MeetingHomeRow, response: RsvpResponse, scope: RsvpScope): void {
-    if (this.saving()) return;
+    if (this.busy()) return;
     this.saving.set(response);
     this.rsvpService
       .submit$(row.meeting, row.occurrenceId ?? undefined, response, scope)
@@ -101,6 +121,7 @@ export class MeetingRsvpControlsComponent {
           const label = this.choices.find((choice) => choice.response === rsvp.response_type)?.label ?? '';
           const scopeLabel = row.meeting.recurrence ? getMeetingRsvpScopeLabel(rsvp) : 'This meeting';
           this.toast.show({ variant: 'dark', message: `Response saved: ${label}`, description: `${row.title} — ${scopeLabel}` });
+          this.keepFocusOnRsvp();
         },
         error: (error: MeetingRsvpSubmitError) => {
           this.saving.set(null);
@@ -108,5 +129,17 @@ export class MeetingRsvpControlsComponent {
         },
         complete: () => this.saving.set(null),
       });
+  }
+
+  /** A first answer swaps the focused button for the status badge, so focus follows it instead of dropping to the page. */
+  private keepFocusOnRsvp(): void {
+    if (!this.host.contains(this.document.activeElement)) return;
+    afterNextRender(
+      () => {
+        const active = this.document.activeElement;
+        if (!active || active === this.document.body) this.statusTrigger()?.nativeElement.focus();
+      },
+      { injector: this.injector }
+    );
   }
 }

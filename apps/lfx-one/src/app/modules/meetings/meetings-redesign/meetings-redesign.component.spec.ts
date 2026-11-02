@@ -126,7 +126,7 @@ describe('MeetingsRedesignComponent', () => {
           },
         },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
-        { provide: MeetingRsvpService, useValue: {} },
+        { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate } },

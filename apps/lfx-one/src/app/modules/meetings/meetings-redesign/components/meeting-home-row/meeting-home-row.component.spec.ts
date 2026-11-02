@@ -90,7 +90,7 @@ describe('MeetingHomeRowComponent', () => {
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: MeetingRsvpService, useValue: {} },
+        { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
       ],
     });
   });

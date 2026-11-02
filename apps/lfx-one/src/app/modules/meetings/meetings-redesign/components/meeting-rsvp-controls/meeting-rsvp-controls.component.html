@@ -7,10 +7,11 @@
     @if (current(); as answer) {
       <!-- lfx-ui-badge has no trigger mode, so a plain button opens the menu through the CDK trigger, as lfx-ui-button does. -->
       <button
+        #statusTrigger
         type="button"
         class="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-wait"
-        [cdkMenuTriggerFor]="saving() ? null : rsvpMenu"
-        [disabled]="!!saving()"
+        [cdkMenuTriggerFor]="busy() ? null : rsvpMenu"
+        [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
         <lfx-ui-badge [tone]="answer.tone">
@@ -33,7 +34,7 @@
           [icon]="choice.icon + ' ' + iconColor[choice.response]"
           [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"
-          [disabled]="!!saving() && saving() !== choice.response"
+          [disabled]="busy() && saving() !== choice.response"
           (click)="choose(choice.response)"
           [attr.data-testid]="'meetings-home-rsvp-' + choice.response">
           {{ choice.action }}

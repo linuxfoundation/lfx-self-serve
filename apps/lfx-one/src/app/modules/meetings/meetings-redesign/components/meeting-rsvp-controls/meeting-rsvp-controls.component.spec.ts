@@ -8,7 +8,7 @@ import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRsvpScopeModalComponent } from '../meeting-rsvp-scope-modal/meeting-rsvp-scope-modal.component';
@@ -58,6 +58,7 @@ describe('MeetingRsvpControlsComponent', () => {
   let showToast: ReturnType<typeof vi.fn>;
   let closed: Subject<RsvpScope | undefined>;
   let removed: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let submitting: ReturnType<typeof signal<ReadonlySet<string>>>;
 
   const render = async (row: MeetingHomeRow): Promise<ComponentFixture<MeetingRsvpControlsComponent>> => {
     const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
@@ -82,9 +83,10 @@ describe('MeetingRsvpControlsComponent', () => {
     openModal = vi.fn(() => ({ closed, close: () => closed.next(undefined) }));
     showToast = vi.fn();
     removed = signal<ReadonlySet<string>>(new Set());
+    submitting = signal<ReadonlySet<string>>(new Set());
     TestBed.configureTestingModule({
       providers: [
-        { provide: MeetingRsvpService, useValue: { submit$: submit } },
+        { provide: MeetingRsvpService, useValue: { submit$: submit, submittingMeetingIds: submitting } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removed } },
         { provide: UiModalService, useValue: { open: openModal } },
         { provide: UiToastService, useValue: { show: showToast } },
@@ -154,6 +156,32 @@ describe('MeetingRsvpControlsComponent', () => {
       await fixture.whenStable();
       expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(false);
       expect(submit).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits while another date of the same series is saving', async () => {
+      submitting.set(new Set(['synthetic-meeting']));
+      const fixture = await render(buildRow(buildMeeting()));
+
+      expect(button(fixture, 'meetings-home-rsvp-accepted').disabled).toBe(true);
+      expect(button(fixture, 'meetings-home-rsvp-maybe').getAttribute('aria-busy')).toBeNull();
+    });
+
+    it('moves focus to the status badge when a first answer replaces the buttons', async () => {
+      const fixture = await render(buildRow(buildMeeting()));
+      submit.mockImplementation(() =>
+        defer(() => {
+          // The saved answer reaches the row before the next render, as the store's overlay does.
+          fixture.componentRef.setInput('row', buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
+          return of(buildRsvp());
+        })
+      );
+      document.body.appendChild(fixture.nativeElement);
+
+      button(fixture, 'meetings-home-rsvp-accepted').focus();
+      await press(fixture, 'meetings-home-rsvp-accepted');
+
+      expect(document.activeElement).toBe(query(fixture, 'meetings-home-rsvp-status'));
+      fixture.nativeElement.remove();
     });
 
     it('reports a failure with the error copy and lets the viewer try again', async () => {

@@ -18,7 +18,7 @@ describe('MeetingsDayGroupComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: MeetingRsvpService, useValue: {} },
+        { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
       ],
     });
   });
