@@ -1266,9 +1266,9 @@ describe('program detail helpers', () => {
       ).map((action) => action.label);
 
     // An application under review is decided.
-    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('pending')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // Only an accepted mentee is given tasks or graduated.
-    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
     // A declined or withdrawn application can be re-opened, back to review.
     expect(labelsFor('declined')).toEqual(['Re-open']);
     expect(labelsFor('withdrawn')).toEqual(['Re-open']);
