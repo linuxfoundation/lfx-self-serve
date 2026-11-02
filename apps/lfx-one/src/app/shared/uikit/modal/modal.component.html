@@ -26,7 +26,8 @@
 </div>
 
 <ng-template #titleBlock>
-  <h2 class="heading-24 text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
+  <!-- Roboto Slab 300 20/28: heading-24 at the library's smaller modal size. -->
+  <h2 class="heading-24 text-[20px] leading-[28px] text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
   @if (subtitle()) {
     <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-modal-subtitle">{{ subtitle() }}</p>
   }

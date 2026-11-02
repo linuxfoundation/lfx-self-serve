@@ -42,7 +42,7 @@ export class UiMenuItemComponent implements DoCheck {
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, such as an external-link arrow. */
   public readonly trailingIcon = input<string>('');
-  /** Keyboard shortcut shown at the end of the row as keycaps, such as `⌘E` or `Ctrl+E`. A `+` between keys separates them; the `+` key itself goes last, as in `Ctrl++`. It is a hint only; wire the shortcut yourself. */
+  /** Keyboard shortcut shown at the end of the row as keycaps, such as `⌘E` or `Ctrl+E`. A `+` between keys separates them; a `+` with no key on one side is the `+` key itself, as in `Ctrl++`, `Ctrl+` or `+K`. It is a hint only; wire the shortcut yourself. */
   public readonly shortcut = input<string>('');
 
   protected readonly menuItem = inject(CdkMenuItem);
@@ -71,10 +71,13 @@ export class UiMenuItemComponent implements DoCheck {
 
   private initShortcutKeys(): Signal<string[]> {
     return computed(() => {
-      // A `+` at the end is the key itself (`Ctrl++`), not a separator.
-      return this.shortcut()
-        .trim()
-        .split(/\s*\+\s*(?!$)/)
+      const text = this.shortcut().trim();
+      if (!text) return [];
+      // An empty part is where a `+` key was (`+K`, `Ctrl+`, `Ctrl++`); each run of them is one `+` key.
+      return text
+        .split(/\s*\+\s*/)
+        .map((part) => part || '+')
+        .filter((part, index, parts) => part !== '+' || parts[index - 1] !== '+')
         .flatMap((part) => {
           // `⌘E`, `⌘ K`: each leading modifier symbol is its own key, the rest is the last key.
           const modifiers = part.match(/^[⌘⇧⌥⌃]+/)?.[0] ?? '';

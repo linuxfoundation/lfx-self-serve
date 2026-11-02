@@ -20,9 +20,9 @@ import { UiDrawerContext } from './drawer.context';
  * ```html
  * <lfx-ui-drawer heading="Weekly Sync" subtitle="Technical Steering Committee">
  *   <lfx-ui-avatar drawerLeading shape="rounded" [size]="40" name="Technical Steering Committee" [decorative]="true" />
- *   <ng-container drawerActions><lfx-ui-button variant="secondary" size="small">Edit meeting</lfx-ui-button></ng-container>
+ *   <ng-container drawerActions><lfx-ui-button variant="secondary">Edit meeting</lfx-ui-button></ng-container>
  *   <p>Agenda…</p>
- *   <ng-container drawerFooter><lfx-ui-button variant="primary">Save</lfx-ui-button></ng-container>
+ *   <ng-container drawerFooter><lfx-ui-button variant="primary" size="large">Save</lfx-ui-button></ng-container>
  * </lfx-ui-drawer>
  * ```
  */

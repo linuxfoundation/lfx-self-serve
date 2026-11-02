@@ -44,7 +44,7 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly type = input<UiInputType>('text');
   /** Virtual keyboard hint for a `text` field, for example `numeric` or `decimal`. Empty leaves the browser default. */
   public readonly inputmode = input<UiInputMode | ''>('');
-  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair with a button of the same size. */
+  /** `tiny` 24px, `small` 32px, `medium` 40px. Pair it with the `small`, `default` or `large` button. */
   public readonly size = input<UiInputSize>('medium');
   /** Pill-shaped corners and 16px side padding. */
   public readonly rounded = input<boolean, unknown>(false, { transform: booleanAttribute });

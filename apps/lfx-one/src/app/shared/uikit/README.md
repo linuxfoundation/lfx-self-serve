@@ -21,7 +21,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 | Selector                | Class                      | Purpose                                                                                                                                                                |
 | ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`, `menu` and `popover` triggers; button or router link                                  |
+| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, `small` 24, `default` 32 or `large` 40px, icon-only circle, loading, forwards `lfxUiTooltip`, `menu`, `popover`; button or link                        |
 | `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`                                 |
 | `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field on `lfx-ui-input`: search icon, clear button, 32px tall, 300px minimum width; `[(value)]`                                                            |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
@@ -46,7 +46,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-radio-group`    | `UiRadioGroupComponent`    | Fieldset of native radios (`lfx-ui-radio` options); arrow keys, `[(value)]` and reactive forms                                                                         |
 | `lfx-ui-toggle`         | `UiToggleComponent`        | On/off switch (`role="switch"`): three sizes, accent, warning or danger; `[(checked)]` and reactive forms                                                              |
 | `lfx-ui-loading-dots`   | `UiLoadingDotsComponent`   | Three pulsing dots, 4, 5 or 7px, current colour; hidden beside visible text, `role="status"` when given a `label`                                                      |
-| `lfx-ui-show-more`      | `UiShowMoreComponent`      | Small button between two rules: "Show 12 More" then "Show Less"; `[(expanded)]`, `aria-expanded`, `aria-controls`; `noBorder`                                          |
+| `lfx-ui-show-more`      | `UiShowMoreComponent`      | Button between two rules: "Show 12 More" then "Show Less"; `[(expanded)]`, `aria-expanded`, `aria-controls`; `noBorder`                                                |
 | `lfx-ui-input`          | `UiInputComponent`         | Text field: label, hint, error, prefix or suffix, trailing `lfxUiInputAction` slot, three sizes, rounded; `[(value)]` and forms; `aria-describedby`                    |
 | `lfx-ui-scroller`       | `UiScrollerComponent`      | Scroll rail or list with edge fades that appear as content clips; optional prev and next buttons; horizontal, vertical, both                                           |
 | `lfx-ui-project-banner` | `UiProjectBannerComponent` | Full-width 48px notice, five variants, one sentence and one `banner-action` button; `role="status"`, `alert` on error with `announce`                                  |
@@ -58,9 +58,9 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 | `lfx-ui-textarea`       | `UiTextareaComponent`      | Multi-line field: label, hint, error, 80px minimum, vertical resize, `maxlength`; `[(value)]` and forms                                                                |
 | `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, with `empty-state-action` buttons below; title is a heading at a level you set                                      |
-| `lfx-ui-toast`          | `UiToastComponent`         | Message toast: default, success, warning, error; two actions, dismiss button; closes in 5s, 8s with actions, never for errors; `role="status"` or `"alert"`            |
+| `lfx-ui-toast`          | `UiToastComponent`         | Toast: default, success, warning, error, dark (bottom-centre, 3s); up to two actions, dismiss; 5s, 8s with actions, never on errors; hover or focus pauses it          |
 | `lfx-ui-split-button`   | `UiSplitButtonComponent`   | Main action joined to a chevron that opens an `lfx-ui-menu`: primary or secondary, three sizes; named, `aria-haspopup`, `aria-expanded`                                |
-| `UiToastService`        | `UiToastService`           | Bottom-right stack in a CDK overlay, newest on top, kept as a polite live region; `show()` returns a handle, `dismissAll()`                                            |
+| `UiToastService`        | `UiToastService`           | Bottom-right stack, bottom-centre for `dark` or `position`, in CDK overlays kept as polite live regions; newest on top; `show()` returns a handle, `dismissAll()`      |
 | `lfxUiContextMenu`      | `UiContextMenuDirective`   | Opens a `lfx-ui-menu` on right-click, touch long-press, Shift+F10 or the context menu key; flips inside the window; innermost host wins                                |
 | `lfx-ui-select`         | `UiSelectComponent`        | Select-only combobox on CDK: projected `lfx-ui-option` rows with any content, groups, separators, prefix, header and value slots; `[(value)]`, forms                   |
 | `lfx-ui-combobox`       | `UiComboboxComponent`      | Text field that filters the same `lfx-ui-option` rows as you type, bold match, empty state; picks from the list only; `[(value)]`, forms                               |
@@ -105,7 +105,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 | Type size and line height                                    | `text-label-14`, `text-copy-14`, `text-button-14`, `text-heading-24`, ...                                                                              | `--ui-font-*`                     |
 | Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono`     |
 
-The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`.
+The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`; buttons use the library's 4px `ui-accent-100` halo instead.
 
 Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
 

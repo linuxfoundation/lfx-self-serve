@@ -75,7 +75,7 @@ describe('UiShowMoreComponent', () => {
     expect(rules().length).toBe(2);
     expect(rules()[0].className).toContain('bg-ui-neutral-alpha-200');
     expect(button().classList).toContain('bg-ui-background-100');
-    expect(button().classList).toContain('edge');
+    expect(button().classList).toContain('border-ui-neutral-alpha-200');
 
     const show = TestBed.createComponent(UiShowMoreComponent);
     show.componentRef.setInput('controls', 'x');
@@ -85,17 +85,17 @@ describe('UiShowMoreComponent', () => {
 
     expect(el.querySelector('[data-testid="ui-show-more-rule"]')?.className).toContain('bg-transparent');
     expect(el.querySelector('button')?.classList).toContain('bg-transparent');
-    expect(el.querySelector('button')?.classList).not.toContain('edge');
+    expect(el.querySelector('button')?.classList).toContain('border-transparent');
   });
 
-  it('is a small lfx-ui-button with a 12px trailing chevron', () => {
+  it('is a default-size (32px) lfx-ui-button with a 12px trailing chevron', () => {
     expect(wrapper().tagName).toBe('LFX-UI-BUTTON');
     expect(button().classList).toContain('h-ui-small');
     expect(wrapper().querySelector('[data-testid="ui-button-trailing-icon"]')?.classList).toContain('fa-chevron-down');
     expect(wrapper().className).toContain('[&_button>i]:text-[12px]');
   });
 
-  it('shows the library focus ring on keyboard focus', () => {
-    expect(button().className).toContain('focus-visible:shadow-focus');
+  it('shows the button focus halo on keyboard focus', () => {
+    expect(button().className).toContain('focus-visible:shadow-ui-accent-100');
   });
 });
