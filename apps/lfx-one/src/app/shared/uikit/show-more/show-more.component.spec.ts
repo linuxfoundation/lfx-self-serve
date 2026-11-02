@@ -85,10 +85,10 @@ describe('UiShowMoreComponent', () => {
 
     expect(el.querySelector('[data-testid="ui-show-more-rule"]')?.className).toContain('bg-transparent');
     expect(el.querySelector('button')?.classList).toContain('bg-transparent');
-    expect(el.querySelector('button')?.classList).not.toContain('edge');
+    expect(el.querySelector('button')?.classList).toContain('border-transparent');
   });
 
-  it('is a small lfx-ui-button with a 12px trailing chevron', () => {
+  it('is a default-size (32px) lfx-ui-button with a 12px trailing chevron', () => {
     expect(wrapper().tagName).toBe('LFX-UI-BUTTON');
     expect(button().classList).toContain('h-ui-small');
     expect(wrapper().querySelector('[data-testid="ui-button-trailing-icon"]')?.classList).toContain('fa-chevron-down');

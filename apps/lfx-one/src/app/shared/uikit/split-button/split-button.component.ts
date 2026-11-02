@@ -104,6 +104,7 @@ export class UiSplitButtonComponent {
 
   private initChevronClasses(): Signal<string> {
     return computed(() => {
+      // Exact px: the button's 4px ui-accent-100 focus halo.
       const base =
         'relative inline-flex aspect-square shrink-0 items-center justify-center rounded-l-none border p-0 leading-none transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:z-10 focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] hover:z-10';
       // Same heights, corner radii and glyph sizes as the matching lfx-ui-button size. Exact px: the 8px and 10px radii have no ui-* utility.

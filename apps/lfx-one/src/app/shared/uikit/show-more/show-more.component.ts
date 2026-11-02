@@ -7,7 +7,7 @@ import { UiButtonVariant } from '@lfx-one/shared/interfaces';
 import { UiButtonComponent } from '../button/button.component';
 
 /**
- * Reveals the rest of a long list or block in place: a small button between two rules, "Show 12 More" then "Show Less".
+ * Reveals the rest of a long list or block in place: a default-size button between two rules, "Show 12 More" then "Show Less".
  * The component only owns the button. The page owns the content: render the extra rows when `expanded` is true, give
  * their container the id passed as `controls`, and move focus to the first revealed row.
  */

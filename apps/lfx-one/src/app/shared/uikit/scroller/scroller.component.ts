@@ -158,7 +158,7 @@ export class UiScrollerComponent {
   }
 
   private initButtonClasses(): Signal<string> {
-    // Library: default-size secondary circle with shadow, centred on the edge (14px out).
+    // Library: default-size secondary circle with shadow, centred on the edge (14px out), with the button's exact 4px focus halo.
     // shortcut: native circle button, because lfx-ui-button has no focusable aria-disabled state or `shadow` modifier. revisit: when lfx-ui-button gains both, swap to it.
     return computed(
       () =>

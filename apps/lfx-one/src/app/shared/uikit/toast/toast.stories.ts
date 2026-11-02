@@ -5,6 +5,7 @@ import { Directive, inject, input } from '@angular/core';
 import { UiToastConfig } from '@lfx-one/shared/interfaces';
 import { argsToTemplate, moduleMetadata, type Meta, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiToastComponent } from './toast.component';
 import { UiToastService } from './toast.service';
 
@@ -26,7 +27,7 @@ const meta: Meta<UiToastComponent> = {
   title: 'Uikit/Toast',
   component: UiToastComponent,
   argTypes: { variant: { control: 'inline-radio', options: ['default', 'success', 'warning', 'error'] } },
-  decorators: [moduleMetadata({ imports: [StoryShowsToastDirective] })],
+  decorators: [moduleMetadata({ imports: [StoryShowsToastDirective, UiButtonComponent] })],
   parameters: { layout: 'padded' },
   args: { variant: 'default', actions: [], duration: 0, dismissible: true },
   render: (args) => ({ props: args, template: `<lfx-ui-toast ${argsToTemplate(args)}>Committee created.</lfx-ui-toast>` }),
@@ -94,9 +95,9 @@ export const FromService: Story = {
     template: `
       <div class="flex flex-wrap gap-[8px]">
         @for (entry of entries; track entry.label) {
-          <button type="button" class="edge h-ui-small cursor-pointer rounded-[10px] bg-ui-background-100 px-[10px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryShowsToast]="entry.config">{{ entry.label }}</button>
+          <lfx-ui-button variant="secondary" [lfxStoryShowsToast]="entry.config">{{ entry.label }}</lfx-ui-button>
         }
-        <button type="button" class="h-ui-small cursor-pointer rounded-[10px] px-[10px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryShowsToast]="null">dismiss all</button>
+        <lfx-ui-button variant="tertiary" [lfxStoryShowsToast]="null">dismiss all</lfx-ui-button>
       </div>`,
   }),
 };

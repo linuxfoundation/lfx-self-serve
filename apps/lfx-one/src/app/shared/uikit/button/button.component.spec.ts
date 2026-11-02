@@ -106,7 +106,10 @@ describe('UiButtonComponent', () => {
     ['secondary', 'border-ui-neutral-alpha-200'],
     ['secondary-accent', 'border-ui-accent-500'],
     ['tertiary', 'border-transparent'],
+    ['tertiary-accent', 'border-transparent'],
     ['danger', 'border-transparent'],
+    ['danger-tertiary', 'border-transparent'],
+    ['recording', 'border-transparent'],
   ])('gives the %s variant a real 1px border in %s', async (variant, border) => {
     await set('variant', variant);
     expect(el().classList).toContain('border');

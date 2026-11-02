@@ -184,7 +184,7 @@ export const OverlaysInside: Story = {
         <ng-template #dialog let-ref="dialogRef">
           <lfx-ui-modal size="sm" heading="Rename project" [singleAction]="true">
             <p class="copy-14 text-ui-neutral-600">Click inside this modal: the popover behind it stays open.</p>
-            <ng-container modalActions><lfx-ui-button size="large" (click)="ref.close()">Done</lfx-ui-button></ng-container>
+            <ng-container modalActions><lfx-ui-button (click)="ref.close()">Done</lfx-ui-button></ng-container>
           </lfx-ui-modal>
         </ng-template>
       </div>`,

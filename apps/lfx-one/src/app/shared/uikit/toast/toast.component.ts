@@ -209,7 +209,7 @@ export class UiToastComponent {
     if (target?.isConnected && target !== this.document.activeElement) target.focus();
   }
 
-  // shortcut: native buttons in the default-size tertiary look. revisit: when lfx-ui-button gets an on-colour variant (white ink)
+  // shortcut: native buttons in the default-size tertiary look, with its exact 4px focus halo. revisit: when lfx-ui-button gets an on-colour variant (white ink)
   private buttonBase(): string {
     return 'inline-flex h-ui-small cursor-pointer items-center justify-center whitespace-nowrap border border-transparent transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
   }

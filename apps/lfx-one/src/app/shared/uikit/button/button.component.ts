@@ -160,7 +160,7 @@ export class UiButtonComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
-      // forced-colors: the focus halo is a shadow and vanishes, so an outline marks focus.
+      // Exact px: the library's 4px ui-accent-100 focus halo; forced-colors drops shadows, so an outline marks focus there.
       const base =
         'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline border transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
       // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
