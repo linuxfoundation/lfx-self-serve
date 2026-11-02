@@ -1,0 +1,71 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ShareDialogData } from '@lfx-one/shared/interfaces';
+import { ClipboardShareService } from '@services/clipboard-share.service';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ShareDialogComponent } from './share-dialog.component';
+
+const URL = 'https://app.lfx.dev/newsletters/cncf/abc123';
+
+describe('ShareDialogComponent', () => {
+  let fixture: ComponentFixture<ShareDialogComponent>;
+  let close: ReturnType<typeof vi.fn>;
+  let copyLink: ReturnType<typeof vi.fn>;
+
+  const find = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  async function mount(data: ShareDialogData): Promise<void> {
+    close = vi.fn();
+    copyLink = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [ShareDialogComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: ClipboardShareService, useValue: { copyLink } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(ShareDialogComponent);
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => TestBed.resetTestingModule());
+
+  it('shows the title as the eyebrow when no eyebrow is given', async () => {
+    await mount({ url: URL, title: 'K8s Weekly #42' });
+    expect(find('share-dialog-eyebrow')!.textContent!.trim()).toBe('K8s Weekly #42');
+  });
+
+  it('opens social destinations in a new tab and email in the mail client', async () => {
+    await mount({ url: URL, title: 'K8s Weekly #42' });
+
+    for (const key of ['x', 'linkedin', 'reddit']) {
+      const link = find(`share-dialog-${key}`)!;
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(link.getAttribute('href')).toContain(encodeURIComponent(URL));
+    }
+
+    const email = find('share-dialog-email')!;
+    expect(email.getAttribute('target')).toBeNull();
+    expect(email.getAttribute('href')).toMatch(/^mailto:\?subject=K8s%20Weekly%20%2342&body=/);
+  });
+
+  it('copies the URL with the caller-supplied toast message', async () => {
+    await mount({ url: URL, title: 'K8s Weekly #42', copiedMessage: 'Newsletter link copied to clipboard.' });
+    find('share-dialog-copy-link')!.querySelector('button')!.click();
+    expect(copyLink).toHaveBeenCalledWith(URL, 'Newsletter link copied to clipboard.');
+  });
+
+  it('closes from the round close button', async () => {
+    await mount({ url: URL, title: 'K8s Weekly #42' });
+    find('share-dialog-close')!.click();
+    expect(close).toHaveBeenCalled();
+  });
+});
