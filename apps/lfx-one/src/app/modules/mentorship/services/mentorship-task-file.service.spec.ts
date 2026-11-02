@@ -25,6 +25,11 @@ import {
   MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_SUMMARY,
   MENTORSHIP_TASK_FILE_DOWNLOAD_FALLBACK_NAME,
   MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE,
+  MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_DETAIL,
+  MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_SUMMARY,
+  MENTORSHIP_TASK_FILE_VIEW_ERROR_FALLBACK,
+  MENTORSHIP_TASK_FILE_VIEW_ERROR_SUMMARY,
+  MENTORSHIP_TASK_FILE_VIEW_URL_LIFE_MS,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeTaskFileUploadResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
@@ -394,6 +399,154 @@ describe('MentorshipTaskFileService', () => {
       expect(downloadTaskFile).not.toHaveBeenCalled();
       expect(createObjectURL).not.toHaveBeenCalled();
       expect(add).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('view', () => {
+    const VIEW_URL = 'blob:http://example.com/view-1';
+    let createObjectURL: ReturnType<typeof vi.fn<(blob: Blob) => string>>;
+    let revokeObjectURL: ReturnType<typeof vi.fn>;
+    let savedAs: string[];
+    let tab: { opener: unknown; location: { href: string }; close: ReturnType<typeof vi.fn> };
+    let open: ReturnType<typeof vi.spyOn>;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+
+    const responseWith = (body: Blob | null, headers: Record<string, string> = {}) => new HttpResponse<Blob>({ body, headers: new HttpHeaders(headers) });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      createObjectURL = vi.fn(() => VIEW_URL);
+      revokeObjectURL = vi.fn();
+      URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+      savedAs = [];
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedAs.push(this.download);
+      });
+      tab = { opener: window, location: { href: '' }, close: vi.fn() };
+      open = vi.spyOn(window, 'open').mockImplementation(() => tab as unknown as Window);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    });
+
+    it('opens the tab before the file arrives, cut off from this page', () => {
+      const pending = new Subject<HttpResponse<Blob>>();
+      downloadTaskFile.mockReturnValueOnce(pending);
+
+      service.view(TASK_ID);
+
+      expect(open).toHaveBeenCalledWith('', '_blank');
+      expect(tab.opener).toBeNull();
+      expect(tab.location.href).toBe('');
+    });
+
+    it.each([
+      ['a PDF', { 'Content-Type': 'application/pdf' }, 'application/pdf'],
+      ['plain text', { 'Content-Type': 'text/plain; charset=iso-8859-1' }, 'text/plain;charset=utf-8'],
+      [
+        'a generic type named .pdf',
+        { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="essay.pdf"' },
+        'application/pdf',
+      ],
+    ])('shows %s in the tab, re-typed, and revokes the URL later', (_label, headers, viewType) => {
+      downloadTaskFile.mockReturnValueOnce(of(responseWith(new Blob(['data']), headers)));
+
+      service.view(TASK_ID);
+
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      expect(createObjectURL.mock.calls[0][0].type).toBe(viewType);
+      expect(tab.location.href).toBe(VIEW_URL);
+      expect(tab.close).not.toHaveBeenCalled();
+      expect(savedAs).toEqual([]);
+      expect(add).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(MENTORSHIP_TASK_FILE_VIEW_URL_LIFE_MS - 1);
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(revokeObjectURL).toHaveBeenCalledWith(VIEW_URL);
+    });
+
+    it.each([
+      [
+        'a DOCX',
+        {
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'Content-Disposition': 'attachment; filename="essay.docx"',
+        },
+      ],
+      ['a DOC', { 'Content-Type': 'application/msword', 'Content-Disposition': 'attachment; filename="essay.doc"' }],
+      ['HTML, whatever its name', { 'Content-Type': 'text/html', 'Content-Disposition': 'attachment; filename="essay.txt"' }],
+    ])('closes the tab and saves %s instead, saying why', (_label, headers) => {
+      downloadTaskFile.mockReturnValueOnce(of(responseWith(new Blob(['data']), headers)));
+
+      service.view(TASK_ID);
+
+      expect(tab.close).toHaveBeenCalled();
+      expect(tab.location.href).toBe('');
+      expect(savedAs).toHaveLength(1);
+      expect(add).toHaveBeenCalledWith({
+        severity: 'info',
+        summary: MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_SUMMARY,
+        detail: MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_DETAIL,
+        life: MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE,
+      });
+    });
+
+    it('saves a viewable file without a toast when the browser blocked the tab', () => {
+      open.mockImplementationOnce(() => null);
+      downloadTaskFile.mockReturnValueOnce(
+        of(responseWith(new Blob(['data']), { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="report.pdf"' }))
+      );
+
+      service.view(TASK_ID);
+
+      expect(savedAs).toEqual(['report.pdf']);
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('closes the tab when the response has no body', () => {
+      downloadTaskFile.mockReturnValueOnce(of(responseWith(null, { 'Content-Type': 'application/pdf' })));
+
+      service.view(TASK_ID);
+
+      expect(tab.close).toHaveBeenCalled();
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404, 503])('closes the tab and toasts the mapped copy for a %i', (status) => {
+      downloadTaskFile.mockReturnValueOnce(throwError(() => httpError(status)));
+
+      service.view(TASK_ID);
+
+      expect(tab.close).toHaveBeenCalled();
+      expect(add).toHaveBeenCalledWith({
+        severity: 'error',
+        summary: MENTORSHIP_TASK_FILE_VIEW_ERROR_SUMMARY,
+        detail: MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES[status],
+        life: MENTORSHIP_TASK_FILE_DOWNLOAD_TOAST_LIFE,
+      });
+    });
+
+    it('toasts the view fallback for an unmapped failure', () => {
+      downloadTaskFile.mockReturnValueOnce(throwError(() => httpError(500)));
+
+      service.view(TASK_ID);
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_TASK_FILE_VIEW_ERROR_FALLBACK }));
+    });
+
+    it('does nothing on the server', () => {
+      configure('server');
+
+      service.view(TASK_ID);
+
+      expect(open).not.toHaveBeenCalled();
+      expect(downloadTaskFile).not.toHaveBeenCalled();
     });
   });
 });

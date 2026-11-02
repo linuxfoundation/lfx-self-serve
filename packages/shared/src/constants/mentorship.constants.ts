@@ -255,6 +255,27 @@ export const MENTORSHIP_TASK_FILE_DOWNLOAD_ERROR_MESSAGES: Readonly<Record<numbe
   503: 'File downloads are unavailable right now. Please try again later.',
 };
 
+/** Task file View: opens a PDF or plain-text file in a new tab, and saves any other type (DOC, DOCX) instead. */
+export const MENTORSHIP_TASK_FILE_VIEW_LABEL = 'View';
+export const MENTORSHIP_TASK_FILE_VIEW_ERROR_SUMMARY = 'Could not open the file';
+export const MENTORSHIP_TASK_FILE_VIEW_ERROR_FALLBACK = 'We could not open this file right now. Please try again.';
+export const MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_SUMMARY = 'File downloaded';
+export const MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_DETAIL = 'This file type cannot be previewed in the browser, so it was downloaded instead.';
+/**
+ * The type a viewable file is opened as, keyed by the response's type and by the file name's extension. The bytes are
+ * always re-typed to one of these: a `blob:` URL runs with this page's origin, so no other type may ever be opened.
+ */
+export const MENTORSHIP_TASK_FILE_VIEW_TYPES: Readonly<Record<string, string>> = {
+  'application/pdf': 'application/pdf',
+  '.pdf': 'application/pdf',
+  'text/plain': 'text/plain;charset=utf-8',
+  '.txt': 'text/plain;charset=utf-8',
+};
+/** A response type that says nothing about the file, so its extension decides. */
+export const MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE = 'application/octet-stream';
+/** How long a viewed file's `blob:` URL is kept, so the new tab has time to load it before it is revoked. */
+export const MENTORSHIP_TASK_FILE_VIEW_URL_LIFE_MS = 60_000;
+
 /**
  * Toast `summary` shown by every mentorship register form when submit is blocked by
  * client-side validation. Shared so a copy change lands on both mentor and mentee forms
