@@ -70,6 +70,9 @@ function mockWarehouse(): void {
     if (query.includes('SELECT DISTINCT COURSE_ID')) {
       return { rows: [{ COURSE_ID: 'course-one', COURSE_NAME: 'Project Fundamentals' }] };
     }
+    if (query.includes('MAX(DBT_RUN_AT)')) {
+      return { rows: [{ AS_OF: '2026-10-30 04:15:00' }] };
+    }
     return {
       rows: [
         {
@@ -279,11 +282,23 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
     expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+  });
+
+  it('treats a v4-shaped entry without the build time as a miss, so the as-of date is never dropped for a TTL', async () => {
+    await service.getTrainees(ACCOUNT, '365d');
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as Partial<CompactOrgTraineesRawCache>;
+    delete stored.asOf;
+    cacheValues.set(key, JSON.stringify(stored));
+
+    const response = await service.getTrainees(ACCOUNT, '365d');
+
+    expect(response.asOf).toBe('2026-10-30T04:15:00.000Z');
   });
 });
 
@@ -291,6 +306,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
 // cards, table and both dropdowns describe that range.
 describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   const queries = (): string[] => execute.mock.calls.map(([sql]) => sql as string);
+  const rangedQueries = (): string[] => queries().filter((sql) => !sql.includes('MAX(DBT_RUN_AT)'));
 
   it.each([
     ['30d', 30],
@@ -301,8 +317,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     const response = await service.getTrainees(ACCOUNT, range);
 
     expect(response.timeRange).toBe(range);
-    expect(execute).toHaveBeenCalledTimes(4);
-    for (const sql of queries()) {
+    expect(rangedQueries()).toHaveLength(4);
+    for (const sql of rangedQueries()) {
       expect(sql).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
     }
   });
@@ -310,10 +326,24 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   it('reads all time without a date predicate', async () => {
     await service.getTrainees(ACCOUNT, 'all');
 
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(5);
     for (const sql of queries()) {
       expect(sql).not.toContain('ACTIVITY_TS >=');
     }
+  });
+
+  it('states the build time of the training data whatever the range, and null when the account has none', async () => {
+    const narrow = await service.getTrainees(ACCOUNT, '30d');
+    const wide = await service.getTrainees(ACCOUNT, 'all');
+    const asOfRead = queries().find((sql) => sql.includes('MAX(DBT_RUN_AT)'))!;
+
+    expect(narrow.asOf).toBe('2026-10-30T04:15:00.000Z');
+    expect(wide.asOf).toBe(narrow.asOf);
+    expect(asOfRead).not.toContain('ACTIVITY_TS');
+
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    expect((await service.getTrainees('another-account', '30d')).asOf).toBeNull();
   });
 
   it('takes identity from the all-time ranges roster, limited to people with training rows in the range', async () => {
@@ -349,8 +379,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '365d');
     await service.getTrainees(ACCOUNT, '30d');
 
-    expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v4:365d')!)).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(10);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!)).toBe(true);
   });
 });
