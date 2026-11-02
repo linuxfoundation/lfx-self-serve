@@ -411,7 +411,7 @@ test.describe('Org Profile — spec 023 empty addresses graceful degradation', (
 // LFXV2-3288 — logo upload on the edit page. Saves immediately (independent of the form's own
 // Save/Cancel), so these stub the dedicated logo endpoint rather than the record PUT used by S3.
 test.describe('Org Profile — logo upload (LFXV2-3288)', () => {
-  test('S7: uploading a valid PNG updates the preview and shows a success toast', async ({ page }) => {
+  test('S7: uploading a valid SVG updates the preview and shows a success toast', async ({ page }) => {
     await gotoProfileWithStubs(page, [MOCK_UID]);
 
     const root = page.getByTestId('org-profile-page');
@@ -419,7 +419,7 @@ test.describe('Org Profile — logo upload (LFXV2-3288)', () => {
     await page.getByTestId('org-profile-edit-button').click();
     await expect(root).toHaveAttribute('data-mode', 'edit');
 
-    const updatedLogoUrl = 'https://cdn.example.com/logo.png?v=2';
+    const updatedLogoUrl = 'https://cdn.example.com/logo.svg?v=2';
     await page.route(`**/api/orgs/uid/${MOCK_UID}/logo`, (route) => {
       if (route.request().method() !== 'POST') {
         return route.fallback();
