@@ -14,7 +14,8 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 export class ShareDialogService {
   private readonly dialogService = inject(DialogService);
 
-  public open(data: ShareDialogData): void {
+  /** Opens the dialog and returns its ref, so a caller that can go away first can close it. */
+  public open(data: ShareDialogData): DynamicDialogRef {
     const dialogRef = this.dialogService.open(ShareDialogComponent, {
       // No PrimeNG header — the dialog body renders its own eyebrow, "Share" heading and close.
       showHeader: false,
@@ -29,5 +30,6 @@ export class ShareDialogService {
     }) as DynamicDialogRef;
 
     nameDynamicDialog(this.dialogService, dialogRef, ShareDialogComponent.headingId);
+    return dialogRef;
   }
 }

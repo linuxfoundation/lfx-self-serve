@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, model, output } from '@angular/core';
+import { Component, DestroyRef, inject, input, model, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { NewsletterShareEvent, NewsletterShareTarget } from '@lfx-one/shared/interfaces';
 import { ShareDialogService } from '@services/share-dialog.service';
 import { DrawerModule } from 'primeng/drawer';
+import { DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { NewsletterPreviewComponent } from '../newsletter-preview/newsletter-preview.component';
 import { ShareButtonComponent } from '../share-button/share-button.component';
@@ -18,6 +19,10 @@ import { ShareButtonComponent } from '../share-button/share-button.component';
 export class NewsletterPreviewDrawerComponent {
   // === Services ===
   private readonly shareDialog = inject(ShareDialogService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** The Share dialog this drawer opened. It reports shares through `shared`, so it must not outlive the drawer. */
+  private shareDialogRef: DynamicDialogRef | null = null;
 
   // === Inputs (pass-through to the preview component) ===
   public readonly subject = input.required<string>();
@@ -47,12 +52,19 @@ export class NewsletterPreviewDrawerComponent {
   // === Model Signals (two-way) ===
   public readonly visible = model<boolean>(false);
 
+  // === Constructor ===
+  public constructor() {
+    // The dialog is root-scoped and outlives this drawer (e.g. browser Back leaves the page). Once the drawer
+    // is gone nobody listens to `shared`, so a share from the orphaned dialog would go unrecorded: close it.
+    this.destroyRef.onDestroy(() => this.shareDialogRef?.close());
+  }
+
   public onShare(): void {
     const url = this.shareUrl();
     if (!url) return;
 
     const target = this.shareTarget();
-    this.shareDialog.open({
+    this.shareDialogRef = this.shareDialog.open({
       url,
       title: this.subject(),
       copiedMessage: 'Newsletter link copied to clipboard.',

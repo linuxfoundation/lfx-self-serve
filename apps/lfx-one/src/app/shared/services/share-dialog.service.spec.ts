@@ -24,8 +24,9 @@ describe('ShareDialogService', () => {
     const host = { setInput: vi.fn(), changeDetectorRef: { detectChanges: vi.fn() } };
     const { open } = setup(host);
 
-    TestBed.inject(ShareDialogService).open(data);
+    const ref = TestBed.inject(ShareDialogService).open(data);
 
+    expect(ref).toBe(open.mock.results[0].value);
     expect(open).toHaveBeenCalledWith(
       ShareDialogComponent,
       expect.objectContaining({ showHeader: false, modal: true, dismissableMask: true, breakpoints: { '640px': '92vw' }, data })
