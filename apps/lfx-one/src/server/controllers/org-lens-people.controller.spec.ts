@@ -72,6 +72,8 @@ vi.mock('../services/org-people-key-contacts.service', () => ({
 }));
 vi.mock('../services/org-people-trainees.service', () => ({ OrgPeopleTraineesService: class {} }));
 
+import { ORG_TRAINEE_OUTSIDE_KEY_PREFIX } from '@lfx-one/shared/constants';
+
 import { ServiceValidationError } from '../errors';
 import { OrgLensPeopleController } from './org-lens-people.controller';
 
@@ -627,5 +629,33 @@ describe('OrgLensPeopleController organization scope (lfx-self-serve-ops#1219)',
     expect(getContributors).not.toHaveBeenCalled();
     expect(getEmployeeDetail).not.toHaveBeenCalled();
     expect(getEmployeeDetailByUsername).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#4287)', () => {
+  const controller = new OrgLensPeopleController();
+  // The opaque per-response key the Trainees response gives a learner outside the people list.
+  const outsideReq = (): Request =>
+    ({ params: { orgUid: ORG_UID, personKey: `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}1` }, query: {}, path: '/test' }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects the opaque key with a 400 on the detail, company-email and key-contact endpoints before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(outsideReq(), buildRes(), next);
+    await controller.getCompanyEmails(outsideReq(), buildRes(), next);
+    await controller.getPersonKeyContacts(outsideReq(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(3);
+    for (const [error] of next.mock.calls) {
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error).toMatchObject({ statusCode: 400 });
+    }
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
+    expect(getCompanyEmails).not.toHaveBeenCalled();
+    expect(resolveUsernameByPersonKey).not.toHaveBeenCalled();
+    expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 });

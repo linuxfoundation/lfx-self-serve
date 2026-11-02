@@ -15,6 +15,7 @@ export type OrgTraineeSortDirection = 1 | -1;
 
 /** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
 export interface OrgTraineeDetailRow {
+  /** Warehouse person key for a people-list member; the same opaque per-response key as its trainee row otherwise. */
   personKey: string;
   status: OrgTraineeStatus;
   courseOrCertId: string;
@@ -34,9 +35,11 @@ export interface OrgTraineeDetailRow {
 
 /**
  * Per-(account, person) main row source — joined client-side with `details` for filter-aware derivations. A learner
- * outside the Org Lens people list (lfx-self-serve#4287) carries a name and nothing else: no ids, title or email.
+ * outside the Org Lens people list (lfx-self-serve#4287) carries a name and nothing else: no ids, title or email, and an
+ * opaque per-response `personKey` (`ORG_TRAINEE_OUTSIDE_KEY_PREFIX` + n) in place of their warehouse key.
  */
 export interface OrgTraineeRow {
+  /** Warehouse person key for a people-list member, which the person drawer reads; opaque per response otherwise. */
   personKey: string;
   lfid: string | null;
   cdpMemberId: string | null;

@@ -114,9 +114,10 @@ export class OrgLensTrainingService {
 
   public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
     // v2: adds roster members, people with training activity and the as-of timestamps.
+    // v3: the two certification counts keep to people on the org's people list.
     const raw = await withOrgCache(
       accountId,
-      'training-stats:v2',
+      'training-stats:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTrainingStatsRows(accountId),
       isTrainingStatsRaw
@@ -392,11 +393,13 @@ export class OrgLensTrainingService {
   }
 
   private async fetchTrainingStatsRows(accountId: string): Promise<OrgTrainingStatsRaw> {
+    // People-list rows only, like the Certifications tab both certification tiles open (its query joins ORG_PEOPLE_ALL).
     const certSql = `
       WITH ${scopedCourseCatalogDimCte(`
         SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
         WHERE t.ACCOUNT_ID = ?
+          AND t.ON_PEOPLE_LIST
           AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
       `)},
       scoped AS (
@@ -408,6 +411,7 @@ export class OrgLensTrainingService {
         INNER JOIN course_dim d
           ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
         WHERE t.ACCOUNT_ID = ?
+          AND t.ON_PEOPLE_LIST
           AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
       )
       SELECT

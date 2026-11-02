@@ -318,7 +318,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
-    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two', 'ti:outside-one']);
+    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two', 'outside:1']);
   });
 
   it('treats a v4-shaped entry without the build time as a miss, so the as-of date is never dropped for a TTL', async () => {
@@ -574,9 +574,16 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
 
     expect(response.trainees).toEqual([
       expect.objectContaining({ personKey: 'person-listed', onPeopleList: true, email: 'listed@company.example' }),
-      { personKey: 'ti:outside-one', lfid: null, cdpMemberId: null, name: 'Outside Learner', title: null, email: null, onPeopleList: false },
+      { personKey: 'outside:1', lfid: null, cdpMemberId: null, name: 'Outside Learner', title: null, email: null, onPeopleList: false },
     ]);
-    expect(response.details.filter((row) => row.personKey === 'ti:outside-one').map((row) => row.status)).toEqual(['Enrolled', 'Certified']);
+    expect(response.details.filter((row) => row.personKey === 'outside:1').map((row) => row.status)).toEqual(['Enrolled', 'Certified']);
+  });
+
+  it("ships an opaque per-response key in place of the learner's warehouse key, the same in trainees and details", async () => {
+    const response = await service.getTrainees(ACCOUNT, '730d');
+
+    expect(JSON.stringify(response)).not.toContain('ti:outside-one');
+    expect(response.details.map((row) => row.personKey)).toEqual(['person-listed', 'outside:1', 'outside:1']);
   });
 
   it('reads the learners of the range from rows outside the people list, and the identity of listed people from rows on it', async () => {

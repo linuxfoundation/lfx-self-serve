@@ -10,9 +10,12 @@ export type OrgTrainingTabId = 'certifications' | 'trainings';
 
 // ─── Org Certifications tab (LFXV2-1896) ─────────────────────────────────────
 
-/** One row in the org Certifications table — a distinct course/cert the org's people have engaged with. */
+/**
+ * One row in the org Certifications table: a certification course the org's people-list members hold or are enrolled in.
+ * Counts come from ORG_PEOPLE_TRAINING_COURSE_STATUS, one status per (person, course) resolved in lf-dbt.
+ */
 export interface OrgCertification {
-  /** Stable grouping key — COALESCE(COURSE_ID, COURSE_OR_CERT_ID) */
+  /** Course id (ORG_PEOPLE_TRAINING_COURSE_STATUS.COURSE_ID) */
   readonly courseId: string;
   /** Course / certification name */
   readonly name: string;
@@ -22,9 +25,9 @@ export interface OrgCertification {
   readonly level: string | null;
   /** Logo/seal image URL; null when unavailable */
   readonly imageUrl: string | null;
-  /** Count of org employees who hold this certification (STATUS = 'Certified') */
+  /** People on the org's people list with status Certified for this course (a certified person who re-enrolled counts once, as certified) */
   readonly certifiedCount: number;
-  /** Count of org employees in progress (STATUS IS DISTINCT FROM 'Certified', including NULL) */
+  /** People on the org's people list with status Enrolled for this course, enrolled in the last 12 months */
   readonly inProgressCount: number;
 }
 
@@ -124,7 +127,7 @@ export interface GetOrgTrainingsOptions {
 
 /**
  * Summary statistics for the Org Lens training & certifications stat strip and the Overview training tile.
- * Definitions: `.knowledge/v2/org-lens/training-learner-numbers.md` (lfx-self-serve#4286). Each `*AsOf` is an ISO-8601 UTC timestamp.
+ * Definitions: lfx-self-serve#4286. Each `*AsOf` is an ISO-8601 UTC timestamp.
  */
 export interface OrgTrainingStats {
   /** Members LF Education's training program lists for the org (ORG_TRAINING_ROSTER_MEMBERS), enrolled or not; null when the org has no training client. */
@@ -135,9 +138,9 @@ export interface OrgTrainingStats {
   peopleWithTrainingActivity: number;
   /** Build time of ORG_PEOPLE_TRAINING, which also backs the two certification counts; null when the org has no rows. */
   trainingActivityAsOf: string | null;
-  /** Distinct people holding a current certificate (STATUS = 'Certified', certification courses), issued at any time. */
+  /** Distinct people on the org's people list holding a current certificate (STATUS = 'Certified', certification courses), issued at any time. */
   certifiedEmployees: number;
-  /** Current certificates (STATUS = 'Certified', certification courses), issued at any time. */
+  /** Current certificates held by people on the org's people list (STATUS = 'Certified', certification courses), issued at any time. */
   certificationsEarned: number;
   /** Snapshot: distinct people with an active enrollment today (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress'). */
   employeesInTraining: number;

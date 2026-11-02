@@ -4,8 +4,7 @@
 import type { OrgTraineesStatKey, OrgTrainingStatDefinition, OrgTrainingStatKey, OrgTrainingStatTileLayout } from '../interfaces/training.interface';
 
 // Org Lens learner and enrollment numbers (lfx-self-serve#4290). Every surface reads its label, unit, window and
-// tooltip definition from here so one definition carries one label everywhere. Definitions:
-// `.knowledge/v2/org-lens/training-learner-numbers.md` (lfx-self-serve#4286).
+// tooltip definition from here so one definition carries one label everywhere. Definitions: lfx-self-serve#4286.
 
 /** Caption and tooltip suffix of the roster stat for an organization with no LF Education training program (no roster row). */
 export const ORG_TRAINING_NO_ROSTER_NOTE = 'No LF Education training program on record for this organization';
@@ -41,13 +40,15 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     label: 'Certified people',
     unit: 'people',
     window: 'current certificates, issued at any time',
-    definition: 'Distinct people holding at least one current certification certificate, issued at any time. Expired certificates are not counted.',
+    definition:
+      "Distinct people on this organization's people list holding at least one current certification certificate, issued at any time. Expired certificates are not counted.",
   },
   certificationsEarned: {
     label: 'Certifications earned',
     unit: 'certificates',
     window: 'current certificates, issued at any time',
-    definition: 'Current certification certificates, issued at any time; a person with two certificates counts twice. Expired certificates are not counted.',
+    definition:
+      "Current certification certificates held by people on this organization's people list, issued at any time; a person with two certificates counts twice. Expired certificates are not counted.",
   },
   peopleInTraining: {
     label: 'People in training',

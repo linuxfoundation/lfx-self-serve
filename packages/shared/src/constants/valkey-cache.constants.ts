@@ -279,8 +279,10 @@ export const VALKEY_CACHE = {
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three
     // orgs needs more than 3 MiB: Past 365 days peaks at 0.91 MB, and the Past 2 years default (lfx-self-serve#4694) at
     // 1.94 MiB (prod, 2026-10-29). 6,782,106 × 1.25 = 8,477,633, rounded up
-    // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906). `v5` (lfx-self-serve#4916) adds
-    // one build timestamp per entry, so the cap carries over.
+    // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906). `v5` (lfx-self-serve#4916,
+    // #4287) adds one build timestamp per entry, the project id/name, level and format columns to the course
+    // dictionary, and the learners outside the people list (name-only rows plus their detail rows); it drops the
+    // foundation and course option rows, which are now built from the details. The cap carries over; v5 was not remeasured.
     'org-lens-sf:v1:people-trainees:v5': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 

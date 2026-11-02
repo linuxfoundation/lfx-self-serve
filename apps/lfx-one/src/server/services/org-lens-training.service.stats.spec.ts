@@ -137,13 +137,45 @@ describe('OrgLensTrainingService — learner numbers on the stats endpoint', () 
     expect(activitySql).not.toContain('ORG_PEOPLE_ALL');
   });
 
-  it('caches under the v2 key and rejects an entry stored before the learner numbers existed', async () => {
+  it("leaves an outside learner's certificate out of both certification counts, like the Certifications tab", async () => {
+    // Certificate rows of one account: a people-list member with two certificates and a learner outside the people list.
+    const certificates = [
+      { PERSON_KEY: 'listed-person', ON_PEOPLE_LIST: true },
+      { PERSON_KEY: 'listed-person', ON_PEOPLE_LIST: true },
+      { PERSON_KEY: 'outside-learner', ON_PEOPLE_LIST: false },
+    ];
+    execute.mockImplementation(async (sql: string) => {
+      if (!sql.includes('CERTIFIED_EMPLOYEES') || sql.includes('ORG_PEOPLE_TRAINING_COURSES')) return { rows: [] };
+      // Counts the rows the statement's certificate read keeps, honoring its people-list predicate when present.
+      const keepsPeopleList = /INNER JOIN course_dim d[\s\S]*?WHERE t\.ACCOUNT_ID = \?\s+AND t\.ON_PEOPLE_LIST/.test(sql);
+      const kept = certificates.filter((row) => !keepsPeopleList || row.ON_PEOPLE_LIST);
+      return {
+        rows: [
+          {
+            CERTIFIED_EMPLOYEES: new Set(kept.map((row) => row.PERSON_KEY)).size,
+            CERTIFICATIONS_EARNED: kept.length,
+            EMPLOYEES_IN_TRAINING: 0,
+            TRAINING_COURSES_ENROLLED: 0,
+          },
+        ],
+      };
+    });
+
+    const stats = await service.getTrainingStats(ACCOUNT);
+
+    expect(stats.certifiedEmployees).toBe(1);
+    expect(stats.certificationsEarned).toBe(2);
+    // Both ORG_PEOPLE_TRAINING reads (course scope and the counted rows) keep to the people list.
+    expect(sqlReading('CERTIFIED_EMPLOYEES').match(/AND t\.ON_PEOPLE_LIST\b/g)).toHaveLength(2);
+  });
+
+  it('caches under the v3 key and rejects an entry stored before the learner numbers existed', async () => {
     mockStatsRows({});
 
     await service.getTrainingStats(ACCOUNT);
 
     const [, key, , , accept] = withOrgCache.mock.calls[0] as [string, string, number, unknown, (value: unknown) => boolean];
-    expect(key).toBe('training-stats:v2');
+    expect(key).toBe('training-stats:v3');
     expect(accept({ certRows: [], trainingRows: [] })).toBe(false);
     expect(accept({ certRows: [], trainingRows: [], activityRows: [], rosterRows: [] })).toBe(true);
   });

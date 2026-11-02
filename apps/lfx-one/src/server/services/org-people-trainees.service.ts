@@ -5,6 +5,7 @@ import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
   ORG_TRAINEE_DETAIL_COLUMNS,
+  ORG_TRAINEE_OUTSIDE_KEY_PREFIX,
   ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS,
   ORG_TRAINEE_ROW_COLUMNS,
   VALKEY_CACHE,
@@ -67,6 +68,20 @@ export class OrgPeopleTraineesService {
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
     );
 
+    // Only people-list members keep their warehouse key, which the person drawer reads. Every other key (a learner
+    // outside the people list) is replaced by an opaque per-response key, the same in `trainees` and `details`.
+    const listedKeys = new Set(traineeRows.map((row) => row.PERSON_KEY));
+    const opaqueKeys = new Map<string, string>();
+    const wireKey = (personKey: string): string => {
+      if (listedKeys.has(personKey)) return personKey;
+      let opaque = opaqueKeys.get(personKey);
+      if (!opaque) {
+        opaque = `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${opaqueKeys.size + 1}`;
+        opaqueKeys.set(personKey, opaque);
+      }
+      return opaque;
+    };
+
     const trainees: OrgTraineeRow[] = [
       ...traineeRows.map((row) => ({
         personKey: row.PERSON_KEY,
@@ -77,9 +92,9 @@ export class OrgPeopleTraineesService {
         email: row.EMAIL,
         onPeopleList: true,
       })),
-      // Name and training status only (lfx-self-serve#4287): no ids, title or email ever leave the BFF for these learners.
+      // Name and training status only (lfx-self-serve#4287): no warehouse key, ids, title or email leave the BFF for these learners.
       ...outsideLearnerRows.map((row) => ({
-        personKey: row.PERSON_KEY,
+        personKey: wireKey(row.PERSON_KEY),
         lfid: null,
         cdpMemberId: null,
         name: row.LEARNER_NAME ?? '',
@@ -96,7 +111,7 @@ export class OrgPeopleTraineesService {
       if (!activityTs) return [];
       return [
         {
-          personKey: row.PERSON_KEY,
+          personKey: wireKey(row.PERSON_KEY),
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
           courseOrCertId: row.COURSE_OR_CERT_ID,
           // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
@@ -239,8 +254,8 @@ export class OrgPeopleTraineesService {
 
 /**
  * The five Trainees dropdowns from the details the response ships, so an option exists only when a row of the range
- * carries it and picking it can never empty the table. Rows without the field are reachable only through "All": a
- * certified row has no format, a few courses have no level.
+ * carries it and picking it on its own can never empty the table. Rows without the field are reachable only through
+ * "All": a certified row has no format, a few courses have no level.
  */
 function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOptions {
   const foundations = new Map<string, string>();
@@ -252,7 +267,7 @@ function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOpt
     if (row.foundationId && row.foundationName) foundations.set(row.foundationId, row.foundationName);
     if (row.projectId && row.projectName) projects.set(row.projectId, row.projectName);
     // Keyed on the name: several course ids share one (course versions), and one entry has to cover all of their rows.
-    courses.set(row.courseName, row.courseName);
+    if (row.courseName) courses.set(row.courseName, row.courseName);
     if (row.courseLevel) levels.set(row.courseLevel, row.courseLevel);
     if (row.courseFormat) formats.set(row.courseFormat, row.courseFormat);
   }
