@@ -705,6 +705,61 @@ logger.success(req, 'user_login', startTime, {
 });
 ```
 
+## Browser Asset Miss Sampling
+
+`createBrowserAssetsMiddleware` terminates root-level hashed JS/CSS GET/HEAD
+misses before `pino-http`, OIDC, or SSR. It emits best-effort INFO samples via
+`logger.info(undefined, 'browser_asset_miss', 'Browser bundle unavailable', metadata)`.
+Anonymous clients can manufacture eligible misses, so INFO preserves production
+visibility without making every sample an on-call WARN. Filter on the operation
+name for analysis; neither the level nor a sample alone establishes user impact.
+It never passes `req` or reads `req.log`, which is not yet attached. The logger
+service forwards the allowlisted metadata under `data` in the real Pino output:
+
+```json
+{
+  "level": "INFO",
+  "operation": "browser_asset_miss",
+  "status": "info",
+  "data": {
+    "asset_path": "/chunk-ABCDEFGH.js",
+    "version": "release-identifier",
+    "status_code": 404,
+    "method": "GET"
+  }
+}
+```
+
+- **Path privacy and size:** only generated `main`, `chunk`, `styles`, and
+  `polyfills` prefixes followed by an alphanumeric hash (at least eight characters)
+  and `.js`/`.css` are logged, case-insensitively. The decoded root pathname is
+  truncated to `BROWSER_ASSET_MISS_LOG_PATH_MAX_LENGTH` (160 characters). Arbitrary
+  prefixes still receive the existing 404 but are not logged and do not consume
+  the sample window. No full URL, query, headers, cookies, username, IP, request
+  Host, or request logger context is included.
+- **Version:** `data.version` explicitly contains `APP_VERSION || 'development'`.
+  Do not rely on the base Pino `version` binding: the current bindings formatter
+  drops it. This event does not change global logger configuration.
+- **Bounded volume and state:** the first eligible miss is sampled immediately,
+  then at most once per `BROWSER_ASSET_MISS_LOG_INTERVAL_MS` (30 seconds), using
+  monotonic `performance.now()`. One scalar gate per middleware instance covers
+  every filename and caller; the app mounts one instance per process. There are
+  no maps, per-user/per-path tracking, or timers, and idle time does not accumulate
+  a burst allowance. The window is consumed before attempting the logger call,
+  so a throwing logger neither floods retries nor prevents the non-cacheable 404.
+- **Interpretation:** event counts are **not exact miss counts** and no suppression
+  total is emitted. Other misses within the window, ineligible prefixes, disabled
+  INFO logging, and failed logger calls are not represented. Quiet windows emit
+  nothing; process restarts reset the gate, and multiple workers/pods each have
+  their own gate. A sampled filename is not a per-file frequency measurement and
+  caller-controlled eligible misses can occupy the window. This is a rollout /
+  stale-browser availability clue, not an unsampled request metric or unique-user
+  count.
+
+Static hits, nonmatching paths, and non-GET/HEAD methods do not emit this event.
+Static caching, authentication matching, and middleware ordering are unchanged;
+see [SSR Server Architecture](./ssr-server.md#static-asset-strategy).
+
 ## 📊 Health Check Filtering
 
 Liveness and readiness endpoints are excluded from automatic HTTP logging by being registered before the `pino-http` middleware:
