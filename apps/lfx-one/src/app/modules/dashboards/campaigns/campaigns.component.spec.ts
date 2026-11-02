@@ -9553,6 +9553,19 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(hint?.textContent).toContain('Wait for the audience to finish updating.');
     });
 
+    it('says why Build is off while the audience is being replaced', () => {
+      stageable(3);
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl('2026-12-0' + (index + 1), { nonNullable: true })));
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const note = fixture.nativeElement.querySelector('[data-testid="campaigns-send-workflow-note"]') as HTMLElement | null;
+      expect(note?.textContent).toContain('Wait for the audience to finish updating.');
+    });
+
     it('keeps the audience locked and Stage all off around an audience replacement', () => {
       selectSurvey();
       seq().emailBriefOutput.set(surveyBrief);

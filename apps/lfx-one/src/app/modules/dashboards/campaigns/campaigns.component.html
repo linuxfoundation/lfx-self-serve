@@ -1484,7 +1484,14 @@
                           data-testid="campaigns-send-workflow-build-btn" />
                         @if (!canBuildSequenceWorkflow() && sendWorkflowState() !== 'building') {
                           <span class="text-xs text-gray-500" data-testid="campaigns-send-workflow-note">
-                            @if (!surveySequenceComplete()) {
+                            <!-- One branch per term of canBuildSequenceWorkflow, as Stage all's hint has. -->
+                            @if (sequenceStagingState() === 'staging') {
+                              Wait for every draft to finish staging.
+                            } @else if (emailAudienceWriteInFlight()) {
+                              Wait for the audience to finish updating.
+                            } @else if (activeFoundationSlug() === '') {
+                              Select a foundation to save these campaigns under.
+                            } @else if (!surveySequenceComplete()) {
                               Write every email first &mdash; the last write did not finish.
                             } @else if (!sequenceDatesComplete()) {
                               Enter a send date for every email &mdash; each one re-dates a step of the workflow.
