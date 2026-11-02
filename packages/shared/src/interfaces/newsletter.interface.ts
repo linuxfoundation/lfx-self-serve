@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Project } from './project.interface';
+import { SocialShareChannel } from './social-share.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
 
@@ -161,6 +162,8 @@ export interface Newsletter {
   version: number;
   created_at: string;
   updated_at: string;
+  /** In-app share count, one per user per channel. Sent newsletters only; absent when unknown — not zero. */
+  share_count?: number;
 }
 
 /**
@@ -487,6 +490,8 @@ export interface CommitteeNewsletter {
   project_uid: string;
   subject: string;
   sent_at?: string;
+  /** In-app share count, one per user per channel; absent when unknown — not zero. */
+  share_count?: number;
 }
 
 export interface CommitteeNewsletterListResponse {
@@ -541,6 +546,17 @@ export interface MyNewslettersState {
  */
 export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
+  /** `share_count` plus this session's not-yet-counted shares; null when the count is unknown. */
+  shareCount: number | null;
+}
+
+/** Share count shown beside a newsletter's Share button, bumped locally as the reader shares. */
+export interface NewsletterShareTally {
+  newsletterId: string | null;
+  /** Null when the server did not return a count (unknown, not zero). */
+  count: number | null;
+  /** Channels already counted this session — the server counts each channel once per user. */
+  channels: SocialShareChannel[];
 }
 
 export interface NewsletterListParams {
@@ -635,6 +651,15 @@ export interface NewsletterAnalytics {
   click_to_open_rate?: number;
   daily_clicks?: NewsletterDailyClicks[];
   top_links?: NewsletterLinkClicks[];
+  /** In-app shares, one per user per channel. Absent when the share store can't be read. */
+  total_shares?: number;
+  /** `total_shares` split by channel; every channel present, `0` when unused. */
+  shares_by_channel?: Partial<Record<SocialShareChannel, number>>;
+}
+
+/** Body of POST /api/newsletters/:projectUid/:newsletterUid/share. */
+export interface NewsletterShareRequest {
+  channel: SocialShareChannel;
 }
 
 /**

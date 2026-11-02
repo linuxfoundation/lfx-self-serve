@@ -63,6 +63,28 @@ describe('ShareDialogComponent', () => {
     expect(copyLink).toHaveBeenCalledWith(URL, 'Newsletter link copied to clipboard.');
   });
 
+  it('reports the channel when a destination is picked', async () => {
+    const onShare = vi.fn();
+    await mount({ url: URL, title: 'K8s Weekly #42', onShare });
+    const link = find('share-dialog-linkedin')!;
+    link.addEventListener('click', (event) => event.preventDefault());
+    link.click();
+    expect(onShare).toHaveBeenCalledWith('linkedin');
+  });
+
+  it('reports copy_link only when the copy succeeded', async () => {
+    const onShare = vi.fn();
+    await mount({ url: URL, title: 'K8s Weekly #42', onShare });
+
+    copyLink.mockReturnValue(false);
+    find('share-dialog-copy-link')!.querySelector('button')!.click();
+    expect(onShare).not.toHaveBeenCalled();
+
+    copyLink.mockReturnValue(true);
+    find('share-dialog-copy-link')!.querySelector('button')!.click();
+    expect(onShare).toHaveBeenCalledWith('copy_link');
+  });
+
   it('claims Escape so overlays underneath do not also close', async () => {
     await mount({ url: URL, title: 'K8s Weekly #42' });
     const documentListener = vi.fn();

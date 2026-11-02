@@ -135,9 +135,10 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[55%]">Title</th>
-                  <th class="w-[20%]">Sent</th>
-                  <th class="w-[25%]">Project</th>
+                  <th class="w-[50%]">Title</th>
+                  <th class="w-[18%]">Sent</th>
+                  <th class="w-[12%]">Shares</th>
+                  <th class="w-[20%]">Project</th>
                 </tr>
               </ng-template>
 
@@ -185,6 +186,18 @@
                     <span class="text-sm text-gray-700">{{ newsletter.sent_at | date: 'MMM d, y' }}</span>
                   </td>
                   <td>
+                    @if (newsletter.shareCount) {
+                      <span
+                        class="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums"
+                        [attr.aria-label]="newsletter.shareCount === 1 ? 'Shared 1 time' : 'Shared ' + newsletter.shareCount + ' times'"
+                        [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">
+                        <i class="fa-light fa-share-nodes text-xs text-gray-400" aria-hidden="true"></i>{{ newsletter.shareCount | number }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400" [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">—</span>
+                    }
+                  </td>
+                  <td>
                     <span class="text-sm text-gray-700">{{ newsletter.project_name || '—' }}</span>
                   </td>
                 </tr>
@@ -209,5 +222,7 @@
   [headerTitle]="selected()?.project_name || 'Newsletter'"
   [headerSubtitle]="drawerSubtitle()"
   [shareUrl]="selectedShareUrl()"
+  [shareCount]="selectedShareCount()"
+  (shared)="onShared($event)"
   (visibleChange)="onDrawerVisibleChange($event)"
   data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

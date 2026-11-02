@@ -26,6 +26,7 @@
       <li>
         <a
           [href]="link.href"
+          (click)="onShareLink(link)"
           [attr.target]="link.key === 'email' ? null : '_blank'"
           [attr.rel]="link.key === 'email' ? null : 'noopener noreferrer'"
           [attr.aria-label]="link.label"

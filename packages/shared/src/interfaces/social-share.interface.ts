@@ -4,6 +4,9 @@
 /** Destinations offered by the share dialog. */
 export type SocialSharePlatformKey = 'x' | 'linkedin' | 'reddit' | 'email';
 
+/** A share action the dialog can report: one of its destinations, or Copy link. */
+export type SocialShareChannel = SocialSharePlatformKey | 'copy_link';
+
 /** Display metadata for one share destination. */
 export interface SocialSharePlatform {
   key: SocialSharePlatformKey;
@@ -32,4 +35,9 @@ export interface ShareDialogData {
   eyebrow?: string;
   /** Toast detail after Copy link; defaults to a generic message. */
   copiedMessage?: string;
+  /**
+   * Called when the user picks a destination, or after Copy link succeeds — so callers can record
+   * the share. Fires on intent: the dialog cannot see whether a post was actually published.
+   */
+  onShare?: (channel: SocialShareChannel) => void;
 }

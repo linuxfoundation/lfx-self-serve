@@ -27,10 +27,12 @@ import {
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterStatusCounts,
+  SocialShareChannel,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { PlausibleService } from '@services/plausible.service';
+import { catchError, EMPTY, Observable, take, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -48,6 +50,7 @@ import { catchError, Observable, take, throwError } from 'rxjs';
 })
 export class NewsletterService {
   private readonly http = inject(HttpClient);
+  private readonly plausible = inject(PlausibleService);
 
   public getRecipientCount(projectUid: string, payload: NewsletterRecipientCountPayload): Observable<NewsletterRecipientCount> {
     return this.http.post<NewsletterRecipientCount>(`/api/projects/${this.enc(projectUid)}/newsletters/recipient-count`, payload).pipe(take(1));
@@ -132,6 +135,22 @@ export class NewsletterService {
   /** Member benefit: add the caller's qualifying work email to the issue's newsletter group (server re-checks eligibility). */
   public joinNewsletterGroup(projectUid: string, newsletterUid: string): Observable<NewsletterJoinResult> {
     return this.http.post<NewsletterJoinResult>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/join`, {}).pipe(take(1));
+  }
+
+  /**
+   * Records an in-app share of a sent issue (#4958) and the matching Plausible event. Fire-and-forget:
+   * sharing must never fail because tracking did, so errors (including the 403 while impersonating)
+   * are swallowed here. The server counts one share per user per channel.
+   */
+  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): void {
+    this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel });
+    this.http
+      .post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel })
+      .pipe(
+        take(1),
+        catchError(() => EMPTY)
+      )
+      .subscribe();
   }
 
   /**

@@ -54,14 +54,7 @@
             data-testid="newsletter-reader-invite" />
         }
         @if (shareUrl()) {
-          <button
-            type="button"
-            (click)="openShare()"
-            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-            data-testid="newsletter-reader-share">
-            <i class="fa-light fa-share-nodes text-lg" aria-hidden="true"></i>
-            Share
-          </button>
+          <lfx-newsletter-share-button [count]="shareTally().count" (share)="openShare()" testId="newsletter-reader-share" />
         }
       </div>
     </div>

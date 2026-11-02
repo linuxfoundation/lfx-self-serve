@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,13 +14,16 @@ import {
   NewsletterInviteLookup,
   NewsletterJoinState,
   NewsletterReaderState,
+  NewsletterShareTally,
   ServerRequestContext,
+  SocialShareChannel,
 } from '@lfx-one/shared/interfaces';
-import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ShareDialogService } from '@services/share-dialog.service';
+import { ShareButtonComponent } from '../components/share-button/share-button.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
@@ -45,7 +48,14 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
  */
 @Component({
   selector: 'lfx-newsletter-reader',
-  imports: [ButtonComponent, NewsletterMemberBenefitBannerComponent, NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    NewsletterMemberBenefitBannerComponent,
+    NewsletterNotFoundComponent,
+    NewsletterPreviewComponent,
+    ShareButtonComponent,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './newsletter-reader.component.html',
 })
@@ -116,12 +126,24 @@ export class NewsletterReaderComponent {
     return toAbsoluteUrl(newsletterIssuePath(slug, id), isPlatformBrowser(this.platformId));
   });
 
+  // === Writable Signals (linked) ===
+  /** Share count beside the Share button: the server's `share_count`, bumped as this reader shares. Resets per issue. */
+  protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => {
+    const newsletter = this.newsletter();
+    return { newsletterId: newsletter?.id ?? null, count: newsletter?.share_count ?? null, channels: [] };
+  });
+
   // === Protected Methods ===
   protected openShare(): void {
     const url = this.shareUrl();
     if (!url) return;
 
-    this.shareDialog.open({ url, title: this.newsletter()?.subject || this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
+    this.shareDialog.open({
+      url,
+      title: this.newsletter()?.subject || this.pageTitle(),
+      copiedMessage: 'Newsletter link copied to clipboard.',
+      onShare: (channel) => this.onShared(channel),
+    });
   }
 
   protected onInvite(): void {
@@ -135,6 +157,16 @@ export class NewsletterReaderComponent {
       dismissableMask: false,
       data: { foundation } satisfies NewsletterInviteDialogData,
     });
+  }
+
+  /** Records the share (fire-and-forget) and bumps the visible count the way the server will. */
+  protected onShared(channel: SocialShareChannel): void {
+    const project = this.project();
+    const newsletter = this.newsletter();
+    if (!project || !newsletter) return;
+
+    this.newsletterService.recordShare(project.uid, newsletter.id, channel);
+    this.shareTally.update((tally) => addShareToTally(tally, channel));
   }
 
   protected retryJoin(): void {

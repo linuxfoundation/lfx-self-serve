@@ -10,7 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT } from '@lfx-one/shared/constants';
+import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT, SHARE_CHANNEL_LABELS, SHARE_CHANNELS } from '@lfx-one/shared/constants';
 import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
 import { normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
@@ -86,6 +86,12 @@ export class NewsletterAnalyticsComponent {
     return (a.total_clicks ?? 0) > 0 || (a.unique_clicks ?? 0) > 0 || (a.daily_clicks?.length ?? 0) > 0 || (a.top_links?.length ?? 0) > 0;
   });
   protected readonly clickRatePercent: Signal<number | null> = this.initClickRatePercent();
+  /** "LinkedIn 2 · Copy link 1" — the channels used, in dialog order; a hint when there are none yet. */
+  protected readonly shareBreakdown: Signal<string> = computed(() => {
+    const byChannel = this.analytics()?.shares_by_channel ?? {};
+    const parts = SHARE_CHANNELS.filter((channel) => (byChannel[channel] ?? 0) > 0).map((channel) => `${SHARE_CHANNEL_LABELS[channel]} ${byChannel[channel]}`);
+    return parts.length ? parts.join(' · ') : 'from the in-app Share button';
+  });
   protected readonly clickToOpenRatePercent: Signal<number | null> = this.initClickToOpenRatePercent();
   // Distinct from hasDailyBreakdown: upstream derives daily_clicks from a separate
   // event query than daily_opens, so a day present in one series can be absent
