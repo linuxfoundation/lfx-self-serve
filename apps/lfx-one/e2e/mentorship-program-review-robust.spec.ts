@@ -16,13 +16,7 @@
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import {
-  gotoProgramReview,
-  openProgramReview,
-  PROGRAM_REVIEW_LOAD_TIMEOUT,
-  stubProgramDecision,
-  stubProgramReview,
-} from './helpers/program-review.helper';
+import { gotoProgramReview, openProgramReview, PROGRAM_REVIEW_LOAD_TIMEOUT, stubProgramDecision, stubProgramReview } from './helpers/program-review.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 

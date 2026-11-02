@@ -22,13 +22,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import {
-  MENTOR_PAGE_LOAD_TIMEOUT,
-  MENTOR_PROGRAMS_URL,
-  MENTOR_REGISTER_URL,
-  openMentorPage,
-  stubMentorHasProfile,
-} from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, MENTOR_REGISTER_URL, openMentorPage, stubMentorHasProfile } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
