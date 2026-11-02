@@ -3,6 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvpScopeDialogData } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,8 +16,8 @@ const MEETING = {
   title: 'Synthetic sync',
   project_name: 'Synthetic Project',
   meeting_type: 'Technical',
-  recurrence: { type: 2, repeat_interval: 1 },
-} as unknown as Meeting;
+  recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 },
+} as Meeting;
 
 function buildRow(occurrenceId: string | null): MeetingHomeRow {
   return { key: 'row', meeting: MEETING, occurrence: null, title: 'Synthetic sync', occurrenceId, startTime: START.toISOString(), durationMinutes: 60 };

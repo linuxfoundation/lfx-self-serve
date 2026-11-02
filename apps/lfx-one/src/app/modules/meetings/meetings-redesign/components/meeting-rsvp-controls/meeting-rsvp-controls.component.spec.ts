@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvp, MeetingRsvpSubmitError, RsvpScope } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -50,7 +51,7 @@ function buildRow(meeting: Meeting, overrides: Partial<MeetingHomeRow> = {}): Me
   };
 }
 
-const RECURRING = { recurrence: { type: 2, repeat_interval: 1 } } as Partial<Meeting>;
+const RECURRING: Partial<Meeting> = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 } };
 
 describe('MeetingRsvpControlsComponent', () => {
   let submit: ReturnType<typeof vi.fn>;
