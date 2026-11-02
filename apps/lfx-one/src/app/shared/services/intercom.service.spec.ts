@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { INTERCOM_CUSTOM_LAUNCHER_SELECTOR } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -182,7 +183,7 @@ describe('IntercomService', () => {
 
       service.boot({ app_id: 'test-app-id' });
 
-      const launcher = { hide_default_launcher: true, custom_launcher_selector: '#lfx-support-launcher' };
+      const launcher = { hide_default_launcher: true, custom_launcher_selector: INTERCOM_CUSTOM_LAUNCHER_SELECTOR };
       expect(queuedCommands()[0]).toEqual(['boot', { app_id: 'test-app-id', ...launcher }]);
       expect(window.intercomSettings).toMatchObject(launcher);
       expect(service.customLauncherActive()).toBe(true);

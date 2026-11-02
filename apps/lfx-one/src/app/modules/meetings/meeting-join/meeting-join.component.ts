@@ -8,7 +8,6 @@ import {
   Component,
   computed,
   DestroyRef,
-  effect,
   inject,
   makeStateKey,
   OnInit,
@@ -196,8 +195,8 @@ export class MeetingJoinComponent implements OnInit {
    */
   private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly destroyRef = inject(DestroyRef);
-  protected readonly overlayState = inject(OverlayStateService);
-  protected readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
+  private readonly overlayState = inject(OverlayStateService);
+  private readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
 
@@ -611,14 +610,18 @@ export class MeetingJoinComponent implements OnInit {
     // Drive the launcher from the same signal the drawer's [(visible)] binds to, so every close path
     // (header X, Esc, mask click, programmatic set(false)) unregisters. PrimeNG's onHide is not
     // reliable here: it fires after the leave animation, which never completes when the drawer is
-    // removed first, and that left the launcher hidden for good.
-    effect(() => {
-      if (this.showRegistrants()) {
-        this.overlayState.register(this.registrantsOverlayId);
-      } else {
-        this.overlayState.unregister(this.registrantsOverlayId);
-      }
-    });
+    // removed first, and that left the launcher hidden for good. Declared last in the constructor:
+    // toObservable() schedules an effect, and creating it before the data pipeline above reorders the
+    // effects the page depends on (33 existing specs fail).
+    toObservable(this.showRegistrants)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((open) => {
+        if (open) {
+          this.overlayState.register(this.registrantsOverlayId);
+        } else {
+          this.overlayState.unregister(this.registrantsOverlayId);
+        }
+      });
   }
 
   public ngOnInit(): void {

@@ -3,9 +3,10 @@
 
 import { computed, Injectable, signal } from '@angular/core';
 
-// Tracks which drawers, dialogs and sticky bottom bars are currently on screen so shell-level
-// chrome (the support launcher) can get out of their way. Consumers register an id when they open
-// and unregister when they close or are destroyed; ids are idempotent so a double open/close is safe.
+// Tracks which overlays are currently on screen so shell-level chrome (the support launcher) can get
+// out of their way. Consumers register an id when they open and unregister when they close or are
+// destroyed; ids are idempotent so a double open/close is safe. Today the only registered overlay is
+// the meeting-join guests drawer; other drawers, dialogs and sticky bars opt in by calling this API.
 @Injectable({
   providedIn: 'root',
 })
@@ -15,7 +16,7 @@ export class OverlayStateService {
   /** True while at least one registered overlay is open. */
   public readonly anyOpen = computed(() => this.openIds().size > 0);
 
-  /** Set by pages that render a sticky bottom action bar the launcher would otherwise cover. */
+  /** For pages that render a sticky bottom action bar the launcher would otherwise cover. No page sets it yet. */
   public readonly stickyBarVisible = signal(false);
 
   public register(id: string): void {

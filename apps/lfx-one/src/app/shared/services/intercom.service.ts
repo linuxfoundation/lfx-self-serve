@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable, signal } from '@angular/core';
-import { INTERCOM_CUSTOM_LAUNCHER_SELECTOR, VOTES_MOBILE_MEDIA_QUERY } from '@lfx-one/shared/constants';
+import { INTERCOM_CUSTOM_LAUNCHER_SELECTOR, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { IntercomBootOptions, IntercomFunction, IntercomSettings } from '@lfx-one/shared/interfaces';
 import { redactInviteToken } from '@lfx-one/shared/utils';
 
@@ -20,6 +20,7 @@ export class IntercomService {
   // True when this boot is on a phone-width viewport and Intercom's default launcher is replaced by
   // the shell's compact support launcher (SupportLauncherComponent). Decided once per boot — Intercom
   // only documents launcher attributes at boot, so there is no runtime update() toggle to throttle.
+  // A viewport that crosses the phone breakpoint after boot (rotation) keeps the boot-time choice.
   public readonly customLauncherActive = signal(false);
 
   private readonly dataDogRumService = inject(DataDogRumService);
@@ -133,7 +134,7 @@ export class IntercomService {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return {};
     }
-    if (!window.matchMedia(VOTES_MOBILE_MEDIA_QUERY).matches) {
+    if (!window.matchMedia(PHONE_MEDIA_QUERY).matches) {
       return {};
     }
     return { hide_default_launcher: true, custom_launcher_selector: INTERCOM_CUSTOM_LAUNCHER_SELECTOR };
