@@ -6,8 +6,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID, DEFAULT_ORG_PROJECTS_WORKSPACE_NAME, ORG_SCOPE_PROJECTS_NOTE } from '@lfx-one/shared/constants';
-import type { OrgLensEmptyStateName, OrgLensProject, OrgScopeFilter } from '@lfx-one/shared/interfaces';
+import {
+  DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
+  DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
+  ORG_PROJECTS_CONTRIBUTORS_TOOLTIP,
+  ORG_SCOPE_PROJECTS_NOTE,
+  ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
+} from '@lfx-one/shared/constants';
+import type { OrgLensEmptyStateName, OrgLensProject, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
@@ -167,7 +174,7 @@ describe('OrgProjectsComponent — health label', () => {
     // A stray covered count of 2 on an unscored row must not mark it.
     makeProject('Echo', { ...UNSCORED, healthCoveredCategoryCount: 2 }),
   ];
-  let responseExtra: { maintainerRolesUnavailable?: true } = {};
+  let responseExtra: { maintainerRolesUnavailable?: true; teamMembersUnavailable?: true } = {};
 
   let fixture: ComponentFixture<OrgProjectsComponent>;
   let component: OrgProjectsComponent;
@@ -311,6 +318,23 @@ describe('OrgProjectsComponent — health label', () => {
       responseExtra = {};
     }
   });
+
+  it('notes that team members are counted only when the response says the team-member data is unavailable', async () => {
+    const note = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-projects-team-members-unavailable"]');
+    expect(note()).toBeNull();
+
+    responseExtra = { teamMembersUnavailable: true };
+    try {
+      component['reload'].update((n: number) => n + 1);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(note()?.textContent).toContain(ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE);
+    } finally {
+      responseExtra = {};
+    }
+  });
 });
 
 describe('OrgProjectsComponent — Employees filter', () => {
@@ -374,9 +398,11 @@ describe('OrgProjectsComponent — Employees filter', () => {
   };
 
   const requestedScopes: OrgScopeFilter[] = [];
+  const requestedTeamMembers: OrgTeamMembersFilter[] = [];
 
   beforeEach(async () => {
     requestedScopes.length = 0;
+    requestedTeamMembers.length = 0;
     selectedAccount.set(ORG_A);
     await TestBed.configureTestingModule({
       imports: [OrgProjectsComponent],
@@ -409,8 +435,9 @@ describe('OrgProjectsComponent — Employees filter', () => {
                   { id: 'ws-rest', name: 'Rest', projectSlugs: PROJECTS_BY_ORG[accountUid].slice(1).map((project) => project.slug) },
                 ],
               }),
-            getProjects: (accountUid: string, accountName: string, slugs: string[], orgScope: OrgScopeFilter) => {
+            getProjects: (accountUid: string, accountName: string, slugs: string[], orgScope: OrgScopeFilter, teamMembers: OrgTeamMembersFilter) => {
               requestedScopes.push(orgScope);
+              requestedTeamMembers.push(teamMembers);
               return of({
                 orgSlug: accountUid,
                 orgName: accountName,
@@ -644,6 +671,58 @@ describe('OrgProjectsComponent — Employees filter', () => {
     expect(component['scopeForm'].controls.orgScope.value).toBe('insights');
     toggle().click();
     await settle();
+    expect(toggle().textContent?.trim()).toBe('More filters');
+  });
+
+  // lfx-self-serve-ops#1246 — the Contributors column leaves CDP team members out by default, as People and Code Contributions.
+  it('excludes team members by default, re-reads on Include with ?teamMembers=include on page 1, and drops the param back at Exclude', async () => {
+    await open('/?employees=p-known&page=2');
+    expect(requestedTeamMembers.at(-1)).toBe('exclude');
+    expect(component['scopeForm'].controls.teamMembers.value).toBe('exclude');
+    expect(component['teamMembersTooltip']).toBe(ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP);
+    expect(component['contributorsTooltip']).toBe(ORG_PROJECTS_CONTRIBUTORS_TOOLTIP);
+    expect(ORG_PROJECTS_CONTRIBUTORS_TOOLTIP).toContain('excluded by default');
+
+    component['scopeForm'].controls.teamMembers.setValue('include');
+    await settle();
+    expect(requestedTeamMembers.at(-1)).toBe('include');
+    expect(queryParams()).toEqual({ employees: 'p-known', teamMembers: 'include' });
+
+    component['scopeForm'].controls.teamMembers.setValue('exclude');
+    await settle();
+    expect(requestedTeamMembers.at(-1)).toBe('exclude');
+    expect(queryParams()).toEqual({ employees: 'p-known' });
+  });
+
+  it('reads ?teamMembers=include from a shared link and follows a query-only navigation', async () => {
+    await open('/?teamMembers=include');
+    expect(component['scopeForm'].controls.teamMembers.value).toBe('include');
+    expect(requestedTeamMembers.at(-1)).toBe('include');
+
+    await router.navigateByUrl('/');
+    await settle();
+    expect(component['scopeForm'].controls.teamMembers.value).toBe('exclude');
+    expect(requestedTeamMembers.at(-1)).toBe('exclude');
+  });
+
+  it('keeps team members behind More filters, counted with the organization scope, and Reset filters clears both', async () => {
+    await open('/?teamMembers=include&orgScope=all');
+    const el = fixture.nativeElement as HTMLElement;
+    const toggle = (): HTMLButtonElement => el.querySelector('[data-testid="org-projects-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el.querySelector('#org-projects-more-filters')!;
+
+    expect(panel().querySelector('[data-test="org-projects-team-members-filter"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-projects-toolbar"] [data-test="org-projects-team-members-filter"]')).toBeNull();
+    expect(toggle().textContent?.trim()).toBe('More filters (2)');
+
+    component['scopeForm'].controls.orgScope.setValue('insights');
+    await settle();
+    expect(toggle().textContent?.trim()).toBe('More filters (1)');
+
+    component['resetFilters']();
+    await settle();
+    expect(queryParams()).toEqual({});
+    expect(component['scopeForm'].controls.teamMembers.value).toBe('exclude');
     expect(toggle().textContent?.trim()).toBe('More filters');
   });
 });

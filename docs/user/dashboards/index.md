@@ -75,6 +75,8 @@ Your choice stays in the page address (`?orgScope=all`) and carries to the other
 
 On the **Projects** list the choice changes the **Contributors** column only; influence, health, participants and maintainers are the same under both options. On a project's detail page, contributors' first and most recent activity dates come from every related organization. Under **Insights organization**, the influence level next to **Our Technical Influence** and **Our Ecosystem Influence** is the Insights organization's own; if it has no leaderboard ranking on the project, no level is shown, even when a related organization has one.
 
+**People**, **Code Contributions** and the **Projects** list also have a **Team members** dropdown under **More filters**. People marked as team members in the Community Data Platform are excluded by default, as LFX Insights does; choose **Include team members** to count them. Your choice stays in the page address (`?teamMembers=include`) and carries between these pages when you move between them from the sidebar. On the **Projects** list it changes the **Contributors** column only; participants and maintainers are the same under both options.
+
 ### Navigation
 
 Switch to the **Organization** lens using the lens selector. The Org Overview is the default landing page for the Org lens (route: `/org`).
