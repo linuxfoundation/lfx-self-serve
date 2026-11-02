@@ -184,7 +184,7 @@
     <!-- 22px between day groups (exact px) -->
     <div class="relative flex flex-col gap-[22px]" data-testid="meetings-home-list">
       @for (group of store.groups(); track group.label) {
-        <lfx-meetings-day-group [group]="group" data-testid="meetings-home-day-group" />
+        <lfx-meetings-day-group [group]="group" [view]="store.tab()" data-testid="meetings-home-day-group" />
       }
       @if (store.hasMore()) {
         <!-- Re-created per page so a trigger still in view after a page loads fires again. -->

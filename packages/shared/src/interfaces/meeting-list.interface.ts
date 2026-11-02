@@ -66,3 +66,30 @@ export interface MeetingVisibilityInfo {
   description: string | null;
   icon: string;
 }
+
+/** Where a meetings home row opens. */
+export interface MeetingHomeRowLink {
+  /** App-relative URL with its query string. */
+  url: string;
+  /** Open in a new tab, as the legacy card does for upcoming meetings. */
+  newTab: boolean;
+}
+
+/** Project eyebrow of a meetings home row. */
+export interface MeetingHomeRowProject {
+  name: string;
+  /** Shown in the logo tile when there is no logo. */
+  initial: string;
+  /** Logo URL; empty when the project has none. */
+  logo: string;
+  /** Project or foundation overview; null without a project slug. */
+  url: string | null;
+  /** Accessible name, e.g. "Jump to project: Kubernetes". */
+  label: string;
+}
+
+/** Meeting type label and icon on a meetings home row. */
+export interface MeetingHomeRowType {
+  label: string;
+  icon: string;
+}

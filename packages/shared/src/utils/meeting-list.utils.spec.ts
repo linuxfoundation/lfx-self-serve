@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
 import { MeetingVisibility, MeetingVisibilityKind, RecurrenceType } from '../enums';
-import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters } from '../interfaces';
+import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '../interfaces';
 import {
   buildMeetingFilterChips,
   countAppliedMeetingFilters,
@@ -16,9 +16,11 @@ import {
   filterMeetingsHome,
   formatMeetingTimeRange,
   getMeetingDayBucket,
+  getMeetingHomeRowLink,
+  getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
   getMeetingStartsInLabel,
-  getMeetingVisibilityInfo,
+  getMeetingVisibilityBadges,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
@@ -487,19 +489,83 @@ describe('getMeetingStartsInLabel', () => {
   });
 });
 
-describe('getMeetingVisibilityInfo', () => {
-  it.each<[MeetingVisibility | null, boolean | null, MeetingVisibilityKind]>([
-    [MeetingVisibility.PUBLIC, false, MeetingVisibilityKind.PUBLIC],
-    [null, null, MeetingVisibilityKind.PUBLIC],
-    [MeetingVisibility.PRIVATE, null, MeetingVisibilityKind.PRIVATE],
-    [MeetingVisibility.PUBLIC, true, MeetingVisibilityKind.RESTRICTED],
-    [MeetingVisibility.PRIVATE, true, MeetingVisibilityKind.RESTRICTED],
-  ])('%s, restricted %s → %s', (visibility, restricted, kind) => {
-    expect(getMeetingVisibilityInfo({ visibility, restricted })).toBe(MEETING_VISIBILITY_INFO[kind]);
+describe('getMeetingVisibilityBadges', () => {
+  it.each<[MeetingVisibility | null, boolean | null, MeetingVisibilityKind[]]>([
+    [MeetingVisibility.PUBLIC, false, [MeetingVisibilityKind.PUBLIC]],
+    [null, null, [MeetingVisibilityKind.PUBLIC]],
+    [MeetingVisibility.PRIVATE, null, [MeetingVisibilityKind.PRIVATE]],
+    [MeetingVisibility.PUBLIC, true, [MeetingVisibilityKind.RESTRICTED]],
+    [MeetingVisibility.PRIVATE, true, [MeetingVisibilityKind.PRIVATE, MeetingVisibilityKind.RESTRICTED]],
+  ])('%s, restricted %s → %j', (visibility, restricted, kinds) => {
+    expect(getMeetingVisibilityBadges({ visibility, restricted })).toEqual(kinds.map((kind) => MEETING_VISIBILITY_INFO[kind]));
   });
 
   it('carries the tooltip copy', () => {
     expect(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]).toMatchObject({ title: 'Public', description: null, icon: 'fa-solid fa-globe' });
     expect(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]).toMatchObject({ title: 'Restricted', description: 'Only invited people can join' });
+  });
+});
+
+describe('getMeetingHomeRowLink', () => {
+  const upcomingRow = (meeting: Meeting, start: Date): MeetingHomeRow => ({
+    key: meeting.id,
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: null,
+    startTime: start.toISOString(),
+    durationMinutes: 60,
+  });
+  const pastRow = (overrides: Partial<PastMeeting>): MeetingHomeRow => {
+    const meeting = { ...buildMeeting({ id: '123' }), meeting_and_occurrence_id: '123-1759334400000', ...overrides } as PastMeeting;
+    return {
+      key: '123-1759334400000',
+      meeting,
+      occurrence: null,
+      title: meeting.title,
+      occurrenceId: null,
+      startTime: '2025-10-01T16:00:00Z',
+      durationMinutes: 60,
+    };
+  };
+  const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+  it('opens an upcoming date in a new tab with its password and date', () => {
+    const link = getMeetingHomeRowLink(upcomingRow(buildMeeting({ id: '123', password: 'p w' }), future), 'upcoming');
+
+    expect(link).toEqual({ url: `/meetings/123?password=p+w&occurrence=${future.getTime()}`, newTab: true });
+  });
+
+  it('leaves the password out when the meeting has none', () => {
+    expect(getMeetingHomeRowLink(upcomingRow(buildMeeting({ id: '123' }), future), 'upcoming').url).toBe(`/meetings/123?occurrence=${future.getTime()}`);
+  });
+
+  it('opens a past meeting in place on its meeting page for invitees', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: false }), 'past')).toEqual({ url: '/meetings/123-1759334400000', newTab: false });
+  });
+
+  it('opens a past meeting on the admin details page with the project for organizers', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true, is_foundation: false, project_slug: 'kubernetes' }), 'past')).toEqual({
+      url: '/project/meetings/123-1759334400000/details?project=kubernetes',
+      newTab: false,
+    });
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true, is_foundation: true, project_slug: 'cncf' }), 'past').url).toBe(
+      '/foundation/meetings/123-1759334400000/details?project=cncf'
+    );
+  });
+
+  it('falls back to the flat details route when the tier is unknown', () => {
+    expect(getMeetingHomeRowLink(pastRow({ organizer: true }), 'past').url).toBe('/meetings/123-1759334400000/details');
+  });
+});
+
+describe('getMeetingProjectUrl', () => {
+  it('links to the project or foundation overview', () => {
+    expect(getMeetingProjectUrl({ project_slug: 'kubernetes', is_foundation: false })).toBe('/project/overview?project=kubernetes');
+    expect(getMeetingProjectUrl({ project_slug: 'cncf', is_foundation: true })).toBe('/foundation/overview?project=cncf');
+  });
+
+  it('has no link without a slug', () => {
+    expect(getMeetingProjectUrl({ project_slug: undefined, is_foundation: true })).toBeNull();
   });
 });

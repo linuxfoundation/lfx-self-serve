@@ -72,7 +72,7 @@ describe('MeetingsRedesignComponent', () => {
   };
   const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
     Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
-      (row) => row.querySelector('span')?.textContent?.trim() ?? ''
+      (row) => row.querySelector('[data-testid="meetings-home-row-title"]')?.textContent?.trim() ?? ''
     );
 
   beforeEach(() => {
