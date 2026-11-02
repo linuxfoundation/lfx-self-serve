@@ -20,10 +20,11 @@
 <ng-template #panel>
   <!-- 470px scrolling list inside the design's 660px panel cap -->
   <div
+    #panelList
     class="flex max-h-[min(470px,calc(100vh-160px))] flex-col divide-y divide-gray-100 overflow-y-auto overscroll-contain py-[4px]"
     data-testid="meetings-home-pending-rsvps-panel">
     @for (item of items(); track item.row.key) {
-      <div class="flex flex-wrap items-center gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
+      <div #rowElement class="flex flex-wrap items-center gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
         <div class="flex min-w-0 flex-[1_1_220px] flex-col gap-[4px]">
           @if (item.project; as project) {
             <span class="flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
@@ -33,6 +34,7 @@
           }
           <!-- Masked in Session Replay: the href carries the meeting password. -->
           <a
+            #rowTitle
             data-dd-privacy="mask"
             class="min-w-0 break-words text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             [href]="item.link.url"
@@ -41,7 +43,9 @@
             data-testid="meetings-home-pending-rsvps-row-title"
             >{{ item.row.title }}</a
           >
-          <span class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-500" data-testid="meetings-home-pending-rsvps-row-meta">
+          <span
+            class="flex min-w-0 flex-wrap items-center gap-x-[6px] gap-y-[2px] whitespace-nowrap text-[12px] text-gray-500"
+            data-testid="meetings-home-pending-rsvps-row-meta">
             @for (badge of item.visibilityBadges; track badge.kind) {
               <span
                 role="img"
@@ -55,7 +59,7 @@
                 <i class="text-[8px]" [class]="badge.icon" aria-hidden="true"></i>
               </span>
             }
-            <span class="min-w-0 truncate" data-testid="meetings-home-pending-rsvps-row-when">{{ item.when }}</span>
+            <span data-testid="meetings-home-pending-rsvps-row-when">{{ item.when }}</span>
             @if (item.type; as type) {
               <span aria-hidden="true">·</span>
               <span class="inline-flex flex-none items-center gap-[5px]"

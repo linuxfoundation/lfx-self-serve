@@ -2,7 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, formatDate } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, ElementRef, inject, Injector, input, Signal } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  Signal,
+  viewChild,
+  viewChildren,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
 import { MeetingHomeRow, MeetingPendingRsvpItem, UiFocusable } from '@lfx-one/shared/interfaces';
@@ -37,6 +49,9 @@ export class PendingRsvpsComponent {
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly panelList = viewChild<ElementRef<HTMLElement>>('panelList');
+  private readonly rowElements = viewChildren<ElementRef<HTMLElement>>('rowElement');
+  private readonly rowTitles = viewChildren<ElementRef<HTMLElement>>('rowTitle');
   private readonly timeFormat = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
 
   /** Dates the viewer still has to answer, soonest first. */
@@ -52,27 +67,36 @@ export class PendingRsvpsComponent {
     this.initFocusRestore();
   }
 
-  /** An answered date leaves the list with the focused button; focus goes to the date now in its place, or out of the popover once it is empty. */
+  /** An answered date leaves the list with the focused button; focus goes to the next date left, or out of the popover once it is empty. */
   private initFocusRestore(): void {
     toObservable(this.rows)
       .pipe(pairwise(), takeUntilDestroyed())
       .subscribe(([previous, rows]) => {
-        const index = previous.findIndex((row) => !rows.some((kept) => kept.key === row.key));
-        if (index < 0 || !(this.panelElement() || this.host.contains(this.document.activeElement))) return;
-        afterNextRender(() => this.restoreFocus(index), { injector: this.injector });
+        const kept = new Set(rows.map((row) => row.key));
+        const active = this.document.activeElement;
+        if (previous.every((row) => kept.has(row.key)) || !(this.panelList() || this.host.contains(active))) return;
+        // The answered date is the one holding focus, else the first one that left; the rendered rows still match `previous` here.
+        const focused = this.rowElements().findIndex((row) => row.nativeElement.contains(active));
+        const origin = focused >= 0 ? focused : previous.findIndex((row) => !kept.has(row.key));
+        const next =
+          previous.slice(origin + 1).find((row) => kept.has(row.key)) ??
+          previous
+            .slice(0, origin)
+            .reverse()
+            .find((row) => kept.has(row.key));
+        const target = next ? rows.findIndex((row) => row.key === next.key) : -1;
+        afterNextRender(() => this.restoreFocus(target), { injector: this.injector });
       });
   }
 
-  private restoreFocus(index: number): void {
+  private restoreFocus(target: number): void {
     const active = this.document.activeElement;
-    if (active && active !== this.document.body) return;
-    const titles = this.panelElement()?.querySelectorAll<HTMLElement>('[data-testid="meetings-home-pending-rsvps-row-title"]') ?? [];
-    if (titles.length) titles[Math.min(index, titles.length - 1)].focus();
+    const panel = this.panelList()?.nativeElement ?? null;
+    // Focus left with the removed button: it is on nothing, or on the popover dialog around the list.
+    if (active && active !== this.document.body && !active.contains(panel)) return;
+    const title = this.rowTitles()[target]?.nativeElement;
+    if (title) title.focus();
     else this.fallbackFocus()?.focus();
-  }
-
-  private panelElement(): HTMLElement | null {
-    return this.document.querySelector<HTMLElement>('[data-testid="meetings-home-pending-rsvps-panel"]');
   }
 
   private toItem(row: MeetingHomeRow): MeetingPendingRsvpItem {

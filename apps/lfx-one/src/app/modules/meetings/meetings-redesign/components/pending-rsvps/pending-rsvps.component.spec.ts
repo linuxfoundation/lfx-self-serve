@@ -144,6 +144,17 @@ describe('PendingRsvpsComponent', () => {
     expect(document.activeElement?.textContent?.trim()).toBe('Synthetic b');
   });
 
+  it('moves focus forward past other dates the same answer cleared', async () => {
+    const rows = ['a1', 'b2', 'a8', 'c9'].map((key) => buildRow(key));
+    await render(rows);
+    await open();
+
+    await answer(all('meetings-home-pending-rsvps-row')[2], 'meetings-home-rsvp-accepted');
+    await setRows([rows[1], rows[3]]);
+
+    expect(document.activeElement?.textContent?.trim()).toBe('Synthetic c9');
+  });
+
   it('closes and hides once the last date is answered, handing focus to the fallback', async () => {
     await render([buildRow('a')]);
     await open();
