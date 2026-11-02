@@ -114,6 +114,13 @@ export const NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Query param on the My Newsletters foundation drill-down that carries an invite's newsletter group uid. */
 export const NEWSLETTER_INVITE_QUERY_PARAM = 'invite';
 
+/**
+ * How long the newsletter reader waits after the member-benefit join before re-checking invite
+ * eligibility: my-foundations reads memberships from the query-service index, which is updated
+ * asynchronously after the committee write.
+ */
+export const NEWSLETTER_INVITE_RELOOKUP_DELAY_MS = 3000;
+
 /** 404 code of an invite whose group is not a Newsletter-category group (or no longer exists). */
 export const NEWSLETTER_INVITE_INVALID_ERROR_CODE = 'NEWSLETTER_INVITE_INVALID';
 

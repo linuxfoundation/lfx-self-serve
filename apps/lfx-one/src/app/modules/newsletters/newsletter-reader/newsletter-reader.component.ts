@@ -6,7 +6,7 @@ import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } fro
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
 import {
   MyNewsletterFoundation,
   MyNewsletterFoundationsResponse,
@@ -23,7 +23,7 @@ import { ProjectService } from '@services/project.service';
 import { ShareDialogService } from '@services/share-dialog.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
 
 import { NewsletterMemberBenefitBannerComponent } from './newsletter-member-benefit-banner/newsletter-member-benefit-banner.component';
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
@@ -261,7 +261,9 @@ export class NewsletterReaderComponent {
   /**
    * Looks up the issue's foundation in GET /api/newsletters/my-foundations once a readable issue has
    * loaded, and again after the member-benefit join adds the reader to the group (they may now be
-   * able to invite). Browser-only; a failure just hides the CTA — the invite POST re-checks everything.
+   * able to invite). That second lookup waits {@link NEWSLETTER_INVITE_RELOOKUP_DELAY_MS}: the
+   * endpoint reads memberships from the query-service index, which picks up the join asynchronously.
+   * Browser-only; a failure just hides the CTA — the invite POST re-checks everything.
    */
   private initInviteFoundation(): Signal<MyNewsletterFoundation | null> {
     const lookup = computed<NewsletterInviteLookup | null>(
@@ -277,13 +279,12 @@ export class NewsletterReaderComponent {
         filter(() => isPlatformBrowser(this.platformId)),
         switchMap((target) => {
           if (!target) return of(null);
-          return this.newsletterService.getMyNewsletterFoundations().pipe(
+          const fetch$ = defer(() => this.newsletterService.getMyNewsletterFoundations()).pipe(
             map((response) => this.findInviteFoundation(response, target)),
-            catchError((err) => {
-              console.error('Failed to load newsletter invite eligibility', err);
-              return of(null);
-            })
+            // NewsletterService already logs the failure; here it only hides an optional button.
+            catchError(() => of(null))
           );
+          return target.joined ? timer(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS).pipe(switchMap(() => fetch$)) : fetch$;
         })
       ),
       { initialValue: null }

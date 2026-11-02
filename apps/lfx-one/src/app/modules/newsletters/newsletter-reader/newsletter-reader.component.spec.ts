@@ -5,6 +5,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MyNewsletterFoundation, MyNewsletterFoundationsResponse, Newsletter, NewsletterJoinResult, Project } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_INVITE_RELOOKUP_DELAY_MS } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
@@ -551,7 +552,6 @@ describe('NewsletterReaderComponent', () => {
       vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
       vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
       vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
       expect(render().querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
     });
@@ -565,7 +565,8 @@ describe('NewsletterReaderComponent', () => {
       expect(newsletterService.getMyNewsletterFoundations).not.toHaveBeenCalled();
     });
 
-    it('looks up again after the member benefit adds the reader to the group', () => {
+    it('looks up again, after the index delay, once the member benefit adds the reader to the group', () => {
+      vi.useFakeTimers();
       vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
       vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
         of({
@@ -592,6 +593,14 @@ describe('NewsletterReaderComponent', () => {
       fixture.detectChanges();
 
       expect(component['joinState']().status).toBe('added');
+      // Not straight away: the query-service index has not picked up the new membership yet.
+      expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(NEWSLETTER_INVITE_RELOOKUP_DELAY_MS);
+      TestBed.tick();
+      fixture.detectChanges();
+      vi.useRealTimers();
+
       expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
       expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).not.toBeNull();
     });
