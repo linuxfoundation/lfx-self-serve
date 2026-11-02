@@ -4,7 +4,7 @@
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { hasModifierKey } from '@angular/cdk/keycodes';
 import { ComponentType } from '@angular/cdk/overlay';
-import { Dialog, DialogRef } from '@angular/cdk/dialog';
+import { Dialog, DialogConfig, DialogRef } from '@angular/cdk/dialog';
 import { inject, Injectable, TemplateRef } from '@angular/core';
 import { UiModalConfig } from '@lfx-one/shared/interfaces';
 import { filter, takeUntil } from 'rxjs';
@@ -19,8 +19,15 @@ export class UiModalService {
   private readonly dialog = inject(Dialog);
   private readonly ids = inject(_IdGenerator);
 
-  /** Opens the modal and returns its `DialogRef`; `ref.closed` emits the result. */
-  public open<R = unknown, D = unknown, C = unknown>(content: ComponentType<C> | TemplateRef<C>, config: UiModalConfig<D> = {}): DialogRef<R, C> {
+  /**
+   * Opens the modal and returns its `DialogRef`; `ref.closed` emits the result. `dialogOverrides` replaces the placement and close
+   * options a component built on the modal needs, like the drawer; the id, labelling, `disableClose` and focus handling stay the modal's.
+   */
+  public open<R = unknown, D = unknown, C = unknown>(
+    content: ComponentType<C> | TemplateRef<C>,
+    config: UiModalConfig<D> = {},
+    dialogOverrides: Partial<Pick<DialogConfig<D, DialogRef<R, C>>, 'positionStrategy' | 'height' | 'maxWidth' | 'providers' | 'closePredicate'>> = {}
+  ): DialogRef<R, C> {
     const id = this.ids.getId('lfx-ui-modal-');
     const closeOnEscape = config.closeOnEscape ?? true;
     const closeOnBackdropClick = config.closeOnBackdropClick ?? true;
@@ -40,6 +47,7 @@ export class UiModalService {
       maxWidth: 'calc(100vw - 32px)',
       // The scrim colour is the ui-overlay token; the CDK's own 400ms fade is overridden with the library's.
       backdropClass: ['bg-ui-overlay', '!duration-ui-base', '!ease-ui-standard', 'motion-reduce:!transition-none'],
+      ...dialogOverrides,
     });
 
     if (closeOnEscape) {

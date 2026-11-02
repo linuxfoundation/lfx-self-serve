@@ -1,0 +1,54 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The sheet is on its way out: it takes no more clicks.
+:host(.is-leaving) {
+  pointer-events: none;
+}
+
+// Slide 24px along the edge the drawer is anchored to and fade, as the library describes for drawers; none under reduced motion.
+@media (prefers-reduced-motion: no-preference) {
+  :host(.is-right) {
+    animation: drawer-in-right var(--ui-duration-slow) var(--ui-ease);
+  }
+
+  :host(.is-left) {
+    animation: drawer-in-left var(--ui-duration-slow) var(--ui-ease);
+  }
+
+  :host(.is-leaving.is-right) {
+    animation: drawer-out-right var(--ui-duration-base) var(--ui-ease-standard) forwards;
+  }
+
+  :host(.is-leaving.is-left) {
+    animation: drawer-out-left var(--ui-duration-base) var(--ui-ease-standard) forwards;
+  }
+}
+
+@keyframes drawer-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes drawer-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes drawer-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes drawer-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
