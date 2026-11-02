@@ -106,6 +106,16 @@ export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
 /** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
 export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;
 
+/** Active manager results: non-overlapping visible-tab reads, with capped retry backoff (#4769). */
+export const VOTE_DETAIL_RESULTS_POLL_OPTIONS = {
+  intervalMs: 5000,
+  backoffBaseMs: 5000,
+  backoffMaxMs: 30000,
+} as const;
+
+/** Detail managers: total final-results reads after closure, including held payloads and failed attempts. */
+export const VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS = 12;
+
 /** Vote detail page (#3913) tab shown when `?tab=` is absent or invalid; omitted from the URL. */
 export const VOTE_DETAIL_DEFAULT_TAB: VoteDetailTab = 'overview';
 
