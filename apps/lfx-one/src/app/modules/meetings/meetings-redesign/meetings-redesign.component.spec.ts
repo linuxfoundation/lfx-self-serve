@@ -127,10 +127,19 @@ describe('MeetingsRedesignComponent', () => {
           },
         },
         { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
-        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal(new Set<string>()),
+            getMeetingRsvps: () => of([]),
+            getPastMeetingSummary: () => of(null),
+            getPastMeetingTranscript: () => of(null),
+            getPastMeetingRecording: () => of(null),
+          },
+        },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: Router, useValue: { navigate } },
+        { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
     });
@@ -166,6 +175,24 @@ describe('MeetingsRedesignComponent', () => {
     await fixture.whenStable();
 
     expect(query(fixture, 'meetings-home-last-card-empty')).toBeTruthy();
+  });
+
+  it('gives the Last meeting card the row menu', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    latestPast$.next([{ ...buildMeeting(4, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting]);
+    await fixture.whenStable();
+
+    const trigger = query(fixture, 'meetings-home-last-card-menu')?.querySelector<HTMLButtonElement>(
+      '[data-testid="meetings-home-row-actions-trigger"] button'
+    );
+    navigate.mockClear();
+    trigger?.click();
+    await fixture.whenStable();
+
+    expect(document.querySelector('[data-testid="meetings-home-row-actions-menu"]')).toBeTruthy();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('hides the Last meeting card, with no error, when its feed fails', async () => {

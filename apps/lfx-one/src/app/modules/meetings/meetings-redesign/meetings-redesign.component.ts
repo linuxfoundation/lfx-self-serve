@@ -116,6 +116,11 @@ export class MeetingsRedesignComponent {
     const row = this.store.nextRow();
     return row ? [row] : [];
   });
+  /** The Last meeting as a one-item list, so its menu is keyed by row. */
+  protected readonly lastRows: Signal<MeetingHomeRow[]> = computed(() => {
+    const row = this.store.lastMeeting();
+    return row ? [row] : [];
+  });
   /** The active tab has no meetings at all. */
   protected readonly tabEmpty: Signal<boolean> = computed(() => !this.store.loading() && this.store.tabRows().length === 0);
   /** The active tab has meetings, but none match the search and filters. */
