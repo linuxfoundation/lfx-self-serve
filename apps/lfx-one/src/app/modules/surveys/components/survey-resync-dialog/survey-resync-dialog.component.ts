@@ -12,7 +12,7 @@ import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { concat, finalize, forkJoin, map, toArray } from 'rxjs';
+import { concat, finalize, forkJoin, map, tap, toArray } from 'rxjs';
 
 /**
  * Resyncs an open survey's recipient list (#4340): previews the committee members who joined
@@ -34,6 +34,8 @@ export class SurveyResyncDialogComponent {
   // === Constants ===
   private readonly surveyUid: string = this.config.data!.survey.uid;
   private readonly committeeUids: string[] = this.config.data!.committeeUids;
+  /** Committees already resynced in this dialog; a retry never repeats them. */
+  private readonly completedCommittees = new Set<string>();
   protected readonly skeletonRows = [0, 1, 2];
 
   // === Writable Signals ===
@@ -62,8 +64,13 @@ export class SurveyResyncDialogComponent {
     if (this.recipients().length === 0 || this.sending()) return;
 
     this.sending.set(true);
+    const pending = this.committeesToSend();
     // One committee at a time: the server authorizes each committee on its own.
-    concat(...this.committeesToSend().map((committeeUid) => this.surveyService.resyncRecipients(this.surveyUid, committeeUid)))
+    concat(
+      ...pending.map((committeeUid) =>
+        this.surveyService.resyncRecipients(this.surveyUid, committeeUid).pipe(tap(() => this.completedCommittees.add(committeeUid)))
+      )
+    )
       .pipe(
         // An initiated write must finish even if navigation destroys this dialog.
         toArray(),
@@ -80,14 +87,26 @@ export class SurveyResyncDialogComponent {
           if (!this.destroyRef.destroyed) this.ref.close(true);
         },
         error: (error: unknown) => {
-          this.messageService.add({ severity: 'error', summary: "Couldn't resync recipients", detail: this.errorMessage(error, 'send') });
+          const sent = pending.filter((uid) => this.completedCommittees.has(uid)).length;
+          if (sent === 0) {
+            this.messageService.add({ severity: 'error', summary: "Couldn't resync recipients", detail: this.errorMessage(error, 'send') });
+            return;
+          }
+          // Some committees went out: say so, and rebuild the preview for the rest so a retry only covers them.
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Resync partly sent',
+            detail: `Sent for ${sent} of ${pending.length} groups. ${this.errorMessage(error, 'send')}`,
+          });
+          if (!this.destroyRef.destroyed) this.loadPreview();
         },
       });
   }
 
   protected cancel(): void {
     if (this.sending()) return;
-    this.ref.close(false);
+    // After a partial resync, tell the drawer to reload even though the dialog is cancelled.
+    this.ref.close(this.completedCommittees.size > 0);
   }
 
   // === Private Helpers ===
@@ -95,9 +114,11 @@ export class SurveyResyncDialogComponent {
     this.loading.set(true);
     this.loadError.set(null);
     forkJoin(
-      this.committeeUids.map((committeeUid) =>
-        this.surveyService.getResyncPreview(this.surveyUid, committeeUid).pipe(map((preview) => ({ committeeUid, recipients: preview.affected_recipients })))
-      )
+      this.committeeUids
+        .filter((committeeUid) => !this.completedCommittees.has(committeeUid))
+        .map((committeeUid) =>
+          this.surveyService.getResyncPreview(this.surveyUid, committeeUid).pipe(map((preview) => ({ committeeUid, recipients: preview.affected_recipients })))
+        )
     )
       .pipe(
         finalize(() => this.loading.set(false)),

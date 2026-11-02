@@ -99,4 +99,76 @@ describe('SurveyResyncDialogComponent', () => {
     ]);
     expect(close).toHaveBeenCalledWith(true);
   });
+
+  it('after a partial failure, reports it, previews only the remaining committees, and retries only those', async () => {
+    TestBed.resetTestingModule();
+    const getResyncPreview = vi.fn().mockReturnValue(of(PREVIEW));
+    const resyncRecipients = vi
+      .fn()
+      .mockReturnValueOnce(of(undefined))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 429 })))
+      .mockReturnValue(of(undefined));
+    const add = vi.fn();
+    const close = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [SurveyResyncDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUids: ['c-1', 'c-2'] } } },
+        { provide: SurveyService, useValue: { getResyncPreview, resyncRecipients } },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    const fixture = TestBed.createComponent(SurveyResyncDialogComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+
+    component['send']();
+
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'warn', summary: 'Resync partly sent', detail: expect.stringContaining('Sent for 1 of 2 groups') })
+    );
+    expect(getResyncPreview.mock.calls.at(-1)).toEqual(['s-1', 'c-2']);
+    expect(close).not.toHaveBeenCalled();
+
+    component['send']();
+    expect(resyncRecipients.mock.calls).toEqual([
+      ['s-1', 'c-1'],
+      ['s-1', 'c-2'],
+      ['s-1', 'c-2'],
+    ]);
+    expect(close).toHaveBeenCalledWith(true);
+  });
+
+  it('asks the drawer to reload when cancelled after a partial resync', async () => {
+    TestBed.resetTestingModule();
+    const close = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [SurveyResyncDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close } },
+        { provide: DynamicDialogConfig, useValue: { data: { survey: { uid: 's-1' } as Survey, committeeUids: ['c-1', 'c-2'] } } },
+        {
+          provide: SurveyService,
+          useValue: {
+            getResyncPreview: vi.fn().mockReturnValue(of(PREVIEW)),
+            resyncRecipients: vi
+              .fn()
+              .mockReturnValueOnce(of(undefined))
+              .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 }))),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    const fixture = TestBed.createComponent(SurveyResyncDialogComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance['send']();
+    fixture.componentInstance['cancel']();
+
+    expect(close).toHaveBeenCalledWith(true);
+  });
 });
