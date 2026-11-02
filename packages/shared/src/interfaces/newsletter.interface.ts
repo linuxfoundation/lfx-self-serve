@@ -336,6 +336,14 @@ export interface NewsletterInviteResult {
   foundation_name: string;
 }
 
+/** What the newsletter reader page looks up to decide whether to show the invite CTA. */
+export interface NewsletterInviteLookup {
+  projectUid: string;
+  newsletterId: string;
+  /** The member benefit just added the reader to the group (or found them already on it). */
+  joined: boolean;
+}
+
 /** DynamicDialog data of the My Newsletters invite dialog. */
 export interface NewsletterInviteDialogData {
   foundation: MyNewsletterFoundation;
