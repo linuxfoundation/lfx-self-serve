@@ -96,7 +96,7 @@ describe('UiToastComponent', () => {
       expect(toast().querySelector('[data-testid="ui-toast-message"]')?.classList).toContain('font-medium');
       const description = toast().querySelector('[data-testid="ui-toast-description"]') as HTMLElement;
       expect(description.textContent).toBe('Anyone with the link can join.');
-      expect(Array.from(description.classList)).toEqual(expect.arrayContaining(['copy-13', 'text-ui-neutral-300']));
+      expect(Array.from(description.classList)).toEqual(expect.arrayContaining(['copy-13', 'leading-[20px]', 'text-ui-neutral-300']));
     });
 
     it('has no check and keeps the ink on the description of other variants', async () => {

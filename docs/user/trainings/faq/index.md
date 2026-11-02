@@ -3,14 +3,30 @@ title: Trainings FAQ
 description: Frequently asked questions about training enrollments in LFX Self Serve.
 audience: [all]
 product_area: Trainings
-tags: [trainings, faq, certifications, enrollments]
-last_updated: 2026-08-19
+tags: [trainings, faq, certifications, enrollments, exams, vouchers, refunds, invoices]
+last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
 
 ## How do I contact the LF Education team?
 
-Use <https://training.linuxfoundation.org/about/contact-us/>
+Check the LF Education FAQ at [training.linuxfoundation.org/about/faqs](https://training.linuxfoundation.org/about/faqs/) first. If it doesn't answer your question, contact the LF Education support team through their support portal at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). See [Get Help with Training and Certifications](../training-support/) for which questions they handle.
+
+## When does my exam voucher expire, and can I extend it?
+
+LFX Self Serve doesn't show voucher terms or expiry dates for exam vouchers you bought or received through a program. Contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) to check a voucher or ask about an extension. For Tux Rewards coupons, see [Training Rewards and Coupons](../rewards/).
+
+## How do I schedule or reschedule an exam, or check how many attempts I have left?
+
+Exam scheduling, rescheduling, and retakes aren't managed in LFX Self Serve. Contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org).
+
+## How do I get a refund or invoice for a training or certification purchase?
+
+Refunds, invoices, and receipts for training courses, certification exams, bundles, and subscriptions are handled by the LF Education team. Contact them at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID from the **Transactions** tab (`/profile/transactions`).
+
+## Who do I ask about THRIVE, CARE, or Kubestronaut benefits?
+
+These are LF Education programs. Contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org).
 
 ## How do I enroll in a training course?
 

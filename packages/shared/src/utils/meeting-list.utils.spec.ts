@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MEETING_VISIBILITY_INFO, MEETINGS_HOME_DEFAULT_FILTERS } from '../constants';
 import { MeetingVisibility, MeetingVisibilityKind, RecurrenceType } from '../enums';
-import type { MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters, MeetingWithRsvps } from '../interfaces';
+import type { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, MeetingsHomeFilters } from '../interfaces';
 import {
   buildMeetingFilterChips,
   countAppliedMeetingFilters,
@@ -30,7 +30,7 @@ const local = (month: number, day: number, hour = 10, minute = 0, year = 2026): 
 const seconds = (date: Date): string => String(Math.floor(date.getTime() / 1000));
 const WEEKLY = { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '5' };
 
-function buildMeeting(overrides: Partial<MeetingWithRsvps> = {}): MeetingWithRsvps {
+function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
     id: 'm-1',
     created_at: '',
@@ -85,7 +85,7 @@ function rsvp(overrides: Partial<MeetingRsvp>): MeetingRsvp {
   };
 }
 
-function row({ meeting = buildMeeting(), ...overrides }: Partial<MeetingHomeRow> & { meeting?: MeetingWithRsvps } = {}): MeetingHomeRow {
+function row({ meeting = buildMeeting(), ...overrides }: Partial<MeetingHomeRow> & { meeting?: Meeting } = {}): MeetingHomeRow {
   return {
     key: meeting.id,
     meeting,
@@ -102,7 +102,7 @@ function row({ meeting = buildMeeting(), ...overrides }: Partial<MeetingHomeRow>
 const filters = (overrides: Partial<MeetingsHomeFilters> = {}): MeetingsHomeFilters => ({ ...MEETINGS_HOME_DEFAULT_FILTERS, ...overrides });
 
 describe('isMeetingPendingRsvp', () => {
-  it.each<[string, Partial<MeetingWithRsvps>, boolean]>([
+  it.each<[string, Partial<Meeting>, boolean]>([
     ['RSVPs loaded and none applies', { my_rsvp: null }, true],
     ['live registration', { my_rsvp: null, my_registrant_ids: ['reg-1'] }, true],
     ['RSVPs not loaded', { my_rsvp: undefined }, false],
