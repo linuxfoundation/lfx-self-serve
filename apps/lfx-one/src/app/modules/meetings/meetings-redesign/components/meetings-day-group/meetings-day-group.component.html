@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex items-center gap-[8px] pb-[6px]" data-testid="meetings-home-day-group-separator">
+  <h3 class="whitespace-nowrap text-[12px] font-semibold text-gray-500" data-testid="meetings-home-day-group-label">{{ group().label }}</h3>
+  <span class="text-[11px] text-gray-400" data-testid="meetings-home-day-group-count"
+    >{{ group().count }}<span class="sr-only"> {{ group().count === 1 ? 'meeting' : 'meetings' }}</span></span
+  >
+  <span class="h-px flex-auto bg-gray-200" aria-hidden="true"></span>
+</div>
+<ul class="flex flex-col">
+  @for (row of group().rows; track row.key) {
+    <!-- Placeholder line until the meeting row component lands. -->
+    <li
+      class="flex min-w-0 flex-wrap items-baseline gap-x-[14px] gap-y-[4px] border-b border-gray-200 px-[4px] py-[16px] last:border-b-0"
+      data-testid="meetings-home-day-group-row">
+      <span class="min-w-0 truncate text-[14px] font-medium text-gray-900">{{ row.title }}</span>
+      <span class="text-[12px] text-gray-500">{{ row.startTime | date: 'EEE, MMM d · h:mm a' }}</span>
+    </li>
+  }
+</ul>

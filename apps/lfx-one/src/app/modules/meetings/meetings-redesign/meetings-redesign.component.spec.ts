@@ -3,16 +3,59 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { IMPERSONATION_BANNER_HEIGHT_PX } from '@lfx-one/shared/constants';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { MeetingService } from '@services/meeting.service';
+import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsRedesignComponent } from './meetings-redesign.component';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function buildMeeting(index: number, overrides: Partial<Meeting> = {}): Meeting {
+  return {
+    id: `m-${index}`,
+    created_at: '',
+    modified_at: '',
+    project_uid: 'p-1',
+    start_time: new Date(Date.now() + (40 + index) * DAY_MS).toISOString(),
+    duration: 60,
+    timezone: 'UTC',
+    title: `Meeting ${index}`,
+    description: '',
+    recurrence: null,
+    committees: [],
+    meeting_type: 'Technical',
+    visibility: MeetingVisibility.PUBLIC,
+    restricted: false,
+    recording_enabled: null,
+    transcript_enabled: null,
+    youtube_upload_enabled: null,
+    artifact_visibility: null,
+    cancel_on_committee_removal: null,
+    organizers: [],
+    password: null,
+    invited: true,
+    occurrences: [],
+    ...overrides,
+  };
+}
+
 describe('MeetingsRedesignComponent', () => {
   const HEADER_HEIGHT = 80;
   let impersonating: ReturnType<typeof signal<boolean>>;
+  let personaLoaded: ReturnType<typeof signal<boolean>>;
   let desktop: boolean;
+  let upcoming$: Subject<Meeting[]>;
+  let past$: Subject<PastMeeting[]>;
+  let queryParams: Record<string, string>;
+  let navigate: ReturnType<typeof vi.fn>;
+  let observerCallback: IntersectionObserverCallback | null;
 
   const render = (): ComponentFixture<MeetingsRedesignComponent> => {
     const fixture = TestBed.createComponent(MeetingsRedesignComponent);
@@ -22,9 +65,35 @@ describe('MeetingsRedesignComponent', () => {
   const query = (fixture: ComponentFixture<MeetingsRedesignComponent>, testId: string): HTMLElement | null =>
     fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
+  const loadFeeds = async (fixture: ComponentFixture<MeetingsRedesignComponent>, upcoming: Meeting[], past: PastMeeting[] = []): Promise<void> => {
+    upcoming$.next(upcoming);
+    past$.next(past);
+    await fixture.whenStable();
+  };
+  const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
+    Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
+      (row) => row.querySelector('span')?.textContent?.trim() ?? ''
+    );
+
   beforeEach(() => {
     desktop = true;
     impersonating = signal(false);
+    personaLoaded = signal(true);
+    upcoming$ = new Subject();
+    past$ = new Subject();
+    queryParams = {};
+    navigate = vi.fn().mockResolvedValue(true);
+    observerCallback = null;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public disconnect = vi.fn();
+        public constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback;
+        }
+      }
+    );
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -35,7 +104,26 @@ describe('MeetingsRedesignComponent', () => {
     );
     vi.stubGlobal('matchMedia', (q: string) => ({ matches: desktop, media: q }));
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(HEADER_HEIGHT);
-    TestBed.configureTestingModule({ providers: [{ provide: UserService, useValue: { impersonating } }] });
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: UserService,
+          useValue: {
+            impersonating,
+            meetingFeedIdentity: signal('viewer'),
+            viewerUsername: signal('viewer'),
+            getUserMeetings: () => upcoming$,
+            getUserPastMeetings: () => past$,
+            confirmedMeetingRsvps: () => [],
+            isMeetingRsvpCurrent: () => true,
+          },
+        },
+        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
+        { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: Router, useValue: { navigate } },
+        { provide: ActivatedRoute, useFactory: () => ({ snapshot: { queryParamMap: convertToParamMap(queryParams) } }) },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -52,10 +140,11 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'ui-tab-past')).toBeTruthy();
     expect(query(fixture, 'meetings-redesign-search')).toBeTruthy();
     expect(query(fixture, 'meetings-redesign-list-upcoming')?.getAttribute('role')).toBe('tabpanel');
-    for (const block of ['next-meeting', 'last-meeting', 'pending-rsvps']) {
+    for (const block of ['next-meeting', 'last-meeting']) {
       expect(query(fixture, `meetings-redesign-rail-${block}`)).toBeTruthy();
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
     }
+    expect(query(fixture, 'meetings-redesign-rail-pending-rsvps')).toBeNull();
   });
 
   it('has no Create meeting button', async () => {
@@ -139,5 +228,147 @@ describe('MeetingsRedesignComponent', () => {
 
     expect(query(fixture, 'meetings-redesign-header')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX}px`);
     expect(query(fixture, 'meetings-redesign-tabs-bar')?.style.top).toBe(`${IMPERSONATION_BANNER_HEIGHT_PX + HEADER_HEIGHT}px`);
+  });
+
+  describe('list', async () => {
+    it('shows skeleton rows until the feed answers, then tab counts and day groups', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-list-loading')?.getAttribute('role')).toBe('status');
+      expect(query(fixture, 'ui-tab-upcoming')?.textContent).not.toMatch(/\d/);
+
+      await loadFeeds(fixture, [buildMeeting(1), buildMeeting(2)], []);
+
+      expect(query(fixture, 'meetings-home-list-loading')).toBeNull();
+      expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
+      expect(query(fixture, 'ui-tab-past')?.textContent).toContain('0');
+      expect(query(fixture, 'meetings-home-day-group-label')?.textContent?.trim()).toBeTruthy();
+      expect(rowTitles(fixture)).toEqual(['Meeting 1', 'Meeting 2']);
+    });
+
+    it('shows a header skeleton until the persona loads', async () => {
+      personaLoaded.set(false);
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-persona-loading')).toBeTruthy();
+      expect(query(fixture, 'meetings-redesign-title')).toBeNull();
+
+      personaLoaded.set(true);
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-title')).toBeTruthy();
+    });
+
+    it('filters rows by the search text', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(1, { title: 'Board Review' }), buildMeeting(2, { title: 'Tech Sync' })]);
+
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'board';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toEqual(['Board Review']);
+    });
+
+    it('shows one page of rows, the next one when the trigger scrolls into view, then the end line', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(
+        fixture,
+        Array.from({ length: MEETINGS_HOME_PAGE_SIZE + 5 }, (_, index) => buildMeeting(index))
+      );
+
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE);
+      expect(query(fixture, 'meetings-home-all-loaded')).toBeNull();
+
+      observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      await fixture.whenStable();
+
+      expect(rowTitles(fixture)).toHaveLength(MEETINGS_HOME_PAGE_SIZE + 5);
+      expect(query(fixture, 'meetings-home-load-more')).toBeNull();
+      expect(query(fixture, 'meetings-home-all-loaded')?.textContent?.trim()).toBe(`All ${MEETINGS_HOME_PAGE_SIZE + 5} meetings loaded`);
+    });
+
+    it('shows an error with a retry instead of the empty state when the feed fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = render();
+      await fixture.whenStable();
+
+      upcoming$.error(new Error('down'));
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-error')?.textContent).toContain("Couldn't load your meetings");
+      expect(query(fixture, 'meetings-home-empty-upcoming')).toBeNull();
+      expect(query(fixture, 'ui-tab-upcoming')?.textContent).not.toMatch(/\d/);
+
+      upcoming$ = new Subject();
+      (query(fixture, 'meetings-home-error-retry')?.querySelector('button') as HTMLButtonElement).click();
+      await loadFeeds(fixture, [buildMeeting(1)]);
+
+      expect(query(fixture, 'meetings-home-error')).toBeNull();
+      expect(rowTitles(fixture)).toEqual(['Meeting 1']);
+    });
+
+    it('shows the empty state for a tab without meetings and hides search', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, []);
+
+      expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('No upcoming meetings');
+      expect(query(fixture, 'meetings-home-empty-upcoming')?.textContent).toContain('Meetings from your committees and projects will appear here.');
+      expect(query(fixture, 'meetings-redesign-search')).toBeNull();
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('No past meetings');
+      expect(query(fixture, 'meetings-home-empty-past')?.textContent).toContain('Your past meetings will appear here.');
+    });
+
+    it('shows no results with a reset that clears the search', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, [buildMeeting(1)]);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'nothing matches';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('No results found');
+      expect(query(fixture, 'meetings-home-no-results')?.textContent).toContain('Try adjusting your filter criteria');
+
+      (query(fixture, 'meetings-home-no-results-reset')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-home-no-results')).toBeNull();
+      expect(rowTitles(fixture)).toEqual(['Meeting 1']);
+    });
+  });
+
+  describe('tabs and URL', async () => {
+    it('opens on the Past tab from ?time=past', async () => {
+      queryParams = { time: 'past' };
+      const fixture = render();
+      await fixture.whenStable();
+
+      expect(query(fixture, 'meetings-redesign-list-past')?.hidden).toBe(false);
+      expect(query(fixture, 'meetings-redesign-list-upcoming')?.hidden).toBe(true);
+    });
+
+    it('writes the tab to the URL on a switch', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: 'past' }, replaceUrl: true }));
+
+      query(fixture, 'ui-tab-upcoming')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { time: null } }));
+    });
   });
 });
