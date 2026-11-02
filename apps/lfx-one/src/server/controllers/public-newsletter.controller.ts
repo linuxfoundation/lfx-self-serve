@@ -26,7 +26,8 @@ export class PublicNewsletterController {
     const startTime = logger.startOperation(req, operation, { project_slug: projectSlug, newsletter_uid: newsletterUid });
 
     try {
-      const notFound = new ResourceNotFoundError('Newsletter', newsletterUid ?? '', { operation, service: 'public_newsletter_controller', path: req.path });
+      // A fixed resource id: this anonymous endpoint never echoes caller-supplied text into its error.
+      const notFound = new ResourceNotFoundError('Newsletter', 'share-preview', { operation, service: 'public_newsletter_controller' });
 
       // Both params become upstream lookup keys; anything else is simply not a newsletter.
       if (!NEWSLETTER_SHARE_PREVIEW_SLUG_PATTERN.test(projectSlug ?? '') || !isUuid(newsletterUid ?? '')) throw notFound;
