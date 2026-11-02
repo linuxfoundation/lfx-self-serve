@@ -47,13 +47,13 @@ export class UiShowMoreComponent {
     });
   }
 
-  // Library: a small secondary button; the borderless form drops to tertiary (as in the library preview).
+  // Library: a default-size secondary button; the borderless form drops to tertiary (as in the library preview).
   private initVariant(): Signal<UiButtonVariant> {
     return computed(() => (this.noBorder() ? 'tertiary' : 'secondary'));
   }
 
   private initButtonClasses(): Signal<string> {
-    // The library's 12px chevron flips when expanded. Exact px, not rem; `button>i` outranks the button's own 16px icon rule.
+    // The library's 12px chevron flips when expanded. Exact px, not rem; `button>i` outranks the button's own 14px icon rule.
     const base = '[&_button>i]:text-[12px] [&_button>i]:transition-transform [&_button>i]:duration-ui-base motion-reduce:[&_button>i]:transition-none';
     return computed(() => (this.expanded() ? `${base} [&_button>i]:rotate-180` : base));
   }

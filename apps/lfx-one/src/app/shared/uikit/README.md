@@ -21,7 +21,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 
 | Selector                | Class                      | Purpose                                                                                                                                                                |
 | ----------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, three sizes, icon-only circle, loading, forwards `lfxUiTooltip`, `menu` and `popover` triggers; button or router link                                  |
+| `lfx-ui-button`         | `UiButtonComponent`        | Eight variants, `small` 24, `default` 32 or `large` 40px, icon-only circle, loading, forwards `lfxUiTooltip`, `menu`, `popover`; button or link                        |
 | `lfx-ui-tabs`           | `UiTabsComponent`          | Underline or secondary-pill tabs, default or small, with counts, icons and disabled tabs with a reason; arrows, Home, End; `[(value)]`                                 |
 | `lfx-ui-search-input`   | `UiSearchInputComponent`   | Pill search field on `lfx-ui-input`: search icon, clear button, 32px tall, 300px minimum width; `[(value)]`                                                            |
 | `lfx-ui-badge`          | `UiBadgeComponent`         | Pill label: six tones, subtle, solid or outline, 20 or 24px, optional leading icon and status dot                                                                      |
@@ -105,7 +105,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 | Type size and line height                                    | `text-label-14`, `text-copy-14`, `text-button-14`, `text-heading-24`, ...                                                                              | `--ui-font-*`                     |
 | Full type role (family, size, line height, weight, tracking) | `label-14`, `copy-14`, `button-14`, `heading-24`, `label-14-mono`, ...                                                                                 | `--ui-font-sans/display/mono`     |
 
-The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`.
+The `ui` prefix on colours, radii and heights avoids collisions with Tailwind's own `neutral`, `red`, `amber`, `sm`/`md` and `h-*` names. Pair `text-heading-24` with `font-display font-light` or use the `heading-24` class, which sets both. Focus: `focus-visible:shadow-focus focus-visible:outline-none`; buttons use the library's 4px `ui-accent-100` halo instead.
 
 Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
 

@@ -75,7 +75,7 @@ describe('UiShowMoreComponent', () => {
     expect(rules().length).toBe(2);
     expect(rules()[0].className).toContain('bg-ui-neutral-alpha-200');
     expect(button().classList).toContain('bg-ui-background-100');
-    expect(button().classList).toContain('edge');
+    expect(button().classList).toContain('border-ui-neutral-alpha-200');
 
     const show = TestBed.createComponent(UiShowMoreComponent);
     show.componentRef.setInput('controls', 'x');
@@ -95,7 +95,7 @@ describe('UiShowMoreComponent', () => {
     expect(wrapper().className).toContain('[&_button>i]:text-[12px]');
   });
 
-  it('shows the library focus ring on keyboard focus', () => {
-    expect(button().className).toContain('focus-visible:shadow-focus');
+  it('shows the button focus halo on keyboard focus', () => {
+    expect(button().className).toContain('focus-visible:shadow-ui-accent-100');
   });
 });

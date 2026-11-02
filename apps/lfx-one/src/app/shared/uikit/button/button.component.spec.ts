@@ -102,26 +102,55 @@ describe('UiButtonComponent', () => {
   });
 
   it.each([
-    ['secondary', true],
-    ['secondary-accent', false],
-    ['tertiary', false],
-    ['primary', false],
-  ])('gives the %s variant the neutral edge ring: %s', async (variant, ring) => {
+    ['primary', 'border-transparent'],
+    ['secondary', 'border-ui-neutral-alpha-200'],
+    ['secondary-accent', 'border-ui-accent-500'],
+    ['tertiary', 'border-transparent'],
+    ['danger', 'border-transparent'],
+  ])('gives the %s variant a real 1px border in %s', async (variant, border) => {
     await set('variant', variant);
-    expect(el().classList.contains('edge')).toBe(ring);
+    expect(el().classList).toContain('border');
+    expect(el().classList).toContain(border);
+    expect(el().classList).not.toContain('edge');
   });
 
   it.each([
-    ['tiny', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12'],
-    ['small', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14'],
-    ['medium', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14'],
-  ])('sizes %s with height, radius, padding and type role', async (size, height, radius, padding, type) => {
-    await set('size', size);
-    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type]));
+    ['secondary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    [
+      'secondary-accent',
+      [
+        'hover:bg-ui-accent-50',
+        'hover:text-ui-accent-700',
+        'hover:border-ui-accent-700',
+        'active:bg-ui-accent-100',
+        'active:text-ui-accent-800',
+        'active:border-ui-accent-800',
+      ],
+    ],
+    ['tertiary', ['hover:bg-ui-neutral-alpha-50', 'active:bg-ui-neutral-alpha-100']],
+    ['tertiary-accent', ['hover:bg-ui-accent-50', 'hover:text-ui-accent-700', 'active:bg-ui-accent-100', 'active:text-ui-accent-800']],
+  ])('gives the %s variant the library hover and pressed states', async (variant, states) => {
+    await set('variant', variant);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining(states));
   });
 
-  it('defaults to the medium 40px size', () => {
-    expect(el().classList).toContain('h-ui-medium');
+  it('shows the 4px accent halo on keyboard focus only', () => {
+    expect(Array.from(el().classList)).toEqual(
+      expect.arrayContaining(['focus:outline-none', 'focus-visible:shadow-[0_0_0_4px]', 'focus-visible:shadow-ui-accent-100'])
+    );
+  });
+
+  it.each([
+    ['small', 'h-ui-tiny', 'rounded-[8px]', 'px-[8px]', 'button-12', '[&>i]:text-[12px]'],
+    ['default', 'h-ui-small', 'rounded-[10px]', 'px-[10px]', 'button-14', '[&>i]:text-[14px]'],
+    ['large', 'h-ui-medium', 'rounded-ui-sm', 'px-[16px]', 'button-14', '[&>i]:text-[16px]'],
+  ])('sizes %s with height, radius, padding, type role and icon size', async (size, height, radius, padding, type, icon) => {
+    await set('size', size);
+    expect(Array.from(el().classList)).toEqual(expect.arrayContaining([height, radius, padding, type, icon]));
+  });
+
+  it('defaults to the 32px default size', () => {
+    expect(el().classList).toContain('h-ui-small');
   });
 
   it('renders the leading icon before the label', async () => {
@@ -173,7 +202,7 @@ describe('UiButtonComponent', () => {
     await set('iconOnly', true);
     expect(el().classList).toContain('aspect-square');
     expect(el().classList).toContain('rounded-ui-full');
-    expect(el().classList).not.toContain('px-[16px]');
+    expect(el().classList).not.toContain('px-[10px]');
     expect(el().getAttribute('aria-label')).toBe('Next');
   });
 
@@ -185,11 +214,18 @@ describe('UiButtonComponent', () => {
     expect(el().classList).not.toContain('bg-ui-accent-500');
   });
 
-  it('keeps a disabled tertiary button transparent without a ring', async () => {
+  it('gives a disabled bordered button the neutral border', async () => {
+    await set('variant', 'secondary-accent');
+    await set('disabled', true);
+    expect(el().classList).toContain('border-ui-neutral-alpha-200');
+    expect(el().classList).not.toContain('border-ui-accent-500');
+  });
+
+  it('keeps a disabled tertiary button transparent without a border', async () => {
     await set('variant', 'tertiary');
     await set('disabled', true);
     expect(el().classList).toContain('bg-transparent');
-    expect(el().classList).not.toContain('edge');
+    expect(el().classList).toContain('border-transparent');
   });
 
   it('accepts boolean attributes written as plain attributes', async () => {
@@ -253,7 +289,7 @@ describe('UiButtonComponent', () => {
       expect(el().querySelector('i[aria-hidden="true"].fa-plus')).toBeNull();
       const spinner = el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement;
       expect(spinner.classList).toContain('text-current');
-      expect(spinner.style.width).toBe('16px');
+      expect(spinner.style.width).toBe('14px');
       expect(el().getAttribute('aria-busy')).toBe('true');
     });
 
@@ -262,10 +298,13 @@ describe('UiButtonComponent', () => {
       expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).getAttribute('aria-hidden')).toBe('true');
     });
 
-    it('uses a 12px spinner on a tiny button', async () => {
-      await set('size', 'tiny');
+    it.each([
+      ['small', '12px'],
+      ['large', '16px'],
+    ])('sizes the spinner to the icon on a %s button: %s', async (size, width) => {
+      await set('size', size);
       await set('loading', true);
-      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe('12px');
+      expect((el().querySelector('[data-testid="ui-button-spinner"]') as HTMLElement).style.width).toBe(width);
     });
 
     it('has no aria-busy and no spinner when idle', () => {

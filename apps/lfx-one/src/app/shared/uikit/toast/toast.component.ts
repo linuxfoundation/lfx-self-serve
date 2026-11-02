@@ -161,7 +161,7 @@ export class UiToastComponent {
       this.actions()
         .slice(0, 2)
         .map((action) => {
-          // 10px radius, 10px padding and 6px gap are the small-button steps.
+          // 10px radius, 10px padding and 6px gap are the default-size button steps.
           const shape = `${this.buttonBase()} gap-[6px] rounded-[10px] px-[10px] button-14`;
           // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
           const primary =
@@ -209,15 +209,15 @@ export class UiToastComponent {
     if (target?.isConnected && target !== this.document.activeElement) target.focus();
   }
 
-  // shortcut: native buttons in the small tertiary look. revisit: when lfx-ui-button gets an on-colour variant (white ink)
+  // shortcut: native buttons in the default-size tertiary look. revisit: when lfx-ui-button gets an on-colour variant (white ink)
   private buttonBase(): string {
-    return 'inline-flex h-ui-small cursor-pointer items-center justify-center whitespace-nowrap transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
+    return 'inline-flex h-ui-small cursor-pointer items-center justify-center whitespace-nowrap border border-transparent transition-colors duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
   }
 
   // shortcut: literal white at 16% for the hover on success and error toasts. revisit: when the library ships a white-alpha token.
   private quietInk(): string {
     return this.variant() === 'success' || this.variant() === 'error'
       ? 'bg-transparent text-ui-white hover:bg-[rgba(255,255,255,0.16)]'
-      : 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200';
+      : 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100';
   }
 }

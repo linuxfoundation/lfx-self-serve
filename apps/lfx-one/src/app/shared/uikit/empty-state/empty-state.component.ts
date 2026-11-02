@@ -11,7 +11,7 @@ import { UiHeadingLevel } from '@lfx-one/shared/interfaces';
  *
  * ```html
  * <lfx-ui-empty-state icon="fa-light fa-chart-bar" heading="No metrics yet" description="Connect a GitHub organization to start tracking contributors.">
- *   <lfx-ui-button empty-state-action (click)="connect()">Connect GitHub</lfx-ui-button>
+ *   <lfx-ui-button empty-state-action size="large" (click)="connect()">Connect GitHub</lfx-ui-button>
  * </lfx-ui-empty-state>
  * ```
  */

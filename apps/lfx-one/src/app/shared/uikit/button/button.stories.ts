@@ -18,12 +18,12 @@ const meta: Meta<UiButtonComponent> = {
       control: 'select',
       options: ['primary', 'secondary', 'secondary-accent', 'tertiary', 'tertiary-accent', 'danger', 'danger-tertiary', 'recording'],
     },
-    size: { control: 'select', options: ['tiny', 'small', 'medium'] },
+    size: { control: 'select', options: ['small', 'default', 'large'] },
   },
   decorators: [applicationConfig({ providers: [provideRouter([{ path: '**', children: [] }])] })],
   args: {
     variant: 'primary',
-    size: 'medium',
+    size: 'default',
     icon: '',
     trailingIcon: '',
     iconOnly: false,
@@ -47,12 +47,12 @@ export const Danger: Story = { args: { variant: 'danger' } };
 export const DangerTertiary: Story = { args: { variant: 'danger-tertiary' } };
 /** Not in the LFX UI Library: the epic's proposed green action, flagged for the design team. */
 export const Recording: Story = { args: { variant: 'recording', icon: 'fa-light fa-circle-dot' } };
-export const Tiny: Story = { args: { size: 'tiny', variant: 'secondary' } };
 export const Small: Story = { args: { size: 'small', variant: 'secondary' } };
+export const Large: Story = { args: { size: 'large', variant: 'secondary' } };
 export const WithLeadingIcon: Story = { args: { icon: 'fa-light fa-plus' } };
-export const WithTrailingIcon: Story = { args: { variant: 'secondary', size: 'small', trailingIcon: 'fa-light fa-chevron-right' } };
+export const WithTrailingIcon: Story = { args: { variant: 'secondary', trailingIcon: 'fa-light fa-chevron-right' } };
 export const WithBothIcons: Story = { args: { icon: 'fa-light fa-video', trailingIcon: 'fa-light fa-chevron-right' } };
-/** Icon-only buttons are always circles; give them an `ariaLabel` and a tooltip. */
+/** Icon-only buttons are circles in every variant and size; give them an `ariaLabel` and a tooltip. */
 export const IconOnly: Story = {
   args: { variant: 'secondary', iconOnly: true, icon: 'fa-light fa-plus', ariaLabel: 'Add' },
   render: (args) => ({ props: args, template: `<lfx-ui-button ${argsToTemplate(args)} />` }),
@@ -93,12 +93,12 @@ export const WithMenu: Story = {
   }),
 };
 
-/** Every variant in its default, disabled and loading state, for visual comparison with the library. */
+/** Every variant at every size in its default, icon-only, disabled and loading state, for visual comparison with the library. */
 export const Matrix: Story = {
   render: () => ({
     template: `
       <div class="flex flex-col gap-[16px]">
-        @for (size of ['tiny', 'small', 'medium']; track size) {
+        @for (size of ['small', 'default', 'large']; track size) {
           <div class="flex flex-wrap items-center gap-[8px]">
             @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary','recording']; track variant) {
               <lfx-ui-button [variant]="variant" [size]="size" icon="fa-light fa-circle">{{ variant }}</lfx-ui-button>
@@ -109,7 +109,11 @@ export const Matrix: Story = {
               <lfx-ui-button [variant]="variant" [size]="size" [disabled]="true" icon="fa-light fa-circle">{{ variant }}</lfx-ui-button>
             }
             <lfx-ui-button variant="primary" [size]="size" [loading]="true">Saving</lfx-ui-button>
-            <lfx-ui-button variant="secondary" [size]="size" [iconOnly]="true" icon="fa-light fa-plus" ariaLabel="Add" />
+          </div>
+          <div class="flex flex-wrap items-center gap-[8px]">
+            @for (variant of ['primary','secondary','secondary-accent','tertiary','tertiary-accent','danger','danger-tertiary','recording']; track variant) {
+              <lfx-ui-button [variant]="variant" [size]="size" [iconOnly]="true" icon="fa-light fa-plus" [ariaLabel]="'Add ' + variant" />
+            }
           </div>
         }
       </div>`,

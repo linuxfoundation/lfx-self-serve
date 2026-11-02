@@ -26,7 +26,7 @@ import { UiSpinnerComponent } from '../spinner/spinner.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
- * Button with eight variants and three sizes. Renders a native `<button>`, or a router link when `link` is set.
+ * Button with eight variants and three sizes (small 24px, default 32px, large 40px). Renders a native `<button>`, or a router link when `link` is set.
  * Supports a leading and a trailing Font Awesome icon, an icon-only circle, a loading state and full width.
  *
  * Tooltip: put `lfxUiTooltip` (and the optional `lfxUiTooltipTitle`, `lfxUiTooltipShortcut`, `lfxUiTooltipSide`, `lfxUiTooltipDelay`,
@@ -58,8 +58,8 @@ export class UiButtonComponent {
 
   /** Visual style. `primary` is the one main action of a view; `secondary` suits every other action; `danger` confirms a destructive one; `recording` is the green start/stop-recording action. */
   public readonly variant = input<UiButtonVariant>('primary');
-  /** `tiny` is 24px tall, `small` 32px and `medium` 40px. */
-  public readonly size = input<UiButtonSize>('medium');
+  /** `small` is 24px tall, `default` 32px and `large` 40px. Pair `large` with a 40px input, `default` with a 32px one and `small` with a 24px one. */
+  public readonly size = input<UiButtonSize>('default');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-plus`. Replaced by a spinner while `loading`. */
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, e.g. `fa-light fa-chevron-right`. Independent of `icon`. */
@@ -108,7 +108,7 @@ export class UiButtonComponent {
 
   /* eslint-enable @angular-eslint/no-input-rename */
 
-  /** Icon and spinner size in px: 12 on a tiny button, 16 otherwise. */
+  /** Icon and spinner size in px: 12 on a small button, 14 on a default one and 16 on a large one. */
   protected readonly iconSize: Signal<number> = this.initIconSize();
   protected readonly classes: Signal<string> = this.initClasses();
   /** A disabled link leaves the tab order; a loading link stays focusable because it has no href while busy. */
@@ -148,7 +148,7 @@ export class UiButtonComponent {
   }
 
   private initIconSize(): Signal<number> {
-    return computed(() => (this.size() === 'tiny' ? 12 : 16));
+    return computed(() => ({ small: 12, default: 14, large: 16 })[this.size()]);
   }
 
   private initLinkTabIndex(): Signal<number | null> {
@@ -160,33 +160,34 @@ export class UiButtonComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
+      // forced-colors: the focus halo is a shadow and vanishes, so an outline marks focus.
       const base =
-        'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline transition-[background-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
+        'relative inline-flex select-none [&>i]:leading-none items-center justify-center whitespace-nowrap no-underline border transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard motion-reduce:transition-none focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]';
       // shortcut: hover/active mixes spelled out with var(). revisit: when the library ships hover/active mix tokens
       const variants = {
         primary:
-          'bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
-        secondary: 'bg-ui-background-100 text-ui-neutral-900 edge hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
-        // The 1px ring geometry is arbitrary and its colour comes from the shadow colour utility, so the focus ring can replace it.
+          'border-transparent bg-ui-accent-500 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-accent-500)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-accent-500)_76%,var(--ui-slate-900))]',
+        secondary: 'border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
         'secondary-accent':
-          'bg-ui-background-100 text-ui-accent-500 shadow-[0_0_0_1px] shadow-ui-accent-300 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
-        tertiary: 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200',
-        'tertiary-accent': 'bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100',
+          'border-ui-accent-500 bg-ui-background-100 text-ui-accent-500 hover:border-ui-accent-700 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:border-ui-accent-800 active:bg-ui-accent-100 active:text-ui-accent-800',
+        tertiary: 'border-transparent bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100',
+        'tertiary-accent':
+          'border-transparent bg-transparent text-ui-accent-500 hover:bg-ui-accent-50 hover:text-ui-accent-700 active:bg-ui-accent-100 active:text-ui-accent-800',
         danger:
-          'bg-ui-danger-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
-        'danger-tertiary': 'bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
+          'border-transparent bg-ui-danger-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-danger-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-danger-600)_76%,var(--ui-slate-900))]',
+        'danger-tertiary': 'border-transparent bg-transparent text-ui-danger-700 hover:bg-ui-danger-50 active:bg-ui-danger-100',
         // Not in the library: the epic's proposed green action, styled like primary on the success steps.
         recording:
-          'bg-ui-success-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
+          'border-transparent bg-ui-success-600 text-ui-white hover:bg-[color-mix(in_srgb,var(--ui-success-600)_86%,var(--ui-slate-900))] active:bg-[color-mix(in_srgb,var(--ui-success-600)_76%,var(--ui-slate-900))]',
       };
-      // Disabled looks the same for every variant; the tertiary family stays transparent and ringless.
+      // Disabled looks the same for every variant; the tertiary family stays transparent and borderless.
       const flat = ['tertiary', 'tertiary-accent', 'danger-tertiary'].includes(this.variant());
-      const disabled = flat ? 'bg-transparent text-ui-neutral-500' : 'bg-ui-neutral-50 text-ui-neutral-500 edge';
-      // Exact px: the 8px and 10px radii, the 4/6/8px gaps and the 8/10/16px padding are library steps with no ui-* utility at the 14px root.
+      const disabled = flat ? 'border-transparent bg-transparent text-ui-neutral-500' : 'border-ui-neutral-alpha-200 bg-ui-neutral-50 text-ui-neutral-500';
+      // Exact px: the 8px and 10px radii, the 4/6/8px gaps, the 8/10/16px padding and the 12/14/16px icons are library steps with no ui-* utility at the 14px root.
       const sizes = {
-        tiny: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[8px]', pad: 'px-[8px]' },
-        small: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[16px]', radius: 'rounded-[10px]', pad: 'px-[10px]' },
-        medium: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[16px]', radius: 'rounded-ui-sm', pad: 'px-[16px]' },
+        small: { box: 'h-ui-tiny gap-[4px] button-12 [&>i]:text-[12px]', radius: 'rounded-[8px]', pad: 'px-[8px]' },
+        default: { box: 'h-ui-small gap-[6px] button-14 [&>i]:text-[14px]', radius: 'rounded-[10px]', pad: 'px-[10px]' },
+        large: { box: 'h-ui-medium gap-[8px] button-14 [&>i]:text-[16px]', radius: 'rounded-ui-sm', pad: 'px-[16px]' },
       };
       const size = sizes[this.size()];
       // Icon-only is a circle: square from the height, no padding.

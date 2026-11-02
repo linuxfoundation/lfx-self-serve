@@ -158,11 +158,11 @@ export class UiScrollerComponent {
   }
 
   private initButtonClasses(): Signal<string> {
-    // Library: small secondary circle with shadow, centred on the edge (14px out).
+    // Library: default-size secondary circle with shadow, centred on the edge (14px out).
     // shortcut: native circle button, because lfx-ui-button has no focusable aria-disabled state or `shadow` modifier. revisit: when lfx-ui-button gains both, swap to it.
     return computed(
       () =>
-        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full bg-ui-background-100 text-ui-neutral-900 shadow-small transition-colors duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-100 active:bg-ui-neutral-alpha-200 focus-visible:shadow-focus focus-visible:outline-none aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-border aria-disabled:focus-visible:shadow-focus motion-reduce:transition-none'
+        'absolute top-1/2 z-[1] inline-flex aspect-square h-ui-small -translate-y-1/2 cursor-pointer items-center justify-center rounded-ui-full border border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 shadow-small transition-[background-color,border-color,box-shadow,color] duration-ui-base ease-ui-standard hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight] aria-disabled:cursor-not-allowed aria-disabled:bg-ui-neutral-50 aria-disabled:text-ui-neutral-500 aria-disabled:shadow-none aria-disabled:focus-visible:shadow-[0_0_0_4px] aria-disabled:focus-visible:shadow-ui-accent-100 motion-reduce:transition-none'
     );
   }
 
