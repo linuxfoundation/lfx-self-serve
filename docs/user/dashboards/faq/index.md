@@ -10,7 +10,9 @@ intercom_collection: Dashboards
 
 ## Why don't I see all four lenses?
 
-The lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins, Linux Foundation staff and a few other Linux Foundation admin, auditor and marketing roles. If you can use both Foundation and Projects, they share a single **Projects** tab in the sidebar, so you see three tabs instead of four. Select a foundation in that tab to open the Foundation lens. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not visible, contact your foundation or project administrator.
+If you can use both Foundation and Projects, you see three tabs instead of four: Foundation and Projects share a single **Projects** tab in the sidebar. This is expected. Open **Projects** and select a foundation from the list to open the Foundation lens.
+
+Otherwise, the lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins, Linux Foundation staff and a few other Linux Foundation admin, auditor and marketing roles. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not listed in either place, contact your foundation or project administrator.
 
 ## Why can't I see my organization's dashboard?
 
