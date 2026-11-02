@@ -12,7 +12,7 @@
     <nav aria-label="Breadcrumb" class="flex items-center gap-2 mb-3 text-sm text-gray-600" data-testid="my-newsletters-breadcrumb">
       <a routerLink="/newsletters/my" class="hover:text-gray-900" data-testid="my-newsletters-back">Newsletters</a>
       <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
-      <span class="text-gray-900 truncate min-w-0" aria-current="page" data-testid="my-newsletters-breadcrumb-current">{{
+      <span class="text-gray-900 min-w-0 break-words" aria-current="page" data-testid="my-newsletters-breadcrumb-current">{{
         foundation()?.name ?? 'Newsletters'
       }}</span>
     </nav>
@@ -169,13 +169,9 @@
                           {{ newsletter.subject }}
                         </a>
                       } @else {
-                        <!-- No resolvable permalink (project slug missing upstream): nothing to open. -->
-                        <span
-                          class="text-sm text-gray-900 font-medium truncate min-w-0"
-                          [pTooltip]="newsletter.subject"
-                          tooltipEvent="both"
-                          tooltipPosition="top"
-                          [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
+                        <!-- No resolvable permalink (project slug missing upstream): nothing to open.
+                             Wraps rather than truncating, so the full subject needs no tooltip. -->
+                        <span class="text-sm text-gray-900 font-medium min-w-0 break-words" [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                           {{ newsletter.subject }}
                         </span>
                       }
