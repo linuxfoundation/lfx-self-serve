@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
@@ -220,14 +221,18 @@ export class MeetingsHomeStore {
     return computed(() => sortPastMeetingsDescending(this.pastMeetings()).flatMap((meeting) => toPastMeetingHomeRow(meeting) ?? []));
   }
 
-  /** Loads one artifact of the last meeting, again whenever it changes; a failed lookup reads as null. */
+  /** Loads one artifact of the last meeting, again whenever it changes; a missing or failed lookup reads as null. */
   private initLastMeetingArtifact<T>(load: (pastMeetingId: string) => Observable<T>): Signal<T | null | undefined> {
     return toSignal(
       toObservable(computed(() => this.lastMeeting()?.key ?? null)).pipe(
         switchMap((id) =>
           id
             ? load(id).pipe(
-                catchError(() => of(null)),
+                catchError((error: unknown) => {
+                  // A 404 just means the meeting has no such artifact.
+                  if (!(error instanceof HttpErrorResponse && error.status === 404)) console.error('Failed to load a last meeting artifact:', error);
+                  return of(null);
+                }),
                 startWith(undefined)
               )
             : of(null)

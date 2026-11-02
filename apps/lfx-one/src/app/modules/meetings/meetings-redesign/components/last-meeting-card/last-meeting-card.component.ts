@@ -1,8 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
+import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  output,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Router } from '@angular/router';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
@@ -22,6 +36,7 @@ import {
   getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
   getMeetingVisibilityBadges,
+  isPastMeetingSummaryAwaitingApproval,
   isPastMeetingSummaryReadOnly,
   isPastMeetingSummaryVisible,
   stripMarkdown,
@@ -50,6 +65,11 @@ import { DialogService } from 'primeng/dynamicdialog';
 export class LastMeetingCardComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
+  private readonly groupNameElement = viewChild<ElementRef<HTMLElement>>('groupName');
 
   /** The last meeting; null when the viewer has none. */
   public readonly row = input.required<MeetingHomeRow | null>();
@@ -61,6 +81,8 @@ export class LastMeetingCardComponent {
   /** The summary after an organizer edited or approved it in the dialog. */
   public readonly summaryChange = output<PastMeetingSummary>();
 
+  protected readonly projectTruncated = signal(false);
+  protected readonly groupTruncated = signal(false);
   protected readonly link: Signal<MeetingHomeRowLink | null> = computed(() => {
     const row = this.row();
     return row ? getMeetingHomeRowLink(row, 'past') : null;
@@ -85,11 +107,28 @@ export class LastMeetingCardComponent {
   /** Raw summary text the viewer may read; organizers also see one awaiting their approval. */
   protected readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   protected readonly summaryText: Signal<string> = computed(() => stripMarkdown(this.summaryContent() ?? ''));
+  /** Only organizers see a summary that still needs approval; tell them invitees don't yet. */
+  protected readonly summaryAwaitingReview: Signal<boolean> = computed(() => !!this.summaryContent() && isPastMeetingSummaryAwaitingApproval(this.summary()));
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
     [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
     [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
   };
+
+  public constructor() {
+    afterNextRender(() => {
+      if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
+      const isTruncated = (element: ElementRef<HTMLElement> | undefined): boolean =>
+        !!element && element.nativeElement.scrollWidth > element.nativeElement.clientWidth;
+      const observer = new ResizeObserver(() => {
+        this.projectTruncated.set(isTruncated(this.projectNameElement()));
+        this.groupTruncated.set(isTruncated(this.groupNameElement()));
+      });
+      // The card re-renders as data loads, so observe its host rather than elements that come and go.
+      observer.observe(this.host.nativeElement);
+      this.destroyRef.onDestroy(() => observer.disconnect());
+    });
+  }
 
   protected open(): void {
     const link = this.link();

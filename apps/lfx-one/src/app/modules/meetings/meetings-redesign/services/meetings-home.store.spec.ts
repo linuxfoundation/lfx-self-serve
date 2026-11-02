@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
@@ -457,8 +458,10 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()?.approved).toBe(false);
     });
 
-    it('reads a failed artifact lookup as none', () => {
-      meetingService['getPastMeetingSummary'] = vi.fn(() => throwError(() => new Error('down')));
+    it('reads a missing or failed artifact lookup as none, logging only the failure', () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      logged.mockClear();
+      meetingService['getPastMeetingSummary'] = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 })));
       meetingService['getPastMeetingRecording'] = vi.fn(() => throwError(() => new Error('down')));
       const store = create();
       latestPast$.next([buildPastMeeting('b', inDays(-1))]);
@@ -467,6 +470,7 @@ describe('MeetingsHomeStore', () => {
       expect(store.lastMeetingSummary()).toBeNull();
       expect(store.lastMeetingRecordingUrl()).toBeNull();
       expect(store.lastMeetingHasTranscript()).toBe(true);
+      expect(logged).toHaveBeenCalledTimes(1);
     });
   });
 });

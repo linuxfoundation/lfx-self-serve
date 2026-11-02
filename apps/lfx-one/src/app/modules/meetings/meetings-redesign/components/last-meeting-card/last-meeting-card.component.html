@@ -53,10 +53,13 @@
             class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
             [href]="url"
             [attr.aria-label]="project.label"
+            [lfxUiTooltip]="project.name"
+            [lfxUiTooltipDisabled]="!projectTruncated()"
             (click)="onLinkClick($event, url)"
             data-testid="meetings-home-last-card-project">
             <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
             <span
+              #projectName
               class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
               >{{ project.name }}</span
             >
@@ -66,7 +69,14 @@
             class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
             data-testid="meetings-home-last-card-project">
             <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-            <span class="min-w-0 truncate">{{ project.name }}</span>
+            <span
+              #projectName
+              class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [attr.tabindex]="projectTruncated() ? 0 : null"
+              [lfxUiTooltip]="project.name"
+              [lfxUiTooltipDisabled]="!projectTruncated()"
+              >{{ project.name }}</span
+            >
           </span>
         }
       }
@@ -108,7 +118,15 @@
           }
           @if (group()) {
             <lfx-ui-badge class="min-w-0 max-w-full" variant="outline" size="sm" data-testid="meetings-home-last-card-group">
-              <i class="fa-light fa-users" aria-hidden="true"></i><span class="truncate">{{ group() }}</span>
+              <i class="fa-light fa-users" aria-hidden="true"></i
+              ><span
+                #groupName
+                class="truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                [attr.tabindex]="groupTruncated() ? 0 : null"
+                [lfxUiTooltip]="group()"
+                [lfxUiTooltipDisabled]="!groupTruncated()"
+                >{{ group() }}</span
+              >
             </lfx-ui-badge>
           }
         </span>
@@ -123,14 +141,19 @@
       </div>
     } @else if (summaryContent()) {
       <div class="flex flex-col items-start gap-[6px]" data-testid="meetings-home-last-card-summary">
-        <lfx-ui-badge tone="feature" size="sm"><i class="fa-light fa-sparkles" aria-hidden="true"></i>AI Summary</lfx-ui-badge>
+        <span class="flex flex-wrap items-center gap-[6px]">
+          <lfx-ui-badge tone="feature" size="sm"><i class="fa-light fa-sparkles" aria-hidden="true"></i>AI Summary</lfx-ui-badge>
+          @if (summaryAwaitingReview()) {
+            <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-last-card-summary-pending">Awaiting your review</lfx-ui-badge>
+          }
+        </span>
         <p class="line-clamp-5 text-[13px] leading-[1.5] text-gray-700" data-testid="meetings-home-last-card-summary-text">{{ summaryText() }}</p>
         <button
           type="button"
           class="text-[12px] font-medium text-gray-700 underline decoration-gray-400 underline-offset-[3px] transition-colors duration-150 hover:text-gray-900 hover:decoration-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
           (click)="openSummary($event)"
           data-testid="meetings-home-last-card-read-more">
-          Read more
+          {{ summaryAwaitingReview() ? 'Review summary' : 'Read more' }}
         </button>
       </div>
     }

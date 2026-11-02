@@ -166,6 +166,19 @@ describe('LastMeetingCardComponent', () => {
       expect(!!query(fixture, 'meetings-home-last-card-summary')).toBe(shown);
     });
 
+    it('tells an organizer the summary is awaiting their review', async () => {
+      const pending = { approved: false, requires_approval: true };
+      const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary(pending) });
+
+      expect(text(fixture, 'meetings-home-last-card-summary-pending')).toBe('Awaiting your review');
+      expect(text(fixture, 'meetings-home-last-card-read-more')).toBe('Review summary');
+
+      fixture.componentRef.setInput('summary', buildSummary());
+      await fixture.whenStable();
+      expect(query(fixture, 'meetings-home-last-card-summary-pending')).toBeNull();
+      expect(text(fixture, 'meetings-home-last-card-read-more')).toBe('Read more');
+    });
+
     it('hides the section when there is no summary or it is empty', async () => {
       const fixture = await render({ row: rowOf(buildMeeting()), summary: null });
       expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
