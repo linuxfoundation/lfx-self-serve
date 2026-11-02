@@ -88,6 +88,7 @@ import {
   Subject,
   switchMap,
   tap,
+  takeUntil,
   takeWhile,
   throwError,
 } from 'rxjs';
@@ -190,6 +191,8 @@ export class VoteDetailComponent {
   protected readonly myBallotError = signal<boolean>(false);
   /** Records a settled lookup even when the viewer has no response row; null alone cannot identify its vote. */
   private readonly myResponseLoadedFor = signal<string | null>(null);
+  /** Final badges require this vote's successful, non-held results read after closure was confirmed. */
+  private readonly finalResultsFor = signal<string | null>(null);
   /** Results status belongs to its request's vote, just like the retained payload. */
   private readonly voteResultsStatus = signal<{ voteId: string | null; loading: boolean; error: boolean; stale: boolean }>({
     voteId: null,
@@ -489,12 +492,11 @@ export class VoteDetailComponent {
               return of(inPlace && lastLoaded ? lastLoaded : errorState);
             })
           );
+          const polled$ = this.polledVote$.pipe(filter((vote) => vote.uid === id));
           const states$ = merge(
-            load$,
-            this.polledVote$.pipe(
-              filter((vote) => vote.uid === id),
-              map((vote): VoteDetailState => ({ loading: false, notFound: false, error: false, vote }))
-            )
+            // Matching polled metadata supersedes any older foreground response still in flight.
+            load$.pipe(takeUntil(polled$)),
+            polled$.pipe(map((vote): VoteDetailState => ({ loading: false, notFound: false, error: false, vote })))
           ).pipe(
             tap((state) => {
               lastLoaded = state.vote ? state : null;
@@ -636,6 +638,7 @@ export class VoteDetailComponent {
       toObservable(key).pipe(
         distinctUntilChanged((a, b) => a?.id === b?.id && a?.tick === b?.tick && a?.poll === b?.poll),
         switchMap((resultsKey) => {
+          this.finalResultsFor.set(null);
           if (!resultsKey) {
             loadedFor = null;
             lastResults = null;
@@ -699,10 +702,14 @@ export class VoteDetailComponent {
                 });
                 const exhausted = ended && finalizationAttempts >= VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS;
                 const stale = backgroundRefresh && !!lastResults && isTransientError(event.error) && !exhausted;
-                if (!stale) lastResults = null;
+                if (!stale) {
+                  lastResults = null;
+                  this.finalResultsFor.set(null);
+                }
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: !stale, stale });
               } else {
                 lastResults = event.value;
+                this.finalResultsFor.set(ended && event.value.results_held !== true ? resultsKey.id : null);
                 this.voteResultsStatus.set({ voteId: resultsKey.id, loading: false, error: false, stale: false });
               }
               return { id: resultsKey.id, payload: lastResults };
@@ -768,7 +775,7 @@ export class VoteDetailComponent {
 
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
-      if (normalizePollStatus(this.vote()?.status) === PollStatus.ENDED) return true;
+      if (this.isEnded()) return this.finalResultsFor() === this.vote()?.uid;
       // Treat 100% participation as finalized even if the vote hasn't formally ended.
       const stats = this.participationStats();
       return stats.eligibleVoters > 0 && stats.participationRate >= 100;
@@ -777,10 +784,10 @@ export class VoteDetailComponent {
 
   private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary' }> {
     return computed(() => {
-      // Held results are never final: an ended vote can still be held while upstream catches up (#3916).
-      if (this.resultsHeld()) {
-        if (this.isEnded()) return { value: 'Totals pending', severity: 'secondary' };
-      } else if (this.isVoteClosed()) {
+      // Closure alone cannot finalize retained live counts; wait for released post-closure results.
+      if (this.isEnded() && !this.isVoteClosed()) {
+        return { value: 'Totals pending', severity: 'secondary' };
+      } else if (!this.resultsHeld() && this.isVoteClosed()) {
         return { value: 'Final results', severity: 'secondary' };
       }
       if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
