@@ -4,7 +4,7 @@ description: View your reward points, claim incentives, and redeem coupons for L
 audience: [all]
 product_area: Trainings
 tags: [trainings, rewards, coupons, points, certifications]
-last_updated: 2026-08-19
+last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
 
@@ -45,6 +45,11 @@ If you do not have any redeemable coupons yet, the column shows an empty state w
 ## Use a coupon code
 
 Copy the coupon code from the card, then paste it into the coupon field at checkout on the Linux Foundation training platform to apply the discount.
+
+## Get help with rewards and coupons
+
+- **Tux Rewards** points, incentives, and coupons on this tab — for example, points that haven't appeared or a Tux Rewards coupon you can't claim or redeem — contact LFX support.
+- **Other exam vouchers** — vouchers bought in a bundle or on their own, vouchers received through a program or partner (such as Kubestronaut or CARE), and voucher validity or extensions — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). See [Get Help with Training and Certifications](../training-support/).
 
 ## Related
 

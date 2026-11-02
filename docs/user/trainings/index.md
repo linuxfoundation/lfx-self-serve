@@ -4,7 +4,7 @@ description: View your Linux Foundation training enrollments and certifications 
 audience: [all]
 product_area: Trainings
 tags: [trainings, courses, enrollments, certifications, learning]
-last_updated: 2026-08-19
+last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
 
@@ -55,5 +55,6 @@ Viewing your company's training activity in Org Lens requires **admin access** t
 ## Related sections
 
 - [Training Rewards and Coupons](rewards/) — view reward points, claim incentives, and redeem coupons
+- [Get Help with Training and Certifications](training-support/) — where to get help with exams, vouchers, refunds, and invoices
 - [Badges](../badges/) — credentials earned from completed training programs
 - [Transactions](../account/transactions/) — training purchases appear in your transaction history

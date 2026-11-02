@@ -14,7 +14,6 @@ import type {
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
-  MeetingWithRsvps,
 } from '../interfaces';
 import {
   buildRecurrenceSummary,
@@ -57,7 +56,7 @@ export function isMeetingHomeRowPendingRsvp(row: MeetingHomeRow): boolean {
  * overlaid on `my_rsvp` still wins by recency. Without `my_rsvps`, dates `my_rsvp` does not cover are unknown
  * (undefined), except the next date, which `my_rsvp` is resolved for.
  */
-export function expandMeetingOccurrences(meetings: readonly MeetingWithRsvps[], now: Date = new Date()): MeetingHomeRow[] {
+export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date = new Date()): MeetingHomeRow[] {
   const nowMs = now.getTime();
   const rows: MeetingHomeRow[] = [];
 
@@ -253,7 +252,7 @@ function isOccurrenceOpen(meeting: Meeting, occurrence: MeetingOccurrence, nowMs
   return !Number.isNaN(startMs) && startMs + (occurrence.duration || meeting.duration || 0) * MINUTE_MS + MEETING_END_BUFFER_MS >= nowMs;
 }
 
-function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurrence | null, isNextDate: boolean): MeetingHomeRow | null {
+function buildUpcomingRow(meeting: Meeting, occurrence: MeetingOccurrence | null, isNextDate: boolean): MeetingHomeRow | null {
   const startTime = getUpcomingMeetingStartTime(meeting, occurrence);
   if (!startTime || Number.isNaN(Date.parse(startTime))) return null;
 
@@ -272,7 +271,7 @@ function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurren
   };
 }
 
-function resolveRowRsvp(meeting: MeetingWithRsvps, occurrenceId: string | null, isNextDate: boolean): MeetingRsvp | null | undefined {
+function resolveRowRsvp(meeting: Meeting, occurrenceId: string | null, isNextDate: boolean): MeetingRsvp | null | undefined {
   if (meeting.my_rsvps === undefined) {
     if (!meeting.my_rsvp) return meeting.my_rsvp;
     return selectApplicableRsvp(occurrenceId, [meeting.my_rsvp]) ?? (isNextDate ? null : undefined);
