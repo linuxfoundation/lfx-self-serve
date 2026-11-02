@@ -155,7 +155,12 @@
         [summary]="store.lastMeetingSummary()"
         [hasTranscript]="store.lastMeetingHasTranscript()"
         [recordingUrl]="store.lastMeetingRecordingUrl()"
-        (summaryChange)="store.setLastMeetingSummary($event)" />
+        (summaryChange)="store.setLastMeetingSummary($event)">
+        <!-- Keyed by row, so a new Last meeting gets a fresh menu. -->
+        @for (lastRow of lastRows(); track lastRow.key) {
+          <lfx-meeting-home-actions last-meeting-card-menu [row]="lastRow" view="past" />
+        }
+      </lfx-last-meeting-card>
     </section>
   }
 </ng-template>
