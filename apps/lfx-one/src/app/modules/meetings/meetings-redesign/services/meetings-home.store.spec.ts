@@ -7,9 +7,10 @@ import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
+import { calculateRsvpCounts } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { of, Subject, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeStore } from './meetings-home.store';
@@ -119,6 +120,8 @@ describe('MeetingsHomeStore', () => {
     removed = signal<ReadonlySet<string>>(new Set());
     meetingService = {
       removedRegistrationMeetingIds: removed,
+      getMeetingRsvps: vi.fn((): Observable<MeetingRsvp[]> => of([])),
+      getPublicMeetingJoinUrl: vi.fn(() => of({ link: 'https://zoom.example.test/j/1' })),
       getPastMeetingSummary: vi.fn(() => summary$),
       getPastMeetingTranscript: vi.fn(() =>
         of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/t.vtt' }] } as PastMeetingTranscript)
@@ -140,6 +143,8 @@ describe('MeetingsHomeStore', () => {
       getUserLatestPastMeetings: vi.fn(() => latestPast$),
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
+      authenticated: signal(true),
+      meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
   });
 
@@ -342,8 +347,9 @@ describe('MeetingsHomeStore', () => {
 
       store.loadMore();
 
-      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
-      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 5);
+      // The soonest date sits in the Next meeting card, not the list.
+      expect(shown()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
+      expect(counted()).toBe(MEETINGS_HOME_PAGE_SIZE + 4);
       expect(store.hasMore()).toBe(false);
     });
 
@@ -360,12 +366,145 @@ describe('MeetingsHomeStore', () => {
 
     it('searches titles case-insensitively', () => {
       const store = create();
-      upcoming$.next([buildMeeting({ id: 'a', title: 'Board Review' }), buildMeeting({ id: 'b', title: 'Tech Sync' })]);
+      upcoming$.next([buildMeeting({ id: 'a', title: 'Board Review' }), buildMeeting({ id: 'b', title: 'Tech Sync', start_time: inDays(1).toISOString() })]);
 
       store.setSearch('board');
 
       expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['a']);
       expect(store.hasActiveQuery()).toBe(true);
+    });
+  });
+
+  describe('next meeting', () => {
+    it('takes the soonest date out of the Upcoming list, whatever the search, and keeps it in the tab rows', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ id: 'later', start_time: inDays(3).toISOString() }), buildMeeting({ id: 'soon', start_time: inDays(1).toISOString() })]);
+
+      expect(store.nextRow()?.meeting.id).toBe('soon');
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
+      expect(store.upcomingRows()).toHaveLength(2);
+
+      store.setSearch('sync');
+      expect(store.nextRow()?.meeting.id).toBe('soon');
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['later']);
+    });
+
+    it('is the first date of a series, leaving its later dates in the list', () => {
+      const store = create();
+      const series = weeklyMeeting([inDays(1), inDays(8)]);
+      upcoming$.next([series]);
+
+      expect(store.nextRow()?.occurrenceId).toBe(seconds(inDays(1)));
+      expect(store.filteredRows().map((row) => row.occurrenceId)).toEqual([store.upcomingRows()[1].occurrenceId]);
+    });
+
+    it('passes over a date that is over but still in its join buffer for the one starting next', () => {
+      const store = create();
+      const ended = new Date(Date.now() - 70 * 60_000);
+      upcoming$.next([buildMeeting({ id: 'over', start_time: ended.toISOString() }), buildMeeting({ id: 'up' })]);
+
+      expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['over', 'up']);
+      expect(store.nextRow()?.meeting.id).toBe('up');
+      expect(store.filteredRows().map((row) => row.meeting.id)).toEqual(['over']);
+    });
+
+    it('loads the responses once per next meeting and reads a failure as a hidden roster', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const responses = [rsvp()];
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(of(responses))
+        .mockReturnValueOnce(throwError(() => new Error('down')));
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      expect(store.nextRowRsvps()).toEqual(responses);
+      upcoming$.next([buildMeeting({ title: 'Renamed' })]);
+      TestBed.tick();
+      expect(meetingService['getMeetingRsvps']).toHaveBeenCalledTimes(1);
+
+      upcoming$.next([buildMeeting({ id: 'm-2' })]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([]);
+    });
+
+    it('builds the join link for the real viewer inside the join window only', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ password: 'pw' })]);
+      TestBed.tick();
+      expect(store.nextRowJoinable()).toBe(false);
+      expect(meetingService['getPublicMeetingJoinUrl']).not.toHaveBeenCalled();
+
+      upcoming$.next([buildMeeting({ password: 'pw', start_time: new Date(Date.now() + 5 * 60_000).toISOString() })]);
+      TestBed.tick();
+
+      expect(store.nextRowJoinable()).toBe(true);
+      expect(meetingService['getPublicMeetingJoinUrl']).toHaveBeenCalledWith('m-1', 'pw', { email: 'real@example.test' });
+      expect(store.nextRowJoinUrl()).toMatch(/^https:\/\/zoom\.example\.test\/j\/1\?uname=Real%20Viewer&un=/);
+    });
+
+    it("never offers the previous meeting's join link while the next one's loads", () => {
+      const pending$ = new Subject<{ link: string }>();
+      const store = create();
+      const soon = new Date(Date.now() + 5 * 60_000).toISOString();
+      upcoming$.next([buildMeeting({ start_time: soon })]);
+      TestBed.tick();
+      expect(store.nextRowJoinUrl()).toMatch(/^https:\/\/zoom\.example\.test\/j\/1/);
+
+      (meetingService['getPublicMeetingJoinUrl'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(pending$);
+      upcoming$.next([buildMeeting({ id: 'm-2', start_time: soon })]);
+      TestBed.tick();
+      expect(store.nextRowJoinUrl()).toBeNull();
+
+      pending$.next({ link: 'https://zoom.example.test/j/2' });
+      expect(store.nextRowJoinUrl()).toMatch(/^https:\/\/zoom\.example\.test\/j\/2/);
+    });
+
+    it("adds the viewer's answers saved this session to a visible roster only", () => {
+      const others = [rsvp({ id: 'r-other', registrant_id: 'reg-other', email: 'other@example.test' })];
+      const mine = rsvp({ id: 'r-mine', response_type: 'maybe' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of(others)).mockReturnValueOnce(of([]));
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([mine]);
+      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
+
+      upcoming$.next([buildMeeting({ id: 'm-2' })]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([]);
+    });
+
+    it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {
+      const createdAt = new Date().toISOString();
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([rsvp({ created_at: createdAt })]));
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([rsvp({ response_type: 'declined', created_at: createdAt })]);
+
+      expect(calculateRsvpCounts(null, store.nextRowRsvps() ?? [])).toMatchObject({ accepted: 0, declined: 1 });
+    });
+
+    it('never lets the viewer join a restricted meeting they are not invited to', () => {
+      const store = create();
+      upcoming$.next([buildMeeting({ restricted: true, invited: false, start_time: new Date(Date.now() + 5 * 60_000).toISOString() })]);
+      TestBed.tick();
+
+      expect(store.nextRowJoinable()).toBe(false);
+      expect(store.nextRowJoinUrl()).toBeNull();
+    });
+
+    it('is null without upcoming dates and keeps the Past list whole', () => {
+      const store = create();
+      upcoming$.next([]);
+      past$.next([buildPastMeeting('p1', inDays(-1))]);
+      store.setTab('past');
+
+      expect(store.nextRow()).toBeNull();
+      expect(store.filteredRows()).toHaveLength(1);
     });
   });
 
