@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingCalendarEvent } from '@lfx-one/shared/interfaces';
-import { buildMeetingIcs, buildMeetingIcsFileName, resolveMeetingCalendarOccurrence } from '@lfx-one/shared/utils';
+import { buildMeetingIcsFileName, resolveMeetingCalendarOccurrence } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { buildMeetingIcs } from '../helpers/ics.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';

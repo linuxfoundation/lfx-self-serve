@@ -2272,6 +2272,31 @@ describe('MeetingJoinComponent', () => {
         expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
       });
 
+      it('flips the page to ended without moving to the next occurrence or refetching the RSVP and roster', async () => {
+        vi.setSystemTime(new Date('2030-06-01T10:00:00Z'));
+        const fixture = await render({
+          start_time: '2030-06-01T10:00:00Z',
+          duration: 30,
+          occurrences: [
+            { occurrence_id: 'a', start_time: '2030-06-01T10:00:00Z', duration: 30 },
+            { occurrence_id: 'b', start_time: '2030-06-08T10:00:00Z', duration: 30 },
+          ] as Meeting['occurrences'],
+        });
+        const component = fixture.componentInstance;
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        const rsvpFetches = getMeetingRsvpForCurrentUser.mock.calls.length;
+        const rosterFetches = getMyMeetingRegistrants.mock.calls.length;
+
+        advance(2 * 60 * 60_000);
+        window.dispatchEvent(new Event('focus'));
+        await settle();
+
+        expect(component.currentOccurrence()?.occurrence_id).toBe('a');
+        expect(bar(fixture)).toBeNull();
+        expect(getMeetingRsvpForCurrentUser.mock.calls.length).toBe(rsvpFetches);
+        expect(getMyMeetingRegistrants.mock.calls.length).toBe(rosterFetches);
+      });
+
       it('stops ticking and listening when the page is destroyed', async () => {
         const clearSpy = vi.spyOn(globalThis, 'clearInterval');
         const fixture = await renderEleven();

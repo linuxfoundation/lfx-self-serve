@@ -269,8 +269,10 @@ export class MeetingJoinComponent implements OnInit {
   private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
-  // Wall clock for time-gated UI (join window, ended). Nothing else makes these computeds re-run as time passes, so a
-  // page left open across T-10 would keep showing a disabled Join until reload. Browser-only, see startClock().
+  // Wall clock for the time-gated UI: the join window (canJoinMeeting) and "has ended" (isPastMeeting). Nothing else makes
+  // those re-run as time passes, so a page left open across T-10 kept a disabled Join until reload. Deliberately NOT read by
+  // currentOccurrence: the shown occurrence never rolls over in place, because that would refetch the RSVP and roster.
+  // Browser-only, see startClock().
   private readonly clock = signal<number>(Date.now());
   // Sticky bar (#4862): set when the calendar endpoint answers 401/403 so the actions stop being offered.
   private readonly calendarUnavailable = signal<boolean>(false);
@@ -1311,7 +1313,6 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
     return computed(() => {
-      this.clock(); // the current/next occurrence rolls over as time passes
       const meeting = this.meeting();
       // Check if a specific occurrence was requested via query param
       const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
