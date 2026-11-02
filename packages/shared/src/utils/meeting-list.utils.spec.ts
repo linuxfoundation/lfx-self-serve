@@ -33,21 +33,32 @@ const WEEKLY = { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '
 function buildMeeting(overrides: Partial<MeetingWithRsvps> = {}): MeetingWithRsvps {
   return {
     id: 'm-1',
-    title: 'Weekly Sync',
+    created_at: '',
+    modified_at: '',
     project_uid: 'p-1',
     project_name: 'Project One',
-    meeting_type: 'Technical',
     start_time: local(10, 8).toISOString(),
     duration: 60,
     timezone: 'America/Los_Angeles',
+    title: 'Weekly Sync',
+    description: '',
     recurrence: null,
     committees: [],
-    occurrences: [],
+    meeting_type: 'Technical',
     visibility: MeetingVisibility.PUBLIC,
     restricted: false,
+    recording_enabled: null,
+    transcript_enabled: null,
+    youtube_upload_enabled: null,
+    artifact_visibility: null,
+    cancel_on_committee_removal: null,
+    organizers: [],
+    password: null,
+    invited: true,
+    occurrences: [],
     is_invite_responses_enabled: true,
     ...overrides,
-  } as MeetingWithRsvps;
+  };
 }
 
 function occurrence(start: Date, duration = 60): MeetingOccurrence {
@@ -61,20 +72,30 @@ function weeklyOccurrences(first: Date, count: number): MeetingOccurrence[] {
 }
 
 function rsvp(overrides: Partial<MeetingRsvp>): MeetingRsvp {
-  return { id: 'r-1', response_type: 'accepted', scope: 'all', created_at: '2026-09-01T00:00:00Z', ...overrides } as MeetingRsvp;
+  return {
+    id: 'r-1',
+    meeting_id: 'm-1',
+    registrant_id: 'reg-1',
+    username: 'viewer',
+    email: 'viewer@example.test',
+    response_type: 'accepted',
+    scope: 'all',
+    created_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  };
 }
 
-function row(overrides: Partial<MeetingHomeRow> & { meeting?: MeetingWithRsvps } = {}): MeetingHomeRow {
-  const meeting = overrides.meeting ?? buildMeeting();
+function row({ meeting = buildMeeting(), ...overrides }: Partial<MeetingHomeRow> & { meeting?: MeetingWithRsvps } = {}): MeetingHomeRow {
   return {
     key: meeting.id,
+    meeting,
     occurrence: null,
+    title: meeting.title,
     occurrenceId: null,
     startTime: local(10, 8).toISOString(),
     durationMinutes: 60,
     myRsvp: null,
     ...overrides,
-    meeting,
   };
 }
 
@@ -113,9 +134,7 @@ describe('expandMeetingOccurrences', () => {
   it('lists every active date of a series that has not ended, however far out', () => {
     // Sep 24 ended; Oct 1 08:30 is in progress at 09:00; weekly through Feb 2027.
     const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: weeklyOccurrences(local(9, 24, 8, 30), 20) });
-
     const rows = expandMeetingOccurrences([meeting], NOW);
-
     expect(rows).toHaveLength(19);
     expect(rows[0].startTime).toBe(local(10, 1, 8, 30).toISOString());
     expect(rows.at(-1)?.startTime).toBe(local(2, 4, 8, 30, 2027).toISOString());
@@ -123,11 +142,23 @@ describe('expandMeetingOccurrences', () => {
     expect(rows[1].occurrenceId).toBe(seconds(local(10, 8, 8, 30)));
   });
 
-  it('skips cancelled dates', () => {
-    const occurrences = weeklyOccurrences(local(10, 8), 3);
-    const meeting = buildMeeting({ recurrence: WEEKLY, occurrences, cancelled_occurrences: [occurrences[1].occurrence_id] });
+  it('skips dates cancelled either way, with no fallback once all are cancelled', () => {
+    const [first, second, third] = weeklyOccurrences(local(10, 8), 3);
+    const occurrences = [first, second, { ...third, status: 'cancel' }];
+    const meeting = buildMeeting({
+      recurrence: WEEKLY,
+      occurrences,
+      cancelled_occurrences: [second.occurrence_id],
+      next_occurrence_start_time: second.start_time,
+    });
+    expect(expandMeetingOccurrences([meeting], NOW).map((item) => item.occurrenceId)).toEqual([first.occurrence_id]);
+    expect(expandMeetingOccurrences([{ ...meeting, cancelled_occurrences: [first.occurrence_id, second.occurrence_id] }], NOW)).toEqual([]);
+  });
 
-    expect(expandMeetingOccurrences([meeting], NOW).map((item) => item.occurrenceId)).toEqual([occurrences[0].occurrence_id, occurrences[2].occurrence_id]);
+  it('uses the occurrence title when it has one', () => {
+    const [first, second] = weeklyOccurrences(local(10, 8), 2);
+    const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: [{ ...first, title: 'Kickoff' }, second] });
+    expect(expandMeetingOccurrences([meeting], NOW).map((item) => item.title)).toEqual(['Kickoff', 'Weekly Sync']);
   });
 
   it('falls back to the next start when a series has no usable occurrence list', () => {
@@ -138,9 +169,7 @@ describe('expandMeetingOccurrences', () => {
       start_time: local(1, 1).toISOString(),
       next_occurrence_start_time: next.toISOString(),
     });
-
     const rows = expandMeetingOccurrences([meeting], NOW);
-
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ startTime: next.toISOString(), occurrence: null, occurrenceId: seconds(next), durationMinutes: 60 });
   });
@@ -148,9 +177,7 @@ describe('expandMeetingOccurrences', () => {
   it('lists a one-time meeting once, wherever it falls, and drops it once ended', () => {
     const later = buildMeeting({ id: 'later', start_time: local(3, 1, 10, 0, 2027).toISOString() });
     const ended = buildMeeting({ id: 'ended', start_time: local(9, 30).toISOString() });
-
     const rows = expandMeetingOccurrences([later, ended], NOW);
-
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ key: 'later', occurrenceId: null });
   });
@@ -158,7 +185,6 @@ describe('expandMeetingOccurrences', () => {
   it('sorts rows from every meeting by start', () => {
     const series = buildMeeting({ id: 'series', recurrence: WEEKLY, occurrences: weeklyOccurrences(local(10, 2), 2) });
     const oneTime = buildMeeting({ id: 'one', start_time: local(10, 5).toISOString() });
-
     expect(expandMeetingOccurrences([series, oneTime], NOW).map((item) => item.meeting.id)).toEqual(['series', 'one', 'series']);
   });
 
@@ -176,9 +202,7 @@ describe('expandMeetingOccurrences', () => {
           rsvp({ id: 'following', response_type: 'maybe', scope: 'this_and_following', occurrence_id: `${dates[2].occurrence_id}000` }),
         ],
       });
-
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => item.myRsvp?.response_type ?? null);
-
       expect(responses).toEqual([null, 'declined', 'maybe', 'maybe']);
     });
 
@@ -199,9 +223,7 @@ describe('expandMeetingOccurrences', () => {
         my_rsvps: [rsvp({ id: 'old', response_type: 'declined', scope: 'all', created_at: '2026-09-01T00:00:00Z' })],
         my_rsvp: rsvp({ id: 'new', response_type: 'accepted', scope: 'single', occurrence_id: dates[0].occurrence_id, created_at: '2026-09-20T00:00:00Z' }),
       });
-
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => item.myRsvp?.response_type);
-
       expect(responses).toEqual(['accepted', 'declined', 'declined', 'declined']);
     });
 
@@ -213,6 +235,16 @@ describe('expandMeetingOccurrences', () => {
         ],
       });
       expect(expandMeetingOccurrences([meeting], NOW)[0].myRsvp?.id).toBe('b');
+    });
+
+    it('treats dates a date-scoped my_rsvp does not cover as unknown, except the next one', () => {
+      const meeting = buildMeeting({
+        recurrence: WEEKLY,
+        occurrences: dates,
+        my_rsvp: rsvp({ response_type: 'accepted', scope: 'single', occurrence_id: dates[2].occurrence_id }),
+      });
+      const responses = expandMeetingOccurrences([meeting], NOW).map((item) => (item.myRsvp === undefined ? 'unknown' : (item.myRsvp?.response_type ?? null)));
+      expect(responses).toEqual([null, 'unknown', 'accepted', 'unknown']);
     });
   });
 });
@@ -263,7 +295,6 @@ describe('groupMeetingsByDayBucket', () => {
 
   it('groups rows with bucket totals', () => {
     const groups = groupMeetingsByDayBucket(rows, 'upcoming', NOW);
-
     expect(groups.map((group) => [group.label, group.count, group.rows.length])).toEqual([
       ['Today', 2, 2],
       ['Tomorrow', 1, 1],
@@ -273,7 +304,6 @@ describe('groupMeetingsByDayBucket', () => {
 
   it('places only the loaded page into groups but keeps full counts', () => {
     const groups = groupMeetingsByDayBucket(rows, 'upcoming', NOW, 4);
-
     expect(groups.map((group) => [group.label, group.count, group.rows.map((item) => item.key)])).toEqual([
       ['Today', 2, ['r0', 'r1']],
       ['Tomorrow', 1, ['r2']],
@@ -305,6 +335,7 @@ describe('filterMeetingsHome', () => {
   it('searches titles case-insensitively, trimmed, and committee names', () => {
     expect(keys(filterMeetingsHome(rows, filters(), '  board SYNC ', null))).toEqual(['board-1', 'board-2', 'board-3']);
     expect(keys(filterMeetingsHome(rows, filters(), 'steering', null))).toEqual(['tsc-1', 'tsc-2']);
+    expect(keys(filterMeetingsHome([row({ key: 'occ', title: 'Release Kickoff' })], filters(), 'kickoff', null))).toEqual(['occ']);
   });
 
   it('filters by project and meeting type', () => {
@@ -329,6 +360,17 @@ describe('filterMeetingsHome', () => {
 
   it('hides a series only when every listed date is declined', () => {
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true }), '', null))).toEqual(['board-1', 'board-2', 'board-3', 'quiet-1']);
+  });
+
+  it('never hides organizer or responses-off meetings, and is ignored under Not going', () => {
+    const organized = buildMeeting({ id: 'own', organizer: true });
+    const off = buildMeeting({ id: 'off', is_invite_responses_enabled: false });
+    const extra = [
+      row({ key: 'own-1', meeting: organized, myRsvp: rsvp({ response_type: 'declined' }) }),
+      row({ key: 'off-1', meeting: off, myRsvp: rsvp({ response_type: 'declined' }) }),
+    ];
+    expect(keys(filterMeetingsHome(extra, filters({ hideDeclined: true }), '', null))).toEqual(['own-1', 'off-1']);
+    expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true, rsvp: 'declined' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'board-1']);
   });
 
   it('combines search and filters', () => {
@@ -357,7 +399,6 @@ describe('buildMeetingFilterChips', () => {
       filters({ project: 'p-1', meetingType: 'Technical', rsvp: 'declined', organizedByMe: true, hideDeclined: true }),
       rows
     );
-
     expect(chips).toEqual([
       { key: 'project', label: 'Project: Project One' },
       { key: 'meetingType', label: 'Meeting type: Technical' },

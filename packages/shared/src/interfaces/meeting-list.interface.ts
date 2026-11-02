@@ -20,6 +20,8 @@ export interface MeetingHomeRow {
   meeting: Meeting;
   /** The occurrence this row shows; null for one-time meetings, past meetings and series without a usable occurrence list. */
   occurrence: MeetingOccurrence | null;
+  /** The occurrence's own title when it has one, else the meeting title. */
+  title: string;
   /** Occurrence id to act on (RSVP, links); null for one-time meetings. */
   occurrenceId: string | null;
   /** RFC3339 start of this row's date. */
@@ -40,7 +42,7 @@ export interface MeetingsHomeFilters {
   rsvp: MeetingResponseFilter;
   /** Keep only meetings the viewer organizes. */
   organizedByMe: boolean;
-  /** Hide a series when the viewer declined every upcoming date of it. */
+  /** Hide a series when the viewer declined every upcoming date of it; never hides meetings the viewer organizes. */
   hideDeclined: boolean;
 }
 
@@ -51,7 +53,7 @@ export interface MeetingResponseFilterOption {
 
 /** A day separator on the meetings home list with the rows under it. */
 export interface MeetingDayGroup {
-  /** "Today", "Tomorrow", "This week", "This month" or a month name. */
+  /** "Today", "Tomorrow"/"Yesterday", "This week", "This month", or a month name (with the year when it falls in another year). */
   label: string;
   /** Rows in this bucket across the whole list, not just the loaded page. */
   count: number;

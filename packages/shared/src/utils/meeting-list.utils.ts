@@ -52,24 +52,27 @@ export function isMeetingHomeRowPendingRsvp(row: MeetingHomeRow): boolean {
 /**
  * Expands the viewer's upcoming meetings into one row per date, soonest first.
  * @description A recurring series contributes every active date in its occurrence list that has not ended
- * (end + {@link MEETING_END_BUFFER_MS}); a series whose list is missing or unusable falls back to one row for its
- * next start. Each row's RSVP is resolved for that date from `my_rsvps` plus `my_rsvp`, so a confirmed answer
- * overlaid on `my_rsvp` still wins by recency.
+ * (end + {@link MEETING_END_BUFFER_MS}); a series whose list holds no date that has not ended falls back to one row
+ * for its next start. Each row's RSVP is resolved for that date from `my_rsvps` plus `my_rsvp`, so a confirmed answer
+ * overlaid on `my_rsvp` still wins by recency. Without `my_rsvps`, dates `my_rsvp` does not cover are unknown
+ * (undefined), except the next date, which `my_rsvp` is resolved for.
  */
 export function expandMeetingOccurrences(meetings: readonly MeetingWithRsvps[], now: Date = new Date()): MeetingHomeRow[] {
   const nowMs = now.getTime();
   const rows: MeetingHomeRow[] = [];
 
   for (const meeting of meetings) {
-    const occurrences = meeting.recurrence ? upcomingOccurrences(meeting, nowMs) : [];
-    const dates = occurrences.length > 0 ? occurrences : [null];
+    const listed = meeting.recurrence ? (meeting.occurrences ?? []).filter((occurrence) => isOccurrenceOpen(meeting, occurrence, nowMs)) : [];
+    const active = getActiveOccurrences(listed, meeting.cancelled_occurrences).sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
+    // A list whose open dates are all cancelled has nothing left; only a list with no open date falls back.
+    const dates = listed.length > 0 ? active : [null];
 
-    for (const occurrence of dates) {
-      const row = buildUpcomingRow(meeting, occurrence);
+    dates.forEach((occurrence, index) => {
+      const row = buildUpcomingRow(meeting, occurrence, index === 0);
       if (row && Date.parse(row.startTime) + row.durationMinutes * MINUTE_MS + MEETING_END_BUFFER_MS >= nowMs) {
         rows.push(row);
       }
-    }
+    });
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
@@ -127,7 +130,8 @@ export function groupMeetingsByDayBucket(
 /**
  * Applies search and filters to a tab's rows (AND).
  * @description Search is a case-insensitive substring over the title and committee names. Hide declined
- * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows.
+ * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
+ * meeting the viewer organizes (`organizer`) and is ignored while the RSVP filter is "Not going".
  */
 export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
@@ -136,16 +140,16 @@ export function filterMeetingsHome(
   viewerUsername: string | null
 ): MeetingHomeRow[] {
   const query = search.trim().toLowerCase();
-  const declinedSeries = filters.hideDeclined ? findDeclinedSeries(rows) : null;
+  const declinedSeries = filters.hideDeclined && filters.rsvp !== 'declined' ? findDeclinedSeries(rows) : null;
 
   return rows.filter((row) => {
     const meeting = row.meeting;
-    if (query && !matchesMeetingSearch(meeting, query)) return false;
+    if (query && !matchesMeetingSearch(row, query)) return false;
     if (filters.project && meeting.project_uid !== filters.project) return false;
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
-    return !declinedSeries?.has(meeting.id);
+    return meeting.organizer === true || !declinedSeries?.has(meeting.id);
   });
 }
 
@@ -242,16 +246,12 @@ function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): 
   return isMeetingInviteResponsesEnabled(meeting) && rsvp === null && (registrationIds === undefined || registrationIds.length > 0);
 }
 
-function upcomingOccurrences(meeting: Meeting, nowMs: number): MeetingOccurrence[] {
-  return getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences)
-    .filter((occurrence) => {
-      const startMs = Date.parse(occurrence.start_time);
-      return !Number.isNaN(startMs) && startMs + (occurrence.duration || meeting.duration || 0) * MINUTE_MS + MEETING_END_BUFFER_MS >= nowMs;
-    })
-    .sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
+function isOccurrenceOpen(meeting: Meeting, occurrence: MeetingOccurrence, nowMs: number): boolean {
+  const startMs = Date.parse(occurrence.start_time);
+  return !Number.isNaN(startMs) && startMs + (occurrence.duration || meeting.duration || 0) * MINUTE_MS + MEETING_END_BUFFER_MS >= nowMs;
 }
 
-function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurrence | null): MeetingHomeRow | null {
+function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurrence | null, isNextDate: boolean): MeetingHomeRow | null {
   const startTime = getUpcomingMeetingStartTime(meeting, occurrence);
   if (!startTime || Number.isNaN(Date.parse(startTime))) return null;
 
@@ -260,15 +260,19 @@ function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurren
     key: occurrenceId ? `${meeting.id}:${occurrenceId}` : meeting.id,
     meeting,
     occurrence,
+    title: occurrence?.title || meeting.title,
     occurrenceId,
     startTime,
     durationMinutes: occurrence ? occurrence.duration || meeting.duration : resolveUpcomingMeetingDurationMinutes(meeting),
-    myRsvp: resolveRowRsvp(meeting, occurrenceId),
+    myRsvp: resolveRowRsvp(meeting, occurrenceId, isNextDate),
   };
 }
 
-function resolveRowRsvp(meeting: MeetingWithRsvps, occurrenceId: string | null): MeetingRsvp | null | undefined {
-  if (meeting.my_rsvps === undefined && meeting.my_rsvp === undefined) return undefined;
+function resolveRowRsvp(meeting: MeetingWithRsvps, occurrenceId: string | null, isNextDate: boolean): MeetingRsvp | null | undefined {
+  if (meeting.my_rsvps === undefined) {
+    if (!meeting.my_rsvp) return meeting.my_rsvp;
+    return selectApplicableRsvp(occurrenceId, [meeting.my_rsvp]) ?? (isNextDate ? null : undefined);
+  }
 
   const candidates = [...(meeting.my_rsvps ?? [])];
   if (meeting.my_rsvp && !candidates.some((rsvp) => rsvp.id === meeting.my_rsvp?.id)) {
@@ -277,9 +281,9 @@ function resolveRowRsvp(meeting: MeetingWithRsvps, occurrenceId: string | null):
   return selectApplicableRsvp(occurrenceId, candidates);
 }
 
-function matchesMeetingSearch(meeting: Meeting, query: string): boolean {
-  if (meeting.title?.toLowerCase().includes(query)) return true;
-  return (meeting.committees ?? []).some((committee) => committee.name?.toLowerCase().includes(query));
+function matchesMeetingSearch(row: MeetingHomeRow, query: string): boolean {
+  if (row.title.toLowerCase().includes(query)) return true;
+  return (row.meeting.committees ?? []).some((committee) => committee.name?.toLowerCase().includes(query));
 }
 
 function matchesRsvpFilter(row: MeetingHomeRow, filter: MeetingResponseFilter): boolean {
@@ -291,7 +295,7 @@ function matchesRsvpFilter(row: MeetingHomeRow, filter: MeetingResponseFilter): 
 function findDeclinedSeries(rows: readonly MeetingHomeRow[]): Set<string> {
   const declined = new Map<string, boolean>();
   for (const row of rows) {
-    const isDeclined = row.myRsvp?.response_type === 'declined';
+    const isDeclined = isMeetingInviteResponsesEnabled(row.meeting) && row.myRsvp?.response_type === 'declined';
     declined.set(row.meeting.id, (declined.get(row.meeting.id) ?? true) && isDeclined);
   }
   return new Set([...declined].filter(([, allDeclined]) => allDeclined).map(([id]) => id));
