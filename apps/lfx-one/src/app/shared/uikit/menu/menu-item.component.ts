@@ -42,7 +42,7 @@ export class UiMenuItemComponent implements DoCheck {
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, such as an external-link arrow. */
   public readonly trailingIcon = input<string>('');
-  /** Keyboard shortcut shown at the end of the row as keycaps, such as `⌘E` or `Ctrl+E`. It is a hint only; wire the shortcut yourself. */
+  /** Keyboard shortcut shown at the end of the row as keycaps, such as `⌘E` or `Ctrl+E`. A `+` between keys separates them; the `+` key itself goes last, as in `Ctrl++`. It is a hint only; wire the shortcut yourself. */
   public readonly shortcut = input<string>('');
 
   protected readonly menuItem = inject(CdkMenuItem);
