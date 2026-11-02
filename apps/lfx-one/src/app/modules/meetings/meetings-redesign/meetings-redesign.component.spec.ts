@@ -10,6 +10,7 @@ import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +54,7 @@ describe('MeetingsRedesignComponent', () => {
   let desktop: boolean;
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
+  let latestPast$: Subject<PastMeeting[]>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
@@ -81,6 +83,7 @@ describe('MeetingsRedesignComponent', () => {
     personaLoaded = signal(true);
     upcoming$ = new Subject();
     past$ = new Subject();
+    latestPast$ = new Subject();
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
     observerCallback = null;
@@ -114,12 +117,14 @@ describe('MeetingsRedesignComponent', () => {
             viewerUsername: signal('viewer'),
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
+            getUserLatestPastMeetings: () => latestPast$,
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
           },
         },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
@@ -145,6 +150,30 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
     }
     expect(query(fixture, 'meetings-redesign-rail-pending-rsvps')).toBeNull();
+  });
+
+  it('paints the Last meeting card from the latest-past feed without waiting for the past list', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-home-last-card-loading')).toBeTruthy();
+
+    latestPast$.next([]);
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-home-last-card-empty')).toBeTruthy();
+  });
+
+  it('hides the Last meeting card, with no error, when its feed fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = render();
+    await fixture.whenStable();
+
+    latestPast$.error(new Error('down'));
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-redesign-rail-last-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-folded-last-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeTruthy();
   });
 
   it('has no Create meeting button', async () => {

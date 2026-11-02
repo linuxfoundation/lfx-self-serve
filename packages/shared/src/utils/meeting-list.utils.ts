@@ -15,6 +15,7 @@ import type {
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
+  PastMeeting,
 } from '../interfaces';
 import { getEntityCommands } from './entity-route.utils';
 import {
@@ -31,7 +32,7 @@ import {
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
-import { getPastMeetingResourceId } from './past-meeting.utils';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
@@ -79,6 +80,21 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+}
+
+/** A past meeting as a home row, or null when it has no valid start. */
+export function toPastMeetingHomeRow(meeting: PastMeeting): MeetingHomeRow | null {
+  const startMs = getPastMeetingStartTimeMs(meeting);
+  if (startMs === null) return null;
+  return {
+    key: getPastMeetingResourceId(meeting),
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: meeting.occurrence_id || null,
+    startTime: new Date(startMs).toISOString(),
+    durationMinutes: meeting.duration,
+  };
 }
 
 /**
