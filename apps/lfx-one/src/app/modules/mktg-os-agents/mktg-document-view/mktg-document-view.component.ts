@@ -253,6 +253,7 @@ export class MktgDocumentViewComponent {
   protected readonly approvalError = signal('');
   protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
+  private readonly dismissedCurrentBanners = signal<Set<string>>(new Set());
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
@@ -310,15 +311,13 @@ export class MktgDocumentViewComponent {
   protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
-  protected readonly newlyApprovedRevision = this.initNewlyApprovedRevision();
+  protected readonly currentBanner = this.initCurrentBanner();
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
     const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
     return revision ? `Saving revision ${revision.number}…` : this.approvalAnnouncement();
   });
-  protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
-  protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
   protected readonly visibleRevisionRows: Signal<MktgRevisionSummary[]> = this.initVisibleRevisionRows();
   /**
    * The revision as a framework asset, when it is one: a JSON revision of the
@@ -1022,6 +1021,11 @@ export class MktgDocumentViewComponent {
   }
 
   // === Protected methods ===
+  protected dismissCurrentBanner(): void {
+    const banner = this.currentBanner();
+    if (banner) this.dismissedCurrentBanners.update((keys) => new Set([...keys, banner.key]));
+  }
+
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const viewed = this.view();
@@ -1461,34 +1465,17 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
-  private initNewlyApprovedRevision() {
-    let identity = '';
-    let firstApprovedId = '';
-    let firstHighestNumber = 0;
-    let approvalMoved = false;
+  private initCurrentBanner() {
     return computed(() => {
       const view = this.view();
-      if (!view) {
-        identity = '';
-        return null;
-      }
-      const key = JSON.stringify([view.project, view.type.agentKey, view.documentId, view.revision.id, this.revisionParam()]);
-      if (key !== identity) {
-        // First successful metadata is a baseline, not an event; selection starts a new baseline.
-        identity = key;
-        firstApprovedId = view.approvedCurrent?.revisionId ?? '';
-        firstHighestNumber = Math.max(0, ...view.revisions.map((row) => row.number));
-        approvalMoved = false;
-        return null;
-      }
-      if ((view.approvedCurrent?.revisionId ?? '') !== firstApprovedId) approvalMoved = true;
-      const approved = view.revisions.find(
-        (row) => row.id === view.approvedCurrent?.revisionId && row.id !== view.revision.id && (approvalMoved || row.id !== firstApprovedId)
-      );
-      const candidate = approved ?? view.revisions.find((row) => row.number > firstHighestNumber && row.id !== view.revision.id);
-      if (!candidate) return null;
-      const author = candidate.approval ? candidate.approval.approvedBy : candidate.author;
-      return { ...candidate, authorLabel: describeMktgRevisionAuthor(author) };
+      const approved = view?.approvedCurrent;
+      if (!view || !approved || approved.revisionId === view.revision.id) return null;
+      const key = [view.project, view.type.agentKey, view.documentId, view.revision.id, approved.revisionId].join(':');
+      if (this.dismissedCurrentBanners().has(key)) return null;
+      const row = view.revisions.find((revision) => revision.id === approved.revisionId);
+      const number = row?.number ?? approved.number;
+      if (!Number.isFinite(number) || number <= 0) return null;
+      return { key, id: approved.revisionId, number, viewedNumber: view.revision.number, authorLabel: describeMktgRevisionAuthor(row?.approval?.approvedBy) };
     });
   }
 
@@ -1618,14 +1605,6 @@ export class MktgDocumentViewComponent {
       ),
       { initialValue: null }
     );
-  }
-
-  private initViewedAuthorLabel(): Signal<string> {
-    return computed(() => describeMktgRevisionAuthor(this.view()?.revision.author));
-  }
-
-  private initCurrentRevision(): Signal<MktgRevisionSummary | null> {
-    return computed(() => this.view()?.revisions.find((revision) => revision.latest) ?? null);
   }
 
   private initVisibleRevisionRows(): Signal<MktgRevisionSummary[]> {

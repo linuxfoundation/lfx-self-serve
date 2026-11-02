@@ -127,6 +127,37 @@
         </div>
       }
     </div>
+    @if (currentBanner(); as banner) {
+      <div
+        role="status"
+        aria-atomic="true"
+        data-testid="mktg-document-view-current-banner"
+        class="flex min-w-0 flex-col gap-3 rounded-lg border border-blue-600 bg-blue-50 px-4 py-3 text-[15px] leading-[1.45] text-gray-900 md:flex-row md:items-center">
+        <span class="min-w-0 flex-1">
+          <strong>v{{ banner.number }} is now the current version</strong>, approved by {{ banner.authorLabel }}. You are reading v{{ banner.viewedNumber }}.
+        </span>
+        <div class="flex w-full shrink-0 gap-2 md:w-auto">
+          <a
+            [routerLink]="submittingGeneration() ? null : []"
+            [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+            [attr.tabindex]="submittingGeneration() ? -1 : null"
+            [class.opacity-50]="submittingGeneration()"
+            [queryParams]="{ revision: banner.id }"
+            queryParamsHandling="merge"
+            data-testid="mktg-document-view-current-banner-open"
+            class="flex-1 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700 md:flex-none"
+            >Open v{{ banner.number }}</a
+          >
+          <button
+            type="button"
+            data-testid="mktg-document-view-current-banner-dismiss"
+            class="flex-1 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-4 py-2 text-center hover:bg-gray-50 md:flex-none"
+            (click)="dismissCurrentBanner()">
+            Keep reading v{{ banner.viewedNumber }}
+          </button>
+        </div>
+      </div>
+    }
     @if (workbookError()) {
       <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
     }
@@ -570,86 +601,6 @@
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
-            @if (current.type.kind === 'living' && !current.revision.latest) {
-              @let active = currentRevision();
-              @let viewedAuthor = viewedAuthorLabel();
-              @let viewedDate = current.revision.createdAt | date: 'd MMM';
-              @let historySummary =
-                "You're reading v" +
-                current.revision.number +
-                ' (' +
-                (viewedDate ? viewedDate + ', ' : '') +
-                viewedAuthor +
-                ')' +
-                (active ? '. v' + active.number + ' is the current version.' : '');
-              <!-- The Revisions slot keeps new navigation out of the content column: the tabs never move. -->
-              <div
-                class="flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
-                role="group"
-                aria-label="Revision navigation"
-                [attr.aria-busy]="restoringId() !== null"
-                data-testid="mktg-document-view-history-bar">
-                <span
-                  class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-                  tabindex="0"
-                  role="note"
-                  [textContent]="historySummary"
-                  [attr.aria-label]="historySummary"
-                  [pTooltip]="historySummary"
-                  tooltipPosition="bottom"
-                  tooltipEvent="both"
-                  [escape]="true"
-                  appendTo="body"
-                  data-testid="mktg-document-view-history-bar-summary"></span>
-                <span
-                  class="min-w-0 flex-1 sm:hidden"
-                  [textContent]="'Viewing v' + current.revision.number"
-                  data-testid="mktg-document-view-history-bar-mobile-summary"></span>
-                <span class="sm:hidden" aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
-                  [disabled]="writePending()"
-                  data-testid="mktg-document-view-history-bar-make-current"
-                  (click)="onRestore(current.revision)">
-                  @if (restoringId() === current.revision.id) {
-                    <span>Saving…</span>
-                  } @else {
-                    <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
-                    <span class="sm:hidden">Make current</span>
-                  }
-                </button>
-                @if (active) {
-                  <span class="sm:hidden" aria-hidden="true">·</span>
-                  <a
-                    class="shrink-0 text-blue-700 underline hover:text-blue-900"
-                    [routerLink]="submittingGeneration() ? null : []"
-                    [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-                    [attr.tabindex]="submittingGeneration() ? -1 : null"
-                    [queryParams]="{ revision: active.id }"
-                    queryParamsHandling="merge"
-                    data-testid="mktg-document-view-history-bar-back">
-                    <span class="hidden sm:inline" [textContent]="'Open v' + active.number"></span>
-                    <span class="sm:hidden">Open</span>
-                  </a>
-                }
-              </div>
-            }
-            @if (newlyApprovedRevision(); as approved) {
-              <p class="text-xs text-gray-500" data-testid="mktg-document-view-new-approval" role="status">
-                v{{ approved.number }} was {{ approved.approval ? 'approved' : 'produced' }} by {{ approved.authorLabel }} ·
-                <a
-                  [routerLink]="submittingGeneration() ? null : []"
-                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-                  [attr.tabindex]="submittingGeneration() ? -1 : null"
-                  [queryParams]="{ revision: approved.id }"
-                  queryParamsHandling="merge"
-                  data-testid="mktg-document-view-new-approval-open"
-                  class="text-blue-600 hover:text-blue-800"
-                  >Open it</a
-                >
-              </p>
-            }
             <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
               @for (revision of visibleRevisionRows(); track revision.id) {
                 <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->
@@ -682,7 +633,27 @@
                     </span>
                   </div>
                   @if (revision.id === current.revision.id) {
-                    <span class="shrink-0 text-gray-500">here</span>
+                    <span class="flex w-16 shrink-0 flex-col items-end gap-1 text-right text-gray-500">
+                      <span>here</span>
+                      @if (current.type.kind === 'living' && !current.revision.latest && current.approvedCurrent?.revisionId !== revision.id) {
+                        <button
+                          type="button"
+                          data-testid="mktg-document-view-restore-current"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="writePending()"
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="both"
+                          (click)="onRestore(revision)">
+                          @if (restoringId() === revision.id) {
+                            Saving…
+                          } @else {
+                            Make current
+                          }
+                        </button>
+                      }
+                    </span>
                   } @else {
                     <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
                     <span
