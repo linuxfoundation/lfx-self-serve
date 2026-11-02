@@ -1,12 +1,16 @@
 ---
 title: Organization FAQ
-description: Short answers about EasyCLA in the Organization lens — who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — how to switch organizations and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, easycla, cla, ccla, cla-manager]
-last_updated: 2026-10-21
+tags: [organization, faq, switch-organization, easycla, cla, ccla, cla-manager]
+last_updated: 2026-11-02
 intercom_collection: Organization
 ---
+
+## How do I switch to a different organization?
+
+You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, and the browser's Back button returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
 
 ## Why can't I edit this corporate CLA?
 
