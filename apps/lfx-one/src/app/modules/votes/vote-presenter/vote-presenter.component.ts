@@ -1,19 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DOCUMENT, formatDate, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, LOCALE_ID, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { QrCodeComponent } from '@components/qr-code/qr-code.component';
+import { PresenterSharePanelComponent } from '@components/presenter-share-panel/presenter-share-panel.component';
+import { PresenterShellComponent } from '@components/presenter-shell/presenter-shell.component';
 import {
   VOTE_CLOSE_CONFIRMATION,
   VOTE_PRESENTER_BACKOFF_BASE_MS,
   VOTE_PRESENTER_BACKOFF_MAX_MS,
-  VOTE_PRESENTER_COPY_CONFIRMATION_MS,
   VOTE_PRESENTER_CLOCK_TICK_MS,
   VOTE_PRESENTER_POLL_INTERVAL_MS,
   VOTE_PRESENTER_RESULTS_HOLD_MAX_ATTEMPTS,
@@ -72,8 +72,8 @@ function tallyBarClass(option: VoteResultsOption): string {
     CardComponent,
     DatePipe,
     ConfirmDialogModule,
-    NgTemplateOutlet,
-    QrCodeComponent,
+    PresenterSharePanelComponent,
+    PresenterShellComponent,
     VoteRankedQuestionResultsComponent,
     VoteSendBallotsComponent,
   ],
@@ -101,8 +101,6 @@ export class VotePresenterComponent {
   // === Writable Signals ===
   private readonly locale = inject(LOCALE_ID);
   protected readonly nowMs = signal(Date.now());
-  protected readonly copied = signal(false);
-  protected readonly copyFailed = signal(false);
   /** True while the end request is in flight. */
   private readonly endInFlight = signal(false);
   /** The poll generation the end request's forced restart started; only a result from that generation or later settles the close. */
@@ -189,6 +187,8 @@ export class VotePresenterComponent {
   });
   /** Exit asks first only while the vote is live; the result, empty, error and loading screens leave at once. */
   protected readonly confirmsExit = computed(() => this.phase() === 'active' || this.phase() === 'reconnecting');
+  /** The open content (count, share panel, Close) renders while the vote is live, including a reconnect. */
+  protected readonly showOpen = computed(() => this.phase() === 'active' || this.phase() === 'reconnecting');
   /** The presenter route is writer-guarded (`votePresenterGuard`), so being here means the caller can end the vote; the BFF re-checks. */
   protected readonly canClose = computed(() => this.vote()?.status === PollStatus.ACTIVE && !this.closing());
   protected readonly showAbstain = computed(() => this.vote()?.allow_abstain === true);
@@ -230,12 +230,7 @@ export class VotePresenterComponent {
     return `Vote open · closes ${formatDate(vote.end_time, 'MMM d, h:mm a', this.locale)}`;
   });
 
-  private copyResetTimer: ReturnType<typeof setTimeout> | null = null;
-
   public constructor() {
-    this.destroyRef.onDestroy(() => {
-      if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
-    });
     if (this.isBrowser) {
       timer(VOTE_PRESENTER_CLOCK_TICK_MS, VOTE_PRESENTER_CLOCK_TICK_MS)
         .pipe(takeUntilDestroyed(this.destroyRef))
@@ -287,19 +282,6 @@ export class VotePresenterComponent {
   /** Restarts the poll loop from the error state without waiting out the backoff. */
   protected retry(): void {
     this.live.restart(true);
-  }
-
-  protected async copyLink(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(this.voteLink());
-      this.copyFailed.set(false);
-      this.copied.set(true);
-      if (this.copyResetTimer) clearTimeout(this.copyResetTimer);
-      this.copyResetTimer = setTimeout(() => this.copied.set(false), VOTE_PRESENTER_COPY_CONFIRMATION_MS);
-    } catch {
-      this.copied.set(false);
-      this.copyFailed.set(true);
-    }
   }
 
   // === Private Initializers ===

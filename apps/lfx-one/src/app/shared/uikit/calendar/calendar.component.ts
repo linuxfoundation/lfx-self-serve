@@ -4,6 +4,7 @@
 import { _IdGenerator } from '@angular/cdk/a11y';
 import {
   afterNextRender,
+  booleanAttribute,
   ChangeDetectionStrategy,
   Component,
   computed,
@@ -52,11 +53,14 @@ export class UiCalendarComponent implements ControlValueAccessor {
   public readonly ariaLabel = input<string>('');
   /** The day treated as today, as a local `YYYY-MM-DD` string. Leave `null` to use the live current date; pin it so a server and a client in another timezone agree near midnight. Any other value that is not a `YYYY-MM-DD` string, including an empty one, throws; an impossible date rolls over as `Date` does. */
   public readonly today = input<string | null>(null);
+  /** Disables the whole calendar: no selecting, no moving between months, days dimmed. Reactive forms disable it too. */
+  public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The selected date, or `null`. Supports two-way binding with `[(value)]`. */
   public readonly value = model<Date | null>(null);
 
   protected readonly titleId = `${this.titleBaseId}title`;
   protected readonly formDisabled = signal(false);
+  protected readonly isDisabled: Signal<boolean> = computed(() => this.disabled() || this.formDisabled());
   /** The date that holds the roving tab stop; its month is the month on show. Resets when the value changes. */
   protected readonly focusedDate: WritableSignal<Date> = linkedSignal(() => this.value() ?? this.startOfToday());
   protected readonly focusedKey: Signal<string> = computed(() => toLocalDateOnlyString(this.focusedDate()));
@@ -88,7 +92,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   protected select(day: UiCalendarDay): void {
-    if (this.formDisabled()) return;
+    if (this.isDisabled()) return;
     this.focusedDate.set(day.date);
     // Clicking a day from another month rebuilds the rows, so put focus back on the clicked day.
     this.focusActiveDay();
@@ -99,7 +103,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   protected shiftMonth(months: number): void {
-    if (this.formDisabled()) return;
+    if (this.isDisabled()) return;
     this.focusedDate.set(this.addMonths(this.focusedDate(), months));
   }
 
@@ -110,7 +114,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
   }
 
   protected onKeydown(event: KeyboardEvent): void {
-    if (this.formDisabled()) return;
+    if (this.isDisabled()) return;
     const current = this.focusedDate();
     const weekStart = (current.getDay() - this.weekStartsOn() + 7) % 7;
     const next = {
@@ -150,7 +154,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
       const count = Math.ceil((lead + daysInMonth) / 7);
       const label = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       const todayKey = toLocalDateOnlyString(this.startOfToday());
-      const gridOff = this.formDisabled();
+      const gridOff = this.isDisabled();
       const selected = this.value();
       const selectedKey = selected ? toLocalDateOnlyString(selected) : null;
       const disabled = this.isDateDisabled();
@@ -199,7 +203,7 @@ export class UiCalendarComponent implements ControlValueAccessor {
     if (day.selected) {
       // An unavailable selected date keeps its fill and gains the strike-through; the ink stays white to stay readable on the fill.
       const unavailable = day.disabled ? 'cursor-not-allowed line-through' : '';
-      return `${base} ${dot} bg-ui-accent-500 text-white after:bg-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
     }
     if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
     const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';

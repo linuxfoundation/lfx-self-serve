@@ -200,12 +200,27 @@ function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Mock the bare minimum committee-view endpoints so committee-overview renders
- * with `canEdit=true` and the weekly-brief card is reachable. Anything not
- * explicitly mocked here (lens, project context, mailing lists, etc.) is left
- * to the dev backend — the card only reads `committee.uid` and `canEdit`.
+ * Mock the committee-view shell and project-writer lookup so committee-overview renders
+ * with `canEdit=true` and the weekly-brief card is reachable. The `projectWriter` option
+ * controls access to Email Group Members. Endpoints not explicitly mocked here (lens,
+ * mailing lists, etc.) are left to the dev backend.
  */
-async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}): Promise<void> {
+async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}, options: { projectWriter?: boolean } = {}): Promise<void> {
+  // The email share needs project-writer access (committee-view's projectWriter lookup via
+  // GET /api/projects/:key, keyed by the committee's project uid), so the card's Email Group
+  // Members button is only enabled when this resolves with writer: true.
+  await page.route('**/api/projects/project-uid-wb*', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ uid: 'project-uid-wb', slug: 'project-wb', name: 'Weekly Brief Test Project', writer: options.projectWriter ?? true }),
+    });
+  });
+
   await page.route(`**/api/committees/${TEST_COMMITTEE_UID}*`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
@@ -1246,7 +1261,7 @@ test.describe('WG Weekly Brief card — read failure (flag ON)', () => {
   });
 });
 
-test.describe('WG Weekly Brief card — Share to Mailing List (flag ON)', () => {
+test.describe('WG Weekly Brief card — Email Group Members (flag ON)', () => {
   test('sends the current brief and shows a success toast', async ({ page }) => {
     await mockCommitteeShell(page, { has_mailing_list: true, mailing_list: 'wg-tsc@lists.example.org' });
     await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
@@ -1261,16 +1276,20 @@ test.describe('WG Weekly Brief card — Share to Mailing List (flag ON)', () => 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button').getByRole('button');
     await expect(shareBtn).toBeVisible();
     await expect(shareBtn).toBeEnabled();
     await shareBtn.click();
+
+    await expect(shareBtn).toContainText('Email Group Members');
 
     // Confirm dialog appears, describing the true recipient audience
     // (committee members) — never the Groups.io mailing-list address, which
     // is not who actually receives the email.
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.p-confirmdialog')).toContainText('all members of Weekly Brief Test WG');
+    await expect(page.locator('.p-confirmdialog')).toContainText("not the mailing list's subscribers");
+    await expect(page.locator('.p-confirmdialog')).toContainText("won't appear in the mailing list's history");
 
     const sharePromise = page.waitForRequest(
       (req) => req.method() === 'POST' && req.url().includes(`/api/committees/${TEST_COMMITTEE_UID}/weekly-briefs/share`),
@@ -1295,7 +1314,7 @@ test.describe('WG Weekly Brief card — Share to Mailing List (flag ON)', () => 
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1318,7 +1337,7 @@ test.describe('WG Weekly Brief card — Share disabled (no mailing list)', () =>
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    const shareBtn = page.getByTestId('weekly-brief-card-share-button');
+    const shareBtn = page.getByTestId('weekly-brief-card-share-button').getByRole('button');
     await expect(shareBtn).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(shareBtn).toBeDisabled();
 
@@ -1327,6 +1346,23 @@ test.describe('WG Weekly Brief card — Share disabled (no mailing list)', () =>
     const hint = page.getByTestId('weekly-brief-card-share-disabled-hint');
     await expect(hint).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(hint).toContainText('No mailing list configured for this committee');
+  });
+});
+
+test.describe('WG Weekly Brief card — Share disabled (not a project writer)', () => {
+  test('Email Group Members is disabled with a visible hint for a committee-only writer', async ({ page }) => {
+    await mockCommitteeShell(page, { has_mailing_list: true, mailing_list: 'wg-tsc@lists.example.org' }, { projectWriter: false });
+    await mockCurrentBrief(page, { brief: GENERATED_BRIEF, throttle: USED_THROTTLE_AFTER_GENERATE });
+
+    await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.getByTestId('weekly-brief-card-share-button').getByRole('button')).toBeDisabled({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Visible text (not a tooltip) so keyboard and screen-reader users can reach the explanation.
+    const hint = page.getByTestId('weekly-brief-card-share-access-hint');
+    await expect(hint).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(hint).toContainText('Only project writers can email the brief to group members');
   });
 });
 
@@ -1339,7 +1375,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1366,7 +1402,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 
@@ -1382,7 +1418,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 
@@ -1397,7 +1433,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
 
     const sharePromise = page.waitForRequest(
@@ -1423,7 +1459,7 @@ test.describe('WG Weekly Brief card — Share failure', () => {
     await page.goto(COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('committee-overview-weekly-brief-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    await page.getByTestId('weekly-brief-card-share-button').click();
+    await page.getByTestId('weekly-brief-card-share-button').getByRole('button').click();
     await expect(page.locator('.p-confirmdialog')).toBeVisible({ timeout: 5000 });
     await page.locator('.p-confirmdialog').getByRole('button', { name: /Send/i }).click();
 

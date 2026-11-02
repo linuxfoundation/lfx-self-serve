@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, ElementRef, inject, input, output, PLATFORM_ID, Signal, viewChildren } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, signal, Signal, viewChildren } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -10,8 +11,12 @@ import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
 import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
 import { formatVoteDeadline, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, normalizePollStatus } from '@lfx-one/shared/utils';
+import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
+import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots.component';
 
@@ -21,12 +26,26 @@ import { VoteSendBallotsComponent } from '../vote-send-ballots/vote-send-ballots
  */
 @Component({
   selector: 'lfx-vote-detail-header',
-  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, VoteSendBallotsComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
+  imports: [
+    NgClass,
+    ButtonComponent,
+    CardComponent,
+    TagComponent,
+    TooltipModule,
+    VoteSendBallotsComponent,
+    DueDateLabelColorPipe,
+    LongTimezonePipe,
+    PollStatusLabelPipe,
+    PollStatusSeverityPipe,
+  ],
+  providers: [DueDateLabelPipe],
   templateUrl: './vote-detail-header.component.html',
 })
 export class VoteDetailHeaderComponent {
   // === Services ===
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly dueDateLabelPipe = inject(DueDateLabelPipe);
 
   // === Inputs ===
   public readonly vote = input.required<Vote>();
@@ -60,7 +79,11 @@ export class VoteDetailHeaderComponent {
   private readonly tabBtns = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
-  private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+  protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+
+  // === Clock State ===
+  private readonly countdownTick = signal(0);
+  private countdownTimer: ReturnType<typeof setTimeout> | undefined;
 
   // === Computed Signals ===
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
@@ -70,9 +93,24 @@ export class VoteDetailHeaderComponent {
     return VOTE_METHOD_LABELS[pollType] || pollType;
   });
   protected readonly privacyLabel: Signal<string> = this.initPrivacyLabel();
+  /** The instant shown in the close date: the early end for a vote that ended, otherwise the scheduled deadline. */
+  protected readonly closeTime: Signal<string | undefined> = computed(() => {
+    const vote = this.vote();
+    return normalizePollStatus(vote.status) === PollStatus.ENDED ? vote.early_end_time || vote.end_time : vote.end_time;
+  });
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
+  protected readonly timeRemainingText: Signal<string> = this.initTimeRemainingText();
   protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
+
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.vote)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this.refreshCountdownClock());
+      this.destroyRef.onDestroy(() => clearTimeout(this.countdownTimer));
+    }
+  }
 
   // === Protected Methods ===
   /**
@@ -109,10 +147,21 @@ export class VoteDetailHeaderComponent {
     return computed(() => {
       const vote = this.vote();
       const ended = normalizePollStatus(vote.status) === PollStatus.ENDED;
-      const endTime = ended ? vote.early_end_time || vote.end_time : vote.end_time;
+      const endTime = this.closeTime();
       if (!endTime) return '';
       const deadline = formatVoteDeadline(endTime, this.viewerTimezone);
       return ended ? `Closed ${deadline}` : `Closes ${deadline}`;
+    });
+  }
+
+  private initTimeRemainingText(): Signal<string> {
+    return computed(() => {
+      this.countdownTick();
+      const endTime = this.vote().end_time;
+      const deadline = new Date(endTime).getTime();
+      if (!this.isActive() || Number.isNaN(deadline) || deadline <= Date.now()) return '';
+      // Invoke the shared formatter on each clock invalidation, not a pure template pipe with unchanged inputs.
+      return this.dueDateLabelPipe.transform(endTime, this.viewerTimezone);
     });
   }
 
@@ -131,5 +180,19 @@ export class VoteDetailHeaderComponent {
       if (invited === undefined || invited === null) return null;
       return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
     });
+  }
+
+  /** Re-evaluate only at the next label boundary or exact deadline; vote changes replace the pending timeout. */
+  private refreshCountdownClock(): void {
+    clearTimeout(this.countdownTimer);
+    this.countdownTick.update((tick) => tick + 1);
+    const now = Date.now();
+    const deadline = new Date(this.vote().end_time).getTime();
+    if (!this.isActive() || !Number.isFinite(deadline) || deadline <= now) return;
+
+    // In the browser viewerTimezone is the host zone; calendar midnight handles 23/25-hour DST days.
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    this.countdownTimer = setTimeout(() => this.refreshCountdownClock(), Math.min(deadline, midnight.getTime()) - now);
   }
 }

@@ -78,6 +78,11 @@ describe('windowForDays', () => {
 });
 
 describe('toKeywordMetricsResponse', () => {
+  /** campaign-service's `cost_micros` is "the account's native currency", with no FX (#4807). */
+  it("marks the amounts as the connected account's own currency", () => {
+    expect(toKeywordMetricsResponse(keywordsPayload(), 30, PULLED_AT).amountsInAccountCurrency).toBe(true);
+  });
+
   it('converts micro-units to a currency amount', () => {
     const { keywords } = toKeywordMetricsResponse(keywordsPayload(), 30, PULLED_AT);
     // 25_000_000 micros = 25.00. A missed conversion yields 25000000, a doubled one 0.000025;

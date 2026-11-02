@@ -257,6 +257,89 @@ describe('UserService', () => {
     }
   });
 
+  describe('retry after a failed personal-meeting fetch (GH-4780)', () => {
+    // The dashboard's Retry control re-calls these getters after an error. shareReplay
+    // otherwise caches and replays a failure forever, so a real retry must issue a fresh
+    // request instead of immediately re-erroring from the stale cached observable.
+    it('getUserMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<Meeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<Meeting[]>();
+
+      let rows: Meeting[] = [];
+      service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-meeting' } as Meeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-meeting' }]);
+    });
+
+    it('getUserPastMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<PastMeeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/past-meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserPastMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<PastMeeting[]>();
+
+      let rows: PastMeeting[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-past-meeting' } as PastMeeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
+    });
+
+    it('getUserLatestPastMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<PastMeeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/latest-past-meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserLatestPastMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<PastMeeting[]>();
+
+      let rows: PastMeeting[] = [];
+      service.getUserLatestPastMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-latest-past-meeting' } as PastMeeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-latest-past-meeting' }]);
+    });
+  });
+
   it('refetches a primed personal feed on return after an inactive-lens response without fetching while inactive', () => {
     const pending = { id: 'synthetic-meeting', is_invite_responses_enabled: true, my_rsvp: null } as Meeting;
     const accepted = { ...pending, my_rsvp: { response_type: 'accepted', scope: 'all' } } as Meeting;

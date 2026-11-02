@@ -1,19 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { CAMPAIGN_PLATFORMS } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PLATFORMS, GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS } from '@lfx-one/shared/constants';
 import type {
   CampaignPlatform,
   CreativeSlotCoverageGroup,
   CreativeSlotCoverageRow,
+  CreativeSlotAssignment,
   CreativeSlotCoverageState,
   CreativeSlotGap,
 } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { catchError, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, map, of, startWith, switchMap, timer } from 'rxjs';
 
 /** Platform ids in the order the brief's own platform picker shows them, so the grid reads in the same order. */
 const PLATFORM_ORDER: readonly string[] = CAMPAIGN_PLATFORMS.map((platform) => platform.id);
@@ -23,6 +24,7 @@ const STATUS_ORDER: Readonly<Record<CreativeSlotCoverageRow['status'], number>> 
 
 /**
  * Which of a brief's stored images fill which platform image slots, and what is still missing.
+ * A slot the host's form already fills (`formFilled`) reads as filled in the form instead (#4833).
  *
  * Reads `get-asset-plan` itself rather than taking a plan as an input: the plan is derived from the
  * library and the platform selection, both of which change while the operator is on this tab, and a
@@ -60,6 +62,33 @@ export class CreativeSlotGridComponent {
   public readonly platforms = input<readonly CampaignPlatform[]>([]);
   /** Bumped by the host when an upload adds an asset to the library, to re-read the plan. */
   public readonly reloadToken = input(0);
+  /**
+   * The plan slots the host can fill (#4825), as `platform/channel/slot` built from an assignment's own
+   * fields. The grid has no fields of its own, so it offers "Use suggested images" only when the plan
+   * suggests an image for one of these — a plan whose suggestions are all for another platform or a
+   * channel not on screen would otherwise get a button that fills nothing.
+   */
+  public readonly suggestionTargets = input<readonly string[]>([]);
+  /** What the host did with the last suggestions it was handed, or `''`. Shown and announced here, beside the button. */
+  public readonly applyResult = input('');
+  /**
+   * Bumped by the host on every apply. Two applies can end in the same sentence, and a live region
+   * whose text does not change announces nothing, so this is what makes the second one heard.
+   */
+  public readonly applySeq = input(0);
+  /**
+   * How many images each slot already has IN THE FORM — pasted URLs plus picked library images —
+   * keyed by `slot_key` (#4833). The plan reads only the stored library, so without this a slot the
+   * operator filled by hand would still read as missing while the form above it is satisfied.
+   */
+  public readonly formFilled = input<Readonly<Record<string, number>>>({});
+
+  // === Outputs ===
+  /**
+   * The plan's assignments that name at least one stored image, for the host to apply. Which of them
+   * it takes — and that it fills only empty fields — is the host's decision, not the grid's.
+   */
+  public readonly applySuggested = output<CreativeSlotAssignment[]>();
 
   // === Signals ===
   /** Bumped by Refresh. Part of the request identity, so each press is one more read. */
@@ -71,8 +100,19 @@ export class CreativeSlotGridComponent {
   protected readonly unplannedPlatforms: Signal<string[]> = this.initUnplannedPlatforms();
   protected readonly openCount: Signal<number> = computed(() => this.groups().reduce((total, group) => total + group.openCount, 0));
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
+  /** The apply result as the live region announces it: emptied, then refilled on the next tick, per apply. */
+  protected readonly applyAnnouncement: Signal<string> = this.initApplyAnnouncement();
+  /** The ready plan's assignments that name an image for a slot the host can fill — what "Use suggested images" hands over. */
+  protected readonly suggestions: Signal<CreativeSlotAssignment[]> = this.initSuggestions();
 
   // === Protected Methods ===
+  protected applySuggestions(): void {
+    const suggestions = this.suggestions();
+    if (suggestions.length > 0) {
+      this.applySuggested.emit(suggestions);
+    }
+  }
+
   protected refresh(): void {
     if (this.state().status !== 'loading') {
       this.attempts.update((n) => n + 1);
@@ -182,7 +222,7 @@ export class CreativeSlotGridComponent {
         const gap = slotGaps.get(assignment.slotKey);
         emitted.add(assignment.slotKey);
         const filled = assignment.assetIds.length;
-        this.push(groups, assignment.platform, assignment.channel, {
+        this.pushRow(groups, assignment.platform, assignment.channel, assignment.minCount, [assignment.slotKey], {
           key: assignment.slotKey,
           label: assignment.label,
           requirement: assignment.requirement,
@@ -206,7 +246,9 @@ export class CreativeSlotGridComponent {
           continue;
         }
         emitted.add(key);
-        this.push(groups, gap.platform, gap.channel, {
+        // A cross-slot rule is matched against the form through its member slots, summed.
+        const formKeys = slotKey === '' ? (GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS[`${gap.platform}/${gap.channel ?? ''}`] ?? []) : [slotKey];
+        this.pushRow(groups, gap.platform, gap.channel, gap.need, formKeys, {
           key,
           label: gap.label,
           requirement: '',
@@ -292,6 +334,39 @@ export class CreativeSlotGridComponent {
     });
   }
 
+  /**
+   * Every apply clears the region and refills it a tick later, so a result that repeats the previous
+   * one is announced again: a polite live region speaks only when its contents CHANGE, and the empty
+   * render in between is that change. The visible line reads `applyResult` directly and never blinks.
+   */
+  private initApplyAnnouncement(): Signal<string> {
+    const apply = computed(() => ({ seq: this.applySeq(), text: this.applyResult() }));
+    return toSignal(
+      toObservable(apply).pipe(
+        switchMap(({ text }) =>
+          text === ''
+            ? of('')
+            : timer(0).pipe(
+                map(() => text),
+                startWith('')
+              )
+        )
+      ),
+      { initialValue: '' }
+    );
+  }
+
+  private initSuggestions(): Signal<CreativeSlotAssignment[]> {
+    return computed(() => {
+      const state = this.state();
+      if (state.status !== 'ready' || !state.plan) return [];
+      const targets = new Set(this.suggestionTargets());
+      return state.plan.assignments.filter(
+        (assignment) => assignment.assetIds.length > 0 && targets.has(`${assignment.platform}/${assignment.channel ?? ''}/${assignment.slot}`)
+      );
+    });
+  }
+
   // === Private Helpers ===
   private push(groups: Map<string, CreativeSlotCoverageGroup>, platform: string, channel: string | undefined, row: CreativeSlotCoverageRow): void {
     const key = channel ? `${platform}/${channel}` : platform;
@@ -306,6 +381,32 @@ export class CreativeSlotGridComponent {
       rows: [row],
       openCount: 0,
     });
+  }
+
+  /**
+   * Push a row, read against the form first: a slot whose field already holds at least the images it
+   * requires (and at least one) is covered for THIS campaign whatever the library holds, so it reads
+   * "Filled in the form" with its count, needs nothing more, and is not open. `formKeys` names the
+   * slots whose form counts apply: the row's own slot, or a cross-slot rule's member slots summed
+   * (`GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS`); a rule with no known members never matches.
+   */
+  private pushRow(
+    groups: Map<string, CreativeSlotCoverageGroup>,
+    platform: string,
+    channel: string | undefined,
+    required: number,
+    formKeys: readonly string[],
+    row: CreativeSlotCoverageRow
+  ): void {
+    const filled = this.formFilled();
+    const inForm = formKeys.reduce((total, key) => total + (filled[key] ?? 0), 0);
+    const covered = inForm > 0 && inForm >= required;
+    this.push(
+      groups,
+      platform,
+      channel,
+      covered ? { ...row, status: 'filled', statusLabel: 'Filled in the form', countText: `${inForm} in the form`, reason: '', need: 0 } : row
+    );
   }
 
   private statusOf(filled: number, short: boolean): CreativeSlotCoverageRow['status'] {

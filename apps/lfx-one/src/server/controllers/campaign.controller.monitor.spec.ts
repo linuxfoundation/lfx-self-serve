@@ -11,10 +11,11 @@ import { MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE, MONITOR_SHARED_ACCOUNT_RESTRICT
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
-// The account-monitor routes (#2519): Meta and Reddit switch backend on LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR,
+// The account-monitor routes (#2519): Google Ads, Meta and Reddit switch backend on LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR,
 // and Microsoft, X and HubSpot exist only behind it. Kept out of campaign.controller.spec.ts, which is
 // already 5000 lines, the way analytics.controller is split by area.
 const {
+  svcGoogle,
   svcLinkedIn,
   legacyLinkedIn,
   svcMeta,
@@ -37,6 +38,7 @@ const {
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
+  svcGoogle: vi.fn(),
   svcLinkedIn: vi.fn(),
   legacyLinkedIn: vi.fn(),
   svcMeta: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
   return {
     ...actual,
     CampaignServiceClient: class {
+      public getGoogleAdsAccountMonitor = svcGoogle;
       public getLinkedInAdsAccountMonitor = svcLinkedIn;
       public getMetaAdsAccountMonitor = svcMeta;
       public getRedditAdsAccountMonitor = svcReddit;
@@ -266,6 +269,148 @@ describe.each([
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(404);
     expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+  });
+});
+
+describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
+  const GOOGLE_ACCOUNT = '8666746580';
+
+  function connected(): void {
+    svcConnection.mockResolvedValueOnce({ account_id: GOOGLE_ACCOUNT, label: 'LF Google Ads' });
+  }
+
+  it('serves the legacy account-wide read while the flag is off, reading no connection', async () => {
+    const legacyData = { campaigns: [] };
+    legacyGoogle.mockResolvedValueOnce(legacyData);
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ days: '14', project: 'tlf' }), res, vi.fn());
+
+    expect(legacyGoogle).toHaveBeenCalledWith(expect.anything(), 14);
+    expect(svcConnection).not.toHaveBeenCalled();
+    expect(svcGoogle).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(legacyData);
+  });
+
+  it("reads the project's own connection's account with clamped days, answering in the legacy Google shape", async () => {
+    flag(true);
+    connected();
+    svcGoogle.mockResolvedValueOnce(monitorPayload({ account_id: GOOGLE_ACCOUNT, days: 90 }));
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ days: '365', project: ' tlf ' }), res, vi.fn());
+
+    expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'google-ads');
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', GOOGLE_ACCOUNT, 90);
+    expect(legacyGoogle).not.toHaveBeenCalled();
+    const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
+    expect(body['dateRange']).toEqual({ mode: 'last_90_days' });
+    expect(body['accountTotals']).toEqual({ budgetDay: 1, spend: 10, impressions: 100, clicks: 5, conversions: 0, conversionsMeasured: false });
+    expect((body['campaigns'] as Record<string, unknown>[])[0]).toMatchObject({ campaignId: '1', name: 'Camp', avgCpc: 2 });
+  });
+
+  it('answers a project with no Google Ads connection of its own as the typed 404, never the legacy read', async () => {
+    flag(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(404);
+    expect(error.toResponse()['upstreamCode']).toBe('connection_not_found');
+    expect(svcGoogle).not.toHaveBeenCalled();
+    expect(legacyGoogle).not.toHaveBeenCalled();
+  });
+
+  it('answers a connection with no account bound as a 409, reading no monitor', async () => {
+    flag(true);
+    svcConnection.mockResolvedValueOnce({ account_id: '', label: 'LF Google Ads' });
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(409);
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The route admits a ROOT writer before any project check, but campaign-service authorizes the read
+   * with the project's `campaign_manager` relation, which a ROOT writer need not hold (#4837). Its 403
+   * is a standing refusal: answered as a 403 naming the missing role, never the retryable 503.
+   */
+  it("answers campaign-service's refusal of a ROOT writer without the project role as a 403, not a retryable 503", async () => {
+    flag(true);
+    checkRootWriter.mockResolvedValue(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed for project:7f3e' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project."
+    );
+    expect(error.toResponse()['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  it("words campaign-service's refusal of the monitor read itself the same way", async () => {
+    flag(true);
+    svcConnection.mockResolvedValueOnce({ account_id: '8666746580', label: 'LF Google Ads' });
+    svcGoogle.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
+    );
+  });
+
+  it('answers an unreadable connection as a 503 advisory, reading no monitor', async () => {
+    flag(true);
+    svcConnection.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(503);
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  it("keeps the monitor read's upstream status but not its text", async () => {
+    flag(true);
+    connected();
+    svcGoogle.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(409, 'Conflict', { message: 'campaign 7f3e recorded under customer 123' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+  });
+
+  it('requires a project, reading nothing, with the flag on', async () => {
+    flag(true);
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({}), buildRes(), next);
+
+    expect((nextError(next) as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(svcConnection).not.toHaveBeenCalled();
+    expect(svcGoogle).not.toHaveBeenCalled();
   });
 });
 
@@ -641,6 +786,47 @@ describe('CampaignController.getTwitterAdsAccounts', () => {
     });
   });
 
+  /** Both reads share campaign-service's `campaign_manager` rule (#4837): the answer is the role refusal, not the shared-account 403. */
+  it('answers a ROOT writer refused on both reads with a forbidden connection, not an HTTP 403', async () => {
+    twitterOn();
+    const refused = (): MicroserviceError =>
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p');
+    svcTwitterAccounts.mockRejectedValueOnce(refused());
+    svcConnection.mockRejectedValueOnce(refused());
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ accounts: [], connection: { state: 'forbidden', accountId: null, label: null } });
+  });
+
+  /** The API client answers `null` for an empty success; that is a malformed list, not a refusal. */
+  it('fails an empty account-list answer as unreadable, not as forbidden', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockResolvedValueOnce(null);
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), res, next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(502);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('still fails the read on any other refusal of the account list', async () => {
+    twitterOn();
+    svcTwitterAccounts.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(500, 'boom', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    svcConnection.mockResolvedValueOnce({ id: 'c-1', project_id: 'tlf', account_id: '18ce54d4x5t', label: 'LF X', has_credentials: true, status: 'active' });
+    const next = vi.fn();
+
+    await new CampaignController().getTwitterAdsAccounts(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect((nextError(next) as MicroserviceError).statusCode).toBe(500);
+  });
+
   it('reports a connection with no account bound, which the create would be refused for', async () => {
     twitterOn();
     svcTwitterAccounts.mockResolvedValueOnce({ accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] });
@@ -812,6 +998,18 @@ describe('CampaignController.getMonitorConnections', () => {
     expect(body.platforms.microsoft?.accountId).toBe('187654321');
   });
 
+  /** The pickers' read gets the same standing refusal as the Google monitor (#4837), never the retryable `unavailable`. */
+  it("reports campaign-service's 403 as forbidden on the connections read", async () => {
+    flag(true);
+    svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const res = buildRes();
+
+    await new CampaignController().getMonitorConnections(buildReq({ project: 'tlf' }), res, vi.fn());
+
+    const body = vi.mocked(res.json).mock.calls[0][0] as CampaignMonitorConnections;
+    expect(body.platforms.linkedin?.state).toBe('forbidden');
+  });
+
   it('reports a bare gateway 404 as unavailable, not as a missing connection', async () => {
     flag(true);
     svcConnection.mockRejectedValue(MicroserviceError.fromMicroserviceResponse(404, 'Not Found', 'Not Found', 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
@@ -955,7 +1153,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
   }
 
   it.each([
-    { name: 'getMonitorData', legacy: legacyGoogle, svc: null, account: '' },
+    { name: 'getMonitorData', legacy: legacyGoogle, svc: svcGoogle, account: '' },
     { name: 'getRedditMonitor', legacy: legacyReddit, svc: svcReddit, account: REDDIT_ACCOUNT },
     { name: 'getMetaMonitor', legacy: legacyMeta, svc: svcMeta, account: META_ACCOUNT },
   ] as const)('$name refuses a non-root caller with the flag on and off, reading nothing', async ({ name, legacy, svc, account }) => {
@@ -971,7 +1169,8 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
       expect(res.json).not.toHaveBeenCalled();
     }
     expect(legacy).not.toHaveBeenCalled();
-    if (svc) expect(svc).not.toHaveBeenCalled();
+    expect(svc).not.toHaveBeenCalled();
+    expect(svcConnection).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('getTwitterMonitor refuses a non-root caller with the flag %s, not with the flag-off 404', async (on) => {

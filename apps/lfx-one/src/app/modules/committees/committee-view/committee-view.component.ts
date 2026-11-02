@@ -251,6 +251,7 @@ export class CommitteeViewComponent {
   // window is exhausted, so the view shows "finalizing access" rather than the error state.
   public accessFinalizing = signal<boolean>(false);
   public refresh = signal(0);
+  private readonly projectWriterRetry = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
@@ -401,22 +402,25 @@ export class CommitteeViewComponent {
    * navigations, so an untagged result from the previous group would stay visible until the next
    * lookup settles.
    */
-  private readonly projectWriter: Signal<{ uid: string; writer: boolean } | null> = toSignal(
-    toObservable(this.committee).pipe(
-      map((committee) =>
-        committee?.writer ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null) } : null
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean; failed: boolean; attempt: number } | null> = toSignal(
+    combineLatest([toObservable(this.committee), toObservable(this.projectWriterRetry)]).pipe(
+      map(([committee, attempt]) =>
+        committee?.writer
+          ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null), attempt }
+          : null
       ),
-      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key && previous?.attempt === next?.attempt),
       switchMap((target) => {
         if (!target) {
           return of(null);
         }
         if (!target.key) {
-          return of({ uid: target.uid, writer: false });
+          // Missing project context is not a transient lookup failure; retrying cannot supply it.
+          return of({ uid: target.uid, writer: false, failed: false, attempt: target.attempt });
         }
-        return this.projectService.getProject(target.key, false).pipe(
-          map((project) => ({ uid: target.uid, writer: project?.writer === true })),
-          catchError(() => of({ uid: target.uid, writer: false }))
+        return this.projectService.getProject(target.key, false, { strictWriter: true }).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true, failed: project === null, attempt: target.attempt })),
+          catchError(() => of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt }))
         );
       })
     ),
@@ -428,6 +432,26 @@ export class CommitteeViewComponent {
     const committee = this.committee();
     const access = this.projectWriter();
     return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
+  });
+
+  /** The weekly brief email share requires project-writer access server-side (`NOT_PROJECT_WRITER`), not just committee-writer access. */
+  public canShareWeeklyBriefByEmail: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && !this.shareAccessLoading() && access?.uid === committee.uid && access.writer;
+  });
+
+  /** True while the project-writer lookup for the current committee is unresolved, so the card can hold back its denial hint. */
+  public shareAccessLoading: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && (access?.uid !== committee.uid || access.attempt !== this.projectWriterRetry());
+  });
+
+  /** A failed lookup grants nothing, but must not be presented as a confirmed permission denial. */
+  public shareAccessError: Signal<boolean> = computed(() => {
+    const access = this.projectWriter();
+    return this.canEdit() && !this.shareAccessLoading() && access?.uid === this.committee()?.uid && access?.failed === true;
   });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
@@ -777,6 +801,12 @@ export class CommitteeViewComponent {
       return;
     }
     this.refreshCommittee();
+  }
+
+  public retryShareAccessCheck(): void {
+    if (this.shareAccessError()) {
+      this.projectWriterRetry.update((attempt) => attempt + 1);
+    }
   }
 
   public refreshCommittee(): void {

@@ -17,6 +17,13 @@ class FormHostComponent {
   public readonly control = new FormControl('kubernetes', { nonNullable: true });
 }
 
+@Component({
+  selector: 'lfx-ui-input-action-host',
+  imports: [UiInputComponent],
+  template: `<lfx-ui-input ariaLabel="Search"><button type="button" lfxUiInputAction data-testid="action">Go</button></lfx-ui-input>`,
+})
+class ActionHostComponent {}
+
 describe('UiInputComponent', () => {
   let fixture: ComponentFixture<UiInputComponent>;
   let host: HTMLElement;
@@ -29,7 +36,7 @@ describe('UiInputComponent', () => {
   };
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [UiInputComponent, FormHostComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [UiInputComponent, FormHostComponent, ActionHostComponent] }).compileComponents();
     fixture = TestBed.createComponent(UiInputComponent);
     host = fixture.nativeElement as HTMLElement;
     fixture.componentRef.setInput('label', 'Project name');
@@ -74,7 +81,8 @@ describe('UiInputComponent', () => {
 
     expect(host.querySelector('[data-testid="ui-input-hint"]')).toBeNull();
     expect(error.textContent).toContain('Use lowercase letters only.');
-    expect(error.getAttribute('role')).toBe('alert');
+    // aria-invalid and aria-describedby carry the error; a live region would read it twice.
+    expect(error.getAttribute('role')).toBeNull();
     expect(field().getAttribute('aria-invalid')).toBe('true');
     expect(field().getAttribute('aria-describedby')).toBe(error.id);
   });
@@ -192,6 +200,16 @@ describe('UiInputComponent', () => {
     await set('disabled', true);
 
     expect(wrapper().className).not.toContain('edge-hover');
+  });
+
+  it('projects an lfxUiInputAction control into the wrapper after the field', async () => {
+    const actionFixture = TestBed.createComponent(ActionHostComponent);
+    await actionFixture.whenStable();
+    const action = (actionFixture.nativeElement as HTMLElement).querySelector('[data-testid="action"]') as HTMLElement;
+    const children = Array.from(action.parentElement?.children ?? []);
+
+    expect(action.parentElement?.getAttribute('data-testid')).toBe('ui-input-wrapper');
+    expect(children.indexOf(action)).toBeGreaterThan(children.indexOf(action.parentElement?.querySelector('input') as Element));
   });
 
   describe('with a reactive form control', () => {

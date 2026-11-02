@@ -16,7 +16,6 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ROI_ENABLED_FLAG,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -41,7 +40,8 @@ describe('SidebarNavService', () => {
   const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
-  const orgRoiEnabled = signal(false);
+  const lfStaff = signal(false);
+  const impersonating = signal(false);
   const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const akritesEnabled = signal(false);
@@ -88,7 +88,8 @@ describe('SidebarNavService', () => {
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
-    orgRoiEnabled.set(false);
+    lfStaff.set(false);
+    impersonating.set(false);
     orgSegment.set(null);
     mentorshipEnabled.set(false);
     akritesEnabled.set(false);
@@ -124,7 +125,6 @@ describe('SidebarNavService', () => {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
-              if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
@@ -141,7 +141,7 @@ describe('SidebarNavService', () => {
           useValue: {
             hasBoardRole: signal(false),
             isRootWriter: hasFullFoundationAccess,
-            isLFStaff: signal(false),
+            isLFStaff: lfStaff,
             canViewExecutiveDashboards: hasFullFoundationAccess,
             currentPersona,
             grantsByScope,
@@ -166,7 +166,7 @@ describe('SidebarNavService', () => {
             formationOverviewAllowedSlug,
           },
         },
-        { provide: UserService, useValue: { authenticated } },
+        { provide: UserService, useValue: { authenticated, impersonating } },
         {
           provide: WriterGrantsService,
           useValue: {
@@ -516,7 +516,6 @@ describe('SidebarNavService', () => {
   it('opts only EasyCLA into subpath highlighting across the Org Lens tree', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
     const optedIn = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeOnSubpaths);
@@ -527,7 +526,6 @@ describe('SidebarNavService', () => {
   it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
     orgSegment.set('acme-inc');
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
@@ -536,16 +534,15 @@ describe('SidebarNavService', () => {
     expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/acme-inc/easycla', activeAliases: ['/org/easycla'] })]);
   });
 
-  it('keeps ROI after Projects and EasyCLA above Organization Profile when both flags are on', () => {
+  it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
+    lfStaff.set(true);
 
     const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
 
-    // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
-    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
   });
 
   describe('a CLA-only organization (M3)', () => {
@@ -560,7 +557,6 @@ describe('SidebarNavService', () => {
 
     it('shows the EasyCLA item and nothing else', () => {
       orgEasyclaEnabled.set(true);
-      orgRoiEnabled.set(true);
       crowdfundingAttributionEnabled.set(true);
 
       const items = TestBed.inject(SidebarNavService).sidebarItems();
@@ -584,33 +580,33 @@ describe('SidebarNavService', () => {
     });
   });
 
-  it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
+  it('addresses every Org Lens item to the selected organization, with ROI Metrics under LF Staff Only', () => {
     activeLens.set('org');
     orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
+    lfStaff.set(true);
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const engagement = sectionItems(items, 'Organization Engagement');
+    const lfStaffOnly = sectionItems(items, 'LF Staff Only');
     const itemLabels = labels(items);
 
     expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
-    expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(lfStaffOnly, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
     expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
     // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Org Lens item.
     expect(findByLink(items, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
-    const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
+    const orgLinks = [...items, ...engagement, ...lfStaffOnly].map((item) => item.routerLink).filter((link): link is string => !!link);
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
-    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
     expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
   });
 
-  it('shows Initiatives after Projects and ROI on the org lens only for a direct writer on the selected organization with the flag on', () => {
+  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization with the flag on', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set(orgUid);
-    orgRoiEnabled.set(true);
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set([orgUid]));
@@ -626,8 +622,35 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
     );
-    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
+    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
+  });
+
+  describe('the LF Staff Only section', () => {
+    const ROI_LINK = '/org/acme-inc/roi';
+
+    beforeEach(() => {
+      activeLens.set('org');
+      orgSegment.set('acme-inc');
+    });
+
+    it('is shown to LF staff, closing the menu with ROI Metrics inside', () => {
+      lfStaff.set(true);
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+      expect(items[items.length - 1]).toEqual(expect.objectContaining({ label: 'LF Staff Only', isSection: true }));
+      expect(findByLink(sectionItems(items, 'LF Staff Only'), ROI_LINK)).toEqual(expect.objectContaining({ label: 'ROI Metrics' }));
+    });
+
+    it('is hidden from callers who are not LF staff', () => {
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
+
+    it('is hidden from a session acting as another user, even when that user is LF staff', () => {
+      lfStaff.set(true);
+      impersonating.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {

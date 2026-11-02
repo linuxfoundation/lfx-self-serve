@@ -401,15 +401,15 @@ describe('ProjectController.getProjectBySlug', () => {
     return { req, res, next };
   }
 
-  it('fetches by id, forwards the meeting_coordinator/auditor query flags, and logs success', async () => {
+  it('fetches by id, forwards optional role and strict-writer flags, and logs success', async () => {
     isUuidMock.mockReturnValue(true);
     const project = buildProject();
     projectSvc.getProjectById.mockResolvedValue(project);
-    const { req, res, next } = buildSlugReqRes(PROJECT_UID, { meeting_coordinator: 'true', auditor: 'true' });
+    const { req, res, next } = buildSlugReqRes(PROJECT_UID, { meeting_coordinator: 'true', auditor: 'true', strict_writer: 'true' });
 
     await controller.getProjectBySlug(req, res, next);
 
-    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true, true, true);
+    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true, true, true, true);
     expect(projectSvc.getProjectBySlug).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(project);
     expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: PROJECT_UID, project_uid: project.uid });
@@ -424,10 +424,22 @@ describe('ProjectController.getProjectBySlug', () => {
 
     await controller.getProjectBySlug(req, res, next);
 
-    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false);
+    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false, false);
     expect(projectSvc.getProjectById).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(project);
     expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: SLUG, project_uid: project.uid });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['true', 'false'])('forwards strict_writer=%s for slug lookups', async (flag) => {
+    isUuidMock.mockReturnValue(false);
+    projectSvc.getProjectBySlug.mockResolvedValue(buildProject());
+    const { req, res, next } = buildSlugReqRes(SLUG, { strict_writer: flag });
+
+    await controller.getProjectBySlug(req, res, next);
+
+    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false, flag === 'true');
+    expect(res.json).toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 

@@ -13,6 +13,7 @@ import { UiErrorComponent } from '../error/error.component';
  * Single-line text field with an optional label, hint, error and prefix or suffix (icon or text).
  * Works with `[(value)]` and with Angular forms (`formControlName`, `formControl`). An error replaces the hint
  * and is linked to the field with `aria-describedby`. Validate on blur, not on every keystroke.
+ * Project a trailing control, such as a clear button, by adding the `lfxUiInputAction` attribute to it.
  */
 @Component({
   selector: 'lfx-ui-input',

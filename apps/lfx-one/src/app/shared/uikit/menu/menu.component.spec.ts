@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OverlayContainer } from '@angular/cdk/overlay';
 import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { FlexibleConnectedPositionStrategy, OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 import { UiMenuGroupComponent } from './menu-group.component';
 import { UiMenuItemComponent } from './menu-item.component';
 import { UiMenuSeparatorComponent } from './menu-separator.component';
@@ -16,7 +17,7 @@ const HOST_TEMPLATE = `
   <button id="trigger" [cdkMenuTriggerFor]="menu">Actions</button>
   <ng-template #menu>
     <lfx-ui-menu ariaLabel="Project actions">
-      <lfx-ui-menu-item id="edit" icon="fa-light fa-pen-to-square" shortcut="⌘E" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="edit" icon="fa-light fa-pen-to-square" shortcut="⌘E" [disabled]="editLocked()" disabledReason="Editing is paused" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
       <lfx-ui-menu-item id="duplicate" (triggered)="log('duplicate')">Duplicate</lfx-ui-menu-item>
       <lfx-ui-menu-separator />
       <lfx-ui-menu-group label="Share">
@@ -26,7 +27,7 @@ const HOST_TEMPLATE = `
         <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
       </lfx-ui-menu-group>
       <lfx-ui-menu-separator />
-      <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" [disabled]="deleteLocked()" disabledReason="Deleting is paused" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
     </lfx-ui-menu>
   </ng-template>
 `;
@@ -34,6 +35,8 @@ const HOST_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly archiveLocked = signal(false);
+  public readonly editLocked = signal(false);
+  public readonly deleteLocked = signal(false);
   public readonly events = signal<string[]>([]);
 
   public log(name: string): void {
@@ -75,10 +78,11 @@ describe('UiMenuComponent', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
     fixture.destroy();
     TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('opens from the trigger as a named menu with menuitem rows', async () => {
@@ -245,24 +249,85 @@ describe('UiMenuComponent', () => {
     expect(menu()).not.toBeNull();
   });
 
-  it('describes a disabled item with its reason and hides the reason from the item name', async () => {
-    await open();
-    const reason = item('transfer').querySelector('[data-testid="ui-menu-item-reason"]') as HTMLElement;
+  const descriptionOf = (el: HTMLElement) =>
+    (el.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(' ');
+  const tooltip = () => container.querySelector('[data-testid="ui-tooltip"]') as HTMLElement | null;
 
-    expect(reason.textContent).toBe('Only owners can transfer');
-    expect(reason.getAttribute('aria-hidden')).toBe('true');
-    expect(reason.className).toContain('sr-only');
-    expect(item('transfer').getAttribute('aria-describedby')).toBe(reason.id);
+  it('describes a disabled item with its reason and keeps the reason out of the item name', async () => {
+    await open();
+
+    expect(descriptionOf(item('transfer'))).toBe('Only owners can transfer');
+    expect(item('transfer').textContent?.trim()).toBe('Transfer Ownership');
     expect(item('edit').getAttribute('aria-describedby')).toBeNull();
   });
 
-  it('only points at the reason while the item is disabled', async () => {
+  it('only describes the item with the reason while it is disabled', async () => {
     await open();
     expect(item('archive').getAttribute('aria-describedby')).toBeNull();
 
     fixture.componentInstance.archiveLocked.set(true);
     await settle();
-    expect(item('archive').getAttribute('aria-describedby')).toBe(item('archive').querySelector('[data-testid="ui-menu-item-reason"]')?.id);
+    expect(descriptionOf(item('archive'))).toBe('Archived projects are read-only');
+
+    fixture.componentInstance.archiveLocked.set(false);
+    await settle();
+    expect(item('archive').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('shows the reason in a tooltip when keyboard focus reaches a locked item, and not on an unlocked one', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    expect(document.activeElement).toBe(item('transfer'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()?.textContent?.trim()).toBe('Only owners can transfer');
+
+    key(item('transfer'), 'ArrowDown');
+    key(item('hidden-label'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('archive'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()).toBeNull();
+  });
+
+  it('opens the reason beside the locked row first, so it does not cover the neighbours', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const positions = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
+    expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
+  });
+
+  it.each([
+    ['first', 'ArrowDown', 'editLocked', 'edit', 'Editing is paused'],
+    ['last', 'ArrowUp', 'deleteLocked', 'delete', 'Deleting is paused'],
+  ] as const)('shows the reason when the menu opens from the keyboard onto a locked %s item', async (_position, arrow, lock, id, reason) => {
+    fixture.componentInstance[lock].set(true);
+    await settle();
+    trigger.focus();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    key(trigger, arrow);
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(item(id));
+    expect(tooltip()?.textContent?.trim()).toBe(reason);
   });
 
   it('closes when the user clicks outside', async () => {
@@ -271,5 +336,40 @@ describe('UiMenuComponent', () => {
     await settle();
 
     expect(menu()).toBeNull();
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-tooltip-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent, UiTooltipDirective],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item lfxUiTooltip="x" [disabled]="true" disabledReason="y">Locked</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class TooltipDirectiveHostComponent {}
+
+describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
+  const hosts: ComponentFixture<TooltipDirectiveHostComponent>[] = [];
+
+  afterEach(() => {
+    hosts.splice(0).forEach((created) => created.destroy());
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('attaches exactly one tooltip, the disabledReason, and not the lfxUiTooltip text', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = TestBed.createComponent(TooltipDirectiveHostComponent);
+    hosts.push(host);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const item = host.nativeElement.querySelector('lfx-ui-menu-item') as HTMLElement;
+
+    item.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(300);
+    host.detectChanges();
+
+    const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
+    expect(tooltips.length).toBe(1);
+    expect(tooltips[0].textContent?.trim()).toBe('y');
   });
 });

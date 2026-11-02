@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@for (toast of items(); track toast.id) {
+  <lfx-ui-toast
+    [variant]="toast.variant ?? 'default'"
+    [actions]="toast.actions ?? []"
+    [duration]="toast.duration ?? null"
+    [dismissible]="toast.dismissible ?? true"
+    (dismissed)="dismissed.emit(toast.id)">
+    {{ toast.message }}
+  </lfx-ui-toast>
+}

@@ -4,6 +4,9 @@
 import { provideRouter } from '@angular/router';
 import { applicationConfig, argsToTemplate, type Meta, type StoryObj } from '@storybook/angular';
 
+import { UiMenuItemComponent } from '../menu/menu-item.component';
+import { UiMenuSeparatorComponent } from '../menu/menu-separator.component';
+import { UiMenuComponent } from '../menu/menu.component';
 import { UiButtonComponent } from './button.component';
 
 const meta: Meta<UiButtonComponent> = {
@@ -68,6 +71,25 @@ export const WithTooltip: Story = {
         <lfx-ui-button variant="secondary" [iconOnly]="true" icon="fa-light fa-copy" ariaLabel="Copy link" lfxUiTooltip="Copy the public link" [lfxUiTooltipShortcut]="['⌘', 'C']" />
       </div>`,
     moduleMetadata: { imports: [UiButtonComponent] },
+  }),
+};
+
+/** `menu` makes the inner button the trigger of an `lfx-ui-menu`: `aria-haspopup` and `aria-expanded` are set and Escape returns focus to the button. */
+export const WithMenu: Story = {
+  render: () => ({
+    template: `
+      <div class="flex justify-center p-[64px]">
+        <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="actions">Actions</lfx-ui-button>
+        <ng-template #actions>
+          <lfx-ui-menu ariaLabel="Project actions">
+            <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
+            <lfx-ui-menu-item icon="fa-light fa-copy">Duplicate</lfx-ui-menu-item>
+            <lfx-ui-menu-separator />
+            <lfx-ui-menu-item variant="danger" icon="fa-light fa-trash-can">Delete Project</lfx-ui-menu-item>
+          </lfx-ui-menu>
+        </ng-template>
+      </div>`,
+    moduleMetadata: { imports: [UiButtonComponent, UiMenuComponent, UiMenuItemComponent, UiMenuSeparatorComponent] },
   }),
 };
 

@@ -4298,6 +4298,51 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
 
 /**
+ * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
+ * Implement tab's creative control it fills (#4825). An explicit table, not an identity, because the
+ * plan's slot is the PLATFORM layer's name: Performance Max uses Google's asset field types
+ * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
+ * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
+ * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
+ * Display's names already match. A slot absent here is not applied.
+ */
+export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
+  'performance-max': {
+    MARKETING_IMAGE: 'marketingImages',
+    SQUARE_MARKETING_IMAGE: 'squareMarketingImages',
+    PORTRAIT_MARKETING_IMAGE: 'portraitImages',
+    LOGO: 'logoImages',
+    LANDSCAPE_LOGO: 'landscapeLogoImages',
+  },
+  'demand-gen': {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    portraitMarketingImages: 'portraitImages',
+    tallPortraitMarketingImages: 'tallPortraitImages',
+    logoImages: 'logoImages',
+  },
+  display: {
+    marketingImages: 'marketingImages',
+    squareMarketingImages: 'squareMarketingImages',
+    logoImages: 'logoImages',
+    squareLogoImages: 'squareLogoImages',
+  },
+};
+
+/**
+ * The member `slot_key`s of each Google channel's cross-slot "any of" rule, keyed `platform/CHANNEL`
+ * (#4833). campaign-service reports a shortfall on such a rule with no `slot_key` (it spans several
+ * slots), so the slot grid needs the members to tell whether the form already satisfies it. Mirrors
+ * the `AnyOf` rules in `internal/platform/googleads/slot_catalog.go`: Demand Gen and Display each need
+ * a landscape OR a square marketing image; Performance Max has no such rule. A channel absent here has
+ * no rule the form can be matched against.
+ */
+export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  'google-ads/DEMAND_GEN': ['google-ads/DEMAND_GEN/marketingImages', 'google-ads/DEMAND_GEN/squareMarketingImages'],
+  'google-ads/DISPLAY': ['google-ads/DISPLAY/marketingImages', 'google-ads/DISPLAY/squareMarketingImages'],
+};
+
+/**
  * The Google channels that accept campaign ad extensions — the six this application collects
  * (sitelinks, callouts, structured snippets, calls, promotions and prices), and the lead form it
  * does not collect yet.

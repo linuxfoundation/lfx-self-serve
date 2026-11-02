@@ -1,0 +1,21 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (icon()) {
+  <!-- Decorative: the title carries the meaning. 48px tile, 20px glyph, 4px under it (exact px, 14px root). -->
+  <span
+    class="mb-[4px] grid h-[48px] w-[48px] place-items-center rounded-ui-md bg-ui-background-100 text-[20px] text-ui-neutral-900 shadow-small"
+    aria-hidden="true"
+    data-testid="ui-empty-state-icon">
+    <i [class]="icon()"></i>
+  </span>
+}
+<ng-content select="[empty-state-media]" />
+<p class="heading-24 text-ui-neutral-900" role="heading" [attr.aria-level]="headingLevel()" data-testid="ui-empty-state-heading">{{ heading() }}</p>
+@if (description()) {
+  <!-- 400px: library max width, no width utility for it. -->
+  <p class="max-w-[400px] copy-14 text-ui-neutral-600" data-testid="ui-empty-state-description">{{ description() }}</p>
+}
+<!-- 8px above, 12px between actions (exact px). Collapses when nothing is projected. -->
+<div class="mt-[8px] flex items-center gap-[12px] empty:hidden" data-testid="ui-empty-state-actions"><ng-content select="[empty-state-action]" /></div>
+<ng-content />

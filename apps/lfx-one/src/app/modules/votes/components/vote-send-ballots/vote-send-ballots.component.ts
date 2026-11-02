@@ -40,6 +40,8 @@ export class VoteSendBallotsComponent {
   /** The vote's own counts (`num_response_received`, `total_voting_request_invitations`); an empty voter list disables the button only when they confirm completion. */
   public readonly responded = input<number | null | undefined>(null);
   public readonly invited = input<number | null | undefined>(null);
+  /** `presenter` is the large button on the presenter share panel; `compact` matches the small outlined secondary buttons in the vote detail header. */
+  public readonly variant = input<'presenter' | 'compact'>('presenter');
 
   protected readonly checking = signal<boolean>(false);
   protected readonly sending = signal<boolean>(false);
@@ -54,6 +56,13 @@ export class VoteSendBallotsComponent {
   private readonly countsConfirmComplete = computed(() => {
     const invited = this.invited() ?? 0;
     return invited > 0 && (this.responded() ?? 0) >= invited;
+  });
+  protected readonly compact = computed(() => this.variant() === 'compact');
+  protected readonly buttonSize = computed(() => (this.compact() ? 'small' : undefined));
+  protected readonly buttonStyleClass = computed(() => (this.compact() ? undefined : 'min-h-[44px]'));
+  protected readonly sentMessage = computed(() => {
+    const result = this.sent();
+    return result ? `Ballots sent to ${this.members(result.count)}` : '';
   });
   protected readonly busy = computed(() => this.checking() || this.sending());
 
@@ -183,6 +192,10 @@ export class VoteSendBallotsComponent {
         next: ({ sent, skipped }) => {
           this.sent.set({ count: sent, at: new Date() });
           this.startCooldown();
+          // The compact variant has no visible status line, so the toast is its confirmation.
+          if (this.compact()) {
+            this.messageService.add({ severity: 'success', summary: 'Ballots sent', detail: `to ${this.members(sent)}` });
+          }
           if (skipped > 0) {
             this.messageService.add({
               severity: 'warn',
@@ -215,6 +228,10 @@ export class VoteSendBallotsComponent {
         : "We couldn't confirm whether ballots were sent. Check with the members before retrying, since retrying may send duplicate emails.",
       life: 8000,
     });
+  }
+
+  private members(count: number): string {
+    return `${count} ${count === 1 ? 'member' : 'members'}`;
   }
 
   private startCooldown(): void {
