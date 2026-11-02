@@ -264,6 +264,8 @@ export const MENTORSHIP_TASK_FILE_VIEW_DOWNLOADED_DETAIL = 'This file type canno
 /**
  * The type a viewable file is opened as, keyed by the response's type and by the file name's extension. The bytes are
  * always re-typed to one of these: a `blob:` URL runs with this page's origin, so no other type may ever be opened.
+ * Text is always opened as UTF-8 on purpose: upstream stores a text file only when its bytes are valid UTF-8 (uploads
+ * and migrated legacy files alike), so a declared charset is never needed and is not trusted.
  */
 export const MENTORSHIP_TASK_FILE_VIEW_TYPES: Readonly<Record<string, string>> = {
   'application/pdf': 'application/pdf',

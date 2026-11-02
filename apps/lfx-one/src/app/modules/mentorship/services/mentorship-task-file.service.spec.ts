@@ -508,13 +508,18 @@ describe('MentorshipTaskFileService', () => {
       expect(add).not.toHaveBeenCalled();
     });
 
-    it('closes the tab when the response has no body', () => {
-      downloadTaskFile.mockReturnValueOnce(of(responseWith(null, { 'Content-Type': 'application/pdf' })));
+    it.each([
+      ['no body', null],
+      ['an empty body', new Blob([])],
+    ])('closes the tab when the response has %s', (_label, body) => {
+      downloadTaskFile.mockReturnValueOnce(of(responseWith(body, { 'Content-Type': 'application/pdf' })));
 
       service.view(TASK_ID);
 
       expect(tab.close).toHaveBeenCalled();
+      expect(tab.location.href).toBe('');
       expect(createObjectURL).not.toHaveBeenCalled();
+      expect(savedAs).toEqual([]);
       expect(add).not.toHaveBeenCalled();
     });
 

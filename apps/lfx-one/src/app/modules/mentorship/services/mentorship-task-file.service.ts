@@ -115,7 +115,8 @@ export class MentorshipTaskFileService {
     this.mentorshipService.downloadTaskFile(taskId).subscribe({
       next: (response) => {
         const blob = response.body;
-        if (!blob) {
+        // An empty 200 (the BFF passes an empty stream through) has nothing to show, so the tab is not left blank.
+        if (!blob || blob.size === 0) {
           tab?.close();
           return;
         }
