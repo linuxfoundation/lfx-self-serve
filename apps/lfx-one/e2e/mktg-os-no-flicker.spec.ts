@@ -49,6 +49,7 @@ test('an approval in a second browser context updates the open document in place
   );
   await openKit(page, `/documents/${type.agentKey}/living`);
   await expect(page.getByTestId('mktg-document-view-content')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-new-approval')).toHaveCount(0);
   const tab = page.getByTestId('mktg-framework-view-tab-numbers');
   await tab.click();
   const ids = ['mktg-document-view-title', 'mktg-document-view-content', 'mktg-document-view-revisions', 'mktg-framework-view-tab-numbers'];

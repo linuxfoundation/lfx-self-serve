@@ -1462,11 +1462,26 @@ export class MktgDocumentViewComponent {
 
   // === Private initializers ===
   private initNewlyApprovedRevision() {
+    let identity = '';
+    let firstApprovedId = '';
+    let firstHighestNumber = 0;
     return computed(() => {
       const view = this.view();
-      if (!view || view.approvedCurrent?.revisionId === view.revision.id) return null;
-      const approved = view.revisions.find((row) => row.id === view.approvedCurrent?.revisionId);
-      const candidate = approved ?? view.revisions.find((row) => row.number > view.revision.number);
+      if (!view) {
+        identity = '';
+        return null;
+      }
+      const key = JSON.stringify([view.project, view.type.agentKey, view.documentId, view.revision.id, this.revisionParam()]);
+      if (key !== identity) {
+        // First successful metadata is a baseline, not an event; selection starts a new baseline.
+        identity = key;
+        firstApprovedId = view.approvedCurrent?.revisionId ?? '';
+        firstHighestNumber = Math.max(0, ...view.revisions.map((row) => row.number));
+        return null;
+      }
+      if (view.approvedCurrent?.revisionId === view.revision.id) return null;
+      const approved = view.revisions.find((row) => row.id === view.approvedCurrent?.revisionId && row.id !== firstApprovedId);
+      const candidate = approved ?? view.revisions.find((row) => row.number > firstHighestNumber && row.id !== view.revision.id);
       if (!candidate) return null;
       const author = candidate.approval ? candidate.approval.approvedBy : candidate.author;
       return { ...candidate, authorLabel: describeMktgRevisionAuthor(author) };

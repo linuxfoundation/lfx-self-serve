@@ -2555,11 +2555,22 @@ describe('MktgDocumentViewComponent', () => {
     if (!type) throw new Error('Missing catalog ICP fixture');
     const approved = revision(3, { latest: true, approval: { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } } });
     const metadata = { ...detail, type, revisions: [approved, { ...LATEST, latest: false }, OLDER], approvedCurrent: { revisionId: approved.id, number: 3 } };
-    store.getDocument.mockReturnValue(of(metadata));
+    let response: MktgDocumentDetailResponse = {
+      ...metadata,
+      approvedCurrent: null,
+      revisions: metadata.revisions.map((row) => ({ ...row, approval: null })),
+    };
+    store.getDocument.mockImplementation(() => of(response));
     store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) =>
-      of({ ...revisionResponse(metadata.revisions.find((row) => row.id === id) ?? LATEST), ...metadata })
+      of({ ...revisionResponse(response.revisions.find((row) => row.id === id) ?? LATEST), ...response })
     );
     await render(`/documents/${type.agentKey}/living?revision=${selected.id}`);
+    const reader = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!reader) throw new Error('Missing pre-ACK reader');
+    expect(query('mktg-document-view-new-approval')).toBeNull();
+    response = metadata;
+    reader['onPublicProgress']({ detail: metadata, view: null });
+    await settle();
     const progress = new Subject<MktgGenerateProgress>();
     const pending: MktgPendingGeneration = {
       request: { agentId: ICP_INTAKE.agentId, projectUid: PROJECT.uid, intake: ICP_INTAKE, answers: {} },
@@ -3831,6 +3842,7 @@ describe('MktgDocumentViewComponent', () => {
     line?.querySelector('a')?.click();
     await settle();
     expect(TestBed.inject(Router).url).toContain(`revision=${approved.id}`);
+    expect(query('mktg-document-view-new-approval')).toBeNull();
   });
 
   it.each([false, true])('pins the reader through an idle-discovered remote run and stored revision (approved=%s)', async (approved) => {
@@ -3918,6 +3930,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['remoteRevisionId']()).toBe('');
     expect(component['view']()?.revision.id).toBe(newer.id);
     expect(component['view']()?.markdown).toBe(remoteMarkdown);
+    expect(query('mktg-document-view-new-approval')).toBeNull();
   });
 
   it('loads current once when browser Back removes the historical revision selector, then resumes metadata-only polling', async () => {
@@ -3956,10 +3969,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['view']()?.revision.id).toBe(current.id);
   });
 
-  it.each([1, 2])('shows the approved current only when it differs from viewed v%i, even with a newer produced draft', async (number) => {
+  it.each([1, 3])('starts with no event line when deliberately opening v%i while v3 is approved current', async (number) => {
     const approval = { approvedAt: '2026-10-29T12:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
-    const approved = revision(2, { latest: true, approval });
-    const produced = revision(3, { author: { name: 'Synthetic writer' } });
+    const approved = revision(3, { latest: true, approval });
+    const produced = revision(4, { author: { name: 'Synthetic writer' } });
     const oldest = revision(1);
     const selected = number === 1 ? oldest : approved;
     const metadata = {
@@ -3974,13 +3987,8 @@ describe('MktgDocumentViewComponent', () => {
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['remoteRevisionId'].set(selected.id);
     await settle();
-    if (number === 1) {
-      expect(query('mktg-document-view-new-approval')?.textContent).toContain('v2 was approved by Synthetic reviewer');
-      expect(query('mktg-document-view-new-approval-open')?.getAttribute('href')).toContain(`revision=${approved.id}`);
-    } else {
-      expect(component['newlyApprovedRevision']()).toBeNull();
-      expect(query('mktg-document-view-new-approval')).toBeNull();
-    }
+    expect(component['newlyApprovedRevision']()).toBeNull();
+    expect(query('mktg-document-view-new-approval')).toBeNull();
     expect(component['view']()?.revision.id).toBe(selected.id);
   });
 
@@ -4024,13 +4032,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getRevision).toHaveBeenCalledTimes(reads);
   });
 
-  it('renders the newer-revision line from the initial read and leaves the DOM untouched on no-change polls', async () => {
+  it('treats an initially newer produced revision as baseline and leaves the DOM untouched on no-change polls', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     useFrameworkRevision(true, revision(3, { author: { name: 'Synthetic writer' } }));
     await render('/documents/foundation-message/living');
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     const snapshot = component['runDetail']();
-    expect(query('mktg-document-view-new-approval')?.textContent).toContain('v3 was produced by Synthetic writer');
+    expect(query('mktg-document-view-new-approval')).toBeNull();
     store.getDocument.mockImplementation(() => of(structuredClone(snapshot)));
     const records: MutationRecord[] = [];
     const observer = new MutationObserver((batch) => records.push(...batch));
