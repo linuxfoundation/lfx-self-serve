@@ -4490,7 +4490,14 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       hint: 'Optional. The cap of 5 is shared with the square logos.',
       image: { ratioW: 4, ratioH: 1, minWidth: 512, minHeight: 128 },
     },
-    { control: 'squareLogoImages', label: 'Square logo images (1:1)', kind: 'list', max: 5, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } },
+    {
+      control: 'squareLogoImages',
+      label: 'Square logo images (1:1)',
+      kind: 'list',
+      max: 5,
+      hint: 'Optional. The cap of 5 is shared with the landscape logos.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
   ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
 
@@ -4518,9 +4525,10 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
  * so the rule lives here, over the pair.
  *
  * Performance Max and Display are deliberately empty: each requires both marketing arrays
- * SEPARATELY (`pmax_creative.go`; `display_creative.go` since lfx-v2-campaign-service#437, after
- * Google's `ResponsiveDisplayAdInfo`), which their two `min: 1` catalogue entries already express
- * (#4848). An empty list is the honest statement of that, and it keeps every creative-bearing
+ * SEPARATELY, which their two `min: 1` catalogue entries already express (#4848). The authority
+ * for Display is Google's `ResponsiveDisplayAdInfo`, which refuses an ad missing either shape;
+ * campaign-service mirrors it in `display_creative.go` from the release carrying
+ * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty list is the honest statement of that, and it keeps every creative-bearing
  * channel indexable here.
  *
  * The messages are clauses, completed by the channel's section title at the point of use, so one
@@ -4540,9 +4548,11 @@ export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
 /**
  * The ceilings Google states across several of a channel's image fields (#4848), which no
  * per-field `max` can state: every field can sit under its own cap while the group is over this
- * one. campaign-service refuses each before the budget mutate (`maxDemandGenMarketingImages`,
- * `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`, `maxDisplayLogos`), so the
- * operator would otherwise learn of it only as a failed create.
+ * one. Google states each, and campaign-service refuses each before the budget mutate
+ * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`;
+ * Display's shared `maxDisplayLogos` from the release carrying lfx-v2-campaign-service#437, before
+ * which Google refuses the ad itself), so the operator would otherwise learn of it only as a
+ * failed create.
  *
  * Each member's own `max` in {@link GOOGLE_CREATIVE_FIELD_SPECS} equals its group's ceiling, so a
  * single field over it is reported there first, under that field's name.

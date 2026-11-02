@@ -8468,10 +8468,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The first minimum a non-empty creative fails, as a clause, or null when it meets them all.
    *
-   * Four rule kinds, every one of them campaign-service's own and none of them tighter: the
-   * catalogued `min` on a list, the `requiredOnce` scalars Google marks required, the either-or
-   * pairs no per-field bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings
-   * Google shares across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848).
+   * Four rule kinds, every one of them Google's and none of them tighter: the catalogued `min` on
+   * a list, the `requiredOnce` scalars Google marks required, the either-or pairs no per-field
+   * bound can state ({@link GOOGLE_CREATIVE_EITHER_OR_RULES}), and the ceilings Google shares
+   * across several image fields ({@link GOOGLE_CREATIVE_SHARED_CAPS}, #4848). campaign-service
+   * refuses each in preflight; Display's two marketing floors and its shared logo cap only from
+   * the release carrying lfx-v2-campaign-service#437, and before it Google refuses the ad itself.
    * Catalogue order is report order, so the message names the field highest in the section the
    * operator is looking at.
    */
