@@ -48,6 +48,8 @@ export class OrgLensTrainingController {
 
       logger.success(req, 'get_org_lens_training_stats', startTime, {
         org_uid: orgUid,
+        roster_members: response.rosterMembers,
+        people_with_training_activity: response.peopleWithTrainingActivity,
         certified_employees: response.certifiedEmployees,
         certifications_earned: response.certificationsEarned,
         employees_in_training: response.employeesInTraining,

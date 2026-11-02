@@ -122,16 +122,70 @@ export interface GetOrgTrainingsOptions {
   sortOrder: 'ASC' | 'DESC';
 }
 
-/** Summary statistics for the org training & certifications stat strip */
+/**
+ * Summary statistics for the Org Lens training & certifications stat strip and the Overview training tile.
+ * Definitions: `.knowledge/v2/org-lens/training-learner-numbers.md` (lfx-self-serve#4286). Each `*AsOf` is an ISO-8601 UTC timestamp.
+ */
 export interface OrgTrainingStats {
-  /** Count of distinct employees who completed at least one certification (STATUS = 'Certified') */
+  /** Members LF Education's training program lists for the org (ORG_TRAINING_ROSTER_MEMBERS), enrolled or not; null when the org has no training client. */
+  rosterMembers: number | null;
+  /** When the roster data was last updated (AS_OF_TS); null with `rosterMembers`. */
+  rosterMembersAsOf: string | null;
+  /** Distinct people with at least one in-scope enrollment or certificate at any time (ORG_PEOPLE_TRAINING), including learners outside the people list. */
+  peopleWithTrainingActivity: number;
+  /** Build time of ORG_PEOPLE_TRAINING, which also backs the two certification counts; null when the org has no rows. */
+  trainingActivityAsOf: string | null;
+  /** Distinct people holding a current certificate (STATUS = 'Certified', certification courses), issued at any time. */
   certifiedEmployees: number;
-  /** Total count of certification records (STATUS = 'Certified'), regardless of how many employees earned them */
+  /** Current certificates (STATUS = 'Certified', certification courses), issued at any time. */
   certificationsEarned: number;
-  /** Distinct employees with at least one in-progress training enrollment (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
+  /** Snapshot: distinct people with an active enrollment today (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress'). */
   employeesInTraining: number;
-  /** Total in-progress training enrollment rows (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress') */
+  /** Snapshot: active enrollments today (ORG_PEOPLE_TRAINING_COURSES, TRAINING_STATUS = 'InProgress'). */
   trainingCoursesEnrolled: number;
+  /** Build time of ORG_PEOPLE_TRAINING_COURSES, the in-progress snapshot; null when the org has no rows. */
+  inProgressAsOf: string | null;
+}
+
+/** Stats on the Training & Certifications strip; the first four are cumulative, the last two an in-progress snapshot. */
+export type OrgTrainingStatKey =
+  | 'rosterMembers'
+  | 'peopleWithTrainingActivity'
+  | 'certifiedPeople'
+  | 'certificationsEarned'
+  | 'peopleInTraining'
+  | 'trainingCoursesInProgress';
+
+/** Stat cards on People › Trainees; their window is the page's selected range. */
+export type OrgTraineesStatKey = 'trainees' | 'coursesEnrolled' | 'certifications' | 'completionRate';
+
+/** What a learner or enrollment number counts: its label, unit, window and the definition its tooltip states. */
+export interface OrgTrainingStatDefinition {
+  readonly label: string;
+  /** Unit counted, e.g. `people`, `certificates`, `enrollments`. */
+  readonly unit: string;
+  /** Fixed window, e.g. `all time`, `snapshot`; absent when the surface supplies it (the Trainees range). */
+  readonly window?: string;
+  readonly definition: string;
+}
+
+/** Layout of one stat-strip tile: where it sits and where a click goes (null: not clickable). */
+export interface OrgTrainingStatTileLayout {
+  readonly key: OrgTrainingStatKey;
+  readonly group: 'cumulative' | 'snapshot';
+  readonly icon: string;
+  readonly iconClass: string;
+  readonly testId: string;
+  readonly tab: OrgTrainingTabId | null;
+}
+
+/** Client-only view of one stat-strip tile (not on the wire). */
+export interface OrgTrainingStatTileVm extends OrgTrainingStatTileLayout {
+  readonly label: string;
+  /** null when there is nothing to count: no stats loaded, or no training program for the roster stat. */
+  readonly value: number | null;
+  readonly caption: string;
+  readonly tooltip: string;
 }
 
 /**
