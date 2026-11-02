@@ -8,21 +8,36 @@ import {
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+  ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse } from '@lfx-one/shared/interfaces';
+import type { Account, DashboardMetricCard, OrgTrainingEnrollmentsResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
-import { of } from 'rxjs';
+import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { Observable, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgOverviewInvolvementComponent } from './org-overview-involvement.component';
 
 const ACCOUNT_ID = 'acc-1';
 
+const TRAINING_STATS: OrgTrainingStats = {
+  rosterMembers: 1250,
+  rosterMembersAsOf: '2030-03-04T23:00:00.000Z',
+  peopleWithTrainingActivity: 1830,
+  trainingActivityAsOf: '2030-03-05T09:48:21.094Z',
+  certifiedEmployees: 140,
+  certificationsEarned: 190,
+  employeesInTraining: 25,
+  trainingCoursesEnrolled: 31,
+  inProgressAsOf: '2030-03-05T10:15:00.000Z',
+};
+
 async function buildMetrics(
   training: OrgTrainingEnrollmentsResponse,
-  maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] }
+  maintainers: object = { accountId: ACCOUNT_ID, maintainerRoles: 20, monthlyData: [12, 15], monthlyLabels: ['Jan 2030', 'Feb 2030'] },
+  trainingStats: Observable<OrgTrainingStats> = of(TRAINING_STATS)
 ): Promise<DashboardMetricCard[]> {
   const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const analytics = {
@@ -49,6 +64,7 @@ async function buildMetrics(
     providers: [
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgInvolvementAnalyticsService, useValue: analytics },
+      { provide: OrgLensTrainingService, useValue: { getTrainingStats: () => trainingStats } },
     ],
   });
   // The cards' state lives in `primaryMetrics`; the template only renders it (and needs a canvas for charts).
@@ -61,18 +77,19 @@ async function buildMetrics(
 }
 
 function trainingCard(metrics: DashboardMetricCard[]): DashboardMetricCard {
-  const card = metrics.find((metric) => metric.title === 'Training Enrollments');
+  const card = metrics.find((metric) => metric.title === ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label);
   if (!card) {
-    throw new Error('Training Enrollments card missing');
+    throw new Error('Training card missing');
   }
   return card;
 }
 
-describe('OrgOverviewInvolvementComponent training enrollments', () => {
+describe('OrgOverviewInvolvementComponent training tile', () => {
   it('formats YYYY-MM-DD enrollment dates as chart labels', async () => {
     const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
 
     expect(trainingCard(metrics).chartData?.labels).toEqual(['Mar 4, 2030']);
+    expect(trainingCard(metrics).chartCaption).toContain('Mar 4, 2030');
   });
 
   // #4223: a cache entry written before the date-only fix carries an ISO timestamp. Throwing here froze
@@ -86,7 +103,28 @@ describe('OrgOverviewInvolvementComponent training enrollments', () => {
 
     expect(trainingCard(metrics).chartData?.labels).toEqual(['2030-03-04T00:00:00.000Z']);
     expect(metrics.map((metric) => metric.loading)).toEqual([false, false, false, false, false, false]);
-    expect(trainingCard(metrics).value).toBe('7');
+  });
+
+  // lfx-self-serve#4290: the tile shows the Training page's number for the same definition, not this year's enrollments.
+  it('headlines people with training activity, all time, with the as-of date, instead of the year-to-date enrollment total', async () => {
+    const metrics = await buildMetrics({ accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [{ date: '2030-03-04', count: 7, cumulativeCount: 7 }] });
+    const card = trainingCard(metrics);
+
+    expect(card.value).toBe('1,830');
+    expect(card.subtitle).toContain('all time');
+    expect(card.subtitle).toContain('Mar 5, 2030');
+    expect(card.tooltipText).toContain('Mar 5, 2030');
+  });
+
+  it('shows a dash, not zero, when the training stats cannot load', async () => {
+    const metrics = await buildMetrics(
+      { accountId: ACCOUNT_ID, totalEnrollments: 7, dailyData: [] },
+      undefined,
+      throwError(() => new Error('boom'))
+    );
+
+    expect(trainingCard(metrics).value).toBe('—');
+    expect(trainingCard(metrics).loading).toBe(false);
   });
 });
 
@@ -179,6 +217,7 @@ describe('OrgOverviewInvolvementComponent organization scope', () => {
             getTrainingEnrollments: () => of({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] }),
           },
         },
+        { provide: OrgLensTrainingService, useValue: { getTrainingStats: () => of(TRAINING_STATS) } },
       ],
     });
     // The real template, without the chart cards jsdom cannot draw.

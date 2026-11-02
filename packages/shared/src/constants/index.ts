@@ -63,6 +63,7 @@ export * from './activity-event.constants';
 export * from './lens.constants';
 export * from './badge.constants';
 export * from './training.constants';
+export * from './org-training-stats.constants';
 export * from './documents.constants';
 export * from './document-title.constants';
 export * from './transaction.constants';
