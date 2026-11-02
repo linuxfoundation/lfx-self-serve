@@ -18,7 +18,7 @@ It depends on the group's join mode. In an **Open** group, select **Join Group**
 
 ## How do I find a group I'm not a member of?
 
-Open the **Projects** tab in the sidebar, select the project, then select **Groups**. Any signed-in user can browse a project's groups this way; you don't need a role on the project. If you don't see a **Projects** tab, open the project's public groups list at `app.lfx.dev/projects/<project-slug>/groups` instead. Open a group to see its join button. See [Find a group to join](../join-and-leave-a-group/#find-a-group-to-join).
+Open the **Projects** tab in the sidebar, select the project, then select **Groups**. Any signed-in user can browse a project's groups this way; you don't need a role on the project. If you don't see a **Projects** tab, open the project's public groups list at `app.lfx.dev/projects/<project-slug>/groups` instead. You see the project's public groups, plus private groups you are a member of or manage; other private groups are not listed. Open a group to see its join button. See [Find a group to join](../join-and-leave-a-group/#find-a-group-to-join).
 
 ## Where do groups I join show up?
 

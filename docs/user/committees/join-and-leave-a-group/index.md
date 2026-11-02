@@ -19,6 +19,8 @@ You don't need a role on a project to see its groups. Any signed-in user can ope
 3. Select **Groups** in the sidebar. The page lists the project's groups.
 4. Select a group to open its page. The button in the header depends on the group's join mode, described below.
 
+You see the project's **public** groups, plus any **private** groups you are a member of or manage. Private groups you don't have access to are not listed. If you open a link to one, the page says "We couldn't load this group", without confirming whether the group exists. To join a private group, you need an invitation, or a group manager has to add you.
+
 If you don't see a **Projects** tab, or you want to browse without signing in, open the project's public groups list at `app.lfx.dev/projects/<project-slug>/groups`. It lists the project's public groups; select one to open its page, then sign in to join. If someone shared a link to a group, you can open it directly.
 
 After you join, the group appears under **Groups** in the **Me** lens. Pending invitations and applications are listed there too, until you accept or an admin approves you.
