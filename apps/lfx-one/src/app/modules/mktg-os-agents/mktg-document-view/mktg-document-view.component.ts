@@ -276,6 +276,7 @@ export class MktgDocumentViewComponent {
   protected readonly progressRefreshKey = signal('0');
   protected readonly remoteRevisionId = signal('');
   private pinnedRouteRevision = '';
+  private pendingTitleFocus: { scopeKey: string; revisionId: string } | null = null;
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
@@ -307,6 +308,7 @@ export class MktgDocumentViewComponent {
   });
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly memberResult = viewChild(Member360ResultComponent);
+  private readonly documentTitle = viewChild<ElementRef<HTMLElement>>('documentTitle');
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
   protected readonly bannerKey = this.initBannerKey();
@@ -653,6 +655,15 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
+            const focus = this.pendingTitleFocus;
+            if (
+              focus &&
+              (focus.scopeKey !== JSON.stringify([request.project, request.agentKey, request.documentId]) ||
+                focus.revisionId !== request.revisionId ||
+                request.runId ||
+                request.generation)
+            )
+              this.pendingTitleFocus = null;
             if (request.revisionId !== this.pinnedRouteRevision || request.generation) this.remoteRevisionId.set('');
             const key = JSON.stringify({ ...request, reload: 0 });
             selectionChanged = key !== readerSelectionKey;
@@ -678,6 +689,7 @@ export class MktgDocumentViewComponent {
             }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
+              this.pendingTitleFocus = null;
               this.loadedScope = scope;
               this.remoteRevisionId.set('');
               this.redirectedRun = '';
@@ -1011,11 +1023,35 @@ export class MktgDocumentViewComponent {
           takeUntilDestroyed()
         )
         .subscribe((view) => {
+          const focus = this.pendingTitleFocus;
+          this.pendingTitleFocus = null;
           this.view.set(view);
           if (view) this.selectionReadPending.set(false);
           if (!this.editingLink() && !this.savingLink())
             this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
+          if (
+            focus &&
+            view &&
+            focus.scopeKey === JSON.stringify([view.project, view.type.agentKey, view.documentId]) &&
+            focus.revisionId === view.revision.id
+          ) {
+            const focusScope = this.loadedScope;
+            afterNextRender(
+              () => {
+                if (focusScope !== this.loadedScope) return;
+                const current = this.view();
+                if (!current) return;
+                if (
+                  this.revisionParam() === focus.revisionId &&
+                  current.revision.id === focus.revisionId &&
+                  JSON.stringify([current.project, current.type.agentKey, current.documentId]) === focus.scopeKey
+                )
+                  this.focusDocumentTitle();
+              },
+              { injector: this.injector }
+            );
+          }
         });
     }
   }
@@ -1027,23 +1063,12 @@ export class MktgDocumentViewComponent {
     this.focusDocumentTitle();
   }
 
-  protected onBannerOpen(): void {
+  protected onBannerOpen(event: MouseEvent): void {
+    this.pendingTitleFocus = null;
     const banner = this.currentBanner();
     const viewed = this.view();
-    if (!banner || !viewed || this.submittingGeneration() || !isPlatformBrowser(this.platformId)) return;
-    toObservable(this.view, { injector: this.injector })
-      .pipe(
-        filter(
-          (opened) =>
-            opened?.project === viewed.project &&
-            opened?.type.agentKey === viewed.type.agentKey &&
-            opened?.documentId === viewed.documentId &&
-            opened?.revision.id === banner.id
-        ),
-        take(1),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(() => afterNextRender(() => this.focusDocumentTitle(), { injector: this.injector }));
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !banner || !viewed || this.submittingGeneration()) return;
+    this.pendingTitleFocus = { scopeKey: JSON.stringify([viewed.project, viewed.type.agentKey, viewed.documentId]), revisionId: banner.id };
   }
 
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
@@ -1120,6 +1145,7 @@ export class MktgDocumentViewComponent {
   }
 
   protected onPublicProgressError(error: HttpErrorResponse): void {
+    this.pendingTitleFocus = null;
     this.runDetail.set(null);
     this.localProgress.set(null);
     this.view.set(null);
@@ -1797,12 +1823,11 @@ export class MktgDocumentViewComponent {
     }
   }
 
-  // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
   private focusDocumentTitle(): void {
-    if (isPlatformBrowser(this.platformId))
-      this.document.querySelector<HTMLElement>('[data-testid="mktg-document-view-title"]')?.focus({ preventScroll: true });
+    if (isPlatformBrowser(this.platformId)) this.documentTitle()?.nativeElement.focus({ preventScroll: true });
   }
 
+  // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
   private clearAeoPrint(): void {
     if (this.aeoPrintRequested) {
       this.printService.clear();

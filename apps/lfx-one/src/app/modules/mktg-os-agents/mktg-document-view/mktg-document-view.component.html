@@ -16,7 +16,7 @@
     @if (currentBanner(); as banner) {
       <div
         data-testid="mktg-document-view-current-banner"
-        class="flex min-w-0 flex-col gap-3 rounded-lg border border-blue-600 bg-blue-50 p-[12px] text-[14px] leading-[1.45] text-gray-900 md:flex-row md:items-center md:px-[16px] md:py-[12px] md:text-[15px]">
+        class="flex min-w-0 flex-col gap-3 rounded-lg border border-blue-600 bg-blue-50 p-[12px] text-[14px] leading-[1.45] text-gray-900 md:flex-row md:items-center md:px-[16px] md:text-[15px]">
         <span class="min-w-0 flex-1">
           <strong>v{{ banner.number }} is now the current version</strong>{{ banner.approverClause }}. You are reading v{{ banner.viewedNumber }}.
         </span>
@@ -30,7 +30,7 @@
             queryParamsHandling="merge"
             data-testid="mktg-document-view-current-banner-open"
             class="min-w-0 flex-1 whitespace-normal rounded-lg bg-blue-600 px-4 py-2 text-center font-semibold text-white hover:bg-blue-700 md:flex-none md:whitespace-nowrap"
-            (click)="onBannerOpen()"
+            (click)="onBannerOpen($event)"
             >Open v{{ banner.number }}</a
           >
           <button
@@ -51,7 +51,12 @@
             <lfx-mktg-skeleton variant="header" />
           </div>
         } @else {
-          <h1 tabindex="-1" class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
+          <h1
+            #documentTitle
+            tabindex="-1"
+            class="text-base font-semibold text-gray-900"
+            [class.break-words]="isLinkedinDocument()"
+            data-testid="mktg-document-view-title">
             {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
           </h1>
         }

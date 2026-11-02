@@ -311,6 +311,22 @@ describe('MktgDocumentViewComponent', () => {
     return history;
   }
 
+  function mockBannerFocusHistory() {
+    const history = mockNineRevisionHistory(3);
+    const current = history.revisions.find((row) => row.number === 3);
+    const viewed = history.revisions.find((row) => row.number === 1);
+    if (!current || !viewed) throw new Error('Missing synthetic focus revisions');
+    current.approval = { approvedAt: '2026-11-02T18:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    history.approvedCurrent = { revisionId: current.id, number: current.number };
+    store.getRevision.mockImplementation((project: string, _agent: string, _document: string, id: string) => {
+      const selected = history.revisions.find((row) => row.id === id);
+      if (!selected) throw new Error('Missing synthetic focus selection');
+      return of({ ...history, project, revision: selected, approval: selected.approval, markdown: `# Revision ${selected.number}\n`, sidecar: null });
+    });
+    const targetView: MktgRevisionResponse = { ...history, revision: current, approval: current.approval, markdown: '# Revision 3\n', sidecar: null };
+    return { viewed, current, targetView };
+  }
+
   beforeEach(async () => {
     dialog.open.mockReset();
     subject = linkedSignal(() => viewer()?.sub ?? '');
@@ -2567,7 +2583,6 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/${type.agentKey}/living?revision=${selected.id}`);
     const reader = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     if (!reader) throw new Error('Missing pre-ACK reader');
-
     response = metadata;
     reader['onPublicProgress']({ detail: metadata, view: null });
     await settle();
@@ -2585,7 +2600,6 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
     if (!component) throw new Error('Missing prepared receiver');
-
     expect(query('mktg-document-view-current-banner-open')).not.toBeNull();
     const links = [
       ...(harness.routeNativeElement?.querySelectorAll<HTMLAnchorElement>(
@@ -2922,7 +2936,6 @@ describe('MktgDocumentViewComponent', () => {
     );
     await render(`/documents/brand-kit/living?revision=${survivor.id}`);
     expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
-
     query('mktg-document-view-viewed-make-current')?.click();
     await settle();
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
@@ -3057,12 +3070,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-version')?.textContent).toContain('v1');
     expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(2);
     expect(query('mktg-document-view-viewed-make-current')).not.toBeNull();
-
     expect(query('mktg-document-view-viewed-make-current')?.textContent).toContain('Make current');
-
     const openLink = query('mktg-document-view-open-2');
     const runAgain = expectTitleCardRunAgain();
-    if (!openLink) throw new Error('Missing history fixture');
+    if (!openLink) throw new Error('Missing open-revision link fixture');
     expect(runAgain.compareDocumentPosition(openLink) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     const focusable = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLElement>('a[href], button, [tabindex]') ?? []).filter(
       (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
@@ -3071,7 +3082,6 @@ describe('MktgDocumentViewComponent', () => {
     if (!navigationLink) throw new Error('Missing shared parent breadcrumb');
     expect(focusable[focusable.indexOf(navigationLink) + 1]).toBe(runAgain);
     const restoreCurrent = query('mktg-document-view-viewed-make-current');
-
     expect(query('mktg-document-view-revisions')?.contains(restoreCurrent)).toBe(true);
     expect(query('mktg-document-view-content')?.contains(restoreCurrent)).toBe(false);
     expect(query('mktg-document-view-hash')).toBeNull();
@@ -3383,7 +3393,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-controls')).toBe('mktg-document-view-revision-list');
     expect(query('mktg-document-view-revision-3')).toBeNull();
     expect(query('mktg-document-view-revision-4')).toBeNull();
-
     expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 9 ▾');
     query('mktg-document-view-show-all-revisions')?.click();
     await settle();
@@ -3606,12 +3615,12 @@ describe('MktgDocumentViewComponent', () => {
     await render(`/documents/faq/living?revision=${draft.id}`);
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     const approve = query('mktg-document-view-approve')?.querySelector('button');
-    const history = query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null;
+    const viewedMakeCurrent = query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null;
     const row = query('mktg-document-view-restore-1') as HTMLButtonElement | null;
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
-    (first === 'approve' ? approve : history)?.click();
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(false);
+    (first === 'approve' ? approve : viewedMakeCurrent)?.click();
     await settle();
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(true);
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(true);
     component['onApprove']();
     component['onRestore'](OLDER);
     expect(store.approveRevision).toHaveBeenCalledTimes(first === 'approve' ? 1 : 0);
@@ -3622,7 +3631,7 @@ describe('MktgDocumentViewComponent', () => {
       pending.complete();
     }
     await settle();
-    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
+    for (const button of [approve, viewedMakeCurrent, row]) expect(button?.disabled).toBe(false);
   });
 
   it.each(['brand-kit', 'foundation-message'] as const)(
@@ -3861,7 +3870,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(tabs?.getBoundingClientRect().top).toBe(tabsTop);
     const currentPill = query('mktg-document-view-current-3');
     expect(currentPill).not.toBeNull();
-
     if (approved) expect(query('mktg-document-view-current-banner')?.textContent).toContain('v3 is now the current version, approved by Synthetic reviewer');
     else expect(query('mktg-document-view-current-banner-open')).toBeNull();
     expect(query(approved ? 'mktg-document-view-current-banner-open' : 'mktg-document-view-open-3')?.getAttribute('href')).toContain(`revision=${newer.id}`);
@@ -3938,7 +3946,6 @@ describe('MktgDocumentViewComponent', () => {
     const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
     component['remoteRevisionId'].set(selected.id);
     await settle();
-
     if (number === 1) expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${approved.id}`);
     else expect(query('mktg-document-view-current-banner-open')).toBeNull();
     expect(component['view']()?.revision.id).toBe(selected.id);
@@ -4179,13 +4186,85 @@ describe('MktgDocumentViewComponent', () => {
     await harness.navigateByUrl(`/documents/brand-kit/living?revision=${revisions[2].id}`, MktgDocumentViewComponent);
     await settle();
     expect(query('mktg-document-view-current-banner-open')?.getAttribute('href')).toContain(`revision=${revisions[1].id}`);
-    query('mktg-document-view-current-banner-open')?.click();
+    const openLink = query('mktg-document-view-current-banner-open');
+    if (!openLink) throw new Error('Missing current-version link');
+    openLink.focus();
+    expect(document.activeElement).toBe(openLink);
+    openLink.click();
     await settle();
     expect(query('mktg-document-view-current-banner')).toBeNull();
     expect(query('mktg-document-view-viewed-make-current')).toBeNull();
     expect(query('mktg-document-view-current-banner-status')).toBe(status);
     expect(status?.textContent).toBe('');
     expect(document.activeElement).toBe(query('mktg-document-view-title'));
+  });
+
+  it('moves focus from the banner Open link to the title only after its requested revision lands', async () => {
+    const { viewed, current } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const openLink = query('mktg-document-view-current-banner-open');
+    if (!openLink) throw new Error('Missing synthetic banner link');
+    openLink.focus();
+    expect(document.activeElement).toBe(openLink);
+    openLink.click();
+    await settle();
+    expect(component['view']()?.revision.id).toBe(current.id);
+    expect(component['pendingTitleFocus']).toBeNull();
+    expect(document.activeElement).toBe(query('mktg-document-view-title'));
+  });
+
+  it('does not steal focus on later row navigation after a banner Open body read fails', async () => {
+    const { viewed, current, targetView } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const failedRead = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 })));
+    store.getRevision.mockImplementationOnce(failedRead);
+    const bannerLink = query('mktg-document-view-current-banner-open');
+    if (!bannerLink) throw new Error('Missing failing banner link');
+    bannerLink.focus();
+    bannerLink.click();
+    await settle();
+    expect(failedRead).toHaveBeenCalledOnce();
+    expect(component['pendingTitleFocus']).toBeNull();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${viewed.id}`, MktgDocumentViewComponent);
+    await settle();
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockImplementationOnce(() => pending);
+    const targetLink = query(`mktg-document-view-open-${current.number}`);
+    if (!targetLink) throw new Error('Missing later revision link');
+    targetLink.focus();
+    targetLink.click();
+    await settle();
+    const retainedRowLink = query('mktg-document-view-open-9');
+    if (!retainedRowLink) throw new Error('Missing retained row link');
+    retainedRowLink.focus();
+    expect(document.activeElement).toBe(retainedRowLink);
+    pending.next(targetView);
+    pending.complete();
+    await settle();
+    expect(component['view']()?.revision.id).toBe(current.id);
+    expect(document.activeElement).toBe(retainedRowLink);
+    expect(component['pendingTitleFocus']).toBeNull();
+  });
+
+  it('does not arm banner title focus for modifier or non-primary clicks', async () => {
+    const { viewed } = mockBannerFocusHistory();
+    await render(`/documents/brand-kit/living?revision=${viewed.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const link = query('mktg-document-view-current-banner-open');
+    if (!link) throw new Error('Missing synthetic modified-click link');
+    const url = TestBed.inject(Router).url;
+    for (const modifier of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      link.focus();
+      const event = new MouseEvent('click', { button: 0, ...modifier, bubbles: true, cancelable: true });
+      event.preventDefault();
+      link.dispatchEvent(event);
+      await settle();
+      expect(component['pendingTitleFocus']).toBeNull();
+      expect(document.activeElement).toBe(link);
+      expect(TestBed.inject(Router).url).toBe(url);
+    }
   });
 
   it('mounts the empty status region before the banner sentence arrives', async () => {
@@ -4615,7 +4694,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(status?.textContent).toBe('Saving revision 1…');
     expect(status?.closest('[aria-busy]')).toBeNull();
     expect(query('mktg-document-view-viewed-make-current')?.textContent?.trim()).toBe('Saving…');
-
     expect((query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null)?.disabled).toBe(true);
     expect(pending.observed).toBe(true);
     harness.fixture.destroy();
@@ -4640,7 +4718,6 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-error')?.textContent).toContain('The revision could not be made current. Reload to check its state, then try again.');
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect((query('mktg-document-view-viewed-make-current') as HTMLButtonElement | null)?.disabled).toBe(false);
-
     expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
   });
   it('renders a Brand Kit revision on the kit’s web view, in the content column, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
