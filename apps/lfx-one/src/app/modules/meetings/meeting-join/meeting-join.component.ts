@@ -1594,12 +1594,13 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  // Tooltip: the zone the meeting was scheduled in, which can differ from the viewer's.
+  // Visible line naming the zone the meeting was scheduled in, shown only when it differs from the viewer's
+  // zone (title tooltips are unreachable on touch and by keyboard).
   private initializeMobileScheduledTimezoneLabel(): Signal<string> {
     return computed(() => {
       const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
       const scheduledZone = this.meeting()?.timezone;
-      if (!startTime || !scheduledZone) {
+      if (!startTime || !scheduledZone || scheduledZone === this.userTimezone()) {
         return '';
       }
       return `Scheduled in ${scheduledZone} (${getTimezoneAbbreviation(startTime, scheduledZone)})`;
@@ -1614,7 +1615,8 @@ export class MeetingJoinComponent implements OnInit {
     });
   }
 
-  // Full organizer name(s), same resolution as the desktop chip; never blank (falls back per organizerDisplayName).
+  // Full organizer name(s) from the same organizer set as the desktop chip (every name comma-joined, no "you"/"+N" collapsing);
+  // when none resolves, organizerDisplayName supplies a never-blank fallback.
   private initializeMobileOrganizerLabel(): Signal<string> {
     return computed(() => {
       const meeting = this.meeting();

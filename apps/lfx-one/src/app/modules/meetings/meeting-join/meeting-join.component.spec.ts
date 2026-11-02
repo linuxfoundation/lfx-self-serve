@@ -1998,13 +1998,29 @@ describe('MeetingJoinComponent', () => {
       });
 
       it('shows the viewer timezone abbreviation next to the time', async () => {
-        const page = await renderPage({ timezone: 'America/Los_Angeles' });
+        const page = await renderPage();
 
-        const datetime = page.querySelector('[data-testid="meeting-meta-mobile-datetime"]');
         const abbreviation = page.querySelector('[data-testid="meeting-meta-mobile-timezone"]');
-        expect(datetime).not.toBeNull();
         expect(abbreviation?.textContent?.trim()).toBe(getTimezoneAbbreviation(FUTURE_START_TIME, getUserTimezone()));
-        expect(abbreviation?.getAttribute('title')).toContain('Scheduled in America/Los_Angeles');
+      });
+
+      it('names the scheduled zone as visible text when it differs from the viewer zone', async () => {
+        const scheduledZone = getUserTimezone() === 'Asia/Tokyo' ? 'America/New_York' : 'Asia/Tokyo';
+        const page = await renderPage({ timezone: scheduledZone });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')?.textContent).toContain(`Scheduled in ${scheduledZone}`);
+      });
+
+      it('omits the scheduled zone line when it matches the viewer zone', async () => {
+        const page = await renderPage({ timezone: getUserTimezone() });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')).toBeNull();
+      });
+
+      it('still shows foundation and project when the guest projection has no start_time', async () => {
+        const page = await renderPage({ start_time: undefined as unknown as string });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
       });
 
       it('shows foundation and project on one line', async () => {

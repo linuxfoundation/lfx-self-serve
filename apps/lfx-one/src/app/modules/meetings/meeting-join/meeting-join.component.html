@@ -210,26 +210,27 @@
                   }
 
                   <!-- Compact meta summary (mobile only): date · time · zone, foundation · project, organizer. Desktop keeps the pills below. -->
-                  @if (currentOccurrence()?.start_time || meeting().start_time; as mobileStartTime) {
-                    <div class="flex flex-col gap-1 text-sm text-gray-700 md:hidden" data-testid="meeting-meta-mobile">
+                  <div class="flex flex-col gap-1 text-sm text-gray-700 md:hidden" data-testid="meeting-meta-mobile">
+                    @if (currentOccurrence()?.start_time || meeting().start_time; as mobileStartTime) {
                       @if (userTimezone(); as tz) {
                         <p class="font-medium text-gray-900" data-testid="meeting-meta-mobile-datetime">
                           {{ mobileStartTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz }}
-                          <span class="underline decoration-dotted" [attr.title]="mobileScheduledTimezoneLabel()" data-testid="meeting-meta-mobile-timezone">
-                            {{ mobileTimezoneAbbreviation() }}
-                          </span>
+                          <span data-testid="meeting-meta-mobile-timezone">{{ mobileTimezoneAbbreviation() }}</span>
                         </p>
+                        @if (mobileScheduledTimezoneLabel(); as scheduledLabel) {
+                          <p class="text-xs text-gray-500" data-testid="meeting-meta-mobile-scheduled-zone">{{ scheduledLabel }}</p>
+                        }
                       } @else {
                         <p-skeleton width="14rem" height="1.25rem" animation="wave" data-testid="meeting-meta-mobile-datetime-skeleton" />
                       }
-                      @if (mobileContextLabel(); as contextLabel) {
-                        <p data-testid="meeting-meta-mobile-context">{{ contextLabel }}</p>
-                      }
-                      @if (authenticated()) {
-                        <p class="break-words" data-testid="meeting-meta-mobile-organizer">Organized by {{ mobileOrganizerLabel() }}</p>
-                      }
-                    </div>
-                  }
+                    }
+                    @if (mobileContextLabel(); as contextLabel) {
+                      <p data-testid="meeting-meta-mobile-context">{{ contextLabel }}</p>
+                    }
+                    @if (authenticated()) {
+                      <p class="break-words" data-testid="meeting-meta-mobile-organizer">Organized by {{ mobileOrganizerLabel() }}</p>
+                    }
+                  </div>
 
                   <!-- Date/Time Badge -->
                   @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {

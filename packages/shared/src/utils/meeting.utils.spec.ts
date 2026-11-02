@@ -2073,8 +2073,8 @@ describe('getMeetingSelfRemovalMessage', () => {
 describe('organizerDisplayName', () => {
   it('prefers the owner name', () => {
     expect(
-      organizerDisplayName({ owner: { name: 'Mazin Gilbert', username: 'mgilbert' }, created_by: { name: 'Other Person', username: 'op', email: '' } })
-    ).toBe('Mazin Gilbert');
+      organizerDisplayName({ owner: { name: 'Test Organizer', username: 'test-organizer' }, created_by: { name: 'Other Person', username: 'op', email: '' } })
+    ).toBe('Test Organizer');
   });
 
   it('falls back to created_by name when the owner is empty', () => {
