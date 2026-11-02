@@ -53,6 +53,8 @@ export class UiDrawerService {
             // The host class is set on the element, not through the template: a close during teardown must not need a render.
             const host = current.overlayRef.overlayElement.querySelector('lfx-ui-drawer');
             host?.classList.add('is-leaving');
+            // Inert stops keyboard activation as well as clicks while it slides out.
+            host?.setAttribute('inert', '');
             const finish = () => {
               if (exited) return;
               clearTimeout(timer);

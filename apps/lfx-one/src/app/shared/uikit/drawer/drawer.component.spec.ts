@@ -369,6 +369,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
       pressEscape();
       await settle();
       expect(drawer()?.className).toContain('is-leaving');
+      expect(drawer()?.hasAttribute('inert')).toBe(true);
 
       pressEscape();
       clickBackdrop();
