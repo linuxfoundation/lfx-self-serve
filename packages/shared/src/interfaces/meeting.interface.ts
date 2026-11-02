@@ -1073,9 +1073,9 @@ export interface PastMeeting extends Meeting {
   sessions: MeetingSession[];
   /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
-  /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings only; undefined when the lookup failed */
+  /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_recording?: boolean;
-  /** Whether an approved (or approval-free) AI summary with content is viewable — /api/user/past-meetings only; undefined when the lookup failed */
+  /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_ai_summary?: boolean;
 }
 

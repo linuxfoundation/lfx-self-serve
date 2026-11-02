@@ -1705,7 +1705,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
       [summary('m1:1'), summary('m2:1', { approved: false }), summary('m3:1', { content: '', requires_approval: false })]
     );
 
-    const result = await service.getUserPastMeetings(req, 'user@example.com');
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(result.map((m) => [m.id, m.has_recording, m.has_ai_summary])).toEqual([
       ['m1:1', true, true],
@@ -1723,20 +1723,49 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     }
   });
 
+  it('reports a summary awaiting approval only to organizers', async () => {
+    mockIndexes(
+      [pastMeeting('invited:1'), pastMeeting('organized:1')],
+      [],
+      [summary('invited:1', { approved: false }), summary('organized:1', { approved: false })]
+    );
+    Object.assign(service, {
+      accessCheckService: {
+        addAccessToResources: async (_req: Request, items: PastMeeting[]) => items.map((m) => ({ ...m, organizer: m.id === 'organized:1' })),
+      },
+    });
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
+  });
+
   it('leaves only the failed flag undefined when one index lookup fails', async () => {
     mockIndexes([pastMeeting('m1:1')], new Error('recording index down'), [summary('m1:1')]);
 
-    const [result] = await service.getUserPastMeetings(req, 'user@example.com');
+    const [result] = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(result.has_recording).toBeUndefined();
     expect(result.has_ai_summary).toBe(true);
+  });
+
+  it('skips the artifact lookups and leaves the flags absent unless asked', async () => {
+    mockIndexes([pastMeeting('m1:1')], [recording('m1:1', 'https://zoom.example/rec/1')], [summary('m1:1')]);
+
+    const [result] = await service.getUserPastMeetings(req, 'user@example.com');
+
+    const types = proxyRequest.mock.calls.map(([, , , , params]) => params?.type);
+    expect(types).not.toContain('v1_past_meeting_recording');
+    expect(types).not.toContain('v1_past_meeting_summary');
+    expect(result).not.toHaveProperty('has_recording');
+    expect(result).not.toHaveProperty('has_ai_summary');
   });
 
   it('queries at most 100 past meetings per request', async () => {
     const meetings = Array.from({ length: 150 }, (_, i) => pastMeeting(`m${i}:1`));
     mockIndexes(meetings, [], []);
 
-    const result = await service.getUserPastMeetings(req, 'user@example.com');
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     const recordingCalls = proxyRequest.mock.calls.filter(([, , , , params]) => params?.type === 'v1_past_meeting_recording');
     expect(recordingCalls.map(([, , , , params]) => params.tags.length)).toEqual([100, 50]);

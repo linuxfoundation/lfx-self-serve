@@ -227,3 +227,30 @@ describe('UserController — foundation_uid validation on meeting list endpoints
     });
   }
 });
+
+describe('UserController.getUserPastMeetings include param', () => {
+  let controller: UserController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new UserController();
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    userSvc.getUserPastMeetings.mockResolvedValue([]);
+    getStringQueryParamMock.mockImplementation(((r: { query: Record<string, unknown> }, name: string) =>
+      typeof r.query[name] === 'string' ? r.query[name] : undefined) as never);
+  });
+
+  it.each([
+    [{ include: 'artifacts' }, true],
+    [{ include: 'everything' }, false],
+    [{ include: ['artifacts', 'artifacts'] }, false],
+    [{}, false],
+  ])('passes includeArtifacts for query %j as %s', async (query, includeArtifacts) => {
+    const next = vi.fn();
+
+    await controller.getUserPastMeetings({ query, path: '/api/user/past-meetings', log: {} } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(userSvc.getUserPastMeetings).toHaveBeenCalledWith(expect.anything(), 'user@example.com', undefined, undefined, { includeArtifacts });
+  });
+});
