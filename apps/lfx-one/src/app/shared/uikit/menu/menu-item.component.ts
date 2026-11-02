@@ -4,6 +4,7 @@
 import { CdkMenuItem } from '@angular/cdk/menu';
 import { ChangeDetectionStrategy, Component, computed, DoCheck, inject, input, Signal } from '@angular/core';
 
+import { UiKeyboardInputComponent } from '../keyboard-input/keyboard-input.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
@@ -19,6 +20,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 @Component({
   selector: 'lfx-ui-menu-item',
   templateUrl: './menu-item.component.html',
+  imports: [UiKeyboardInputComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   hostDirectives: [
     {
@@ -40,12 +42,13 @@ export class UiMenuItemComponent implements DoCheck {
   public readonly icon = input<string>('');
   /** Font Awesome class string for a trailing icon, such as an external-link arrow. */
   public readonly trailingIcon = input<string>('');
-  /** Keyboard shortcut shown at the end of the row, such as `⌘E`. It is a hint only; wire the shortcut yourself. */
+  /** Keyboard shortcut shown at the end of the row as keycaps, such as `⌘E` or `Ctrl+E`. It is a hint only; wire the shortcut yourself. */
   public readonly shortcut = input<string>('');
 
   protected readonly menuItem = inject(CdkMenuItem);
   private readonly tooltip = inject(UiTooltipDirective, { self: true });
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
+  protected readonly shortcutKeys: Signal<string[]> = this.initShortcutKeys();
   protected readonly affixClasses: Signal<string> = this.initAffixClasses();
 
   public constructor() {
@@ -63,6 +66,22 @@ export class UiMenuItemComponent implements DoCheck {
       const base =
         'group flex h-ui-menu-item shrink-0 w-full cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 hover:bg-ui-neutral-alpha-50 focus:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-focus aria-disabled:cursor-not-allowed aria-disabled:text-ui-neutral-500 aria-disabled:hover:bg-transparent';
       return `${base} ${this.variant() === 'danger' ? 'text-ui-danger-700' : 'text-ui-neutral-900'}`;
+    });
+  }
+
+  private initShortcutKeys(): Signal<string[]> {
+    return computed(() => {
+      const shortcut = this.shortcut().trim();
+      if (shortcut.includes('+')) {
+        return shortcut
+          .split('+')
+          .map((key) => key.trim())
+          .filter(Boolean);
+      }
+      // `⌘E`: each leading modifier symbol is its own key, the rest is the last key.
+      const modifiers = shortcut.match(/^[⌘⇧⌥⌃]+/)?.[0] ?? '';
+      const rest = shortcut.slice(modifiers.length);
+      return [...Array.from(modifiers), ...(rest ? [rest] : [])];
     });
   }
 

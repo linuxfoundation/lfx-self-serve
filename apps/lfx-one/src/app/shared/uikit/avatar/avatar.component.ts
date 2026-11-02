@@ -107,8 +107,8 @@ export class UiAvatarComponent {
   }
 
   private initFontSize(): Signal<number> {
-    // Three-character text such as `+14` needs a smaller scale than one or two initials.
-    return computed(() => this.size() * (Array.from(this.text()).length > 2 ? 0.32 : 0.38));
+    // The `+N` overflow tile of a group uses the library's smaller 32% scale; initials use 38%.
+    return computed(() => this.size() * (this.initials().startsWith('+') ? 0.32 : 0.38));
   }
 
   private initClasses(): Signal<string> {

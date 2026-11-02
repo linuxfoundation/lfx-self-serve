@@ -102,7 +102,8 @@ describe('UiMenuComponent', () => {
     await open();
 
     expect(item('edit').querySelector('[data-testid="ui-menu-item-icon"] i')?.className).toContain('fa-pen-to-square');
-    expect(item('edit').querySelector('kbd')?.textContent).toBe('⌘E');
+    const keys = Array.from(item('edit').querySelectorAll('[data-testid="ui-menu-item-shortcut"] kbd'));
+    expect(keys.map((key) => key.querySelector('[aria-hidden="true"]')?.textContent ?? key.textContent?.trim())).toEqual(['⌘', 'E']);
     expect(item('delete').querySelector('[data-testid="ui-menu-item-trailing-icon"]')).not.toBeNull();
     expect(item('delete').className).toContain('text-ui-danger-700');
     expect(item('edit').className).toContain('text-ui-neutral-900');

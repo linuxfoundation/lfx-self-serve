@@ -457,6 +457,8 @@ export default {
         '.edge-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
         // cv11/ss01 for uikit text that sets a size without a type role.
         '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
+        // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
+        '.ui-icon': { '--fa-width': '1em', height: '1em', flexShrink: '0' },
       });
       // Full type roles (`heading-24`, `copy-14`, `button-14`, ...): family, size, line height, weight and tracking.
       addComponents(

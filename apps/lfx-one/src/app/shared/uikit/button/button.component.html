@@ -5,11 +5,11 @@
   @if (loading()) {
     <lfx-ui-spinner tone="current" [size]="iconSize()" aria-hidden="true" data-testid="ui-button-spinner" />
   } @else if (icon()) {
-    <i [class]="icon()" aria-hidden="true"></i>
+    <i class="ui-icon" [class]="icon()" aria-hidden="true"></i>
   }
   <ng-content />
   @if (trailingIcon() && !iconOnly()) {
-    <i [class]="trailingIcon()" aria-hidden="true" data-testid="ui-button-trailing-icon"></i>
+    <i class="ui-icon" [class]="trailingIcon()" aria-hidden="true" data-testid="ui-button-trailing-icon"></i>
   }
 </ng-template>
 

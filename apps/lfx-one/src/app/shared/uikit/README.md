@@ -58,7 +58,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-choicebox`      | `UiChoiceboxComponent`     | Large radio or checkbox tile with title, description and badge; `lfx-ui-choicebox-group` holds them: `[(value)]` or `[(values)]`, forms                                |
 | `lfx-ui-textarea`       | `UiTextareaComponent`      | Multi-line field: label, hint, error, 80px minimum, vertical resize, `maxlength`; `[(value)]` and forms                                                                |
 | `lfx-ui-empty-state`    | `UiEmptyStateComponent`    | Icon tile or your own art, title and one sentence, with `empty-state-action` buttons below; title is a heading at a level you set                                      |
-| `lfx-ui-toast`          | `UiToastComponent`         | Message toast: default, success, warning, error; up to two actions, dismiss button, 5s or 8s auto-dismiss that pauses on hover and focus; `role="status"` or `"alert"` |
+| `lfx-ui-toast`          | `UiToastComponent`         | Message toast: default, success, warning, error; two actions, dismiss button; closes in 5s, 8s with actions, never for errors; `role="status"` or `"alert"`            |
 | `lfx-ui-split-button`   | `UiSplitButtonComponent`   | Main action joined to a chevron that opens an `lfx-ui-menu`: primary or secondary, three sizes; named, `aria-haspopup`, `aria-expanded`                                |
 | `UiToastService`        | `UiToastService`           | Bottom-right stack in a CDK overlay, newest on top, kept as a polite live region; `show()` returns a handle, `dismissAll()`                                            |
 | `lfxUiContextMenu`      | `UiContextMenuDirective`   | Opens a `lfx-ui-menu` on right-click, touch long-press, Shift+F10 or the context menu key; flips inside the window; innermost host wins                                |
@@ -68,6 +68,7 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-multi-select`   | `UiMultiSelectComponent`   | Several values from the same `lfx-ui-option` rows: checkbox rows, Only action, count in the trigger; `[(values)]` and forms with `string[]`                            |
 | `lfxUiPopover`          | `UiPopoverDirective`       | Non-modal dialog panel in the Menu material from any content: `aria-haspopup`, `aria-expanded`, Escape and outside click close; open it from `lfx-ui-button [popover]` |
 | `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal: left or right, width in px, header actions and close button, scrolling body, footer; slides, `canClose` guard           |
+| `UiDrawerService`       | `UiDrawerService`          | Opens content whose root is `lfx-ui-drawer` as a side sheet on the modal: focus trap, scroll lock, slide; `canClose` guards dismissal; returns a `DialogRef`           |
 | `lfx-ui-chip`           | `UiChipComponent`          | Removable badge for an applied filter: accent subtle, 20px or 24px, × button named "Remove" and the label; `lfx-ui-chip-group` moves focus on removal                  |
 
 ## Design tokens
@@ -78,6 +79,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
 - **Tailwind utilities** (v3, `tailwind.config.js`) read those variables, so they follow the theme. Existing classes (`bg-blue-500`, `text-gray-700`, `rounded-md`, `shadow-md`, `text-sm`) are unchanged.
 - **White and black:** on-colour ink is `text-ui-white` (also `bg-ui-white`, `stroke-ui-white` and the `ui-black` equivalents), which read `--ui-white` / `--ui-black`. The bare `text-white` is the app's `lfxColors.white`, not a library token.
 - **Exact px:** the app root font is 14px, so rem would scale. Library sizes are px values, not Tailwind's rem scale (`h-10` is 35px here; `h-ui-medium` is 40px).
+- **Icons:** `ui-icon` gives a Font Awesome `<i>` the library's 1em box (Font Awesome 7 makes glyphs 1.25em wide). Put it on every icon a uikit component renders.
 - **No opacity modifier:** colours are CSS variables, so `bg-ui-accent-500/50` does not work. Use the matching `ui-*-alpha` or lower step (`bg-ui-accent-100`).
 - **Primitives** other than white and black (`azure`, `slate`, ...) are variables only. Components use the `ui-*` roles, except the hover and active colour mixes on `--ui-slate-900` in Button, SplitButton and Toast, which copy the library's `bundle.css` until it ships mix tokens. The primitives are for charts, avatars and illustrations (`var(--ui-azure-500)`).
 - **Colour literals:** a few shadows and masks use literal colours, because the library ships no token for them yet:
@@ -85,6 +87,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
   - Toggle thumb shadow: `rgba(15, 23, 43, 0.2)` and `0.1` for its two layers, copied from the library.
   - Toast hover: white at 16% on success and error toasts, which have no white-alpha token.
   - Tooltip key ring: white at 25% around the shortcut keys.
+  - Tooltip description: white at 65% for the second line of the rich layout.
   - Scroller mask: `#000` is only the mask's alpha stop, not a colour.
 
 | Need                                                         | Utility                                                                                                                                                | Variable                          |

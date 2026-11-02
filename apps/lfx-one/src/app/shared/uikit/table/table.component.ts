@@ -93,8 +93,9 @@ export class UiTableComponent {
 
   private initColumnViews(): Signal<UiTableColumnView[]> {
     return computed(() => {
-      // Exact px: 12px cell padding with 16px on the outer columns, and 13px header type, are library steps below the ui spacing scale.
-      const pad = 'px-[12px] first:pl-[16px] last:pr-[16px]';
+      // Exact px: 12px cell padding, 16px on the outer columns and 13px header type are library steps below the ui spacing scale.
+      // py-0 resets the browser's 1px cell padding.
+      const pad = 'px-[12px] py-0 first:pl-[16px] last:pr-[16px]';
       const rule = 'border-b border-ui-neutral-alpha-200';
       const hover = this.interactive() ? 'group-hover:bg-ui-neutral-alpha-50' : '';
       const sort = this.sort();
@@ -119,7 +120,7 @@ export class UiTableComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
-      const ring = this.bordered() ? 'rounded-ui-sm shadow-border' : '';
+      const ring = this.bordered() ? 'rounded-ui-sm edge' : '';
       return `block w-full overflow-x-auto copy-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus ${ring}`;
     });
   }
