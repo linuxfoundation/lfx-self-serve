@@ -246,9 +246,10 @@ export class MeetingsHomeStore {
       { initialValue: null }
     );
     return computed(() => {
-      const rsvps = loaded();
       const meeting = this.nextRow()?.meeting;
-      if (!rsvps?.length || !meeting) return rsvps;
+      // Drops the viewer's own answers from registrations they removed since the roster loaded.
+      const rsvps = meeting ? loaded()?.filter((rsvp) => !this.userService.isMeetingRegistrationEnded(meeting.id, rsvp.registrant_id)) : loaded();
+      if (!rsvps?.length || !meeting) return rsvps ?? null;
       // Confirmations go first so they win timestamp ties.
       return [...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id)), ...rsvps];
     });

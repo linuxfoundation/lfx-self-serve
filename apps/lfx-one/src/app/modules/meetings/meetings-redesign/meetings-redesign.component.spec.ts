@@ -124,6 +124,7 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
+            isMeetingRegistrationEnded: () => false,
           },
         },
         { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
