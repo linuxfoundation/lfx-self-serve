@@ -358,6 +358,15 @@ export interface NewsletterInviteLookup {
   joined: boolean;
 }
 
+/** The newsletter reader breadcrumb's middle crumb: where "back to the list" goes. */
+export interface NewsletterReaderCrumb {
+  label: string;
+  /** Rendered href, so modified clicks open the same page in a new tab. */
+  href: string;
+  /** Router commands for a plain click. */
+  commands: string[];
+}
+
 /** DynamicDialog data of the My Newsletters invite dialog. */
 export interface NewsletterInviteDialogData {
   foundation: MyNewsletterFoundation;
@@ -546,7 +555,7 @@ export interface MyNewslettersState {
  */
 export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
-  /** `share_count` plus shares accepted on this page; null when the count is unknown. */
+  /** The issue's `share_count`; null when the count is unknown. */
   shareCount: number | null;
 }
 

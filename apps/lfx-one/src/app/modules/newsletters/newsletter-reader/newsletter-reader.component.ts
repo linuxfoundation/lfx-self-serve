@@ -12,6 +12,7 @@ import {
   MyNewsletterFoundationsResponse,
   NewsletterInviteDialogData,
   NewsletterInviteLookup,
+  NewsletterReaderCrumb,
   NewsletterJoinState,
   NewsletterReaderState,
   NewsletterShareEvent,
@@ -91,9 +92,23 @@ export class NewsletterReaderComponent {
   protected readonly state: Signal<NewsletterReaderState> = this.initState();
   /** Automatic member-benefit group add, driven by an `eligible` access decision. */
   protected readonly joinState: Signal<NewsletterJoinState> = this.initJoinState();
-  /** The issue's foundation card from My Newsletters, used for the invite CTA (null until resolved, on SSR, or on failure). */
-  protected readonly inviteFoundation: Signal<MyNewsletterFoundation | null> = this.initInviteFoundation();
-  protected readonly canInvite = computed(() => !!this.inviteFoundation()?.can_invite);
+  /**
+   * The issue's foundation card from My Newsletters (null until resolved, on SSR, or on failure). Drives the
+   * invite CTA and the breadcrumb's link back to that foundation's list (`/newsletters/my/:slug`, #4979).
+   */
+  protected readonly issueFoundation: Signal<MyNewsletterFoundation | null> = this.initIssueFoundation();
+  protected readonly canInvite = computed(() => !!this.issueFoundation()?.can_invite);
+  /**
+   * Breadcrumb middle crumb (#4979): the issue's foundation, linking to its newsletter list. Until the
+   * foundation resolves — or when the reader doesn't receive it — the project, linking to the cards.
+   */
+  protected readonly foundationCrumb: Signal<NewsletterReaderCrumb> = computed(() => {
+    const foundation = this.issueFoundation();
+    if (foundation?.slug) {
+      return { label: foundation.name, href: `/newsletters/my/${encodeURIComponent(foundation.slug)}`, commands: ['/newsletters/my', foundation.slug] };
+    }
+    return { label: this.pageTitle(), href: '/newsletters/my', commands: ['/newsletters/my'] };
+  });
 
   // === Computed: state projections ===
   protected readonly loading = computed(() => this.state().loading);
@@ -151,7 +166,7 @@ export class NewsletterReaderComponent {
   }
 
   protected onInvite(): void {
-    const foundation = this.inviteFoundation();
+    const foundation = this.issueFoundation();
     if (!foundation?.can_invite) return;
     this.dialogService.open(NewsletterInviteDialogComponent, {
       header: 'Invite a colleague',
@@ -180,9 +195,10 @@ export class NewsletterReaderComponent {
     this.joinRetry$.next();
   }
 
-  // The personal route restores Me; eager selection updates this tab immediately,
-  // including when a modified click opens the feed in another tab.
-  protected goToMyNewsletters(event: MouseEvent): void {
+  // The personal routes restore Me; eager selection updates this tab immediately,
+  // including when a modified click opens the feed in another tab. Serves both
+  // breadcrumb links: the foundation cards (default) and one foundation's list.
+  protected goToMyNewsletters(event: MouseEvent, commands: string[] = ['/newsletters/my']): void {
     // Persist the lens before branching for a new-tab/window click.
     this.lensService.setLens('me');
 
@@ -193,7 +209,7 @@ export class NewsletterReaderComponent {
     }
 
     event.preventDefault();
-    void this.router.navigate(['/newsletters/my']);
+    void this.router.navigate(commands);
   }
 
   // === Private Initializers ===
@@ -302,9 +318,10 @@ export class NewsletterReaderComponent {
    * loaded, and again after the member-benefit join adds the reader to the group (they may now be
    * able to invite). That second lookup waits {@link NEWSLETTER_INVITE_RELOOKUP_DELAY_MS}: the
    * endpoint reads memberships from the query-service index, which picks up the join asynchronously.
-   * Browser-only; a failure just hides the CTA — the invite POST re-checks everything.
+   * Browser-only; a failure just hides the CTA — the invite POST re-checks everything — and points the
+   * breadcrumb's middle crumb at the foundation cards instead of one foundation's list.
    */
-  private initInviteFoundation(): Signal<MyNewsletterFoundation | null> {
+  private initIssueFoundation(): Signal<MyNewsletterFoundation | null> {
     const lookup = computed<NewsletterInviteLookup | null>(
       () => {
         const { loading, error, project, newsletter, access } = this.state();
@@ -320,7 +337,7 @@ export class NewsletterReaderComponent {
         switchMap((target) => {
           if (!target) return of(null);
           const fetch$ = defer(() => this.newsletterService.getMyNewsletterFoundations()).pipe(
-            map((response) => this.findInviteFoundation(response, target)),
+            map((response) => this.findIssueFoundation(response, target)),
             // NewsletterService already logs the failure; here it only hides an optional button.
             catchError(() => of(null))
           );
@@ -337,7 +354,7 @@ export class NewsletterReaderComponent {
    * own card. Never guesses a parent — the server only maps a project to its parent when that parent
    * is a foundation, and a wrong guess would invite to another newsletter group.
    */
-  private findInviteFoundation(response: MyNewsletterFoundationsResponse, target: NewsletterInviteLookup): MyNewsletterFoundation | null {
+  private findIssueFoundation(response: MyNewsletterFoundationsResponse, target: NewsletterInviteLookup): MyNewsletterFoundation | null {
     const row =
       response.newsletters.find((entry) => entry.id === target.newsletterId) ?? response.newsletters.find((entry) => entry.project_uid === target.projectUid);
     const foundationUid = row ? (row.foundation_uid ?? row.project_uid) : target.projectUid;
