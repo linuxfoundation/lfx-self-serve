@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, TemplateRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -17,7 +17,7 @@ import {
   ValidationError,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
-import { SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -28,6 +28,10 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
+import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+
+import { MailingListSyncSettingsComponent } from '../../../mailing-lists/components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
@@ -44,6 +48,8 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
     ConfirmDialogModule,
     MailingListEmailPipe,
     MailingListTypePipe,
+    UiDrawerComponent,
+    MailingListSyncSettingsComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
@@ -60,6 +66,7 @@ export class CommitteeSettingsTabComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly drawerService = inject(UiDrawerService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -132,6 +139,17 @@ export class CommitteeSettingsTabComponent {
   // actually succeed; this flag alone controls whether the card renders at all, so it stays off
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Dark-launch gate for the "Auto Sync" entry point (#4025) — mirrors the same flag's use as the
+  // sync settings section's own gate (mailing-list-sync-settings.component.ts). UI-only; see that
+  // constant's doc comment for the real-time auto-sync execution kill switch tracked separately in #4878.
+  public autoSyncEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+
+  // The "Auto Sync" button only makes sense once the committee has at least one linked mailing list to configure.
+  public showAutoSyncButton = computed(() => this.autoSyncEnabled() && this.canEdit() && this.associatedMailingLists().length > 0);
+
+  // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
+  public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
@@ -225,6 +243,17 @@ export class CommitteeSettingsTabComponent {
           this.form.disable();
         }
       });
+  }
+
+  public openAutoSyncDrawer(): void {
+    this.drawerService.open(this.autoSyncDrawerTemplate(), { width: 600 });
+  }
+
+  // Refreshes associatedMailingLists (shared by this card and the drawer) so every open
+  // lfx-mailing-list-sync-settings instance's own siblingLists/activeSync lookup sees the new
+  // sync_mode right away, instead of waiting on each instance's independent polling.
+  public onSyncSettingsUpdated(): void {
+    this.refreshMl$.next();
   }
 
   public openMailingListPicker(): void {
