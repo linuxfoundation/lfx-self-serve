@@ -1943,4 +1943,44 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
     });
   });
+
+  // #4859 Session B: mobile polish on the meeting detail page.
+  describe('mobile polish (#4860, #4863)', () => {
+    const PAST_START_TIME = '2020-01-01T00:00:00.000Z';
+
+    const renderPage = async (overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting(overrides), project: buildProject() }));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the hero logo below md and keeps it on desktop (#4860)', async () => {
+      const page = await renderPage();
+
+      const hero = page.querySelector('[data-testid="meeting-hero-logo"]');
+      expect(hero).not.toBeNull();
+      expect(hero?.classList.contains('hidden')).toBe(true);
+      expect(hero?.classList.contains('md:flex')).toBe(true);
+    });
+
+    it('renders no AI Summary chip for a future meeting even when summaries are enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: FUTURE_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    it('still renders the AI Summary chip for a past meeting with summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).not.toBeNull();
+    });
+
+    it('renders no AI Summary chip for a past meeting without summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: false, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+  });
 });

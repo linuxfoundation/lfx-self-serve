@@ -323,6 +323,7 @@ export class MeetingJoinComponent implements OnInit {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
+  public showAiSummaryBadge: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
   // Gates agenda, materials, and date/time rendering for both the past-meeting and live-meeting
   // paths — picks whichever full-access flag matches how the current meeting() was loaded.
@@ -526,6 +527,7 @@ export class MeetingJoinComponent implements OnInit {
     bindLfxDocumentTitle(this.meetingTitle);
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
+    this.showAiSummaryBadge = this.initializeShowAiSummaryBadge();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
@@ -1564,6 +1566,11 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeHasAiCompanion(): Signal<boolean> {
     return computed(() => this.meeting()?.ai_summary_enabled || false);
+  }
+
+  // The chip advertises a summary that only exists after the meeting; before the end there is nothing to show (#4863).
+  private initializeShowAiSummaryBadge(): Signal<boolean> {
+    return computed(() => this.hasAiCompanion() && this.isPastMeeting());
   }
 
   private initializeIsInvited(): Signal<boolean> {

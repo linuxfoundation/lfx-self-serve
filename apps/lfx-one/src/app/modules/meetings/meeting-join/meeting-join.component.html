@@ -36,7 +36,8 @@
       <div class="container mx-auto py-6 px-8">
         <div class="max-w-[900px] mx-auto flex flex-col">
           <!-- Project Logo (fallback to LFX logo) -->
-          <div class="flex items-center justify-center mb-6">
+          <!-- Hidden below md so the meeting title lands in the first viewport on phones; the header bar still shows the LFX logo. -->
+          <div class="hidden md:flex items-center justify-center mb-6" data-testid="meeting-hero-logo">
             @if (project()?.logo_url) {
               <img [src]="project()?.logo_url" [alt]="project()?.name" class="w-auto h-10 md:h-14" />
             } @else {
@@ -299,7 +300,7 @@
                     }
 
                     <!-- AI Summary Badge -->
-                    @if (hasAiCompanion()) {
+                    @if (showAiSummaryBadge()) {
                       <lfx-tag
                         value="AI Summary"
                         severity="secondary"
