@@ -31,6 +31,7 @@ import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -1945,7 +1946,7 @@ describe('MeetingJoinComponent', () => {
   });
 
   // #4859 Session B: mobile polish on the meeting detail page.
-  describe('mobile polish (#4860, #4863)', () => {
+  describe('mobile polish (#4860, #4861, #4863)', () => {
     const PAST_START_TIME = '2020-01-01T00:00:00.000Z';
 
     const renderPage = async (overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
@@ -1981,6 +1982,58 @@ describe('MeetingJoinComponent', () => {
       const page = await renderPage({ ai_summary_enabled: false, start_time: PAST_START_TIME });
 
       expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    describe('compact meta summary (#4861)', () => {
+      const LONG_NAME = 'Maximilian Alexander Featherstonehaugh-Montgomery';
+
+      it('keeps the desktop pills and hides them below md', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const desktopRow = page.querySelector('[data-testid="meeting-meta-desktop"]');
+        const mobile = page.querySelector('[data-testid="meeting-meta-mobile"]');
+        expect(desktopRow?.classList.contains('hidden')).toBe(true);
+        expect(desktopRow?.classList.contains('md:flex')).toBe(true);
+        expect(mobile?.classList.contains('md:hidden')).toBe(true);
+      });
+
+      it('shows the viewer timezone abbreviation next to the time', async () => {
+        const page = await renderPage({ timezone: 'America/Los_Angeles' });
+
+        const datetime = page.querySelector('[data-testid="meeting-meta-mobile-datetime"]');
+        const abbreviation = page.querySelector('[data-testid="meeting-meta-mobile-timezone"]');
+        expect(datetime).not.toBeNull();
+        expect(abbreviation?.textContent?.trim()).toBe(getTimezoneAbbreviation(FUTURE_START_TIME, getUserTimezone()));
+        expect(abbreviation?.getAttribute('title')).toContain('Scheduled in America/Los_Angeles');
+      });
+
+      it('shows foundation and project on one line', async () => {
+        const page = await renderPage();
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows the full organizer name without truncating it', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const organizer = page.querySelector('[data-testid="meeting-meta-mobile-organizer"]');
+        expect(organizer?.textContent).toContain(`Organized by ${LONG_NAME}`);
+        expect(organizer?.querySelector('.truncate')).toBeNull();
+        expect(organizer?.classList.contains('truncate')).toBe(false);
+      });
+
+      it('falls back to Linux Foundation when the meeting was created by a service account', async () => {
+        const page = await renderPage({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')?.textContent).toContain('Organized by Linux Foundation');
+      });
+
+      it('does not show the organizer to unauthenticated viewers', async () => {
+        authenticated.set(false);
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')).toBeNull();
+      });
     });
   });
 });
