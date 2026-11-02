@@ -8,12 +8,13 @@ import { describe, expect, it } from 'vitest';
 import { MeetingsDayGroupComponent } from './meetings-day-group.component';
 
 const row = (key: string, title: string): MeetingHomeRow =>
-  ({ key, title, startTime: '2026-11-03T15:00:00Z', durationMinutes: 60, occurrence: null, occurrenceId: null, meeting: {} }) as MeetingHomeRow;
+  ({ key, title, startTime: '2026-11-03T15:00:00Z', durationMinutes: 60, occurrence: null, occurrenceId: null, meeting: { id: key } }) as MeetingHomeRow;
 
 describe('MeetingsDayGroupComponent', () => {
   const render = async (group: MeetingDayGroup): Promise<HTMLElement> => {
     const fixture = TestBed.createComponent(MeetingsDayGroupComponent);
     fixture.componentRef.setInput('group', group);
+    fixture.componentRef.setInput('view', 'upcoming');
     await fixture.whenStable();
     return fixture.nativeElement;
   };
