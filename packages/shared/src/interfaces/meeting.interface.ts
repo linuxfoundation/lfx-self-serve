@@ -428,7 +428,7 @@ export interface Meeting {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
-  /** Project logo URL from BFF project enrichment; empty when the project has none or the lookup failed */
+  /** Project logo URL from BFF project enrichment; else the payload's own value, else empty */
   project_logo_url?: string;
 }
 
@@ -1075,7 +1075,7 @@ export interface PastMeeting extends Meeting {
   user_attended?: boolean;
   /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings only; undefined when the lookup failed */
   has_recording?: boolean;
-  /** Whether a visible AI summary with content is viewable by the user — /api/user/past-meetings only; undefined when the lookup failed */
+  /** Whether an approved (or approval-free) AI summary with content is viewable — /api/user/past-meetings only; undefined when the lookup failed */
   has_ai_summary?: boolean;
 }
 

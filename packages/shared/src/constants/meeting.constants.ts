@@ -950,6 +950,9 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 
+/** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
+export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
+
 /**
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
  */

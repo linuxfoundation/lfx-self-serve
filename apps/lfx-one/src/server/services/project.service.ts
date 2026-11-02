@@ -7356,7 +7356,7 @@ export class ProjectService {
   }
 
   /**
-   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid).
+   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid, logo_url).
    * Resolves every referenced project in one batched query-service lookup (`getProjectsByIds`,
    * 100 uids per `filters_or` query, fail-soft per batch) instead of fanning out to per-project
    * `getProjectById` calls — and ungated, so callers without a direct project viewer relation

@@ -5,6 +5,7 @@ import {
   LATEST_PAST_MEETINGS_FETCH_SIZE,
   LATEST_PAST_MEETINGS_RETURN_LIMIT,
   NATS_CONFIG,
+  PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY,
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_SEVERITY,
   PROFILE_BIO_MAX_LENGTH,
@@ -1255,12 +1256,10 @@ export class UserService {
     pastMeetingIds: string[],
     isAvailable: (rows: T[]) => boolean
   ): Promise<Map<string, boolean>> {
-    const BATCH_SIZE = 100;
-    const CONCURRENCY = 5;
     const flags = new Map<string, boolean>();
     const batches: string[][] = [];
-    for (let i = 0; i < pastMeetingIds.length; i += BATCH_SIZE) {
-      batches.push(pastMeetingIds.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < pastMeetingIds.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(pastMeetingIds.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
     const fetchBatch = async (batch: string[]): Promise<void> => {
@@ -1301,8 +1300,8 @@ export class UserService {
       }
     };
 
-    for (let i = 0; i < batches.length; i += CONCURRENCY) {
-      await Promise.all(batches.slice(i, i + CONCURRENCY).map(fetchBatch));
+    for (let i = 0; i < batches.length; i += PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY) {
+      await Promise.all(batches.slice(i, i + PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY).map(fetchBatch));
     }
     return flags;
   }
