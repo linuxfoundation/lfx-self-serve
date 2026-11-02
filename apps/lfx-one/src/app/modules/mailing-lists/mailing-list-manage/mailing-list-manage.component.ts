@@ -560,6 +560,10 @@ export class MailingListManageComponent {
       service_id: service.uid,
       committee_uid: committeeUid,
       title: formValue.group_name,
+      // This form has no sync direction control (#4024) — preserve the existing value in edit mode
+      // so saving unrelated fields here doesn't silently reset it to manual. Dropped along with the
+      // committee association, since sync requires a committee_uid.
+      sync_mode: committeeUid ? this.mailingList()?.sync_mode : undefined,
     };
   }
 
