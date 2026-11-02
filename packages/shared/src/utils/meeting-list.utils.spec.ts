@@ -21,6 +21,7 @@ import {
   getMeetingHomeRowType,
   getMeetingProjectUrl,
   getMeetingRecurrenceTooltip,
+  getMeetingRsvpScopeLabel,
   getMeetingStartsInLabel,
   getMeetingVisibilityBadges,
   groupMeetingsByDayBucket,
@@ -639,5 +640,24 @@ describe('getMeetingHomeRowType', () => {
     [null, null],
   ])('%s → %j', (type, expected) => {
     expect(getMeetingHomeRowType({ meeting_type: type })).toEqual(expected);
+  });
+});
+
+describe('getMeetingRsvpScopeLabel', () => {
+  const seconds = String(NOW.getTime() / 1000);
+
+  it('names the date a single or following answer starts from', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', occurrence_id: seconds })).toBe('Oct 1 only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following', occurrence_id: seconds })).toBe('Oct 1 and following');
+  });
+
+  it('reads the date from the composite id when the direct one is missing', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'single', meeting_and_occurrence_id: `123-${seconds}` })).toBe('Oct 1 only');
+  });
+
+  it('says all dates for an all-dates answer and falls back without a date', () => {
+    expect(getMeetingRsvpScopeLabel({ scope: 'all', occurrence_id: seconds })).toBe('All dates');
+    expect(getMeetingRsvpScopeLabel({ scope: 'single' })).toBe('This date only');
+    expect(getMeetingRsvpScopeLabel({ scope: 'this_and_following' })).toBe('This date and following');
   });
 });
