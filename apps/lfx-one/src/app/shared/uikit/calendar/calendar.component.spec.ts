@@ -128,6 +128,16 @@ describe('UiCalendarComponent', () => {
     expect(day('2026-10-13').className).toContain('forced-colors:focus-visible:outline-[color:CanvasText]');
   });
 
+  it('draws the selected day in GrayText in forced colours when the calendar is disabled', async () => {
+    await set('value', new Date(2026, 9, 12));
+    await set('disabled', true);
+
+    const selected = day('2026-10-12').className;
+    expect(selected).toContain('forced-colors:bg-[color:GrayText]');
+    expect(selected).toContain('forced-colors:text-[color:Canvas]');
+    expect(selected).not.toContain('forced-colors:bg-[color:Highlight]');
+  });
+
   it('opens on the selected date month and keeps one tab stop on it', async () => {
     await set('value', new Date(2026, 4, 20));
 

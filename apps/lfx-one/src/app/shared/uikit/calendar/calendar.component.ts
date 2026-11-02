@@ -204,7 +204,11 @@ export class UiCalendarComponent implements ControlValueAccessor {
     if (day.selected) {
       // An unavailable selected date keeps its fill and gains the strike-through; the ink stays white to stay readable on the fill.
       const unavailable = day.disabled ? 'cursor-not-allowed line-through' : '';
-      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white forced-color-adjust-none forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText] forced-colors:after:bg-[color:HighlightText] ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+      // forced-colors: Highlight reads as usable, so a disabled grid's selected day is GrayText.
+      const forced = gridOff
+        ? 'forced-colors:bg-[color:GrayText] forced-colors:text-[color:Canvas] forced-colors:after:bg-[color:Canvas]'
+        : 'forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText] forced-colors:after:bg-[color:HighlightText]';
+      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white forced-color-adjust-none ${forced} ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
     }
     if (day.disabled)
       return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500 forced-colors:text-[color:GrayText] forced-colors:after:bg-[color:GrayText]`;
