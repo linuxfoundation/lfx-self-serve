@@ -79,7 +79,16 @@ Switch to the **Org** lens using the lens selector at the top of LFX Self Serve.
 
 ### Who can access this
 
-Accessing the Org Overview requires **admin access** to your organization in LFX. If you are not yet an admin, another admin at your organization can invite you to accept an admin role. Once you accept, the Org lens will become available to you and you will be able to view your company's collective activity.
+Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
+
+If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
+
+- **No organization linked to your account**: your profile is not linked to an organization.
+- **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
+- **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
+- **Contractor accounts need an organization grant**: LF contractor accounts need a grant from each organization's administrators.
+
+If you are a CLA Manager, see [Why can't I see my company in the Organization lens?](../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
 ## Related sections
 
