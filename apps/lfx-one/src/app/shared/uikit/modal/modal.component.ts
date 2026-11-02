@@ -13,7 +13,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject,
  *
  * Give projected `<p>`/`<label>` a type role; the app base layer otherwise sets 14/21.
  *
- * Project the body as plain content, an inset band with `modalInset` and the buttons with `modalActions`:
+ * Project the body as plain content, an inset band with `modalInset` and the default-size buttons with `modalActions`:
  *
  * ```html
  * <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings.">

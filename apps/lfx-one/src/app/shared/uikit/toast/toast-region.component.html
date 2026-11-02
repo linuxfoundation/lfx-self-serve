@@ -4,6 +4,7 @@
 @for (toast of items(); track toast.id) {
   <lfx-ui-toast
     [variant]="toast.variant ?? 'default'"
+    [description]="toast.description ?? ''"
     [actions]="toast.actions ?? []"
     [duration]="toast.duration ?? null"
     [dismissible]="toast.dismissible ?? true"

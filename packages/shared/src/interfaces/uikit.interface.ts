@@ -227,8 +227,11 @@ export type UiChoiceboxColumns = 1 | 2 | 3;
 /** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
 export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed. */
-export type UiToastVariant = 'default' | 'success' | 'warning' | 'error';
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed; `dark` is a short confirmation with a check. */
+export type UiToastVariant = 'default' | 'success' | 'warning' | 'error' | 'dark';
+
+/** Where `UiToastService` stacks a toast: the bottom-right corner or the bottom centre of the window. */
+export type UiToastPosition = 'bottom-right' | 'bottom-center';
 
 /** An action button on a uikit toast, such as Undo. Running it dismisses the toast. */
 export interface UiToastAction {
@@ -242,13 +245,17 @@ export interface UiToastAction {
 
 /** What `UiToastService.show` needs to put a toast on screen. */
 export interface UiToastConfig {
-  /** The message: a short sentence about something that just happened. */
+  /** The message: a short sentence about something that just happened, or the title when there is a `description`. */
   message: string;
+  /** A second, quieter line under the message. */
+  description?: string;
   /** Defaults to `default`. */
   variant?: UiToastVariant;
+  /** Defaults to `bottom-center` for `dark` and `bottom-right` for every other variant. */
+  position?: UiToastPosition;
   /** Up to two action buttons; any more are ignored. */
   actions?: UiToastAction[];
-  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 8000 with actions, and never for `error`. */
+  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   duration?: number;
   /** Shows the dismiss button. Defaults to `true`. */
   dismissible?: boolean;
