@@ -279,7 +279,7 @@
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
             [deliveryType]="sendSurface()"
-            [emailStage]="audienceQaStage()"
+            [emailStage]="selectedEmailStage() ?? ''"
             (proceedToImplementation)="onEmailProceedFromPlanning($event)"
             (restoreSavedBriefRequested)="onRestoreSavedEmailBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
             data-testid="campaigns-email-planning-tab" />

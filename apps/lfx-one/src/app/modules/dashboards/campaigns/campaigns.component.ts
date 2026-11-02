@@ -2339,6 +2339,9 @@ export class CampaignsComponent {
       // Not once a send is staged: campaign-service hands back a brief's existing draft on a
       // second create, so a rewrite would show new copy while HubSpot kept sending the old.
       this.sequenceStagedBriefIds().length === 0 &&
+      // Nor over a send held unconfirmed: its draft may exist, and rewriting would clear the hold
+      // and reuse the same brief. Start the series over, which writes on new briefs.
+      !this.sequenceHasHeldSend() &&
       this.surveySequenceState() !== 'generating' &&
       this.sequenceStagingState() !== 'staging' &&
       this.sendWorkflowState() !== 'building' &&
@@ -4164,8 +4167,9 @@ export class CampaignsComponent {
         } catch (error) {
           // The request was SENT and no answer arrived -- a dropped connection, a gateway 5xx --
           // so the draft may exist, as the single-send path assumes. Held, not retried. Only an
-          // explicit 4xx is a refusal that created nothing and stays retryable.
-          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500;
+          // explicit 4xx is a refusal that created nothing and stays retryable; a 408 or 429 says
+          // the request timed out or was throttled, which does not prove nothing was created.
+          const refused = error instanceof HttpErrorResponse && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
           if (!refused && isCurrent()) {
             this.holdUnresolvedSend(send.briefId);
           }

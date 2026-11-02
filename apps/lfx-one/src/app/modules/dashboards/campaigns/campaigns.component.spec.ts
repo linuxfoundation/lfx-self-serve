@@ -8987,6 +8987,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['a dropped connection', 0, true],
       ['a gateway error', 504, true],
+      ['a request timeout', 408, true],
+      ['throttling', 429, true],
       ['an explicit refusal', 400, false],
     ])('after %s on the create request, holds the send only when a draft may exist', async (_label, status, held) => {
       selectSurvey();
@@ -9191,6 +9193,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canBuildSequenceWorkflow(), 'build during an audience write').toBe(false);
     });
 
+    it('blocks a rewrite while a send is held unconfirmed, even with none confirmed staged', () => {
+      stageable(3);
+      expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      expect(seq().canGenerateSurveySequence(), 'a rewrite would clear the hold and reuse the brief').toBe(false);
+    });
+
     it('starts the series over from a held send, clearing its staging so it can be written again', () => {
       stageable(3);
       seq().sequenceStagedBriefIds.set(['brief-1']);
@@ -9326,6 +9335,13 @@ describe('CampaignsComponent — email delivery channel', () => {
       const page = fixture.componentInstance as unknown as { selectedEmailStage(): string | undefined; audienceQaStage(): string };
       expect(page.selectedEmailStage(), 'fixture precondition: a survey stage is selected').toMatch(/Survey|Report/);
       expect(page.audienceQaStage()).toBe('');
+      // The planner still gets the real stage: its saved-brief lookup needs it to reopen a survey.
+      const planners = fixture.debugElement
+        .queryAll(By.directive(PlanningTabComponent))
+        .map((d) => d.componentInstance as unknown as { deliveryType(): string; emailStage(): string });
+      const planner = planners.find((p) => p.deliveryType() === 'survey');
+      expect(planner, 'fixture precondition: the survey planner').toBeDefined();
+      expect(planner?.emailStage()).toBe(page.selectedEmailStage());
     });
 
     it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
