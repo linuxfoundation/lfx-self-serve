@@ -53,6 +53,7 @@ function responseFor(range: OrgLensTimeRange): OrgTraineesResponse {
             { foundationId: 'lf', foundationName: 'lf' },
           ],
     courseOptions: [...new Set(details.map((row) => row.courseId))].map((courseId) => ({ courseId, courseName: courseId })),
+    asOf: '2026-10-30T09:48:21.094Z',
   };
 }
 
@@ -162,5 +163,22 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     );
 
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ personKey: 'p-1', defaultTab: 'training', range: '30d' }));
+  });
+
+  // lfx-self-serve#4290: every card states its unit, the picked range as its window, and the date the data reflects.
+  it('states the picked range and the as-of date under each stat card', async () => {
+    const caption = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}-caption"]`)?.textContent ?? '';
+    await mount('/?tab=training');
+
+    for (const name of ['trainees', 'courses-enrolled', 'certifications', 'completion-rate']) {
+      expect(caption(name)).toContain('Past 2 years');
+      expect(caption(name)).toContain('Oct 30, 2026');
+    }
+
+    form().controls['timeRange'].setValue('all');
+    await settle();
+
+    expect(caption('trainees')).toContain('All time');
+    expect(caption('trainees')).not.toContain('Past 2 years');
   });
 });

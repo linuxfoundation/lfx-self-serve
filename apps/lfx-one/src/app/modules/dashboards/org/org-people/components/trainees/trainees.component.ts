@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { avatarColorClass } from '@lfx-one/shared/utils';
+import { avatarColorClass, orgTrainingStatCaption, orgTrainingStatTooltip } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
@@ -23,6 +23,7 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGE_OPTIONS,
   ORG_TRAINEES_INITIAL_LIMIT,
+  ORG_TRAINEES_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
 import type {
   OrgDropdownOption,
@@ -35,15 +36,17 @@ import type {
   OrgTraineeSortColumn,
   OrgTraineeSortDirection,
   OrgTraineeStatsBaseline,
+  OrgTraineesStatKey,
 } from '@lfx-one/shared/interfaces';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { TraineesService } from '../../services/trainees.service';
 
 /** Trainees tab body — search + foundation + course + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
 @Component({
   selector: 'lfx-org-people-trainees',
-  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
+  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule, TooltipModule],
   templateUrl: './trainees.component.html',
 })
 export class TraineesComponent {
@@ -56,7 +59,8 @@ export class TraineesComponent {
   protected readonly initialLimit = ORG_TRAINEES_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
-  protected readonly statSkeletonLabels: readonly string[] = ['Trainees', 'Courses Enrolled', 'Certifications', 'Completion Rate'];
+  protected readonly statDefinitions = ORG_TRAINEES_STAT_DEFINITIONS;
+  protected readonly statSkeletonLabels: readonly string[] = Object.values(ORG_TRAINEES_STAT_DEFINITIONS).map((stat) => stat.label);
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -109,6 +113,9 @@ export class TraineesComponent {
   protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
 
   protected readonly stats: Signal<OrgTraineeStatsBaseline> = computed(() => this.initStats());
+
+  // Each card states its unit, the selected range as its window, and the date the training data reflects.
+  protected readonly statCopy: Signal<Record<OrgTraineesStatKey, { caption: string; tooltip: string }>> = computed(() => this.initStatCopy());
 
   protected readonly viewRows: Signal<OrgTraineeRowVm[]> = computed(() => this.initViewRows());
 
@@ -256,6 +263,17 @@ export class TraineesComponent {
       certifications,
       completionRate,
     };
+  }
+
+  private initStatCopy(): Record<OrgTraineesStatKey, { caption: string; tooltip: string }> {
+    const range = this.timeRange();
+    const window = ORG_LENS_TIME_RANGE_OPTIONS.find((option) => option.value === range)?.label;
+    const asOf = this.response().asOf;
+    const entries = (Object.keys(ORG_TRAINEES_STAT_DEFINITIONS) as OrgTraineesStatKey[]).map((key) => {
+      const stat = ORG_TRAINEES_STAT_DEFINITIONS[key];
+      return [key, { caption: orgTrainingStatCaption(stat, asOf, window), tooltip: orgTrainingStatTooltip(stat, asOf, window) }] as const;
+    });
+    return Object.fromEntries(entries) as Record<OrgTraineesStatKey, { caption: string; tooltip: string }>;
   }
 
   private initViewRows(): OrgTraineeRowVm[] {
