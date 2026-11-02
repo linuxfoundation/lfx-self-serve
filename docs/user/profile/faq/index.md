@@ -4,7 +4,7 @@ description: Frequently asked questions about your personal profile and public p
 audience: [all]
 product_area: Profile
 tags: [profile, faq, about-me, photo, public-profile, visibility]
-last_updated: 2026-10-27
+last_updated: 2026-11-02
 intercom_collection: Profile
 ---
 
@@ -27,6 +27,8 @@ Your profile is private by default. Open [**Profile & Account**](/profile), sele
 ## My name is displaying incorrectly. How do I fix it?
 
 Open [**Profile & Account**](/profile), select **Edit profile**, update your **First Name** and **Last Name** fields, and select **Save Changes**.
+
+This changes your name in LFX Self Serve only. It does not change the name on a training certificate that has already been issued. To correct a certificate, see [The name on my certificate is wrong](../../trainings/faq/#the-name-on-my-certificate-is-wrong-how-do-i-change-it).
 
 ## Where do I manage my email, password, affiliations, or CLAs?
 
