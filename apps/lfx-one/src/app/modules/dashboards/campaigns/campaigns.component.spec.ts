@@ -9556,8 +9556,14 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
       // A visible TEXT badge on the suggested row only -- not colour alone.
       const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('[data-testid="campaigns-email-template-suggested-mcp"]')?.textContent?.trim()).toBe('Suggested');
-      expect(host.querySelector('[data-testid="campaigns-email-template-suggested-kc"]')).toBeNull();
+      // Both badges stay MOUNTED, so a row's width never shifts as the suggestion moves; only the
+      // suggested row's badge is visible (frontend-checklist 8).
+      const suggestedBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-mcp"]');
+      const otherBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-kc"]');
+      expect(suggestedBadge?.textContent?.trim()).toBe('Suggested');
+      expect(suggestedBadge?.classList.contains('invisible')).toBe(false);
+      expect(otherBadge, 'the badge slot was removed rather than hidden').not.toBeNull();
+      expect(otherBadge?.classList.contains('invisible')).toBe(true);
       // And the row is NOT drawn as selected: the badge is the only mark it carries.
       const row = host.querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]');
       expect(row?.getAttribute('aria-pressed')).toBe('false');
@@ -10288,6 +10294,48 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
       expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * When the list is GONE rather than replaced, a hand-picked template goes with it (#2057).
+     *
+     * There is no list to render the row in, and `canStageEmail` reads the id, so a surviving
+     * selection would let Stage Email Draft clone a template the operator can no longer see. One
+     * row per terminal arm of `searchEmailTemplates`; a search that merely replaces the list keeps
+     * the pick (the test below).
+     */
+    it.each([
+      ['HubSpot refuses the search', (): void => respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] })],
+      ['the channel is off', (): void => respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] })],
+      [
+        'every row is unusable',
+        (): void => respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '', name: 'No id' }] as HubSpotMarketingEmail[] }),
+      ],
+      [
+        'the request fails in transport',
+        (): void => {
+          httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').error(new ProgressEvent('error'));
+          fixture.detectChanges();
+        },
+      ],
+    ])('clears a hand-picked template when %s', (_arm, fail) => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'hand', name: 'Something the operator knows about' }] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      fail();
+
+      expect(picker().selectedEmailTemplateId(), 'an invisible, stageable selection survived the list').toBe('');
+      expect(picker().emailTemplatesRendered()).toEqual([]);
+      expect(picker().canStageEmail()).toBe(false);
     });
 
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */

@@ -3843,7 +3843,7 @@ export class CampaignsComponent {
       // The page is reachable by an ED of any foundation and templates are per-project, so a
       // missing slug must not fall back to some other portal's templates.
       this.emailTemplates.set(null);
-      this.clearEventTemplateSuggestion();
+      this.dropEmailTemplateList();
       // Same reason as the reset below: a stale `false` would render "Connect HubSpot" instead of
       // this message, because the template checks the channel flag first.
       this.emailChannelEnabled.set(null);
@@ -3893,14 +3893,14 @@ export class CampaignsComponent {
             // Not an error: HubSpot simply is not connected for this project, which is the steady
             // state everywhere the channel is not set up.
             this.emailTemplates.set(null);
-            this.clearEventTemplateSuggestion();
+            this.dropEmailTemplateList();
             return;
           }
           if (result.error) {
             // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
             // empty — an empty list would claim the portal has no templates.
             this.emailTemplates.set(null);
-            this.clearEventTemplateSuggestion();
+            this.dropEmailTemplateList();
             this.emailTemplatesError.set(result.error);
             return;
           }
@@ -3917,7 +3917,7 @@ export class CampaignsComponent {
             // NULL rather than [], for the same reason the error arms use null: only a search
             // that genuinely came back with nothing can support the empty-portal claim.
             this.emailTemplates.set(null);
-            this.clearEventTemplateSuggestion();
+            this.dropEmailTemplateList();
             this.emailTemplatesError.set('Could not load templates. Try again.');
             return;
           }
@@ -3932,7 +3932,7 @@ export class CampaignsComponent {
           this.emailTemplatesLoading.set(false);
           // NULL, not []. A failed search says nothing about what the portal holds.
           this.emailTemplates.set(null);
-          this.clearEventTemplateSuggestion();
+          this.dropEmailTemplateList();
           this.emailTemplatesError.set('Could not load templates. Try again.');
         },
       });
@@ -5081,13 +5081,29 @@ export class CampaignsComponent {
   /**
    * Forget the suggestion, leaving the operator's selection alone.
    *
-   * Called at dispatch and from every arm that drops the list. `applyEventTemplateSuggestion` runs
-   * only after a successful listing, so without this the `enabled: false`, HubSpot-error,
-   * unusable-rows and transport-error arms would leave a suggestion naming a row no longer shown.
+   * Called at dispatch, where the list is being REPLACED: the suggestion describes the rows going
+   * away and the success arm re-derives it, while the operator's selection is theirs and survives.
+   * `applyEventTemplateSuggestion` runs only after a successful listing, so the terminal arms go
+   * through `dropEmailTemplateList` instead, which clears this too.
    */
   private clearEventTemplateSuggestion(): void {
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
+  }
+
+  /**
+   * The list is GONE, not replaced: no foundation, the channel off, HubSpot refusing, unusable rows,
+   * or a transport failure. The suggestion goes, and so does the selection, hand-picked or not.
+   *
+   * #2057 asks for exactly this split. A surviving id here is invisible (there is no list to render
+   * it in) and still stageable, because `canStageEmail` reads the id rather than the list, so
+   * Stage Email Draft would clone a template the operator can no longer see. A search on the wire
+   * only replaces the list, and keeps the selection; see `clearEventTemplateSuggestion`.
+   */
+  private dropEmailTemplateList(): void {
+    this.clearEventTemplateSuggestion();
+    this.selectedEmailTemplateId.set('');
+    this.selectedEmailTemplateRow.set(null);
   }
 
   /**
