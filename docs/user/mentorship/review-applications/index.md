@@ -22,7 +22,7 @@ The **Current Mentees** tab is where a Program Admin decides on applications for
 
 1. Go to the **Current Mentees** tab.
 2. Narrow the list with the **Search** box, the **Filter By Status** filter (**All statuses**, or one status) and the **Filter by Term** filter (**All open terms**, or one term). On **Past Mentees** the term filter offers **All closed terms**.
-3. Select **View Tasks** on the row to expand the applicant's prerequisite tasks and download anything they submitted. Use **Add note**, or the note already on the row, for reviewer notes.
+3. Select **View Tasks** on the row to expand the applicant's prerequisite tasks. Next to a submitted file, the eye icon opens it in a new tab (a DOC or DOCX file downloads instead) and the download icon saves it. Use **Add note**, or the note already on the row, for reviewer notes.
 
    On an **Open** or **Completed** program, the applicant's name links to their public mentee page, which opens in a new tab. On any other program the name is not a link. The row itself does not open anything.
 
