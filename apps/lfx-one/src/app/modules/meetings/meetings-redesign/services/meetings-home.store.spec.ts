@@ -498,6 +498,22 @@ describe('MeetingsHomeStore', () => {
       expect(store.nextRowRsvps()).toEqual(others);
     });
 
+    it('keeps answers saved this session when every loaded answer came from a removed registration', () => {
+      const removed = rsvp({ id: 'r-removed', registrant_id: 'reg-removed' });
+      const survivor = rsvp({ id: 'r-survivor', registrant_id: 'reg-survivor', response_type: 'maybe' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([removed]));
+      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation(
+        (_id: string, registrantId: string) => registrantId === 'reg-removed'
+      );
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([survivor]);
+
+      expect(store.nextRowRsvps()).toEqual([survivor]);
+    });
+
     it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {
       const createdAt = new Date().toISOString();
       (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([rsvp({ created_at: createdAt })]));
