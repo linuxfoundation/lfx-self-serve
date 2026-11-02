@@ -66,15 +66,27 @@
           (valueChange)="onTabChange($event)"
           data-testid="meetings-redesign-tabs" />
         @if (!tabEmpty()) {
-          <lfx-ui-search-input
-            class="w-full min-[641px]:w-auto"
-            placeholder="Search meetings"
-            ariaLabel="Search meetings"
-            [value]="store.search()"
-            (valueChange)="store.setSearch($event)"
-            data-testid="meetings-redesign-search" />
+          <div class="flex w-full flex-wrap items-center gap-[8px] min-[641px]:w-auto">
+            <lfx-ui-search-input
+              class="w-full min-[641px]:w-auto"
+              placeholder="Search meetings"
+              ariaLabel="Search meetings"
+              [value]="store.search()"
+              (valueChange)="store.setSearch($event)"
+              data-testid="meetings-redesign-search" />
+            <lfx-meetings-filters [tab]="store.tab()" [rows]="store.tabRows()" [filters]="store.filters()" (filtersChange)="store.setFilters($event)" />
+          </div>
         }
       </div>
+
+      @if (store.filterChips().length) {
+        <!-- -6px pulls the chips toward the tabs bar, per the design -->
+        <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Applied filters" [fallbackFocus]="filtersControl() ?? null" data-testid="meetings-home-filters-chips">
+          @for (chip of store.filterChips(); track chip.key) {
+            <lfx-ui-chip [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="meetings-home-filters-chip" />
+          }
+        </lfx-ui-chip-group>
+      }
 
       <!-- List areas: one tabpanel per tab, so every aria-controls resolves; only the active one renders the list -->
       @for (tab of tabs(); track tab.value) {

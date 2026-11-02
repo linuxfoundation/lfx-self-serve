@@ -23,6 +23,8 @@ import { MeetingDashboardView, MeetingsRailBlock, UiTabItem } from '@lfx-one/sha
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
+import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
@@ -30,6 +32,7 @@ import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
+import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
@@ -53,7 +56,10 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     UiSkeletonComponent,
     UiEmptyStateComponent,
     UiButtonComponent,
+    UiChipGroupComponent,
+    UiChipComponent,
     MeetingsDayGroupComponent,
+    MeetingsFiltersComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore],
@@ -78,6 +84,8 @@ export class MeetingsRedesignComponent {
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  /** Takes focus when the last filter chip is removed. */
+  protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 
   protected readonly idPrefix = 'meetings-redesign';
   protected readonly railBlocks: MeetingsRailBlock[] = [

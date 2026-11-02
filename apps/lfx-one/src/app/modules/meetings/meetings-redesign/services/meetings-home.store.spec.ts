@@ -3,7 +3,7 @@
 
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -358,6 +358,22 @@ describe('MeetingsHomeStore', () => {
       expect(store.tab()).toBe('past');
       expect(store.filters().organizedByMe).toBe(false);
       expect(store.search()).toBe('sync');
+    });
+
+    it('builds one chip per applied filter and clears only the removed one', () => {
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      store.setFilters({ ...store.filters(), project: 'p-1', organizedByMe: true });
+
+      expect(store.filterChips()).toEqual([
+        { key: 'project', label: 'Project: Project One' },
+        { key: 'organizedByMe', label: 'Organized by me' },
+      ]);
+
+      store.clearFilter('project');
+
+      expect(store.filters()).toEqual({ ...MEETINGS_HOME_DEFAULT_FILTERS, organizedByMe: true });
+      expect(store.filterChips().map((chip) => chip.key)).toEqual(['organizedByMe']);
     });
 
     it('clears both filters and search on reset', () => {
