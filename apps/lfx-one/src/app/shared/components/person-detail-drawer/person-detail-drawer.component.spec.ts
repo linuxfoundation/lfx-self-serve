@@ -334,16 +334,23 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')).toBeNull();
   });
 
-  it('states the enrollment window on the Training tab, whether or not courses are listed', async () => {
+  it.each([
+    { label: 'no courses', training: [], listed: false },
+    {
+      label: 'one course',
+      training: [{ courseId: 'course-1', courseName: 'Course One', status: 'Enrolled' as const, certificationsCount: 0, coursesCount: 1 }],
+      listed: true,
+    },
+  ])('states the enrollment window on the Training tab with $label', async ({ training, listed }) => {
     drawer.open(person);
     await render();
-    reply(`${BY_USERNAME}/detail`).next(detail());
+    reply(`${BY_USERNAME}/detail`).next({ ...detail(), training });
     drawer.setTab('training');
     await render();
 
     expect(byTestId('person-detail-drawer-training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
-    expect(PERSON_DETAIL_TRAINING_WINDOW_NOTE).toContain('last 12 months');
-    expect(byTestId('person-detail-drawer-training-empty')).not.toBeNull();
+    expect(byTestId('person-detail-drawer-training-empty') === null).toBe(listed);
+    expect(document.body.textContent).toContain(listed ? 'Course One' : 'No training or certifications recorded.');
   });
 
   it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {

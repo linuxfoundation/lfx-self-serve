@@ -44,6 +44,10 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 - Certification achievements earned by people affiliated with your company
 - An overview of your organization's investment in Linux Foundation learning programs
 
+### Which enrollments and certificates are counted
+
+On the Certifications tab, **In Progress** counts people enrolled in the last 12 months who have no current certificate for the course. **Certified** counts people holding a current certificate, issued at any time; expired certificates are not counted. The same rule applies to the course list in a person's detail panel. The People › Trainees tab uses its own time range instead.
+
 ### Navigation
 
 Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/org/training`).

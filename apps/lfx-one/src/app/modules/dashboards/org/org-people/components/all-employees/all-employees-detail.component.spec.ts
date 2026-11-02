@@ -3,7 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ORG_CODE_MEASURE_DEFINITION, ORG_CODE_METRIC_LABEL, ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import { ORG_CODE_MEASURE_DEFINITION, ORG_CODE_METRIC_LABEL, ORG_COMMITS_DEFINITION, PERSON_DETAIL_TRAINING_WINDOW_NOTE } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeCodeContribution, OrgAllEmployeeDetail, OrgPersonCodeView } from '@lfx-one/shared/interfaces';
 import { Tooltip } from 'primeng/tooltip';
 import { describe, expect, it } from 'vitest';
@@ -111,5 +111,54 @@ describe('AllEmployeesDetailComponent', () => {
     expect(headerText).toBe(header);
     const info = fixture.debugElement.query(By.css('[data-testid="org-people-all-employees-detail-commits-info"]'));
     expect(info.injector.get(Tooltip).content).toBe(tooltip);
+  });
+
+  describe('Training & Certifications window', () => {
+    const emptyDetail: OrgAllEmployeeDetail = {
+      personKey: 'person-1',
+      boardSeats: [],
+      committeeSeats: [],
+      code: [],
+      totalCommits: 0,
+      events: [],
+      training: [],
+    };
+
+    async function render(detail: OrgAllEmployeeDetail | null): Promise<HTMLElement> {
+      await TestBed.configureTestingModule({ imports: [AllEmployeesDetailComponent] }).compileComponents();
+      const fixture = TestBed.createComponent(AllEmployeesDetailComponent);
+      fixture.componentRef.setInput('detail', detail);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    const q = (el: HTMLElement, id: string): Element | null => el.querySelector(`[data-testid="org-people-all-employees-detail-${id}"]`);
+
+    it('states the window above the listed courses', async () => {
+      const el = await render({
+        ...emptyDetail,
+        training: [{ courseId: 'course-1', courseName: 'Course One', status: 'Certified', certificationsCount: 1, coursesCount: 1 }],
+      });
+
+      expect(q(el, 'training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
+      expect(q(el, 'training')?.textContent).toContain('Course One');
+      expect(q(el, 'training-empty')).toBeNull();
+    });
+
+    it('keeps the section, with the window and an empty message, when the windowed list is empty', async () => {
+      const el = await render(emptyDetail);
+
+      expect(q(el, 'training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
+      expect(q(el, 'training-empty')).not.toBeNull();
+      expect(q(el, 'empty')).toBeNull();
+    });
+
+    it('keeps the no-detail message when no detail payload arrived', async () => {
+      const el = await render(null);
+
+      expect(q(el, 'empty')).not.toBeNull();
+      expect(q(el, 'training')).toBeNull();
+    });
   });
 });

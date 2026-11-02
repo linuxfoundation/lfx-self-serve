@@ -12,8 +12,8 @@ describe('orgTrainingEnrolledWindowPredicate', () => {
   });
 
   it('derives the window from the shared constant and honours the column', () => {
-    expect(ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS).toBe(12);
-    expect(orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS')).toContain(`-${ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS},`);
-    expect(orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS')).toMatch(/^t\.ACTIVITY_TS::date >= .* AND t\.ACTIVITY_TS::date < CURRENT_DATE\(\)$/);
+    expect(orgTrainingEnrolledWindowPredicate('t.ACTIVITY_TS')).toBe(
+      `t.ACTIVITY_TS::date >= DATEADD('MONTH', -${ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS}, CURRENT_DATE()) AND t.ACTIVITY_TS::date < CURRENT_DATE()`
+    );
   });
 });

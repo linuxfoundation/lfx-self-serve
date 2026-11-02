@@ -19,7 +19,7 @@
         Retry
       </button>
     </div>
-  } @else if (!hasAnyDetail()) {
+  } @else if (!detail()) {
     <p class="py-2 text-sm italic text-gray-400" data-testid="org-people-all-employees-detail-empty">No LF activity detail recorded for this employee.</p>
   } @else {
     <div class="flex flex-col gap-4">
@@ -210,12 +210,15 @@
         </section>
       }
 
-      @if (training().length > 0) {
-        <section data-testid="org-people-all-employees-detail-training">
-          <header class="mb-2 flex items-center gap-2">
-            <i class="fa-light fa-graduation-cap text-xs text-violet-700" aria-hidden="true"></i>
-            <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Training &amp; Certifications</h3>
-          </header>
+      <section data-testid="org-people-all-employees-detail-training">
+        <header class="mb-2 flex items-center gap-2">
+          <i class="fa-light fa-graduation-cap text-xs text-violet-700" aria-hidden="true"></i>
+          <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Training &amp; Certifications</h3>
+        </header>
+        <p class="mb-2 text-xs text-gray-500" data-testid="org-people-all-employees-detail-training-window">{{ trainingWindowNote }}</p>
+        @if (training().length === 0) {
+          <p class="text-sm italic text-gray-400" data-testid="org-people-all-employees-detail-training-empty">No training or certifications in this window.</p>
+        } @else {
           <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
             <table class="w-full text-sm">
               <thead class="bg-gray-50">
@@ -247,8 +250,8 @@
               </tbody>
             </table>
           </div>
-        </section>
-      }
+        }
+      </section>
     </div>
   }
 </div>

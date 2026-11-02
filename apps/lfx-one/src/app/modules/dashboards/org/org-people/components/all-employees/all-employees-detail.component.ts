@@ -3,12 +3,12 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
-import { ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT } from '@lfx-one/shared/constants';
+import { ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT, PERSON_DETAIL_TRAINING_WINDOW_NOTE } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeeDetail, OrgPersonCodeCount } from '@lfx-one/shared/interfaces';
 import { orgPersonCodeCount } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
 
-/** Expandable detail sub-table for one All Employees row — up to five sections, empty ones hidden. */
+/** Expandable detail sub-table for one All Employees row — up to five sections; the training section is always shown so its window note stays visible. */
 @Component({
   selector: 'lfx-org-people-all-employees-detail',
   imports: [DecimalPipe, TooltipModule],
@@ -24,7 +24,7 @@ export class AllEmployeesDetailComponent {
   // The code column counts what the row does — the page's range, project type and code count (lfx-self-serve#4404).
   protected readonly codeCount: Signal<OrgPersonCodeCount> = computed(() => orgPersonCodeCount(this.detail()?.codeView));
 
-  protected readonly hasAnyDetail: Signal<boolean> = computed(() => this.initHasAnyDetail());
+  protected readonly trainingWindowNote = PERSON_DETAIL_TRAINING_WINDOW_NOTE;
 
   protected readonly boardSeats = computed(() => this.detail()?.boardSeats ?? []);
   protected readonly committeeSeats = computed(() => this.detail()?.committeeSeats ?? []);
@@ -34,10 +34,4 @@ export class AllEmployeesDetailComponent {
 
   // Server denormalizes the aggregate on every event row; render once in the section header instead of repeating per row.
   protected readonly eventsTotal = computed(() => this.events()[0]?.eventsCount ?? 0);
-
-  private initHasAnyDetail(): boolean {
-    const d = this.detail();
-    if (!d) return false;
-    return d.boardSeats.length + d.committeeSeats.length + d.code.length + d.events.length + d.training.length > 0;
-  }
 }

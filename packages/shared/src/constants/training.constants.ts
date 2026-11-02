@@ -97,11 +97,11 @@ export const ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS = 12;
 
 const ORG_TRAINING_ENROLLMENT_WINDOW_LABEL = `last ${ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS} months`;
 
-/** Note above the Certifications table. */
-export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no certificate for the course. Certified counts certificates of any age.`;
+/** Note above the Certifications table. Expired certificates are dropped upstream; the Certified figure counts people. */
+export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no current certificate for the course. Certified counts people with a current certificate, issued at any time; expired certificates are not counted.`;
 
 /** Note in the Certifications In Progress roster drawer. */
-export const ORG_CERT_IN_PROGRESS_WINDOW_NOTE = `Enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}, with no certificate for this course.`;
+export const ORG_CERT_IN_PROGRESS_WINDOW_NOTE = `Enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}, with no current certificate for this course.`;
 
-/** Note on the person detail Training tab. */
-export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Certificates of any age. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;
+/** Note on the person detail Training tab and the All Employees expanded row. */
+export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Current certificates, issued at any time; expired ones are not listed. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;
