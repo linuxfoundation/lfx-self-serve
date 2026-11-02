@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-10-28
+last_updated: 2026-11-02
 intercom_collection: Meetings
 ---
 
@@ -25,6 +25,16 @@ You can join from **10 minutes before the start time**, or earlier if the organi
 Select **Join Meeting**. When the meeting opens, you're taken to Zoom automatically, using the details from your LFX account.
 
 If you see an error about your email address, such as that you aren't on the guest list for a restricted meeting, select **Click here** to join using a different email address, and use the email the organizer invited.
+
+### On a phone
+
+When you're signed in and the meeting hasn't ended, a bar stays at the bottom of the screen with two ways to put the meeting in your calendar and a **Join Meeting** button.
+
+- **Add to calendar** downloads an `.ics` file for the meeting. Open it to add the event to Apple Calendar, Outlook or another calendar app. The file holds the title, the project name, the start and end times, and a link back to this join page. It doesn't contain the Zoom link, passcode, host key or guest list. On a recurring meeting it adds the next occurrence.
+- **Google Calendar** opens Google Calendar with the same event filled in.
+- **Join Meeting** is greyed out and reads "Join opens" followed by the time in your own time zone, until the join window opens (10 minutes before the start, or earlier if the organizer set a longer early join time). It turns on by itself, with no need to reload the page.
+
+The bar hides while the guest list is open, and it doesn't appear if you aren't signed in, if you joined a private meeting with only its password link, or once the meeting has ended. Larger screens keep the join button and message at the top of the page.
 
 ### If you're not signed in
 
