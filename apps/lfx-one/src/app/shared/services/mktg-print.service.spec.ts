@@ -4,6 +4,7 @@
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  BRAND_KIT_PORTRAIT_PRINT_CLASS,
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
@@ -14,6 +15,7 @@ import {
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgPrintService } from './mktg-print.service';
@@ -38,6 +40,11 @@ describe('MktgPrintService isolated frame', () => {
     const frame = document.querySelector<HTMLIFrameElement>('[data-testid="lfx-print-frame"]');
     if (!frame?.contentDocument || !frame.contentWindow) throw new Error('Missing synthetic print frame');
     return frame;
+  }
+  /** The frame's own unnamed @page rule: the last style in its head, after the cloned sheets. */
+  function framePageRule(): string | null {
+    const styles = currentFrame().contentDocument?.head.querySelectorAll('style') ?? [];
+    return styles[styles.length - 1]?.textContent ?? null;
   }
   async function releaseFrame() {
     currentFrame()
@@ -84,10 +91,10 @@ describe('MktgPrintService isolated frame', () => {
   });
 
   it.each([
-    [FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS],
-    [BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS],
-    [MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS],
-  ])('creates only the %s print root immediately, then prints the idle frame, never the app window', async (bodyClass, wrapper) => {
+    [FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['mktg-framework']],
+    [BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['brand-kit']],
+    [MKTG_FAMILY_PRINT_BODY_CLASS, MKTG_FAMILY_PRINT_ONLY_CLASS, MKTG_PRINT_PAGE_SETUPS['mktg-framework']],
+  ])('creates only the %s print root immediately, then prints the idle frame, never the app window', async (bodyClass, wrapper, pageSetup) => {
     root.className = wrapper;
     root.innerHTML += '<script type="text/plain">not copied</script><img onerror="window.synthetic = true">';
     configure().printNow(bodyClass);
@@ -99,6 +106,8 @@ describe('MktgPrintService isolated frame', () => {
     expect(frame.style.height).toBe(`${MKTG_PRINT_FRAME_PAPER_IN.height}in`);
     expect(frame.style.opacity).toBe('0');
     expect(frame.style.pointerEvents).toBe('none');
+    // The surface's page setup, written unnamed so WebKit applies it whether or not it honours named pages.
+    expect(framePageRule()).toBe(`@page { ${pageSetup} }`);
     expect(frame.getAttribute('aria-hidden')).toBe('true');
     expect(frame.contentDocument?.body.classList.contains(bodyClass)).toBe(true);
     expect(frame.contentDocument?.querySelector('[data-testid="synthetic-print"]')?.textContent).toBe('Synthetic print');
@@ -110,6 +119,13 @@ describe('MktgPrintService isolated frame', () => {
     expect(frameFocus).toHaveBeenCalledOnce();
     expect(framePrint).toHaveBeenCalledOnce();
     expect(parentPrint).not.toHaveBeenCalled();
+  });
+
+  it('gives the brand kit portrait print the framework page setup, as the stylesheets do, not the landscape book', () => {
+    root.className = BRAND_KIT_PRINT_ONLY_CLASS;
+    root.innerHTML = `<section class="${BRAND_KIT_PORTRAIT_PRINT_CLASS}" data-testid="synthetic-print">Synthetic print</section>`;
+    configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
   });
 
   it('copies head CSS, base and page classes, but never scripts or interactive shell content', async () => {
@@ -137,6 +153,8 @@ describe('MktgPrintService isolated frame', () => {
     expect(doc?.head.querySelector('[data-print-fixture="style"]')?.textContent).toContain('@page synthetic');
     expect(doc?.head.querySelector('[onload], [onerror]')).toBeNull();
     expect(doc?.querySelector('script')).toBeNull();
+    // The frame's own @page rule follows every cloned sheet.
+    expect(doc?.head.lastElementChild?.textContent).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
     await releaseFrame();
     expect(framePrint).toHaveBeenCalledOnce();
   });

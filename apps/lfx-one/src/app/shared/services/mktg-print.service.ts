@@ -4,6 +4,7 @@
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
+  BRAND_KIT_PORTRAIT_PRINT_CLASS,
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
@@ -15,6 +16,7 @@ import {
   MKTG_PRINT_FONT_WEIGHTS,
   MKTG_PRINT_FRAME_LINGER_MS,
   MKTG_PRINT_FRAME_PAPER_IN,
+  MKTG_PRINT_PAGE_SETUPS,
 } from '@lfx-one/shared/constants';
 
 /**
@@ -42,7 +44,10 @@ import {
  * 1px frame collapsed the covers' viewport-height boxes and shifted the page
  * breaks; Chromium paginates against the page box either way. A fixed box adds
  * no scrollable overflow and `pointer-events: none` lets clicks through, so
- * the page under it is unchanged while the dialog is open.
+ * the page under it is unchanged while the dialog is open. The frame's head
+ * also gets one unnamed `@page` rule with the surface's named page setup
+ * (`MKTG_PRINT_PAGE_SETUPS`): WebKit's support for named pages is doubtful,
+ * and on default margins a cover sized to the page area spills a blank sheet.
  *
  * The brand's typeface is loaded before the dialog opens, in the page (ahead
  * of the click) and again in the frame, and only after its Google Fonts
@@ -147,6 +152,13 @@ export class MktgPrintService {
       if (clone.tagName === 'LINK') sheets.push(this.waitForStylesheet(clone as HTMLLinkElement));
       doc.head.appendChild(clone);
     });
+    // The surface's page setup as the frame's unnamed @page rule, chosen as mktg-family-print.scss
+    // chooses the named page: the brand kit's legacy book is landscape, every portrait document
+    // (the kit's portrait print included) is on the framework's margins. Last in the head, after
+    // the cloned sheets; in Chrome the matched named rule still outranks it with the same values.
+    const setup = doc.createElement('style');
+    setup.textContent = `@page { ${this.pageSetup(bodyClass, roots)} }`;
+    doc.head.appendChild(setup);
     // Only the three existing print-only wrappers, selected by their shared constants.
     // Keep Angular's scoping attributes; never clone the interactive app shell or its scripts/streams.
     roots.forEach((root) => {
@@ -211,6 +223,13 @@ export class MktgPrintService {
     if (bodyClass === BRAND_KIT_PRINT_BODY_CLASS) wrapper = BRAND_KIT_PRINT_ONLY_CLASS;
     if (bodyClass === FOUNDATION_MESSAGE_PRINT_BODY_CLASS) wrapper = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
     return wrapper ? Array.from(this.document.querySelectorAll<HTMLElement>(`.${wrapper}`)) : [];
+  }
+
+  /** The named page the stylesheets give this print, by the same test: only the kit's legacy book is landscape. */
+  private pageSetup(bodyClass: string, roots: HTMLElement[]): string {
+    const portrait = roots.some((root) => root.classList.contains(BRAND_KIT_PORTRAIT_PRINT_CLASS) || root.querySelector(`.${BRAND_KIT_PORTRAIT_PRINT_CLASS}`));
+    const book = bodyClass === BRAND_KIT_PRINT_BODY_CLASS && !portrait;
+    return book ? MKTG_PRINT_PAGE_SETUPS['brand-kit'] : MKTG_PRINT_PAGE_SETUPS['mktg-framework'];
   }
 
   /** Inline handlers would be the frame's only script; the clone carries none. */

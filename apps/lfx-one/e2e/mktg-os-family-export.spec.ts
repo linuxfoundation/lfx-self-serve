@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_PRINT_BODY_CLASS } from '../../../packages/shared/src/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintCover, expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.use({ viewport: { width: 1440, height: 1000 } });
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
@@ -178,7 +178,7 @@ test('Download PDF stays disabled behind the checking line until prepared, then 
   // Only the wrapper travels: the card's controls are not in the frame.
   await expect(printFrame.getByTestId('family-export-actions')).toHaveCount(0);
   const cover = printFrame.getByTestId('family-export-print-cover');
-  await expect(cover).toBeVisible();
+  await expectMktgPrintCover(cover);
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveText('Positioning & brand');
   await expect(printFrame.getByTestId('family-export-print-title')).toHaveCSS('text-wrap', 'balance');
   await expect(printFrame.getByTestId('family-export-print-logo')).toBeVisible();

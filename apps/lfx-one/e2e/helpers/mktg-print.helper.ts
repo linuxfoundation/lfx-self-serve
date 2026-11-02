@@ -1,15 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, FrameLocator, Page } from '@playwright/test';
+import { expect, FrameLocator, Locator, Page } from '@playwright/test';
 import { MKTG_PRINT_FRAME_PAPER_IN } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './account-settings-email.helper';
 
 /** The frame prints once its own stylesheets, faces and images settle, or at the service's cap. */
 const PRINT_FRAME_TIMEOUT_MS = 10_000;
 
-/** US Letter at CSS pixels: the production frame's viewport, the initial containing block the print geometry is measured against. */
-export const PRINT_FRAME_LETTER = { width: MKTG_PRINT_FRAME_PAPER_IN.width * 96, height: MKTG_PRINT_FRAME_PAPER_IN.height * 96 };
+/** The production frame's viewport at CSS pixels (Letter's width, a hair under its height): the initial containing block the print geometry is measured against. */
+export const PRINT_FRAME_LETTER = { width: Math.round(MKTG_PRINT_FRAME_PAPER_IN.width * 96), height: Math.round(MKTG_PRINT_FRAME_PAPER_IN.height * 96) };
+
+/** What a cover sized `calc(100vh - 1.1in)` must at least measure in that frame: the collapse this guards against left it at its content's height. */
+export const PRINT_COVER_MIN_HEIGHT = 900;
 
 export function mktgPrintFrame(page: Page): FrameLocator {
   return page.frameLocator('[data-testid="lfx-print-frame"]');
@@ -43,17 +46,28 @@ export async function expectMktgPrintFrame(page: Page, bodyClass: string, docume
   await expect(frame.locator('script')).toHaveCount(0);
   // document.open() gave the frame the page's address (not about:blank), so default headers/footers print it.
   expect(await frame.locator('html').evaluate((root) => root.ownerDocument.location.href)).toBe(page.url().split('#')[0]);
-  // The paper-sized frame is fixed, transparent and inert: it takes no pointer events and adds no
-  // scrollable overflow, whatever the viewport, so the page under it keeps working while the dialog is open.
+  // The paper-sized frame is fixed, transparent and inert: hit testing skips it (elementsFromPoint
+  // omits pointer-events:none boxes) and it adds no scrollable overflow, whatever the viewport, so the
+  // page under it keeps working while the dialog is open. The probe is a point inside both the frame
+  // and the viewport (its centre, pulled into view on the 393px project), over the main content.
   const overlay = await page.getByTestId('lfx-print-frame').evaluate((element) => {
     const rect = element.getBoundingClientRect();
+    const view = element.ownerDocument.defaultView;
     const root = element.ownerDocument.documentElement;
+    const x = Math.min(rect.left + rect.width / 2, (view?.innerWidth ?? rect.width) / 2);
+    const y = Math.min(rect.top + rect.height / 2, (view?.innerHeight ?? rect.height) / 2);
+    const stack = element.ownerDocument.elementsFromPoint(x, y);
     return {
-      hit: element.ownerDocument.elementFromPoint(rect.left + 4, rect.top + 4) === element,
+      probeInsideFrame: x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom,
+      underProbe: stack.length,
+      frameHit: stack.includes(element),
       addsScroll: root.scrollWidth > root.clientWidth && root.scrollWidth >= rect.right,
     };
   });
-  expect(overlay).toEqual({ hit: false, addsScroll: false });
+  expect(overlay.probeInsideFrame).toBe(true);
+  expect(overlay.underProbe).toBeGreaterThan(0);
+  expect(overlay.frameHit).toBe(false);
+  expect(overlay.addsScroll).toBe(false);
   await expect(frame.locator('html')).toHaveAttribute('data-mktg-frame-printed', 'yes', { timeout: PRINT_FRAME_TIMEOUT_MS });
 }
 
@@ -74,6 +88,13 @@ export async function layoutMktgPrintFrame(page: Page): Promise<FrameLocator> {
   });
   await page.emulateMedia({ media: 'print' });
   return mktgPrintFrame(page);
+}
+
+/** A viewport-height cover in the laid-out frame fills the page: the 1px frame left it at its content's height. */
+export async function expectMktgPrintCover(cover: Locator): Promise<void> {
+  await expect(cover).toBeVisible();
+  const box = await cover.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(PRINT_COVER_MIN_HEIGHT);
 }
 
 export async function finishMktgPrintFrame(page: Page): Promise<void> {

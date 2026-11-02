@@ -9,7 +9,14 @@ import {
   MKTG_SLIDES_EXPORT_API_PATH,
 } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, PRINT_FRAME_LETTER, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import {
+  expectMktgPrintCover,
+  expectMktgPrintFrame,
+  finishMktgPrintFrame,
+  layoutMktgPrintFrame,
+  PRINT_FRAME_LETTER,
+  stubMktgPrintFrame,
+} from './helpers/mktg-print.helper';
 
 import {
   columnAssetRevisionResponse,
@@ -236,6 +243,7 @@ for (const key of MKTG_SLIDES_EXPORT_AGENT_KEYS) {
       await expect(print.getByTestId('kit-print-type')).toContainText('Typography');
     } else {
       await expect(frame.getByTestId('mktg-framework-print-tagline')).toHaveText('Build openly.');
+      await expectMktgPrintCover(frame.getByTestId('mktg-framework-print-cover'));
       await expect(print).toHaveCSS('position', 'static');
       await expect(print).toHaveCSS('display', 'block');
       await expect(print.locator('.h-screen, .min-h-screen, .flex-1')).toHaveCount(0);
