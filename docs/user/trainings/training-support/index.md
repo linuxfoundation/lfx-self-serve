@@ -8,7 +8,7 @@ last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
 
-LFX Self Serve shows your Linux Foundation training and certification purchases, enrollments, certifications, rewards, and coupons in read-only view. The purchases and programs themselves are managed by the LF Education team, and they handle questions about them.
+LFX Self Serve shows your Linux Foundation training and certification purchases, enrollments, and certifications in read-only view. The purchases and programs themselves are managed by the LF Education team, and they handle questions about them. On the **Rewards** tab you can also claim Tux Rewards incentives and redeem coupons — see [Training Rewards and Coupons](../rewards/).
 
 ## Contact the LF Education team
 

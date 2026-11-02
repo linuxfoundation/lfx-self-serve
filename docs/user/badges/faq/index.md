@@ -36,4 +36,4 @@ Some badges have an expiry date. Cards for these badges show **Expires on** with
 
 ## Who do I contact if a badge is incorrect?
 
-Contact LFX support. Include the badge name and the project it relates to so the support team can investigate.
+If a Linux Foundation training or certification badge shows incorrect details in Credly, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). If the badge is correct in Credly but shows incorrectly on the LFX **Badges** page, or it's another kind of badge, contact LFX support. Include the badge name and the project it relates to so the support team can investigate.
