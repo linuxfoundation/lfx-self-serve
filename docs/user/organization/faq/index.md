@@ -1,10 +1,10 @@
 ---
 title: Organization FAQ
-description: Short answers about EasyCLA in the Organization lens — who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — adding and removing Org Lens access, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
-tags: [organization, faq, easycla, cla, ccla, cla-manager]
-last_updated: 2026-10-21
+tags: [organization, faq, easycla, cla, ccla, cla-manager, access, remove, invite]
+last_updated: 2026-11-02
 intercom_collection: Organization
 ---
 
@@ -46,3 +46,11 @@ You sign a corporate CLA (CCLA) from **Sign CLA** on EasyCLA, either yourself in
 ## What does a sanctioned organization look like?
 
 A sanctioned organization has no status pill, and the Overview heading ends with **Unavailable**. There is no banner on the page. Signing and changes are refused. Answering the CLA Manager question while signing for that organization shows **Your organization cannot sign this CLA at this time. Contact support for more information.** Any other refused step shows an error when you try it. See [What does a sanctioned organization look like on EasyCLA?](../easycla/#what-does-a-sanctioned-organization-look-like-on-easycla).
+
+## How do I remove someone from my organization?
+
+Remove their Org Lens access. You must be an Admin for the organization. In the **Organization** lens, open **People**, select the **Org Lens Access** tab, select the trash icon next to the person, then select **Remove**. This removes the access granted to them on that tab. If they can also open your organization another way, for example through access to a related organization, they keep that access. It does not remove them from committees, groups, mailing lists or meetings. You cannot remove the organization's only Admin until another Admin is added. See [Manage Org Lens Access](../manage-org-lens-access/#remove-someone-s-access).
+
+## How do I give someone access to my organization?
+
+Invite them from the **Org Lens Access** tab. You must be an Admin for the organization. In the **Organization** lens, open **People**, select the **Org Lens Access** tab, select **Add Users**, enter their email, choose **Viewer** or **Admin**, then select **Send Invite**. They appear as **Invited** until they accept. See [Manage Org Lens Access](../manage-org-lens-access/#add-someone).

@@ -81,7 +81,7 @@ Switch to the **Organization** lens using the lens selector. The Org Overview is
 
 ### Who can access this
 
-Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
+Everyone can open the **Organization** lens, but a company's pages show only to people who have access to that organization. Access is granted by the organization's own **Organization Lens administrators**, not by the Linux Foundation. Administrators manage it on the **Org Lens Access** tab; see [Manage Org Lens Access](../organization/manage-org-lens-access/). If you are not sure who they are, your company's open source program office (OSPO) is a good place to start. Linux Foundation staff can open every organization.
 
 If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
 
