@@ -14,7 +14,7 @@ The LFX Self Serve dashboard adapts based on your roles and the lens you have se
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Locate the lens switcher in the top navigation or sidebar.
-3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Organization**.
+3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Organization**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
 4. The dashboard and left navigation update automatically to reflect the selected lens.
 
 On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
@@ -37,7 +37,7 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ## Project lens
 
-The **Project** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
 
 ## Org lens
 
@@ -45,7 +45,7 @@ The **Organization** lens (also called the Org lens) shows your company's member
 
 ## Switch project context
 
-When you are in the **Foundation** or **Project** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
+When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
 
 ## Drawers and detail panels
 

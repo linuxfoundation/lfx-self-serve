@@ -34,6 +34,8 @@ Which lenses you see depends on your roles on Linux Foundation projects, such as
 | **Foundation**   | Board members and executive directors of a foundation, foundation admins, Linux Foundation staff, and a few other Linux Foundation admin, auditor and marketing roles.                                                                                                                                                 |
 | **Organization** | Everyone sees the lens. The pages for a specific company show only if you have access to that organization. See [Who can access this](#who-can-access-this) under Your company's activity.                                                                                                                             |
 
+If you can use both the Foundation and Projects lenses, the sidebar shows a single **Projects** tab instead of two separate tabs. It lists both foundations and projects; select a foundation to open the Foundation lens.
+
 Some pages inside a lens have their own access rules. For example, **Health Metrics** in the Foundation lens is available only to the foundation's executive director and to Linux Foundation staff.
 
 ## Your personal dashboard
@@ -75,7 +77,7 @@ On the **Projects** list the choice changes the **Contributors** column only; in
 
 ### Navigation
 
-Switch to the **Org** lens using the lens selector at the top of LFX Self Serve. The Org Overview is the default landing page for the Org lens (route: `/org`).
+Switch to the **Organization** lens using the lens selector. The Org Overview is the default landing page for the Org lens (route: `/org`).
 
 ### Who can access this
 
