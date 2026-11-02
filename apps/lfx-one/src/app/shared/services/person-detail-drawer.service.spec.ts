@@ -106,4 +106,24 @@ describe('PersonDetailDrawerService — detail request', () => {
 
     expect(http.expectOne((req) => req.url === DETAIL).request.params.has('teamMembers')).toBe(false);
   });
+
+  it("sends the opener's Organization scope pick with its code filters", async () => {
+    service.open({
+      personKey: 'person-one',
+      name: 'Ada',
+      range: '90d',
+      codeFilters: { projectScope: 'all', commitScope: 'all', metric: 'code' },
+      orgScope: 'all',
+    });
+    await flushEffects();
+
+    expect(http.expectOne((req) => req.url === DETAIL).request.params.get('orgScope')).toBe('all');
+  });
+
+  it('sends no Organization scope pick without code filters', async () => {
+    service.open({ personKey: 'person-one', name: 'Ada', orgScope: 'all' });
+    await flushEffects();
+
+    expect(http.expectOne((req) => req.url === DETAIL).request.params.has('orgScope')).toBe(false);
+  });
 });

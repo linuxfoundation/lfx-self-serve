@@ -52,6 +52,10 @@ Enrollment in new training courses is handled on the Linux Foundation training p
 
 If you have no training enrollments, the page shows a message indicating no trainings are available. To enroll in courses, visit [https://training.linuxfoundation.org](https://training.linuxfoundation.org).
 
+## Need help?
+
+LFX Self Serve shows your training in read-only view. For questions about a course, exam, voucher, refund, or invoice, see [Get Help with Training and Certifications](../training-support/).
+
 ## Related
 
 - [Badges](../../badges/) — training completions can earn you LFX badges

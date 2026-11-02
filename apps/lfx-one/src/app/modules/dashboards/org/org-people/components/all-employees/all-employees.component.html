@@ -3,99 +3,116 @@
 
 <div class="flex flex-col gap-6" data-testid="org-people-all-employees">
   <!-- Filter bar -->
-  <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
-    <div class="flex-1 md:min-w-56">
-      <lfx-input-text
-        [form]="filterForm"
-        control="search"
-        placeholder="Search all employees..."
-        ariaLabel="Search all employees"
-        icon="fa-light fa-magnifying-glass"
-        styleClass="w-full"
-        size="small"
-        dataTest="org-people-all-employees-search-input" />
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-people-all-employees-filter-bar">
+      <div class="flex-1 md:min-w-56">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search all employees..."
+          ariaLabel="Search all employees"
+          icon="fa-light fa-magnifying-glass"
+          styleClass="w-full"
+          size="small"
+          dataTest="org-people-all-employees-search-input" />
+      </div>
+      <div class="w-full md:w-56" data-testid="org-people-all-employees-foundation-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="foundation"
+          size="small"
+          [options]="foundationOptions()"
+          styleClass="w-full"
+          ariaLabel="Filter by foundation"
+          dataTest="org-people-all-employees-foundation-select" />
+      </div>
+      <div class="w-full md:w-48" data-testid="org-people-all-employees-activity-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="activity"
+          size="small"
+          [options]="activityOptions()"
+          styleClass="w-full"
+          ariaLabel="Filter by activity"
+          dataTest="org-people-all-employees-activity-select" />
+      </div>
+      <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="range"
+          size="small"
+          [options]="rangeOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by time range"
+          dataTest="org-people-all-employees-range-select" />
+      </div>
+      <div class="w-full md:w-44" data-testid="org-people-all-employees-project-scope-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="projectScope"
+          size="small"
+          [options]="projectScopeOptions"
+          styleClass="w-full"
+          [ariaLabel]="projectScopeLabel"
+          dataTest="org-people-all-employees-project-scope-select" />
+      </div>
+      <lfx-more-filters-toggle
+        [(expanded)]="moreFiltersExpanded"
+        [count]="hiddenFilterCount()"
+        controls="org-people-all-employees-more-filters"
+        dataTest="org-people-all-employees-more-filters-toggle" />
+      @if (canClearFilters()) {
+        <button
+          type="button"
+          class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
+          data-testid="org-people-all-employees-clear-filters"
+          (click)="clearFilters()">
+          Clear filters
+        </button>
+      }
     </div>
-    <div class="w-full md:w-56" data-testid="org-people-all-employees-foundation-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="foundation"
-        size="small"
-        [options]="foundationOptions()"
-        styleClass="w-full"
-        ariaLabel="Filter by foundation"
-        dataTest="org-people-all-employees-foundation-select" />
+    <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+    <div
+      id="org-people-all-employees-more-filters"
+      class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
+      [class.hidden]="!moreFiltersExpanded()"
+      data-testid="org-people-all-employees-more-filters">
+      <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="employment"
+          size="small"
+          [options]="employmentOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by employment"
+          dataTest="org-people-all-employees-employment-select" />
+      </div>
+      <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="metric"
+          size="small"
+          [options]="metricOptions"
+          styleClass="w-full"
+          ariaLabel="Count all commits, only main branch commits or all code contributions"
+          dataTest="org-people-all-employees-metric-select" />
+      </div>
+      <div class="w-full md:w-52" data-testid="org-people-all-employees-team-members-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="teamMembers"
+          size="small"
+          [options]="teamMembersOptions"
+          styleClass="w-full"
+          [ariaLabel]="teamMembersLabel"
+          [tooltip]="teamMembersTooltip"
+          tooltipPosition="top"
+          dataTest="org-people-all-employees-team-members-select" />
+      </div>
+      <div class="w-full md:w-60">
+        <lfx-org-scope-select [form]="filterForm" [note]="orgScopeNote" dataTest="org-people-all-employees-org-scope-filter" />
+      </div>
     </div>
-    <div class="w-full md:w-48" data-testid="org-people-all-employees-activity-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="activity"
-        size="small"
-        [options]="activityOptions()"
-        styleClass="w-full"
-        ariaLabel="Filter by activity"
-        dataTest="org-people-all-employees-activity-select" />
-    </div>
-    <div class="w-full md:w-52" data-testid="org-people-all-employees-employment-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="employment"
-        size="small"
-        [options]="employmentOptions"
-        styleClass="w-full"
-        ariaLabel="Filter by employment"
-        dataTest="org-people-all-employees-employment-select" />
-    </div>
-    <div class="w-full md:w-44" data-testid="org-people-all-employees-range-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="range"
-        size="small"
-        [options]="rangeOptions"
-        styleClass="w-full"
-        ariaLabel="Filter by time range"
-        dataTest="org-people-all-employees-range-select" />
-    </div>
-    <div class="w-full md:w-44" data-testid="org-people-all-employees-project-scope-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="projectScope"
-        size="small"
-        [options]="projectScopeOptions"
-        styleClass="w-full"
-        [ariaLabel]="projectScopeLabel"
-        dataTest="org-people-all-employees-project-scope-select" />
-    </div>
-    <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="metric"
-        size="small"
-        [options]="metricOptions"
-        styleClass="w-full"
-        ariaLabel="Count all commits, only main branch commits or all code contributions"
-        dataTest="org-people-all-employees-metric-select" />
-    </div>
-    <div class="w-full md:w-52" data-testid="org-people-all-employees-team-members-filter">
-      <lfx-select
-        [form]="filterForm"
-        control="teamMembers"
-        size="small"
-        [options]="teamMembersOptions"
-        styleClass="w-full"
-        [ariaLabel]="teamMembersLabel"
-        [tooltip]="teamMembersTooltip"
-        tooltipPosition="top"
-        dataTest="org-people-all-employees-team-members-select" />
-    </div>
-    @if (canClearFilters()) {
-      <button
-        type="button"
-        class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 md:self-auto"
-        data-testid="org-people-all-employees-clear-filters"
-        (click)="clearFilters()">
-        Clear filters
-      </button>
-    }
   </div>
 
   @if (teamMembersUnavailable()) {
@@ -202,6 +219,8 @@
           }
         </div>
       } @else {
+        <!-- Hidden: read only as the description of the rows' name buttons that point at it, never in the page's reading order. -->
+        <span hidden [id]="unclassifiedRowNoteId">{{ unclassifiedRowNote }}</span>
         <table class="w-full text-sm" data-testid="org-people-all-employees-rows">
           <thead class="bg-gray-50">
             <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500">
@@ -296,6 +315,11 @@
                     type="button"
                     class="group flex min-w-0 items-center gap-3 text-left"
                     [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-name'"
+                    [pTooltip]="unclassifiedRowNote"
+                    [tooltipDisabled]="!row.isUnclassified"
+                    tooltipEvent="focus"
+                    tooltipPosition="top"
+                    [attr.aria-describedby]="row.isUnclassified ? unclassifiedRowNoteId : null"
                     (click)="$event.stopPropagation(); onPersonClick(row)">
                     <span
                       class="relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-semibold text-white"
@@ -319,6 +343,16 @@
                             class="inline-flex flex-shrink-0 items-center rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
                             [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-former'">
                             Former
+                          </span>
+                        }
+                        @if (row.isUnclassified) {
+                          <span
+                            class="inline-flex flex-shrink-0 items-center text-gray-400"
+                            [pTooltip]="unclassifiedRowNote"
+                            tooltipPosition="top"
+                            aria-hidden="true"
+                            [attr.data-testid]="'org-people-all-employees-row-' + row.personKey + '-unclassified'">
+                            <i class="fa-light fa-circle-question"></i>
                           </span>
                         }
                       </span>

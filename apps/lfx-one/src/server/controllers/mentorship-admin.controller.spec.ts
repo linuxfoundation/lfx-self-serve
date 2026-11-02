@@ -606,9 +606,29 @@ describe('MentorshipAdminController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('updateApplicationStatus passes an accept without an attendance type, which undoes a graduation', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus').mockResolvedValue();
+      const out = writeRes();
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body: { status: 'accepted' } } as Request;
+
+      await controller.updateApplicationStatus(req, out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { status: 'accepted' });
+      expect(out.status).toHaveBeenCalledWith(204);
+    });
+
+    it('updateApplicationStatus passes a re-open as pending, dropping any attendance type', async () => {
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'updateApplicationStatus').mockResolvedValue();
+      const req = { ...buildReq({}, { applicationId: APPLICATION_ID }), body: { status: 'pending', attendanceType: 'full_time' } } as Request;
+
+      await controller.updateApplicationStatus(req, writeRes(), next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), APPLICATION_ID, { status: 'pending' });
+    });
+
     it.each([
-      ['an accept without an attendance type', { status: 'accepted' }],
       ['an accept with an unknown attendance type', { status: 'accepted', attendanceType: 'weekends' }],
+      ['an accept with a null attendance type', { status: 'accepted', attendanceType: null }],
       ['a status the admin cannot set', { status: 'withdrawn' }],
       ['no body', undefined],
     ])('updateApplicationStatus rejects %s with a 400 and no upstream call', async (_label, body) => {

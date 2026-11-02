@@ -15,6 +15,8 @@ import type {
   OrgEmploymentFilter,
   OrgEmploymentOption,
   OrgEventAttendeesResponse,
+  OrgScopeFilter,
+  OrgScopeOption,
   OrgTeamMembersFilter,
   OrgTeamMembersOption,
   OrgTraineesResponse,
@@ -87,6 +89,13 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
  */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
 
+/**
+ * Hint on an All Employees row for someone with code credited to the company but no employment record there
+ * (lfx-self-serve#4730): neither current nor former, so listed only under "All employees".
+ */
+export const ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE =
+  'No employment record at this company: listed for code credited to it, only under "All employees", not as a current or former employee.';
+
 /** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
 export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
 
@@ -132,6 +141,54 @@ export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choos
 
 /** The person-level CDP team-member flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
 export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
+
+/**
+ * Organization-scope filter on the Org Lens pages with contributor counts — People → Contributors and All Employees (code
+ * only), Code Contributions, Projects and Project Detail (lfx-self-serve-ops#1219); the Overview counts the default. `insights`, the default, counts
+ * only the crowd.dev organization behind the account's LFX Insights page and only repositories LFX Insights counts, as
+ * that page does; `all` counts every organization linked to the account in every repository. Maintainer roles, seats,
+ * events and training are not affected.
+ */
+export const ORG_SCOPE_OPTIONS: readonly OrgScopeOption[] = [
+  { label: 'Insights organization', value: 'insights' },
+  { label: 'All related organizations', value: 'all' },
+] as const;
+
+/** Default organization scope — the URL drops `?orgScope=` when it is active. */
+export const DEFAULT_ORG_SCOPE: OrgScopeFilter = 'insights';
+
+/** URL query parameter of the organization-scope filter. */
+export const ORG_SCOPE_QUERY_PARAM = 'orgScope';
+
+/** Accessible label of the organization-scope filter. */
+export const ORG_SCOPE_LABEL = 'Organization scope';
+
+/** Tooltip on the organization-scope filter while All related organizations is picked. */
+export const ORG_SCOPE_ALL_TOOLTIP =
+  'Counts every organization linked to this company account (subsidiaries, acquisitions and duplicate records), in every repository.';
+
+/** Added to the organization-scope tooltip on People → All Employees, whose other columns are not code. */
+export const ORG_SCOPE_CODE_ONLY_NOTE = 'Applies to code contributions only.';
+
+/** Added to the organization-scope tooltip on Projects, where only the Contributors column follows the pick. */
+export const ORG_SCOPE_PROJECTS_NOTE = 'Applies to the Contributors column only.';
+
+/** Added to the organization-scope tooltip on Project Detail, where maintainer roles, health and influence scores do not follow the pick. */
+export const ORG_SCOPE_PROJECT_DETAIL_NOTE = "Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.";
+
+/**
+ * Note on the info button of a disabled organization-scope filter (its tooltip and accessible label): the account has no
+ * Insights organization, or its Insights organization has no code activity on the account in the past 730 days (lf-dbt
+ * `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
+ */
+export const ORG_SCOPE_UNAVAILABLE_NOTE =
+  'This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.';
+
+/** The sentence a count's caption or tooltip adds for the organization scope it counts (lfx-self-serve-ops#1219). */
+export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> = {
+  insights: "Only the company's LFX Insights organization, in repositories LFX Insights counts.",
+  all: 'Every organization related to the company, in every repository.',
+};
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 

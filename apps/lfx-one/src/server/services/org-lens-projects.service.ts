@@ -3,6 +3,7 @@
 
 import {
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA,
+  DEFAULT_ORG_SCOPE,
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
@@ -47,6 +48,7 @@ import type {
   OrgProjectsWorkspaceResource,
   OrgProjectsWorkspacesResponse,
   OrgProjectMaintainerRoleRow,
+  OrgScopeFilter,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
@@ -54,6 +56,7 @@ import type { Request } from 'express';
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { resolveOrgScope } from '../helpers/org-scope.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -65,10 +68,21 @@ export class OrgLensProjectsService {
   private readonly snowflakeService = SnowflakeService.getInstance();
   private readonly microserviceProxy = new MicroserviceProxyService();
 
-  public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
+  /**
+   * The account's projects. `orgScope` (lfx-self-serve-ops#1219) scopes only the contributors: under `insights` a
+   * contributor is listed for code of the account's Insights organization in repositories LFX Insights counts. Influence,
+   * health, participants and maintainer roles are the same under both scopes.
+   */
+  public async getProjects(
+    accountId: string,
+    orgName: string,
+    slugs: string[] | null,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
+  ): Promise<OrgLensProjectsResponse> {
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
     // `v8` bump: maintainers are now the account's maintainer roles on the project (lfx-self-serve#4482), not the
-    // current-tenure people of ORG_LENS_PROJECT_PEOPLE, so a `v7` entry must miss.
-    const cacheKey = `projects:v8:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    // current-tenure people of ORG_LENS_PROJECT_PEOPLE, so a `v7` entry must miss. The served scope ends the key.
+    const cacheKey = `projects:v8:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}:${scope}`;
     // Set by the fetcher below, read by `storable` immediately after it resolves. A flag rather
     // than a field on the response because it must never reach the browser or the stored value —
     // it describes this one fetch, not the page.
@@ -79,7 +93,7 @@ export class OrgLensProjectsService {
       cacheKey,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchProjects(accountId, orgName, slugs);
+        const fetched = await this.fetchProjects(accountId, orgName, slugs, scope);
         noActivityDegraded = fetched.noActivityDegraded;
         rolesMissing = fetched.rolesMissing;
         return fetched.response;
@@ -411,7 +425,8 @@ export class OrgLensProjectsService {
   private async fetchProjects(
     accountId: string,
     orgName: string,
-    slugs: string[] | null
+    slugs: string[] | null,
+    scope: OrgScopeFilter
   ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean; rolesMissing: boolean }> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
@@ -424,7 +439,7 @@ export class OrgLensProjectsService {
     let noActivityDegraded = false;
     // Run the slug-keyed reads concurrently to avoid sequential Snowflake round trips.
     const [peopleRows, maintainerRows, noActivityRows] = await Promise.all([
-      projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
+      projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs, scope) : Promise.resolve([]),
       roleSlugs.length ? this.fetchMaintainerRows(accountId, roleSlugs) : Promise.resolve([]),
       // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
       // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
@@ -546,8 +561,12 @@ export class OrgLensProjectsService {
     return slugs?.length ? [accountId, ...slugs] : [accountId];
   }
 
-  /** Contributors and participants; maintainers come from {@link fetchMaintainerRows}. */
-  private async fetchPeopleRows(accountId: string, projectSlugs: string[]): Promise<OrgLensProjectPersonRow[]> {
+  /**
+   * Contributors and participants; maintainers come from {@link fetchMaintainerRows}. Under `insights` a contributor
+   * row needs `IS_INSIGHTS_SCOPE` (lfx-self-serve-ops#1219); participant rows carry NULL there and stay unscoped.
+   */
+  private async fetchPeopleRows(accountId: string, projectSlugs: string[], scope: OrgScopeFilter): Promise<OrgLensProjectPersonRow[]> {
+    const contributorGate = scope === 'insights' ? " AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE))" : '';
     const sql = `
       SELECT
         PROJECT_SLUG,
@@ -557,7 +576,7 @@ export class OrgLensProjectsService {
         PARTICIPANT_AVATAR_URL
       FROM ${this.projectPeopleTable()}
       WHERE ACCOUNT_ID = ?
-        AND INVOLVEMENT_ROLE <> 'maintainer'
+        AND INVOLVEMENT_ROLE <> 'maintainer'${contributorGate}
         AND PROJECT_SLUG IN (${projectSlugs.map(() => '?').join(', ')})
       ORDER BY PROJECT_SLUG ASC, INVOLVEMENT_ROLE ASC, PARTICIPANT_NAME ASC
     `;

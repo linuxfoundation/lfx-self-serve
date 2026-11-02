@@ -4,6 +4,7 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { UiFocusable } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiChipGroupComponent } from './chip-group.component';
@@ -22,7 +23,7 @@ const GROUP_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly filters = signal(['Project: CNCF', 'Meeting type: Committee', 'RSVP: Going']);
-  public readonly fallback = signal<{ focus(): void } | null>(null);
+  public readonly fallback = signal<UiFocusable | null>(null);
   public readonly removed = signal<string[]>([]);
   /** When set, a dismissal waits here, like a removal that needs a request, until `flush`. */
   public readonly deferred = signal(false);

@@ -23,7 +23,7 @@ apps/lfx-one/src/app/modules/
 ├── meetings/                   # Meetings management
 │   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
 │   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
-│   ├── meetings-redesign/      # Me lens meetings redesign, layout shell (flag-gated)
+│   ├── meetings-redesign/      # Me lens meetings home page redesign (flag-gated)
 │   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
 │   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-join/           # Public meeting join page

@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { OrgPeopleDirectoryStateService } from './org-people-directory-state.service';
 
-const urlFor = (range: string, projectScope = 'all', commitScope = 'all', metric = 'code', teamMembers = 'exclude'): string =>
-  `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}&projectScope=${projectScope}&commitScope=${commitScope}&metric=${metric}&teamMembers=${teamMembers}`;
+const urlFor = (range: string, projectScope = 'all', commitScope = 'all', metric = 'code', teamMembers = 'exclude', orgScope = 'insights'): string =>
+  `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true&range=${range}&projectScope=${projectScope}&commitScope=${commitScope}&metric=${metric}&teamMembers=${teamMembers}&orgScope=${orgScope}`;
 const URL = urlFor('365d');
 const ROSTER_URL = `/api/orgs/${SYNTHETIC_ORG_ACCOUNT_ID}/lens/people/all?live=true`;
 
@@ -116,7 +116,7 @@ describe('OrgPeopleDirectoryStateService', () => {
     expect(cache.size).toBe(0);
     http.expectOne(URL).flush(roster('Default'));
     await next;
-    expect([...cache.keys()]).toEqual([`${SYNTHETIC_ORG_ACCOUNT_ID}:365d:all:all:code:exclude`]);
+    expect([...cache.keys()]).toEqual([`${SYNTHETIC_ORG_ACCOUNT_ID}:365d:all:all:code:exclude:insights`]);
 
     const again = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '30d'));
     http.expectOne(urlFor('30d')).flush(roster('Recent Again'));
@@ -194,6 +194,20 @@ describe('OrgPeopleDirectoryStateService', () => {
 
     await expect(excluded).resolves.toEqual(roster('Without Team'));
     await expect(included).resolves.toEqual(roster('With Team'));
+  });
+
+  it('keeps each organization scope apart, the Insights organization by default', async () => {
+    const filters = { projectScope: 'all', commitScope: 'all', metric: 'code' } as const;
+    const insights = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', filters));
+    const all = firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', filters, 'exclude', 'all'));
+    http.expectOne(urlFor('365d')).flush(roster('Insights Org'));
+    http.expectOne(urlFor('365d', 'all', 'all', 'code', 'exclude', 'all')).flush(roster('All Orgs'));
+
+    await expect(insights).resolves.toEqual(roster('Insights Org'));
+    await expect(all).resolves.toEqual(roster('All Orgs'));
+
+    await expect(firstValueFrom(service.getDirectory(SYNTHETIC_ORG_ACCOUNT_ID, '365d', filters, 'exclude', 'all'))).resolves.toEqual(roster('All Orgs'));
+    http.expectNone(urlFor('365d', 'all', 'all', 'code', 'exclude', 'all'));
   });
 
   it('does not keep a directory served while the team-member data was unavailable', async () => {

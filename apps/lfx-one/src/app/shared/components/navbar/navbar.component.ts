@@ -7,7 +7,6 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
-import { CreateArtifactDialogComponent } from '@components/create-artifact-dialog/create-artifact-dialog.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
@@ -48,6 +47,7 @@ import {
 import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
@@ -56,8 +56,7 @@ import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { filter, pairwise } from 'rxjs';
 
@@ -110,6 +109,7 @@ import { NavMenuBase } from './nav-menu-base.directive';
 })
 export class NavbarComponent extends NavMenuBase {
   private readonly dialogService = inject(DialogService);
+  private readonly createArtifactDialog = inject(CreateArtifactDialogService);
   private readonly changelogService = inject(ChangelogService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly appService = inject(AppService);
@@ -416,19 +416,7 @@ export class NavbarComponent extends NavMenuBase {
   protected openCreateDialog(artifact: CreatableArtifactConfig): void {
     this.createMenu()?.hide();
     this.closePeekForDialog();
-    const dialogRef = this.dialogService.open(CreateArtifactDialogComponent, {
-      // No PrimeNG header — the dialog body renders its own "Create <Type>" header.
-      showHeader: false,
-      width: '480px',
-      contentStyle: { padding: '1.5rem' },
-      modal: true,
-      draggable: false,
-      resizable: false,
-      dismissableMask: true,
-      data: { type: artifact.type },
-    }) as DynamicDialogRef;
-
-    nameDynamicDialog(this.dialogService, dialogRef, CreateArtifactDialogComponent.headingId);
+    this.createArtifactDialog.open(artifact.type);
   }
 
   protected retryMenu(): void {

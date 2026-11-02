@@ -38,7 +38,7 @@ const meta: Meta<UiMenuComponent> = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu [ariaLabel]="cfg.ariaLabel">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -61,7 +61,7 @@ export const ItemVariants: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
+      <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-down" [menu]="menu">Actions</lfx-ui-button>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions" class="!w-[240px]">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square" shortcut="⌘E">Edit</lfx-ui-menu-item>
@@ -85,7 +85,7 @@ export const IconTrigger: Story = {
   render: (args) => ({
     props: { cfg: args },
     template: `
-      <lfx-ui-button variant="secondary" size="medium" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
+      <lfx-ui-button variant="secondary" size="large" iconOnly icon="fa-light fa-ellipsis" ariaLabel="More actions" [menu]="menu" />
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="More actions">
           <lfx-ui-menu-item icon="fa-light fa-pen-to-square">Edit</lfx-ui-menu-item>
@@ -103,7 +103,7 @@ export const FlipsAtTheEdge: Story = {
     props: { cfg: args },
     template: `
       <div class="flex h-[360px] items-end">
-        <lfx-ui-button variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
+        <lfx-ui-button size="large" variant="secondary" trailingIcon="fa-light fa-chevron-up" [menu]="menu">Actions</lfx-ui-button>
       </div>
       <ng-template #menu>
         <lfx-ui-menu ariaLabel="Project actions">

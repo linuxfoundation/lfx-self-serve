@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, tasks, status, file-upload, prerequisites]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
@@ -55,10 +55,12 @@ Until you upload, **Submitted** stays disabled and the row shows:
 
 Afterwards:
 
-| You want to          | You can, while                                                         |
-| -------------------- | ---------------------------------------------------------------------- |
-| **Replace** the file | Your mentor has not completed the task and the due date has not passed |
-| **Remove** the file  | The task is not submitted yet and the due date has not passed          |
+| You want to           | You can, while                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| **View** the file     | Always — a PDF or plain-text file opens in a new tab; DOC and DOCX download instead |
+| **Download** the file | Always                                                                              |
+| **Replace** the file  | Your mentor has not completed the task and the due date has not passed              |
+| **Remove** the file   | The task is not submitted yet and the due date has not passed                       |
 
 Because the upload submits the task, **Remove** disappears straight after it. To take a submission back, move the task to **In Progress** first, then remove or replace the file.
 

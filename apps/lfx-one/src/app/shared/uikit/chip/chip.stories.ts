@@ -81,7 +81,7 @@ export const AppliedFilters: Story = {
     },
     template: `
       <div class="flex flex-col gap-[16px]">
-        <lfx-ui-button #filtersButton variant="secondary" size="small" (click)="reset()">Filters (click to reset)</lfx-ui-button>
+        <lfx-ui-button #filtersButton variant="secondary" (click)="reset()">Filters (click to reset)</lfx-ui-button>
         @if (filters().length) {
           <lfx-ui-chip-group ariaLabel="Applied filters" [fallbackFocus]="filtersButton">
             @for (filter of filters(); track filter) {

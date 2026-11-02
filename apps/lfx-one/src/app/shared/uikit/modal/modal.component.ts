@@ -13,7 +13,7 @@ import { booleanAttribute, ChangeDetectionStrategy, Component, computed, inject,
  *
  * Give projected `<p>`/`<label>` a type role; the app base layer otherwise sets 14/21.
  *
- * Project the body as plain content, an inset band with `modalInset` and the buttons with `modalActions`:
+ * Project the body as plain content, an inset band with `modalInset` and the default-size buttons with `modalActions`:
  *
  * ```html
  * <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings.">
@@ -74,7 +74,7 @@ export class UiModalComponent {
   private initActionsClasses(): Signal<string> {
     return computed(() => {
       const base =
-        'flex items-center justify-between gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200 empty:hidden';
+        'flex items-center justify-end gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200 empty:hidden';
       // The button component's inner button is content-width unless told otherwise, so stretch it too.
       return this.singleAction() ? `${base} [&>*]:flex-1 [&_a]:w-full [&_button]:w-full` : base;
     });
