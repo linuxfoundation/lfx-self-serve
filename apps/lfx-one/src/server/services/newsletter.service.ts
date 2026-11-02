@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ApiRequestOptions,
   CommitteeNewsletter,
   CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
@@ -128,8 +129,9 @@ export class NewsletterService {
     return this.newsletterClient.createNewsletter(req, projectUid, payload);
   }
 
-  public getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
-    return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid);
+  /** `options.bearerToken` scopes an M2M override to this one read (the public share preview). */
+  public getNewsletter(req: Request, projectUid: string, newsletterUid: string, options?: ApiRequestOptions): Promise<Newsletter> {
+    return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
   }
 
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
