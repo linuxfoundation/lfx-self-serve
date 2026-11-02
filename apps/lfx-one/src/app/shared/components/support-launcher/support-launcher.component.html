@@ -1,0 +1,14 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Always in the DOM (hidden via class, not @if) so Intercom's custom_launcher_selector can bind to it. -->
+<button
+  type="button"
+  lfxOpenIntercom
+  [id]="launcherId"
+  class="fixed bottom-4 right-4 z-40 flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+  [class.hidden]="!visible()"
+  aria-label="Support"
+  data-testid="support-launcher">
+  <i class="fa-light fa-circle-question text-lg" aria-hidden="true"></i>
+</button>

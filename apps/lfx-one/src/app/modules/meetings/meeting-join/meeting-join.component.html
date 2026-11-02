@@ -902,6 +902,8 @@
         styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
         [modal]="true"
         [showCloseIcon]="false"
+        (onShow)="overlayState.register(registrantsOverlayId)"
+        (onHide)="overlayState.unregister(registrantsOverlayId)"
         data-testid="meeting-registrants-drawer">
         <ng-template #header>
           <div class="flex items-center justify-between w-full">

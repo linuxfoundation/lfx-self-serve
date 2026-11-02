@@ -167,4 +167,63 @@ describe('IntercomService', () => {
 
     expect(onLoadError).toHaveBeenCalledTimes(1);
   });
+
+  describe('compact launcher (#4865)', () => {
+    const stubMatchMedia = (matches: boolean): void => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches, media: query }));
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should boot with the default launcher hidden and the custom launcher selector on a phone viewport', () => {
+      stubMatchMedia(true);
+
+      service.boot({ app_id: 'test-app-id' });
+
+      const launcher = { hide_default_launcher: true, custom_launcher_selector: '#lfx-support-launcher' };
+      expect(queuedCommands()[0]).toEqual(['boot', { app_id: 'test-app-id', ...launcher }]);
+      expect(window.intercomSettings).toMatchObject(launcher);
+      expect(service.customLauncherActive()).toBe(true);
+    });
+
+    it('should boot exactly as before on a desktop viewport', () => {
+      stubMatchMedia(false);
+
+      service.boot({ app_id: 'test-app-id' });
+
+      expect(queuedCommands()[0]).toEqual(['boot', { app_id: 'test-app-id' }]);
+      expect(window.intercomSettings).not.toHaveProperty('hide_default_launcher');
+      expect(service.customLauncherActive()).toBe(false);
+    });
+
+    it('should not add any user identifier beyond the staged boot options', () => {
+      stubMatchMedia(true);
+      const identified = { app_id: 'test-app-id', user_id: 'alice', name: 'Alice Example', email: 'alice@example.com' };
+
+      service.boot(identified);
+
+      const [, bootOptions] = queuedCommands()[0] as [string, Record<string, unknown>];
+      expect(Object.keys(bootOptions).sort()).toEqual(['app_id', 'custom_launcher_selector', 'email', 'hide_default_launcher', 'name', 'user_id']);
+    });
+
+    it('should drop the custom launcher on shutdown', () => {
+      stubMatchMedia(true);
+      service.boot({ app_id: 'test-app-id' });
+
+      service.shutdown();
+
+      expect(service.customLauncherActive()).toBe(false);
+    });
+
+    it('should drop the custom launcher when the widget script fails to load', () => {
+      stubMatchMedia(true);
+      service.boot({ app_id: 'test-app-id' });
+
+      widgetScript()?.onerror?.call(widgetScript() as GlobalEventHandlers, new Event('error'));
+
+      expect(service.customLauncherActive()).toBe(false);
+    });
+  });
 });

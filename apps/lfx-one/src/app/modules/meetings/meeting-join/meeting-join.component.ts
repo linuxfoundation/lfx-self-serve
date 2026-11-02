@@ -98,6 +98,7 @@ import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-er
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
+import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -194,6 +195,8 @@ export class MeetingJoinComponent implements OnInit {
    */
   private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly overlayState = inject(OverlayStateService);
+  protected readonly registrantsOverlayId = 'meeting-join-registrants-drawer';
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
 
@@ -467,6 +470,8 @@ export class MeetingJoinComponent implements OnInit {
   public formValues: Signal<{ name: string; email: string; organization: string }>;
 
   public constructor() {
+    // Navigating away destroys the drawer without firing onHide; never leave the launcher stranded hidden.
+    this.destroyRef.onDestroy(() => this.overlayState.unregister(this.registrantsOverlayId));
     // Initialize all class variables
     this.authenticated = this.userService.authenticated;
 

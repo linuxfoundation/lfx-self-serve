@@ -5,7 +5,7 @@ import { Clipboard } from '@angular/cdk/clipboard';
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -26,6 +26,7 @@ import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/me
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
+import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -327,6 +328,41 @@ describe('MeetingJoinComponent', () => {
 
       expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
       expect(page.querySelector('[data-testid="view-members-button"]')).toBeNull();
+    });
+  });
+
+  describe('support launcher overlay state (#4865)', () => {
+    const renderWithRoster = async (): Promise<ComponentFixture<MeetingJoinComponent>> => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture;
+    };
+    const drawer = (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.debugElement.query(By.css('[data-testid="meeting-registrants-drawer"]'));
+
+    it('registers the guests drawer as open on show and clears it on hide', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      drawer(fixture).triggerEventHandler('onShow', {});
+      expect(overlayState.anyOpen()).toBe(true);
+
+      drawer(fixture).triggerEventHandler('onHide', {});
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('clears the registration when the page is destroyed with the drawer still open, so navigation never strands the launcher hidden', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+
+      drawer(fixture).triggerEventHandler('onShow', {});
+      fixture.destroy();
+
+      expect(overlayState.anyOpen()).toBe(false);
     });
   });
 

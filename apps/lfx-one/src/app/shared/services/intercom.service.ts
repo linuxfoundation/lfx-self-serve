@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable } from '@angular/core';
-import { IntercomBootOptions, IntercomFunction } from '@lfx-one/shared/interfaces';
+import { inject, Injectable, signal } from '@angular/core';
+import { INTERCOM_CUSTOM_LAUNCHER_SELECTOR, VOTES_MOBILE_MEDIA_QUERY } from '@lfx-one/shared/constants';
+import { IntercomBootOptions, IntercomFunction, IntercomSettings } from '@lfx-one/shared/interfaces';
 import { redactInviteToken } from '@lfx-one/shared/utils';
 
 import { DataDogRumService } from './datadog-rum.service';
@@ -15,6 +16,11 @@ export class IntercomService {
   // Read by openMessenger() to decide whether an on-demand anonymous boot is needed first.
   // Set synchronously when boot() is called; the stub queue absorbs commands until the script loads.
   public isBootRequested = false;
+
+  // True when this boot is on a phone-width viewport and Intercom's default launcher is replaced by
+  // the shell's compact support launcher (SupportLauncherComponent). Decided once per boot — Intercom
+  // only documents launcher attributes at boot, so there is no runtime update() toggle to throttle.
+  public readonly customLauncherActive = signal(false);
 
   private readonly dataDogRumService = inject(DataDogRumService);
 
@@ -54,8 +60,13 @@ export class IntercomService {
       window.history.replaceState(window.history.state, '', redactedUrl);
     }
 
-    this.loadIntercomScript(options.app_id, options.api_base);
-    window.Intercom!('boot', options);
+    // Phones get the compact shell launcher instead of Intercom's default bubble, which covers row
+    // actions and sticky bars (#4865). Desktop boots exactly as before.
+    const launcherSettings = this.launcherSettings();
+    this.customLauncherActive.set(Object.keys(launcherSettings).length > 0);
+
+    this.loadIntercomScript(options.app_id, options.api_base, launcherSettings);
+    window.Intercom!('boot', { ...options, ...launcherSettings });
     this.isBootRequested = true;
     console.info('Intercom: boot command dispatched to widget');
   }
@@ -105,6 +116,7 @@ export class IntercomService {
     // Dropped unconditionally: the stale identity must not survive into the next boot even when
     // there is no widget to shut down.
     this.identity = null;
+    this.customLauncherActive.set(false);
     if (typeof window === 'undefined') {
       return;
     }
@@ -114,7 +126,20 @@ export class IntercomService {
     }
   }
 
-  private loadIntercomScript(appId: string, apiBase?: string): void {
+  // Launcher attributes for a phone-width boot; empty on desktop and during SSR. Both attributes are
+  // documented Intercom messenger settings read at boot: the default bubble is hidden and the
+  // shell's own button (matched by selector) opens the messenger instead.
+  private launcherSettings(): IntercomSettings {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return {};
+    }
+    if (!window.matchMedia(VOTES_MOBILE_MEDIA_QUERY).matches) {
+      return {};
+    }
+    return { hide_default_launcher: true, custom_launcher_selector: INTERCOM_CUSTOM_LAUNCHER_SELECTOR };
+  }
+
+  private loadIntercomScript(appId: string, apiBase?: string, launcherSettings: IntercomSettings = {}): void {
     if (this.isLoaded || typeof window === 'undefined') {
       return;
     }
@@ -127,6 +152,7 @@ export class IntercomService {
     window.intercomSettings = {
       api_base: apiBase || 'https://api-iam.intercom.io',
       app_id: appId,
+      ...launcherSettings,
     };
 
     this.initializeIntercomFunction();
@@ -145,6 +171,8 @@ export class IntercomService {
 
     script.onerror = (error) => {
       this.isBootRequested = false;
+      // No widget will bind the custom launcher, so drop it rather than leave a dead button.
+      this.customLauncherActive.set(false);
       script.remove();
       this.scriptElement = null;
       // Drop the stub and settings so a retry boots from a genuinely fresh queue — otherwise the
