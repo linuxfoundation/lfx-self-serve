@@ -61,9 +61,7 @@ export const FlipsAtTheEdge: Story = {
   render: () => ({
     template: `
       <div class="flex justify-center">
-        <button type="button" lfxUiTooltip="Flipped below the button" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 focus-visible:shadow-focus focus-visible:outline-none">
-          <i class="fa-light fa-link" aria-hidden="true"></i><span class="sr-only">Share</span>
-        </button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-link" [iconOnly]="true" ariaLabel="Share" lfxUiTooltip="Flipped below the button" />
       </div>`,
   }),
 };

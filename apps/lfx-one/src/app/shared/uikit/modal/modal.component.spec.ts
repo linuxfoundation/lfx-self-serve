@@ -266,6 +266,12 @@ describe('UiModalComponent and UiModalService', () => {
     expect(container.querySelector('[data-testid="ui-modal-body"]')?.className).toContain('overflow-auto');
   });
 
+  it('right-aligns the footer actions with a 12px gap', async () => {
+    await open();
+    const actions = container.querySelector('[data-testid="ui-modal-actions"]');
+    expect(Array.from(actions?.classList ?? [])).toEqual(expect.arrayContaining(['justify-end', 'gap-[12px]']));
+  });
+
   it('singleAction stretches the footer button', async () => {
     await open((host) => (host.single = true));
     const actions = container.querySelector('[data-testid="ui-modal-actions"]');
