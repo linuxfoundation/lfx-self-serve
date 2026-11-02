@@ -5,7 +5,6 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { IntercomService } from '@services/intercom.service';
 import { OverlayStateService } from '@services/overlay-state.service';
-import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportLauncherComponent } from './support-launcher.component';
@@ -15,19 +14,18 @@ describe('SupportLauncherComponent', () => {
   let customLauncherActive: ReturnType<typeof signal<boolean>>;
   let overlayState: OverlayStateService;
   let update: ReturnType<typeof vi.fn>;
+  let openMessenger: ReturnType<typeof vi.fn>;
 
   const button = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="support-launcher"]');
 
   beforeEach(async () => {
     customLauncherActive = signal(true);
     update = vi.fn();
+    openMessenger = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [SupportLauncherComponent],
-      providers: [
-        { provide: IntercomService, useValue: { customLauncherActive, update, openMessenger: vi.fn() } },
-        { provide: MessageService, useValue: { add: vi.fn() } },
-      ],
+      providers: [{ provide: IntercomService, useValue: { customLauncherActive, update, openMessenger } }],
     }).compileComponents();
 
     overlayState = TestBed.inject(OverlayStateService);
@@ -38,6 +36,12 @@ describe('SupportLauncherComponent', () => {
   it('should render a button Intercom can bind to by id', () => {
     expect(button().id).toBe('lfx-support-launcher');
     expect(button().classList.contains('hidden')).toBe(false);
+  });
+
+  it('should leave opening the messenger to Intercom, so a tap cannot open then close it', () => {
+    button().click();
+
+    expect(openMessenger).not.toHaveBeenCalled();
   });
 
   it('should ask the widget to re-scan for the launcher after it renders', () => {
