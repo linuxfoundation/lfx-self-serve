@@ -432,9 +432,9 @@ test.describe('Org Profile — logo upload (LFXV2-3288)', () => {
     });
 
     await page.getByTestId('org-profile-edit-logo-input').setInputFiles({
-      name: 'logo.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from('fake-png-bytes'),
+      name: 'logo.svg',
+      mimeType: 'image/svg+xml',
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
     });
 
     await expect(page.getByTestId('org-profile-edit-logo-image')).toHaveAttribute('src', updatedLogoUrl);
@@ -456,8 +456,8 @@ test.describe('Org Profile — logo upload (LFXV2-3288)', () => {
     });
 
     await page.getByTestId('org-profile-edit-logo-input').setInputFiles({
-      name: 'oversized.png',
-      mimeType: 'image/png',
+      name: 'oversized.svg',
+      mimeType: 'image/svg+xml',
       buffer: Buffer.alloc(3 * 1024 * 1024),
     });
 
