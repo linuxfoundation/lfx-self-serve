@@ -4,15 +4,6 @@
 import type { MeetingVisibilityKind } from '../enums';
 import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp } from './meeting.interface';
 
-/**
- * A meeting from the viewer's feed, with every RSVP the viewer has on it.
- * @description Narrow input type for occurrence expansion until `Meeting` itself carries `my_rsvps`.
- */
-export interface MeetingWithRsvps extends Meeting {
-  /** All of the viewer's RSVPs for this meeting; undefined when the feed did not enrich them. */
-  my_rsvps?: MeetingRsvp[];
-}
-
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
   /** Stable key: the meeting id, plus the occurrence id for one date of a series. */
