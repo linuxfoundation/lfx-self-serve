@@ -155,6 +155,7 @@
                   <p class="text-sm text-gray-500">Something went wrong fetching this organization's certifications. Please try again.</p>
                 </div>
               } @else {
+                <p class="mb-3 text-xs text-gray-500" data-testid="org-certifications-window-note">{{ certificationsWindowNote }}</p>
                 <lfx-org-certifications-table
                   [certificationsResponse]="certifications()"
                   [loading]="certificationsLoading()"

@@ -615,6 +615,24 @@ export function getUserTimezone(): string {
 }
 
 /**
+ * Short zone abbreviation for an instant in a timezone (e.g. `PST`, `PDT`), resolved for that
+ * instant so DST is honoured. Zones without a locale abbreviation come back as `GMT+1`-style.
+ * Falls back to the zone id when the zone is invalid and to '' when the date is invalid.
+ */
+export function getTimezoneAbbreviation(isoDate: string, timeZone: string): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
+    return parts.find((part) => part.type === 'timeZoneName')?.value ?? timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
+/**
  * Helper function to format timezone display with current time
  */
 export function formatTimezoneWithCurrentTime(timezone: string): string {

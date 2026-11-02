@@ -526,6 +526,16 @@
     }
   }
 
+  // "No logo" placeholder: two short lines so the words fit the 32px tile.
+  .lfxn__tile-empty {
+    padding: 2px;
+    color: theme('colors.gray.500');
+    font-size: 8px;
+    font-weight: 500;
+    line-height: 1.1;
+    text-align: center;
+  }
+
   .lfxn__context--org .lfxn__tile--logo > img {
     padding: 6px;
   }

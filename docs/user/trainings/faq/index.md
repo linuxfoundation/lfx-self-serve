@@ -3,7 +3,7 @@ title: Trainings FAQ
 description: Frequently asked questions about training enrollments in LFX Self Serve.
 audience: [all]
 product_area: Trainings
-tags: [trainings, faq, certifications, enrollments, exams, vouchers, refunds, invoices]
+tags: [trainings, faq, certifications, enrollments, exams, vouchers, refunds, invoices, certificate, name, name change]
 last_updated: 2026-11-02
 intercom_collection: Trainings
 ---
@@ -41,6 +41,12 @@ A certification exam you are enrolled in appears on the **Enrolled Trainings** t
 ## How do I see my training completion certificates?
 
 Certificates earned through Linux Foundation training appear on the **Certifications** tab in LFX Self Serve. You can also access them directly from the LF Training Portal.
+
+## The name on my certificate is wrong. How do I change it?
+
+Changing your name in LFX Self Serve does not change a certificate that has already been issued. The **Download** and **Download Certificate** buttons open the certificate file from the Linux Foundation training platform, so updating your name in **Profile & Account** and downloading it again gives you the same file with the same name.
+
+To have the name on a certificate corrected, for example if it is printed in a different alphabet or spelled wrong, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). Include the course or exam code (for example, LFS184) and your name exactly as it should appear.
 
 ## Do training enrollments expire?
 

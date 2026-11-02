@@ -37,6 +37,7 @@ The **Current Mentees** tab is where a Program Admin decides on applications for
    | **Undo graduation** | Moves a graduated mentee back to **Accepted**. See [Undoing a graduation](#undoing-a-graduation)                      |
    | **Re-open**         | Moves a declined or withdrawn application back to review. See [Re-opening an application](#re-opening-an-application) |
    | **Create task**     | Assigns work. See [Create and Assign Tasks](../manage-tasks/)                                                         |
+   | **Contact Mentee**  | Opens an email to the mentee in your mail app. Offered at every status, and asks for no confirmation                  |
 
 5. Confirm in the dialog.
 

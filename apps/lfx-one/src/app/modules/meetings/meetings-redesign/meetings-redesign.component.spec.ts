@@ -10,6 +10,7 @@ import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +54,7 @@ describe('MeetingsRedesignComponent', () => {
   let desktop: boolean;
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
+  let latestPast$: Subject<PastMeeting[]>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let navigate: ReturnType<typeof vi.fn>;
   let observerCallback: IntersectionObserverCallback | null;
@@ -72,7 +74,7 @@ describe('MeetingsRedesignComponent', () => {
   };
   const rowTitles = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
     Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-day-group-row"]')).map(
-      (row) => row.querySelector('span')?.textContent?.trim() ?? ''
+      (row) => row.querySelector('[data-testid="meetings-home-row-title"]')?.textContent?.trim() ?? ''
     );
 
   beforeEach(() => {
@@ -81,6 +83,7 @@ describe('MeetingsRedesignComponent', () => {
     personaLoaded = signal(true);
     upcoming$ = new Subject();
     past$ = new Subject();
+    latestPast$ = new Subject();
     queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
     navigate = vi.fn().mockResolvedValue(true);
     observerCallback = null;
@@ -114,12 +117,14 @@ describe('MeetingsRedesignComponent', () => {
             viewerUsername: signal('viewer'),
             getUserMeetings: () => upcoming$,
             getUserPastMeetings: () => past$,
+            getUserLatestPastMeetings: () => latestPast$,
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
           },
         },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: Router, useValue: { navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
@@ -145,6 +150,30 @@ describe('MeetingsRedesignComponent', () => {
       expect(query(fixture, `meetings-redesign-folded-${block}`)).toBeTruthy();
     }
     expect(query(fixture, 'meetings-redesign-rail-pending-rsvps')).toBeNull();
+  });
+
+  it('paints the Last meeting card from the latest-past feed without waiting for the past list', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+    expect(query(fixture, 'meetings-home-last-card-loading')).toBeTruthy();
+
+    latestPast$.next([]);
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-home-last-card-empty')).toBeTruthy();
+  });
+
+  it('hides the Last meeting card, with no error, when its feed fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const fixture = render();
+    await fixture.whenStable();
+
+    latestPast$.error(new Error('down'));
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-redesign-rail-last-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-folded-last-meeting')).toBeNull();
+    expect(query(fixture, 'meetings-redesign-rail-next-meeting')).toBeTruthy();
   });
 
   it('has no Create meeting button', async () => {
@@ -345,6 +374,77 @@ describe('MeetingsRedesignComponent', () => {
 
       expect(query(fixture, 'meetings-home-no-results')).toBeNull();
       expect(rowTitles(fixture)).toEqual(['Meeting 1']);
+    });
+  });
+
+  describe('filters', async () => {
+    const chips = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
+      Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-filters-chip"]')).map(
+        (chip) => chip.querySelector('[data-testid="ui-chip-label"]')?.textContent?.trim() ?? ''
+      );
+    const applyOrganizedByMe = async (fixture: ComponentFixture<MeetingsRedesignComponent>): Promise<void> => {
+      (query(fixture, 'meetings-home-filters-button')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      (document.querySelector('[data-testid="meetings-home-filters-organized"] input') as HTMLInputElement).click();
+      await fixture.whenStable();
+      (document.querySelector('[data-testid="meetings-home-filters-apply"] button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+    };
+    const meetings = (): Meeting[] => [
+      buildMeeting(1, { title: 'Board Review', created_by: { username: 'viewer', email: 'viewer@example.test' } }),
+      buildMeeting(2, { title: 'Tech Sync' }),
+    ];
+
+    it('applies filters from the popover, counts them on the button and shows a chip each', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+
+      expect(chips(fixture)).toEqual([]);
+      await applyOrganizedByMe(fixture);
+
+      expect(rowTitles(fixture)).toEqual(['Board Review']);
+      expect(query(fixture, 'meetings-home-filters-count')?.textContent?.trim()).toBe('1');
+      expect(chips(fixture)).toEqual(['Organized by me']);
+    });
+
+    it('removes only the filter whose chip is dismissed', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+      document.body.appendChild(fixture.nativeElement);
+      await applyOrganizedByMe(fixture);
+
+      const dismiss = query(fixture, 'meetings-home-filters-chip')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement;
+      dismiss.focus();
+      dismiss.click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-filters-count')).toBeNull();
+      expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
+      expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
+      fixture.nativeElement.remove();
+    });
+
+    it('clears applied filters on a tab switch but keeps the search', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings(), [
+        { ...buildMeeting(3, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting,
+      ]);
+      await applyOrganizedByMe(fixture);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'sync';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-filters-count')).toBeNull();
+      expect((query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement).value).toBe('sync');
     });
   });
 

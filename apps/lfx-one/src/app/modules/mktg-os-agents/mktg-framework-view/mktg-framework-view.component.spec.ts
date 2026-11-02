@@ -362,7 +362,12 @@ describe('MktgFrameworkViewComponent', () => {
     host.state.set('ready');
     await fixture.whenStable();
     const { rowHeader, goal } = FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM;
-    expect((query('mktg-framework-view-goals') as HTMLTableElement).style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+    const table = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(table.style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+    // The wrapper scrolls and is positioned: the field comments' sr-only live regions take it as their containing block, so
+    // a column past the viewport cannot stretch the page (#4885).
+    expect(table.parentElement?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(table.parentElement?.classList.contains('relative')).toBe(true);
 
     const [adoption] = ASSET.content.mf.goals;
     const eight = Array.from({ length: FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max }, (_, index) => ({ ...adoption, id: `goal-${index}`, n: index + 1 }));

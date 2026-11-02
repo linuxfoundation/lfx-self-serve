@@ -4,6 +4,7 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
+  NewsletterSharePreview,
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
   GenerateNewsletterResponse,
@@ -145,6 +146,14 @@ export class NewsletterService {
         return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Signed-out link preview of a permalink (#4940): the subject of a sent issue, nothing else. 404 for
+   * an unknown or unsent issue; the caller falls back to a neutral card.
+   */
+  public getNewsletterSharePreview(projectSlug: string, newsletterUid: string): Observable<NewsletterSharePreview> {
+    return this.http.get<NewsletterSharePreview>(`/public/api/newsletters/${this.enc(projectSlug)}/${this.enc(newsletterUid)}/preview`).pipe(take(1));
   }
 
   /** Emails a colleague an invitation to a foundation's newsletter (server checks sender and invitee eligibility). */

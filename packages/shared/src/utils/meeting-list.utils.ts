@@ -9,13 +9,17 @@ import type {
   MeetingDayGroup,
   MeetingFilterChip,
   MeetingHomeRow,
+  MeetingHomeRowLink,
   MeetingOccurrence,
   MeetingResponseFilter,
   MeetingRsvp,
   MeetingsHomeFilters,
   MeetingVisibilityInfo,
+  PastMeeting,
 } from '../interfaces';
+import { getEntityCommands } from './entity-route.utils';
 import {
+  buildMeetingOccurrenceRoute,
   buildRecurrenceSummary,
   convertRecurrenceToPattern,
   getActiveOccurrences,
@@ -28,6 +32,7 @@ import {
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
+import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
 import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
@@ -75,6 +80,21 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+}
+
+/** A past meeting as a home row, or null when it has no valid start. */
+export function toPastMeetingHomeRow(meeting: PastMeeting): MeetingHomeRow | null {
+  const startMs = getPastMeetingStartTimeMs(meeting);
+  if (startMs === null) return null;
+  return {
+    key: getPastMeetingResourceId(meeting),
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: meeting.occurrence_id || null,
+    startTime: new Date(startMs).toISOString(),
+    durationMinutes: meeting.duration,
+  };
 }
 
 /**
@@ -235,11 +255,36 @@ export function getMeetingStartsInLabel(start: string | Date, now: Date = new Da
   return `Meeting starts in ${Math.max(1, Math.floor(diffMs / HOUR_MS))} h`;
 }
 
-/** Visibility badge for a row: restricted wins over private, otherwise public. */
-export function getMeetingVisibilityInfo(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo {
-  if (meeting.restricted) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED];
-  if (meeting.visibility === MeetingVisibility.PRIVATE) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE];
-  return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC];
+/** Visibility badges for a row: Private and Restricted can both show, Public only when neither applies. */
+export function getMeetingVisibilityBadges(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo[] {
+  const badges: MeetingVisibilityInfo[] = [];
+  if (meeting.visibility === MeetingVisibility.PRIVATE) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE]);
+  if (meeting.restricted) badges.push(MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED]);
+  return badges.length > 0 ? badges : [MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC]];
+}
+
+/**
+ * Where a meetings home row opens.
+ * @description Upcoming dates open the meeting page in a new tab with the password and the date. Past meetings open in place:
+ * organizers on the admin details page with `?project=` so the project context follows, everyone else on the meeting page.
+ */
+export function getMeetingHomeRowLink(row: MeetingHomeRow, view: MeetingDashboardView): MeetingHomeRowLink {
+  const { meeting } = row;
+  if (view === 'past') {
+    const resourceId = getPastMeetingResourceId(meeting);
+    if (!meeting.organizer) return { url: toAppUrl(['/meetings', resourceId]), newTab: false };
+    const path = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
+    return { url: toAppUrl(path, meeting.project_slug ? { project: meeting.project_slug } : undefined), newTab: false };
+  }
+
+  const route = buildMeetingOccurrenceRoute(meeting.id, row.startTime, row.durationMinutes, { password: meeting.password ?? undefined });
+  return { url: toAppUrl(route.path, route.queryParams), newTab: true };
+}
+
+/** The meeting's project or foundation overview, or null without a project slug. */
+export function getMeetingProjectUrl(meeting: Pick<Meeting, 'project_slug' | 'is_foundation'>): string | null {
+  if (!meeting.project_slug) return null;
+  return toAppUrl([meeting.is_foundation ? 'foundation' : 'project', 'overview'], { project: meeting.project_slug });
 }
 
 function isRsvpPending(meeting: Meeting, rsvp: MeetingRsvp | null | undefined): boolean {
@@ -316,4 +361,15 @@ function getWeekdayIndex(start: string, timeZone: string | null | undefined): nu
   } catch {
     return date.getDay();
   }
+}
+
+/** Joins router-style segments (with or without slashes) into one app URL. */
+function toAppUrl(segments: readonly string[], queryParams?: Record<string, string>): string {
+  const path = segments
+    .flatMap((segment) => segment.split('/'))
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  const query = new URLSearchParams(queryParams).toString();
+  return `/${path}${query ? `?${query}` : ''}`;
 }
