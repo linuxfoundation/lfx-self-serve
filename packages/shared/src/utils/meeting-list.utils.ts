@@ -131,7 +131,7 @@ export function groupMeetingsByDayBucket(
  * Applies search and filters to a tab's rows (AND).
  * @description Search is a case-insensitive substring over the title and committee names. Hide declined
  * drops a series when every one of its rows in `rows` is declined, so pass the tab's unfiltered rows. It never hides a
- * meeting the viewer organizes (`organizer`) and is ignored while the RSVP filter is "Not going".
+ * meeting the viewer organizes ({@link isMeetingOrganizedByViewer}) and is ignored while the RSVP filter is "Not going".
  */
 export function filterMeetingsHome(
   rows: readonly MeetingHomeRow[],
@@ -149,7 +149,7 @@ export function filterMeetingsHome(
     if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingOrganizedByViewer(meeting, viewerUsername)) return false;
-    return meeting.organizer === true || !declinedSeries?.has(meeting.id);
+    return !declinedSeries?.has(meeting.id) || isMeetingOrganizedByViewer(meeting, viewerUsername);
   });
 }
 
@@ -235,7 +235,7 @@ export function getMeetingStartsInLabel(start: string | Date, now: Date = new Da
 }
 
 /** Visibility badge for a row: restricted wins over private, otherwise public. */
-export function getMeetingVisibilityKind(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo {
+export function getMeetingVisibilityInfo(meeting: Pick<Meeting, 'visibility' | 'restricted'>): MeetingVisibilityInfo {
   if (meeting.restricted) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.RESTRICTED];
   if (meeting.visibility === MeetingVisibility.PRIVATE) return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PRIVATE];
   return MEETING_VISIBILITY_INFO[MeetingVisibilityKind.PUBLIC];

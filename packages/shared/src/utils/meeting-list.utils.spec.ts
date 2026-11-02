@@ -18,7 +18,7 @@ import {
   getMeetingDayBucket,
   getMeetingRecurrenceTooltip,
   getMeetingStartsInLabel,
-  getMeetingVisibilityKind,
+  getMeetingVisibilityInfo,
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
@@ -363,13 +363,14 @@ describe('filterMeetingsHome', () => {
   });
 
   it('never hides organizer or responses-off meetings, and is ignored under Not going', () => {
-    const organized = buildMeeting({ id: 'own', organizer: true });
-    const off = buildMeeting({ id: 'off', is_invite_responses_enabled: false });
+    const declined = rsvp({ response_type: 'declined' });
     const extra = [
-      row({ key: 'own-1', meeting: organized, myRsvp: rsvp({ response_type: 'declined' }) }),
-      row({ key: 'off-1', meeting: off, myRsvp: rsvp({ response_type: 'declined' }) }),
+      row({ key: 'own-1', meeting: buildMeeting({ id: 'own', created_by: ada }), myRsvp: declined }),
+      // An FGA manage grant alone is not organizing
+      row({ key: 'grant-1', meeting: buildMeeting({ id: 'grant', organizer: true }), myRsvp: declined }),
+      row({ key: 'off-1', meeting: buildMeeting({ id: 'off', is_invite_responses_enabled: false }), myRsvp: declined }),
     ];
-    expect(keys(filterMeetingsHome(extra, filters({ hideDeclined: true }), '', null))).toEqual(['own-1', 'off-1']);
+    expect(keys(filterMeetingsHome(extra, filters({ hideDeclined: true }), '', 'alovelace'))).toEqual(['own-1', 'off-1']);
     expect(keys(filterMeetingsHome(rows, filters({ hideDeclined: true, rsvp: 'declined' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'board-1']);
   });
 
@@ -478,7 +479,7 @@ describe('getMeetingStartsInLabel', () => {
   });
 });
 
-describe('getMeetingVisibilityKind', () => {
+describe('getMeetingVisibilityInfo', () => {
   it.each<[MeetingVisibility | null, boolean | null, MeetingVisibilityKind]>([
     [MeetingVisibility.PUBLIC, false, MeetingVisibilityKind.PUBLIC],
     [null, null, MeetingVisibilityKind.PUBLIC],
@@ -486,7 +487,7 @@ describe('getMeetingVisibilityKind', () => {
     [MeetingVisibility.PUBLIC, true, MeetingVisibilityKind.RESTRICTED],
     [MeetingVisibility.PRIVATE, true, MeetingVisibilityKind.RESTRICTED],
   ])('%s, restricted %s → %s', (visibility, restricted, kind) => {
-    expect(getMeetingVisibilityKind({ visibility, restricted })).toBe(MEETING_VISIBILITY_INFO[kind]);
+    expect(getMeetingVisibilityInfo({ visibility, restricted })).toBe(MEETING_VISIBILITY_INFO[kind]);
   });
 
   it('carries the tooltip copy', () => {
