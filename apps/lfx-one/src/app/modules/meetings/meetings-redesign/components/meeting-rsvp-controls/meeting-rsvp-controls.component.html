@@ -31,6 +31,7 @@
         <lfx-ui-button
           variant="secondary"
           [icon]="choice.icon + ' ' + iconColor[choice.response]"
+          [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"
           [disabled]="!!saving() && saving() !== choice.response"
           (click)="choose(choice.response)"

@@ -117,6 +117,7 @@ describe('MeetingRsvpControlsComponent', () => {
       expect(query(fixture, 'meetings-home-rsvp-accepted')?.textContent?.trim()).toBe('Yes');
       expect(query(fixture, 'meetings-home-rsvp-declined')?.textContent?.trim()).toBe('No');
       expect(query(fixture, 'meetings-home-rsvp-maybe')?.textContent?.trim()).toBe('Maybe');
+      expect(button(fixture, 'meetings-home-rsvp-accepted').getAttribute('aria-label')).toBe('RSVP Yes to Synthetic sync');
       await press(fixture, 'meetings-home-rsvp-accepted');
 
       expect(openModal).not.toHaveBeenCalled();
