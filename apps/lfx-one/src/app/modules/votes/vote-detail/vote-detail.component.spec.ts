@@ -2230,6 +2230,38 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-overview-option-choice-yes')?.textContent).toContain('2 votes');
     });
 
+    it.each([503, 401, 403, 404])('keeps an HTTP %s error visible throughout an in-flight background retry', async (status) => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const metadata = new Subject<Vote>();
+      const results = new Subject<VoteResultsResponse>();
+      voteService.fetchVote.mockReturnValueOnce(of(makeVote())).mockReturnValueOnce(metadata);
+      voteService.getVoteResults.mockReturnValueOnce(httpError(status)).mockReturnValueOnce(results);
+      const fixture = await setup('browser', [VoteOptionResultsComponent]);
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+
+      await vi.advanceTimersByTimeAsync(VOTE_DETAIL_RESULTS_POLL_OPTIONS.backoffBaseMs);
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(metadata.observers).toHaveLength(1);
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-loading')).toBeNull();
+
+      metadata.next(makeVote());
+      metadata.complete();
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(results.observers).toHaveLength(1);
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-loading')).toBeNull();
+
+      results.next(makeMethodResults());
+      results.complete();
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(testId(fixture, 'vote-detail-results-error')).toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-bars')).not.toBeNull();
+    });
+
     it.each([0, 503])('retains the last good results with a stale notice after transient HTTP %s, then recovers', async (status) => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const pending = new Subject<VoteResultsResponse>();

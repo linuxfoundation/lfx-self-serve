@@ -648,7 +648,7 @@ export class VoteDetailComponent {
           const load = (poll = false) => {
             backgroundRefresh = resultsKey.poll && (poll || attempted);
             attempted = true;
-            this.voteResultsStatus.update((status) => ({ ...status, loading: !lastResults, error: false }));
+            this.voteResultsStatus.update((status) => (backgroundRefresh && status.error ? status : { ...status, loading: !lastResults, error: false }));
             // A scheduled or returning-tab refresh reads status first: deadlines alone never prove a vote formally ended.
             // Both requests share the poll subscription, so hidden tabs, route changes and destruction cancel either read.
             const metadata$: Observable<Vote | null> = backgroundRefresh
