@@ -40,7 +40,8 @@ import { UiChipHost } from './chip-host';
   templateUrl: './chip.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'inline-flex max-w-full',
+    // The projected `<i slot="icon">` gets the `ui-icon` box (1em, not Font Awesome's 1.25em), so consumers need no class on it.
+    class: 'inline-flex max-w-full [&_i[slot=icon]]:ui-icon',
     '[attr.role]': 'group ? "listitem" : null',
     'data-testid': 'ui-chip',
   },

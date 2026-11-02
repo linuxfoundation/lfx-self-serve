@@ -10,7 +10,7 @@
     @if (hasPrefix()) {
       <span [id]="prefixId" [class]="prefixClasses()" data-testid="ui-input-prefix">
         @if (prefixIcon()) {
-          <i [class]="prefixIcon()" aria-hidden="true"></i>
+          <i class="ui-icon" [class]="prefixIcon()" aria-hidden="true"></i>
         }
         {{ prefixText() }}
       </span>
@@ -37,7 +37,7 @@
       <span [id]="suffixId" [class]="suffixClasses()" data-testid="ui-input-suffix">
         {{ suffixText() }}
         @if (suffixIcon()) {
-          <i [class]="suffixIcon()" aria-hidden="true"></i>
+          <i class="ui-icon" [class]="suffixIcon()" aria-hidden="true"></i>
         }
       </span>
     }

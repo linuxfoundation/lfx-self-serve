@@ -68,9 +68,9 @@ export class UiButtonComponent {
   public readonly iconOnly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Accessible name; required for icon-only buttons. */
   public readonly ariaLabel = input<string>('');
-  /** Writes `aria-expanded` on the inner element for a button that shows or hides content, such as `lfx-ui-show-more`. Leave `null` for no attribute. Not used with `menu`, whose trigger sets it. */
+  /** Writes `aria-expanded` on the inner element for a button that shows or hides content, such as `lfx-ui-show-more`. Leave `null` for no attribute. Not used with `menu` or `popover`, whose triggers set it. */
   public readonly ariaExpanded = input<boolean | null>(null);
-  /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. */
+  /** Writes `aria-controls` on the inner element: the id of the content this button shows or hides. Not used with `menu` or `popover`. */
   public readonly ariaControls = input<string>('');
   /** Disables the button (or the link, when `link` is set). */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });

@@ -127,7 +127,7 @@ describe('UiButtonComponent', () => {
   it('renders the leading icon before the label', async () => {
     await set('icon', 'fa-light fa-plus');
     const icon = el().querySelector('i');
-    expect(icon?.className).toBe('fa-light fa-plus');
+    expect(icon?.className).toBe('ui-icon fa-light fa-plus');
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
   });
 

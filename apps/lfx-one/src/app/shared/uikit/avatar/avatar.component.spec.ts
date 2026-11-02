@@ -73,6 +73,13 @@ describe('UiAvatarComponent', () => {
     expect(parseFloat(host.style.fontSize)).toBeCloseTo(10.24, 2);
   });
 
+  it('scales a single-digit overflow tile to 32% of the size', async () => {
+    fixture.componentRef.setInput('initials', '+4');
+    await fixture.whenStable();
+
+    expect(parseFloat(host.style.fontSize)).toBeCloseTo(10.24, 2);
+  });
+
   it('scales the text to 38% of the size', async () => {
     fixture.componentRef.setInput('size', 48);
     await fixture.whenStable();

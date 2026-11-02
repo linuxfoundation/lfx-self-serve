@@ -39,6 +39,9 @@ export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | '
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
 export type UiBadgeTone = UiTone;
 
+/** Look of a uikit badge: the role's `subtle` fill, its `solid` fill, or the neutral `outline` ring. */
+export type UiBadgeVariant = 'subtle' | 'solid' | 'outline';
+
 /** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
 export type UiBadgeSize = 'sm' | 'md';
 
@@ -350,6 +353,12 @@ export interface UiCommandGroupView {
   label: string;
   /** The commands that match the search. */
   items: UiCommandItemView[];
+}
+
+/** Anything that can take focus, such as an element or an `lfx-ui-button`. */
+export interface UiFocusable {
+  /** Moves focus to it. */
+  focus(): void;
 }
 
 /** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */

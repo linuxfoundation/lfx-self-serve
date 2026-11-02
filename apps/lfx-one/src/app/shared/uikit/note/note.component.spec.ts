@@ -92,7 +92,7 @@ describe('UiNoteComponent', () => {
   it('swaps the icon for a custom one', async () => {
     await set('icon', 'fa-light fa-bell');
 
-    expect(icon()).toBe('fa-light fa-bell');
+    expect(icon()).toBe('ui-icon fa-light fa-bell');
   });
 
   it('projects the message and one action', async () => {

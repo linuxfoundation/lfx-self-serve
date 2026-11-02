@@ -50,7 +50,7 @@ const meta: Meta<UiCommandMenuComponent> = {
   render: (args) => ({
     props: { config: { groups: args.groups, label: args.label, placeholder: args.placeholder } },
     template: `
-      <lfx-ui-button #opener="lfxStoryOpensCommandMenu" variant="outline-neutral" icon="fa-light fa-magnifying-glass" [lfxStoryOpensCommandMenu]="config">Open command menu</lfx-ui-button>
+      <lfx-ui-button #opener="lfxStoryOpensCommandMenu" variant="secondary" icon="fa-light fa-magnifying-glass" [lfxStoryOpensCommandMenu]="config">Open command menu</lfx-ui-button>
       <p class="copy-14 mt-[12px] text-ui-neutral-600" role="status">Chosen: {{ opener.chosen()?.label ?? 'nothing yet' }}</p>`,
   }),
 };

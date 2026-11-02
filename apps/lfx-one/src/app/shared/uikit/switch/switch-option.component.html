@@ -14,7 +14,7 @@
     data-testid="ui-switch-option-input" />
   <span [class]="segmentClasses()" data-testid="ui-switch-option-segment">
     @if (icon()) {
-      <i [class]="icon()" aria-hidden="true"></i>
+      <i class="ui-icon" [class]="icon()" aria-hidden="true"></i>
     }
     <span [class.sr-only]="iconOnly() && icon()" data-testid="ui-switch-option-text">{{ label() }}</span>
   </span>

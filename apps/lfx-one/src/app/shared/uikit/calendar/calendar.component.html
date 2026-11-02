@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px, not rem; 14px root: 280px wide, 12px gaps, 2px row gap, 36px days, 28px weekday row. -->
+<!-- Exact px, not rem; 14px root: 280px wide, 12px gaps, 2px row gap, 36px days, 28px weekday row, 20px weekday line. -->
 <div class="flex w-[280px] flex-col gap-[12px]" data-testid="ui-calendar">
   <div class="flex items-center justify-between">
     <lfx-ui-button
@@ -34,7 +34,10 @@
     data-testid="ui-calendar-grid">
     <div role="row" class="grid grid-cols-7">
       @for (weekday of weekdays(); track weekday.long) {
-        <div role="columnheader" class="grid h-[28px] place-items-center label-12 uppercase text-ui-neutral-600" [attr.aria-label]="weekday.long">
+        <div
+          role="columnheader"
+          class="grid h-[28px] place-items-center label-12 uppercase leading-[20px] text-ui-neutral-600"
+          [attr.aria-label]="weekday.long">
           {{ weekday.short }}
         </div>
       }
