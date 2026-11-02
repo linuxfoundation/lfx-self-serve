@@ -33,6 +33,21 @@ The server implements an **aggressive caching strategy** for static assets, serv
 - **Reduces server load** by serving static content directly from filesystem
 - **Improves performance** through efficient asset delivery before application logic
 
+`createBrowserAssetsMiddleware` groups static serving with a missing-bundle boundary,
+mounted before OIDC and selective authentication. Existing files retain their cache
+policy: content-hashed assets are immutable for one year, non-hashed HTML/JS/CSS must
+revalidate, and other files use a short cache lifetime.
+
+If static serving cannot find a root-level hashed JavaScript or CSS file, GET and
+HEAD return **404** with **`Cache-Control: no-store`**, without entering authentication
+or Angular SSR. This prevents a stale-tab or mixed-version rollout asset miss from
+becoming an SSO redirect and a browser CORS failure. The matcher excludes nested API
+and page paths; it is not a general authentication exemption for file extensions.
+
+This boundary does not retain previous releases' assets or invalidate redirects
+already cached in browsers/CDNs. Deployment asset availability and CDN rules must
+be addressed separately; the CDN must respect `no-store` for these responses.
+
 ### Health Monitoring Architecture
 
 The application includes **dedicated health endpoints** designed for load balancers and monitoring systems. These endpoints:
@@ -65,14 +80,15 @@ The authentication layer operates at the Express middleware level, ensuring all 
 
 ### Middleware Pipeline Architecture
 
-The server employs a **carefully orchestrated middleware pipeline** that processes requests in specific order:
+After compression and body parsing, the server registers handlers in this order:
 
-1. **Static Asset Serving** - Fast path for pre-built resources
-2. **Health Monitoring** - Unobstructed monitoring endpoints
-3. **Structured Logging** - Request/response tracking and metrics
-4. **Authentication** - Session management and user context
-5. **API Routes** - Business logic endpoints with bearer token validation
-6. **Angular SSR** - Universal rendering for all remaining routes
+1. **Health Monitoring** - Unobstructed monitoring endpoints, before filesystem lookups, logging, and authentication
+2. **Public Docs Sitemap** - Dedicated handler before static serving and authentication
+3. **Static Asset Serving** - Fast path for pre-built resources; missing root-level hashed JS/CSS terminates with a non-cacheable 404 before authentication
+4. **Structured Logging** - Request/response tracking and metrics
+5. **Authentication** - Session management and user context
+6. **API Routes** - Business logic endpoints with bearer token validation
+7. **Angular SSR** - Universal rendering for all remaining routes
 
 ### Selective Authentication
 
@@ -191,7 +207,7 @@ This strategy eliminates the need for separate server configurations across envi
 
 #### 2. Middleware Pipeline Ordering
 
-**Decision**: Static assets → Health → Logging → Auth → API → SSR
+**Decision**: Health → Sitemap → Static assets → Logging → Auth → API → SSR
 **Trade-offs**:
 
 - ✅ **Benefits**: Optimal performance with fast static asset serving

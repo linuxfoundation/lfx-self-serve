@@ -5,12 +5,12 @@ import { CdkMenu } from '@angular/cdk/menu';
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 /**
- * The menu panel: a list of actions that opens from a button. Put it in an `<ng-template>` and open it from the trigger
- * with the CDK directive `[cdkMenuTriggerFor]`. The panel opens below the trigger, start-aligned, and flips to stay in the window.
+ * The menu panel: a list of actions that opens from a button. Put it in an `<ng-template>` and open it from `lfx-ui-button` with its
+ * `menu` input. The panel opens below the trigger, start-aligned, and flips to stay in the window.
  * Arrow keys, Home, End and type-ahead move between items; Escape closes it and returns focus to the trigger.
  *
  * ```html
- * <button [cdkMenuTriggerFor]="actions">Actions</button>
+ * <lfx-ui-button [menu]="actions">Actions</lfx-ui-button>
  * <ng-template #actions>
  *   <lfx-ui-menu ariaLabel="Project actions">
  *     <lfx-ui-menu-item icon="fa-light fa-pen-to-square" (triggered)="edit()">Edit</lfx-ui-menu-item>

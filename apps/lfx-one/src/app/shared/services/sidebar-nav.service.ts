@@ -20,7 +20,6 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ROI_ENABLED_FLAG,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
@@ -74,8 +73,6 @@ export class SidebarNavService {
   private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
-  private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
@@ -242,25 +239,26 @@ export class SidebarNavService {
     }
   });
 
+  /**
+   * The LF Staff Only section (ROI Metrics) is for LF staff alone, and never for a session acting as another user,
+   * matching the route guard and the server gate (`requireOrgLensRoiAudience`).
+   */
+  private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
+
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
     // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
     const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
-    const afterProjectsItems = [
-      ...(this.isOrgLensRoiEnabled() ? [this.orgRoiNavItem()] : []),
-      // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
-      // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
-      ...(this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
+    // Initiatives (#348) is dark-launched and follows a direct writer grant on the selected organization — CF lists an
+    // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
+    const initiativesItems =
+      this.isCrowdfundingAttributionEnabled() && this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '')
         ? [this.orgInitiativesNavItem()]
-        : []),
-    ];
-    if (afterProjectsItems.length === 0) return items;
-    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
-    // Append rather than prepend if Projects ever goes away, so these can't silently jump to the top.
-    if (projectsIndex === -1) return [...items, ...afterProjectsItems];
-    const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), ...afterProjectsItems, ...items.slice(afterProjects)];
+        : [];
+    const withInitiatives = this.placeAfterOrgProjects(items, initiativesItems);
+    // ROI Metrics sits in the LF Staff Only section, which closes the menu.
+    return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
@@ -889,6 +887,14 @@ export class SidebarNavService {
     testId: 'sidebar-org-roi',
   }));
 
+  // LF Staff Only closes the Org Lens menu. ROI Metrics is its only item today.
+  private readonly orgLfStaffOnlySection: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'LF Staff Only',
+    isSection: true,
+    expanded: true,
+    items: [this.orgRoiNavItem()],
+  }));
+
   private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'Crowdfunding Initiatives',
     icon: 'fa-light fa-box-dollar',
@@ -1155,5 +1161,14 @@ export class SidebarNavService {
       return false;
     }
     return relation === 'isMarketingAuditor' ? this.personaService.isMarketingAuditor() : this.personaService.isCampaignManager();
+  }
+
+  /** Splices `extra` in right after Projects. Appends when Projects is absent, so it can't jump to the top. */
+  private placeAfterOrgProjects(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
+    if (extra.length === 0) return items;
+    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
+    if (projectsIndex === -1) return [...items, ...extra];
+    const afterProjects = projectsIndex + 1;
+    return [...items.slice(0, afterProjects), ...extra, ...items.slice(afterProjects)];
   }
 }

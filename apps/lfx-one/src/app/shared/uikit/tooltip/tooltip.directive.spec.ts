@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FocusMonitor } from '@angular/cdk/a11y';
 import { FlexibleConnectedPositionStrategy, Overlay, OverlayContainer, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { UiTooltipSide } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -133,6 +135,58 @@ describe('UiTooltipDirective', () => {
 
       trigger.blur();
       await advance(0);
+      expect(tooltip()).toBeNull();
+    });
+
+    it('opens when focus enters the page from outside, right after a window focus', async () => {
+      await setup();
+      window.dispatchEvent(new Event('focus'));
+      trigger.focus();
+      await advance(40);
+      expect(tooltip()).not.toBeNull();
+
+      trigger.blur();
+      await advance(0);
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus without a window focus before it', async () => {
+      await setup();
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open when the window focus was a macrotask earlier', async () => {
+      await setup();
+      window.dispatchEvent(new Event('focus'));
+      await advance(0);
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus after a window focus once the pointer has been used', async () => {
+      await setup();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+      await advance(5);
+      window.dispatchEvent(new Event('focus'));
+      trigger.focus();
+      await advance(200);
+
+      expect(tooltip()).toBeNull();
+    });
+
+    it('does not open on script focus once the pointer has been used', async () => {
+      await setup();
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+      // The CDK keeps the mouse origin for 1ms, so wait it out for the focus to count as a script focus.
+      await advance(5);
+      trigger.focus();
+      await advance(200);
+
       expect(tooltip()).toBeNull();
     });
 
@@ -372,6 +426,27 @@ describe('UiTooltipDirective', () => {
       expect(tooltip()).toBeNull();
     });
 
+    it('watches focus only while there is text or a title', async () => {
+      await setup();
+      const focusMonitor = TestBed.inject(FocusMonitor);
+      const monitor = vi.spyOn(focusMonitor, 'monitor');
+      const stop = vi.spyOn(focusMonitor, 'stopMonitoring');
+      fixture.componentInstance.text.set('');
+      await flush();
+      expect(stop).toHaveBeenCalledWith(trigger);
+
+      pressKey('Tab');
+      trigger.focus();
+      await advance(60);
+      expect(tooltip()).toBeNull();
+      expect(monitor).not.toHaveBeenCalled();
+
+      trigger.blur();
+      fixture.componentInstance.heading.set('Heading');
+      await flush();
+      expect(monitor).toHaveBeenCalledWith(trigger, true);
+    });
+
     it('stays closed while disabled', async () => {
       await setup();
       fixture.componentInstance.disabled.set(true);
@@ -392,6 +467,19 @@ describe('UiTooltipDirective', () => {
       expect(positions).toHaveLength(4);
       expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
       expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
+    });
+
+    it('lets a host component override the requested side', async () => {
+      await setup();
+      const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+      fixture.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective).hostSide.set('right');
+      await flush();
+      await hover();
+
+      const positions = spy.mock.calls[0][0];
+      expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
+      expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
+      expect(positions[2]).toMatchObject({ originY: 'top', overlayY: 'bottom' });
     });
 
     it('reopens after the CDK disposes the overlay itself, such as on navigation', async () => {

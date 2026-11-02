@@ -8,7 +8,7 @@
       variant="tertiary"
       size="small"
       [iconOnly]="true"
-      [disabled]="formDisabled()"
+      [disabled]="isDisabled()"
       icon="fa-light fa-chevron-left"
       ariaLabel="Previous month"
       (click)="shiftMonth(-1)"
@@ -18,7 +18,7 @@
       variant="tertiary"
       size="small"
       [iconOnly]="true"
-      [disabled]="formDisabled()"
+      [disabled]="isDisabled()"
       icon="fa-light fa-chevron-right"
       ariaLabel="Next month"
       (click)="shiftMonth(1)"
@@ -26,7 +26,7 @@
   </div>
   <div
     role="grid"
-    [attr.aria-disabled]="formDisabled() ? 'true' : null"
+    [attr.aria-disabled]="isDisabled() ? 'true' : null"
     class="flex flex-col gap-[2px]"
     [attr.aria-labelledby]="ariaLabel() ? null : titleId"
     [attr.aria-label]="ariaLabel() || null"
@@ -46,8 +46,8 @@
             <button
               type="button"
               [class]="day.classes"
-              [disabled]="formDisabled()"
-              [attr.tabindex]="!formDisabled() && day.key === focusedKey() ? 0 : -1"
+              [disabled]="isDisabled()"
+              [attr.tabindex]="!isDisabled() && day.key === focusedKey() ? 0 : -1"
               [attr.aria-label]="day.label"
               [attr.aria-current]="day.today ? 'date' : null"
               [attr.aria-disabled]="day.disabled ? 'true' : null"

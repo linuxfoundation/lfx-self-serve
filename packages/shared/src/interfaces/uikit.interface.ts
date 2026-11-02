@@ -21,17 +21,32 @@ export interface UiTabItem {
   disabledReason?: string;
 }
 
+/** Two-step density shared by the uikit tabs, collapse and note: `default`, or `small` for dense places. */
+export type UiDensitySize = 'default' | 'small';
+
 /** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
-export type UiTabsSize = 'default' | 'small';
+export type UiTabsSize = UiDensitySize;
 
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
 export type UiTabsVariant = 'default' | 'secondary';
 
+/** Height of a uikit form control: `tiny` 24px, `small` 32px, `medium` 40px. Shared by the button, switch and text input. */
+export type UiControlSize = 'tiny' | 'small' | 'medium';
+
+/** The six colour roles of the LFX UI Library. */
+export type UiTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+
 /** Colour role of a uikit badge and its status dot. `neutral` is the default. */
-export type UiBadgeTone = 'neutral' | 'accent' | 'feature' | 'warning' | 'danger' | 'success';
+export type UiBadgeTone = UiTone;
+
+/** Height of a uikit badge and chip: `sm` is 20px with 11px text, `md` is 24px with 12px text. */
+export type UiBadgeSize = 'sm' | 'md';
+
+/** Look of a uikit chip: the badge's `subtle` role fill, or the neutral `outline` ring. */
+export type UiChipVariant = 'subtle' | 'outline';
 
 /** Colour role that tints a uikit avatar. `neutral` is the quiet default. */
-export type UiAvatarTone = 'neutral' | 'accent' | 'feature' | 'success' | 'warning' | 'danger';
+export type UiAvatarTone = UiTone;
 
 /** A person, organization or bot shown in a uikit avatar group. */
 export interface UiAvatarItem {
@@ -57,6 +72,24 @@ export interface UiModalConfig<D = unknown> {
   describedBy?: boolean;
   /** Element that gets focus on open: `first-tabbable` (default), `first-heading`, `dialog`, or a CSS selector such as `[data-autofocus]`. */
   autoFocus?: string;
+}
+
+/** Edge of the window a uikit drawer is anchored to. */
+export type UiDrawerSide = 'left' | 'right';
+
+/** Options for `UiDrawerService.open`. Every field is optional. Takes the modal options, except `role`: a drawer is always a `dialog`. */
+export interface UiDrawerConfig<D = unknown> extends Omit<UiModalConfig<D>, 'role'> {
+  /** Edge the drawer slides in from. Defaults to `right`. */
+  side?: UiDrawerSide;
+  /** Width in px. Defaults to 600; it never exceeds the window and fills it at 640px and narrower. */
+  width?: number;
+  /**
+   * Asked before the user dismisses the drawer with Escape, a backdrop click or the close button; return `false` to keep it open,
+   * for example while a form has unsaved changes. It may return a promise, such as the answer of a confirm modal. A promise that
+   * never settles blocks dismissal until `ref.close()`. A throw or a rejection is logged and keeps the drawer open.
+   * `DialogRef.close()` does not ask: call it once the work is saved or discarded.
+   */
+  canClose?: () => boolean | Promise<boolean>;
 }
 
 /** One day button in a uikit calendar month grid. */
@@ -102,7 +135,7 @@ export type UiToggleTone = 'accent' | 'warning' | 'danger';
 export type UiLoadingDotsSize = 'sm' | 'md' | 'lg';
 
 /** Height of a uikit text input: `tiny` 24px, `small` 32px, `medium` 40px. Matches the button sizes. */
-export type UiInputSize = 'tiny' | 'small' | 'medium';
+export type UiInputSize = UiControlSize;
 
 /** Native `type` of a uikit text input. There is no `number`: it would hand forms a string. Use `text` with the input's `inputmode` instead. */
 export type UiInputType = 'text' | 'email' | 'url' | 'tel' | 'password' | 'search';
@@ -171,22 +204,159 @@ export interface UiTableColumnView {
 }
 
 /** Size of a uikit collapse group: `default` has 20px headings, `small` 14px headings and tighter padding. */
-export type UiCollapseSize = 'default' | 'small';
-
-/** Heading level (`aria-level`) of the triggers in a uikit collapse group. */
-export type UiCollapseHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+export type UiCollapseSize = UiDensitySize;
 
 /** Visual style of a uikit button. `primary` is the accent fill; `secondary` and `tertiary` are neutral; `danger` is for destructive actions; `recording` is the green recording action. */
 export type UiButtonVariant = 'primary' | 'secondary' | 'secondary-accent' | 'tertiary' | 'tertiary-accent' | 'danger' | 'danger-tertiary' | 'recording';
 
 /** Size of a uikit button: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiButtonSize = 'tiny' | 'small' | 'medium';
+export type UiButtonSize = UiControlSize;
 
 /** Size of a uikit switch (segmented control), matching the button sizes: `tiny` 24px, `small` 32px or `medium` 40px tall. */
-export type UiSwitchSize = 'tiny' | 'small' | 'medium';
+export type UiSwitchSize = UiControlSize;
 
 /** Whether a uikit choicebox group picks one tile (`radio`) or any number of tiles (`checkbox`). A group never mixes the two. */
 export type UiChoiceboxType = 'radio' | 'checkbox';
 
 /** Number of equal columns in a uikit choicebox group. */
 export type UiChoiceboxColumns = 1 | 2 | 3;
+
+/** Heading level (`aria-level`) of a uikit component's title, such as the collapse triggers and the empty state title. */
+export type UiHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** Colour and urgency of a uikit toast. `error` announces assertively and stays until dismissed. */
+export type UiToastVariant = 'default' | 'success' | 'warning' | 'error';
+
+/** An action button on a uikit toast, such as Undo. Running it dismisses the toast. */
+export interface UiToastAction {
+  /** Button text, in Title Case. */
+  label: string;
+  /** Called when the button is pressed. */
+  run: () => void;
+  /** Gives the button the accent fill. Only honoured on the `default` variant; on coloured toasts every action is a quiet text button. */
+  primary?: boolean;
+}
+
+/** What `UiToastService.show` needs to put a toast on screen. */
+export interface UiToastConfig {
+  /** The message: a short sentence about something that just happened. */
+  message: string;
+  /** Defaults to `default`. */
+  variant?: UiToastVariant;
+  /** Up to two action buttons; any more are ignored. */
+  actions?: UiToastAction[];
+  /** Milliseconds before the toast dismisses itself, `0` for never. Defaults to 5000, 8000 with actions, and never for `error`. */
+  duration?: number;
+  /** Shows the dismiss button. Defaults to `true`. */
+  dismissible?: boolean;
+}
+
+/** A toast in the stack, as `UiToastService` holds it. */
+export interface UiToastItem extends UiToastConfig {
+  /** Unique id, used to dismiss the toast. */
+  id: string;
+}
+
+/** Handle returned by `UiToastService.show`. */
+export interface UiToastRef {
+  /** The toast's unique id. */
+  id: string;
+  /** Removes the toast now. Does nothing if it is already gone. */
+  dismiss(): void;
+}
+
+/** One choice of a uikit list. Select, combobox and multi-select share it: they differ in how they pick, not in what they pick from. The CDK key manager reads `disabled`. */
+export interface UiOption {
+  /** DOM id of the option row. The list points `aria-activedescendant` at it. */
+  readonly id: string;
+  /** Stable identifier written to the form control and the `value` model. Unique within the list. */
+  readonly value: string;
+  /** Plain text of the choice: shown in the trigger once picked and matched by type-ahead, whatever rich content the row holds. */
+  readonly label: string;
+  /** The option stays visible but cannot be picked, and the keyboard skips it. */
+  readonly disabled: boolean;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. Empty when the option has none. */
+  readonly icon: string;
+}
+
+/** A plain option label split around the part a filtering list emphasises. `match` is empty when nothing is emphasised. */
+export interface UiOptionLabelParts {
+  /** Text before the emphasised part, or the whole label when nothing is emphasised. */
+  before: string;
+  /** The emphasised part, such as the text typed in a combobox. */
+  match: string;
+  /** Text after the emphasised part. */
+  after: string;
+}
+
+/** What a custom uikit select value template receives: the picked option as the implicit value. */
+export interface UiSelectValueContext {
+  /** The picked option. */
+  $implicit: UiOption;
+}
+
+/** Visual style of a uikit split button. Only the accent `primary` and the neutral `secondary` exist: a split button is never destructive. */
+export type UiSplitButtonVariant = 'primary' | 'secondary';
+
+/** One command in a uikit command menu: a place to go or an action to run. */
+export interface UiCommandItem {
+  /** Stable identifier, unique within the menu. The chosen item is handed back whole, so match on this. */
+  value: string;
+  /** What the row says and what typing matches, such as "Create Committee". */
+  label: string;
+  /** Font Awesome class string for a leading icon, e.g. `fa-light fa-users`. */
+  icon?: string;
+  /** Shortcut hint at the end of the row, one entry per key, such as `['⌘', 'M']`. A hint only; wire the shortcut yourself. */
+  shortcut?: string[];
+  /** Extra words that typing matches but the row does not show, such as "meeting" for "Schedule Meeting". */
+  keywords?: string[];
+  /** The row stays visible but cannot be chosen, and the keyboard skips it. */
+  disabled?: boolean;
+}
+
+/** A titled run of commands in a uikit command menu. Groups with no matching command are hidden while the user types. */
+export interface UiCommandGroup {
+  /** Small heading above the group, such as "Projects". */
+  label: string;
+  /** The commands in the group, in display order. */
+  items: UiCommandItem[];
+}
+
+/** What `UiCommandMenuService.open` needs to show a command menu. */
+export interface UiCommandMenuConfig {
+  /** The commands, grouped. */
+  groups: UiCommandGroup[];
+  /** Accessible name of the dialog, read when it opens. Defaults to "Command menu". */
+  label?: string;
+  /** Placeholder of the search field. */
+  placeholder?: string;
+}
+
+/** A command row of the uikit command menu with the ids and position its template needs. */
+export interface UiCommandItemView {
+  /** The command. */
+  item: UiCommandItem;
+  /** DOM id of the row, the target of `aria-activedescendant`. */
+  id: string;
+  /** Position among all visible commands, across groups. */
+  index: number;
+}
+
+/** A group of the uikit command menu after filtering. */
+export interface UiCommandGroupView {
+  /** DOM id of the group heading, which names the group. */
+  id: string;
+  /** Heading text. */
+  label: string;
+  /** The commands that match the search. */
+  items: UiCommandItemView[];
+}
+
+/** Padding of a uikit popover panel: the default 16px, or none for content that runs edge to edge. */
+export type UiPopoverPadding = 'default' | 'none';
+
+/** What a uikit popover passes to its template: `<ng-template let-close="close">` closes the popover from inside, such as a Done button. */
+export interface UiPopoverContext {
+  /** Closes the popover and returns focus to the trigger. */
+  close: () => void;
+}

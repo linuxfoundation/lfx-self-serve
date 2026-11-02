@@ -462,7 +462,14 @@ export class UserService {
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
       const destroy$ = this.userMeetingsDestroy$;
       this.userMeetingsSubject = subject;
-      this.userMeetings$ = combineLatest([
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer chain (e.g. a user/identity change
+        // that already rebuilt it while this one was still erroring out).
+        if (this.userMeetings$ === meetings$) {
+          this.userMeetings$ = null;
+        }
+      };
+      const meetings$: Observable<Meeting[]> = combineLatest([
         this.userMeetingsRefresh$.pipe(
           startWith(undefined),
           switchMap(() => this.http.get<Meeting[]>('/api/user/meetings').pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject))))
@@ -471,8 +478,17 @@ export class UserService {
       ]).pipe(
         map(([meetings, confirmed]) => this.applyConfirmedMeetingRsvps(meetings, subject, confirmed)),
         takeUntil(destroy$),
+        // Never cache a failure — shareReplay otherwise replays it to every subscriber
+        // forever, so the dashboard's Retry control (GH-4780) would just re-show the same
+        // stale error instead of issuing a new request. Drop the cached reference so the
+        // next caller rebuilds the chain and actually re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userMeetings$ = meetings$;
     }
     return this.userMeetings$;
   }
@@ -484,12 +500,23 @@ export class UserService {
   public getUserPastMeetings(): Observable<PastMeeting[]> {
     if (!this.userPastMeetings$) {
       const destroy$ = this.userPastMeetingsDestroy$;
-      this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+      const dropIfCurrent = (): void => {
+        if (this.userPastMeetings$ === pastMeetings$) {
+          this.userPastMeetings$ = null;
+        }
+      };
+      const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
         takeUntil(destroy$),
+        // Never cache a failure — see getUserMeetings() for why.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userPastMeetings$ = pastMeetings$;
     }
     return this.userPastMeetings$;
   }
@@ -504,15 +531,26 @@ export class UserService {
   public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
     if (!this.userLatestPastMeetings$) {
       const destroy$ = this.userLatestPastMeetingsDestroy$;
+      const dropIfCurrent = (): void => {
+        if (this.userLatestPastMeetings$ === latestPastMeetings$) {
+          this.userLatestPastMeetings$ = null;
+        }
+      };
       // Shares `userPastMeetingsRefresh$` with `getUserPastMeetings()` on purpose — the two
       // caches represent different slices of the same underlying data, so `refreshUserPastMeetings()`
       // invalidates both together and they re-fetch in lockstep.
-      this.userLatestPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+      const latestPastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() => this.http.get<PastMeeting[]>('/api/user/latest-past-meetings')),
         takeUntil(destroy$),
+        // Never cache a failure — see getUserMeetings() for why.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userLatestPastMeetings$ = latestPastMeetings$;
     }
     return this.userLatestPastMeetings$;
   }

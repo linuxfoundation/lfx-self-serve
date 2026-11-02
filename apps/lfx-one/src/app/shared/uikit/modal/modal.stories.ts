@@ -89,7 +89,7 @@ export const StickyLongBody: Story = {
       <ng-template #dialog let-ref="dialogRef">
         <lfx-ui-modal [sticky]="true" heading="Terms of Use" subtitle="Scroll to read the whole text.">
           @for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; track n) {
-            <p>Section {{ n }}. Contributors keep the copyright to their work and license it to the project under the terms the project chose when it was created.</p>
+            <p class="copy-14">Section {{ n }}. Contributors keep the copyright to their work and license it to the project under the terms the project chose when it was created.</p>
           }
           <ng-container modalActions>
             <lfx-ui-button variant="secondary" (click)="ref.close()">Decline</lfx-ui-button>
@@ -119,7 +119,7 @@ export const Layout: Story = {
     template: `
       <div class="flex justify-center rounded-ui-md bg-ui-overlay p-[24px]">
         <lfx-ui-modal heading="Create Committee" subtitle="Committees get their own meetings, mailing list and voting.">
-          <p>Body content goes here.</p>
+          <p class="copy-14">Body content goes here.</p>
           <div modalInset class="label-14">Inset band</div>
           <ng-container modalActions>
             <lfx-ui-button variant="secondary">Cancel</lfx-ui-button>

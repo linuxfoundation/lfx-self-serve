@@ -5895,6 +5895,7 @@ describe('CampaignServiceClient account monitors', () => {
   });
 
   it.each([
+    ['getGoogleAdsAccountMonitor', 'google-ads', '8666746580'],
     ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
     ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
     ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],

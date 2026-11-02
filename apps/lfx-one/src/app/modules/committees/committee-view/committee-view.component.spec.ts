@@ -551,6 +551,7 @@ describe('CommitteeViewComponent', () => {
       flush();
 
       expect(component.editLink()).toEqual({ commands: getGroupCommands(currentCommittee, 'edit'), queryParams: { project: 'proj' } });
+      expect(getProject()).toHaveBeenCalledWith('proj', false, { strictWriter: true });
     });
 
     it('hides the link from a committee-only writer, since writerGuard would redirect them with an access-denied notice', () => {
@@ -571,6 +572,65 @@ describe('CommitteeViewComponent', () => {
 
       expect(component.editLink()).toBeNull();
       expect(getProject()).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, ''])('settles sharing access without a retryable failure when project keys are %s', (key) => {
+      asWriter({ project_slug: key, project_uid: key });
+      const component = createComponent();
+      flush();
+
+      expect(component.editLink()).toBeNull();
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(getProject()).not.toHaveBeenCalled();
+    });
+
+    it.each(['null', 'error'])('distinguishes a %s project lookup failure from a permission denial', (failure) => {
+      asWriter();
+      getProject().mockReturnValue(failure === 'null' ? of(null) : throwError(() => new Error('temporarily unavailable')));
+      const component = createComponent();
+      flush();
+
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(true);
+    });
+
+    it('retries failed sharing access for the same committee and restores an authorized writer', () => {
+      asWriter();
+      const pending = new Subject<{ writer: boolean }>();
+      getProject().mockReturnValueOnce(of(null)).mockReturnValueOnce(pending);
+      const component = createComponent();
+      flush();
+      expect(component.shareAccessError()).toBe(true);
+
+      component.retryShareAccessCheck();
+      expect(component.shareAccessLoading()).toBe(true);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      flush();
+      expect(getProject()).toHaveBeenCalledTimes(2);
+      expect(getProject()).toHaveBeenNthCalledWith(1, 'proj', false, { strictWriter: true });
+      expect(getProject()).toHaveBeenNthCalledWith(2, 'proj', false, { strictWriter: true });
+
+      pending.next({ writer: true });
+      pending.complete();
+      flush();
+      expect(component.shareAccessLoading()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.canShareWeeklyBriefByEmail()).toBe(true);
+    });
+
+    it('keeps a confirmed project-writer denial distinct from a failed lookup', () => {
+      asWriter();
+      getProject().mockReturnValue(of({ writer: false }));
+      const component = createComponent();
+      flush();
+
+      expect(component.canShareWeeklyBriefByEmail()).toBe(false);
+      expect(component.shareAccessError()).toBe(false);
+      expect(component.shareAccessLoading()).toBe(false);
     });
 
     it('refreshes in place after a settings save when the page was opened by UID', () => {

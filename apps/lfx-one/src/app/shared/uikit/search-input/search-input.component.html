@@ -1,16 +1,28 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design. -->
-<div class="relative">
-  <i class="fa-light fa-magnifying-glass pointer-events-none absolute left-[12px] top-1/2 -translate-y-1/2 text-[12px] text-gray-400" aria-hidden="true"></i>
-  <input
-    type="search"
-    [value]="value()"
-    [placeholder]="placeholder()"
-    [disabled]="disabled()"
-    [attr.aria-label]="ariaLabel()"
-    (input)="onInput($event)"
-    class="h-[34px] w-full rounded-full border border-gray-200 bg-white pl-[32px] pr-[12px] text-[13px] text-gray-900 placeholder:text-gray-500 transition duration-150 hover:border-gray-300 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-    data-testid="ui-search-input" />
-</div>
+<lfx-ui-input
+  type="search"
+  size="small"
+  rounded
+  prefixIcon="fa-light fa-magnifying-glass"
+  [placeholder]="placeholder()"
+  [ariaLabel]="ariaLabel()"
+  [disabled]="disabled()"
+  [(value)]="value"
+  (keydown.escape)="onEscape($event)"
+  class="[&_input::-webkit-search-cancel-button]:hidden"
+  data-testid="ui-search-input">
+  @if (value() && !disabled()) {
+    <!-- Exact px, not rem; 14px root: a 20px round button with an 8px gap to the edge. -->
+    <button
+      type="button"
+      lfxUiInputAction
+      class="mr-[8px] inline-flex h-[20px] w-[20px] shrink-0 items-center justify-center self-center rounded-ui-full text-[12px] text-ui-neutral-500 transition-colors duration-ui-fast hover:bg-ui-neutral-alpha-100 hover:text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none"
+      aria-label="Clear search"
+      (click)="clear()"
+      data-testid="ui-search-input-clear">
+      <i class="fa-light fa-xmark" aria-hidden="true"></i>
+    </button>
+  }
+</lfx-ui-input>

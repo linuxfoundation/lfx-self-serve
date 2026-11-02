@@ -4,24 +4,26 @@
 import { afterNextRender, booleanAttribute, ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
 import { UiAvatarTone } from '@lfx-one/shared/interfaces';
 
+import { UiSkeletonComponent } from '../skeleton/skeleton.component';
+
 /**
  * A person, organization or bot as a photo or initials in a circle with a hairline ring. Falls back from the photo to the icon or
- * initials when the image is missing or fails to load. Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
+ * initials when the image is missing or fails to load, and to a neutral person glyph when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
  * 48 to 64 in headers. Use `lfx-ui-avatar-group` to stack several.
  */
 @Component({
   selector: 'lfx-ui-avatar',
   templateUrl: './avatar.component.html',
-  styleUrl: './avatar.component.scss',
+  imports: [UiSkeletonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
     '[style.width.px]': 'size()',
     '[style.height.px]': 'size()',
     '[style.font-size.px]': 'fontSize()',
-    '[attr.role]': 'decorative() || placeholder() || !name() ? null : "img"',
-    '[attr.aria-label]': 'decorative() || placeholder() || !name() ? null : name()',
-    '[attr.title]': 'decorative() || placeholder() || !name() ? null : name()',
+    '[attr.role]': 'accessibleName() ? "img" : null',
+    '[attr.aria-label]': 'accessibleName() || null',
+    '[attr.title]': 'accessibleName() || null',
     '[attr.aria-hidden]': 'decorative() || placeholder() ? "true" : null',
     'data-testid': 'ui-avatar',
   },
@@ -53,6 +55,8 @@ export class UiAvatarComponent {
   private readonly failedSrc = signal<string>('');
   private readonly photoEl = viewChild<ElementRef<HTMLImageElement>>('photo');
 
+  // Empty for a decorative or loading avatar and for a blank name, so none of them is announced as an unnamed image.
+  protected readonly accessibleName: Signal<string> = computed(() => (this.decorative() || this.placeholder() ? '' : this.name().trim()));
   protected readonly photoSrc: Signal<string> = this.initPhotoSrc();
   protected readonly text: Signal<string> = this.initText();
   protected readonly fontSize: Signal<number> = this.initFontSize();
@@ -109,21 +113,20 @@ export class UiAvatarComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
-      const base = 'relative inline-grid shrink-0 select-none place-items-center font-medium leading-none';
+      const base = 'relative inline-grid shrink-0 select-none place-items-center font-features-ui font-medium leading-none';
       // Exact px, not rem: the app root font is 14px.
       const shapes = { circle: 'rounded-ui-full', rounded: 'rounded-[8px]' };
-      // text-white matches the library's --white on tints; no on-fill token exists yet.
+      // text-ui-white matches the library's --white on tints; no on-fill token exists yet.
       const tints = {
         neutral: 'bg-ui-neutral-50 text-ui-neutral-600',
-        accent: 'bg-ui-accent-600 text-white',
-        feature: 'bg-ui-feature-600 text-white',
-        success: 'bg-ui-success-600 text-white',
-        warning: 'bg-ui-warning-600 text-white',
-        danger: 'bg-ui-danger-600 text-white',
+        accent: 'bg-ui-accent-600 text-ui-white',
+        feature: 'bg-ui-feature-600 text-ui-white',
+        success: 'bg-ui-success-600 text-ui-white',
+        warning: 'bg-ui-warning-600 text-ui-white',
+        danger: 'bg-ui-danger-600 text-ui-white',
       };
-      const shimmer =
-        'avatar-shimmer bg-gradient-to-r from-ui-neutral-50 from-25% via-ui-neutral-100 via-[37%] to-ui-neutral-50 to-[63%] bg-[length:400%_100%] bg-[position:100%_50%]';
-      const fill = this.placeholder() ? shimmer : tints[this.tone()];
+      // The placeholder is a skeleton clipped to the avatar shape.
+      const fill = this.placeholder() ? 'overflow-hidden' : tints[this.tone()];
       // Tinted avatars have no hairline ring; stacked ones always get the background ring.
       const hairline = this.tone() === 'neutral' || this.placeholder() ? 'edge' : '';
       const ring = this.stacked() ? 'ring-2 ring-ui-background-100' : hairline;

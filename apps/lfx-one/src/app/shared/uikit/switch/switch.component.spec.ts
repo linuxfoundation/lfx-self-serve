@@ -161,6 +161,10 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
       expect(segments()[0].classList).toContain('forced-colors:peer-focus-visible:outline');
       expect(segments()[3].classList).toContain('forced-colors:text-[color:GrayText]');
     });
+
+    it('swaps colours at once in forced colours, so a half-faded label is never on screen', () => {
+      segments().forEach((segment) => expect(segment.classList).toContain('forced-colors:transition-none'));
+    });
   });
 
   describe('with a reactive-forms control', () => {

@@ -26,6 +26,7 @@ import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
@@ -238,28 +239,8 @@ app.get('/readyz', (_req: Request, res: Response) => {
 // for any code path that does fall through.
 app.use(sitemapRouter);
 
-app.get(
-  '**',
-  express.static(browserDistFolder, {
-    index: false,
-    setHeaders: (res, filePath) => {
-      if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
-        // Angular emits content-hashed filenames (outputHashing: "all") — safe to
-        // cache permanently; the hash changes whenever content changes.
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        return;
-      }
-      if (/\.(html|js|css)$/i.test(filePath)) {
-        // Non-hashed HTML, JS, and CSS (e.g. index.html, main.js in dev builds where
-        // outputHashing is not "all") must revalidate on every request — stale entry
-        // bundles reference old chunk hashes and cause "Importing a module script failed".
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        return;
-      }
-      res.setHeader('Cache-Control', 'public, max-age=300');
-    },
-  })
-);
+// Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
+app.use(createBrowserAssetsMiddleware(browserDistFolder));
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
