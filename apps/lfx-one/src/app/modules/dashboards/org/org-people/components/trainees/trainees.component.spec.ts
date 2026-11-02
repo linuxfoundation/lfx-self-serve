@@ -508,3 +508,51 @@ describe('TraineesComponent — only learners outside the people list in the ran
     expect(emptyText()).toBe('No one on the people list has training activity in this range.');
   });
 });
+
+// People-list rows whose person has no current-employee identity row (a former employee, or a member a learner was
+// merged into who lacks one) arrive under an opaque key with no trainee entry: counted, never listed or named.
+describe('TraineesComponent — people-list rows without an identity row', () => {
+  let fixture: ComponentFixture<TraineesComponent>;
+
+  const el = (): HTMLElement => fixture.nativeElement;
+  const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
+  const listed = (): string[] =>
+    [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    const response: OrgTraineesResponse = {
+      ...EMPTY_ORG_TRAINEES_RESPONSE,
+      accountId: ORG,
+      timeRange: '730d',
+      trainees: [{ personKey: 'p-1', lfid: 'lfid-1', cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com' }],
+      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf'), detail('outside:2', 'cka', 'Certified', 'cncf')],
+      outsideLearners: [{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }],
+    };
+    await TestBed.configureTestingModule({
+      imports: [TraineesComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: TraineesService, useValue: { getTrainees: vi.fn(() => of(response)) } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    await TestBed.inject(Router).navigateByUrl('/?tab=training');
+    fixture = TestBed.createComponent(TraineesComponent);
+    await settle();
+  });
+
+  it('counts them once in every card without listing or naming them', () => {
+    expect(listed()).toEqual(['p-1']);
+    expect(stat('trainees')).toBe('3');
+    expect(stat('courses-enrolled')).toBe('2');
+    expect(stat('certifications')).toBe('1');
+    expect(el().textContent).not.toContain('outside:2');
+  });
+});

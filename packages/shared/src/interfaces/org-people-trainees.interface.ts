@@ -103,7 +103,10 @@ export interface OrgTraineesResponse {
    * for learners outside the people list.
    */
   details: OrgTraineeDetailRow[];
-  /** Learners outside the people list with a training row in the range, sorted by name; filtered by the range only. */
+  /**
+   * Learners outside the people list with a training row in the range, sorted by name; filtered by the range only. A
+   * learner whose warehouse key also has people-list rows in `details` is left out, so the people card counts them once.
+   */
   outsideLearners: OrgTraineeOutsideLearner[];
   filterOptions: OrgTraineeFilterOptions;
   /** ISO build time of `ORG_PEOPLE_TRAINING` (`MAX(DBT_RUN_AT)` over the account's rows, every range): the date the training data reflects. Null when the account has no rows. */

@@ -283,9 +283,10 @@ export const VALKEY_CACHE = {
     // #4287) adds one build timestamp per entry and the project id/name, level and format columns to the course
     // dictionary, and drops the foundation and course option rows, which are now built from the details. Learners
     // outside the people list add one (name, certified flag) row each and no detail rows, so the per-course grain
-    // stays the people list's, as measured for `v4`; the cap carries over unmeasured for v6 and v7. Re-measure it on the
+    // stays the people list's, as measured for `v4`; the cap carries over unmeasured for v6, v7 and v8 (v8 only drops
+    // outside learners already counted through people-list rows). Re-measure it on the
     // largest organization after lf-dbt enables outside learners (rollout step 3).
-    'org-lens-sf:v1:people-trainees:v7': 9 * 1_048_576,
+    'org-lens-sf:v1:people-trainees:v8': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**

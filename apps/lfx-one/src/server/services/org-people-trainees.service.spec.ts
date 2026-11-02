@@ -314,7 +314,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.
     const legacy = { traineeRows: [], detailRows: [{ PERSON_KEY: 'stale' }], foundationRows: [], courseRows: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v7:365d')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:365d')!, JSON.stringify(legacy));
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
@@ -414,8 +414,8 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '30d');
 
     expect(execute).toHaveBeenCalledTimes(8);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v7:30d')!)).toBe(true);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v7:365d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:30d')!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v8:365d')!)).toBe(true);
   });
 });
 
@@ -583,7 +583,9 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
         for (const row of training.filter((candidate) => offList.has(candidate.PERSON_KEY) && inRange(candidate))) {
           certified.set(row.PERSON_KEY, (certified.get(row.PERSON_KEY) ?? false) || row.STATUS === 'Certified');
         }
-        return { rows: [...certified].map(([key, isCertified]) => ({ LEARNER_NAME: learnerNames[key], IS_CERTIFIED: isCertified })) };
+        return {
+          rows: [...certified].map(([key, isCertified]) => ({ PERSON_KEY: key, LEARNER_NAME: learnerNames[key], IS_CERTIFIED: isCertified })),
+        };
       }
       if (query.includes('MAX(DBT_RUN_AT)')) return { rows: [] };
       const onList = /AND IS_ON_PEOPLE_LIST\b/.test(query);
@@ -664,14 +666,43 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
     expect(response.filterOptions.courses.map((option) => option.value)).toEqual(['Course One']);
   });
 
+  it('counts a learner who shares a warehouse key with people-list rows once, and never sends that key', async () => {
+    // The same warehouse person as an outside learner and behind a former employee's (or a listed member's)
+    // people-list rows: lf-dbt keeps IS_ON_PEOPLE_LIST constant per key, but the people card must not count them twice.
+    const honest = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: unknown[]) => {
+      if (!query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) return honest(query, binds);
+      return {
+        rows: [
+          { PERSON_KEY: 'person-former', LEARNER_NAME: 'Former Learner', IS_CERTIFIED: false },
+          { PERSON_KEY: 'person-listed', LEARNER_NAME: 'Listed Learner', IS_CERTIFIED: true },
+          { PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Zoe Outside', IS_CERTIFIED: false },
+        ],
+      };
+    });
+
+    const response = await service.getTrainees(ACCOUNT, 'all');
+
+    expect(response.outsideLearners).toEqual([{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }]);
+    // The people card's set: distinct detail keys plus the outside learners — the listed member, the former employee
+    // and Zoe, each once.
+    const people = new Set([...response.details.map((row) => row.personKey), ...response.outsideLearners.map((row) => row.personKey)]);
+    expect(people.size).toBe(3);
+    expect(JSON.stringify(response)).not.toMatch(/person-former|Former Learner|Listed Learner/);
+    // Nor cached: the stored entry holds no learner's warehouse key and no dropped learner's name.
+    const stored = [...cacheValues.values()].join('\n');
+    expect(stored).toContain('Zoe Outside');
+    expect(stored).not.toMatch(/ti:outside-one|Former Learner|Listed Learner/);
+  });
+
   it('windows the learners on the range and reads their status, not their rows', async () => {
     await service.getTrainees(ACCOUNT, '90d');
 
     const queries = execute.mock.calls.map(([sql]) => sql as string);
     const outside = queries.find((sql) => sql.includes('ORG_TRAINING_OUTSIDE_LEARNERS'))!;
     expect(outside).toMatch(/AND NOT IS_ON_PEOPLE_LIST[\s\S]*AND ACTIVITY_TS >= DATEADD\(day, -90,[\s\S]*GROUP BY PERSON_KEY/);
-    // The warehouse key is the join's only: never selected, so never cached.
-    expect(outside).toMatch(/SELECT\s+o\.LEARNER_NAME,\s+t\.IS_CERTIFIED\s+FROM/);
+    // The warehouse key is selected for the dedupe against people-list rows only; the test above shows it is never cached.
+    expect(outside).toMatch(/SELECT\s+o\.PERSON_KEY,\s+o\.LEARNER_NAME,\s+t\.IS_CERTIFIED\s+FROM/);
     expect(outside).not.toMatch(/\b(EMAIL|TITLE|COURSE_ID|COURSE_NAME|PROJECT_ID|FOUNDATION_ID|COURSE_OR_CERT_ID)\b/);
     expect(queries.find((sql) => sql.includes('COURSE_OR_CERT_ID'))).toMatch(/AND IS_ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
     expect(queries.find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))).toMatch(/AND IS_ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);

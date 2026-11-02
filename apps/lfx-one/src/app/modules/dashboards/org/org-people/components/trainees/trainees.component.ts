@@ -275,7 +275,8 @@ export class TraineesComponent {
       }
     }
     // The people card adds the listed learners outside the people list, as the Training page's people with training
-    // activity does; the course and certification cards stay on the people list, as its certification tiles do.
+    // activity does; the BFF leaves out a learner already behind people-list rows, so each person counts once. The
+    // course and certification cards stay on the people list, as its certification tiles do.
     if (!this.courseFilterPicked()) {
       for (const learner of this.outsideLearners()) trainees.add(learner.personKey);
     }

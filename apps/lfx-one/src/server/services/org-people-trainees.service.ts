@@ -59,14 +59,15 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v7:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // `people-trainees:v8:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
     // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` added the
     // table's build time, the project, level and format columns and the learners outside the people list (name and
     // certified flag, no detail rows), and dropped the two option reads; `v7` stops caching those learners' warehouse
-    // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column.
+    // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column; `v8`
+    // drops a learner whose warehouse key also has people-list rows in the range, so a `v7` entry may count them twice.
     const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v7:${range}`,
+      `people-trainees:v8:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
@@ -84,8 +85,9 @@ export class OrgPeopleTraineesService {
     // Only people-list members keep their warehouse key, which the person drawer reads. Every other key gets an opaque
     // per-response key from one counter: each learner outside the people list, and each person behind people-list
     // training rows who has no current-employee row (a former employee; their rows still count in the cards, as on the
-    // Training page's certification tiles). The two are never merged, even on a shared warehouse key, so no course row
-    // on the wire is ever tied to an outside learner's name.
+    // Training page's certification tiles). The two never share a warehouse key here: a learner whose key also has
+    // people-list rows in the range is dropped before caching (see fetchTraineesRaw), so the people card counts each
+    // warehouse person once and no course row on the wire is ever tied to an outside learner's name.
     const listedKeys = new Set(trainees.map((row) => row.personKey));
     let opaqueCount = 0;
     const nextOpaqueKey = (): string => `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}${++opaqueCount}`;
@@ -112,8 +114,7 @@ export class OrgPeopleTraineesService {
     // corrupt downstream lex sorts and most-recent derivations.
     let unavailableCourseCount = 0;
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
-      if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
-      const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
+      const activityTs = countedActivityTs(row);
       if (!activityTs) return [];
       const listed = listedKeys.has(row.PERSON_KEY);
       // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01).
@@ -163,12 +164,20 @@ export class OrgPeopleTraineesService {
     asOf: string | null;
   }> {
     const inRange = trainingRangePredicate(range);
-    const [traineeRows, outsideLearnerRows, detailRows, asOf] = await Promise.all([
+    const [traineeRows, keyedOutsideLearnerRows, detailRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
       this.fetchOutsideLearnerRows(accountId, inRange),
       this.fetchDetailRows(accountId, inRange),
       this.fetchAsOf(accountId),
     ]);
+    // One person per warehouse key, as the Training page's COUNT(DISTINCT PERSON_KEY): a learner outside the list whose
+    // key also has counted people-list rows in the range is that person, already counted (and, when listed, named)
+    // through those rows, so their outside entry is dropped. lf-dbt keeps IS_ON_PEOPLE_LIST constant per key, so this
+    // only guards against that invariant breaking. The key is used here only: never cached, never sent.
+    const countedKeys = new Set(detailRows.filter((row) => countedActivityTs(row) !== null).map((row) => row.PERSON_KEY));
+    const outsideLearnerRows = keyedOutsideLearnerRows.flatMap((row) =>
+      countedKeys.has(row.PERSON_KEY) ? [] : [{ LEARNER_NAME: row.LEARNER_NAME, IS_CERTIFIED: row.IS_CERTIFIED }]
+    );
     return { traineeRows, outsideLearnerRows, detailRows, asOf };
   }
 
@@ -212,10 +221,11 @@ export class OrgPeopleTraineesService {
    * is aggregated here so none of their course rows is read or cached. Same row rules as the detail mapping: a known
    * status and a dated row.
    */
-  private async fetchOutsideLearnerRows(accountId: string, inRange: string): Promise<OrgTrainingOutsideLearnerRow[]> {
-    // The warehouse key stays in the join only: it is neither selected nor cached.
+  private async fetchOutsideLearnerRows(accountId: string, inRange: string): Promise<(OrgTrainingOutsideLearnerRow & { PERSON_KEY: string })[]> {
+    // The warehouse key is selected only so fetchTraineesRaw can drop a learner already counted on the people list.
     const query = `
       SELECT
+        o.PERSON_KEY,
         o.LEARNER_NAME,
         t.IS_CERTIFIED
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_OUTSIDE_LEARNERS o
@@ -235,7 +245,7 @@ export class OrgPeopleTraineesService {
       WHERE o.ACCOUNT_ID = ?
       ORDER BY o.LEARNER_NAME ASC NULLS LAST
     `;
-    const result = await this.snowflakeService.execute<OrgTrainingOutsideLearnerRow>(query, [accountId, accountId]);
+    const result = await this.snowflakeService.execute<OrgTrainingOutsideLearnerRow & { PERSON_KEY: string }>(query, [accountId, accountId]);
     return result.rows;
   }
 
@@ -313,6 +323,15 @@ function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOpt
  */
 function trainingRangePredicate(range: OrgLensTimeRange): string {
   return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
+}
+
+/**
+ * A detail row's activity date when the Trainees cards count the row (a known status and a parseable date), else null.
+ * Shared by the detail mapping and the outside-learner dedupe, so both agree on which people the cards count.
+ */
+function countedActivityTs(row: OrgPeopleTrainingRow): string | null {
+  if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return null;
+  return toIsoTimestamp(row.ACTIVITY_TS);
 }
 
 /**
