@@ -197,10 +197,17 @@ export const ORG_TRAINEES_INITIAL_LIMIT = 30;
 
 /**
  * Prefix of the per-response key the BFF gives a Trainees learner not on the people list (`outside:1`, `outside:2`, …)
- * in place of their warehouse key (lfx-self-serve#4287). The `:` fails `PERSON_KEY_PATTERN`, so the person endpoints
- * reject it with a 400.
+ * in place of their warehouse key (lfx-self-serve#4287), and of the key it gives each person behind people-list
+ * training rows who has no current-employee row (an unlisted former employee). The `:` fails `PERSON_KEY_PATTERN`, so
+ * the person endpoints reject it with a 400.
  */
 export const ORG_TRAINEE_OUTSIDE_KEY_PREFIX = 'outside:';
+
+/** Prefix of the opaque per-response course token on an unlisted former employee's training row with no `COURSE_ID`. */
+export const ORG_TRAINEE_UNAVAILABLE_COURSE_PREFIX = 'course-unavailable:';
+
+/** Course name on an unlisted former employee's training row with no `COURSE_ID`. */
+export const ORG_TRAINEE_UNAVAILABLE_COURSE_NAME = 'Course not available';
 
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {

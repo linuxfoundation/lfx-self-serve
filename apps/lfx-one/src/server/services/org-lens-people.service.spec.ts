@@ -112,7 +112,7 @@ const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primary
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
 const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
-/** Rows on the people list (ON_PEOPLE_LIST keeps its default, 1). */
+/** Rows on the people list (IS_ON_PEOPLE_LIST keeps its default, 1). */
 const STATUS_INSERT =
   'INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS (ACCOUNT_ID, PERSON_KEY, COURSE_ID, STATUS, COURSE_NAME, LAST_ENROLLED_TS, LAST_CERTIFIED_TS) VALUES (?, ?, ?, ?, ?, ?, ?)';
 // SQLite form of the bound range start in the maintainer roles overlap predicate.
@@ -551,7 +551,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   // below omits; the off-roster read classifies against that roster read (lfx-self-serve#4735, lfx-self-serve#4287).
   const TRAINING_FOUNDATION_COLUMNS =
     'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT; ' +
-    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1;';
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1;';
   const activity = {
     boardSeats: [
       {
@@ -631,7 +631,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       );
       CREATE TABLE ORG_PEOPLE_TRAINING_COURSE_STATUS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT,
-        ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1
+        IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1
       );
     `);
     database
@@ -689,7 +689,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ['course-recent', 'Enrolled'],
     ]);
     expect(detail.training[0]?.coursesCount).toBe(3);
-    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v6:${personKey}`)!)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v7:${personKey}`)!)).toBe(true);
   });
 
   // lf-dbt resolves one status per course, Certified winning over a re-enrollment; the drawer shows it as is, so a
@@ -1182,13 +1182,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
       ]);
       const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
       expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:730d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:730d:all')!)).toBe(true);
     });
 
     it('offers the training foundations of people-list rows only, not those of learners outside the list', async () => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
       const insert = database.prepare(
-        'INSERT INTO ORG_PEOPLE_TRAINING (ACCOUNT_ID, PERSON_KEY, COURSE_OR_CERT_ID, STATUS, ACTIVITY_TS, FOUNDATION_ID, FOUNDATION_NAME, ON_PEOPLE_LIST) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO ORG_PEOPLE_TRAINING (ACCOUNT_ID, PERSON_KEY, COURSE_OR_CERT_ID, STATUS, ACTIVITY_TS, FOUNDATION_ID, FOUNDATION_NAME, IS_ON_PEOPLE_LIST) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       );
       insert.run(ACCOUNT, personKey, 'enrolled:listed', 'Enrolled', daysAgo(30), 'foundation-listed', 'Foundation Listed', 1);
       insert.run(ACCOUNT, 'ti:outside-learner', 'enrolled:outside', 'Enrolled', daysAgo(30), 'foundation-outside', 'Foundation Outside', 0);
@@ -1256,9 +1256,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
       // The live code read is People → Contributors' own entry, shared by the current and the off-roster reads.
       expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
         [
-          'people-all:v7:30d:all',
-          'people-all:v7:all:all',
-          'people-all:v7:all:lf',
+          'people-all:v8:30d:all',
+          'people-all:v8:all:all',
+          'people-all:v8:all:lf',
           'people-contributors:v5:30d:all:all',
           'people-contributors:v5:all:all:all',
           'people-contributors:v5:all:lf:all',
@@ -1299,8 +1299,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rosterRead?.[0]).toMatch(/ORG_PEOPLE_ALL\s/);
       expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
       expect(rosterRead?.[1]).toEqual([ACCOUNT]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:roster')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
     });
 
     // lfx-self-serve#4685
@@ -1323,7 +1323,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(formerExcluded.rows).toEqual([]);
       // One roster entry per range and scope serves both picks; the team members are cached once per account.
       expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
-        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v7:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
       );
       expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
     });
@@ -1619,7 +1619,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(rosterRead).not.toMatch(/COMMITS_COUNT|CODE_ACTIVITIES_COUNT|INSIGHTS/);
         expect(rosterRead).toContain('NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
         expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(orgScope === 'insights' ? 1 : 0);
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:365d:all')!)).toBe(true);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
       }
     );
 
@@ -1630,7 +1630,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
       expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
     });
 
@@ -1641,7 +1641,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
       expect(resolveOrgScope).not.toHaveBeenCalled();
       expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v7:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
     });
 
     it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels, still naming every unclassified person', async () => {
@@ -2125,7 +2125,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
     const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v7:365d:all')!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, JSON.stringify(legacy));
     mockRoster();
 
     const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');

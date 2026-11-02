@@ -34,6 +34,7 @@ import type {
   OrgTraineeDetailRow,
   OrgTraineeExpandedRowVm,
   OrgTraineeOutsideLearner,
+  OrgTraineesEmptyState,
   OrgTraineeRowVm,
   OrgTraineesResponse,
   OrgTraineeSortColumn,
@@ -154,7 +155,8 @@ export class TraineesComponent {
 
   protected readonly footerCountLabel: Signal<string> = computed(() => this.initFooterCountLabel());
 
-  public readonly isFiltering: Signal<boolean> = computed(() => this.initIsFiltering());
+  /** Which empty-table copy applies; only a search or a dropdown pick reads as filtering, never the range alone. */
+  public readonly emptyState: Signal<OrgTraineesEmptyState> = computed(() => this.initEmptyState());
 
   protected readonly ariaSortMap: Signal<Record<OrgTraineeSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
 
@@ -383,11 +385,16 @@ export class TraineesComponent {
     return `Showing ${visible.toLocaleString()} of ${this.totalFiltered().toLocaleString()}`;
   }
 
-  private initIsFiltering(): boolean {
+  private initEmptyState(): OrgTraineesEmptyState {
     const { search = '', foundation, project, course, level, format } = this.filterValues();
+    const searching = search.trim().length > 0;
     const hasDropdown = !!(foundation || project || course || level || format);
-    const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
-    return search.trim().length > 0 || hasDropdown || hasTimeFilter;
+    // Learners outside the people list follow the range and the search, and are hidden while a dropdown is picked.
+    const outsideShown = !this.courseFilterPicked() && this.outsideLearners().length > 0;
+    if (hasDropdown) return 'filters';
+    if (searching) return outsideShown ? 'people-list-search' : 'filters';
+    if (outsideShown) return 'people-list-range';
+    return this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE ? 'range' : 'none';
   }
 
   private initAriaSortMap(): Record<OrgTraineeSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -437,7 +444,7 @@ export class TraineesComponent {
       if (a.name === b.name) return 0;
       if (a.name === null) return 1;
       if (b.name === null) return -1;
-      return a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name, 'en-US');
     });
   }
 

@@ -150,14 +150,14 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('reads the picked range for the filtering state without waiting for the search debounce', async () => {
+  it('reads the picked range for the empty state without waiting for the search debounce, and never as a filter', async () => {
     await mount('/?tab=trainees');
-    const isFiltering = (): boolean => fixture.componentInstance.isFiltering();
-    expect(isFiltering()).toBe(false);
+    const emptyState = (): string => fixture.componentInstance.emptyState();
+    expect(emptyState()).toBe('none');
 
     form().controls['timeRange'].setValue('30d');
 
-    expect(isFiltering()).toBe(true);
+    expect(emptyState()).toBe('range');
   });
 
   it('opens the person drawer for the range the tab lists the person in', async () => {
@@ -368,6 +368,7 @@ describe('TraineesComponent — learners outside the people list (lfx-self-serve
   const outsideList = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside"]');
   const outsideNames = (): string[] => [...(outsideList()?.querySelectorAll('li') ?? [])].map((li) => li.querySelector('span')?.textContent?.trim() ?? '');
   const filteredNote = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-filtered-note"]');
+  const emptyText = (): string => el().querySelector('[data-testid="org-people-trainees-empty"] p')?.textContent?.trim() ?? '';
 
   async function settle(): Promise<void> {
     fixture.detectChanges();
@@ -439,7 +440,7 @@ describe('TraineesComponent — learners outside the people list (lfx-self-serve
     await pick(values);
 
     expect(outsideList()).toBeNull();
-    expect(filteredNote()?.textContent).toContain('filtered by time range only');
+    expect(filteredNote()?.textContent).toContain('follow the time range and the name search');
     expect(listed()).toEqual(['p-1']);
     expect(stat('trainees')).toBe('1');
 
@@ -455,5 +456,55 @@ describe('TraineesComponent — learners outside the people list (lfx-self-serve
     expect(listed()).toEqual([]);
     expect(outsideNames()).toEqual(['Bea Outside']);
     expect(stat('trainees')).toBe('1');
+    expect(emptyText()).toBe('No one on the people list matches the search.');
+  });
+
+  it('keeps the generic filter copy for a search nobody matches, and says so plainly in the list', async () => {
+    await pick({ search: 'nobody-matches' });
+
+    expect(emptyText()).toBe('No trainees match the current filters.');
+    expect(el().querySelector('[data-testid="org-people-trainees-outside-empty"]')?.textContent?.trim()).toBe('No one in this list matches the search.');
+  });
+});
+
+describe('TraineesComponent — only learners outside the people list in the range (lfx-self-serve#4287)', () => {
+  let fixture: ComponentFixture<TraineesComponent>;
+
+  const emptyText = (): string => fixture.nativeElement.querySelector('[data-testid="org-people-trainees-empty"] p')?.textContent?.trim() ?? '';
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function mount(url: string): Promise<void> {
+    const response = (timeRange: OrgLensTimeRange): OrgTraineesResponse => ({
+      ...EMPTY_ORG_TRAINEES_RESPONSE,
+      accountId: ORG,
+      timeRange,
+      outsideLearners: [{ personKey: 'outside:1', name: 'Zoe Outside', status: 'Enrolled' }],
+    });
+    await TestBed.configureTestingModule({
+      imports: [TraineesComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: TraineesService, useValue: { getTrainees: vi.fn((_org: string, range: OrgLensTimeRange) => of(response(range))) } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    await TestBed.inject(Router).navigateByUrl(url);
+    fixture = TestBed.createComponent(TraineesComponent);
+    await settle();
+  }
+
+  it.each([
+    ['the default range', '/?tab=training'],
+    ['a non-default range', '/?tab=training&range=30d'],
+  ])('says nobody on the people list has activity on %s, not that filters match nothing', async (_label, url) => {
+    await mount(url);
+
+    expect(emptyText()).toBe('No one on the people list has training activity in this range.');
   });
 });

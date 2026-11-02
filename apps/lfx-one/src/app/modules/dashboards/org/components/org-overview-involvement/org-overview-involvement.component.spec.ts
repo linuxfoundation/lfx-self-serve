@@ -15,7 +15,7 @@ import { MetricCardComponent } from '@components/metric-card/metric-card.compone
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgOverviewInvolvementComponent } from './org-overview-involvement.component';
@@ -125,6 +125,63 @@ describe('OrgOverviewInvolvementComponent training tile', () => {
 
     expect(trainingCard(metrics).value).toBe('—');
     expect(trainingCard(metrics).loading).toBe(false);
+    // As on the strip: no number, so no as-of date in the subtitle or the tooltip.
+    expect(trainingCard(metrics).subtitle).toBe('People · all time');
+    expect(trainingCard(metrics).tooltipText).not.toMatch(/as of|as-of/i);
+  });
+
+  it("never shows the previous organization's number while the next organization's stats load", async () => {
+    const selectedAccount = signal<Account>({ accountId: ACCOUNT_ID, accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+    const pending = new Subject<OrgTrainingStats>();
+    const getTrainingStats = vi.fn((uid: string) => (uid === 'org-uid-1' ? of(TRAINING_STATS) : pending));
+    const empty = () => of({ accountId: ACCOUNT_ID, totalEnrollments: 0, dailyData: [] });
+    TestBed.configureTestingModule({
+      imports: [OrgOverviewInvolvementComponent],
+      providers: [
+        { provide: AccountContextService, useValue: { selectedAccount } },
+        {
+          provide: OrgInvolvementAnalyticsService,
+          useValue: {
+            getFoundationCoverage: () => of({ accountId: ACCOUNT_ID, foundationCount: 0, foundations: [] }),
+            getContributorsMonthly: () => of({ accountId: ACCOUNT_ID, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] }),
+            getMaintainersMonthly: () => of({ accountId: ACCOUNT_ID, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] }),
+            getEventAttendanceMonthly: () =>
+              of({
+                accountId: ACCOUNT_ID,
+                accountName: '',
+                totalAttended: 0,
+                totalSpeakers: 0,
+                attendeesMonthlyData: [],
+                speakersMonthlyData: [],
+                monthlyLabels: [],
+              }),
+            getCertifiedEmployeesMonthly: () =>
+              of({ accountId: ACCOUNT_ID, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] }),
+            getTrainingEnrollments: empty,
+          },
+        },
+        { provide: OrgLensTrainingService, useValue: { getTrainingStats } },
+      ],
+    });
+    TestBed.overrideComponent(OrgOverviewInvolvementComponent, { set: { template: '', imports: [] } });
+    const fixture = TestBed.createComponent(OrgOverviewInvolvementComponent);
+    await fixture.whenStable();
+    expect(trainingCard(fixture.componentInstance.primaryMetrics()).value).toBe('1,830');
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Org', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getTrainingStats).toHaveBeenLastCalledWith('org-uid-2');
+    const card = trainingCard(fixture.componentInstance.primaryMetrics());
+    expect(card.value).toBe('—');
+    expect(card.subtitle).not.toContain('Mar 5, 2030');
+
+    pending.next({ ...TRAINING_STATS, peopleWithTrainingActivity: 7 });
+    pending.complete();
+    await fixture.whenStable();
+
+    expect(trainingCard(fixture.componentInstance.primaryMetrics()).value).toBe('7');
   });
 });
 

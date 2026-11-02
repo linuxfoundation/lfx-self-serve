@@ -18,12 +18,17 @@ export function formatOrgTrainingAsOf(asOf: string | null | undefined): string {
  * (the Trainees range) for a stat without a fixed one.
  */
 export function orgTrainingStatCaption(stat: OrgTrainingStatDefinition, asOf: string | null | undefined, window?: string): string {
+  return [orgTrainingStatUnitWindow(stat, window), formatOrgTrainingAsOf(asOf)].join(' · ');
+}
+
+/** The caption without an as-of date (`People · all time`), for a number that did not load. */
+export function orgTrainingStatUnitWindow(stat: OrgTrainingStatDefinition, window?: string): string {
   const unit = stat.unit.charAt(0).toUpperCase() + stat.unit.slice(1);
-  return [unit, stat.window ?? window, formatOrgTrainingAsOf(asOf)].filter(Boolean).join(' · ');
+  return [unit, stat.window ?? window].filter(Boolean).join(' · ');
 }
 
 /** A stat's definition, then its unit and window, without an as-of date (used while the stats have not loaded). */
-function orgTrainingStatDefinitionText(stat: OrgTrainingStatDefinition, window?: string): string {
+export function orgTrainingStatDefinitionText(stat: OrgTrainingStatDefinition, window?: string): string {
   return `${stat.definition} Unit: ${stat.unit}. Window: ${stat.window ?? window ?? 'not stated'}.`;
 }
 

@@ -581,16 +581,16 @@ export class OrgLensPeopleService {
 
   /**
    * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
-   * `people-all:v7:{range}:{projectScope}` | `people-all:v7:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * `people-all:v8:{range}:{projectScope}` | `people-all:v8:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
    * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
    * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
    * the same entry the page lists. `v7` (lfx-self-serve#4287; the roster was `v4:roster`): training foundation labels
-   * come from people-list rows only.
+   * come from people-list rows only. `v8`: the people-list column is `IS_ON_PEOPLE_LIST`.
    */
   private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     return withOrgCompactCache(
       accountId,
-      range ? `people-all:v7:${range}:${projectScope}` : 'people-all:v7:roster',
+      range ? `people-all:v8:${range}:${projectScope}` : 'people-all:v8:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
       {
@@ -755,7 +755,7 @@ export class OrgLensPeopleService {
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-        WHERE ACCOUNT_ID = ? AND ON_PEOPLE_LIST AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
+        WHERE ACCOUNT_ID = ? AND IS_ON_PEOPLE_LIST AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
       )
       SELECT FOUNDATION_ID, FOUNDATION_NAME
       FROM pairs
@@ -800,13 +800,13 @@ export class OrgLensPeopleService {
 
   /**
    * Committee, event and training rows. `v6`: the training rows are one per course, read from
-   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss.
+   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss. `v7`: the people-list column is `IS_ON_PEOPLE_LIST`.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     return this.withPersonCache(
       accountId,
       personKey,
-      `people-detail:v6:${personKey}`,
+      `people-detail:v7:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );
@@ -1107,7 +1107,7 @@ export class OrgLensPeopleService {
         STATUS,
         COURSE_NAME
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSE_STATUS
-      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND ON_PEOPLE_LIST
+      WHERE ACCOUNT_ID = ? AND PERSON_KEY = ? AND IS_ON_PEOPLE_LIST
         AND (STATUS = 'Certified' OR (${orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS')}))
       ORDER BY STATUS ASC NULLS LAST, COURSE_NAME ASC NULLS LAST
     `;

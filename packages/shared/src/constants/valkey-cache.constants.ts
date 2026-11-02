@@ -250,8 +250,8 @@ export const VALKEY_CACHE = {
     // each stored as an absent cell, and is one entry for both organization scopes. Measured 2026-10-30 on the
     // lf-dbt#3166 dev build: largest value 4.57 MB (largest org, All time). `v7` (lfx-self-serve#4287) reads training
     // foundation labels from people-list rows only, a few labels fewer at most, and also keys the unranged roster
-    // (`v7:roster`, formerly `v4:roster`); the cap carries over.
-    'org-lens-sf:v1:people-all:v7': 6 * 1_048_576,
+    // (`v7:roster`, formerly `v4:roster`); the cap carries over. `v8` reads the renamed `IS_ON_PEOPLE_LIST` column, same rows.
+    'org-lens-sf:v1:people-all:v8': 6 * 1_048_576,
     // `people-former` is stored as named-key JSON rows (`withOrgCache`, not columnar). `v3` measured 2026-10-27
     // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
     // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.
@@ -282,10 +282,10 @@ export const VALKEY_CACHE = {
     // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906). `v6` (lfx-self-serve#4916,
     // #4287) adds one build timestamp per entry and the project id/name, level and format columns to the course
     // dictionary, and drops the foundation and course option rows, which are now built from the details. Learners
-    // outside the people list add one (key, name, certified flag) row each and no detail rows, so the per-course grain
-    // stays the people list's, as measured for `v4`; the cap carries over unmeasured for v6. Re-measure it on the
+    // outside the people list add one (name, certified flag) row each and no detail rows, so the per-course grain
+    // stays the people list's, as measured for `v4`; the cap carries over unmeasured for v6 and v7. Re-measure it on the
     // largest organization after lf-dbt enables outside learners (rollout step 3).
-    'org-lens-sf:v1:people-trainees:v6': 9 * 1_048_576,
+    'org-lens-sf:v1:people-trainees:v7': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**

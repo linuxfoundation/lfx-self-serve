@@ -115,9 +115,10 @@ export class OrgLensTrainingService {
   public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
     // v2: adds roster members, people with training activity and the as-of timestamps.
     // v3: the two certification counts keep to people on the org's people list.
+    // v4: the people-list column is IS_ON_PEOPLE_LIST.
     const raw = await withOrgCache(
       accountId,
-      'training-stats:v3',
+      'training-stats:v4',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTrainingStatsRows(accountId),
       isTrainingStatsRaw
@@ -399,7 +400,7 @@ export class OrgLensTrainingService {
         SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING t
         WHERE t.ACCOUNT_ID = ?
-          AND t.ON_PEOPLE_LIST
+          AND t.IS_ON_PEOPLE_LIST
           AND COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) IS NOT NULL
       `)},
       scoped AS (
@@ -411,7 +412,7 @@ export class OrgLensTrainingService {
         INNER JOIN course_dim d
           ON d.COURSE_ID = COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID)
         WHERE t.ACCOUNT_ID = ?
-          AND t.ON_PEOPLE_LIST
+          AND t.IS_ON_PEOPLE_LIST
           AND d.PRODUCT_TYPE = '${CERTIFICATION_PRODUCT_TYPE}'
       )
       SELECT

@@ -41,14 +41,14 @@ export const ORG_TRAINING_STAT_DEFINITIONS: Readonly<Record<OrgTrainingStatKey, 
     unit: 'people',
     window: 'current certificates, issued at any time',
     definition:
-      "Distinct people on this organization's people list holding at least one current certification certificate, issued at any time. Expired certificates are not counted.",
+      "Distinct people on this organization's people list holding at least one current certification certificate, issued at any time. Certificates the training system marks expired are not counted.",
   },
   certificationsEarned: {
     label: 'Certifications earned',
     unit: 'certificates',
     window: 'current certificates, issued at any time',
     definition:
-      "Current certification certificates held by people on this organization's people list, issued at any time; a person with two certificates counts twice. Expired certificates are not counted.",
+      "Current certification certificates held by people on this organization's people list, issued at any time; a person with two certificates counts twice. Certificates the training system marks expired are not counted.",
   },
   peopleInTraining: {
     label: 'People in training',
@@ -155,4 +155,4 @@ export const ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING = 'Learners not on the people
 
 /** Shown in place of that list while a course-level filter is picked: the list carries no course data to filter on. */
 export const ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE =
-  'Learners not on the people list are filtered by time range only, so they are hidden while a foundation, project, course, level or format is selected.';
+  'Learners not on the people list follow the time range and the name search only, so they are hidden while a foundation, project, course, level or format is selected.';

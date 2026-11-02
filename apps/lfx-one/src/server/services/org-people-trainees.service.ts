@@ -8,6 +8,8 @@ import {
   ORG_TRAINEE_OUTSIDE_KEY_PREFIX,
   ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS,
   ORG_TRAINEE_ROW_COLUMNS,
+  ORG_TRAINEE_UNAVAILABLE_COURSE_NAME,
+  ORG_TRAINEE_UNAVAILABLE_COURSE_PREFIX,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -57,14 +59,14 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v6:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
-    // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` adds the
+    // `people-trainees:v7:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // so the read is windowed per range here instead of shipping every row for the client to filter. `v6` added the
     // table's build time, the project, level and format columns and the learners outside the people list (name and
-    // certified flag, no detail rows), and drops the two option reads; a `v5` entry, which cached those learners'
-    // detail rows, must miss.
+    // certified flag, no detail rows), and dropped the two option reads; `v7` stops caching those learners' warehouse
+    // key, so a `v6` entry, which still holds it, must miss, and reads the renamed `IS_ON_PEOPLE_LIST` column.
     const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
-      `people-trainees:v6:${range}`,
+      `people-trainees:v7:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId, range),
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
@@ -106,23 +108,29 @@ export class OrgPeopleTraineesService {
       status: row.IS_CERTIFIED === true ? 'Certified' : 'Enrolled',
     }));
 
-    // People-list rows only (the read filters on ON_PEOPLE_LIST). Drop null-ACTIVITY_TS rows; coercing to '' would
+    // People-list rows only (the read filters on IS_ON_PEOPLE_LIST). Drop null-ACTIVITY_TS rows; coercing to '' would
     // corrupt downstream lex sorts and most-recent derivations.
+    let unavailableCourseCount = 0;
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
       if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
       const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
       if (!activityTs) return [];
       const listed = listedKeys.has(row.PERSON_KEY);
+      // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01).
+      // A listed row falls back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on
+      // '' / undefined. An unlisted (former-employee) row fails closed: its enrollment / certificate id is a per-person
+      // identifier, so a missing course gets an opaque per-response token instead. Kept rather than dropped, so the cards
+      // count the row exactly as before; the token is distinct per row, as the instance id was.
+      const courseId = row.COURSE_ID ?? (listed ? row.COURSE_OR_CERT_ID : `${ORG_TRAINEE_UNAVAILABLE_COURSE_PREFIX}${++unavailableCourseCount}`);
+      const courseName = row.COURSE_NAME ?? row.COURSE_ID ?? (listed ? row.COURSE_OR_CERT_ID : ORG_TRAINEE_UNAVAILABLE_COURSE_NAME);
       return [
         {
           personKey: detailKey(row.PERSON_KEY),
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
           // Blank without a current-employee row: the enrollment / certificate id is a per-person identifier, and no client reads it.
           courseOrCertId: listed ? row.COURSE_OR_CERT_ID : '',
-          // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
-          // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
-          courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
-          courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
+          courseId,
+          courseName,
           foundationId: row.FOUNDATION_ID,
           foundationName: row.FOUNDATION_NAME,
           projectId: row.PROJECT_ID,
@@ -140,7 +148,7 @@ export class OrgPeopleTraineesService {
       trainees,
       details,
       outsideLearners,
-      filterOptions: buildFilterOptions(details),
+      filterOptions: buildFilterOptions(details.filter((row) => listedKeys.has(row.personKey))),
       asOf,
     };
   }
@@ -189,7 +197,7 @@ export class OrgPeopleTraineesService {
           SELECT PERSON_KEY
           FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
           WHERE ACCOUNT_ID = ?
-            AND ON_PEOPLE_LIST
+            AND IS_ON_PEOPLE_LIST
             ${inRange}
         )
       ORDER BY NAME ASC NULLS LAST
@@ -205,9 +213,9 @@ export class OrgPeopleTraineesService {
    * status and a dated row.
    */
   private async fetchOutsideLearnerRows(accountId: string, inRange: string): Promise<OrgTrainingOutsideLearnerRow[]> {
+    // The warehouse key stays in the join only: it is neither selected nor cached.
     const query = `
       SELECT
-        o.PERSON_KEY,
         o.LEARNER_NAME,
         t.IS_CERTIFIED
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_OUTSIDE_LEARNERS o
@@ -217,7 +225,7 @@ export class OrgPeopleTraineesService {
           BOOLOR_AGG(STATUS = 'Certified') AS IS_CERTIFIED
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
         WHERE ACCOUNT_ID = ?
-          AND NOT ON_PEOPLE_LIST
+          AND NOT IS_ON_PEOPLE_LIST
           AND STATUS IN ('Enrolled', 'Certified')
           AND ACTIVITY_TS IS NOT NULL
           ${inRange}
@@ -249,7 +257,7 @@ export class OrgPeopleTraineesService {
         COURSE_FORMAT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
-        AND ON_PEOPLE_LIST
+        AND IS_ON_PEOPLE_LIST
         ${inRange}
       ORDER BY PERSON_KEY ASC, ACTIVITY_TS DESC NULLS LAST
     `;
@@ -270,9 +278,9 @@ export class OrgPeopleTraineesService {
 }
 
 /**
- * The five Trainees dropdowns from the details the response ships, so an option exists only when a row of the range
- * carries it and picking it on its own can never empty the table. Rows without the field are reachable only through
- * "All": a certified row has no format, a few courses have no level.
+ * The five Trainees dropdowns from the people-list members' details (the rows the table lists), so an option exists
+ * only when a listed row of the range carries it and picking it on its own can never empty the table. Rows without the
+ * field are reachable only through "All": a certified row has no format, a few courses have no level.
  */
 function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOptions {
   const foundations = new Map<string, string>();
@@ -391,11 +399,9 @@ function isCompactTraineesRaw(value: unknown): boolean {
   const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
   const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');
-  const outsideKeyIndex = ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS.indexOf('PERSON_KEY');
   if (
     !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[courseOrCertIndex])) ||
-    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex])) ||
-    !cache.outsideLearnerRows.r.every((row) => isStoredNullableString(row[outsideKeyIndex]))
+    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex]))
   ) {
     return false;
   }

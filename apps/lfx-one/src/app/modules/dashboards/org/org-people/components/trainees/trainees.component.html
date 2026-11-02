@@ -191,13 +191,23 @@
       } @else if (totalFiltered() === 0) {
         <div class="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center" data-testid="org-people-trainees-empty">
           <i class="fa-light fa-graduation-cap text-2xl text-gray-300" aria-hidden="true"></i>
-          @if (isFiltering()) {
-            <p class="text-sm text-gray-700">No trainees match the current filters.</p>
-            <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
-          } @else if (outsideLearners().length > 0) {
-            <p class="text-sm text-gray-700">No one on the people list has training activity in this range.</p>
-          } @else {
-            <p class="text-sm text-gray-700">No trainees found for this organization.</p>
+          @switch (emptyState()) {
+            @case ('filters') {
+              <p class="text-sm text-gray-700">No trainees match the current filters.</p>
+              <p class="text-xs text-gray-500">Try clearing the search or changing the dropdown selections.</p>
+            }
+            @case ('people-list-search') {
+              <p class="text-sm text-gray-700">No one on the people list matches the search.</p>
+            }
+            @case ('people-list-range') {
+              <p class="text-sm text-gray-700">No one on the people list has training activity in this range.</p>
+            }
+            @case ('range') {
+              <p class="text-sm text-gray-700">No trainees found in this range.</p>
+            }
+            @default {
+              <p class="text-sm text-gray-700">No trainees found for this organization.</p>
+            }
           }
         </div>
       } @else {
@@ -415,7 +425,7 @@
             {{ outsideLearnersHeading }} ({{ outsideLearners().length | number }})
           </h3>
           @if (outsideLearners().length === 0) {
-            <p class="px-4 py-3 text-xs text-gray-500" data-testid="org-people-trainees-outside-empty">No learners not on the people list match the search.</p>
+            <p class="px-4 py-3 text-xs text-gray-500" data-testid="org-people-trainees-outside-empty">No one in this list matches the search.</p>
           } @else {
             <ul class="divide-y divide-gray-100">
               @for (learner of outsideLearners(); track learner.personKey) {

@@ -13,6 +13,13 @@ export type OrgTraineeSortColumn = 'name' | 'status' | 'courses' | 'certs' | 're
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgTraineeSortDirection = 1 | -1;
 
+/**
+ * Which empty-table copy the Trainees tab shows: a search or dropdown pick (`filters`); a search that matches only
+ * learners outside the people list; a range where only learners outside the people list have activity; any other
+ * non-default range; or nothing at all.
+ */
+export type OrgTraineesEmptyState = 'filters' | 'people-list-search' | 'people-list-range' | 'range' | 'none';
+
 /** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` for a people-list member — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
 export interface OrgTraineeDetailRow {
   /**
@@ -90,7 +97,11 @@ export interface OrgTraineesResponse {
   timeRange: OrgLensTimeRange;
   /** People-list members with a training row in the range. */
   trainees: OrgTraineeRow[];
-  /** Training rows in the range of the people-list members in `trainees`; none for learners outside the people list. */
+  /**
+   * Training rows in the range behind the cards: the people-list members in `trainees` under their warehouse key, plus
+   * people-list rows of a person with no current-employee row (an unlisted former employee) under an opaque key. None
+   * for learners outside the people list.
+   */
   details: OrgTraineeDetailRow[];
   /** Learners outside the people list with a training row in the range, sorted by name; filtered by the range only. */
   outsideLearners: OrgTraineeOutsideLearner[];
@@ -168,7 +179,6 @@ export interface TraineeAsOfRow {
  * learner outside the people list, name and overall status only.
  */
 export interface OrgTrainingOutsideLearnerRow {
-  PERSON_KEY: string;
   LEARNER_NAME: string | null;
   /** Whether any of the learner's training rows in the range is a certificate (`BOOLOR_AGG`). */
   IS_CERTIFIED: boolean | null;

@@ -18,12 +18,19 @@ import {
   ORG_OVERVIEW_TRAINING_TREND_LABEL,
   ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import { hexToRgba, orgTrainingStatCaption, orgTrainingStatTooltip, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import {
+  hexToRgba,
+  orgTrainingStatCaption,
+  orgTrainingStatDefinitionText,
+  orgTrainingStatTooltip,
+  orgTrainingStatUnitWindow,
+  tryParseLocalDateString,
+} from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
-import { catchError, distinctUntilChanged, finalize, map, Observable, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, finalize, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import type {
   DashboardMetricCard,
@@ -149,11 +156,13 @@ export class OrgOverviewInvolvementComponent {
             return of(null);
           }
           this.trainingStatsLoading.set(true);
+          // Starts from null so the previous organization's stats never show while this one's load.
           return this.trainingService.getTrainingStats(uid).pipe(
             catchError((error: unknown) => {
               console.error('Failed to load org training stats for the Overview training tile:', error);
               return of(null);
             }),
+            startWith(null),
             finalize(() => this.trainingStatsLoading.set(false))
           );
         })
@@ -399,6 +408,7 @@ export class OrgOverviewInvolvementComponent {
   /** Headline: people with training activity, all time, as on the Training page. The chart keeps this year's cumulative enrollments, captioned as such. */
   private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
     const activity = ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity;
+    const hasActivity = stats !== null && stats.peopleWithTrainingActivity != null;
     const labels = data.dailyData.map(
       (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
     );
@@ -406,9 +416,10 @@ export class OrgOverviewInvolvementComponent {
       ...metric,
       loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
       // A failed stats read or an older payload without the field shows a dash, never a zero that reads as "nobody trained".
-      value: stats?.peopleWithTrainingActivity != null ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
-      subtitle: orgTrainingStatCaption(activity, stats?.trainingActivityAsOf),
-      tooltipText: orgTrainingStatTooltip(activity, stats?.trainingActivityAsOf),
+      value: hasActivity ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
+      // As on the strip: no number (loading or a failed read), no as-of date.
+      subtitle: hasActivity ? orgTrainingStatCaption(activity, stats.trainingActivityAsOf) : orgTrainingStatUnitWindow(activity),
+      tooltipText: hasActivity ? orgTrainingStatTooltip(activity, stats.trainingActivityAsOf) : orgTrainingStatDefinitionText(activity),
       chartCaption: labels.length > 0 ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, through ${labels[labels.length - 1]}` : undefined,
       chartOptions: this.createLineChartOptions('Training enrollments'),
       chartData: {
