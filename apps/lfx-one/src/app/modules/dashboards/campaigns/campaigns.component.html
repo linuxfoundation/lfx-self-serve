@@ -1254,7 +1254,7 @@
                 enrols the audience once. A single send has no workflow: it is scheduled and sent
                 on its own, with its list attached when it is staged.
               -->
-              @if (isSurvey()) {
+              @if (surveySeriesMode() || surveySingleSendStaged()) {
                 <div class="flex flex-col gap-4 border-t border-gray-200 pt-4" data-testid="campaigns-survey-sequence">
                   <div class="flex flex-col gap-1">
                     <h4 class="text-sm font-semibold text-gray-900">Email sequence</h4>
@@ -1282,7 +1282,7 @@
                         @if (sequenceStagedBriefIds().length > 0) {
                           These emails are staged in HubSpot. Edit the drafts there, or start the series over below.
                         } @else if (surveySingleSendStaged()) {
-                          This email is staged in HubSpot. Edit the draft there, or start the series over below to write new ones.
+                          This email is staged, or being staged, in HubSpot. Edit the draft there, or start the series over below to write new ones.
                         } @else if (sequenceHasHeldSend()) {
                           A send is unconfirmed and its draft may exist in HubSpot. Check there, then start the series over below.
                         } @else if (emailBriefOutput() === null) {
@@ -1383,7 +1383,7 @@
                   <!-- The recovery for a series that cannot go on (a held send, a refused workflow):
                        start over. Drafts already created stay in HubSpot -- this page cannot
                        change or delete them -- so the note says to deal with them there. -->
-                  @if (surveySeriesStarted() && sequenceStagingState() !== 'staging' && sendWorkflowState() !== 'building') {
+                  @if (surveySeriesStarted() && sequenceStagingState() !== 'staging' && sendWorkflowState() !== 'building' && emailStaging() !== 'staging') {
                     <div class="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="campaigns-sequence-start-over">
                       <p class="text-xs text-amber-900">
                         The audience is locked because this series has staged drafts. Start the series over to change it. Drafts already created stay in HubSpot

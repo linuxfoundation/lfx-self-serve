@@ -1638,6 +1638,7 @@ export class PlanningTabComponent implements OnInit {
       audience: d.audience,
       registrationUrl: d.registrationUrl,
     });
+    this.emailEditError.set('');
     this.isEditingEmailBrief.set(true);
   }
 
@@ -1686,11 +1687,18 @@ export class PlanningTabComponent implements OnInit {
       audience: (this.emailEditForm.controls.audience.value ?? '').trim(),
       registrationUrl: (this.emailEditForm.controls.registrationUrl.value ?? '').trim(),
     });
+    // The lookup reads the planning form, so it follows the edit or it asks under the old slug.
+    // The URL first and silently: the source text's change is what re-runs the lookup, on both.
+    if (this.isSurvey()) {
+      this.briefForm.controls.url.setValue(editedUrl || d.registrationUrl, { emitEvent: false });
+      this.briefForm.controls.sourceText.setValue(editedSource);
+    }
     this.isEditingEmailBrief.set(false);
   }
 
   /** Discard the edits. `eventDetails` was never mutated, so nothing to restore. */
   protected cancelEmailEdit(): void {
+    this.emailEditError.set('');
     this.isEditingEmailBrief.set(false);
   }
 

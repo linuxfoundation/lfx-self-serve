@@ -2142,8 +2142,8 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
-  /** The scope the single Stage button last created a draft under; survives the display reset. */
-  private readonly singleSendStagedScope = signal<string>('');
+  /** Every scope the single Stage button created a draft under; survives the display reset. */
+  private readonly singleSendStagedScopes = signal<ReadonlySet<string>>(new Set());
   /**
    * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
    * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
@@ -2309,16 +2309,16 @@ export class CampaignsComponent {
   );
 
   /**
-   * Whether the single Stage button already put THIS brief's draft in HubSpot. A series opens on the
-   * same brief, whose existing draft campaign-service would hand back unchanged, so a new count or
-   * rewrite would show copy HubSpot never sends. A restart moves the series to new briefs.
+   * Whether the single Stage button put THIS brief's draft in HubSpot, or may be about to (in
+   * flight or unconfirmed). A series opens on the same brief, whose existing draft campaign-service
+   * would hand back unchanged, so a new count or rewrite would show copy HubSpot never sends. A
+   * restart moves the series to new briefs.
    */
   protected readonly surveySingleSendStaged = computed(
     () =>
       this.isSurvey() &&
       !this.surveySeriesRestarted() &&
-      this.singleSendStagedScope() !== '' &&
-      this.singleSendStagedScope() === this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())
+      (this.emailStagingHeld() || this.singleSendStagedScopes().has(this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())))
   );
 
   /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
@@ -3978,7 +3978,7 @@ export class CampaignsComponent {
    * drafts already created stay in HubSpot (the page says so): this cannot change or delete them.
    */
   protected onStartSeriesOver(): void {
-    if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building') {
+    if (this.sequenceStagingState() === 'staging' || this.sendWorkflowState() === 'building' || this.emailStaging() === 'staging') {
       return;
     }
     // Drafts exist for this series, so the next one is written under NEW briefs (see
@@ -5823,7 +5823,7 @@ export class CampaignsComponent {
           // the contract, and an older service that omits it entirely would otherwise report every
           // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
-          this.singleSendStagedScope.set(this.stageScopeKey(projectSlug, briefId));
+          this.singleSendStagedScopes.update((scopes) => new Set(scopes).add(this.stageScopeKey(projectSlug, briefId)));
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
           //

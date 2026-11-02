@@ -6,6 +6,7 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
@@ -9222,11 +9223,39 @@ describe('CampaignsComponent — email delivery channel', () => {
       seq().onSurveyEmailCountChange(3);
       expect(seq().surveyEmailCount(), 'a series would open on the staged draft').toBe(1);
 
+      // Staging another brief must not forget this one, whose draft still exists.
+      seq().emailBriefId.set('brief-other');
+      await seq().onStageEmailSend();
+      expect(service.createCampaign, 'fixture precondition: the second stage ran').toHaveBeenCalledTimes(2);
+      seq().emailBriefId.set('brief-primary');
+      expect(seq().surveySeriesStarted(), 'the earlier brief is still staged').toBe(true);
+
       seq().onStartSeriesOver();
 
       expect(seq().surveySeriesRestarted()).toBe(true);
       expect(seq().surveySeriesStarted()).toBe(false);
       expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('locks the count and rewrites while the single Stage button is still in flight', () => {
+      stageable(1);
+      seq().emailStaging.set('staging');
+
+      expect(seq().surveySeriesStarted()).toBe(true);
+      expect(seq().canGenerateSurveySequence()).toBe(false);
+      seq().onStartSeriesOver();
+      expect(seq().surveySeriesRestarted(), 'a restart must wait for the create').toBe(false);
+    });
+
+    it('offers one copy path at a time for a one-email survey', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-survey-sequence"]')).toBeNull();
+
+      seq().onSurveyEmailCountChange(3);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-survey-sequence"]')).not.toBeNull();
     });
 
     it('starts the series over from a held send, clearing its staging so it can be written again', () => {
@@ -9449,7 +9478,10 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
 
     it('says why Stage all is off while the audience is being replaced', () => {
-      stageable(1);
+      stageable(3);
+      // The writer adds these before publishing a row; this fixture sets the rows directly.
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl('', { nonNullable: true })));
       seq().selectedEmailTab.set('implementation');
       seq().emailAudienceWriteInFlight.set(true);
       fixture.detectChanges();

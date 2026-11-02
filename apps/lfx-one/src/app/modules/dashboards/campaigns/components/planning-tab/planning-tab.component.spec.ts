@@ -1892,6 +1892,42 @@ describe('PlanningTabComponent email brief editing', () => {
     expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
   });
 
+  it('clears a refused edit when the editor is cancelled and reopened', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    const refusal = fixture.componentInstance as unknown as { emailEditError(): string };
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+    internals().saveEmailEdit();
+    expect(refusal.emailEditError()).not.toBe('');
+
+    internals().cancelEmailEdit();
+    expect(refusal.emailEditError()).toBe('');
+
+    internals().enterEmailEditMode();
+    expect(refusal.emailEditError()).toBe('');
+  });
+
+  it("moves a survey's saved-brief lookup to the slug an edited title saves under", async () => {
+    await buildWithScrape('survey');
+    const formUrl = 'https://docs.google.com/forms/d/e/1FAIpQ/viewform';
+    internals().eventDetails.set({ ...scraped, sourceText: 'Old Title', registrationUrl: formUrl });
+    const form = fixture.componentInstance as unknown as {
+      briefForm: { controls: Record<string, { value: string; setValue(v: string): void }> };
+      currentSlug: string;
+    };
+    form.briefForm.controls['url'].setValue(formUrl);
+    form.briefForm.controls['sourceText'].setValue('Old Title');
+    expect(form.currentSlug).toBe('old-title');
+
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('New Title');
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { slug: string }).slug).toBe('new-title');
+    expect(form.currentSlug).toBe('new-title');
+  });
+
   it('renders the scraped brief so the user can see what generation will use', async () => {
     await buildWithScrape();
     const name = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="planning-email-brief-name"]');
