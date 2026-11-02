@@ -57,6 +57,14 @@ describe('MeetingsFiltersComponent', () => {
     (byTestId(testId)?.querySelector('input') as HTMLInputElement).click();
     await settle();
   };
+  const pick = async (testId: string, label: string): Promise<void> => {
+    (byTestId(testId)?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+    await settle();
+    (
+      Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]')).find((option) => option.textContent?.trim() === label) as HTMLElement
+    ).click();
+    await settle();
+  };
   const optionLabels = async (testId: string): Promise<string[]> => {
     (byTestId(testId)?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
     await settle();
@@ -123,6 +131,26 @@ describe('MeetingsFiltersComponent', () => {
 
     expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, organizedByMe: true }]);
     expect(panel()).toBeNull();
+  });
+
+  it('applies picks from the selects, mapping the "All" choices back to no filter', async () => {
+    await render();
+    await open();
+    await pick('meetings-home-filters-project', 'CNCF');
+    await pick('meetings-home-filters-rsvp', 'Needs response');
+
+    expect(panel()).toBeTruthy();
+    expect(emitted).toEqual([]);
+
+    button('meetings-home-filters-apply').click();
+    await settle();
+    expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'p-1', rsvp: 'pending' }]);
+
+    await open();
+    await pick('meetings-home-filters-project', 'All projects');
+    button('meetings-home-filters-apply').click();
+    await settle();
+    expect(emitted[1]).toEqual({ ...MEETINGS_HOME_DEFAULT_FILTERS, rsvp: 'pending' });
   });
 
   it('disables Apply again once the draft matches the applied filters', async () => {
