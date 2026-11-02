@@ -14,7 +14,9 @@ import { UiMenuItemComponent } from '../menu/menu-item.component';
 import { UiMenuComponent } from '../menu/menu.component';
 import { UiModalComponent } from '../modal/modal.component';
 import { UiModalService } from '../modal/modal.service';
+import { UiMultiSelectComponent } from '../multi-select/multi-select.component';
 import { UiOptionComponent } from '../select/option.component';
+import { UiSelectSlotDirective } from '../select/select-slot.directive';
 import { UiSelectComponent } from '../select/select.component';
 import { UiToastService } from '../toast/toast.service';
 import { UiPopoverDirective } from './popover.directive';
@@ -38,6 +40,27 @@ const SELECT_TEMPLATE = `
       <lfx-ui-option value="cncf" label="CNCF" />
       <lfx-ui-option value="lfai" label="LF AI" />
     </lfx-ui-select>
+  </ng-template>
+`;
+
+const SEARCH_SELECT_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <lfx-ui-select ariaLabel="Project" [(value)]="project">
+      <input id="search" lfxUiSelectHeader type="search" aria-label="Search projects" />
+      <lfx-ui-option value="cncf" label="CNCF" />
+      <lfx-ui-option value="lfai" label="LF AI" />
+    </lfx-ui-select>
+  </ng-template>
+`;
+
+const MULTI_SELECT_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <lfx-ui-multi-select label="Projects">
+      <lfx-ui-option value="cncf" label="CNCF" />
+      <lfx-ui-option value="lfai" label="LF AI" />
+    </lfx-ui-multi-select>
   </ng-template>
 `;
 
@@ -670,6 +693,70 @@ describe('UiPopoverDirective', () => {
       await settle();
       expect(panel()).toBeNull();
       expect(document.activeElement).toBe(trigger());
+    });
+  });
+
+  describe('with a select search field inside', () => {
+    beforeEach(async () => mount(SEARCH_SELECT_TEMPLATE, [UiSelectComponent, UiOptionComponent, UiSelectSlotDirective]));
+
+    const openSearch = async () => {
+      await open();
+      (container.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+      await settle();
+      el('search').focus();
+      expect(document.activeElement).toBe(el('search'));
+    };
+
+    it('Tab from the search field, with the Select as the last field, closes the list and the popover onto the host', async () => {
+      await openSearch();
+
+      const event = key(el('search'), 'Tab');
+      await settle();
+
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('Shift+Tab from the search field stops on the Select trigger and keeps the popover open', async () => {
+      await openSearch();
+
+      const event = key(el('search'), 'Tab', { shiftKey: true });
+      await settle();
+
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(container.querySelector('[data-testid="ui-select-trigger"]'));
+      expect(event.defaultPrevented).toBe(true);
+    });
+  });
+
+  describe('with a multi-select inside', () => {
+    beforeEach(async () => mount(MULTI_SELECT_TEMPLATE, [UiMultiSelectComponent, UiOptionComponent]));
+
+    const focusRow = async () => {
+      await open();
+      (container.querySelector('[data-testid="ui-multi-select-trigger"]') as HTMLElement).click();
+      await settle();
+      const box = container.querySelector('[data-testid="ui-multi-select-panel"] input[type="checkbox"]') as HTMLElement;
+      box.focus();
+      expect(document.activeElement).toBe(box);
+      return box;
+    };
+
+    it.each([
+      ['Tab', false, false],
+      ['Shift+Tab', true, true],
+    ])('%s from an open list, with the MultiSelect as the only field, closes the list and the popover onto the host', async (_name, shiftKey, prevented) => {
+      const box = await focusRow();
+
+      const event = key(box, 'Tab', { shiftKey });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-multi-select-panel"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(prevented);
     });
   });
 

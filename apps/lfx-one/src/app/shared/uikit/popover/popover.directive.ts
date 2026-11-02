@@ -158,7 +158,15 @@ export class UiPopoverDirective {
     fromEvent<KeyboardEvent>(this.panelElement() as HTMLElement, 'keydown')
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {
-        if (event.key === 'Tab' && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.altKey && !event.metaKey) this.onTab(event);
+        if (this.isTab(event)) this.onTab(event, event.target as HTMLElement);
+      });
+    // A list opened from the panel, such as a select's search field, hands focus back to its trigger here before the browser moves it.
+    fromEvent<KeyboardEvent>(this.document, 'keydown')
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => {
+        const active = this.document.activeElement as HTMLElement | null;
+        if (!this.isTab(event) || event.defaultPrevented || !this.inLaterOverlay(overlayRef, event.target as Node)) return;
+        if (active && this.panelElement()?.contains(active)) this.onTab(event, active);
       });
     // Backstop for a Tab that leaves the panel without `onTab` catching it.
     fromEvent<FocusEvent>(this.panelElement() as HTMLElement, 'focusout')
@@ -226,9 +234,8 @@ export class UiPopoverDirective {
   }
 
   // The panel is last in the body, so Tab out of it would land nowhere: hand focus to the host first.
-  private onTab(event: KeyboardEvent): void {
+  private onTab(event: KeyboardEvent, target: HTMLElement): void {
     const panelElement = this.panelElement();
-    const target = event.target as HTMLElement;
     // A key from the host or a nested list is not ours.
     if (!panelElement?.contains(target)) return;
     this.tabbed = true;
@@ -242,6 +249,10 @@ export class UiPopoverDirective {
     if (event.shiftKey) event.preventDefault();
     this.open.set(false);
     this.detach(false);
+  }
+
+  private isTab(event: KeyboardEvent): boolean {
+    return event.key === 'Tab' && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.altKey && !event.metaKey;
   }
 
   // Disabled controls are skipped, and a radio group is one stop: its checked radio, or the first.
