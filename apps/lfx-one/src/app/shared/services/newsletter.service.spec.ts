@@ -56,19 +56,25 @@ describe('NewsletterService.recordShare (#4958)', () => {
   });
   afterEach(() => http.verify());
 
-  it('posts the channel and sends the Plausible event', () => {
-    service.recordShare('proj-1', 'news-1', 'linkedin');
+  it('posts the channel, sends the Plausible event and reports acceptance', () => {
+    const accepted = vi.fn();
+    service.recordShare('proj-1', 'news-1', 'linkedin').subscribe(accepted);
     const request = http.expectOne('/api/newsletters/proj-1/news-1/share');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ channel: 'linkedin' });
     request.flush(null, { status: 204, statusText: 'No Content' });
     expect(trackEvent).toHaveBeenCalledWith('newsletter_shared', { newsletterId: 'news-1', channel: 'linkedin' });
+    expect(accepted).toHaveBeenCalledWith(true);
   });
 
-  it('swallows a failed recording so sharing never errors', () => {
-    expect(() => {
-      service.recordShare('proj-1', 'news-1', 'x');
-      http.expectOne('/api/newsletters/proj-1/news-1/share').flush('Forbidden', { status: 403, statusText: 'Forbidden' });
-    }).not.toThrow();
+  it('reports a rejected recording as false instead of erroring', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const next = vi.fn();
+    const error = vi.fn();
+    service.recordShare('proj-1', 'news-1', 'x').subscribe({ next, error });
+    http.expectOne('/api/newsletters/proj-1/news-1/share').flush('Forbidden', { status: 403, statusText: 'Forbidden' });
+    expect(next).toHaveBeenCalledWith(false);
+    expect(error).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalled();
   });
 });

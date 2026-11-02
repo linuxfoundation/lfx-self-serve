@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
@@ -69,6 +69,7 @@ export class NewsletterReaderComponent {
   private readonly shareDialog = inject(ShareDialogService);
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
   /** Re-runs the member-benefit join after a failure. */
@@ -127,11 +128,8 @@ export class NewsletterReaderComponent {
   });
 
   // === Writable Signals (linked) ===
-  /** Share count beside the Share button: the server's `share_count`, bumped as this reader shares. Resets per issue. */
-  protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => {
-    const newsletter = this.newsletter();
-    return { newsletterId: newsletter?.id ?? null, count: newsletter?.share_count ?? null, channels: [] };
-  });
+  /** Share count beside the Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
+  protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => ({ count: this.newsletter()?.share_count ?? null, channels: [] }));
 
   // === Protected Methods ===
   protected openShare(): void {
@@ -159,14 +157,20 @@ export class NewsletterReaderComponent {
     });
   }
 
-  /** Records the share (fire-and-forget) and bumps the visible count the way the server will. */
+  /** Records the share and, once the server accepts it, bumps the visible count (still on the same issue). */
   protected onShared(channel: SocialShareChannel): void {
     const project = this.project();
     const newsletter = this.newsletter();
     if (!project || !newsletter) return;
 
-    this.newsletterService.recordShare(project.uid, newsletter.id, channel);
-    this.shareTally.update((tally) => addShareToTally(tally, channel));
+    this.newsletterService
+      .recordShare(project.uid, newsletter.id, channel)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((accepted) => {
+        if (accepted && this.newsletter()?.id === newsletter.id) {
+          this.shareTally.update((tally) => addShareToTally(tally, channel));
+        }
+      });
   }
 
   protected retryJoin(): void {

@@ -16,10 +16,10 @@ describe('newsletterIssuePath', () => {
 });
 
 describe('addShareToTally', () => {
-  const base = { newsletterId: 'n1', count: 4, channels: [] };
+  const base = { count: 4, channels: [] };
 
   it('counts the first share to a channel', () => {
-    expect(addShareToTally(base, 'linkedin')).toEqual({ newsletterId: 'n1', count: 5, channels: ['linkedin'] });
+    expect(addShareToTally(base, 'linkedin')).toEqual({ count: 5, channels: ['linkedin'] });
   });
 
   it('counts each channel once, like the server', () => {
@@ -29,6 +29,6 @@ describe('addShareToTally', () => {
   });
 
   it('keeps an unknown count unknown but remembers the channel', () => {
-    expect(addShareToTally({ ...base, count: null }, 'x')).toEqual({ newsletterId: 'n1', count: null, channels: ['x'] });
+    expect(addShareToTally({ ...base, count: null }, 'x')).toEqual({ count: null, channels: ['x'] });
   });
 });

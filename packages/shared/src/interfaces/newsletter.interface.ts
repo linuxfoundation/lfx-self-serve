@@ -546,16 +546,15 @@ export interface MyNewslettersState {
  */
 export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
-  /** `share_count` plus this session's not-yet-counted shares; null when the count is unknown. */
+  /** `share_count` plus shares accepted on this page; null when the count is unknown. */
   shareCount: number | null;
 }
 
-/** Share count shown beside a newsletter's Share button, bumped locally as the reader shares. */
+/** Share count shown beside a newsletter's Share button, bumped locally after each accepted share. */
 export interface NewsletterShareTally {
-  newsletterId: string | null;
   /** Null when the server did not return a count (unknown, not zero). */
   count: number | null;
-  /** Channels already counted this session — the server counts each channel once per user. */
+  /** Channels already counted on this page — the server counts each channel once per user. */
   channels: SocialShareChannel[];
 }
 

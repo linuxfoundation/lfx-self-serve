@@ -529,6 +529,7 @@ describe('MyNewslettersComponent', () => {
     expect(fixture.componentInstance['previewVisible']()).toBe(false);
   });
   it('shows share counts in the table and drawer, and counts a drawer share once per channel (#4958)', async () => {
+    gateway.recordShare.mockReturnValue(of(true));
     await respond(
       feedOf([row({ share_count: 3 }), row({ id: 'quiet', subject: 'Quiet news' }), row({ id: 'none', subject: 'Unshared', share_count: 0 })], true)
     );

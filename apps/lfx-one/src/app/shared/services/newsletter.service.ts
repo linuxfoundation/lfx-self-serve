@@ -32,7 +32,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { PlausibleService } from '@services/plausible.service';
-import { catchError, EMPTY, Observable, take, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -138,19 +138,20 @@ export class NewsletterService {
   }
 
   /**
-   * Records an in-app share of a sent issue (#4958) and the matching Plausible event. Fire-and-forget:
-   * sharing must never fail because tracking did, so errors (including the 403 while impersonating)
-   * are swallowed here. The server counts one share per user per channel.
+   * Records an in-app share of a sent issue (#4958) and sends the matching Plausible event. Emits
+   * `true` once the server accepted the share, `false` when it did not (the 403 while impersonating,
+   * a 404 for a draft, a network error). It never errors: sharing must not fail because tracking did.
    */
-  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): void {
+  public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): Observable<boolean> {
     this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel });
-    this.http
-      .post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel })
-      .pipe(
-        take(1),
-        catchError(() => EMPTY)
-      )
-      .subscribe();
+    return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel }).pipe(
+      take(1),
+      map(() => true),
+      catchError((error) => {
+        console.warn('[NewsletterService] Failed to record newsletter share', error);
+        return of(false);
+      })
+    );
   }
 
   /**

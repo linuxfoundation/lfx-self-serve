@@ -220,17 +220,22 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
-  /** A share was made from the drawer: record it (fire-and-forget) and bump that row's count like the server will. */
+  /** A share was made from the drawer: record it and, once the server accepts it, bump that row's count. */
   protected onShared(channel: SocialShareChannel): void {
     const selected = this.selected();
     if (!selected) return;
 
-    this.newsletterService.recordShare(selected.project_uid, selected.id, channel);
-    this.shareTallies.update((tallies) => {
-      const current = tallies[selected.id] ?? { newsletterId: selected.id, count: selected.share_count ?? null, channels: [] };
-      const next = addShareToTally(current, channel);
-      return next === current ? tallies : { ...tallies, [selected.id]: next };
-    });
+    this.newsletterService
+      .recordShare(selected.project_uid, selected.id, channel)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((accepted) => {
+        if (!accepted) return;
+        this.shareTallies.update((tallies) => {
+          const current = tallies[selected.id] ?? { count: selected.share_count ?? null, channels: [] };
+          const next = addShareToTally(current, channel);
+          return next === current ? tallies : { ...tallies, [selected.id]: next };
+        });
+      });
   }
 
   /**
@@ -335,12 +340,6 @@ export class MyNewslettersComponent {
     this.projectFilter.set(null);
   }
 
-  /** Displayed share count: this page's tally when the user shared here, else the server's (null when unknown). */
-  private shareCountOf(newsletter: MyNewsletter): number | null {
-    const tally = this.shareTallies()[newsletter.id];
-    return tally ? tally.count : (newsletter.share_count ?? null);
-  }
-
   // === Private Initializers ===
   private initCompletenessNotice(): Signal<string> {
     return computed(() => {
@@ -412,5 +411,12 @@ export class MyNewslettersComponent {
 
       return filtered;
     });
+  }
+
+  // === Private Helpers ===
+  /** Displayed share count: this page's tally when the user shared here, else the server's (null when unknown). */
+  private shareCountOf(newsletter: MyNewsletter): number | null {
+    const tally = this.shareTallies()[newsletter.id];
+    return tally ? tally.count : (newsletter.share_count ?? null);
   }
 }

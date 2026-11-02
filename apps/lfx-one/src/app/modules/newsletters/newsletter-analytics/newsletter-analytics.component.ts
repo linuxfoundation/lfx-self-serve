@@ -86,12 +86,6 @@ export class NewsletterAnalyticsComponent {
     return (a.total_clicks ?? 0) > 0 || (a.unique_clicks ?? 0) > 0 || (a.daily_clicks?.length ?? 0) > 0 || (a.top_links?.length ?? 0) > 0;
   });
   protected readonly clickRatePercent: Signal<number | null> = this.initClickRatePercent();
-  /** "LinkedIn 2 · Copy link 1" — the channels used, in dialog order; a hint when there are none yet. */
-  protected readonly shareBreakdown: Signal<string> = computed(() => {
-    const byChannel = this.analytics()?.shares_by_channel ?? {};
-    const parts = SHARE_CHANNELS.filter((channel) => (byChannel[channel] ?? 0) > 0).map((channel) => `${SHARE_CHANNEL_LABELS[channel]} ${byChannel[channel]}`);
-    return parts.length ? parts.join(' · ') : 'from the in-app Share button';
-  });
   protected readonly clickToOpenRatePercent: Signal<number | null> = this.initClickToOpenRatePercent();
   // Distinct from hasDailyBreakdown: upstream derives daily_clicks from a separate
   // event query than daily_opens, so a day present in one series can be absent
@@ -100,6 +94,8 @@ export class NewsletterAnalyticsComponent {
   protected readonly clickChartData: Signal<NewsletterChartData | null> = this.initClickChartData();
   protected readonly topLinkRows: Signal<NewsletterLinkRow[]> = this.initTopLinkRows();
   protected readonly topLinksLimit = NEWSLETTER_TOP_LINKS_LIMIT;
+  /** "LinkedIn 2 · Copy link 1" — the channels used, in dialog order; a hint when there are none yet. */
+  protected readonly shareBreakdown: Signal<string> = this.initShareBreakdown();
 
   public constructor() {
     // Lazy chart rendering on the browser only — Chart.js touches `window` on init.
@@ -263,6 +259,16 @@ export class NewsletterAnalyticsComponent {
           },
         ],
       };
+    });
+  }
+
+  private initShareBreakdown(): Signal<string> {
+    return computed(() => {
+      const byChannel = this.analytics()?.shares_by_channel ?? {};
+      const parts = SHARE_CHANNELS.filter((channel) => (byChannel[channel] ?? 0) > 0).map(
+        (channel) => `${SHARE_CHANNEL_LABELS[channel]} ${byChannel[channel]}`
+      );
+      return parts.length ? parts.join(' · ') : 'from the in-app Share button';
     });
   }
 

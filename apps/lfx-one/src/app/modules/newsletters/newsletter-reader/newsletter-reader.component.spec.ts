@@ -109,7 +109,7 @@ describe('NewsletterReaderComponent', () => {
       getReaderAccess: vi.fn(),
       joinNewsletterGroup: vi.fn(),
       getMyNewsletterFoundations: vi.fn().mockReturnValue(of(makeFoundationsResponse({ foundations: [] }))),
-      recordShare: vi.fn(),
+      recordShare: vi.fn().mockReturnValue(of(true)),
     };
     dialogService = { open: vi.fn() };
     const mockShareDialogService = {
@@ -350,6 +350,22 @@ describe('NewsletterReaderComponent', () => {
     expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'linkedin');
     expect(newsletterService.recordShare).toHaveBeenCalledTimes(3);
     expect(shareCount()).toBe('· 9');
+  });
+
+  it('leaves the count alone when the server does not accept the share', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ share_count: 7 }) }));
+    vi.mocked(newsletterService.recordShare).mockReturnValue(of(false));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
+    vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0].onShare!('x');
+    fixture.detectChanges();
+
+    expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'x');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
   });
 
   describe('member benefit (#3469)', () => {

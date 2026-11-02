@@ -57,11 +57,6 @@ export class ShareDialogComponent {
     this.dialogRef.close();
   }
 
-  // === Private Helpers ===
-  private reportShare(channel: SocialShareChannel): void {
-    this.data.onShare?.(channel);
-  }
-
   // === Private Initializers ===
   /**
    * Escape closes only this dialog. PrimeNG overlays (e.g. the newsletter drawer this opens over) listen
@@ -81,5 +76,10 @@ export class ShareDialogComponent {
         event.stopPropagation();
         this.onClose();
       });
+  }
+
+  // === Private Helpers ===
+  private reportShare(channel: SocialShareChannel): void {
+    this.data.onShare?.(channel);
   }
 }
