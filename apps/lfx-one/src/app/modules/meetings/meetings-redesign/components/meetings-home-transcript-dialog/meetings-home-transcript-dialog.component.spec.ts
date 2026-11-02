@@ -46,7 +46,10 @@ describe('MeetingsHomeTranscriptDialogComponent', () => {
     close = vi.fn();
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it('shows a spinner while the transcript loads', async () => {
     const fixture = await render(new Subject<PastMeetingTranscriptContent>());
@@ -95,6 +98,5 @@ describe('MeetingsHomeTranscriptDialogComponent', () => {
     expect(anchor.href).toBe('blob:synthetic');
     expect(anchor.download).toContain('transcript.vtt');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
-    vi.useRealTimers();
   });
 });
