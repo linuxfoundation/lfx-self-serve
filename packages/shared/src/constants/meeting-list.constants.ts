@@ -41,6 +41,13 @@ export const MEETINGS_HOME_FILTER_CHIP_LABELS = {
   hideDeclined: 'Hiding declined series',
 } as const;
 
+/** Tailwind fill of a visibility badge per kind. */
+export const MEETING_VISIBILITY_BG_CLASSES: Record<MeetingVisibilityKind, string> = {
+  [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
+  [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
+  [MeetingVisibilityKind.RESTRICTED]: 'bg-red-600',
+};
+
 /** Visibility badge icon and tooltip copy per kind. */
 export const MEETING_VISIBILITY_INFO: Record<MeetingVisibilityKind, MeetingVisibilityInfo> = {
   [MeetingVisibilityKind.PUBLIC]: {

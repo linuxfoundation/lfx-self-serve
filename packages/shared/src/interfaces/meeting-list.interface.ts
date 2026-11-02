@@ -95,6 +95,19 @@ export interface MeetingHomeRowType {
   icon: string;
 }
 
+/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+export interface MeetingPendingRsvpItem {
+  row: MeetingHomeRow;
+  project: MeetingHomeRowProject | null;
+  link: MeetingHomeRowLink;
+  visibilityBadges: MeetingVisibilityInfo[];
+  /** Day and start time in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 AM PDT". */
+  when: string;
+  type: MeetingHomeRowType | null;
+  /** Recurring tooltip; null for a one-time meeting. */
+  recurrenceTooltip: string | null;
+}
+
 /** One RSVP answer on a meetings home row: its button label, its status label and look. */
 export interface MeetingRsvpChoice {
   response: RsvpResponse;

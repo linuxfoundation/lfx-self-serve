@@ -36,11 +36,12 @@ import { MeetingHomeActionsComponent } from './components/meeting-home-actions/m
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { NextMeetingCardComponent } from './components/next-meeting-card/next-meeting-card.component';
+import { PendingRsvpsComponent } from './components/pending-rsvps/pending-rsvps.component';
 import { MeetingsHomeStore } from './services/meetings-home.store';
 
 /**
  * Redesigned Home / Me lens meetings page (epic #4468).
- * @description Header, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
+ * @description Header with the Pending RSVPs button, tabs bar and the day-grouped meetings list in the centre; Next meeting and Last meeting
  * in a fixed 360px right column. At 1024px and below the right column folds into the centre,
  * above the tabs, and the window scrolls instead of the columns. Rendered by `MeetingsEntryComponent`
  * behind `MEETINGS_REDESIGN_FLAG`.
@@ -66,6 +67,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     MeetingsFiltersComponent,
     LastMeetingCardComponent,
     NextMeetingCardComponent,
+    PendingRsvpsComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore],
@@ -90,6 +92,8 @@ export class MeetingsRedesignComponent {
   private readonly header = viewChild<ElementRef<HTMLElement>>('header');
   private readonly tabsBar = viewChild<ElementRef<HTMLElement>>('tabsBar');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  /** Takes focus when the last pending RSVP is answered. */
+  protected readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
   /** Takes focus when the last filter chip is removed. */
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 

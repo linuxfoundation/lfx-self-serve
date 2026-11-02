@@ -190,6 +190,13 @@ describe('MeetingsRedesignComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Create meeting');
   });
 
+  it('shows the Pending RSVPs button in the header once the feed has dates to answer', async () => {
+    const fixture = render();
+    await loadFeeds(fixture, [buildMeeting(1, { my_rsvp: null, my_rsvps: [], is_invite_responses_enabled: true }), buildMeeting(2)]);
+
+    expect(query(fixture, 'meetings-redesign-header')?.querySelector('[data-testid="meetings-home-pending-rsvps-count"]')?.textContent?.trim()).toBe('1');
+  });
+
   it('renders a tabpanel per tab that every tab controls, hiding the inactive one', async () => {
     const fixture = render();
     await fixture.whenStable();
