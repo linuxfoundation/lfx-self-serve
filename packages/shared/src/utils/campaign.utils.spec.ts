@@ -19,6 +19,7 @@ import {
   campaignFlightDays,
   dailyBudgetFromTotal,
   describeCampaignDispatchFailure,
+  isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
   parseNegativeKeywordInput,
@@ -389,6 +390,26 @@ describe('campaignFlightDays', () => {
   });
 });
 
+describe('isReversedCampaignFlight', () => {
+  it('is true for an end before the start', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-09')).toBe(true);
+    expect(isReversedCampaignFlight('2027-01-01', '2026-12-31')).toBe(true);
+  });
+
+  it('is false for a same-day flight, which Google accepts', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-10')).toBe(false);
+  });
+
+  it('is false for a forward flight', () => {
+    expect(isReversedCampaignFlight('2026-12-10', '2026-12-11')).toBe(false);
+  });
+
+  it.each([[''], ['2026-1-01'], ['2026-02-30'], ['not a date']])('is false when a date is not a real calendar day (%j)', (bad) => {
+    expect(isReversedCampaignFlight(bad, '2026-01-01')).toBe(false);
+    expect(isReversedCampaignFlight('2026-12-31', bad)).toBe(false);
+  });
+});
+
 describe('dailyBudgetFromTotal', () => {
   it('divides the total over the days, rounded down to the cent', () => {
     expect(dailyBudgetFromTotal(900, 31)).toBe(29.03);
@@ -411,6 +432,13 @@ describe('dailyBudgetFromTotal', () => {
   it('keeps an exact division exact', () => {
     expect(dailyBudgetFromTotal(3100, 31)).toBe(100);
     expect(dailyBudgetFromTotal(500, 1)).toBe(500);
+  });
+
+  it('steps back a cent when a total holding a fraction of a cent would round up past itself', () => {
+    // Rounding 31.309 to the cent gives 31.31, which divides to 1.01 a day and 31.31 over the flight.
+    expect(dailyBudgetFromTotal(31.309, 31)).toBe(1);
+    expect(dailyBudgetFromTotal(31.304, 31)).toBe(1);
+    expect((dailyBudgetFromTotal(31.309, 31) as number) * 31).toBeLessThanOrEqual(31.309);
   });
 
   it('can return less than one when the total is small for the flight', () => {
