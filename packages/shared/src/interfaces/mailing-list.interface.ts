@@ -8,6 +8,7 @@ import type {
   MailingListMemberDeliveryMode,
   MailingListMemberModStatus,
   MailingListMemberType,
+  MailingListSyncMode,
   MailingListType,
 } from '../enums/mailing-list.enum';
 import type { CommitteeReference } from './committee.interface';
@@ -130,6 +131,8 @@ export interface GroupsIOMailingList {
   subscriber_count: number;
   /** Whether the current user has write access (response-only, set by access check) */
   writer?: boolean;
+  /** Automatic membership sync direction with the linked committee. Only meaningful when committee_uid/committees is set. */
+  sync_mode?: MailingListSyncMode;
 }
 
 /**
@@ -168,6 +171,8 @@ export interface CreateMailingListRequest {
   committee_uid?: string | null;
   /** Linked committees with allowed voting statuses */
   committees?: CommitteeReference[];
+  /** Automatic membership sync direction with the linked committee. Requires committee_uid to be set. */
+  sync_mode?: MailingListSyncMode;
   /** Email subject prefix (optional) */
   subject_tag?: string;
   /** Manager users who can edit/modify this resource */

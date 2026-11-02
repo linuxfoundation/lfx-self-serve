@@ -71,3 +71,13 @@ export enum MailingListMemberModStatus {
   MODERATOR = 'moderator',
   OWNER = 'owner',
 }
+
+/**
+ * Committee-to-mailing-list membership sync direction
+ * @description Controls automatic membership synchronization between a mailing list and its linked committee. Only meaningful when a committee_uid is set; ITX is the system of record for this value (proxied through on the wire, not persisted locally).
+ */
+export enum MailingListSyncMode {
+  MANUAL = 'manual',
+  AUTO_COMMITTEE_TO_MAILING_LIST = 'auto_c_to_ml',
+  AUTO_MAILING_LIST_TO_COMMITTEE = 'auto_ml_to_c',
+}
