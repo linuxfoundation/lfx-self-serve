@@ -30,12 +30,11 @@
           </a>
           <button
             type="button"
-            (click)="onCopyLink()"
-            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-            title="Copy link"
-            aria-label="Copy link"
-            data-testid="newsletter-preview-drawer-copy-link">
-            <i class="fa-light fa-link text-xl"></i>
+            (click)="onShare()"
+            class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+            data-testid="newsletter-preview-drawer-share">
+            <i class="fa-light fa-share-nodes text-lg" aria-hidden="true"></i>
+            Share
           </button>
         }
         <button

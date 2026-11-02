@@ -16,7 +16,7 @@ The information below reflects **your** training enrollments and certifications 
 
 ### What you can do
 
-- View your enrolled training courses
+- View your enrolled training courses and certification exams
 - Check your enrollment and completion status
 - Access your earned certifications and [rewards, incentives, and coupons](rewards/)
 

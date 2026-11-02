@@ -151,7 +151,7 @@ export class UiToastComponent {
     return computed(() => {
       // Exact px, not rem; 14px root. 12px gap, 12px padding (16px at the start), 56px minimum height and 420px width are library values.
       const base =
-        'flex min-h-[56px] w-[420px] max-w-[calc(100vw-32px)] items-center gap-[12px] rounded-ui-md py-[12px] pl-[16px] pr-[12px] shadow-modal copy-14';
+        'flex min-h-[56px] w-[420px] max-w-[calc(100vw-32px)] items-center gap-[12px] rounded-ui-md py-[12px] pl-[16px] pr-[12px] shadow-modal copy-14 forced-colors:border forced-colors:border-[color:CanvasText]';
       const variants = {
         default: 'bg-ui-background-100 text-ui-neutral-900',
         success: 'bg-ui-success-600 text-ui-white',
