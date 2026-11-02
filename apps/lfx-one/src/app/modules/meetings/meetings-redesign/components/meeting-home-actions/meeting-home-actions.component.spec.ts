@@ -223,7 +223,8 @@ describe('MeetingHomeActionsComponent', () => {
       expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(find('meetings-home-row-actions-remove-info')?.textContent).toContain('Synthetic sync');
       expect(find('meetings-home-row-actions-remove-project')?.lastElementChild?.textContent?.trim()).toBe('Synthetic Project');
-      expect(find('meetings-home-row-actions-remove-message')?.textContent?.trim()).toBe(
+      expect(overlay.querySelector('[role="alertdialog"]')?.getAttribute('aria-describedby')).toBe(find('ui-modal-subtitle')?.id);
+      expect(find('ui-modal-subtitle')?.textContent?.trim()).toBe(
         'Remove yourself from "Synthetic sync"? You will no longer be invited to any occurrence and will lose your RSVP. ' +
           "You stay in the committee, but it won't invite you to this meeting again."
       );
@@ -250,13 +251,17 @@ describe('MeetingHomeActionsComponent', () => {
       expect(refreshUserMeetings).not.toHaveBeenCalled();
     });
 
-    it('keeps the dialog open and busy until the removal settles', async () => {
+    it('keeps the dialog open, busy and undismissable until the removal settles', async () => {
       const removal$ = new Subject<MeetingRegistrationRemovalResult>();
       remove$.mockReturnValue(removal$);
       await render(row(INVITEE));
       await confirmRemoval();
 
       expect(find('meetings-home-row-actions-remove-confirm')?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
+      find('meetings-home-row-actions-remove-cancel')?.querySelector('button')?.click();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+      await settle();
+      expect(overlay.querySelector('[role="alertdialog"]')).not.toBeNull();
       removal$.next({ removed_registrant_ids: ['synthetic-reg'], remaining_registrant_ids: [] });
       removal$.complete();
       await settle();

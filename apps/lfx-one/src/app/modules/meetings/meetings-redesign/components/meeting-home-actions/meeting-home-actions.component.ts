@@ -109,7 +109,12 @@ export class MeetingHomeActionsComponent {
   }
 
   protected confirmRemove(): void {
-    this.dialogRef = this.modal.open(this.removeDialog(), { role: 'alertdialog', autoFocus: '[data-autofocus] button' });
+    // Nothing closes the dialog while the removal runs, since closing would not stop it.
+    this.dialogRef = this.modal.open(
+      this.removeDialog(),
+      { role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
+      { closePredicate: () => !this.removing() }
+    );
   }
 
   protected remove(): void {
