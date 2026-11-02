@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, linkedSignal, model, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -14,29 +14,17 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { NEWSLETTER_INVITE_QUERY_PARAM } from '@lfx-one/shared/constants';
-import {
-  MyNewsletter,
-  MyNewsletterFoundation,
-  MyNewsletterFoundationsState,
-  MyNewsletterRow,
-  NewsletterInviteDialogData,
-  MyNewsletterFoundationsResponse,
-  NewsletterShareEvent,
-  NewsletterShareTally,
-  NewsletterShareTarget,
-} from '@lfx-one/shared/interfaces';
-import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsState, MyNewsletterRow, NewsletterInviteDialogData } from '@lfx-one/shared/interfaces';
+import { newsletterIssuePath } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
-import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, scan, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, scan, startWith, switchMap } from 'rxjs';
 
 import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
 import { NewsletterInviteLandingComponent } from '../components/newsletter-invite-landing/newsletter-invite-landing.component';
-import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
@@ -45,8 +33,8 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
  * Also where a newsletter invite lands (`?invite=<group uid>`) — see NewsletterInviteLandingComponent. Access is membership-derived — the
  * BFF fans out committee-scoped upstream reads that the gateway FGA-checks
  * per request — so joining a group reveals its past newsletters and leaving
- * hides them. Clicking a subject fetches the rendered body via the existing
- * project-scoped get and opens the shared preview drawer.
+ * hides them. Clicking a subject opens the issue's reader permalink (#4979);
+ * the reader's breadcrumb links back here.
  */
 @Component({
   selector: 'lfx-my-newsletters',
@@ -59,7 +47,6 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     EmptyStateComponent,
     InputTextComponent,
     NewsletterInviteLandingComponent,
-    NewsletterPreviewDrawerComponent,
     ReactiveFormsModule,
     RouterLink,
     SelectComponent,
@@ -76,12 +63,10 @@ export class MyNewslettersComponent {
   // === Services ===
   private readonly newsletterService = inject(NewsletterService);
   private readonly personaService = inject(PersonaService);
-  private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly retry$ = new BehaviorSubject<void>(undefined);
 
   // === Forms ===
@@ -91,19 +76,8 @@ export class MyNewslettersComponent {
   });
 
   // === Writable Signals ===
-  protected readonly previewVisible = model<boolean>(false);
-  /** Newsletter id whose body fetch is in flight — serializes drawer opens. */
-  protected readonly openingId = signal<string | null>(null);
-  protected readonly selected = signal<MyNewsletter | null>(null);
-  protected readonly previewBody = signal<string>('');
   protected readonly searchTerm = signal<string>('');
   protected readonly projectFilter = signal<string | null>(null);
-  /** Shares accepted on this page, by newsletter id — override the row's server count until the feed next loads. */
-  private readonly shareTallies = linkedSignal<MyNewsletterFoundationsResponse | null, Record<string, NewsletterShareTally>>({
-    // A new feed response (load, Retry) brings fresh server counts, so local tallies start over.
-    source: () => this.state().data,
-    computation: () => ({}),
-  });
 
   // === Route Signals ===
   protected readonly foundationSlug: Signal<string> = toSignal(this.route.paramMap.pipe(map((m) => m.get('foundationSlug') ?? '')), {
@@ -114,7 +88,7 @@ export class MyNewslettersComponent {
     initialValue: null,
   });
 
-  // === Query Param Signals (for drawer↔URL sync) ===
+  // === Legacy Query Params (`?issue=&project=` links from the retired reader drawer) ===
   protected readonly queryIssueId: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('issue'))), { initialValue: null });
   protected readonly queryProjectSlug: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((m) => m.get('project'))), { initialValue: null });
 
@@ -137,33 +111,10 @@ export class MyNewslettersComponent {
    * template function per row (frontend-checklist.md § 4).
    */
   protected readonly filteredNewsletterRows: Signal<MyNewsletterRow[]> = computed(() =>
-    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter), shareCount: this.shareCountOf(newsletter) }))
+    this.filteredNewsletters().map((newsletter) => ({ ...newsletter, issuePath: this.issuePath(newsletter), shareCount: newsletter.share_count ?? null }))
   );
   protected readonly showProjectFilter: Signal<boolean> = computed(() => this.projectOptions().length > 1);
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => !!(this.searchTerm().trim() || this.projectFilter()));
-  /** Reader-framed drawer subtitle, e.g. "Sent Jul 29, 2026". */
-  protected readonly drawerSubtitle: Signal<string> = computed(() => {
-    const sentAt = this.selected()?.sent_at;
-    return sentAt ? `Sent ${formatDate(sentAt, 'MMM d, y', 'en-US')}` : '';
-  });
-  /** Share count for the drawer's Share button — the same number the selected row shows. */
-  protected readonly selectedShareCount: Signal<number | null> = computed(() => {
-    const selected = this.selected();
-    if (!selected) return null;
-    // Prefer the current feed row: `selected` is a snapshot from when the drawer opened.
-    return this.shareCountOf(this.myNewsletters().find((row) => row.id === selected.id) ?? selected);
-  });
-  /** The issue the drawer shows, for binding its shares. */
-  protected readonly selectedShareTarget: Signal<NewsletterShareTarget | null> = computed(() => {
-    const selected = this.selected();
-    return selected ? { projectUid: selected.project_uid, newsletterId: selected.id } : null;
-  });
-  /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
-  protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
-    const selected = this.selected();
-    if (!selected?.project_slug || !selected.id) return null;
-    return toAbsoluteUrl(newsletterIssuePath(selected.project_slug, selected.id), isPlatformBrowser(this.platformId));
-  });
 
   // === Constructor ===
   public constructor() {
@@ -171,32 +122,14 @@ export class MyNewslettersComponent {
       .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => this.searchTerm.set(value ?? ''));
 
-    // Drawer ↔ URL sync: open the drawer when `issue`/`project` params are
-    // present (page load or forward navigation), close it when they clear
-    // (browser back). Idempotent — an emission for an issue that is already
-    // open or mid-fetch is a no-op, so the sync never re-triggers a fetch.
-    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug), toObservable(this.state)])
+    // Links shared before #4979 opened the issue in a drawer on this page (`?issue=&project=`).
+    // Send them to the issue's reader permalink, which decides access itself, replacing the
+    // history entry so Back from the reader returns to whatever came before the old link.
+    combineLatest([toObservable(this.queryIssueId), toObservable(this.queryProjectSlug)])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([issueId, projectSlug, { loading, error, data }]) => {
-        if (!issueId || !projectSlug) {
-          // Params cleared (drawer close or back navigation) — close the drawer.
-          if (this.previewVisible()) {
-            this.previewVisible.set(false);
-          }
-          return;
-        }
-        // Wait for the feed before deciding; skip if this issue is already opening or open.
-        if (loading || error || this.openingId() || (this.previewVisible() && this.selected()?.id === issueId)) {
-          return;
-        }
-        const newsletter = this.myNewsletters().find((n) => n.id === issueId && n.project_slug === projectSlug);
-        if (newsletter) {
-          // Newsletter is in the feed — open the drawer via the normal path
-          this.onOpenNewsletter(newsletter);
-        } else if (data?.complete === true) {
-          // Newsletter not in the feed (e.g. non-member pasted a URL).
-          // Redirect to the canonical permalink page, which handles access uniformly.
-          this.router.navigate(['/newsletters', projectSlug, issueId]);
+      .subscribe(([issueId, projectSlug]) => {
+        if (issueId && projectSlug) {
+          void this.router.navigate(['/newsletters', projectSlug, issueId], { replaceUrl: true });
         }
       });
   }
@@ -234,28 +167,8 @@ export class MyNewslettersComponent {
 
   // === Protected Methods ===
   /**
-   * A share was made from the drawer: record it and, once the server accepts it, bump that issue's count.
-   * Not tied to the component's lifetime, so leaving the page doesn't abort the write (`recordShare`
-   * completes after one emission). The baseline comes from the whole feed, not this foundation's slice,
-   * so a response that lands after switching foundations keeps the issue's real server count.
-   */
-  protected onShared(event: NewsletterShareEvent): void {
-    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
-      if (!accepted) return;
-      this.shareTallies.update((tallies) => {
-        const serverCount = this.state().data?.newsletters.find((row) => row.id === event.newsletterId)?.share_count ?? null;
-        const current = tallies[event.newsletterId] ?? { count: serverCount, channels: [] };
-        const next = addShareToTally(current, event.channel);
-        return next === current ? tallies : { ...tallies, [event.newsletterId]: next };
-      });
-    });
-  }
-
-  /**
-   * Relative permalink href for a row's subject anchor — lets modified clicks,
-   * middle-click, and right-click ("Open in new tab") reach the reader page
-   * natively. `project_slug` is an enrichment field that can fail to resolve
-   * upstream; the anchor omits its `href` in that case (see `onOpenSubject`).
+   * Relative permalink path for a row's subject link. `project_slug` is an enrichment field that
+   * can fail to resolve upstream; the row then shows its subject as plain text (no reader route).
    */
   protected issuePath(newsletter: MyNewsletter): string | null {
     return newsletter.project_slug ? newsletterIssuePath(newsletter.project_slug, newsletter.id) : null;
@@ -266,81 +179,17 @@ export class MyNewslettersComponent {
     return event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
   }
 
-  protected onOpenNewsletter(newsletter: MyNewsletter): void {
-    if (this.openingId()) {
-      return;
-    }
-    this.selected.set(newsletter);
-    this.openingId.set(newsletter.id);
-
-    // Update URL with query params (sync drawer open state to URL)
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { issue: newsletter.id, project: newsletter.project_slug },
-      queryParamsHandling: 'merge',
-      preserveFragment: true,
-    });
-
-    // The list DTO deliberately omits body_html; fetch the full newsletter via
-    // the project-scoped get (open to any authenticated user upstream) and
-    // only open the drawer once the rendered body is available.
-    this.newsletterService
-      .getNewsletter(newsletter.project_uid, newsletter.id)
-      .pipe(
-        catchError(() => of(null)),
-        finalize(() => this.openingId.set(null)),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe((full) => {
-        if (full?.body_html) {
-          this.previewBody.set(full.body_html);
-          this.previewVisible.set(true);
-        } else {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Unable to open newsletter',
-            detail: 'Could not load the newsletter content. Please try again.',
-          });
-        }
-      });
-  }
-
   /**
-   * Subject-anchor click handler: the anchor is the accessible control (real
-   * link role, native Enter/Space, right-click "Open in new tab"/"Copy link
-   * address"); stopPropagation keeps the supplementary row click from firing
-   * a second open. A modified click (Cmd/Ctrl/Shift/Alt/middle-click) is left
-   * to the browser so it opens the permalink in a new tab instead of the drawer.
+   * Row click: a pointer convenience on top of the subject link, which is the accessible control
+   * (real link role, native Enter, Cmd-click and right-click "Open in new tab"). The link stops its
+   * own click from bubbling here, so a click on it navigates once. A modified click elsewhere on the
+   * row is a no-op rather than a same-tab navigation.
    */
-  protected onOpenSubject(event: MouseEvent, newsletter: MyNewsletter): void {
-    event.stopPropagation();
-    if (this.isModifiedClick(event)) {
+  protected onRowClick(event: MouseEvent, newsletter: MyNewsletterRow): void {
+    if (!newsletter.issuePath || this.isModifiedClick(event)) {
       return;
     }
-    event.preventDefault();
-    this.onOpenNewsletter(newsletter);
-  }
-
-  /** Row click handler: same modified-click guard as the subject anchor, so a Cmd-click anywhere in the row is a no-op rather than opening the drawer with no new tab. */
-  protected onRowClick(event: MouseEvent, newsletter: MyNewsletter): void {
-    if (this.isModifiedClick(event)) {
-      return;
-    }
-    this.onOpenNewsletter(newsletter);
-  }
-
-  protected onDrawerVisibleChange(visible: boolean): void {
-    if (visible) {
-      return;
-    }
-    // Drawer closed by the user — clear the issue params so the URL matches.
-    // The [(visible)] model binding already reflects the closed state.
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { issue: null, project: null },
-      queryParamsHandling: 'merge',
-      preserveFragment: true,
-    });
+    void this.router.navigateByUrl(newsletter.issuePath);
   }
 
   protected onProjectFilterChange(value: string | null): void {
@@ -424,12 +273,5 @@ export class MyNewslettersComponent {
 
       return filtered;
     });
-  }
-
-  // === Private Helpers ===
-  /** Displayed share count: this page's tally when the user shared here, else the server's (null when unknown). */
-  private shareCountOf(newsletter: MyNewsletter): number | null {
-    const tally = this.shareTallies()[newsletter.id];
-    return tally ? tally.count : (newsletter.share_count ?? null);
   }
 }
