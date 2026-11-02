@@ -20,6 +20,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
+import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -30,6 +31,24 @@ interface OrgTrainingStatsRow {
   CERTIFICATIONS_EARNED: number;
   EMPLOYEES_IN_TRAINING: number;
   TRAINING_COURSES_ENROLLED: number;
+  IN_PROGRESS_AS_OF?: Date | string | null;
+}
+
+interface OrgTrainingActivityRow {
+  PEOPLE_WITH_TRAINING_ACTIVITY: number;
+  TRAINING_ACTIVITY_AS_OF: Date | string | null;
+}
+
+interface OrgTrainingRosterMembersRow {
+  ROSTER_MEMBERS: number;
+  AS_OF_TS: Date | string | null;
+}
+
+interface OrgTrainingStatsRaw {
+  certRows: OrgTrainingStatsRow[];
+  trainingRows: OrgTrainingStatsRow[];
+  activityRows: OrgTrainingActivityRow[];
+  rosterRows: OrgTrainingRosterMembersRow[];
 }
 
 interface OrgCertificationRow {
@@ -89,14 +108,15 @@ const scopedCourseCatalogDimCte = (orgCourseIdsSql: string): string => `
   )
 `;
 
-/** Aggregates training & certification counts for the Org Lens Training page stat strip. */
+/** Aggregates training & certification counts for the Org Lens Training page stat strip and the Overview training tile. */
 export class OrgLensTrainingService {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
   public async getTrainingStats(accountId: string): Promise<OrgTrainingStats> {
+    // v2: adds roster members, people with training activity and the as-of timestamps.
     const raw = await withOrgCache(
       accountId,
-      'training-stats',
+      'training-stats:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTrainingStatsRows(accountId),
       isTrainingStatsRaw
@@ -104,12 +124,20 @@ export class OrgLensTrainingService {
 
     const cert = raw.certRows[0];
     const training = raw.trainingRows[0];
+    const activity = raw.activityRows[0];
+    // No row: the org has no LF Education training client, so there is no roster to count (not zero members).
+    const roster = raw.rosterRows[0];
 
     return {
+      rosterMembers: roster ? roster.ROSTER_MEMBERS : null,
+      rosterMembersAsOf: roster ? toIsoTimestamp(roster.AS_OF_TS) : null,
+      peopleWithTrainingActivity: activity?.PEOPLE_WITH_TRAINING_ACTIVITY ?? 0,
+      trainingActivityAsOf: toIsoTimestamp(activity?.TRAINING_ACTIVITY_AS_OF),
       certifiedEmployees: cert?.CERTIFIED_EMPLOYEES ?? 0,
       certificationsEarned: cert?.CERTIFICATIONS_EARNED ?? 0,
       employeesInTraining: training?.EMPLOYEES_IN_TRAINING ?? 0,
       trainingCoursesEnrolled: training?.TRAINING_COURSES_ENROLLED ?? 0,
+      inProgressAsOf: toIsoTimestamp(training?.IN_PROGRESS_AS_OF),
     };
   }
 
@@ -364,7 +392,7 @@ export class OrgLensTrainingService {
     };
   }
 
-  private async fetchTrainingStatsRows(accountId: string): Promise<{ certRows: OrgTrainingStatsRow[]; trainingRows: OrgTrainingStatsRow[] }> {
+  private async fetchTrainingStatsRows(accountId: string): Promise<OrgTrainingStatsRaw> {
     const certSql = `
       WITH ${scopedCourseCatalogDimCte(`
         SELECT DISTINCT COALESCE(t.COURSE_ID, t.COURSE_OR_CERT_ID) AS COURSE_ID
@@ -396,17 +424,37 @@ export class OrgLensTrainingService {
         0                                                                                    AS CERTIFIED_EMPLOYEES,
         0                                                                                    AS CERTIFICATIONS_EARNED,
         COUNT(DISTINCT CASE WHEN TRAINING_STATUS = 'InProgress' THEN PERSON_KEY END)         AS EMPLOYEES_IN_TRAINING,
-        COUNT(CASE WHEN TRAINING_STATUS = 'InProgress' THEN 1 END)                           AS TRAINING_COURSES_ENROLLED
+        COUNT(CASE WHEN TRAINING_STATUS = 'InProgress' THEN 1 END)                           AS TRAINING_COURSES_ENROLLED,
+        MAX(DBT_RUN_AT)                                                                      AS IN_PROGRESS_AS_OF
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING_COURSES
       WHERE ACCOUNT_ID = ?
     `;
 
-    const [certResult, trainingResult] = await Promise.all([
+    // Every person with an in-scope enrollment or certificate, any status, at any time. No people-list join: learners the
+    // warehouse attributes to the org outside its people list count too (lfx-self-serve#4287).
+    const activitySql = `
+      SELECT
+        COUNT(DISTINCT PERSON_KEY) AS PEOPLE_WITH_TRAINING_ACTIVITY,
+        MAX(DBT_RUN_AT)            AS TRAINING_ACTIVITY_AS_OF
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+      WHERE ACCOUNT_ID = ?
+    `;
+
+    // One row per account with an LF Education training client; none otherwise.
+    const rosterSql = `
+      SELECT ROSTER_MEMBERS, AS_OF_TS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_ROSTER_MEMBERS
+      WHERE ACCOUNT_ID = ?
+    `;
+
+    const [certResult, trainingResult, activityResult, rosterResult] = await Promise.all([
       this.snowflakeService.execute<OrgTrainingStatsRow>(certSql, [accountId, accountId]),
       this.snowflakeService.execute<OrgTrainingStatsRow>(trainingSql, [accountId]),
+      this.snowflakeService.execute<OrgTrainingActivityRow>(activitySql, [accountId]),
+      this.snowflakeService.execute<OrgTrainingRosterMembersRow>(rosterSql, [accountId]),
     ]);
 
-    return { certRows: certResult.rows, trainingRows: trainingResult.rows };
+    return { certRows: certResult.rows, trainingRows: trainingResult.rows, activityRows: activityResult.rows, rosterRows: rosterResult.rows };
   }
 
   private async fetchPagedCourseRows<TRow extends { COURSE_ID: string }>(
@@ -510,8 +558,8 @@ function mapRosterRows(rows: readonly OrgRosterEmployeeRow[]): OrgCertEmployee[]
 }
 
 function isTrainingStatsRaw(value: unknown): boolean {
-  const v = value as { certRows?: unknown; trainingRows?: unknown } | null;
-  return !!v && Array.isArray(v.certRows) && Array.isArray(v.trainingRows);
+  const v = value as Partial<Record<keyof OrgTrainingStatsRaw, unknown>> | null;
+  return !!v && Array.isArray(v.certRows) && Array.isArray(v.trainingRows) && Array.isArray(v.activityRows) && Array.isArray(v.rosterRows);
 }
 
 function isPagedCourseRaw(value: unknown): boolean {
