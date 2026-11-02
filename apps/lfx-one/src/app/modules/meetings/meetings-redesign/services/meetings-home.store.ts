@@ -5,8 +5,18 @@ import { isPlatformBrowser } from '@angular/common';
 import { computed, inject, Injectable, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { Meeting, MeetingDashboardView, MeetingDayGroup, MeetingHomeRow, MeetingRsvp, MeetingsHomeFilters, PastMeeting } from '@lfx-one/shared/interfaces';
 import {
+  Meeting,
+  MeetingDashboardView,
+  MeetingDayGroup,
+  MeetingFilterChip,
+  MeetingHomeRow,
+  MeetingRsvp,
+  MeetingsHomeFilters,
+  PastMeeting,
+} from '@lfx-one/shared/interfaces';
+import {
+  buildMeetingFilterChips,
   countAppliedMeetingFilters,
   expandMeetingOccurrences,
   filterMeetingsHome,
@@ -86,6 +96,8 @@ export class MeetingsHomeStore {
   );
   public readonly hasMore: Signal<boolean> = computed(() => this.visibleCount() < this.filteredRows().length);
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
+  /** One chip per applied filter. */
+  public readonly filterChips: Signal<MeetingFilterChip[]> = computed(() => buildMeetingFilterChips(this.filters(), this.tabRows()));
 
   /** Switches tab and clears the filters; search is kept. */
   public setTab(tab: MeetingDashboardView): void {
@@ -100,6 +112,11 @@ export class MeetingsHomeStore {
 
   public setFilters(filters: MeetingsHomeFilters): void {
     this.filtersState.set(filters);
+  }
+
+  /** Resets one filter, as removing its chip does. */
+  public clearFilter(key: keyof MeetingsHomeFilters): void {
+    this.filtersState.update((filters) => ({ ...filters, [key]: MEETINGS_HOME_DEFAULT_FILTERS[key] }));
   }
 
   public loadMore(): void {

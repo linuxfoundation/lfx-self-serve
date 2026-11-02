@@ -348,6 +348,77 @@ describe('MeetingsRedesignComponent', () => {
     });
   });
 
+  describe('filters', async () => {
+    const chips = (fixture: ComponentFixture<MeetingsRedesignComponent>): string[] =>
+      Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="meetings-home-filters-chip"]')).map(
+        (chip) => chip.querySelector('[data-testid="ui-chip-label"]')?.textContent?.trim() ?? ''
+      );
+    const applyOrganizedByMe = async (fixture: ComponentFixture<MeetingsRedesignComponent>): Promise<void> => {
+      (query(fixture, 'meetings-home-filters-button')?.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      (document.querySelector('[data-testid="meetings-home-filters-organized"] input') as HTMLInputElement).click();
+      await fixture.whenStable();
+      (document.querySelector('[data-testid="meetings-home-filters-apply"] button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+    };
+    const meetings = (): Meeting[] => [
+      buildMeeting(1, { title: 'Board Review', created_by: { username: 'viewer', email: 'viewer@example.test' } }),
+      buildMeeting(2, { title: 'Tech Sync' }),
+    ];
+
+    it('applies filters from the popover, counts them on the button and shows a chip each', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+
+      expect(chips(fixture)).toEqual([]);
+      await applyOrganizedByMe(fixture);
+
+      expect(rowTitles(fixture)).toEqual(['Board Review']);
+      expect(query(fixture, 'meetings-home-filters-count')?.textContent?.trim()).toBe('1');
+      expect(chips(fixture)).toEqual(['Organized by me']);
+    });
+
+    it('removes only the filter whose chip is dismissed', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings());
+      document.body.appendChild(fixture.nativeElement);
+      await applyOrganizedByMe(fixture);
+
+      const dismiss = query(fixture, 'meetings-home-filters-chip')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement;
+      dismiss.focus();
+      dismiss.click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-filters-count')).toBeNull();
+      expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
+      expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
+      fixture.nativeElement.remove();
+    });
+
+    it('clears applied filters on a tab switch but keeps the search', async () => {
+      const fixture = render();
+      await fixture.whenStable();
+      await loadFeeds(fixture, meetings(), [
+        { ...buildMeeting(3, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting,
+      ]);
+      await applyOrganizedByMe(fixture);
+      const input = query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement;
+      input.value = 'sync';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      query(fixture, 'ui-tab-past')?.click();
+      await fixture.whenStable();
+
+      expect(chips(fixture)).toEqual([]);
+      expect(query(fixture, 'meetings-home-filters-count')).toBeNull();
+      expect((query(fixture, 'meetings-redesign-search')?.querySelector('input') as HTMLInputElement).value).toBe('sync');
+    });
+  });
+
   describe('tabs and URL', async () => {
     it('opens on the Past tab from ?time=past', async () => {
       queryParamMap$.next(convertToParamMap({ time: 'past' }));
