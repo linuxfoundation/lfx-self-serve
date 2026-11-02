@@ -109,6 +109,7 @@ describe('NewsletterReaderComponent', () => {
       getReaderAccess: vi.fn(),
       joinNewsletterGroup: vi.fn(),
       getMyNewsletterFoundations: vi.fn().mockReturnValue(of(makeFoundationsResponse({ foundations: [] }))),
+      recordShare: vi.fn().mockReturnValue(of(true)),
     };
     dialogService = { open: vi.fn() };
     const mockShareDialogService = {
@@ -325,7 +326,72 @@ describe('NewsletterReaderComponent', () => {
       url: expect.stringContaining('/newsletters/kubernetes/news-123'),
       title: 'K8s Weekly #42',
       copiedMessage: 'Newsletter link copied to clipboard.',
+      onShare: expect.any(Function),
     });
+  });
+
+  it('shows the share count and records shares, counting each channel once (#4958)', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ share_count: 7 }) }));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const shareCount = () => el.querySelector('[data-testid="newsletter-reader-share-count"]')?.textContent?.trim();
+    expect(shareCount()).toBe('· 7');
+
+    el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
+    const { onShare } = vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0];
+    onShare!('linkedin');
+    onShare!('linkedin');
+    onShare!('copy_link');
+    fixture.detectChanges();
+
+    expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'linkedin');
+    expect(newsletterService.recordShare).toHaveBeenCalledTimes(3);
+    expect(shareCount()).toBe('· 9');
+  });
+
+  it('records a share against the issue the dialog opened for, even after Back/Forward', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockImplementation((_project, id) =>
+      of({ access: 'group_member', newsletter: makeNewsletter({ id, share_count: 7 }) })
+    );
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
+    const { onShare } = vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0];
+
+    paramMap$.next(
+      new Map([
+        ['projectSlug', 'kubernetes'],
+        ['id', 'news-456'],
+      ])
+    );
+    fixture.detectChanges();
+    onShare!('reddit');
+    fixture.detectChanges();
+
+    expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'reddit');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
+  });
+
+  it('leaves the count alone when the server does not accept the share', () => {
+    vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+    vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ share_count: 7 }) }));
+    vi.mocked(newsletterService.recordShare).mockReturnValue(of(false));
+
+    fixture = TestBed.createComponent(NewsletterReaderComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-share"]')!.click();
+    vi.mocked(TestBed.inject(ShareDialogService).open).mock.calls[0][0].onShare!('x');
+    fixture.detectChanges();
+
+    expect(newsletterService.recordShare).toHaveBeenCalledWith('proj-123', 'news-123', 'x');
+    expect(el.querySelector('[data-testid="newsletter-reader-share-count"]')!.textContent!.trim()).toBe('· 7');
   });
 
   describe('member benefit (#3469)', () => {

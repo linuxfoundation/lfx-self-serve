@@ -70,6 +70,7 @@ describe('MyNewslettersComponent', () => {
     getNewsletter: vi.fn(),
     getNewsletterGroupJoinStatus: vi.fn(),
     joinNewsletterGroupByInvite: vi.fn(),
+    recordShare: vi.fn(),
   };
   const messages = { add: vi.fn() };
   const shareDialog = { open: vi.fn() };
@@ -526,6 +527,59 @@ describe('MyNewslettersComponent', () => {
     params.next(convertToParamMap({}));
     await settle();
     expect(fixture.componentInstance['previewVisible']()).toBe(false);
+  });
+  it('shows share counts in the table and drawer, and counts a drawer share once per channel (#4958)', async () => {
+    gateway.recordShare.mockReturnValue(of(true));
+    await respond(
+      feedOf([row({ share_count: 3 }), row({ id: 'quiet', subject: 'Quiet news' }), row({ id: 'none', subject: 'Unshared', share_count: 0 })], true)
+    );
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('3');
+    expect(find('my-newsletters-shares-quiet')!.textContent!.trim()).toBe('—');
+    expect(find('my-newsletters-shares-none')!.textContent!.trim()).toBe('—');
+
+    find('my-newsletters-open-issue')!.click();
+    await settle();
+    expect(overlay('newsletter-preview-drawer-share-count')!.textContent!.trim()).toBe('· 3');
+
+    overlay('newsletter-preview-drawer-share')!.click();
+    const { onShare } = shareDialog.open.mock.calls[0][0];
+    onShare('reddit');
+    onShare('reddit');
+    await settle();
+
+    expect(gateway.recordShare).toHaveBeenCalledWith('child', 'issue', 'reddit');
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
+    expect(overlay('newsletter-preview-drawer-share-count')!.textContent!.trim()).toBe('· 4');
+    // A fresh feed response brings the server's count, replacing the local tally.
+    feed.next(feedOf([row({ share_count: 10 }), row({ id: 'quiet', subject: 'Quiet news' })], true));
+    await settle();
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
+  });
+  it('keeps the server count as the baseline when a share lands after switching foundation (#4958)', async () => {
+    const accepted = new Subject<boolean>();
+    gateway.recordShare.mockReturnValue(accepted);
+    await respond(
+      feedOf(
+        [row({ share_count: 3 }), row({ id: 'elsewhere', subject: 'Other news', foundation_uid: 'other', foundation_slug: 'other-slug', share_count: 1 })],
+        true,
+        [card(), card({ uid: 'other', slug: 'other-slug', name: 'Other Foundation' })]
+      )
+    );
+    find('my-newsletters-open-issue')!.click();
+    await settle();
+    overlay('newsletter-preview-drawer-share')!.click();
+    shareDialog.open.mock.calls[0][0].onShare('linkedin');
+
+    // The response arrives while another foundation's slice is shown.
+    routeParams.next(convertToParamMap({ foundationSlug: 'other' }));
+    await settle();
+    expect(fixture.componentInstance.myNewsletters().map((newsletter) => newsletter.id)).toEqual(['elsewhere']);
+    accepted.next(true);
+    accepted.complete();
+    routeParams.next(convertToParamMap({ foundationSlug: 'foundation-slug' }));
+    await settle();
+
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
   });
   it('preserves canonical absence fallback and body-fetch error handling', async () => {
     await respond(feedOf([row()], true));

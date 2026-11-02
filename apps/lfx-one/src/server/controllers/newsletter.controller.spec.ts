@@ -13,7 +13,9 @@ const {
   cancelScheduleNewsletter,
   getReadableNewsletter,
   assertPublisherRead,
+  recordShare,
 } = vi.hoisted(() => ({
+  recordShare: vi.fn(),
   assertPublisherRead: vi.fn(),
   getReadableNewsletter: vi.fn(),
   getMyNewsletters: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
   NEWSLETTER_SYSTEM_PROMPT_MAX_LENGTH: 5_000,
+  SHARE_CHANNELS: ['x', 'linkedin', 'reddit', 'email', 'copy_link'],
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
@@ -46,6 +49,7 @@ vi.mock('../services/newsletter.service', () => ({
     public updateNewsletter = updateNewsletter;
     public scheduleNewsletter = scheduleNewsletter;
     public cancelScheduleNewsletter = cancelScheduleNewsletter;
+    public recordShare = recordShare;
   },
 }));
 vi.mock('../services/ai.service', () => ({ AiService: class {} }));
@@ -391,5 +395,50 @@ describe('NewsletterController.cancelScheduleNewsletter — If-Match required', 
     expect(next).not.toHaveBeenCalled();
     expect(cancelScheduleNewsletter).toHaveBeenCalledWith(expect.anything(), 'p1', 'n1', 3);
     expect(res.json).toHaveBeenCalledWith({ newsletter: { id: 'n1', status: 'draft', version: 4 } });
+  });
+});
+
+describe('NewsletterController.recordShare (#4958)', () => {
+  const PROJECT = '11111111-1111-1111-1111-111111111111';
+  const NEWSLETTER = '22222222-2222-2222-2222-222222222222';
+  const req = (body: unknown, params = { projectUid: PROJECT, newsletterUid: NEWSLETTER }) => ({ params, body, path: '/x' }) as any;
+
+  it('proxies a valid channel and answers 204', async () => {
+    recordShare.mockResolvedValue(undefined);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new NewsletterController().recordShare(req({ channel: 'copy_link' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(recordShare).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER, { channel: 'copy_link' });
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it.each([[{ channel: 'myspace' }], [{}], [undefined], [{ channel: 42 }]])('rejects an invalid body %j before proxying', async (body) => {
+    const next = vi.fn();
+
+    await new NewsletterController().recordShare(req(body), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(recordShare).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-UUID path params before proxying', async () => {
+    const next = vi.fn();
+
+    await new NewsletterController().recordShare(req({ channel: 'x' }, { projectUid: 'p1', newsletterUid: NEWSLETTER }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(recordShare).not.toHaveBeenCalled();
+  });
+
+  it('only forwards the channel, never extra body fields', async () => {
+    recordShare.mockResolvedValue(undefined);
+
+    await new NewsletterController().recordShare(req({ channel: 'x', user: 'someone-else' }), buildRes(), vi.fn());
+
+    expect(recordShare).toHaveBeenCalledWith(expect.anything(), PROJECT, NEWSLETTER, { channel: 'x' });
   });
 });
