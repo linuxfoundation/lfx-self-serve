@@ -15,10 +15,11 @@ import { UiToastService } from './toast.service';
   selector: 'lfx-ui-test-host',
   imports: [UiToastComponent],
   template:
-    '<lfx-ui-toast [variant]="variant()" [actions]="actions()" [duration]="duration()" [dismissible]="dismissible()" (dismissed)="dismissed()">Committee created.</lfx-ui-toast><button id="outside" type="button">Outside</button>',
+    '<lfx-ui-toast [variant]="variant()" [description]="description()" [actions]="actions()" [duration]="duration()" [dismissible]="dismissible()" (dismissed)="dismissed()">Committee created.</lfx-ui-toast><button id="outside" type="button">Outside</button>',
 })
 class TestHostComponent {
   public readonly variant = signal<UiToastVariant>('default');
+  public readonly description = signal('');
   public readonly actions = signal<UiToastAction[]>([]);
   public readonly duration = signal<number | null>(null);
   public readonly dismissible = signal(true);
@@ -72,12 +73,45 @@ describe('UiToastComponent', () => {
     ['success', 'status', 'bg-ui-success-600'],
     ['warning', 'status', 'bg-ui-warning-500'],
     ['error', 'alert', 'bg-ui-danger-600'],
+    ['dark', 'status', 'bg-ui-neutral-900'],
   ] as const)('gives the %s variant role %s and %s', async (variant, role, fill) => {
     await setup((instance) => instance.variant.set(variant));
     expect(toast().getAttribute('role')).toBe(role);
     expect(toast().classList).toContain(fill);
     expect(toast().classList).toContain('rounded-ui-md');
     expect(toast().classList).toContain('shadow-modal');
+  });
+
+  describe('dark', () => {
+    it('shows a success-400 check, a medium title and a neutral-300 description', async () => {
+      await setup((instance) => {
+        instance.variant.set('dark');
+        instance.description.set('Anyone with the link can join.');
+      });
+      expect(toast().classList).toContain('text-ui-background-100');
+      const icon = toast().querySelector('[data-testid="ui-toast-icon"]') as HTMLElement;
+      expect(icon.classList).toContain('fa-circle-check');
+      expect(icon.classList).toContain('text-ui-success-400');
+      expect(icon.getAttribute('aria-hidden')).toBe('true');
+      expect(toast().querySelector('[data-testid="ui-toast-message"]')?.classList).toContain('font-medium');
+      const description = toast().querySelector('[data-testid="ui-toast-description"]') as HTMLElement;
+      expect(description.textContent).toBe('Anyone with the link can join.');
+      expect(Array.from(description.classList)).toEqual(expect.arrayContaining(['copy-13', 'text-ui-neutral-300']));
+    });
+
+    it('has no check and keeps the ink on the description of other variants', async () => {
+      await setup((instance) => instance.description.set('Second line.'));
+      expect(toast().querySelector('[data-testid="ui-toast-icon"]')).toBeNull();
+      expect(toast().querySelector('[data-testid="ui-toast-description"]')?.className).toBe('block copy-13');
+    });
+
+    it('dismisses itself after 3 seconds', async () => {
+      await setup((instance) => instance.variant.set('dark'));
+      await advance(2999);
+      expect(host.dismissed).not.toHaveBeenCalled();
+      await advance(1);
+      expect(host.dismissed).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('auto-dismiss', () => {
@@ -355,6 +389,30 @@ describe('UiToastService', () => {
     const pane = region()?.closest('.cdk-overlay-pane') as HTMLElement;
     expect(pane.style.marginBottom).toBe('16px');
     expect(pane.style.marginRight).toBe('16px');
+  });
+
+  it('stacks dark toasts bottom-centre and the rest bottom-right, unless a position is given', async () => {
+    const pane = (message: string) =>
+      toasts()
+        .find((toast) => toast.textContent?.includes(message))
+        ?.closest('.cdk-overlay-pane') as HTMLElement;
+    const wrapper = (message: string) => pane(message).parentElement as HTMLElement;
+    service.show({ message: 'Link copied.', variant: 'dark', description: 'Anyone with the link can join.' });
+    service.show({ message: 'Saved.' });
+    service.show({ message: 'Moved.', position: 'bottom-center' });
+    await flush();
+
+    expect(wrapper('Link copied.').style.justifyContent).toBe('center');
+    expect(pane('Link copied.').style.marginBottom).toBe('16px');
+    expect(pane('Link copied.').classList.contains(UI_TOAST_PANE_CLASS)).toBe(true);
+    expect(pane('Moved.')).toBe(pane('Link copied.'));
+    expect(pane('Saved.').style.marginRight).toBe('16px');
+    expect(pane('Saved.')).not.toBe(pane('Link copied.'));
+    expect(
+      toasts()
+        .find((toast) => toast.textContent?.includes('Link copied.'))
+        ?.querySelector('[data-testid="ui-toast-description"]')?.textContent
+    ).toBe('Anyone with the link can join.');
   });
 
   it('marks the pane with the toast pane class so a popover does not treat a click on it as outside', () => {

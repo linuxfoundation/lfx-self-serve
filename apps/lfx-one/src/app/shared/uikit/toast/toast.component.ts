@@ -19,9 +19,10 @@ import {
 import { UiToastAction, UiToastVariant } from '@lfx-one/shared/interfaces';
 
 /**
- * A short message about something that just happened. `UiToastService.show` renders these in a stack at the bottom-right of the window;
- * the component can also be placed directly. It dismisses itself after `duration` (5s, 8s with actions, never for `error`) and the
- * countdown pauses while the pointer is over the toast or focus is inside it. The message is the projected content.
+ * A short message about something that just happened. `UiToastService.show` renders these in a stack at the bottom-right of the window,
+ * or the bottom centre for `dark`; the component can also be placed directly. It dismisses itself after `duration` (5s, 3s for `dark`,
+ * 8s with actions, never for `error`) and the countdown pauses while the pointer is over the toast or focus is inside it.
+ * The message is the projected content; `description` adds a quieter second line.
  *
  * Announced to screen readers as a polite status, or as an alert for `error`. The countdown is read once, when the toast first renders.
  */
@@ -45,11 +46,13 @@ export class UiToastComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly document = inject(DOCUMENT);
 
-  /** Colour and urgency: `success`, `warning` and `error` are solid; `error` is an alert and stays until dismissed. */
+  /** Colour and urgency: `success`, `warning` and `error` are solid; `error` is an alert and stays until dismissed; `dark` is a short confirmation with a check. */
   public readonly variant = input<UiToastVariant>('default');
+  /** A second, quieter line under the message. */
+  public readonly description = input<string>('');
   /** Up to two action buttons; any more are ignored. Running one dismisses the toast. */
   public readonly actions = input<UiToastAction[]>([]);
-  /** Milliseconds before it dismisses itself, `0` for never. Leave unset for 5000, 8000 with actions, and never for `error`. */
+  /** Milliseconds before it dismisses itself, `0` for never. Leave unset for 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   public readonly duration = input<number | null>(null);
   /** Shows the dismiss button. A toast that never dismisses itself and has no action shows it regardless, so it can always be closed. */
   public readonly dismissible = input<boolean, unknown>(true, { transform: booleanAttribute });
@@ -64,6 +67,7 @@ export class UiToastComponent {
   protected readonly visibleActions: Signal<{ action: UiToastAction; classes: string }[]> = this.initVisibleActions();
   protected readonly dismissClasses: Signal<string> = this.initDismissClasses();
   protected readonly showDismiss: Signal<boolean> = this.initShowDismiss();
+  protected readonly descriptionClasses: Signal<string> = this.initDescriptionClasses();
 
   private readonly resolvedDuration: Signal<number> = this.initResolvedDuration();
   private remaining = 0;
@@ -137,7 +141,8 @@ export class UiToastComponent {
       const given = this.duration();
       if (given !== null) return given;
       if (this.variant() === 'error') return 0;
-      return this.actions().length ? 8000 : 5000;
+      if (this.actions().length) return 8000;
+      return this.variant() === 'dark' ? 3000 : 5000;
     });
   }
 
@@ -151,6 +156,8 @@ export class UiToastComponent {
         success: 'bg-ui-success-600 text-ui-white',
         warning: 'bg-ui-warning-500 text-ui-neutral-900',
         error: 'bg-ui-danger-600 text-ui-white',
+        // Background-100 ink is white here, and stays legible when the dark theme flips neutral-900 to a light surface.
+        dark: 'bg-ui-neutral-900 text-ui-background-100',
       };
       return `${base} ${variants[this.variant()]}`;
     });
@@ -174,6 +181,10 @@ export class UiToastComponent {
 
   private initDismissClasses(): Signal<string> {
     return computed(() => `${this.buttonBase()} aspect-square rounded-ui-full ${this.quietInk()}`);
+  }
+
+  private initDescriptionClasses(): Signal<string> {
+    return computed(() => `block copy-13 ${this.variant() === 'dark' ? 'text-ui-neutral-300' : ''}`.trim());
   }
 
   private initShowDismiss(): Signal<boolean> {
@@ -216,6 +227,7 @@ export class UiToastComponent {
 
   // shortcut: literal white at 16% for the hover on success and error toasts. revisit: when the library ships a white-alpha token.
   private quietInk(): string {
+    if (this.variant() === 'dark') return 'bg-transparent text-ui-background-100 hover:bg-ui-neutral-800 active:bg-ui-neutral-700';
     return this.variant() === 'success' || this.variant() === 'error'
       ? 'bg-transparent text-ui-white hover:bg-[rgba(255,255,255,0.16)]'
       : 'bg-transparent text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 active:bg-ui-neutral-alpha-100';

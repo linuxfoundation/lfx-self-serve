@@ -32,7 +32,7 @@ describe('UiEmptyStateComponent', () => {
   });
 
   it('renders the heading, the description and a decorative icon tile', () => {
-    expect(q('ui-empty-state-heading')?.textContent).toBe('No metrics yet');
+    expect(q('ui-empty-state-heading')?.textContent?.trim()).toBe('No metrics yet');
     expect(q('ui-empty-state-description')?.textContent).toBe('Connect a GitHub organization.');
     expect(q('ui-empty-state-icon')?.getAttribute('aria-hidden')).toBe('true');
     expect(q('ui-empty-state-icon')?.querySelector('i')?.classList.contains('fa-chart-bar')).toBe(true);
@@ -58,11 +58,19 @@ describe('UiEmptyStateComponent', () => {
     expect(actions.contains(q('guide'))).toBe(false);
   });
 
-  it('keeps the library geometry: ring, 16px radius, 40px by 24px padding', () => {
+  it('keeps the library geometry without a ring: 16px radius, 40px by 24px padding', () => {
     const cls = (q('ui-empty-state') as HTMLElement).className;
-    for (const token of ['ring-1', 'ring-inset', 'ring-ui-neutral-alpha-200', 'rounded-ui-md', 'px-[24px]', 'py-[40px]', 'gap-[12px]']) {
+    for (const token of ['rounded-ui-md', 'px-[24px]', 'py-[40px]', 'gap-[12px]']) {
       expect(cls).toContain(token);
     }
+    expect(cls).not.toMatch(/\bring-|\bborder|\bshadow-|\bedge\b/);
+  });
+
+  it('sets the title in Inter 500 16/24 and the description in neutral-500, 600px wide and balanced', () => {
+    expect(Array.from((q('ui-empty-state-heading') as HTMLElement).classList)).toEqual(expect.arrayContaining(['label-16', 'font-medium', 'leading-[24px]']));
+    expect(Array.from((q('ui-empty-state-description') as HTMLElement).classList)).toEqual(
+      expect.arrayContaining(['max-w-[600px]', 'text-balance', 'text-ui-neutral-500'])
+    );
   });
 
   it('omits the icon tile, description and actions when not given, and the actions row collapses', async () => {

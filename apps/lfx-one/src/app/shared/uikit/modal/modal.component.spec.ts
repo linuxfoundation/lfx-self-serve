@@ -102,6 +102,7 @@ describe('UiModalComponent and UiModalService', () => {
     expect(dialog()?.getAttribute('aria-modal')).not.toBe('true');
     const title = container.querySelector('[data-testid="ui-modal-title"]') as HTMLElement;
     expect(title.textContent).toBe('Create Committee');
+    expect(Array.from(title.classList)).toEqual(expect.arrayContaining(['heading-24', 'text-[20px]', 'leading-[28px]']));
     expect(dialog()?.getAttribute('aria-labelledby')).toBe(title.id);
     expect(container.querySelector('[data-testid="ui-modal-subtitle"]')?.textContent).toBe('Committees get their own meetings.');
     expect(container.querySelector('[data-testid="ui-modal-body"] #name')).not.toBeNull();
