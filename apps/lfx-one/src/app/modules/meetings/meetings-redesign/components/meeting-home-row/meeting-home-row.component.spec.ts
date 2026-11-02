@@ -118,6 +118,7 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(meeting));
 
       expect(text(fixture, 'meetings-home-row-recurring')).toBe('Recurring');
+      expect(query(fixture, 'meetings-home-row-recurring')?.tabIndex).toBe(0);
     });
 
     it.each<[Partial<Meeting>, string[]]>([
@@ -130,6 +131,7 @@ describe('MeetingHomeRowComponent', () => {
       const badges = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-row-visibility-"]'));
 
       expect(badges.map((badge) => badge.getAttribute('aria-label')?.toLowerCase())).toEqual(kinds);
+      expect(badges.every((badge) => badge.tabIndex === 0)).toBe(true);
     });
 
     it('opens the meeting page in a new tab with the password and date', async () => {

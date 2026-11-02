@@ -1,8 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { DatePipe, formatDate, isPlatformBrowser } from '@angular/common';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Router } from '@angular/router';
 import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingType, MeetingVisibilityKind } from '@lfx-one/shared/enums';
@@ -40,11 +53,15 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 export class MeetingHomeRowComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
+  private readonly projectNameElement = viewChild<ElementRef<HTMLElement>>('projectName');
 
   public readonly row = input.required<MeetingHomeRow>();
   public readonly view = input.required<MeetingDashboardView>();
 
+  protected readonly titleTruncated = signal(false);
+  protected readonly projectTruncated = signal(false);
   protected readonly past: Signal<boolean> = computed(() => this.view() === 'past');
   protected readonly link: Signal<MeetingHomeRowLink> = computed(() => getMeetingHomeRowLink(this.row(), this.view()));
   protected readonly visibilityBadges: Signal<MeetingVisibilityInfo[]> = computed(() => getMeetingVisibilityBadges(this.row().meeting));
@@ -56,7 +73,6 @@ export class MeetingHomeRowComponent {
     const meeting: Meeting | PastMeeting = this.row().meeting;
     return this.past() && 'user_attended' in meeting && meeting.user_attended === true;
   });
-  protected readonly titleTruncated = signal(false);
   protected readonly visibilityBg: Record<MeetingVisibilityKind, string> = {
     [MeetingVisibilityKind.PUBLIC]: 'bg-emerald-500',
     [MeetingVisibilityKind.PRIVATE]: 'bg-gray-900',
@@ -65,14 +81,22 @@ export class MeetingHomeRowComponent {
 
   public constructor() {
     afterNextRender(() => {
+      if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
       const title = this.titleElement().nativeElement;
-      const observer = new ResizeObserver(() => this.titleTruncated.set(title.scrollWidth > title.clientWidth));
+      const projectName = this.projectNameElement()?.nativeElement;
+      const observer = new ResizeObserver(() => {
+        this.titleTruncated.set(title.scrollWidth > title.clientWidth);
+        this.projectTruncated.set(!!projectName && projectName.scrollWidth > projectName.clientWidth);
+      });
       observer.observe(title);
+      if (projectName) observer.observe(projectName);
       this.destroyRef.onDestroy(() => observer.disconnect());
     });
   }
 
   protected open(): void {
+    // Releasing a text selection inside the row is not a click on it.
+    if (window.getSelection()?.toString()) return;
     const { url, newTab } = this.link();
     if (newTab) {
       window.open(url, '_blank', 'noopener,noreferrer');

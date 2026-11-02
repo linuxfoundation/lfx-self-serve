@@ -21,7 +21,8 @@
       @for (badge of visibilityBadges(); track badge.kind) {
         <span
           role="img"
-          class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white"
+          tabindex="0"
+          class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
           [class]="visibilityBg[badge.kind]"
           [attr.aria-label]="badge.title"
           [lfxUiTooltip]="badge.description ?? ''"
@@ -40,10 +41,13 @@
           class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
           [href]="url"
           [attr.aria-label]="project.label"
+          [lfxUiTooltip]="project.name"
+          [lfxUiTooltipDisabled]="!projectTruncated()"
           (click)="onLinkClick($event, url, false)"
           data-testid="meetings-home-row-project">
           <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
           <span
+            #projectName
             class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
             data-testid="meetings-home-row-project-name"
             >{{ project.name }}</span
@@ -57,7 +61,15 @@
           class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
           data-testid="meetings-home-row-project">
           <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-          <span class="min-w-0 truncate" data-testid="meetings-home-row-project-name">{{ project.name }}</span>
+          <span
+            #projectName
+            class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            [attr.tabindex]="projectTruncated() ? 0 : null"
+            [lfxUiTooltip]="project.name"
+            [lfxUiTooltipDisabled]="!projectTruncated()"
+            data-testid="meetings-home-row-project-name"
+            >{{ project.name }}</span
+          >
         </span>
       }
     }
@@ -94,7 +106,13 @@
       }
       @if (recurrenceTooltip(); as tooltip) {
         <span aria-hidden="true">·</span>
-        <span class="inline-flex flex-none cursor-default items-center gap-[5px]" [lfxUiTooltip]="tooltip" data-testid="meetings-home-row-recurring">
+        <span
+          role="img"
+          tabindex="0"
+          aria-label="Recurring"
+          class="inline-flex flex-none cursor-default items-center gap-[5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          [lfxUiTooltip]="tooltip"
+          data-testid="meetings-home-row-recurring">
           <i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring
         </span>
       }

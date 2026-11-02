@@ -517,7 +517,17 @@ describe('getMeetingHomeRowLink', () => {
     durationMinutes: 60,
   });
   const pastRow = (overrides: Partial<PastMeeting>): MeetingHomeRow => {
-    const meeting = { ...buildMeeting({ id: '123' }), meeting_and_occurrence_id: '123-1759334400000', ...overrides } as PastMeeting;
+    const meeting: PastMeeting = {
+      ...buildMeeting({ id: '123' }),
+      scheduled_start_time: '2025-10-01T16:00:00Z',
+      scheduled_end_time: '2025-10-01T17:00:00Z',
+      meeting_id: '123',
+      occurrence_id: '1759334400',
+      platform_meeting_id: '',
+      sessions: [],
+      meeting_and_occurrence_id: '123-1759334400000',
+      ...overrides,
+    };
     return {
       key: '123-1759334400000',
       meeting,
