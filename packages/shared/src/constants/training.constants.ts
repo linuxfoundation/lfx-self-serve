@@ -101,15 +101,16 @@ const ORG_TRAINING_ENROLLMENT_WINDOW_LABEL = `last ${ORG_TRAINING_ENROLLMENT_WIN
  * Note above the Certifications table; the Certified figure counts people. Expired certificates are dropped upstream, not in this
  * repo's queries: lf-dbt `platinum_lfx_one_org_people_training` (ORG_PEOPLE_TRAINING) skips certificates the source flags
  * `is_deleted`, which is how the source marks expiry. The flag is set by the source, not derived from `expiration_date`, so a
- * certificate past its expiration date can still be listed until the source flags it.
+ * certificate past its expiration date can still be listed until the source flags it; the notes below therefore say
+ * "marks expired" rather than promising every past-expiry certificate is excluded.
  */
-export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no current certificate for the course. Certified counts people with a current certificate, issued at any time; expired certificates are not counted.`;
+export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no current certificate for the course. Certified counts people with a current certificate, issued at any time; certificates the training system marks expired are not counted.`;
 
 /** Note in the Certifications In Progress roster drawer. */
 export const ORG_CERT_IN_PROGRESS_WINDOW_NOTE = `Enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}, with no current certificate for this course.`;
 
 /** Note on the person detail Training tab. Expired certificates are dropped upstream, see ORG_CERTIFICATIONS_WINDOW_NOTE. */
-export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Current certificates, issued at any time; expired ones are not listed. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;
+export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Current certificates, issued at any time; certificates the training system marks expired are not listed. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;
 
 /** Note on the All Employees expanded row, whose course count follows the page's time range while this list does not. */
 export const ORG_ALL_EMPLOYEES_TRAINING_WINDOW_NOTE = `${PERSON_DETAIL_TRAINING_WINDOW_NOTE} The course count on the row follows the page's time range.`;
