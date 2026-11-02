@@ -374,12 +374,13 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('offers the row actions each status allows', () => {
     expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_3')).toEqual([]);
+    expect(labelsFor('app_3')).toEqual(['Re-open']);
     expect(labelsFor('app_4')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_5')).toEqual([]);
+    expect(labelsFor('app_5')).toEqual(['Undo graduation']);
   });
 
-  it('keeps the Note link on a row with no actions left', () => {
+  it('keeps the Note link on an ended application', () => {
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_3"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 
@@ -1122,6 +1123,65 @@ describe('CurrentMenteesTabComponent', () => {
       expect(detailOf(toast)).toBe("This term is closed, so the application can't be accepted.");
       expect(getProgramMentees.mock.calls.length).toBe(reads);
       expect(emitted).not.toHaveBeenCalled();
+    });
+
+    it('undoes a graduation only after the confirmation is accepted, then reloads and tells the parent', () => {
+      const confirm = confirmSpy();
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_5')!, actionFor('app_5', 'undo-graduation'));
+      expect(confirm.mock.calls[0][0].message).toContain('no email is sent');
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      settle();
+
+      // No attendance type: upstream keeps the one the mentee was accepted with.
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_5', { status: 'accepted' });
+      expect(detailOf(toast)).toBe('Graduation undone');
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('shows the refused message on a 422 for an undone graduation, without reloading', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_5', 'undo-graduation', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe("This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open.");
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+    });
+
+    it('re-opens a declined application as pending only after the confirmation is accepted', () => {
+      const confirm = confirmSpy();
+      const toast = toasts();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_3')!, actionFor('app_3', 'reopen'));
+      expect(confirm.mock.calls[0][0].message).toContain('no email is sent');
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      settle();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_3', { status: 'pending' });
+      expect(detailOf(toast)).toBe('Application re-opened');
+    });
+
+    it('shows the hidden-program message on a 422 for a re-open', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_3', 'reopen', confirm);
+
+      expect(detailOf(toast)).toBe("This application can't be re-opened while the program is hidden.");
     });
 
     it('shows the server read-only message on an impersonation 403', () => {
