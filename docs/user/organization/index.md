@@ -3,7 +3,7 @@ title: Organization
 description: Guides for the Organization lens in LFX Self Serve, including EasyCLA for corporate CLAs.
 audience: [all]
 product_area: Organization
-tags: [organization, org, easycla, cla]
+tags: [organization, org, switch-organization, easycla, cla]
 last_updated: 2026-11-02
 intercom_collection: Organization
 ---
@@ -28,5 +28,5 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 
 - [Choose and switch an organization](./choose-an-organization/) — pick the organization you are viewing, switch to another, and read the organization in a page address
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
-- [EasyCLA FAQ](./faq/) — short answers for who can edit, who can see a company, and CLA Manager changes
+- [Organization FAQ](./faq/) — short answers about switching organizations and, for EasyCLA, who can edit, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA

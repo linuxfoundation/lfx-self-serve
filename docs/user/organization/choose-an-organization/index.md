@@ -46,13 +46,13 @@ The line under the organization's name in the switcher is your role on that orga
 | **Org Admin Viewer (Inherited)**   | You can view this organization through your access to a related organization                                                            |
 | **(Original)** after a direct role | Your role was granted directly on this organization. The label is added when some of your other access comes from related organizations |
 
-An inherited role names the related organization it comes from when you hover over it: **Inherited from your access to** that organization. If the line says **Organization** instead of a role, you have no admin role on that organization.
+In the list of organizations, hovering over an inherited role shows **Inherited from your access to** followed by the related organization's name. If the line says **Organization** instead of a role, you have no admin role on that organization.
 
 ## Why can't I search for an organization in the switcher?
 
 Only Linux Foundation staff can search the switcher. Everyone else sees a list of the organizations they have access to, with no search box.
 
-For Linux Foundation staff, the switcher opens with a **Search organizations...** box. Type at least two characters to search every organization. Until you do, an empty list shows **Search for any organization…**. When the results include organizations you are not assigned to, the ones you are assigned to are listed under **Your organizations** and the rest under **All organizations**, each with a **Member** or **Non-member** label for its Linux Foundation membership.
+For Linux Foundation staff, the switcher opens with a **Search organizations...** box. Type at least two characters to search every organization. Until you do, an empty list shows **Search for any organization…**. When the results include organizations you are not assigned to, the ones you are assigned to are listed under **Your organizations** and the rest under **All organizations**. Each organization under **All organizations** carries a **Member** or **Non-member** label for its Linux Foundation membership.
 
 Other messages in the switcher:
 
