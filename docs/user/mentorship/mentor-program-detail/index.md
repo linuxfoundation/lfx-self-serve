@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, applicants, tasks, review, notes]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
@@ -32,7 +32,7 @@ The page opens on **Tasks**. Each tab shows a count.
 
 1. Open [app.lfx.dev/mentorship/mentor/programs](https://app.lfx.dev/mentorship/mentor/programs) and select a program.
 2. On **Applicants**, search by name or email, or filter with the status pills — **Pending** (the default), **Accepted**, **Declined** or **All**.
-3. Select **View Tasks** on the row to expand their prerequisite tasks and download anything they submitted.
+3. Select **View Tasks** on the row to expand their prerequisite tasks. Next to a submitted file, the eye icon opens it in a new tab and the download icon saves it.
 4. Select **Add note**, or the existing note on the row, to record context for the other reviewers. See [Leave a Reviewer Note](../reviewer-notes/).
 
 Select an applicant's name to open their public mentee page in a new tab. The row itself does not open anything, and there is no cover letter to read — what you review is their tasks and the notes on the row. The **Other Active Applications** column shows the other programs they have live applications on.
@@ -51,8 +51,10 @@ To change a task, expand the mentee's row with **View Tasks** and use **Edit Tas
 1. Open the **Tasks** tab.
 2. Filter with the pills — **Awaiting Review** (the default), **Approved** or **All**.
 3. Read the task card: who submitted or completed which task, the term, when it was last updated, and the task description.
-4. If the mentee uploaded a file, select **Download Submission** to save it.
+4. If the mentee uploaded a file, select **View Submission** to open it in a new tab, or **Download Submission** to save it.
 5. On a submitted task, select **Approve** or **Request Changes**.
+
+PDF and plain-text files open in the browser. A DOC or DOCX file cannot be shown there, so **View Submission** (or the eye icon on Applicants and Mentees) downloads it instead and says so.
 
 This tab is for reviewing only — you cannot create or edit a task here.
 
