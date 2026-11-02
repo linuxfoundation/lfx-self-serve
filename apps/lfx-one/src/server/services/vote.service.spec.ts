@@ -3244,7 +3244,9 @@ describe('VoteService', () => {
     });
 
     it('counts a partial send failure without throwing, and logs a warning for the failed recipient', async () => {
-      sendEmail.mockResolvedValueOnce({ email_id: 'email-sent' }).mockRejectedValueOnce(new Error('smtp down'));
+      sendEmail
+        .mockResolvedValueOnce({ email_id: 'email-sent' })
+        .mockRejectedValueOnce(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}));
 
       const result = await service.sendVoteSummary(req, CANONICAL_UID);
 
@@ -3275,7 +3277,7 @@ describe('VoteService', () => {
     });
 
     it('throws a retry-safe 502 when every send is confirmed failed, reporting none sent', async () => {
-      sendEmail.mockRejectedValue(new Error('smtp down'));
+      sendEmail.mockRejectedValue(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}));
 
       await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({
         statusCode: 502,
@@ -3289,6 +3291,27 @@ describe('VoteService', () => {
 
       await expect(service.sendVoteSummary(req, CANONICAL_UID)).rejects.toMatchObject({ statusCode: 502, code: VOTE_SUMMARY_SEND_FAILED });
     });
+
+    it.each([new Error('Unexpected send error'), new TypeError('Unexpected reply'), new MicroserviceError('Unknown error', 502, 'UNKNOWN', {}), undefined])(
+      'treats an unrecognized rejection %j as uncertain rather than retry-safe',
+      async (reason) => {
+        sendEmail.mockRejectedValue(reason);
+
+        await expect(service.sendVoteSummary(req, CANONICAL_UID)).resolves.toEqual({
+          recipient_count: 0,
+          failed_count: 0,
+          skipped_count: 0,
+          uncertain_count: 2,
+        });
+        expect(sendEmail).toHaveBeenCalledTimes(2);
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'send_vote_summary',
+          'Summary email was not confirmed sent to one recipient',
+          expect.objectContaining({ outcome: 'uncertain' })
+        );
+      }
+    );
 
     it('counts a transport-marked rejection as uncertain, not failed, and logs it', async () => {
       sendEmail
@@ -3315,7 +3338,7 @@ describe('VoteService', () => {
       ]);
       sendEmail
         .mockResolvedValueOnce({ email_id: 'email-sent' })
-        .mockRejectedValueOnce(new Error('smtp down'))
+        .mockRejectedValueOnce(new MicroserviceError('Rejected before sending', 502, 'EMAIL_SEND_FAILED', {}))
         .mockRejectedValueOnce(new MicroserviceError('Unable to reach the email service', 502, 'EMAIL_SEND_FAILED', { transportFailure: true }))
         .mockResolvedValueOnce({});
 

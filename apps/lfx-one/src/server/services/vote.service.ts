@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  EMAIL_SEND_UNCONFIRMED,
   MIN_VIABLE_REQUEST_BUDGET_MS,
   VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT,
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
@@ -932,7 +931,7 @@ export class VoteService {
    *
    * Counts distinct email recipients (#4689) as sent (the service returned an `email_id`), failed
    * (confirmed not sent: rejected before sending or accepted without sending), or uncertain
-   * (transport failed or the service reported an ambiguous SMTP outcome). Invited voters without
+   * (transport failed, the service reported an ambiguous SMTP outcome, or an unexpected error occurred). Invited voters without
    * an email address are counted separately as skipped; shared email addresses are attempted once.
    * One recipient's failure never blocks the rest, so a partial send reports the counts instead of
    * throwing. Only when every attempt was confirmed failed (nothing sent, nothing uncertain) does
@@ -1004,11 +1003,11 @@ export class VoteService {
         return;
       }
 
-      // A transport failure or ambiguous SMTP reply can follow acceptance, so neither proves failure.
+      // Only an explicit pre-send rejection proves failure. Transport, ambiguous SMTP and unexpected
+      // errors (including malformed replies) can follow acceptance and must default to uncertain.
       const uncertain =
         outcome.status === 'rejected' &&
-        outcome.reason instanceof MicroserviceError &&
-        (outcome.reason.transportFailure === true || outcome.reason.code === EMAIL_SEND_UNCONFIRMED);
+        !(outcome.reason instanceof MicroserviceError && outcome.reason.code === 'EMAIL_SEND_FAILED' && outcome.reason.transportFailure !== true);
       if (uncertain) {
         uncertainCount += 1;
       } else {

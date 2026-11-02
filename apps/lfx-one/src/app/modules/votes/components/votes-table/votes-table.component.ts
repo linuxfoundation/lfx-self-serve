@@ -768,14 +768,20 @@ export class VotesTableComponent {
       return;
     }
 
-    if (code === VOTE_SUMMARY_PRECHECK_FAILED) {
-      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'Nothing was sent. Please try again.' });
+    if (error instanceof HttpErrorResponse && code === VOTE_SUMMARY_PRECHECK_FAILED) {
+      let detail = 'Nothing was sent. Please try again.';
+      if (error.status === 401) {
+        detail = 'Nothing was sent. Sign in again before sending a summary.';
+      } else if (error.status === 404) {
+        detail = 'Nothing was sent. This vote is no longer available.';
+      }
+      this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail });
       return;
     }
 
     if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
       const counts = error.error?.details as SendVoteSummaryResponse | undefined;
-      // Only use a complete, confirmed-unsent BFF result. Older servers without details keep the fallback below.
+      // Only a complete, confirmed-unsent BFF result is retry-safe. Legacy or invalid counts stay unconfirmed below.
       if (
         counts &&
         counts.recipient_count === 0 &&
@@ -788,10 +794,7 @@ export class VotesTableComponent {
       }
     }
 
-    const rejected =
-      error instanceof HttpErrorResponse &&
-      !isBffTransportFailure(error) &&
-      ([400, 401, 403, 429].includes(error.status) || (error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED));
+    const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
     if (rejected) {
       this.messageService.add({ severity: 'error', summary: "Couldn't send summary", detail: 'No summaries were sent. Please try again.' });
       return;

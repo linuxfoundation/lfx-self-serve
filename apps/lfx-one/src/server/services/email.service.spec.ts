@@ -119,20 +119,23 @@ describe('EmailService.sendEmail', () => {
     return summary;
   }
 
-  it('returns an uncertain summary count for a real post-SMTP error reply, not a retry-safe 502', async () => {
-    request.mockResolvedValue(reply({ error: 'email delivery failed' }));
-    const summary = summaryService([{ uid: 'r-1', user_email: 'voter@example.test' }]);
+  it.each([null, { error: 'email delivery failed' }])(
+    'returns an uncertain summary count for a real ambiguous reply %j, not a retry-safe 502',
+    async (body) => {
+      request.mockResolvedValue(reply(body));
+      const summary = summaryService([{ uid: 'r-1', user_email: 'voter@example.test' }]);
 
-    await expect(summary.sendVoteSummary(req, 'synthetic-vote')).resolves.toEqual({
-      recipient_count: 0,
-      failed_count: 0,
-      skipped_count: 0,
-      uncertain_count: 1,
-    });
-  });
+      await expect(summary.sendVoteSummary(req, 'synthetic-vote')).resolves.toEqual({
+        recipient_count: 0,
+        failed_count: 0,
+        skipped_count: 0,
+        uncertain_count: 1,
+      });
+    }
+  );
 
-  it('preserves both success and uncertainty through real email reply parsing on a mixed summary', async () => {
-    request.mockResolvedValueOnce(reply({ email_id: 'synthetic-email' })).mockResolvedValueOnce(reply({ error: 'email delivery failed' }));
+  it.each([null, { error: 'email delivery failed' }])('preserves success and uncertainty through real parsing of %j on a mixed summary', async (body) => {
+    request.mockResolvedValueOnce(reply({ email_id: 'synthetic-email' })).mockResolvedValueOnce(reply(body));
     const summary = summaryService([
       { uid: 'r-1', user_email: 'one@example.test' },
       { uid: 'r-2', user_email: 'two@example.test' },

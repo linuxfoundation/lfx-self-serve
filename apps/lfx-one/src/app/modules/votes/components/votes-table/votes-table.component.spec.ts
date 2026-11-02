@@ -1592,11 +1592,35 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Nothing was sent. Please try again.' }));
   });
 
-  it('shows a retry-safe error when every attempt was confirmed rejected (502 VOTE_SUMMARY_SEND_FAILED)', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED } })));
+  it.each([
+    [401, 'Nothing was sent. Sign in again before sending a summary.'],
+    [404, 'Nothing was sent. This vote is no longer available.'],
+  ])('shows actionable guidance for a pre-send failure with status %s', async (status, detail) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: status as number, error: { code: VOTE_SUMMARY_PRECHECK_FAILED } })));
     await sendSummary();
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No summaries were sent. Please try again.' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail }));
+    expect(messageAdd.mock.calls[0][0].detail).not.toContain('try again');
+  });
+
+  it.each([
+    undefined,
+    null,
+    {},
+    { recipient_count: 0, failed_count: 1, skipped_count: 0 },
+    { recipient_count: 0, failed_count: 1, skipped_count: -1, uncertain_count: 0 },
+    { recipient_count: 0, failed_count: 1.5, skipped_count: 0, uncertain_count: 0 },
+    { recipient_count: 1, failed_count: 1, skipped_count: 0, uncertain_count: 0 },
+    { recipient_count: 0, failed_count: 1, skipped_count: 0, uncertain_count: 1 },
+    { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 },
+  ])('keeps a legacy or invalid total-failure result %j unconfirmed', async (details) => {
+    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: { code: VOTE_SUMMARY_SEND_FAILED, details } })));
+    await sendSummary();
+
+    const toast = messageAdd.mock.calls[0][0];
+    expect(toast).toMatchObject({ severity: 'warn', summary: 'Summary delivery unconfirmed', life: 8000 });
+    expect(toast.detail).toContain('retrying may send duplicate summaries');
+    expect(toast.detail).not.toContain('try again');
   });
 
   it('reports the skipped and failed counts when every attempted summary was confirmed unsent', async () => {
