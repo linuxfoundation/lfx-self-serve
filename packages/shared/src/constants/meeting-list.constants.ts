@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MeetingVisibilityKind } from '../enums';
-import type { MeetingResponseFilterOption, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
+import type { MeetingResponseFilterOption, MeetingRsvpChoice, MeetingsHomeFilters, MeetingVisibilityInfo } from '../interfaces';
 
 /** Rows the meetings home list loads per page. */
 export const MEETINGS_HOME_PAGE_SIZE = 20;
@@ -23,6 +23,13 @@ export const MEETINGS_HOME_RSVP_FILTER_OPTIONS: readonly MeetingResponseFilterOp
   { label: 'Going', value: 'accepted' },
   { label: 'Not going', value: 'declined' },
   { label: 'Maybe', value: 'maybe' },
+];
+
+/** RSVP answers on a meetings home row, in button order. */
+export const MEETINGS_HOME_RSVP_CHOICES: readonly MeetingRsvpChoice[] = [
+  { response: 'accepted', action: 'Yes', label: 'Going', icon: 'fa-solid fa-circle-check', tone: 'accent' },
+  { response: 'declined', action: 'No', label: 'Not going', icon: 'fa-solid fa-circle-xmark', tone: 'danger' },
+  { response: 'maybe', action: 'Maybe', label: 'Maybe', icon: 'fa-solid fa-circle-question', tone: 'warning' },
 ];
 
 /** Applied-filter chip copy. */

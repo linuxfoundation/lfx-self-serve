@@ -42,7 +42,7 @@ import {
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
 import { getPastMeetingResourceId, getPastMeetingStartTimeMs } from './past-meeting.utils';
-import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
+import { getRsvpOccurrenceId, getRsvpTimestampMs, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -288,6 +288,14 @@ export function getMeetingHomeRowLink(row: MeetingHomeRow, view: MeetingDashboar
 
   const route = buildMeetingOccurrenceRoute(meeting.id, row.startTime, row.durationMinutes, { password: meeting.password ?? undefined });
   return { url: toAppUrl(route.path, route.queryParams), newTab: true };
+}
+
+/** Which dates a recurring RSVP covers, in the viewer's zone: "Oct 1 only", "Oct 1 and following" or "All dates". */
+export function getMeetingRsvpScopeLabel(rsvp: Pick<MeetingRsvp, 'scope' | 'occurrence_id' | 'meeting_and_occurrence_id'>): string {
+  if (rsvp.scope === 'all') return 'All dates';
+  const startMs = occurrenceIdToMs(getRsvpOccurrenceId(rsvp));
+  const date = startMs === null ? 'This date' : new Date(startMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return rsvp.scope === 'this_and_following' ? `${date} and following` : `${date} only`;
 }
 
 /** The meeting's project or foundation overview, or null without a project slug. */

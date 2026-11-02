@@ -8,7 +8,7 @@ import { Meeting, MeetingRsvp, MeetingRsvpSubmitError, User } from '@lfx-one/sha
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { firstValueFrom, of, throwError, toArray } from 'rxjs';
+import { firstValueFrom, of, Subject, throwError, toArray } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRsvpService } from './meeting-rsvp.service';
@@ -128,6 +128,18 @@ describe('MeetingRsvpService', () => {
 
     expect(emitted).toEqual([]);
     expect(refreshUserMeetings).not.toHaveBeenCalled();
+  });
+
+  it('marks the meeting as submitting until the write settles', async () => {
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending);
+    const subscription = service.submit$(MEETING, undefined, 'accepted', 'all').subscribe();
+
+    expect(service.submittingMeetingIds().has(MEETING.id)).toBe(true);
+    pending.next(ACK);
+    pending.complete();
+    expect(service.submittingMeetingIds().has(MEETING.id)).toBe(false);
+    subscription.unsubscribe();
   });
 
   it('fails without a request when a scoped answer has no resolvable date', async () => {

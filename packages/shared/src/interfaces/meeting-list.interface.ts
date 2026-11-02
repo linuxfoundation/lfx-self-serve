@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibilityKind } from '../enums';
-import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp } from './meeting.interface';
+import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, RsvpResponse, RsvpScope } from './meeting.interface';
+import type { UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
@@ -92,4 +93,28 @@ export interface MeetingHomeRowProject {
 export interface MeetingHomeRowType {
   label: string;
   icon: string;
+}
+
+/** One RSVP answer on a meetings home row: its button label, its status label and look. */
+export interface MeetingRsvpChoice {
+  response: RsvpResponse;
+  /** Button label before answering, e.g. "Yes". */
+  action: string;
+  /** Status label once answered, e.g. "Going". */
+  label: string;
+  icon: string;
+  tone: UiBadgeTone;
+}
+
+/** What the recurring RSVP dialog opens with. */
+export interface MeetingRsvpScopeDialogData {
+  row: MeetingHomeRow;
+  response: RsvpResponse;
+}
+
+/** One choice of the recurring RSVP dialog. */
+export interface MeetingRsvpScopeOption {
+  value: RsvpScope;
+  label: string;
+  description: string;
 }

@@ -39,13 +39,15 @@ import {
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingRsvpControlsComponent } from '../meeting-rsvp-controls/meeting-rsvp-controls.component';
+
 /**
  * One row of the meetings home list: date tile with visibility badges, project eyebrow, title and meta line.
  * @description Clicking the row opens the meeting; the project eyebrow opens the project instead.
  */
 @Component({
   selector: 'lfx-meeting-home-row',
-  imports: [DatePipe, UiAvatarComponent, UiTooltipDirective],
+  imports: [DatePipe, MeetingRsvpControlsComponent, UiAvatarComponent, UiTooltipDirective],
   templateUrl: './meeting-home-row.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },

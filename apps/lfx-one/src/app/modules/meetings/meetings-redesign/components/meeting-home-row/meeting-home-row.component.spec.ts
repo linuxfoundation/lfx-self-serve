@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { formatMeetingTimeRange } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
+import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
@@ -83,7 +86,13 @@ describe('MeetingHomeRowComponent', () => {
       }
     );
     vi.stubGlobal('open', open);
-    TestBed.configureTestingModule({ providers: [{ provide: Router, useValue: { navigateByUrl } }] });
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Router, useValue: { navigateByUrl } },
+        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()) } },
+        { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -185,6 +194,23 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ meeting_type: 'None' })));
 
       expect(query(fixture, 'meetings-home-row-type')).toBeNull();
+    });
+  });
+
+  describe('RSVP', () => {
+    it('shows the RSVP controls on upcoming rows without opening the row on a click', async () => {
+      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
+
+      expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
+      query(fixture, 'meetings-home-rsvp')?.click();
+      expect(open).not.toHaveBeenCalled();
+      expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it('has no RSVP controls on past rows', async () => {
+      const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true })), 'past');
+
+      expect(query(fixture, 'meetings-home-rsvp')).toBeNull();
     });
   });
 
