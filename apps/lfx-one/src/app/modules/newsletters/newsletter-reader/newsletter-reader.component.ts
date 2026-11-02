@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { IMPERSONATION_READ_ONLY_ERROR_CODE, NEWSLETTER_INVITE_RELOOKUP_DELAY_MS, NEWSLETTER_NOT_SENT_ERROR_CODE } from '@lfx-one/shared/constants';
@@ -70,7 +70,6 @@ export class NewsletterReaderComponent {
   private readonly shareDialog = inject(ShareDialogService);
   private readonly dialogService = inject(DialogService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
 
   /** Re-runs the member-benefit join after a failure. */
@@ -164,16 +163,17 @@ export class NewsletterReaderComponent {
     });
   }
 
-  /** Records the share and, once the server accepts it, bumps the visible count if that issue is still shown. */
+  /**
+   * Records the share and, once the server accepts it, bumps the visible count if that issue is still shown.
+   * Not tied to the component's lifetime: leaving the page must not abort the write. `recordShare`
+   * completes after one emission, so nothing leaks, and the id check keeps a late result off another issue.
+   */
   protected onShared(event: NewsletterShareEvent): void {
-    this.newsletterService
-      .recordShare(event.projectUid, event.newsletterId, event.channel)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((accepted) => {
-        if (accepted && this.newsletter()?.id === event.newsletterId) {
-          this.shareTally.update((tally) => addShareToTally(tally, event.channel));
-        }
-      });
+    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
+      if (accepted && this.newsletter()?.id === event.newsletterId) {
+        this.shareTally.update((tally) => addShareToTally(tally, event.channel));
+      }
+    });
   }
 
   protected retryJoin(): void {

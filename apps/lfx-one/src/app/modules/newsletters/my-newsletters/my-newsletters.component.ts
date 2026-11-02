@@ -233,20 +233,22 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
-  /** A share was made from the drawer: record it and, once the server accepts it, bump that issue's count. */
+  /**
+   * A share was made from the drawer: record it and, once the server accepts it, bump that issue's count.
+   * Not tied to the component's lifetime, so leaving the page doesn't abort the write (`recordShare`
+   * completes after one emission). The baseline comes from the whole feed, not this foundation's slice,
+   * so a response that lands after switching foundations keeps the issue's real server count.
+   */
   protected onShared(event: NewsletterShareEvent): void {
-    this.newsletterService
-      .recordShare(event.projectUid, event.newsletterId, event.channel)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((accepted) => {
-        if (!accepted) return;
-        this.shareTallies.update((tallies) => {
-          const serverCount = this.myNewsletters().find((row) => row.id === event.newsletterId)?.share_count ?? null;
-          const current = tallies[event.newsletterId] ?? { count: serverCount, channels: [] };
-          const next = addShareToTally(current, event.channel);
-          return next === current ? tallies : { ...tallies, [event.newsletterId]: next };
-        });
+    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
+      if (!accepted) return;
+      this.shareTallies.update((tallies) => {
+        const serverCount = this.state().data?.newsletters.find((row) => row.id === event.newsletterId)?.share_count ?? null;
+        const current = tallies[event.newsletterId] ?? { count: serverCount, channels: [] };
+        const next = addShareToTally(current, event.channel);
+        return next === current ? tallies : { ...tallies, [event.newsletterId]: next };
       });
+    });
   }
 
   /**
