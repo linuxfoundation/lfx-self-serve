@@ -800,6 +800,9 @@ export class VoteDetailComponent {
   /** Open, ended or draft — a draft hasn't opened for voting, so it reads neither as reminder-ready nor as closed. */
   private notVotedCardText(loaded: boolean): Pick<StatCardItem, 'label' | 'subLine'> {
     if (this.isActive()) {
+      if (loaded && this.participationStats().eligibleVoters === 0) {
+        return { label: 'Not voted yet', subLine: 'No eligible voters' };
+      }
       return { label: 'Not voted yet', subLine: loaded && this.notVotedCount() === 0 ? 'Everyone has voted' : 'Eligible for a reminder' };
     }
     if (this.isEnded()) return { label: 'Did not vote', subLine: 'Voting is closed' };
@@ -827,11 +830,14 @@ export class VoteDetailComponent {
   /** Released results split substantive ballots from abstentions; held results show only overall participation. */
   private respondedProgress(stats: VoteParticipationStats, abstained: number): StatCardProgress {
     const segments = computeParticipationSegments(stats, abstained);
-    const notVoted = Math.max(stats.eligibleVoters - stats.totalResponses, 0);
+    const eligibleVoters = Math.max(0, stats.eligibleVoters);
+    const responded = Math.min(eligibleVoters, Math.max(0, stats.totalResponses));
+    const shownAbstained = Math.min(responded, Math.max(0, abstained));
+    const notVoted = eligibleVoters - responded;
     if (this.resultsHeld()) {
       return {
         segments: [{ percentage: segments.voted, className: 'bg-blue-600' }],
-        ariaLabel: `${stats.totalResponses} of ${stats.eligibleVoters} eligible voters responded; abstention totals are withheld`,
+        ariaLabel: `${responded} of ${eligibleVoters} eligible voters responded; abstention totals are withheld`,
       };
     }
     return {
@@ -839,7 +845,7 @@ export class VoteDetailComponent {
         { percentage: segments.voted, className: 'bg-blue-600' },
         { percentage: segments.abstained, className: 'bg-gray-400' },
       ],
-      ariaLabel: `${stats.totalResponses - Math.min(abstained, stats.totalResponses)} voted, ${abstained} abstained, ${notVoted} not voted yet of ${stats.eligibleVoters} eligible voters`,
+      ariaLabel: `${responded - shownAbstained} voted, ${shownAbstained} abstained, ${notVoted} not voted yet of ${eligibleVoters} eligible voters`,
     };
   }
 

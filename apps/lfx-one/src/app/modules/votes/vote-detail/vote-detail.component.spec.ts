@@ -791,12 +791,68 @@ describe('VoteDetailComponent', () => {
       });
     });
 
+    it.each([
+      { recipients: 5, responses: 2, abstained: 7, widths: ['0%', '40%'], label: '0 voted, 2 abstained, 3 not voted yet of 5 eligible voters' },
+      { recipients: 5, responses: 8, abstained: 2, widths: ['60%', '40%'], label: '3 voted, 2 abstained, 0 not voted yet of 5 eligible voters' },
+      { recipients: 0, responses: 3, abstained: 7, widths: ['0%', '0%'], label: '0 voted, 0 abstained, 0 not voted yet of 0 eligible voters' },
+      { recipients: 5, responses: -2, abstained: 1, widths: ['0%', '0%'], label: '0 voted, 0 abstained, 5 not voted yet of 5 eligible voters' },
+      { recipients: 5, responses: 2, abstained: -1, widths: ['40%', '0%'], label: '2 voted, 0 abstained, 3 not voted yet of 5 eligible voters' },
+    ])(
+      'keeps the progress label consistent with bounded counts ($recipients eligible, $responses responses, $abstained abstained)',
+      async ({ recipients, responses, abstained, widths, label }) => {
+        voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_recipients: recipients, num_votes_cast: responses, num_abstained: abstained }));
+        const fixture = await setup('browser', [StatCardGridComponent]);
+        const bar = fixture.nativeElement.querySelector('[data-testid="vote-detail-summary"] [role="img"]') as HTMLElement;
+
+        expect(bar.getAttribute('aria-label')).toBe(label);
+        expect(Array.from(bar.children, (segment) => (segment as HTMLElement).style.width)).toEqual(widths);
+      }
+    );
+
+    it.each([
+      { recipients: 5, responses: 8, percentage: '100%', label: '5 of 5 eligible voters responded; abstention totals are withheld' },
+      { recipients: 0, responses: 3, percentage: '0%', label: '0 of 0 eligible voters responded; abstention totals are withheld' },
+    ])(
+      'bounds held-results labels without revealing abstentions ($recipients eligible, $responses responses)',
+      async ({ recipients, responses, percentage, label }) => {
+        voteService.fetchVote.mockReturnValue(of(makeVote({ pseudo_anonymity: true })));
+        voteService.getVoteResults.mockReturnValue(
+          of({ ...makeResults(), num_recipients: recipients, num_votes_cast: responses, num_abstained: 7, results_held: true })
+        );
+        const fixture = await setup('browser', [StatCardGridComponent]);
+        const bar = fixture.nativeElement.querySelector('[data-testid="vote-detail-summary"] [role="img"]') as HTMLElement;
+
+        expect(bar.getAttribute('aria-label')).toBe(label);
+        expect(bar.children).toHaveLength(1);
+        expect((bar.firstElementChild as HTMLElement).style.width).toBe(percentage);
+      }
+    );
+
     it('keeps View voters but offers no reminder once everyone has voted', async () => {
       voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_votes_cast: 4 }));
       const fixture = await setup('browser', [StatCardGridComponent]);
 
       expect(notVotedCard(fixture)).toMatchObject({ value: 0, subLine: 'Everyone has voted' });
       expect(notVotedCard(fixture).ctas).toEqual([{ label: 'View voters', action: 'responses', text: true }]);
+      expect(fixture.nativeElement.querySelector('[data-testid="stat-card-cta-not-voted"]')).toBeNull();
+
+      fixture.nativeElement.querySelector('[data-testid="stat-card-cta-responses"] button').click();
+
+      expect(router.navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'voters', voters_choice: null, voters_ballot: null } })
+      );
+      expect(dialogService.open).not.toHaveBeenCalled();
+    });
+
+    it('distinguishes no eligible voters from everyone having voted', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ total_voting_request_invitations: 0 })));
+      voteService.getVoteResults.mockReturnValue(of({ ...makeResults(), num_recipients: 0, num_votes_cast: 0 }));
+      const fixture = await setup('browser', [StatCardGridComponent]);
+
+      expect(notVotedCard(fixture)).toMatchObject({ value: 0, subLine: 'No eligible voters' });
+      expect(notVotedCard(fixture).ctas).toEqual([{ label: 'View voters', action: 'responses', text: true }]);
+      expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-summary"]').textContent).toContain('No eligible voters');
       expect(fixture.nativeElement.querySelector('[data-testid="stat-card-cta-not-voted"]')).toBeNull();
 
       fixture.nativeElement.querySelector('[data-testid="stat-card-cta-responses"] button').click();
