@@ -295,6 +295,15 @@ describe('UiTooltipDirective', () => {
       expect(tooltip()).not.toBeNull();
     });
 
+    it('ignores an Escape that cancels an IME composition', async () => {
+      await setup();
+      await hover();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, isComposing: true, bubbles: true, cancelable: true }));
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true }));
+
+      expect(tooltip()).not.toBeNull();
+    });
+
     it('Escape ends keyboard-focus mode, so a later hover closes normally', async () => {
       await setup();
       pressKey('Tab');

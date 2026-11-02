@@ -4,16 +4,19 @@
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, inject, signal, TemplateRef, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
 import { UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
+import { UiComboboxComponent } from '../combobox/combobox.component';
 import { UiMenuItemComponent } from '../menu/menu-item.component';
 import { UiMenuComponent } from '../menu/menu.component';
 import { UiModalComponent } from '../modal/modal.component';
 import { UiModalService } from '../modal/modal.service';
 import { UiOptionComponent } from '../select/option.component';
 import { UiSelectComponent } from '../select/select.component';
+import { UiToastService } from '../toast/toast.service';
 import { UiPopoverDirective } from './popover.directive';
 
 // Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
@@ -36,6 +39,25 @@ const SELECT_TEMPLATE = `
       <lfx-ui-option value="lfai" label="LF AI" />
     </lfx-ui-select>
   </ng-template>
+`;
+
+const COMBOBOX_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="panel">Filters</button>
+  <ng-template #panel>
+    <lfx-ui-combobox ariaLabel="Project" [(value)]="project">
+      <lfx-ui-option value="cncf" label="CNCF" />
+      <lfx-ui-option value="lfai" label="LF AI" />
+    </lfx-ui-combobox>
+  </ng-template>
+`;
+
+const NESTED_TEMPLATE = `
+  <button id="trigger" type="button" [lfxUiPopover]="outer">Outer</button>
+  <ng-template #outer>
+    <button id="inner-trigger" type="button" [lfxUiPopover]="inner">Inner</button>
+    <button id="outer-last" type="button">Outer last</button>
+  </ng-template>
+  <ng-template #inner><input id="inner-first" aria-label="Search" /><button id="inner-last" type="button">Inner last</button></ng-template>
 `;
 
 const BUTTON_TEMPLATE = `
@@ -361,6 +383,25 @@ describe('UiPopoverDirective', () => {
     });
   });
 
+  describe('with a toast on screen', () => {
+    beforeEach(async () => mount(HOST_TEMPLATE));
+
+    it('stays open for a click on the toast', async () => {
+      const toast = TestBed.inject(UiToastService);
+      await host.whenStable();
+      toast.show({ message: 'Saved' });
+      await settle();
+      await open();
+
+      const message = container.querySelector(`.${UI_TOAST_PANE_CLASS} [data-testid="ui-toast-message"]`) as HTMLElement;
+      expect(message).not.toBeNull();
+      message.click();
+      await settle();
+
+      expect(panel()).not.toBeNull();
+    });
+  });
+
   describe('with a modal opened from the panel', () => {
     beforeEach(async () => mount(MODAL_FROM_PANEL_TEMPLATE, [UiModalComponent]));
 
@@ -580,6 +621,40 @@ describe('UiPopoverDirective', () => {
       expect(container.querySelector('[role="listbox"]')).toBeNull();
     });
 
+    it('Tab from a Select trigger with its list open, as the last field, closes onto the host', async () => {
+      await open();
+      const select = container.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
+      select.click();
+      select.focus();
+      await settle();
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+
+      const event = key(select, 'Tab');
+      await settle();
+
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it('Shift+Tab from a first-field Select with its list open closes the list and the popover onto the host', async () => {
+      await open();
+      const select = container.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
+      select.click();
+      select.focus();
+      await settle();
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+
+      const event = key(select, 'Tab', { shiftKey: true });
+      await settle();
+
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(true);
+    });
+
     it('closes only the list on Escape, then the popover on the next Escape', async () => {
       await open();
       const select = container.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
@@ -595,6 +670,46 @@ describe('UiPopoverDirective', () => {
       await settle();
       expect(panel()).toBeNull();
       expect(document.activeElement).toBe(trigger());
+    });
+  });
+
+  describe('with a combobox inside', () => {
+    beforeEach(async () => mount(COMBOBOX_TEMPLATE, [UiComboboxComponent, UiOptionComponent]));
+
+    it('Tab from an open Combobox, as the last field, closes the list and the popover onto the host', async () => {
+      await open();
+      const field = container.querySelector('[data-testid="ui-combobox-input"]') as HTMLElement;
+      field.focus();
+      field.click();
+      await settle();
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+
+      const event = key(field, 'Tab');
+      await settle();
+
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
+    });
+  });
+
+  describe('with a popover inside', () => {
+    beforeEach(async () => mount(NESTED_TEMPLATE));
+
+    it('closes only the inner popover when Tab leaves its last field', async () => {
+      await open();
+      el('inner-trigger').click();
+      await settle();
+      expect(container.querySelectorAll('[data-testid="ui-popover-panel"]').length).toBe(2);
+      el('inner-last').focus();
+
+      key(el('inner-last'), 'Tab');
+      await settle();
+
+      expect(container.querySelectorAll('[data-testid="ui-popover-panel"]').length).toBe(1);
+      expect(panel()).not.toBeNull();
+      expect(document.activeElement).toBe(el('inner-trigger'));
     });
   });
 

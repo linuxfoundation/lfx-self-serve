@@ -192,6 +192,15 @@ describe('UiModalComponent and UiModalService', () => {
     expect(dialog()).not.toBeNull();
   });
 
+  it('ignores an Escape that cancels an IME composition', async () => {
+    await open();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, isComposing: true, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true }));
+    await settle();
+
+    expect(dialog()).not.toBeNull();
+  });
+
   it('closes on a backdrop click', async () => {
     await open();
     (container.querySelector('.cdk-overlay-backdrop') as HTMLElement).click();

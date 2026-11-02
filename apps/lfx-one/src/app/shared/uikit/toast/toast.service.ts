@@ -6,6 +6,7 @@ import { Overlay, OverlayRef } from '@angular/cdk/overlay';
 import { ComponentPortal } from '@angular/cdk/portal';
 import { afterNextRender, DestroyRef, inject, Injectable, Injector, signal, Signal } from '@angular/core';
 import { outputToObservable, takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
 import { UiToastConfig, UiToastItem, UiToastRef } from '@lfx-one/shared/interfaces';
 
 import { UiToastRegionComponent } from './toast-region.component';
@@ -60,6 +61,8 @@ export class UiToastService {
     // 16px from the window edge, matching the toast's `100vw - 32px` maximum width.
     const overlayRef = this.overlay.create({
       positionStrategy: this.overlay.position().global().bottom('16px').right('16px'),
+      // Marks the stack for code that must not treat a click on it as an outside click, such as the popover.
+      panelClass: UI_TOAST_PANE_CLASS,
       disposeOnNavigation: false,
     });
     // shortcut: 1001 sits above the 1000 of every other CDK overlay, so a toast shows over an open modal. revisit: when the overlay container moves to --ui-z-* tokens, give toasts their own layer above CDK panes.

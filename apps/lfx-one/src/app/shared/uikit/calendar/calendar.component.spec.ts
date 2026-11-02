@@ -111,6 +111,33 @@ describe('UiCalendarComponent', () => {
     expect(day('2026-10-12').className).toContain('cursor-not-allowed');
   });
 
+  it('keeps the selected day and today distinguishable in forced colours', async () => {
+    await set('value', new Date(2026, 9, 12));
+
+    const selected = day('2026-10-12').className;
+    expect(selected).toContain('forced-color-adjust-none');
+    expect(selected).toContain('forced-colors:bg-[color:Highlight]');
+    expect(selected).toContain('forced-colors:text-[color:HighlightText]');
+    const other = day('2026-10-13').className;
+    expect(other).not.toContain('forced-colors:bg-[color:Highlight]');
+    expect(other).not.toContain('forced-color-adjust-none');
+    // Today is the dot: CanvasText on a plain day, HighlightText on the Highlight fill.
+    expect(day('2026-10-29').className).toContain('forced-colors:after:bg-[color:CanvasText]');
+    await set('value', new Date(2026, 9, 29));
+    expect(day('2026-10-29').className).toContain('forced-colors:after:bg-[color:HighlightText]');
+    expect(day('2026-10-13').className).toContain('forced-colors:focus-visible:outline-[color:CanvasText]');
+  });
+
+  it('draws the selected day in GrayText in forced colours when the calendar is disabled', async () => {
+    await set('value', new Date(2026, 9, 12));
+    await set('disabled', true);
+
+    const selected = day('2026-10-12').className;
+    expect(selected).toContain('forced-colors:bg-[color:GrayText]');
+    expect(selected).toContain('forced-colors:text-[color:Canvas]');
+    expect(selected).not.toContain('forced-colors:bg-[color:Highlight]');
+  });
+
   it('opens on the selected date month and keeps one tab stop on it', async () => {
     await set('value', new Date(2026, 4, 20));
 
