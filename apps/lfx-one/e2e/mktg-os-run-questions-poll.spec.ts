@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FAQ_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_PENDING_RUN_STORAGE_KEY_PREFIX } from '@lfx-one/shared/constants';
+import { FAQ_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_PENDING_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_NEW_MODE } from '@lfx-one/shared/constants';
 import type { MktgDocumentRunProgress, MktgRunPendingQuestions } from '@lfx-one/shared/interfaces';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
@@ -148,7 +148,8 @@ test('the browser that started the run keeps its own questions and stored block 
   await page.evaluate((url) => {
     window.history.pushState({}, '', url);
     dispatchEvent(new PopStateEvent('popstate'));
-  }, `/project/mktg-os-agents/${fixture.intake.agentId}?project=${DOCUMENT_PROJECT.slug}`);
+  }, `/project/mktg-os-agents/${fixture.intake.agentId}?project=${DOCUMENT_PROJECT.slug}&mode=${MKTG_RUN_NEW_MODE}`);
+  // The family page's run link opens the agent in fresh mode, whose Sources card carries the Start button.
   await page.getByTestId('mktg-run-start').getByRole('button').click();
   const answer = page.locator('textarea[data-test="mktg-run-questions-answer-goal"]');
   await expect(page.getByTestId('mktg-run-questions')).toContainText('Which synthetic goal?');
