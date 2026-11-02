@@ -3,7 +3,7 @@ title: Dashboard FAQ
 description: Frequently asked questions about navigating the LFX Self Serve dashboard.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, faq, lens, access]
+tags: [dashboard, faq, lens, access, organization, company, employer]
 last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
