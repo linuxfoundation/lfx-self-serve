@@ -7,7 +7,6 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { TagComponent } from '@components/tag/tag.component';
 import { SyncApplyOutcome } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -27,7 +26,7 @@ type PreviewTab = 'adds' | 'removes' | 'conflicts';
 
 @Component({
   selector: 'lfx-mailing-list-sync-preview-dialog',
-  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule, TagComponent],
+  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule],
   templateUrl: './mailing-list-sync-preview-dialog.component.html',
 })
 export class MailingListSyncPreviewDialogComponent {
