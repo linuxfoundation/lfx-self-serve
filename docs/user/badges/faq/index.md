@@ -4,7 +4,7 @@ description: Frequently asked questions about LFX badges.
 audience: [all]
 product_area: Badges
 tags: [badges, faq, credentials, credly]
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 intercom_collection: Badges
 ---
 
@@ -20,7 +20,7 @@ In the **Me** lens of [app.lfx.dev](https://app.lfx.dev), select **Badges** unde
 
 First check whether the badge is waiting for you to accept it in Credly. Until you accept it, the badge shows a **Pending** chip, and you can use the filter's **Status** option to show only **Pending** badges. If you have not accepted it, select **Accept Badge** on the card to open it in Credly.
 
-If the badge is not listed at all, check Credly first. Make sure the email address the badge was issued to is added and verified on your LFX account (see [Settings](../../account/settings/)). LFX One caches badge results for 30 minutes by default, or five minutes when the cached results include Pending badges. After waiting, reload the Badges page to fetch the latest results. These cache durations do not guarantee when Credly will issue a badge. If it is still missing, contact LFX support with the badge name.
+If the badge is not listed at all, check Credly first. Make sure the email address the badge was issued to is added and verified on your LFX account (see [Settings](../../account/settings/)). LFX One caches badge results for 30 minutes by default, or five minutes when the cached results include Pending badges. After waiting, reload the Badges page to fetch the latest results. These cache durations do not guarantee when Credly will issue a badge. If it is still missing from the Badges page, contact LFX support with the badge name. If Credly never issued a badge for a Linux Foundation training or certification, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org).
 
 ## Are my badges visible to others?
 
