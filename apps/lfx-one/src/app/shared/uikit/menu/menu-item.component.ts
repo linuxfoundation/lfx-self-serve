@@ -71,17 +71,15 @@ export class UiMenuItemComponent implements DoCheck {
 
   private initShortcutKeys(): Signal<string[]> {
     return computed(() => {
-      const shortcut = this.shortcut().trim();
-      if (shortcut.includes('+')) {
-        return shortcut
-          .split('+')
-          .map((key) => key.trim())
-          .filter(Boolean);
-      }
-      // `⌘E`: each leading modifier symbol is its own key, the rest is the last key.
-      const modifiers = shortcut.match(/^[⌘⇧⌥⌃]+/)?.[0] ?? '';
-      const rest = shortcut.slice(modifiers.length);
-      return [...Array.from(modifiers), ...(rest ? [rest] : [])];
+      // A `+` at the end is the key itself (`Ctrl++`), not a separator.
+      return this.shortcut()
+        .trim()
+        .split(/\s*\+\s*(?!$)/)
+        .flatMap((part) => {
+          // `⌘E`, `⌘ K`: each leading modifier symbol is its own key, the rest is the last key.
+          const modifiers = part.match(/^[⌘⇧⌥⌃]+/)?.[0] ?? '';
+          return [...Array.from(modifiers), part.slice(modifiers.length).trim()].filter(Boolean);
+        });
     });
   }
 

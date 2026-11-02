@@ -121,7 +121,7 @@ export class UiTableComponent {
   private initHostClasses(): Signal<string> {
     return computed(() => {
       const ring = this.bordered() ? 'rounded-ui-sm edge' : '';
-      return `block w-full overflow-x-auto copy-14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ui-focus ${ring}`;
+      return `block w-full overflow-x-auto copy-14 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ui-focus ${ring}`;
     });
   }
 

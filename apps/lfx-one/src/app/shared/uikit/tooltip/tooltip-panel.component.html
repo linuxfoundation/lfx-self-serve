@@ -3,8 +3,8 @@
 
 @if (heading()) {
   <span data-testid="ui-tooltip-title">{{ heading() }}</span>
-  <!-- shortcut: literal white at 65% for the description ink. revisit: when the library ships a white-alpha token. -->
-  <span class="font-normal text-[rgba(255,255,255,0.65)]" data-testid="ui-tooltip-text">{{ text() }}</span>
+  <!-- shortcut: raw var() in a class, as colour utilities cannot take alpha on a CSS variable. revisit: when the library ships a background-alpha token. -->
+  <span class="font-normal text-[color:color-mix(in_srgb,var(--ui-background-100)_65%,transparent)]" data-testid="ui-tooltip-text">{{ text() }}</span>
 } @else {
   <span data-testid="ui-tooltip-text">{{ text() }}</span>
 }

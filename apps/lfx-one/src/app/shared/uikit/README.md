@@ -87,7 +87,7 @@ The LFX UI Library tokens come from `scripts/ui-tokens/tokens.json` (canonical, 
   - Toggle thumb shadow: `rgba(15, 23, 43, 0.2)` and `0.1` for its two layers, copied from the library.
   - Toast hover: white at 16% on success and error toasts, which have no white-alpha token.
   - Tooltip key ring: white at 25% around the shortcut keys.
-  - Tooltip description: white at 65% for the second line of the rich layout.
+  - Tooltip description: the background colour at 65%, as a `color-mix()` on `var(--ui-background-100)` in the class, so it follows the theme.
   - Scroller mask: `#000` is only the mask's alpha stop, not a colour.
 
 | Need                                                         | Utility                                                                                                                                                | Variable                          |

@@ -112,6 +112,15 @@ describe('UiMenuComponent', () => {
     expect(item('edit').className).toContain('focus-visible:shadow-focus');
   });
 
+  it('dims the shortcut keycaps in a disabled row', async () => {
+    fixture.componentInstance.editLocked.set(true);
+    await open();
+
+    const shortcut = item('edit').querySelector('[data-testid="ui-menu-item-shortcut"]') as HTMLElement;
+    expect(item('edit').getAttribute('aria-disabled')).toBe('true');
+    expect(shortcut.className).toContain('group-aria-disabled:[&_kbd]:text-ui-neutral-500');
+  });
+
   it('draws separators and a labelled group', async () => {
     await open();
 
@@ -372,5 +381,46 @@ describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
     const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
     expect(tooltips.length).toBe(1);
     expect(tooltips[0].textContent?.trim()).toBe('y');
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-shortcut-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item [shortcut]="shortcut()">Go</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class ShortcutHostComponent {
+  public readonly shortcut = signal('');
+}
+
+describe('UiMenuItemComponent shortcut keycaps', () => {
+  const cases: [string, string[]][] = [
+    ['+', ['+']],
+    ['Ctrl++', ['Ctrl', '+']],
+    ['⌘+', ['⌘', '+']],
+    ['⌘ K', ['⌘', 'K']],
+    ['Ctrl+Shift+K', ['Ctrl', 'Shift', 'K']],
+    ['⇧⌘P', ['⇧', '⌘', 'P']],
+    ['⌘E', ['⌘', 'E']],
+    ['', []],
+  ];
+
+  it.each(cases)('splits %j into %j', async (shortcut, expected) => {
+    const host = TestBed.createComponent(ShortcutHostComponent);
+    host.componentInstance.shortcut.set(shortcut);
+    await host.whenStable();
+
+    const keys = Array.from(host.nativeElement.querySelectorAll('[data-testid="ui-menu-item-shortcut"] kbd')) as HTMLElement[];
+    expect(keys.map((key) => key.querySelector('[aria-hidden="true"]')?.textContent ?? key.textContent?.trim())).toEqual(expected);
+    host.destroy();
+  });
+
+  it('speaks the modifier symbols by name in the row text', async () => {
+    const host = TestBed.createComponent(ShortcutHostComponent);
+    host.componentInstance.shortcut.set('⌘+');
+    await host.whenStable();
+
+    expect(host.nativeElement.querySelector('lfx-ui-menu-item')?.textContent).toContain('Command');
+    host.destroy();
   });
 });

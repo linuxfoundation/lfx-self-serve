@@ -6,7 +6,9 @@
 }
 <span class="min-w-0 flex-1 truncate"><ng-content /></span>
 @if (shortcutKeys().length) {
-  <span [class]="affixClasses()" data-testid="ui-menu-item-shortcut"><lfx-ui-keyboard-input [keys]="shortcutKeys()" size="sm" /></span>
+  <span [class]="affixClasses()" class="group-aria-disabled:[&_kbd]:text-ui-neutral-500" data-testid="ui-menu-item-shortcut"
+    ><lfx-ui-keyboard-input [keys]="shortcutKeys()" size="sm"
+  /></span>
 }
 @if (trailingIcon()) {
   <span [class]="affixClasses()" data-testid="ui-menu-item-trailing-icon"><i class="ui-icon" [class]="trailingIcon()" aria-hidden="true"></i></span>
