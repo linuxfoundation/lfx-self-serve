@@ -3,7 +3,7 @@
 
 import { NO_ERRORS_SCHEMA, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensFoundationProject, OrgLensFoundationsAndProjectsResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -100,5 +100,32 @@ describe('OrgOverviewFoundationsAndProjectsComponent maintainer roles (lfx-self-
     expect(maintainers('envoy')).toBe('0');
     expect(maintainers('unavailable')).toBe('—');
     expect(maintainers('non-lf')).toBe('—');
+  });
+});
+
+// lfx-self-serve-ops#1219: the Overview has no organization scope, so its project rows carry none (the default).
+describe('OrgOverviewFoundationsAndProjectsComponent project navigation', () => {
+  interface Rows {
+    onProjectRowClick: (row: OrgLensFoundationProject) => void;
+    onProjectRowKeydown: (event: KeyboardEvent, row: OrgLensFoundationProject) => void;
+  }
+
+  async function navigateFrom(url: string, open: (component: Rows, row: OrgLensFoundationProject) => void) {
+    const fixture = await render([project('k8s')]);
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl(url);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    open(fixture.componentInstance as unknown as Rows, project('k8s'));
+    return navigate;
+  }
+
+  it('opens the project with no organization scope, by click and by keyboard, whatever the address names', async () => {
+    for (const url of ['/', '/?orgScope=all']) {
+      const clicked = await navigateFrom(url, (component, row) => component.onProjectRowClick(row));
+      expect(clicked.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
+
+      const keyed = await navigateFrom(url, (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
+      expect(keyed.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
+    }
   });
 });

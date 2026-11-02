@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  OrgAllEmployeeEmploymentFilter,
   OrgCodeMeasure,
   OrgCodeMeasureOption,
   OrgCodeMetric,
@@ -97,17 +98,29 @@ export const ORG_CODE_METRIC_UNIT: Readonly<Record<OrgCodeMetric, OrgCountUnit>>
 /** All Employees code tile label: people with any code contribution, whichever code-count option is picked (lfx-self-serve#4160). */
 export const ORG_ALL_EMPLOYEE_CODE_STAT_LABEL = 'Code Contributors';
 
-/** Note on the All Employees code tile while only current employees are shown (lfx-self-serve#4160). */
-export const ORG_ALL_EMPLOYEE_CURRENT_ONLY_CODE_NOTE =
-  'Counts current employees only, unlike People → Contributors and Code Contributions. Set the employment filter to "All employees" to include people who have since left.';
+/**
+ * Note on the All Employees code tile per employment view (lfx-self-serve#4160, #4730): under "Current employees" it
+ * leaves out people who have left; under "All employees" it matches People → Contributors, people with code but no
+ * employment record included; the Former view needs none.
+ */
+export const ORG_ALL_EMPLOYEE_CODE_NOTE = {
+  current:
+    'Counts current employees only, unlike People → Contributors and Code Contributions. Set the employment filter to "All employees" to include people who have since left.',
+  former: null,
+  all: 'Matches People → Contributors. Includes people with code credited to this company but no employment record, who are counted and listed only under "All employees", not under current or former employees.',
+} as const satisfies Readonly<Record<OrgAllEmployeeEmploymentFilter, string | null>>;
 
 /**
  * Overview "Active Contributors" card: who it counts and over what window (lfx-self-serve#4160). The headline is the
  * People → Contributors default tile (the Org Lens default view), so it says so in the same words as the Maintainer roles card.
+ * The Overview has no Organization scope picker (lfx-self-serve-ops#1219): it counts the default scope, the company's LFX
+ * Insights organization, or every related organization for a company without one.
  */
 export const ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION =
   `People with at least one code contribution (commit, pull request, review or comment) in ${ORG_DEFAULT_PROJECT_SCOPE_LABEL} ` +
-  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. Bots and CDP team members excluded.`;
+  `over the ${ORG_LENS_DEFAULT_TIME_RANGE_LABEL.toLowerCase()}, credited to the employer they had at the time, so people who have since left are included. ` +
+  "Counts the company's LFX Insights organization, in repositories LFX Insights counts (every related organization when it has none). " +
+  'Bots and CDP team members excluded.';
 
 /** The one commit definition, shown as the tooltip wherever Org Lens shows an all-branch commit count. */
 export const ORG_COMMITS_DEFINITION =

@@ -52,109 +52,126 @@
       <lfx-card-tabs-bar [options]="mainTabs()" [selectedFilter]="mainTab()" (filterChange)="onMainTabChange($event)" data-testid="org-contributions-tabs" />
 
       <!-- Filter bar (shared across both tabs) -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
-        <div class="relative flex-1 sm:min-w-56">
-          <lfx-input-text
-            [form]="filterForm"
-            control="search"
-            [placeholder]="searchPlaceholder()"
-            icon="fa-light fa-search"
-            size="small"
-            styleClass="w-full"
-            dataTest="org-contributions-search-input" />
+      <div class="flex flex-col">
+        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center px-5 py-4 border-b border-gray-100" data-testid="org-contributions-filter-bar">
+          <div class="relative flex-1 sm:min-w-56">
+            <lfx-input-text
+              [form]="filterForm"
+              control="search"
+              [placeholder]="searchPlaceholder()"
+              icon="fa-light fa-search"
+              size="small"
+              styleClass="w-full"
+              dataTest="org-contributions-search-input" />
+          </div>
+          <div class="w-full sm:w-44">
+            <lfx-select
+              [form]="filterForm"
+              control="dateRange"
+              size="small"
+              [options]="dateRangeOptions"
+              styleClass="w-full"
+              ariaLabel="Filter by date range"
+              dataTest="org-contributions-date-range-filter" />
+          </div>
+          <div class="w-full sm:w-44">
+            <lfx-select
+              [form]="filterForm"
+              control="projectScope"
+              size="small"
+              [options]="projectScopeOptions"
+              styleClass="w-full"
+              [ariaLabel]="projectScopeLabel"
+              dataTest="org-contributions-project-scope-filter" />
+          </div>
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="foundation"
+              size="small"
+              [options]="foundationOptions()"
+              [filter]="true"
+              filterPlaceholder="Search foundations"
+              emptyFilterMessage="No foundations match."
+              styleClass="w-full"
+              ariaLabel="Filter by foundation"
+              dataTest="org-contributions-foundation-filter" />
+          </div>
+          <div class="w-full sm:w-52" data-testid="org-contributions-projects-filter">
+            <lfx-multi-select
+              [form]="filterForm"
+              control="projects"
+              [options]="projectOptions()"
+              optionLabel="label"
+              optionValue="value"
+              optionSubLabel="sublabel"
+              [placeholder]="anyProjectLabel"
+              filterPlaceHolder="Search projects"
+              [selectionLimit]="maxFilterValues"
+              size="small"
+              styleClass="w-full" />
+          </div>
+          <div class="w-full sm:w-52">
+            <lfx-multi-select
+              [form]="filterForm"
+              control="employees"
+              [options]="employeeOptions()"
+              optionLabel="label"
+              optionValue="value"
+              optionSubLabel="sublabel"
+              placeholder="All Employees"
+              filterPlaceHolder="Search employees"
+              [selectionLimit]="maxFilterValues"
+              size="small"
+              styleClass="w-full" />
+          </div>
+          <lfx-more-filters-toggle
+            [(expanded)]="moreFiltersExpanded"
+            [count]="hiddenFilterCount()"
+            controls="org-contributions-more-filters"
+            dataTest="org-contributions-more-filters-toggle" />
+          @if (isFiltering()) {
+            <button
+              type="button"
+              class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 sm:self-auto"
+              data-testid="org-contributions-filter-bar-clear-filters"
+              (click)="clearFilters()">
+              Clear filters
+            </button>
+          }
         </div>
-        <div class="w-full sm:w-44">
-          <lfx-select
-            [form]="filterForm"
-            control="dateRange"
-            size="small"
-            [options]="dateRangeOptions"
-            styleClass="w-full"
-            ariaLabel="Filter by date range"
-            dataTest="org-contributions-date-range-filter" />
+        <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+        <div
+          id="org-contributions-more-filters"
+          class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center px-5 py-4 border-b border-gray-100"
+          [class.hidden]="!moreFiltersExpanded()"
+          data-testid="org-contributions-more-filters">
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="metric"
+              size="small"
+              [options]="metricOptions"
+              styleClass="w-full"
+              ariaLabel="Count all commits, only main branch commits or all code contributions"
+              dataTest="org-contributions-metric-filter" />
+          </div>
+          <div class="w-full sm:w-52">
+            <lfx-select
+              [form]="filterForm"
+              control="teamMembers"
+              size="small"
+              [options]="teamMembersOptions"
+              styleClass="w-full"
+              [ariaLabel]="teamMembersLabel"
+              [tooltip]="teamMembersTooltip"
+              tooltipPosition="top"
+              dataTest="org-contributions-team-members-filter" />
+          </div>
+          <div class="w-full sm:w-60">
+            <lfx-org-scope-select [form]="filterForm" dataTest="org-contributions-org-scope-filter" />
+          </div>
         </div>
-        <div class="w-full sm:w-44">
-          <lfx-select
-            [form]="filterForm"
-            control="projectScope"
-            size="small"
-            [options]="projectScopeOptions"
-            styleClass="w-full"
-            [ariaLabel]="projectScopeLabel"
-            dataTest="org-contributions-project-scope-filter" />
-        </div>
-        <div class="w-full sm:w-52">
-          <lfx-select
-            [form]="filterForm"
-            control="metric"
-            size="small"
-            [options]="metricOptions"
-            styleClass="w-full"
-            ariaLabel="Count all commits, only main branch commits or all code contributions"
-            dataTest="org-contributions-metric-filter" />
-        </div>
-        <div class="w-full sm:w-52">
-          <lfx-select
-            [form]="filterForm"
-            control="teamMembers"
-            size="small"
-            [options]="teamMembersOptions"
-            styleClass="w-full"
-            [ariaLabel]="teamMembersLabel"
-            [tooltip]="teamMembersTooltip"
-            tooltipPosition="top"
-            dataTest="org-contributions-team-members-filter" />
-        </div>
-        <div class="w-full sm:w-52">
-          <lfx-select
-            [form]="filterForm"
-            control="foundation"
-            size="small"
-            [options]="foundationOptions()"
-            [filter]="true"
-            filterPlaceholder="Search foundations"
-            emptyFilterMessage="No foundations match."
-            styleClass="w-full"
-            ariaLabel="Filter by foundation"
-            dataTest="org-contributions-foundation-filter" />
-        </div>
-        <div class="w-full sm:w-52" data-testid="org-contributions-projects-filter">
-          <lfx-multi-select
-            [form]="filterForm"
-            control="projects"
-            [options]="projectOptions()"
-            optionLabel="label"
-            optionValue="value"
-            optionSubLabel="sublabel"
-            [placeholder]="anyProjectLabel"
-            filterPlaceHolder="Search projects"
-            [selectionLimit]="maxFilterValues"
-            size="small"
-            styleClass="w-full" />
-        </div>
-        <div class="w-full sm:w-52">
-          <lfx-multi-select
-            [form]="filterForm"
-            control="employees"
-            [options]="employeeOptions()"
-            optionLabel="label"
-            optionValue="value"
-            optionSubLabel="sublabel"
-            placeholder="All Employees"
-            filterPlaceHolder="Search employees"
-            [selectionLimit]="maxFilterValues"
-            size="small"
-            styleClass="w-full" />
-        </div>
-        @if (isFiltering()) {
-          <button
-            type="button"
-            class="self-start whitespace-nowrap text-sm font-medium text-gray-500 underline hover:text-gray-900 sm:self-auto"
-            data-testid="org-contributions-filter-bar-clear-filters"
-            (click)="clearFilters()">
-            Clear filters
-          </button>
-        }
       </div>
 
       @if (response().teamMembersUnavailable) {
