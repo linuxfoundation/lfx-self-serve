@@ -9240,6 +9240,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
     selectedEmailTypeId: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
+    emailAudience: WritableSignal<CampaignAudience | null>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -9279,7 +9280,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
    *
    * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
    * templates. These pin that it is read rather than guessed at, and — more importantly — that a
-   * weak signal is NOT turned into a confident pre-selection.
+   * weak signal is NOT turned into a confident pre-selection. Since #2057 even a strong one is
+   * only a recommendation: nothing is selected until the operator clicks a row.
    */
   describe('event-derived template suggestion', () => {
     const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
@@ -9307,19 +9309,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     };
 
     /**
-     * A pending search must release a SUGGESTED selection at dispatch, not only when it answers.
+     * A pending search clears the suggestion at dispatch, not only when it answers: it describes
+     * the rows being replaced. Nothing was ever selected for the operator, so there is no
+     * selection to release and Stage stays disabled throughout.
      *
-     * Every arm that clears the template list also released the suggestion, but all of them run
-     * after the response lands. In between, the loading branch hides the list while
-     * `canStageEmail` still reads only `selectedEmailTemplateId` -- and `onStageEmailSend`
-     * snapshots that id before its first await. So the operator could stage a suggestion the
-     * in-flight search was about to remove, with the row that justified it already off screen:
-     * a silent wrong clone, which is the exact failure this feature exists to prevent.
-     *
-     * Asserts the state DURING the flight -- the request is deliberately left unanswered, because
-     * flushing it is what the old code needed in order to look correct.
+     * Asserts the state DURING the flight -- the request is deliberately left unanswered.
      */
-    it('releases a suggested selection when a new search is dispatched, before it answers', () => {
+    it('clears the suggestion when a new search is dispatched, before it answers', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('KubeCon Europe 2026', 'kubecon-eu-2026'));
       picker().searchEmailTemplates('kubecon');
@@ -9330,14 +9326,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'k26', name: 'KubeCon Europe 2026 announcement', subject: 'Register now' }] as HubSpotMarketingEmail[],
       });
 
-      // The suggestion took, and it is SYSTEM-owned -- the precondition for the release.
-      expect(picker().selectedEmailTemplateId()).toBe('k26');
+      // Suggested, and NOT selected (#2057).
       expect(picker().emailTemplateSuggestionId()).toBe('k26');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       // Dispatch a narrower search and leave it IN FLIGHT.
       picker().searchEmailTemplates('workshop');
       fixture.detectChanges();
 
+      expect(picker().emailTemplateSuggestionId(), 'the suggestion outlived the rows it described').toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
       expect(picker().canStageEmail()).toBe(false);
 
@@ -9368,17 +9365,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
     /**
-     * An UN-LISTED generic long word still pre-selects, and that is the known trade-off.
+     * An UN-LISTED generic long word still SUGGESTS, and that is the known trade-off.
      *
      * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
      * -- still scores the double weight and clears the threshold alone. This test pins the
-     * CURRENT behavior rather than asserting it is correct: the honest statement of the limit is
-     * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
-     * false positive.
+     * CURRENT behavior rather than asserting it is correct: the deny-list closes words someone has
+     * noticed, and the next un-noticed one is a fresh false positive.
      *
-     * It is here so the limit is visible and measured. If the scoring ever becomes structural --
-     * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
-     * change is deliberate rather than silent.
+     * What #2057 changed is the cost of that false positive: it is a badge, not a selection, so the
+     * unrelated template is never staged unless the operator picks it. The test pins both halves.
      */
     it('does not let a generic-heavy row block an eligible suggestion', () => {
       showPicker();
@@ -9401,7 +9396,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionId()).toBe('eligible');
     });
 
-    it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
+    it('still suggests on an un-enumerated generic long word (known limit), but selects nothing', () => {
       showPicker();
       expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
       picker().emailBriefOutput.set(briefFor('Developer Conference', 'developer-conference'));
@@ -9414,6 +9409,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('unrelated');
+      expect(picker().selectedEmailTemplateId(), 'a heuristic match selected a template nobody chose').toBe('');
+      expect(picker().canStageEmail()).toBe(false);
     });
 
     /**
@@ -9534,10 +9531,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId(), 'the prior edition outranked the year-matching one').toBe('current');
-      expect(picker().selectedEmailTemplateId()).toBe('current');
+      expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('pre-selects the template whose name carries the event, and says what it matched', () => {
+    it('suggests the template whose name carries the event, badges it, and says what it matched', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9552,10 +9549,70 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), "the suggestion selected a template on the operator's behalf").toBe('');
       // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
       expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+
+      // A visible TEXT badge on the suggested row only -- not colour alone.
+      const host = fixture.nativeElement as HTMLElement;
+      // Both badges stay MOUNTED, so a row's width never shifts as the suggestion moves; only the
+      // suggested row's badge is visible (frontend-checklist 8).
+      const suggestedBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-mcp"]');
+      const otherBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-kc"]');
+      expect(suggestedBadge?.textContent?.trim()).toBe('Suggested');
+      expect(suggestedBadge?.classList.contains('invisible')).toBe(false);
+      expect(otherBadge, 'the badge slot was removed rather than hidden').not.toBeNull();
+      expect(otherBadge?.classList.contains('invisible')).toBe(true);
+      // And the row is NOT drawn as selected: the badge is the only mark it carries.
+      const row = host.querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]');
+      expect(row?.getAttribute('aria-pressed')).toBe('false');
+      // aria-label replaces the badge text for assistive tech, so the label carries the same fact.
+      expect(row?.getAttribute('aria-label')).toContain('suggested for this event');
+      expect(host.querySelector('[data-testid="campaigns-email-template-kc"]')?.getAttribute('aria-label')).not.toContain('suggested');
+    });
+
+    /**
+     * The core of #2057: the suggestion RECOMMENDS, and only an explicit click selects.
+     *
+     * Every other Stage precondition is satisfied here, so the selection is the only thing that
+     * can hold Stage back -- and it must, until the operator clicks. Before #2057 the suggestion
+     * wrote `selectedEmailTemplateId`, which becomes `hubspotConfig.sourceEmailId` on stage, so a
+     * heuristic match could clone a branded HubSpot draft that nobody chose.
+     */
+    it('selects nothing and keeps Stage disabled until the operator clicks the suggested row', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().emailAudience.set({
+        id: 'aud-1',
+        briefId: 'brief-1',
+        platform: 'hubspot',
+        platformMasterListId: '900',
+        inclusionSummary: '1 signal list',
+        status: 'built',
+        version: 1,
+      });
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), 'selected before any click').toBe('');
+      expect(picker().canStageEmail(), 'Stage was enabled on a template nobody chose').toBe(false);
+
+      // The explicit operator action, through the DOM rather than the handler.
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]')?.click();
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().canStageEmail(), 'fixture precondition: the click is the only thing Stage was waiting for').toBe(true);
     });
 
     /**
@@ -9594,7 +9651,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('stops calling the selection system-chosen once the operator picks it themselves', () => {
+    it('drops the banner and announcement once the operator picks the suggested row themselves', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9613,23 +9670,20 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         'precondition: the suggestion banner is up'
       ).not.toBeNull();
 
-      const c = fixture.componentInstance as unknown as { onSelectEmailTemplate(id: string): void };
-      // Override to another row, then deliberately pick the suggested one BACK.
-      c.onSelectEmailTemplate('kc');
-      c.onSelectEmailTemplate('mcp');
+      // The operator accepts the suggestion with a click -- now it is their choice.
+      picker().onSelectEmailTemplate('mcp');
       fixture.detectChanges();
 
-      // The ids coincide again -- an equality check would still say "system chose this".
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       expect(
         fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
-        "the banner called the operator's own re-pick a pre-selection"
+        'the banner kept recommending after the operator chose'
       ).toBeNull();
       expect(
         (fixture.componentInstance as unknown as { emailTemplateSuggestionAnnouncement(): string }).emailTemplateSuggestionAnnouncement(),
-        "the screen-reader announcement called the operator's own re-pick a pre-selection"
+        'the screen-reader announcement kept recommending after the operator chose'
       ).toBe('');
     });
 
@@ -9828,7 +9882,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Nairobi welcome note' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       picker().onSelectEmailTemplate('other');
       picker().searchEmailTemplates('');
@@ -9838,38 +9892,41 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The worst state this feature can reach: a banner announcing a pre-selected template while no
-     * VISIBLE row carries it.
+     * The worst state this feature can reach: a banner pointing at a "Suggested" row that no
+     * VISIBLE row carries.
      *
      * Ranking and the suggestion agree on the event half but not the type half, and a tie falls to
      * the server's original order — so a genuinely-suggested template can rank below enough
      * type-keyword matches to be cut by the 100-row render limit. The operator would then be told
-     * something was chosen for them with no way to see or change it. The selected row is spliced
-     * back in at the top for exactly this reason.
+     * about a recommendation they cannot see or accept. The suggested row is spliced back in for
+     * exactly this reason.
      *
-     * Built to reproduce it: 150 rows that match six keywords of the seven-keyword
-     * `final-countdown` type, plus one true KubeCon template that matches none of them.
+     * Built to reproduce it: 150 rows that match three GENERIC event words, which rank but can
+     * never justify a suggestion, plus one true KubeCon template.
      */
-    it('always draws the selected row, even when ranking would cut it past the render limit', () => {
+    it('always draws the suggested row, even when ranking would cut it past the render limit', () => {
       showPicker();
-      picker().selectedEmailTypeId.set('final-countdown');
-      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      // Ranking counts GENERIC event terms; the suggestion does not. So 150 rows matching three
+      // generic words ("community", "training", "webinar") all outrank the one row carrying the
+      // decisive `kubecon`, pushing it past the render cap -- while it is still the only row
+      // eligible to be suggested.
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
       picker().searchEmailTemplates('');
 
       const noise = Array.from({ length: 150 }, (_, i) => ({
         id: `noise-${i}`,
-        name: `Final countdown: last chance, closing deadline, closes soon #${i}`,
+        name: `Community training webinar newsletter #${i}`,
       })) as HubSpotMarketingEmail[];
       respond({
         enabled: true,
         error: null,
         possiblyTruncated: false,
-        emails: [...noise, { id: 'kc', name: 'KubeCon NA 2026 Modern Template' } as HubSpotMarketingEmail],
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('kc');
-      expect(picker().selectedEmailTemplateId()).toBe('kc');
-      // The assertion that matters: it is actually DRAWN, not merely selected.
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      // The assertion that matters: it is actually DRAWN, so its badge can be seen and clicked.
       expect(
         picker()
           .emailTemplatesRendered()
@@ -9877,6 +9934,56 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ).toBe(true);
       // And the render cap is still honoured — the splice replaces a row, it does not append.
       expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /**
+     * Both pinned rows past the cap at once: a hand-picked row AND a different suggested row. The
+     * cap must hold, both must be drawn, and the selection keeps the last slot it always had.
+     */
+    it('draws both the selected and the suggested row when ranking cuts both past the render limit', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      // The noise rows tie, so the server order decides and the last one ranks 150th -- past the cap.
+      picker().onSelectEmailTemplate('noise-149');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered.slice(-2).map((t) => t.id)).toEqual(['kc', 'noise-149']);
+      expect(new Set(rendered.map((t) => t.id)).size, 'a pinned row was drawn twice').toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /** One pinned row already drawn, the other cut: the drawn one keeps its place, the cap holds. */
+    it('keeps an already-drawn selection in place while pinning a cut suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      picker().onSelectEmailTemplate('noise-0');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered[0].id).toBe('noise-0');
+      expect(rendered[rendered.length - 1].id).toBe('kc');
     });
 
     /**
@@ -9908,9 +10015,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The chosen template belongs to the brief that chose it. Left set, it survives into the next
-     * event in the same foundation — where it is both wrong AND silently suppresses the new
-     * suggestion, since the derivation only fills an empty selection. The feature would fail
-     * precisely on the second event.
+     * event in the same foundation — where it is wrong, still stageable, and hides the new event's
+     * suggestion banner, which shows only while nothing is selected.
      */
     it('clears the chosen template when the brief-derived state resets', () => {
       showPicker();
@@ -9922,6 +10028,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
+      picker().onSelectEmailTemplate('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
@@ -9929,9 +10036,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The banner asserts what is SELECTED, so it must not survive an override. Keyed on the
-     * suggestion merely existing, it read "pre-selected ... for this event" beside a template the
-     * derivation never chose.
+     * The banner is help BEFORE a decision, so it must not survive one: repeating the
+     * recommendation beside a template the operator chose argues with their choice.
      */
     it('hides the suggestion banner once the operator picks a different row', () => {
       showPicker();
@@ -9977,7 +10083,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
     });
 
-    /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */
+    /** The banner is one sentence; an @if between text nodes rendered "event . Nothing is". */
     it('renders the banner without a space before the full stop', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
@@ -9991,13 +10097,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
       const text = fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
       expect(text).not.toContain(' .');
-      expect(text).toContain('. Pick a different one to override it.');
+      expect(text).toContain('. Nothing is selected until you choose a template.');
     });
 
     /**
      * The type is the tie-break, so it must be re-applied when the type CHANGES. A suggestion made
-     * under Registration Push is the wrong answer once the operator switches to CFP Launch — and
-     * left alone the stale template stayed selected and would have been the one staged.
+     * under Registration Push is the wrong answer once the operator switches to CFP Launch. Only
+     * the badge moves; nothing is selected either side of the change.
      */
     it('re-derives the suggestion when the email type changes', () => {
       showPicker();
@@ -10013,10 +10119,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
           { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
         ] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('reg');
+      expect(picker().emailTemplateSuggestionId()).toBe('reg');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
-      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+      expect(picker().emailTemplateSuggestionId()).toBe('cfp');
+      expect(picker().selectedEmailTemplateId(), 'a type change selected the re-derived suggestion').toBe('');
     });
 
     /** A hand-picked template is the operator's; a type change is not permission to replace it. */
@@ -10061,10 +10169,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The banner is a plain <p> inserted when the suggestion lands, and a newly inserted element is
-     * not reliably announced — so a screen-reader user could miss that a template was chosen for
-     * them and that it is the one staging will use.
+     * not reliably announced — so a screen-reader user could miss that one row is recommended.
      */
-    it('announces the auto-selection through the existing live region', () => {
+    it('announces the suggestion through the existing live region', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -10076,14 +10183,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(live).toContain('MCP Dev Summit Nairobi registration');
+      expect(live).toContain('Suggested template for this event: MCP Dev Summit Nairobi registration');
       expect(live).toContain('nairobi');
+      expect(live).toContain('Nothing is selected until you choose a template.');
 
-      // Silent once the operator overrides — it no longer describes what is selected.
+      // Silent once the operator has chosen.
       picker().onSelectEmailTemplate('mcp-other');
       fixture.detectChanges();
       const after = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(after).not.toContain('Template selected for this event');
+      expect(after).not.toContain('Suggested template for this event');
     });
 
     /**
@@ -10109,14 +10217,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A search that drops the auto-selected row must release it.
-     *
-     * Only the suggestion id was cleared, not the selection — so after a narrowed search the id
-     * stayed selected while the banner hid (it renders only while the suggestion IS the
-     * selection), and staging would clone a template no longer in the list. The same
-     * silent-wrong-clone the feature exists to prevent, reached from the other direction.
+     * A search that drops the suggested row drops the suggestion, and selects nothing in its
+     * place -- a badge must never describe a row the results no longer contain.
      */
-    it('releases an auto-selected template when a search no longer returns it', () => {
+    it('drops the suggestion when a search no longer returns it, and selects nothing', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -10126,9 +10230,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // A narrowed search that no longer returns the auto-selected row.
+      // A narrowed search that no longer returns the suggested row.
       picker().searchEmailTemplates('newsletter');
       respond({
         enabled: true,
@@ -10137,15 +10242,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
       });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
     /**
-     * ID equality cannot establish provenance.
-     *
-     * After suggestion A the operator can pick B, then deliberately pick A again — the ids
-     * coincide, so an equality check treats their explicit choice as system-owned and silently
-     * releases it on the next search. Provenance is a fact about how the value was SET.
+     * A hand-pick of the SUGGESTED row is the operator's like any other, and survives a search
+     * that no longer returns it.
      */
     it('keeps a hand-picked template that happens to match the suggestion', () => {
       showPicker();
@@ -10156,9 +10259,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Something else' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // Away and deliberately back to the SAME id — now the operator's choice, not the system's.
+      // Away and deliberately back to the suggested id.
       picker().onSelectEmailTemplate('other');
       picker().onSelectEmailTemplate('mcp');
 
@@ -10169,13 +10272,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A FAILED search must release a system-owned selection too.
+     * A FAILED search drops the suggestion too, and leaves nothing selected.
      *
-     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms set
-     * `emailTemplates` to null while leaving the auto-selected id in place — invisible, since
-     * there is no list to show it in, and still stageable.
+     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms must
+     * clear it themselves or a suggestion would outlive the list it described.
      */
-    it('releases an auto-selected template when the search fails', () => {
+    it('drops the suggestion when the search fails, leaving nothing selected', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -10185,12 +10287,80 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
 
       picker().searchEmailTemplates('anything');
       respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * When the list is GONE rather than replaced, a hand-picked template goes with it (#2057).
+     *
+     * There is no list to render the row in, and `canStageEmail` reads the id, so a surviving
+     * selection would let Stage Email Draft clone a template the operator can no longer see. One
+     * row per terminal arm of `searchEmailTemplates` that answers a request. The fifth arm, no
+     * foundation, is reached only through a foundation switch, and that switch clears the
+     * selection itself, so a row for it could not fail. A search that merely replaces the list
+     * keeps the pick (the test below).
+     */
+    it.each([
+      ['HubSpot refuses the search', (): void => respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] })],
+      ['the channel is off', (): void => respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] })],
+      [
+        'every row is unusable',
+        (): void => respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '', name: 'No id' }] as HubSpotMarketingEmail[] }),
+      ],
+      [
+        'the request fails in transport',
+        (): void => {
+          httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').error(new ProgressEvent('error'));
+          fixture.detectChanges();
+        },
+      ],
+    ])('clears a hand-picked template when %s', (_arm, fail) => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'hand', name: 'Something the operator knows about' }] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      fail();
+
+      expect(picker().selectedEmailTemplateId(), 'an invisible, stageable selection survived the list').toBe('');
+      expect(picker().emailTemplatesRendered()).toEqual([]);
+      expect(picker().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * A type change during a search must not re-derive the suggestion from the rows that search is
+     * replacing: the loading state hides them, so the live region would announce a recommendation
+     * for a row nobody can see. The search's own answer derives it under the new type.
+     */
+    it('does not suggest from the previous results while a search is pending', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      (picker() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+
+      expect(picker().emailTemplateSuggestionId(), 'a suggestion was derived from rows the pending search is replacing').toBe('');
     });
 
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */
@@ -10316,8 +10486,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
-     * "Template selected for this event: . Choose another" — which tells a screen-reader user
-     * nothing about what was chosen for them.
+     * "Suggested template for this event: . Nothing is selected" — which tells a screen-reader user
+     * nothing about what is recommended.
      */
     it('announces a subject-matched template by its subject rather than an empty name', () => {
       showPicker();
