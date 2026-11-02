@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test';
 import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { createHash } from 'node:crypto';
-import { MEMBER_360_INPUT_TIMEOUT_MESSAGE } from '../../../packages/shared/src/constants/member-360.constants';
+import { MEMBER_360_INPUT_TIMEOUT_MESSAGE, MEMBER_360_RENEWAL_RED_DAYS } from '../../../packages/shared/src/constants/member-360.constants';
 
 import {
   json,
@@ -601,7 +601,7 @@ for (const scenario of [
   { name: 'all unknown', values: [null, null], note: 'No list-price value for these 2 renewals' },
   { name: 'partly known', values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
   { name: 'all known', values: [25000, 15000], note: '$40,000 at list price' },
-  { name: 'no upcoming renewals', values: [], note: 'No renewals within 120 days' },
+  { name: 'no upcoming renewals', values: [], note: `No renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days` },
 ]) {
   test(`renewal card distinguishes ${scenario.name} list-price coverage`, async ({ page }, info) => {
     await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
@@ -614,8 +614,8 @@ for (const scenario of [
     await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
     await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
     const card = page.getByTestId('member-360-summary-renewals');
-    await expect(card.locator('b')).toHaveText(String(scenario.values.length));
-    await expect(card.locator('span').last()).toHaveText(scenario.note);
+    await expect(card.getByTestId('member-360-summary-renewals-value')).toHaveText(String(scenario.values.length));
+    await expect(card.getByTestId('member-360-summary-renewals-note')).toHaveText(scenario.note);
     await expect(card).not.toContainText('$0 at list price');
     await page.screenshot({ path: info.outputPath(`renewals-${scenario.name.replaceAll(' ', '-')}.png`), fullPage: true });
   });

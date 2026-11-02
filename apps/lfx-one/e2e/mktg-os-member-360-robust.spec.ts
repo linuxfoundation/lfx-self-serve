@@ -56,7 +56,7 @@ for (const width of [1440, 1280, 390]) {
     await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
     await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
     await expect(page.getByTestId('member-360-result')).toBeVisible();
-    const renewalNote = page.getByTestId('member-360-summary-renewals').locator('span').last();
+    const renewalNote = page.getByTestId('member-360-summary-renewals-note');
     await expect(renewalNote).toBeVisible();
     await expect(renewalNote).toHaveText('$25,000 known at list price · 1 without a value');
     await expect(page.getByTestId('member-360-summary')).toContainText('Members scored');
