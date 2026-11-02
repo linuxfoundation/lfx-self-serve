@@ -66,8 +66,8 @@ A PrimeNG-free component library for LFX One, inspired by the Insights uikit. Th
 | `lfx-ui-combobox`       | `UiComboboxComponent`      | Text field that filters the same `lfx-ui-option` rows as you type, bold match, empty state; picks from the list only; `[(value)]`, forms                               |
 | `lfx-ui-command-menu`   | `UiCommandMenuComponent`   | Command palette in a modal via `UiCommandMenuService`: search, groups, shortcut hints, empty state; combobox and listbox                                               |
 | `lfx-ui-multi-select`   | `UiMultiSelectComponent`   | Several values from the same `lfx-ui-option` rows: checkbox rows, Only action, count in the trigger; `[(values)]` and forms with `string[]`                            |
-| `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal: left or right, width in px, header actions and close button, scrolling body, footer; slides, `canClose` guard           |
 | `lfxUiPopover`          | `UiPopoverDirective`       | Non-modal dialog panel in the Menu material from any content: `aria-haspopup`, `aria-expanded`, Escape and outside click close; open it from `lfx-ui-button [popover]` |
+| `lfx-ui-drawer`         | `UiDrawerComponent`        | Side sheet via `UiDrawerService` on the modal: left or right, width in px, header actions and close button, scrolling body, footer; slides, `canClose` guard           |
 
 ## Design tokens
 
