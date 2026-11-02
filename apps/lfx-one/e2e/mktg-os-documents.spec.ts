@@ -359,9 +359,9 @@ test.describe('Marketing OS current revisions', () => {
   test('the subtle bar goes back to current and makes the open revision current', async ({ page }) => {
     await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 9 });
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
-    await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toHaveText("You're viewing v7 · 13 Oct · The writer · v9 is current");
+    await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toHaveText("You're reading v7 (13 Oct, The writer). v9 is the current version.");
     await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toHaveAccessibleName('Make v7 current');
-    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Back to v9');
+    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Open v9');
     await expect(page.getByTestId('mktg-document-view-history-bar-back')).not.toHaveAttribute('aria-disabled', 'true');
     await page.getByTestId('mktg-document-view-history-bar-back').click();
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 9');
@@ -384,7 +384,7 @@ test.describe('Marketing OS current revisions', () => {
     await page.getByTestId('mktg-document-view-run-again').focus();
     await page.keyboard.press('Tab');
     await expect(summary).toBeFocused();
-    await expect(page.getByRole('tooltip')).toHaveText(`You're viewing v7 · 13 Oct · ${name} · v9 is current`);
+    await expect(page.getByRole('tooltip')).toHaveText(`You're reading v7 (13 Oct, ${name}). v9 is the current version.`);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('tooltip')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-history-bar-back').click();
@@ -398,7 +398,7 @@ test.describe('Marketing OS current revisions', () => {
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
     await expect(page.getByTestId('mktg-document-view-history-bar-mobile-summary')).toHaveText('Viewing v7');
     await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toHaveAccessibleName('Make current');
-    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Back');
+    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Open');
     await page.getByTestId('mktg-document-view-history-bar-make-current').click();
     await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 7 of 9');
