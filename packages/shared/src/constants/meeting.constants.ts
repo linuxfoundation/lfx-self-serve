@@ -419,7 +419,7 @@ export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-sch
  * @description Sent with the self-removal request and logged by the BFF so removals can be broken
  * down by where they came from. A value outside this list is logged as `unknown`.
  */
-export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link'] as const;
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link', 'meetings-home'] as const;
 
 /**
  * Feature rows the composer preview lists, in display order.
@@ -949,6 +949,12 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  * filter. Five is the row count surfaced by the dashboard Last Meeting / past-meetings card.
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
+
+/** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
+export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
+
+/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `has_ai_summary`. */
+export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
 
 /**
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.

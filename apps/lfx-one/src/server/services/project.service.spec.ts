@@ -2259,21 +2259,28 @@ describe('ProjectService — enrichWithProjectData', () => {
   it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
       new Map([
-        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn', logo_url: 'https://logos.example/fdn.svg' })],
         ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
       ])
     );
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '', project_logo_url: 'stale' },
       { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
     ]);
 
     // Fresh fields win on every mapped column — including is_foundation flipping both ways
     // (stale false -> computed true for the foundation; stale true -> computed false for the child).
     expect(result).toEqual([
-      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
-      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+      {
+        project_uid: 'fdn',
+        project_name: 'Fresh Foundation',
+        project_slug: 'fresh-fdn',
+        is_foundation: true,
+        parent_project_uid: '',
+        project_logo_url: 'https://logos.example/fdn.svg',
+      },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn', project_logo_url: '' },
     ]);
   });
 
@@ -2281,7 +2288,13 @@ describe('ProjectService — enrichWithProjectData', () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      {
+        project_uid: 'gone',
+        project_name: 'Payload Name',
+        project_slug: 'payload-slug',
+        parent_project_uid: 'payload-parent',
+        project_logo_url: 'payload-logo',
+      },
       { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
     ]);
 
@@ -2291,6 +2304,7 @@ describe('ProjectService — enrichWithProjectData', () => {
       project_slug: 'payload-slug',
       parent_project_uid: 'payload-parent',
       is_foundation: undefined,
+      project_logo_url: 'payload-logo',
     });
     // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
     // a coerced false would mislabel a foundation-owned entity as project-owned.
