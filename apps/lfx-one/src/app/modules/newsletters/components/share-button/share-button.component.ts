@@ -3,10 +3,12 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
+import { shareButtonAriaLabel, visibleShareCount } from '@lfx-one/shared/utils';
 
 /**
- * Newsletter Share button with the issue's share count ("Share · 12"), used by the reader page and
- * the reader drawer. The count is hidden while unknown (null) or zero.
+ * Newsletter Share button with the issue's share count ("Share · 12"), used by the reader drawer. The
+ * reader page shows the same count on `NewsletterEngagementRailComponent` instead. The count is hidden
+ * while unknown (null) or zero; both share the rule and label via `visibleShareCount` / `shareButtonAriaLabel`.
  */
 @Component({
   selector: 'lfx-newsletter-share-button',
@@ -22,13 +24,6 @@ export class ShareButtonComponent {
   public readonly share = output<void>();
 
   // === Computed ===
-  protected readonly visibleCount = computed(() => {
-    const count = this.count();
-    return count && count > 0 ? count : null;
-  });
-  protected readonly ariaLabel = computed(() => {
-    const count = this.visibleCount();
-    if (count === null) return 'Share';
-    return count === 1 ? 'Share, shared 1 time' : `Share, shared ${count} times`;
-  });
+  protected readonly visibleCount = computed(() => visibleShareCount(this.count()));
+  protected readonly ariaLabel = computed(() => shareButtonAriaLabel(this.visibleCount()));
 }

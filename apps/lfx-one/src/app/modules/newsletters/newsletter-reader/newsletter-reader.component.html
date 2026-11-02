@@ -89,7 +89,7 @@
         (share)="openShare()"
         testId="newsletter-reader" />
 
-      <!-- Newsletter preview inline (not a drawer) -->
+      <!-- Newsletter preview inline (not a drawer). 600px: matches the email body width in newsletter-preview.component.scss -->
       <lfx-newsletter-preview
         class="w-full lg:max-w-[600px]"
         [subject]="newsletter()?.subject ?? ''"

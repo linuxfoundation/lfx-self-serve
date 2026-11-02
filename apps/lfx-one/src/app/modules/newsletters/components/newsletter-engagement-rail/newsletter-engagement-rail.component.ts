@@ -3,6 +3,7 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
+import { shareButtonAriaLabel, visibleShareCount } from '@lfx-one/shared/utils';
 
 /**
  * Engagement rail beside a newsletter issue on the reader page: the issue's views (raw opens) and a
@@ -10,7 +11,8 @@ import { Component, computed, input, output } from '@angular/core';
  * beside the issue on large screens; a row above it on smaller ones.
  *
  * Views are display-only and hidden entirely while unknown (null); zero is a real count and shows.
- * The share count is hidden while unknown or zero, matching the drawer's Share button.
+ * The share count is hidden while unknown or zero, with the same rule and label as the drawer's Share
+ * button (`visibleShareCount` / `shareButtonAriaLabel`).
  *
  * Test ids derive from `testId`: `<testId>-engagement-rail`, `<testId>-views(-count)`, `<testId>-share(-count)`.
  */
@@ -29,17 +31,10 @@ export class NewsletterEngagementRailComponent {
   public readonly share = output<void>();
 
   // === Computed ===
-  protected readonly visibleShares = computed(() => {
-    const count = this.shares();
-    return count && count > 0 ? count : null;
-  });
+  protected readonly visibleShares = computed(() => visibleShareCount(this.shares()));
   protected readonly viewsLabel = computed(() => {
     const count = this.views() ?? 0;
     return count === 1 ? 'Viewed 1 time' : `Viewed ${count.toLocaleString('en-US')} times`;
   });
-  protected readonly shareLabel = computed(() => {
-    const count = this.visibleShares();
-    if (count === null) return 'Share';
-    return count === 1 ? 'Share, shared 1 time' : `Share, shared ${count.toLocaleString('en-US')} times`;
-  });
+  protected readonly shareLabel = computed(() => shareButtonAriaLabel(this.visibleShares()));
 }
