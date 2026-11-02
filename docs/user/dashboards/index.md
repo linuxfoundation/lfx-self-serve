@@ -3,36 +3,38 @@ title: Dashboard
 description: The LFX Self Serve dashboard provides a lens-based overview of your projects, foundation, and personal activity.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, overview, lens, persona, me, foundation, project, org]
-last_updated: 2026-10-30
+tags: [dashboard, overview, lens, access, me, foundation, project, org]
+last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
 
-The Dashboard is the central starting point of LFX Self Serve. It adapts to show you relevant information based on who you are (your persona) and what you are viewing (your lens).
+The Dashboard is the central starting point of LFX Self Serve. It adapts to show you relevant information based on your roles on Linux Foundation projects and what you are viewing (your lens).
 
 ## Lens system
 
 The LFX dashboard uses a **lens** concept to let you switch between different viewing perspectives:
 
-| Lens           | Description                                            |
-| -------------- | ------------------------------------------------------ |
-| **Me**         | Your personal activity, contributions, and involvement |
-| **Foundation** | Foundation-level governance, projects, and analytics   |
-| **Project**    | A specific project's metrics, committees, and activity |
-| **Org**        | Your organization's membership and participation       |
+| Lens             | Description                                            |
+| ---------------- | ------------------------------------------------------ |
+| **Me**           | Your personal activity, contributions, and involvement |
+| **Foundation**   | Foundation-level governance, projects, and analytics   |
+| **Projects**     | A specific project's metrics, committees, and activity |
+| **Organization** | Your organization's membership and participation       |
 
-The lenses available to you depend on your persona. Not all users see all lenses.
+Not all users see all lenses.
 
-## Persona system
+## Who can see each lens
 
-Your **persona** is determined by your committee memberships and roles across Linux Foundation projects. The four personas are:
+Which lenses you see depends on your roles on Linux Foundation projects, such as committee seats, maintainer roles, and admin access.
 
-| Persona                | Access                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| **Contributor**        | Me and Project lenses                                                         |
-| **Maintainer**         | Me and Project lenses with write access                                       |
-| **Board Member**       | Me, Foundation, and Project lenses                                            |
-| **Executive Director** | Me, Foundation, and Project lenses (Org lens available with org admin access) |
+| Lens             | Who sees it                                                                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Me**           | Everyone.                                                                                                                                                                                  |
+| **Projects**     | Almost everyone who is signed in. The only users who do not see it are those whose only role is a board seat and who are not a project admin.                                              |
+| **Foundation**   | Board members and executive directors of a foundation, foundation admins, and Linux Foundation staff.                                                                                      |
+| **Organization** | Everyone sees the lens. The pages for a specific company show only if you have access to that organization. See [Who can access this](#who-can-access-this) under Your company's activity. |
+
+Some pages inside a lens have their own access rules. For example, **Health Metrics** in the Foundation lens is available only to the foundation's executive director and to Linux Foundation staff.
 
 ## Your personal dashboard
 

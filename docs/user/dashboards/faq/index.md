@@ -3,18 +3,18 @@ title: Dashboard FAQ
 description: Frequently asked questions about navigating the LFX Self Serve dashboard.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, faq, lens, persona]
-last_updated: 2026-09-25
+tags: [dashboard, faq, lens, access]
+last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
 
 ## Why don't I see all four lenses?
 
-The lenses available to you depend on your persona. Contributors and maintainers see the **Me** and **Project** lenses. Board members and executive directors additionally see the **Foundation** lens. Executive directors also have access to the **Org** lens. If you believe you should have access to a lens that is not visible, contact your foundation or project administrator.
+The lenses you see depend on your roles on Linux Foundation projects. Everyone sees **Me** and **Organization**, and almost everyone sees **Projects**. **Foundation** is for board members, executive directors, foundation admins and Linux Foundation staff. See [Who can see each lens](../#who-can-see-each-lens) for the full list. If you believe you should have access to a lens that is not visible, contact your foundation or project administrator.
 
 ## Why does my dashboard show different content from a colleague's?
 
-The dashboard adapts to your persona and the active project context. If you and your colleague have different personas or have selected different projects, your dashboards will look different.
+The dashboard adapts to your roles and the active project context. If you and your colleague have different roles or have selected different projects, your dashboards will look different.
 
 ## How do I change the project I'm viewing?
 
@@ -30,8 +30,8 @@ Drawers are sliding side panels that show additional detail — such as metrics 
 
 ## How do I get access to the Foundation lens?
 
-The Foundation lens is available to users with a board-member or executive-director persona. Personas are determined by your committee memberships. Contact your project administrator if you need elevated access.
+The Foundation lens is available to board members and executive directors of a foundation, foundation admins, and Linux Foundation staff. Contact your project administrator if you need elevated access.
 
 ## Why is the Health Metrics page not accessible to me?
 
-The `/foundation/health-metrics` page requires an **executive-director** persona. If you see an access denied message, your current persona does not include this role.
+The Health Metrics page (`/foundation/health-metrics`) is available only to the foundation's executive director and to Linux Foundation staff. Anyone else who opens it is taken to the Foundation overview instead.
