@@ -90,7 +90,7 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.locator('main main')).toHaveCount(0);
     await expect(root.getByRole('region', { name: 'Document content' })).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
     await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
@@ -107,11 +107,11 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(open).toBeFocused();
     await open.press('Enter');
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
-    const back = page.getByTestId('mktg-document-view-open-2');
-    await expect(back).not.toHaveAttribute('aria-disabled', 'true');
-    await back.focus();
-    await expect(back).toBeFocused();
-    await back.press('Enter');
+    const currentOpen = page.getByTestId('mktg-document-view-open-2');
+    await expect(currentOpen).not.toHaveAttribute('aria-disabled', 'true');
+    await currentOpen.focus();
+    await expect(currentOpen).toBeFocused();
+    await currentOpen.press('Enter');
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
   });
 

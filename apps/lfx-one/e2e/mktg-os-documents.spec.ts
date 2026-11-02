@@ -28,14 +28,19 @@ test.describe('Marketing OS current revisions', () => {
     await page.screenshot({ path: testInfo.outputPath('final-state.png'), fullPage: true });
   });
 
-  async function setupStateBanner(page: Page) {
+  async function setupStateBanner(page: Page, highest = 3) {
     await setupDocuments(page, { currentRevisionNumber: 3 });
     const approval = { approvedAt: '2026-11-02T16:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
     let metadata = documentFixture(3, 3);
+    const revisions = metadata.revisions.map((row) => {
+      const number = row.number + highest - 3;
+      return { ...row, number, id: `${String(number).padStart(6, '0')}-${row.contentSha256}`, approval };
+    });
     metadata = {
       ...metadata,
-      revisions: metadata.revisions.map((row) => ({ ...row, approval })),
-      approvedCurrent: { revisionId: metadata.revisions[0].id, number: 3 },
+      revisions,
+      current: { revisionId: revisions[0].id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: revisions[0].id, number: highest },
     };
     let polls = 0;
     const path = `/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living`;
@@ -87,36 +92,62 @@ test.describe('Marketing OS current revisions', () => {
     await open.click();
     await expect(banner).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+    await expect(page.getByTestId('mktg-document-view-title')).toBeFocused();
   });
 
   test('Keep reading stays dismissed across two polls and returns when approved current changes', async ({ page }) => {
     const state = await setupStateBanner(page);
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
     await page.getByTestId('mktg-document-view-current-banner-dismiss').click();
+    await expect(page.getByTestId('mktg-document-view-title')).toBeFocused();
     const before = state.polls();
     await expect.poll(state.polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(before + 2);
     await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
     state.move(2);
     await expect(page.getByTestId('mktg-document-view-current-banner')).toContainText('v2 is now the current version', { timeout: 20_000 });
+    state.move(3);
+    await expect(page.getByTestId('mktg-document-view-current-banner')).toContainText('v3 is now the current version', { timeout: 20_000 });
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
   });
 
-  test('the phone state banner stacks its action row below the text without overflow', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 1000 });
-    const state = await setupStateBanner(page);
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
+  for (const width of [360, 390]) {
+    test(`the phone state banner wraps v12 actions below the text without overflow at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      const state = await setupStateBanner(page, 14);
+      await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(12)}`);
+      const banner = page.getByTestId('mktg-document-view-current-banner');
+      const open = page.getByTestId('mktg-document-view-current-banner-open');
+      const keep = page.getByTestId('mktg-document-view-current-banner-dismiss');
+      await expect(banner).toBeVisible();
+      await expect(keep).toHaveText('Keep reading v12');
+      const textBox = await banner.locator('span').first().boundingBox();
+      const openBox = await open.boundingBox();
+      const keepBox = await keep.boundingBox();
+      if (!textBox || !openBox || !keepBox) throw new Error('Missing synthetic phone banner controls');
+      expect(openBox.y).toBeGreaterThanOrEqual(textBox.y + textBox.height);
+      expect(keepBox.y).toBeCloseTo(openBox.y, 0);
+      expect(await banner.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test('the desktop state banner aligns its text and actions in one row at 1280px', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    const state = await setupStateBanner(page, 14);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(12)}`);
     const banner = page.getByTestId('mktg-document-view-current-banner');
-    const open = page.getByTestId('mktg-document-view-current-banner-open');
-    const keep = page.getByTestId('mktg-document-view-current-banner-dismiss');
     await expect(banner).toBeVisible();
     const textBox = await banner.locator('span').first().boundingBox();
-    const openBox = await open.boundingBox();
-    const keepBox = await keep.boundingBox();
-    if (!textBox || !openBox || !keepBox) throw new Error('Missing synthetic phone banner controls');
-    expect(openBox.y).toBeGreaterThanOrEqual(textBox.y + textBox.height);
-    expect(keepBox.y).toBeCloseTo(openBox.y, 0);
+    const openBox = await page.getByTestId('mktg-document-view-current-banner-open').boundingBox();
+    const keepBox = await page.getByTestId('mktg-document-view-current-banner-dismiss').boundingBox();
+    const titleBox = await page.getByTestId('mktg-document-view-title-card').boundingBox();
+    const bannerBox = await banner.boundingBox();
+    if (!textBox || !openBox || !keepBox || !titleBox || !bannerBox) throw new Error('Missing synthetic desktop banner geometry');
+    expect(openBox.x).toBeGreaterThanOrEqual(textBox.x + textBox.width);
+    expect(openBox.y + openBox.height / 2).toBeCloseTo(textBox.y + textBox.height / 2, 0);
+    expect(keepBox.y + keepBox.height / 2).toBeCloseTo(openBox.y + openBox.height / 2, 0);
+    expect(titleBox.y).toBeGreaterThanOrEqual(bannerBox.y + bannerBox.height);
     expect(await banner.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   });
 
   test('the viewed non-current row keeps Make current beside here', async ({ page }) => {
@@ -124,11 +155,11 @@ test.describe('Marketing OS current revisions', () => {
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
     const row = page.getByTestId('mktg-document-view-revision-1');
     await expect(row).toContainText('here');
-    await expect(row.getByTestId('mktg-document-view-restore-current')).toHaveText('Make current');
-    await row.getByTestId('mktg-document-view-restore-current').click();
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveText('Make current');
+    await row.getByTestId('mktg-document-view-viewed-make-current').click();
     await expect(page.getByTestId('mktg-document-view-current-1')).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-current-banner')).toHaveCount(0);
-    await expect(row.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
   });
 
   for (const [state, text] of [
@@ -398,8 +429,8 @@ test.describe('Marketing OS current revisions', () => {
   test('Make current adds no revision and opening another revision clears success', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
-    await page.getByTestId('mktg-document-view-restore-current').click();
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
+    await page.getByTestId('mktg-document-view-viewed-make-current').click();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-notice')).toContainText('No revision was added');
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 1 of 3');
     await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('Current');
@@ -456,7 +487,7 @@ test.describe('Marketing OS current revisions', () => {
     await page.getByTestId('mktg-document-view-open-3').click();
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
     await expect(list.locator('ol > li')).toHaveCount(9);
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
   });
 
   test('opens older revisions rather than making them current from the table', async ({ page }) => {
@@ -467,7 +498,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-run-again-' + DOCUMENT_TYPE.agentKey)).toHaveText('Create a new version');
     await expect(page.getByTestId('mktg-documents-view-latest').getByRole('link')).toHaveAccessibleName('Open');
     await page.getByTestId('mktg-documents-view-1').click();
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
   });
 
   test('empty documents follow their family header without starting a live session', async ({ page }) => {
@@ -499,10 +530,10 @@ test.describe('Marketing OS current revisions', () => {
     test(`Make current failure ${writeStatus} preserves the open body`, async ({ page }) => {
       await setupDocuments(page, { writeStatus });
       await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
-      await page.getByTestId('mktg-document-view-restore-current').click();
+      await page.getByTestId('mktg-document-view-viewed-make-current').click();
       await expect(page.getByTestId('mktg-document-view-error')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
-      await expect(page.getByTestId('mktg-document-view-restore-current')).toBeEnabled();
+      await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeEnabled();
     });
   }
 });

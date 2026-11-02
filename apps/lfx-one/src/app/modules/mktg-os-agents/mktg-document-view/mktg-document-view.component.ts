@@ -75,7 +75,6 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgAssetReadiness,
-  describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   findMktgRunIntake,
@@ -253,7 +252,6 @@ export class MktgDocumentViewComponent {
   protected readonly approvalError = signal('');
   protected readonly approvedReadIsExplicit = signal(true);
   protected readonly approvalAnnouncement = signal('');
-  private readonly dismissedCurrentBanners = signal<Set<string>>(new Set());
   protected readonly editingLink = signal(false);
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
@@ -311,6 +309,8 @@ export class MktgDocumentViewComponent {
   protected readonly memberResult = viewChild(Member360ResultComponent);
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
+  protected readonly bannerKey = this.initBannerKey();
+  protected readonly bannerDismissed = linkedSignal({ source: this.bannerKey, computation: () => false });
   protected readonly currentBanner = this.initCurrentBanner();
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
@@ -1022,8 +1022,28 @@ export class MktgDocumentViewComponent {
 
   // === Protected methods ===
   protected dismissCurrentBanner(): void {
+    if (!this.currentBanner()) return;
+    this.bannerDismissed.set(true);
+    this.focusDocumentTitle();
+  }
+
+  protected onBannerOpen(): void {
     const banner = this.currentBanner();
-    if (banner) this.dismissedCurrentBanners.update((keys) => new Set([...keys, banner.key]));
+    const viewed = this.view();
+    if (!banner || !viewed || this.submittingGeneration() || !isPlatformBrowser(this.platformId)) return;
+    toObservable(this.view, { injector: this.injector })
+      .pipe(
+        filter(
+          (opened) =>
+            opened?.project === viewed.project &&
+            opened?.type.agentKey === viewed.type.agentKey &&
+            opened?.documentId === viewed.documentId &&
+            opened?.revision.id === banner.id
+        ),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => afterNextRender(() => this.focusDocumentTitle(), { injector: this.injector }));
   }
 
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
@@ -1465,17 +1485,26 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
-  private initCurrentBanner() {
+  private initBannerKey() {
     return computed(() => {
       const view = this.view();
+      return view ? [view.project, view.type.agentKey, view.documentId, view.revision.id, view.approvedCurrent?.revisionId ?? ''].join(':') : '';
+    });
+  }
+
+  private initCurrentBanner() {
+    return computed(() => {
+      const dismissed = this.bannerDismissed();
+      const view = this.view();
       const approved = view?.approvedCurrent;
-      if (!view || !approved || approved.revisionId === view.revision.id) return null;
-      const key = [view.project, view.type.agentKey, view.documentId, view.revision.id, approved.revisionId].join(':');
-      if (this.dismissedCurrentBanners().has(key)) return null;
+      if (!view || !approved || approved.revisionId === view.revision.id || dismissed) return null;
       const row = view.revisions.find((revision) => revision.id === approved.revisionId);
       const number = row?.number ?? approved.number;
       if (!Number.isFinite(number) || number <= 0) return null;
-      return { key, id: approved.revisionId, number, viewedNumber: view.revision.number, authorLabel: describeMktgRevisionAuthor(row?.approval?.approvedBy) };
+      // A missing row provides no approver evidence, so omit the clause rather than guessing one.
+      const approverClause = row ? `, approved by ${row.approval?.approvedBy?.name?.trim() || 'a project writer'}` : '';
+      const sentence = `v${number} is now the current version${approverClause}. You are reading v${view.revision.number}.`;
+      return { id: approved.revisionId, number, viewedNumber: view.revision.number, approverClause, sentence };
     });
   }
 
@@ -1769,6 +1798,11 @@ export class MktgDocumentViewComponent {
   }
 
   // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private focusDocumentTitle(): void {
+    if (isPlatformBrowser(this.platformId))
+      this.document.querySelector<HTMLElement>('[data-testid="mktg-document-view-title"]')?.focus({ preventScroll: true });
+  }
+
   private clearAeoPrint(): void {
     if (this.aeoPrintRequested) {
       this.printService.clear();
