@@ -979,6 +979,22 @@ describe('CampaignController.createCampaign cutover', () => {
     });
   });
 
+  it('drops a blank keyword term rather than forwarding one campaign-service refuses', async () => {
+    // #4848: the Implement tab drops them too; a blank row saved from a Planning edit failed the
+    // whole create with only the generic message.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+    const keyword = (term: string) => ({ term, matchType: 'Exact', intentLevel: 'high', notes: 'n' });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ keywords: [keyword('  '), keyword('kubernetes'), keyword('')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['keywords']).toEqual([{ text: 'kubernetes', matchType: 'EXACT' }]);
+  });
+
   it('funds Google with the SEARCH share when demand-gen is also selected', async () => {
     // The dispatcher composes a "Search Campaign" and creates exactly one Search campaign, so the
     // combined budget would spend the demand-gen half on Search.

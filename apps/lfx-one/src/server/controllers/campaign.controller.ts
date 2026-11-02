@@ -5773,7 +5773,11 @@ export class CampaignController {
       // The service's keyword shape is `{text, matchType}` with an upper-case enum; the UI carries
       // `{term, matchType}` in title case alongside brief-only fields (intentLevel, notes) the
       // dispatcher has no field for.
-      keywords: (body.keywords ?? []).map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
+      // A blank term is dropped, as the Implement tab drops it (#4848): campaign-service refuses it,
+      // and the operator would see only the generic failure.
+      keywords: (body.keywords ?? [])
+        .filter((k) => typeof k?.term === 'string' && k.term.trim() !== '')
+        .map((k) => ({ text: k.term, matchType: k.matchType.toUpperCase() })),
       // Omitted rather than sent empty, so the upstream default is reached by the same absent-key
       // route pre-LFXV2-3283 callers take. `geoTargets: []` and no key at all mean the same thing
       // to the dispatcher today; only one of them stays true if that default is ever tightened.
