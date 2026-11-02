@@ -309,6 +309,16 @@ export class MeetingService {
   }
 
   /**
+   * Downloads the meeting occurrence as an .ics file (#4862). Authenticated; the caller sees the endpoint's own
+   * 401/403/404 so the UI can hide the calendar actions rather than offer one that cannot work.
+   * @param occurrenceStartMs start of the occurrence the page shows (epoch ms); omitted for a one-time meeting
+   */
+  public downloadMeetingCalendar(meetingId: string, occurrenceStartMs?: number | null): Observable<Blob> {
+    const params = occurrenceStartMs ? new HttpParams().set('occurrence', String(occurrenceStartMs)) : undefined;
+    return this.http.get(`/api/meetings/${encodeURIComponent(meetingId)}/calendar.ics`, { params, responseType: 'blob' });
+  }
+
+  /**
    * The password gates private/restricted meetings server-side; it travels in a request header so
    * it never appears in the request URL (which Datadog RUM records with trackResources).
    */

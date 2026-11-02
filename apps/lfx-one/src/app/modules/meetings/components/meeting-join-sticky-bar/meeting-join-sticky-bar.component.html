@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!suppressed()) {
+  <div
+    class="fixed inset-x-0 bottom-0 z-40 flex flex-col gap-2 border-t border-gray-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:hidden"
+    role="region"
+    aria-label="Meeting actions"
+    data-testid="meeting-join-sticky-bar">
+    <div class="flex items-center gap-3">
+      <lfx-button
+        class="min-w-0 flex-1"
+        styleClass="w-full"
+        label="Add to calendar"
+        icon="fa-light fa-calendar-plus"
+        severity="primary"
+        [loading]="calendarBusy()"
+        (onClick)="addToCalendar.emit()"
+        data-testid="sticky-add-to-calendar" />
+      @if (googleCalendarUrl()) {
+        <a
+          class="shrink-0 text-sm font-medium text-blue-600 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-blue-600"
+          [href]="googleCalendarUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="sticky-google-calendar"
+          >Google Calendar</a
+        >
+      }
+    </div>
+    @if (canJoin() && joinHref()) {
+      <lfx-button
+        styleClass="w-full"
+        label="Join Meeting"
+        icon="fa-light fa-video"
+        severity="success"
+        [href]="joinHref()"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="sticky-join" />
+    } @else if (canJoin()) {
+      <lfx-button
+        styleClass="w-full"
+        label="Join Meeting"
+        icon="fa-light fa-video"
+        severity="success"
+        [loading]="true"
+        [disabled]="true"
+        data-testid="sticky-join" />
+    } @else {
+      <lfx-button styleClass="w-full" [label]="unlockLabel()" icon="fa-light fa-clock" severity="secondary" [disabled]="true" data-testid="sticky-join" />
+    }
+  </div>
+}

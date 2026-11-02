@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
+import { HttpErrorResponse } from '@angular/common/http';
 import { DatePipe, isPlatformBrowser, isPlatformServer, NgClass } from '@angular/common';
 import {
   afterNextRender,
@@ -24,6 +25,7 @@ import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meet
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
+import { MeetingJoinStickyBarComponent } from '@app/modules/meetings/components/meeting-join-sticky-bar/meeting-join-sticky-bar.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
@@ -31,11 +33,15 @@ import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { saveBlobAsFile } from '@app/shared/utils/save-blob.util';
 import { environment } from '@environments/environment';
 import {
+  buildGoogleCalendarUrl,
   buildJoinUrlWithParams,
+  buildMeetingIcsFileName,
   buildOccurrenceNavTimeline,
   canJoinMeeting,
+  DEFAULT_EARLY_JOIN_TIME,
   DEFAULT_MEETING_TYPE_CONFIG,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
@@ -48,6 +54,9 @@ import {
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   MaterialsChangedEvent,
+  MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
+  MEETING_CLOCK_TICK_MS,
+  MeetingCalendarEvent,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingHostCandidate,
@@ -155,6 +164,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     CardComponent,
     TagComponent,
     RsvpButtonGroupComponent,
+    MeetingJoinStickyBarComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
     MeetingOrganizerComponent,
@@ -259,6 +269,64 @@ export class MeetingJoinComponent implements OnInit {
   private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
+  // Wall clock for time-gated UI (join window, ended). Nothing else makes these computeds re-run as time passes, so a
+  // page left open across T-10 would keep showing a disabled Join until reload. Browser-only, see startClock().
+  private readonly clock = signal<number>(Date.now());
+  // Sticky bar (#4862): set when the calendar endpoint answers 401/403 so the actions stop being offered.
+  private readonly calendarUnavailable = signal<boolean>(false);
+  protected readonly calendarDownloading = signal<boolean>(false);
+  // The occurrence the page shows, as a calendar event. Built from the same start the page displays.
+  private readonly calendarEvent: Signal<MeetingCalendarEvent | null> = computed(() => {
+    const meeting = this.meeting();
+    const occurrence = this.currentOccurrence();
+    const start = occurrence?.start_time || meeting?.start_time;
+    if (!meeting?.id || !start || Number.isNaN(Date.parse(start))) {
+      return null;
+    }
+    return {
+      uid: meeting.id,
+      occurrenceId: occurrence?.occurrence_id ?? null,
+      title: meeting.title,
+      start,
+      durationMinutes: occurrence?.duration || meeting.duration || MEETING_CALENDAR_DEFAULT_DURATION_MINUTES,
+      projectName: meeting.project_name || this.project()?.name,
+      joinUrl: `${environment.urls.home}/meetings/${meeting.id}`,
+    };
+  });
+  // Signed-in viewers with full access to an upcoming or in-progress meeting only: anonymous and password-only guests never
+  // learn the start time (the public projection strips it), so nothing time-related may be shown to them.
+  protected readonly showStickyBar: Signal<boolean> = computed(
+    () =>
+      this.authenticated() &&
+      this.liveMeetingFullAccess() &&
+      !this.loadedViaPastMeetingId() &&
+      !this.calendarUnavailable() &&
+      !!this.calendarEvent() &&
+      !this.isPastMeeting()
+  );
+  // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
+  protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
+  protected readonly googleCalendarUrl: Signal<string> = computed(() => {
+    const event = this.calendarEvent();
+    return event ? buildGoogleCalendarUrl(event) : '';
+  });
+  // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
+  // (resolved after first render) so server and client markup agree.
+  protected readonly joinUnlockLabel: Signal<string> = computed(() => {
+    const event = this.calendarEvent();
+    const timezone = this.userTimezone();
+    if (!event || !timezone) {
+      return 'Join Meeting';
+    }
+    const unlockMs = Date.parse(event.start) - (this.meeting()?.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME) * 60_000;
+    const day = (ms: number) => new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: 'numeric', day: 'numeric' }).format(ms);
+    const time = new Intl.DateTimeFormat('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).format(unlockMs);
+    if (day(unlockMs) === day(this.clock())) {
+      return `Join opens ${time}`;
+    }
+    const date = new Intl.DateTimeFormat('en-US', { timeZone: timezone, month: 'short', day: 'numeric' }).format(unlockMs);
+    return `Join opens ${date}, ${time}`;
+  });
   // Bumped immediately when a guest is added so the count in the RSVP card doesn't lag the
   // async query-service indexing. Floored back to 0 once the registrants refetch absorbs the
   // newly-added rows (see additionalRegistrantsCount computed below).
@@ -646,6 +714,34 @@ export class MeetingJoinComponent implements OnInit {
       mql.addEventListener('change', handler);
       this.destroyRef.onDestroy(() => mql.removeEventListener('change', handler));
     }
+    if (isPlatformBrowser(this.platformId)) {
+      this.startClock();
+    }
+  }
+
+  /** Downloads the ICS for the occurrence on screen; hides the calendar actions when the endpoint refuses the viewer. */
+  public onAddToCalendar(): void {
+    const event = this.calendarEvent();
+    if (!isPlatformBrowser(this.platformId) || !event || this.calendarDownloading()) {
+      return;
+    }
+    this.calendarDownloading.set(true);
+    this.meetingService
+      .downloadMeetingCalendar(event.uid, event.occurrenceId ? Date.parse(event.start) : null)
+      .pipe(
+        finalize(() => this.calendarDownloading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (blob) => saveBlobAsFile(blob, buildMeetingIcsFileName(event.title)),
+        error: (error: HttpErrorResponse) => {
+          if (error.status === 401 || error.status === 403) {
+            this.calendarUnavailable.set(true);
+            return;
+          }
+          this.messageService.add({ severity: 'error', summary: 'Could not add to calendar', detail: 'Please try again.' });
+        },
+      });
   }
 
   public handleCopyLink(): void {
@@ -1182,8 +1278,28 @@ export class MeetingJoinComponent implements OnInit {
     return typeof stated === 'string' && stated ? stated : null;
   }
 
+  // Ticks the wall-clock signal. Also on tab focus/visibility: mobile browsers freeze timers in the background, so the
+  // join state must catch up the moment the viewer returns. Cleaned up with the page; never started on the server.
+  private startClock(): void {
+    const tick = (): void => this.clock.set(Date.now());
+    const onVisibility = (): void => {
+      if (document.visibilityState === 'visible') {
+        tick();
+      }
+    };
+    const intervalId = setInterval(tick, MEETING_CLOCK_TICK_MS);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', tick);
+    this.destroyRef.onDestroy(() => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', tick);
+    });
+  }
+
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
     return computed(() => {
+      this.clock(); // the current/next occurrence rolls over as time passes
       const meeting = this.meeting();
       // Check if a specific occurrence was requested via query param
       const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
@@ -1414,6 +1530,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
+      this.clock(); // re-evaluate as time passes (the util reads the real clock)
       // Hyphenated occurrence-ID URL expresses "view as past" intent — never show Join UI.
       if (this.loadedViaPastMeetingId()) return false;
       // Anonymous/guest responses strip the timing fields canJoinMeeting() needs — use the
@@ -1726,6 +1843,7 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeIsPastMeeting(): Signal<boolean> {
     return computed(() => {
+      this.clock(); // re-evaluate as time passes (the util reads the real clock)
       // Hyphenated occurrence-ID URL expresses "view as past" intent — trust it over the clock.
       if (this.loadedViaPastMeetingId()) return true;
       const meeting = this.meeting();

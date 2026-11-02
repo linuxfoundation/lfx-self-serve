@@ -1,0 +1,142 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { PLATFORM_ID } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { OverlayStateService } from '../../../../shared/services/overlay-state.service';
+import { MeetingJoinStickyBarComponent } from './meeting-join-sticky-bar.component';
+
+describe('MeetingJoinStickyBarComponent', () => {
+  const realMatchMedia = window.matchMedia;
+  let phone: boolean;
+
+  const stubMatchMedia = () => {
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query === PHONE_MEDIA_QUERY ? phone : false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })) as unknown as typeof window.matchMedia;
+  };
+
+  const create = async (platform: 'browser' | 'server' = 'browser'): Promise<ComponentFixture<MeetingJoinStickyBarComponent>> => {
+    TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: platform }] });
+    const fixture = TestBed.createComponent(MeetingJoinStickyBarComponent);
+    await fixture.whenStable();
+    return fixture;
+  };
+
+  const testId = (fixture: ComponentFixture<unknown>, id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+
+  beforeEach(() => {
+    phone = true;
+    stubMatchMedia();
+  });
+  afterEach(() => {
+    window.matchMedia = realMatchMedia;
+  });
+
+  it('puts Add to calendar before the Google Calendar link and the Join button', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('googleCalendarUrl', 'https://calendar.google.com/calendar/render?action=TEMPLATE');
+    await fixture.whenStable();
+
+    const add = testId(fixture, 'sticky-add-to-calendar') as HTMLElement;
+    const google = testId(fixture, 'sticky-google-calendar') as HTMLElement;
+    const join = testId(fixture, 'sticky-join') as HTMLElement;
+    expect(add.compareDocumentPosition(google) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(google.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows the unlock label on a disabled Join until the window opens', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('unlockLabel', 'Join opens 11:50 AM');
+    await fixture.whenStable();
+
+    const join = testId(fixture, 'sticky-join') as HTMLElement;
+    expect(join.textContent).toContain('Join opens 11:50 AM');
+    expect(join.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('links Join to the resolved URL once the window is open', async () => {
+    const fixture = await create();
+    fixture.componentRef.setInput('canJoin', true);
+    fixture.componentRef.setInput('joinHref', 'https://zoom.example/j/1');
+    await fixture.whenStable();
+
+    const anchor = testId(fixture, 'sticky-join')?.querySelector('a') as HTMLAnchorElement;
+    expect(anchor.href).toBe('https://zoom.example/j/1');
+    expect(anchor.rel).toContain('noopener');
+  });
+
+  it('omits the Google link when none is supplied', async () => {
+    const fixture = await create();
+
+    expect(testId(fixture, 'sticky-google-calendar')).toBeNull();
+  });
+
+  it('emits addToCalendar when the primary button is pressed', async () => {
+    const fixture = await create();
+    const emitted = vi.fn();
+    fixture.componentInstance.addToCalendar.subscribe(emitted);
+
+    fixture.debugElement.query(By.css('[data-testid="sticky-add-to-calendar"]')).triggerEventHandler('onClick', new MouseEvent('click'));
+
+    expect(emitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the safe area with a max() padding and is phone-only', async () => {
+    const fixture = await create();
+
+    const root = testId(fixture, 'meeting-join-sticky-bar') as HTMLElement;
+    expect(root.className).toContain('pb-[max(0.75rem,env(safe-area-inset-bottom))]');
+    expect(root.classList.contains('sm:hidden')).toBe(true);
+    expect(root.classList.contains('fixed')).toBe(true);
+  });
+
+  describe('support launcher (stickyBarVisible)', () => {
+    it('hides the launcher at phone width while mounted and releases it on destroy', async () => {
+      const fixture = await create();
+      const overlayState = TestBed.inject(OverlayStateService);
+      expect(overlayState.stickyBarVisible()).toBe(true);
+
+      fixture.destroy();
+
+      expect(overlayState.stickyBarVisible()).toBe(false);
+    });
+
+    it('does not touch the launcher above phone width (desktop keeps its launcher)', async () => {
+      phone = false;
+      await create();
+      const overlayState = TestBed.inject(OverlayStateService);
+
+      expect(overlayState.stickyBarVisible()).toBe(false);
+    });
+
+    it('releases the launcher while suppressed (drawer open) and takes it back after', async () => {
+      const fixture = await create();
+      const overlayState = TestBed.inject(OverlayStateService);
+
+      fixture.componentRef.setInput('suppressed', true);
+      await fixture.whenStable();
+      expect(overlayState.stickyBarVisible()).toBe(false);
+      expect(testId(fixture, 'meeting-join-sticky-bar')).toBeNull();
+
+      fixture.componentRef.setInput('suppressed', false);
+      await fixture.whenStable();
+      expect(overlayState.stickyBarVisible()).toBe(true);
+    });
+
+    it('never writes it during server rendering', async () => {
+      await create('server');
+      const overlayState = TestBed.inject(OverlayStateService);
+
+      expect(overlayState.stickyBarVisible()).toBe(false);
+      expect(window.matchMedia).not.toHaveBeenCalled();
+    });
+  });
+});
