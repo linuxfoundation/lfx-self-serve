@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The real validation helper's import graph pulls in partially compiled Angular; load the JIT compiler for it.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks. stripHostKey is kept as a spy so we can assert every list item is sanitized;
@@ -231,13 +234,13 @@ describe('UserController — foundation_uid validation on meeting list endpoints
 describe('UserController.getUserPastMeetings include param', () => {
   let controller: UserController;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     controller = new UserController();
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     userSvc.getUserPastMeetings.mockResolvedValue([]);
-    getStringQueryParamMock.mockImplementation(((r: { query: Record<string, unknown> }, name: string) =>
-      typeof r.query[name] === 'string' ? r.query[name] : undefined) as never);
+    const actual = await vi.importActual<typeof import('../helpers/validation.helper')>('../helpers/validation.helper');
+    getStringQueryParamMock.mockImplementation(actual.getStringQueryParam as never);
   });
 
   it.each([

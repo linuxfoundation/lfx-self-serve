@@ -659,7 +659,7 @@ export class UserService {
    * @param email - User's email address for participant lookup (attendance enrichment)
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
-   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary` (two extra index lookups)
+   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary` (batched recording and summary index lookups)
    * @returns Array of PastMeeting objects the user has some direct FGA grant on
    */
   public async getUserPastMeetings(
@@ -1260,7 +1260,7 @@ export class UserService {
       });
   }
 
-  // Organizers also see summaries awaiting approval, as on the past-meeting card; other viewers need a visible one.
+  // Organizers also count a summary awaiting approval (the card's review banner); other viewers need a visible one.
   private isPastMeetingSummaryAvailable(summary: PastMeetingSummary | null, meeting: PastMeeting): boolean {
     const hasContent = Boolean(summary?.summary_data?.edited_content || summary?.summary_data?.content);
     return hasContent && (isPastMeetingSummaryVisible(summary) || meeting.organizer === true);
