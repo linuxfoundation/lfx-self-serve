@@ -27,6 +27,7 @@ export class MeetingsHomeRecordingDialogComponent {
 
   protected readonly title = this.data.row.title;
   protected readonly shareUrl = this.data.shareUrl;
+  protected readonly canView = isValidUrl(this.shareUrl);
 
   protected copy(): void {
     if (this.clipboard.copy(this.shareUrl)) {
@@ -37,7 +38,7 @@ export class MeetingsHomeRecordingDialogComponent {
   }
 
   protected view(): void {
-    if (!isValidUrl(this.shareUrl)) return;
+    if (!this.canView) return;
     this.document.defaultView?.open(this.shareUrl, '_blank', 'noopener,noreferrer');
   }
 

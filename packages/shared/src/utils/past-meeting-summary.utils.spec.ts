@@ -34,8 +34,20 @@ describe('isPastMeetingSummaryReadOnly', () => {
 });
 
 describe('getPastMeetingSummaryContent', () => {
-  const summary = (flags: Partial<PastMeetingSummary>, content = 'Generated', edited = ''): PastMeetingSummary =>
-    ({ approved: true, requires_approval: true, summary_data: { content, edited_content: edited }, ...flags }) as PastMeetingSummary;
+  const summary = (flags: Partial<PastMeetingSummary>, content = 'Generated', edited = ''): PastMeetingSummary => ({
+    uid: '',
+    meeting_id: '',
+    past_meeting_id: '',
+    platform: '',
+    approved: true,
+    requires_approval: true,
+    email_sent: false,
+    password: '',
+    summary_data: { title: '', content, edited_content: edited, doc_url: '', start_time: '', end_time: '' },
+    created_at: '',
+    updated_at: '',
+    ...flags,
+  });
 
   it('prefers the edited text', () => {
     expect(getPastMeetingSummaryContent({}, summary({}, 'Generated', 'Edited'))).toBe('Edited');

@@ -86,12 +86,10 @@ describe('MeetingsHomeRecordingDialogComponent', () => {
     expect(open).toHaveBeenCalledWith(SHARE_URL, '_blank', 'noopener,noreferrer');
   });
 
-  it('does not open a link that is not http(s)', async () => {
-    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  it('offers no View Recording for a link that is not http(s)', async () => {
     const fixture = await render('javascript:alert(1)');
 
-    click(fixture, 'meetings-home-dialog-recording-view');
-
-    expect(open).not.toHaveBeenCalled();
+    expect(query(fixture, 'meetings-home-dialog-recording-view')).toBeNull();
+    expect(query(fixture, 'meetings-home-dialog-recording-copy')).toBeTruthy();
   });
 });

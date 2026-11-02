@@ -5,7 +5,7 @@
 <lfx-ui-modal heading="Meeting Summary" [subtitle]="title" sticky data-testid="meetings-home-dialog-summary">
   <span class="flex flex-wrap items-center gap-[6px]">
     <lfx-ui-badge tone="feature" size="sm"><i class="fa-light fa-sparkles" aria-hidden="true"></i>AI Summary</lfx-ui-badge>
-    @if (!readOnly && !summary().approved) {
+    @if (awaitingReview()) {
       <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-dialog-summary-pending">Awaiting your review</lfx-ui-badge>
     }
   </span>

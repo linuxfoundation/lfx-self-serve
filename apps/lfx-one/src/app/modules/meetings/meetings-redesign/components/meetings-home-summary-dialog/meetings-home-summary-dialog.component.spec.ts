@@ -111,6 +111,13 @@ describe('MeetingsHomeSummaryDialogComponent', () => {
       expect(query(fixture, 'meetings-home-dialog-summary-pending')).toBeNull();
     });
 
+    it('does not ask for review when approval is not required', async () => {
+      const fixture = await render(buildRow(true), buildSummary({ approved: false, requires_approval: false }));
+
+      expect(query(fixture, 'meetings-home-dialog-summary-pending')).toBeNull();
+      expect(query(fixture, 'meetings-home-dialog-summary-approve')).toBeTruthy();
+    });
+
     it('keeps Approve after a failed approval', async () => {
       approve.mockReturnValue(throwError(() => new Error('synthetic')));
       const fixture = await render(buildRow(true), buildSummary({ approved: false }));

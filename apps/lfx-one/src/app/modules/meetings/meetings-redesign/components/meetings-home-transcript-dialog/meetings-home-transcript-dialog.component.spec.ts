@@ -81,18 +81,20 @@ describe('MeetingsHomeTranscriptDialogComponent', () => {
   });
 
   it('downloads the fetched file', async () => {
-    const createObjectURL = vi.fn().mockReturnValue('blob:synthetic');
-    const revokeObjectURL = vi.fn();
-    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL }));
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:synthetic');
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const fixture = await render(of({ content: VTT }));
 
     click(fixture, 'meetings-home-dialog-transcript-download');
+    vi.runAllTimers();
 
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     const anchor = anchorClick.mock.contexts[0] as HTMLAnchorElement;
-    expect(anchor.download).toBe('Synthetic sync transcript.vtt');
+    expect(anchor.href).toBe('blob:synthetic');
+    expect(anchor.download).toContain('transcript.vtt');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
-    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });

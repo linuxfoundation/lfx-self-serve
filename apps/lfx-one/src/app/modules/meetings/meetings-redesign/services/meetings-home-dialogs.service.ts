@@ -21,7 +21,7 @@ import { MeetingsHomeTranscriptDialogComponent } from '../components/meetings-ho
 export class MeetingsHomeDialogsService {
   private readonly modal = inject(UiModalService);
 
-  /** The caller decides whether the viewer may see the summary; an organizer can edit and approve it, and `onChange` gets each save. */
+  /** The caller checks the viewer may see the summary; `onChange` gets each saved edit or approval. */
   public openSummary(row: MeetingHomeRow, summary: PastMeetingSummary, onChange?: (summary: PastMeetingSummary) => void): DialogRef<void> {
     return this.modal.open<void, MeetingSummaryDialogData>(MeetingsHomeSummaryDialogComponent, { data: { row, summary, onChange } });
   }

@@ -8,8 +8,7 @@
     <span class="text-[13px] font-medium leading-[18px] text-gray-900">Recording Share URL</span>
     <div class="flex items-center gap-[8px]">
       <span
-        class="min-w-0 flex-1 select-all truncate rounded-[6px] border border-gray-200 bg-gray-50 px-[12px] py-[6px] text-[14px] leading-[20px] text-gray-900"
-        [title]="shareUrl"
+        class="min-w-0 flex-1 select-all break-all rounded-[6px] border border-gray-200 bg-gray-50 px-[12px] py-[6px] text-[14px] leading-[20px] text-gray-900"
         data-testid="meetings-home-dialog-recording-url"
         >{{ shareUrl }}</span
       >
@@ -19,8 +18,10 @@
 
   <ng-container modalActions>
     <lfx-ui-button variant="secondary" (click)="close()" data-testid="meetings-home-dialog-recording-close">Close</lfx-ui-button>
-    <lfx-ui-button icon="fa-light fa-arrow-up-right-from-square" (click)="view()" data-testid="meetings-home-dialog-recording-view"
-      >View Recording</lfx-ui-button
-    >
+    @if (canView) {
+      <lfx-ui-button icon="fa-light fa-arrow-up-right-from-square" (click)="view()" data-testid="meetings-home-dialog-recording-view"
+        >View Recording</lfx-ui-button
+      >
+    }
   </ng-container>
 </lfx-ui-modal>

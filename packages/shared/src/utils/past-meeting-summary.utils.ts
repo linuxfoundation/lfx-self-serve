@@ -62,10 +62,7 @@ export function isPastMeetingSummaryReadOnly(
   return meeting?.organizer !== true || !summary?.uid;
 }
 
-/**
- * The summary text this viewer may read: the edited text, else the generated one. Organizers also get a summary that still
- * awaits their approval; everyone else gets null until it is visible.
- */
+/** Summary text the viewer may read (edited, else generated); only organizers get one still awaiting approval. */
 export function getPastMeetingSummaryContent(
   meeting: Pick<Meeting, 'organizer'> | null | undefined,
   summary: PastMeetingSummary | null | undefined
