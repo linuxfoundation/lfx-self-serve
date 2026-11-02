@@ -98,7 +98,7 @@ describe('MeetingCalendarController.getMeetingCalendarIcs', () => {
     expect(body.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
     expect(body).toContain('DTSTART:20261105T190000Z\r\n');
     expect(body).toContain('DTEND:20261105T200000Z\r\n');
-    expect(body).toContain('UID:92867066227@lfx.dev\r\n');
+    expect(body).toContain('UID:92867066227@lfx.linuxfoundation.org\r\n');
     expect(body).toContain('URL:https://app.lfx.dev/meetings/92867066227\r\n');
     expect(next).not.toHaveBeenCalled();
   });
@@ -131,7 +131,7 @@ describe('MeetingCalendarController.getMeetingCalendarIcs', () => {
     const body = res.send.mock.calls[0][0] as string;
     expect(body).toContain('DTSTART:20261110T190000Z');
     expect(body).toContain('DTEND:20261110T194500Z');
-    expect(body).toContain('UID:92867066227-next@lfx.dev');
+    expect(body).toContain('UID:92867066227-next@lfx.linuxfoundation.org');
   });
 
   it('404s a recurring meeting with no remaining occurrence instead of exporting the series start', async () => {

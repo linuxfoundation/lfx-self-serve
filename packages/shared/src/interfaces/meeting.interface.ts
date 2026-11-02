@@ -2381,7 +2381,7 @@ export type MeetingCreateMenuAlign = 'right' | 'center';
  * @description Deliberately minimal: no registrants, passcode, host key, Zoom links or free-text description.
  */
 export interface MeetingCalendarEvent {
-  /** Meeting id; the ICS UID is `<uid>@lfx.dev`, or `<uid>-<occurrenceId>@lfx.dev` for a recurring occurrence */
+  /** Meeting id; the ICS UID is `<uid>@lfx.linuxfoundation.org`, or `<uid>-<occurrenceId>@…` for a recurring occurrence (the feeds' scheme) */
   uid: string;
   /** Occurrence id of a recurring meeting; keeps each occurrence's calendar event distinct */
   occurrenceId?: string | null;

@@ -48,7 +48,7 @@ describe('buildMeetingIcs', () => {
 
     expect(lines[0]).toBe('BEGIN:VCALENDAR');
     expect(lines.filter((l) => l === 'BEGIN:VEVENT')).toHaveLength(1);
-    expect(props['UID']).toBe('92867066227@lfx.dev');
+    expect(props['UID']).toBe('92867066227@lfx.linuxfoundation.org');
     expect(props['DTSTAMP']).toBe('20261102T200000Z');
     expect(props['DTSTART']).toBe('20261105T190000Z');
     expect(props['DTEND']).toBe('20261105T200000Z');
@@ -77,7 +77,7 @@ describe('buildMeetingIcs', () => {
 
   it('gives each recurring occurrence its own UID so downloads do not overwrite one another', () => {
     const { props } = parseIcs(buildMeetingIcs({ ...FIXTURE, occurrenceId: '1762369200' }, NOW));
-    expect(props['UID']).toBe('92867066227-1762369200@lfx.dev');
+    expect(props['UID']).toBe('92867066227-1762369200@lfx.linuxfoundation.org');
   });
 
   it('escapes TEXT (including semicolons) and cannot be injected with extra properties', () => {

@@ -126,7 +126,7 @@ export function buildVCalendar(events: string[], prodId = '-//LFX//Calendar//EN'
 }
 
 /**
- * Builds the VEVENT for one meeting occurrence (#4862): UTC DTSTART/DTEND, the occurrence-specific UID, the title, the
+ * Builds the VEVENT for one meeting occurrence (#4862): UTC DTSTART/DTEND, the occurrence-specific UID (same scheme and domain as the committee and project feeds, so a subscribed feed and a download are one event), the title, the
  * project-and-page description and the LFX meeting page URL. The input type has no slot for registrants, passcodes,
  * host keys, Zoom links or the meeting description, so none can reach the file. No RRULE, no VTIMEZONE.
  * @throws RangeError when `event.start` is not a valid instant
@@ -139,7 +139,7 @@ export function buildMeetingVEvent(event: MeetingCalendarEvent, now: Date = new 
 
   return [
     'BEGIN:VEVENT',
-    foldLine(`UID:${escapeICSText(uid)}@lfx.dev`),
+    foldLine(`UID:${escapeICSText(uid)}@${ICS_UID_DOMAIN}`),
     `DTSTAMP:${formatICSDate(now.toISOString())}`,
     `DTSTART:${formatICSDate(event.start)}`,
     `DTEND:${formatICSDate(new Date(Date.parse(event.start) + event.durationMinutes * 60_000).toISOString())}`,
