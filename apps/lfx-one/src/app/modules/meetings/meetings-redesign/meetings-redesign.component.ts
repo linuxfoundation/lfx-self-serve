@@ -31,6 +31,7 @@ import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
+import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
 import { MeetingsDayGroupComponent } from './components/meetings-day-group/meetings-day-group.component';
 import { MeetingsFiltersComponent } from './components/meetings-filters/meetings-filters.component';
 import { MeetingsHomeStore } from './services/meetings-home.store';
@@ -60,6 +61,7 @@ import { MeetingsHomeStore } from './services/meetings-home.store';
     UiChipComponent,
     MeetingsDayGroupComponent,
     MeetingsFiltersComponent,
+    LastMeetingCardComponent,
   ],
   templateUrl: './meetings-redesign.component.html',
   providers: [MeetingsHomeStore],
@@ -88,10 +90,7 @@ export class MeetingsRedesignComponent {
   protected readonly filtersControl = viewChild(MeetingsFiltersComponent);
 
   protected readonly idPrefix = 'meetings-redesign';
-  protected readonly railBlocks: MeetingsRailBlock[] = [
-    { key: 'next-meeting', label: 'Next meeting' },
-    { key: 'last-meeting', label: 'Last meeting' },
-  ];
+  protected readonly railBlocks: MeetingsRailBlock[] = [{ key: 'next-meeting', label: 'Next meeting' }];
   protected readonly skeletonRows = [0, 1, 2, 3, 4];
   protected readonly personaLoaded = this.personaService.personaLoaded;
   /** Measured header height; the tabs bar sticks right below it. */

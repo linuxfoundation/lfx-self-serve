@@ -5,10 +5,10 @@ import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
-import { Meeting, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeStore } from './meetings-home.store';
@@ -86,6 +86,9 @@ function rsvp(overrides: Partial<MeetingRsvp> = {}): MeetingRsvp {
 describe('MeetingsHomeStore', () => {
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
+  let latestPast$: Subject<PastMeeting[]>;
+  let summary$: Subject<PastMeetingSummary>;
+  let meetingService: Record<string, unknown>;
   let identity: ReturnType<typeof signal<string>>;
   let confirmed: ReturnType<typeof signal<MeetingRsvp[]>>;
   let removed: ReturnType<typeof signal<ReadonlySet<string>>>;
@@ -97,7 +100,7 @@ describe('MeetingsHomeStore', () => {
         MeetingsHomeStore,
         { provide: PLATFORM_ID, useValue: platform },
         { provide: UserService, useValue: userService },
-        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: removed } },
+        { provide: MeetingService, useValue: meetingService },
       ],
     });
     const store = TestBed.inject(MeetingsHomeStore);
@@ -108,14 +111,32 @@ describe('MeetingsHomeStore', () => {
   beforeEach(() => {
     upcoming$ = new Subject();
     past$ = new Subject();
+    latestPast$ = new Subject();
+    summary$ = new Subject();
     identity = signal('viewer-a');
     confirmed = signal<MeetingRsvp[]>([]);
     removed = signal<ReadonlySet<string>>(new Set());
+    meetingService = {
+      removedRegistrationMeetingIds: removed,
+      getPastMeetingSummary: vi.fn(() => summary$),
+      getPastMeetingTranscript: vi.fn(() =>
+        of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/t.vtt' }] } as PastMeetingTranscript)
+      ),
+      getPastMeetingRecording: vi.fn(() =>
+        of({
+          sessions: [
+            { share_url: 'https://zoom.example/small', total_size: 1 },
+            { share_url: 'https://zoom.example/large', total_size: 9 },
+          ],
+        } as PastMeetingRecording)
+      ),
+    };
     userService = {
       meetingFeedIdentity: identity,
       viewerUsername: signal('viewer'),
       getUserMeetings: vi.fn(() => upcoming$),
       getUserPastMeetings: vi.fn(() => past$),
+      getUserLatestPastMeetings: vi.fn(() => latestPast$),
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
     };
@@ -385,6 +406,67 @@ describe('MeetingsHomeStore', () => {
 
       expect(store.search()).toBe('');
       expect(store.hasActiveQuery()).toBe(false);
+    });
+  });
+
+  describe('last meeting', () => {
+    const summary = { uid: 's-1', approved: true, requires_approval: false } as PastMeetingSummary;
+
+    it('paints from the latest-past feed before the full past list answers', () => {
+      const store = create();
+      expect(store.lastMeetingLoading()).toBe(true);
+
+      latestPast$.next([buildPastMeeting('b', inDays(-1)), buildPastMeeting('a', inDays(-3))]);
+
+      expect(store.lastMeetingLoading()).toBe(false);
+      expect(store.pastLoading()).toBe(true);
+      expect(store.lastMeeting()?.key).toBe('m-past-b');
+    });
+
+    it('is null when the viewer has no past meetings', () => {
+      const store = create();
+      latestPast$.next([]);
+
+      expect(store.lastMeeting()).toBeNull();
+      expect(store.lastMeetingFailed()).toBe(false);
+    });
+
+    it('marks the feed failed instead of empty when it errors', () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const store = create();
+      latestPast$.error(new Error('down'));
+
+      expect(store.lastMeetingFailed()).toBe(true);
+      expect(store.lastMeeting()).toBeNull();
+    });
+
+    it("loads the last meeting's summary, transcript and recording", () => {
+      const store = create();
+      latestPast$.next([buildPastMeeting('b', inDays(-1))]);
+      TestBed.tick();
+
+      expect(meetingService['getPastMeetingSummary']).toHaveBeenCalledWith('m-past-b');
+      expect(store.lastMeetingSummary()).toBeUndefined();
+      expect(store.lastMeetingHasTranscript()).toBe(true);
+      expect(store.lastMeetingRecordingUrl()).toBe('https://zoom.example/large');
+
+      summary$.next(summary);
+      expect(store.lastMeetingSummary()).toEqual(summary);
+
+      store.setLastMeetingSummary({ ...summary, approved: false });
+      expect(store.lastMeetingSummary()?.approved).toBe(false);
+    });
+
+    it('reads a failed artifact lookup as none', () => {
+      meetingService['getPastMeetingSummary'] = vi.fn(() => throwError(() => new Error('down')));
+      meetingService['getPastMeetingRecording'] = vi.fn(() => throwError(() => new Error('down')));
+      const store = create();
+      latestPast$.next([buildPastMeeting('b', inDays(-1))]);
+      TestBed.tick();
+
+      expect(store.lastMeetingSummary()).toBeNull();
+      expect(store.lastMeetingRecordingUrl()).toBeNull();
+      expect(store.lastMeetingHasTranscript()).toBe(true);
     });
   });
 });

@@ -24,6 +24,7 @@ import {
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
+  toPastMeetingHomeRow,
 } from './meeting-list.utils';
 
 // Thursday, Oct 1 2026, 09:00 in the runner's local zone; buckets are local-calendar based.
@@ -255,6 +256,38 @@ describe('expandMeetingOccurrences', () => {
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => (item.myRsvp === undefined ? 'unknown' : (item.myRsvp?.response_type ?? null)));
       expect(responses).toEqual([null, 'unknown', 'accepted', 'unknown']);
     });
+  });
+});
+
+describe('toPastMeetingHomeRow', () => {
+  const pastMeeting = (overrides: Partial<PastMeeting> = {}): PastMeeting => ({
+    ...buildMeeting({ id: '123-1759334400000', title: 'Sync', duration: 45 }),
+    scheduled_start_time: '2025-10-01T16:00:00Z',
+    scheduled_end_time: '2025-10-01T16:45:00Z',
+    meeting_id: '123',
+    occurrence_id: '1759334400',
+    platform_meeting_id: '',
+    sessions: [],
+    meeting_and_occurrence_id: '123-1759334400000',
+    ...overrides,
+  });
+
+  it('keys the row by the past meeting id and starts it at the scheduled start', () => {
+    const meeting = pastMeeting();
+
+    expect(toPastMeetingHomeRow(meeting)).toEqual({
+      key: '123-1759334400000',
+      meeting,
+      occurrence: null,
+      title: 'Sync',
+      occurrenceId: '1759334400',
+      startTime: '2025-10-01T16:00:00.000Z',
+      durationMinutes: 45,
+    });
+  });
+
+  it('returns null without a valid start', () => {
+    expect(toPastMeetingHomeRow(pastMeeting({ scheduled_start_time: 'nope', start_time: '' }))).toBeNull();
   });
 });
 
