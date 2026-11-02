@@ -3,12 +3,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getClaManagerOrgs } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   resolveSegment: vi.fn(),
   getRoleGrants: vi.fn(),
   getClaManagerOrgs: vi.fn(),
+  getRoleGrantAffiliation: vi.fn(),
 }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -32,6 +33,11 @@ vi.mock('../services/org-slug-resolver.service', () => ({
 vi.mock('../services/org-cla-only-orgs.service', () => ({
   OrgClaOnlyOrgsService: class {
     public getRoleGrantClaManagerOrgs = getClaManagerOrgs;
+  },
+}));
+vi.mock('../services/org-affiliation.service', () => ({
+  OrgAffiliationService: class {
+    public getRoleGrantAffiliation = getRoleGrantAffiliation;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -269,6 +275,7 @@ describe('OrgIdentityController.getRoleGrants', () => {
   beforeEach(() => {
     getRoleGrants.mockResolvedValue(grants);
     getClaManagerOrgs.mockResolvedValue({ claManagerOrgs: [], claManagerLookup: 'ok' });
+    getRoleGrantAffiliation.mockResolvedValue({});
   });
 
   // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
@@ -311,6 +318,27 @@ describe('OrgIdentityController.getRoleGrants', () => {
 
       expect(getClaManagerOrgs).toHaveBeenCalledWith(req, grants);
       expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [COMPANY_A], claManagerLookup: 'ok' });
+    });
+
+    it('carries the affiliation verdict through to the browser alongside the grants', async () => {
+      const affiliation = { hasEmployer: true, employerIsMember: true, lookup: 'ok' as const };
+      getRoleGrantAffiliation.mockResolvedValueOnce({ affiliation });
+      const res = buildRes();
+      const req = request();
+
+      await new OrgIdentityController().getRoleGrants(req, res, vi.fn());
+
+      expect(getRoleGrantAffiliation).toHaveBeenCalledWith(req, grants);
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok', affiliation });
+    });
+
+    // #4225 — the verdict is omitted whenever the question does not arise, so the wire stays as it was.
+    it('omits the affiliation verdict when the service answers nothing', async () => {
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok' });
     });
 
     it('passes a failed scopes lookup through to the browser instead of an empty "manages nothing"', async () => {

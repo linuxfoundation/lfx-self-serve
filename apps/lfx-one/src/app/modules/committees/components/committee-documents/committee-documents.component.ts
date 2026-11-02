@@ -10,6 +10,7 @@ import { DocumentsTableComponent } from '@components/documents-table/documents-t
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -207,7 +208,7 @@ export class CommitteeDocumentsComponent {
    * a URL — that silently dropped folders and never included uploaded files.
    *
    * The list is scoped by `currentFolderUid()` for drill-down navigation:
-   * - **Root view (currentFolderUid === null):** show folders (alphabetically) and any orphan
+   * - **Root view (currentFolderUid === null):** show folders and any orphan
    *   items (no parent or parent deleted). Folders display a child count and are clickable.
    * - **Inside a folder (currentFolderUid set):** show only items whose `parent_uid` matches.
    */
@@ -225,10 +226,7 @@ export class CommitteeDocumentsComponent {
 
       // Folder view — show only direct children of the selected folder.
       if (currentFolderUid) {
-        return nonFolders
-          .filter((d) => d.parent_uid === currentFolderUid)
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((d) => this.toDisplayItem(d, committeeUid, groupName, false));
+        return nonFolders.filter((d) => d.parent_uid === currentFolderUid).map((d) => this.toDisplayItem(d, committeeUid, groupName, false));
       }
 
       // Root view — folders (with child counts) followed by orphan items.
@@ -240,8 +238,7 @@ export class CommitteeDocumentsComponent {
       }
 
       const ordered: MyDocumentItem[] = [];
-      const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
-      for (const folder of sortedFolders) {
+      for (const folder of folders) {
         ordered.push({
           ...this.toDisplayItem(folder, committeeUid, groupName, false),
           isFolder: true,
@@ -249,8 +246,8 @@ export class CommitteeDocumentsComponent {
         });
       }
 
-      // Orphans appear at the bottom of the root view so newly uploaded files don't disappear.
-      const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid)).sort((a, b) => a.name.localeCompare(b.name));
+      // Orphans are listed after the folders so newly uploaded files don't disappear.
+      const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid));
       for (const orphan of orphans) {
         ordered.push(this.toDisplayItem(orphan, committeeUid, groupName, false));
       }
@@ -317,7 +314,8 @@ export class CommitteeDocumentsComponent {
       // folder-scoped view is used, so the empty-state message and breadcrumb stay accurate.
       const flatten = !this.currentFolderUid() && (!!query || tab !== 'all');
       const base = flatten ? this.flattenedDocuments() : this.documents();
-      return base.filter((doc) => {
+      // Folders first (alphabetical), then documents newest first — the same order as the project documents page.
+      return [...base].sort(compareDocumentsByRecency).filter((doc) => {
         if (!this.matchesSearch(doc, query)) return false;
         if (tab === 'all') return true;
         // Folder rows are structural navigation: kept in the folder-scoped view, hidden once a pill lists documents flat.

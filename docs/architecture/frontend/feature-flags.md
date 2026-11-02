@@ -1182,6 +1182,14 @@ protected readonly showFeature = this.featureFlagService.getBooleanFlag(FEATURE_
 - Single source of truth
 - Type safety for flag keys
 
+**Real example: `MEETINGS_REDESIGN_FLAG`** (`'meetings-redesign'`) gates the redesigned Home / Me lens Meetings page. The flat `/meetings` route loads a thin `MeetingsEntryComponent` instead of a page, and that wrapper chooses between the existing dashboard and the redesign:
+
+- **URL first**: the wrapper checks the URL before anything else. `/foundation/meetings` and `/project/meetings` render the existing dashboard straight away, on the server too, with no loader, no override read and no LaunchDarkly wait; only the flat `/meetings` evaluates the flag.
+- **Server (flat `/meetings`)**: renders a loading state only. LaunchDarkly is browser-only, so every flag reads `false` there; rendering a page would show the existing one and then swap.
+- **Browser (flat `/meetings`)**: resolves after the first render so hydration matches. A local override (`getFlagOverride`) decides first; otherwise it waits for `providerReady` (up to the shared `FEATURE_FLAG_READY_TIMEOUT_MS`, 10s, like the other flag guards) and a timeout means the existing dashboard.
+- **Page choice**: the redesign renders only when the flag is on, the active lens is `me` and the URL is the flat `/meetings`. The lens is read once, together with the flag, so a later lens change never swaps the page.
+- **Loading**: the existing dashboard is rendered directly, because a plain `@defer` block (no hydrate trigger) renders nothing on the server; the redesign is `@defer`-loaded so its chunk only downloads when chosen. The decision is fixed once resolved, so the page does not swap under the user if the flag or lens changes.
+
 ### Performance Considerations
 
 ✅ **DO: Create flag signals at component initialization**

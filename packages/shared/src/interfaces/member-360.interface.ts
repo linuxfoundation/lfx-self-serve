@@ -3,9 +3,9 @@
 
 import type { z } from 'zod';
 import type { envelopeSchema, tabsSchema, memberRankingRowSchema } from '../server/member-360-schema.utils';
-import type { formInputSchema, trackerSchema, priorRunSchema } from '../server/member-360.utils';
-import type { MktgRunActivity, MktgRunSessionResponse } from './mktg-run.interface';
-import type { CATEGORY_KEYS } from '../constants/member-360.constants';
+import type { formInputSchema, trackerSchema, priorRunSchema, member360QuestionsSchema, member360AnswersSchema } from '../server/member-360.utils';
+import type { MktgRunActivity, MktgRunPersistReceipt, MktgRunSessionResponse, MktgRunQuestion } from './mktg-run.interface';
+import type { CATEGORY_KEYS, MEMBER_360_FINALIZE_RECEIPT_ID } from '../constants/member-360.constants';
 export type Member360Envelope = z.infer<typeof envelopeSchema>;
 export type Member360Tabs = z.infer<typeof tabsSchema>;
 export type Member360RankingRow = z.infer<typeof memberRankingRowSchema>;
@@ -13,11 +13,36 @@ export type Member360FormInput = z.infer<typeof formInputSchema>;
 export type Member360Tracker = z.infer<typeof trackerSchema>;
 export type Member360PriorRun = z.infer<typeof priorRunSchema>;
 export type Member360Category = (typeof CATEGORY_KEYS)[number];
+/** Agent 2.1.1 compact finalize receipt; its hash covers tabs only. */
+export interface Member360FinalizeReceipt {
+  finalize_receipt: typeof MEMBER_360_FINALIZE_RECEIPT_ID;
+  ok: true;
+  sha256: string;
+  rows: { ranking: number; evidence: number };
+  partial: boolean;
+  violations?: string[];
+}
 export interface Member360GenerateRequest {
   project: string;
+  discard?: string;
   window?: '12' | '6' | 'year';
   compare?: boolean;
-  trackers?: Member360Tracker[];
+  trackerIds?: string[];
+}
+/** The only parsed-tracker data sent to the browser. No cell values or headers. */
+export interface Member360TrackerReceipt {
+  trackerId: string;
+  rowCount: number;
+  columnCount: number;
+  byteCount: number;
+  kind?: Member360Tracker['kind'];
+}
+/** Private object-store record, never a response. */
+export interface Member360StoredTracker {
+  project: string;
+  creatorHash: string;
+  expiresAt: number;
+  tracker: Member360Tracker;
 }
 export interface Member360GenerationStart {
   sessionId: string;
@@ -25,22 +50,23 @@ export interface Member360GenerationStart {
 }
 export interface Member360TrackerUpload {
   id: number;
-  tracker: Member360Tracker;
+  tracker: Member360TrackerReceipt;
+  filename: string;
   format: string;
   summary: string;
 }
 export interface Member360Session extends MktgRunSessionResponse {
   documentId: string;
 }
-export interface Member360PendingRun {
-  user: string;
-  project: string;
-  session: Member360Session;
-  startedAt: number;
-}
 export type Member360FailureReason = 'no_edit_access' | 'agent_stopped';
+export type Member360QuestionsTurn = z.infer<typeof member360QuestionsSchema>;
+export type Member360AnswersBody = z.infer<typeof member360AnswersSchema>;
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input' | 'failed';
+  /** Creator-only questions, without the agent's internal evidence basis. */
+  questions?: MktgRunQuestion[];
+  /** SHA-256 of the boundary-trimmed attributed questions turn. */
+  questionsId?: string;
   /** Ephemeral, redacted terminal agent text; never stored as a document. */
   message?: string;
   /** Server-classified failure; clients default older responses to agent_stopped. */
@@ -49,6 +75,8 @@ export interface Member360Result {
   activity?: MktgRunActivity[];
   documentId?: string;
   stored?: boolean;
+  /** Exact receipt lets the shared started-run reader confirm durable completion. */
+  persistence?: MktgRunPersistReceipt;
 }
 export interface Member360WorkbookDownload {
   bytes: Uint8Array;

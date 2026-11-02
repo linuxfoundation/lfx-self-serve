@@ -16,14 +16,17 @@ import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
 import { ProfileController } from './controllers/profile.controller';
+import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
@@ -59,6 +62,7 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -86,7 +90,13 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
-import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import {
+  buildImpersonationIdentityOverride,
+  clearImpersonationSession,
+  decodeJwtPayload,
+  isImpersonating,
+  refreshExpiredSsrAccessToken,
+} from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -112,7 +122,13 @@ installAsyncRouteErrorBridge();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-const angularApp = new AngularNodeAppEngine();
+// @angular/ssr 20.3.42+ serves the client-only shell (no auth state, so authGuard loops through
+// /login) for any request whose Host is not allowed or that carries an untrusted x-forwarded-*
+// header. Trust exactly the headers our ingress sends (#4649).
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').hostname],
+  trustProxyHeaders: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-forwarded-server'],
+});
 const app = express();
 
 // Cold-start phase marks (see #1378) — performance.now() is monotonic and
@@ -223,28 +239,8 @@ app.get('/readyz', (_req: Request, res: Response) => {
 // for any code path that does fall through.
 app.use(sitemapRouter);
 
-app.get(
-  '**',
-  express.static(browserDistFolder, {
-    index: false,
-    setHeaders: (res, filePath) => {
-      if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
-        // Angular emits content-hashed filenames (outputHashing: "all") — safe to
-        // cache permanently; the hash changes whenever content changes.
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        return;
-      }
-      if (/\.(html|js|css)$/i.test(filePath)) {
-        // Non-hashed HTML, JS, and CSS (e.g. index.html, main.js in dev builds where
-        // outputHashing is not "all") must revalidate on every request — stale entry
-        // bundles reference old chunk hashes and cause "Importing a module script failed".
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        return;
-      }
-      res.setHeader('Cache-Control', 'public, max-age=300');
-    },
-  })
-);
+// Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
+app.use(createBrowserAssetsMiddleware(browserDistFolder));
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
@@ -388,7 +384,15 @@ app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
 app.use('/login', authRateLimiter);
 
+// Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
+// document must also never leak the page URL via Referer to anything it links to or loads (#4363).
+app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
@@ -500,6 +504,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     organizations: [],
   };
 
+  // See refreshExpiredSsrAccessToken's docstring — this is what makes an idle-but-valid session
+  // render as authenticated on a full page load instead of tripping the GH-4179 LaunchDarkly stall.
+  await refreshExpiredSsrAccessToken(req);
+
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
@@ -520,7 +528,21 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   if (auth.authenticated) {
-    const personaResult = await resolvePersonaForSsr(req, res);
+    // The stored-name lookup is bounded and fail-open, and runs alongside persona resolution so a
+    // healthy NATS adds no serial round trip. Skipped while impersonating: that identity is
+    // overridden below.
+    const [personaResult, storedName] = await Promise.all([
+      resolvePersonaForSsr(req, res),
+      auth.user && !isImpersonating(req)
+        ? resolveStoredDisplayName(req, {
+            given_name: auth.user.given_name || auth.user.first_name,
+            family_name: auth.user.family_name || auth.user.last_name,
+          })
+        : Promise.resolve(null),
+    ]);
+    if (auth.user && storedName) {
+      auth.user = { ...auth.user, name: storedName };
+    }
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];
@@ -799,6 +821,8 @@ export function startServer() {
       routes_ms: Math.round(routesReadyMs),
       boot_ms: Math.round(performance.now()),
     });
+    // Once per process: which model AI_MODEL resolved to and which sampling params it gets.
+    logAiModelConfig();
   });
   // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
   // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev

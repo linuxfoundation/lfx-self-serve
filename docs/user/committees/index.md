@@ -1,20 +1,20 @@
 ---
 title: Groups
-description: View, create, and manage project committees (groups) in LFX Self Serve.
+description: Find your groups, join or leave them, and create and manage project groups (committees) in LFX Self Serve.
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, governance, membership, management]
-last_updated: 2026-10-11
+last_updated: 2026-10-28
 intercom_collection: Committees
 ---
 
-This page applies to users with **contributor**, **maintainer**, **board-member**, or **executive-director** personas. Contributors can view committee information but cannot create or manage committees.
+This page applies to everyone who is signed in. Contributors, maintainers, board members, and executive directors can all find their groups and join or leave them where a group allows it. Creating a group takes write access to the selected foundation or project. Managing an existing group takes manager access to that group.
 
-In LFX Self Serve, committees are displayed as **Groups**. Navigate to **My Groups** at `/groups` to see your committee memberships. Committees are formal groups that govern project decisions, including Technical Steering Committees (TSCs), boards, and other working groups.
+In LFX Self Serve, committees are called **Groups**: Technical Steering Committees (TSCs), boards, working groups, and other formal groups that govern a project. The Groups pages and these articles use "group"; the section is still filed under Committees in the help center.
 
-## My Groups
+## Groups
 
-My Groups is your personal membership inventory across foundations and projects. Contributor, Maintainer, Board Member, and Executive Director personas use the same inventory; it does not grant new management or voting permissions.
+Groups is your personal membership inventory across foundations and projects. Contributor, Maintainer, Board Member, and Executive Director personas use the same inventory; it does not grant new management or voting permissions.
 
 - Use category buttons, search, and the **Voting capability** filter to narrow your groups. Search includes group names, descriptions, and categories and settles after a short delay.
 - **Foundation** and **Project** filters appear when your persona and available membership scopes support them. Selecting or removing a Foundation clears Project; removing Project keeps Foundation selected. Project choices are constrained to the selected Foundation.
@@ -28,24 +28,36 @@ If your inventory is empty, there is no filter panel or reset action; invitation
 
 ## What you can do
 
-- View all committees for your project or foundation
-- Create new committees
-- Edit committee details and membership
-- View committee members and their roles
-- Manage committee settings
+- Find the groups you belong to, and any invitations or applications that are waiting ([Groups](#groups))
+- Join an open group, apply to one, accept an invitation, or leave ([Join, Apply to, and Leave a Group](join-and-leave-a-group/))
+- Create a group with the four-step wizard ([Create a Group](create-committee/))
+- Edit a group, manage its members and import a CSV, and delete it ([Manage Groups](manage-committees/))
+- Read a group's Overview and About tabs ([Group Overview and About](group-overview-and-about/))
+- Change a group's join mode, visibility, mailing lists, chat channel, and features ([Group Settings](group-settings/))
 
 ## Navigation
 
-Go to **app.lfx.dev** and select **Groups** (route: `/groups`) from the left navigation. The committees dashboard lists all committees you have access to.
+Go to **app.lfx.dev** and select **Groups** from the left navigation. What you see depends on your lens (the Org lens also has a Groups page, at `/org/groups`, for groups your organization's employees take part in):
+
+| Lens           | Route                | What it lists                                                                 |
+| -------------- | -------------------- | ----------------------------------------------------------------------------- |
+| **Me**         | `/groups`            | Your own memberships, with filters, plus pending invitations and applications |
+| **Foundation** | `/foundation/groups` | Every group for the selected foundation                                       |
+| **Project**    | `/project/groups`    | Every group for the selected project                                          |
+
+**Create Group** appears at the top of the Foundation and Project lens pages for users who can create groups. It does not appear in the Me lens.
 
 ## Key concepts
 
-- **Committee**: A formal group with defined membership and a governance role within a project
-- **Committee view**: The detail page for a single committee, showing its members and settings
-- **Committee management**: The create and edit workflow for committee configuration
+- **Group**: A formal body with defined membership and a governance role within a project or foundation.
+- **Group type**: The category you pick in the first step of the wizard, such as a TSC or a working group. You can change it later from the Settings tab.
+- **Join mode**: How people get in. **Open** lets anyone join directly. **Invite Only** requires an invitation from a member or admin. **Apply & Review** lets people apply, and a manager approves or rejects. The group itself shows this mode as **Apply to Join**. **Closed** means only admins add members.
+- **Visibility**: A group is **Public** or **Private**. A separate **Member Visibility** setting decides whether non-managers can see the roster (**Hidden** or **Basic Profile**).
+- **Group page tabs**: Overview, About, Members, Votes, Meetings, Surveys, Documents, and Settings. Which of them you see depends on your access. See [Group Overview and About](group-overview-and-about/) and [Manage Groups](manage-committees/).
+- **Membership badge**: The tag beside a group's name that says where you stand: Manager, Auditor, your member role, Application Pending, or Not a Member.
 
 ## Related sections
 
-- [Votes](../votes/) — create and manage polls for committee decisions
-- [Meetings](../meetings/) — schedule and manage committee meetings
-- [Documents](../documents/) — manage documents associated with committees
+- [Votes](../votes/) — create and manage polls for group decisions
+- [Meetings](../meetings/) — schedule and manage group meetings
+- [Documents](../documents/) — manage documents associated with groups

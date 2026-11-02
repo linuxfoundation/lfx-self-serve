@@ -5,18 +5,19 @@ import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, type ParamMap, Router, UrlTree } from '@angular/router';
-import { PD_HEALTH_TAG } from '@lfx-one/shared/constants';
-import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
+import { ORG_SCOPE_PROJECT_DETAIL_NOTE, PD_HEALTH_TAG } from '@lfx-one/shared/constants';
+import { Account, BoardDisplayRow, OrgLensEmptyStateName, OrgLensInfluenceBlock, OrgLensProjectHero } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, EMPTY, of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
 
@@ -77,6 +78,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -187,6 +189,7 @@ describe('OrgProjectDetailComponent — page-level empty state', () => {
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -283,6 +286,7 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
         {
           provide: OrgLensProjectDetailService,
           useValue: {
@@ -365,5 +369,219 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
     expect(component['heroHealthAriaLabel']()).toBe(
       'Health: Fair, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
+  });
+});
+
+/**
+ * lfx-self-serve-ops#1219: the Organization scope picker drives every scoped Project Detail read and is kept in step with
+ * `?orgScope=` (dropped at the default, insights).
+ */
+describe('OrgProjectDetailComponent — organization scope', () => {
+  let queryParams: BehaviorSubject<ParamMap>;
+  let navigate: Mock;
+  let detail: Record<string, Mock>;
+
+  async function create(
+    initialQuery: Record<string, string> = {},
+    hero: OrgLensProjectHero | null = null,
+    influence: OrgLensInfluenceBlock | null = null
+  ): Promise<{ fixture: ComponentFixture<OrgProjectDetailComponent>; component: OrgProjectDetailComponent }> {
+    queryParams = new BehaviorSubject<ParamMap>(convertToParamMap(initialQuery));
+    navigate = vi.fn();
+    detail = {
+      getHero: vi.fn(() => of(hero ? { hero, isNonLfProject: false } : null)),
+      getInfluenceBlock: vi.fn(() => of(influence)),
+      getTrendBlock: vi.fn(() => of(null)),
+      getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
+      getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+      getLeaderboardBreakdown: vi.fn(() => of(null)),
+      getCardDrawer: vi.fn(() => of(null)),
+      getCardRoster: vi.fn(() => of({ rows: [], total: 0 })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
+        },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
+        { provide: OrgLensProjectDetailService, useValue: detail },
+        {
+          provide: PersonDetailDrawerService,
+          useValue: {
+            open: vi.fn(),
+            close: vi.fn(),
+            isOpen: signal(false),
+            activeContext: signal(null),
+            activeTab: signal('events'),
+            loading: signal(false),
+            error: signal(null),
+            emailError: signal(false),
+            emailsLoading: signal(false),
+            companyEmails: signal([]),
+          },
+        },
+        { provide: Router, useValue: { navigate, events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: of(convertToParamMap({ projectSlug: 'k8s' })),
+            queryParamMap: queryParams.asObservable(),
+            snapshot: {
+              get queryParamMap(): ParamMap {
+                return queryParams.value;
+              },
+            },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgProjectDetailComponent);
+    await fixture.whenStable();
+    return { fixture, component: fixture.componentInstance };
+  }
+
+  it('reads the influence cards under insights when the URL names no scope', async () => {
+    await create();
+
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'insights');
+  });
+
+  // lfx-self-serve#4735: the organization scope sits behind "More filters".
+  it('keeps the organization scope behind More filters in the filter strip, counted from the address', async () => {
+    const hero: OrgLensProjectHero = {
+      projectName: 'Kubernetes',
+      description: '',
+      logoUrl: '',
+      lfxInsightsUrl: null,
+      firstCommit: null,
+      softwareValueUsd: null,
+      health: null,
+      healthOverallScore: null,
+      healthMaxScore: null,
+      healthCoveredCategoryCount: null,
+      healthMaintainer: null,
+      healthSecurity: null,
+      healthDevelopment: null,
+      foundationLabel: '',
+    };
+    const { fixture } = await create({ orgScope: 'all' }, hero);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const toggle = (): HTMLButtonElement => el.querySelector('[data-testid="project-detail-more-filters-toggle"]')!;
+    const panel = (): HTMLElement => el.querySelector('#project-detail-more-filters')!;
+
+    expect(el.querySelector('lfx-org-project-detail-tab-bar [data-testid="project-detail-more-filters-toggle"]')).not.toBeNull();
+    expect(el.querySelector('lfx-org-project-detail-tab-bar [data-test="project-detail-org-scope-filter"]')).toBeNull();
+    expect(panel().querySelector('[data-test="project-detail-org-scope-filter"]')).not.toBeNull();
+    expect(panel().classList).toContain('hidden');
+    expect(toggle().getAttribute('aria-controls')).toBe('project-detail-more-filters');
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().textContent?.trim()).toBe('More filters (1)');
+
+    toggle().click();
+    await fixture.whenStable();
+    expect(panel().classList).not.toContain('hidden');
+    expect(toggle().textContent?.trim()).toBe('Fewer filters');
+  });
+
+  it('reads the influence cards under the scope the URL names', async () => {
+    await create({ orgScope: 'all' });
+
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'all');
+  });
+
+  // Under insights the band chips are the Insights organization's row only; when it has none on the project the BFF
+  // sends null levels even if a related organization has a row, and the section titles carry no chip at all.
+  it.each([
+    { levels: { technical: null, ecosystem: null }, chips: 0 },
+    { levels: { technical: 'leading', ecosystem: 'contributing' }, chips: 2 },
+  ] as const)('renders $chips band chips for levels $levels', async ({ levels, chips }) => {
+    const hero: OrgLensProjectHero = {
+      projectName: 'Kubernetes',
+      description: '',
+      logoUrl: '',
+      lfxInsightsUrl: null,
+      firstCommit: null,
+      softwareValueUsd: null,
+      health: null,
+      healthOverallScore: null,
+      healthMaxScore: null,
+      healthCoveredCategoryCount: null,
+      healthMaintainer: null,
+      healthSecurity: null,
+      healthDevelopment: null,
+      foundationLabel: '',
+    };
+    const { fixture } = await create({}, hero, { technical: [], ecosystem: [], isNonLfProject: false, levels });
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="project-detail-technical-group"] h2')?.textContent).toBe('Our Technical Influence');
+    expect(el.querySelectorAll('[data-testid="project-detail-technical-band"], [data-testid="project-detail-ecosystem-band"]')).toHaveLength(chips);
+  });
+
+  it('re-reads the influence cards and writes ?orgScope= on a pick, dropping it at the default', async () => {
+    const { fixture, component } = await create();
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+    expect(detail['getInfluenceBlock']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), 'all');
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: 'all' } }));
+
+    queryParams.next(convertToParamMap({ orgScope: 'all' }));
+    component['scopeForm'].controls.orgScope.setValue('insights');
+    await fixture.whenStable();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgScope: null } }));
+  });
+
+  it('passes the picker the note on what the pick changes on this page', async () => {
+    const { component } = await create();
+
+    expect(component['orgScopeNote']).toBe(ORG_SCOPE_PROJECT_DETAIL_NOTE);
+  });
+
+  it('keeps ?orgScope=all on the way back to Projects, and nothing at the default', async () => {
+    const { component } = await create({ orgScope: 'all' });
+
+    expect(component['breadcrumbHome']().queryParams).toEqual({ orgScope: 'all' });
+    expect(component['breadcrumbItems']()[0].queryParams).toEqual({ orgScope: 'all' });
+
+    queryParams.next(convertToParamMap({}));
+    expect(component['breadcrumbHome']().queryParams).toEqual({});
+  });
+
+  it('re-reads both leaderboards with the picked scope', async () => {
+    const { fixture, component } = await create({ tab: 'pd-leaderboards' });
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+
+    expect(detail['getTechnicalBoard']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), expect.any(String), 0, 10, '', 'all');
+    expect(detail['getEcosystemBoard']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', expect.any(String), expect.any(String), 0, 10, '', 'all');
+  });
+
+  it('keys the card drawer cache by scope and sends the scope with the drawer and roster reads', async () => {
+    const { fixture, component } = await create();
+
+    component['loadDrawer']('commits');
+    component['loadDrawer']('commits');
+    expect(detail['getCardDrawer']).toHaveBeenCalledTimes(1);
+    expect(detail['getCardDrawer']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 'insights');
+
+    component['scopeForm'].controls.orgScope.setValue('all');
+    await fixture.whenStable();
+    component['loadDrawer']('commits');
+    expect(detail['getCardDrawer']).toHaveBeenCalledTimes(2);
+    expect(detail['getCardDrawer']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 'all');
+
+    component['loadRosterPage']('commits', 0, 10);
+    expect(detail['getCardRoster']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 0, 10, 'all');
   });
 });

@@ -8,9 +8,14 @@ import '@angular/compiler';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { searchUsers, resolveImpersonatorToken } = vi.hoisted(() => ({ searchUsers: vi.fn(), resolveImpersonatorToken: vi.fn() }));
+const { searchUsers, resolveImpersonatorToken, decodeJwtPayload } = vi.hoisted(() => ({
+  searchUsers: vi.fn(),
+  resolveImpersonatorToken: vi.fn(),
+  decodeJwtPayload: vi.fn(),
+}));
 
 vi.mock('../utils/impersonator-token', () => ({ resolveImpersonatorToken }));
+vi.mock('../utils/auth-helper', () => ({ decodeJwtPayload }));
 
 vi.mock('../services/search.service', () => ({
   SearchService: class {
@@ -123,6 +128,61 @@ describe('SearchController.searchUsersAsImpersonator', () => {
     expect(resolveImpersonatorToken).toHaveBeenCalledWith(req, 'search_users');
     expect(searchUsers).toHaveBeenCalledWith(req, { name: 'kim', sort: 'best_match', type: 'committee_member' }, { bearerToken: 'real-admin-token' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  describe('self exclusion', () => {
+    const row = (username: string, email: string) => ({
+      uid: username,
+      username,
+      email,
+      first_name: username,
+      last_name: '',
+      job_title: null,
+      organization: null,
+      type: 'committee_member',
+    });
+
+    beforeEach(() => {
+      decodeJwtPayload.mockReturnValue({ 'http://lfx.dev/claims/username': 'admin', 'http://lfx.dev/claims/email': 'admin@example.com' });
+      searchUsers.mockResolvedValue({ results: [row('admin', 'admin@example.com'), row('kim', 'kim@example.com')], total: 2 });
+    });
+
+    it('drops the signed-in admin from the results and the total', async () => {
+      const res = buildRes();
+
+      await controller.searchUsersAsImpersonator(buildReq({ type: 'committee_member', name: 'a' }), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ results: [row('kim', 'kim@example.com')], total: 1 });
+    });
+
+    it('matches the admin by email when the row carries no username', async () => {
+      searchUsers.mockResolvedValue({ results: [{ ...row('', 'ADMIN@example.com'), username: null }, row('kim', 'kim@example.com')], total: 2 });
+      const res = buildRes();
+
+      await controller.searchUsersAsImpersonator(buildReq({ type: 'committee_member', name: 'a' }), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ results: [row('kim', 'kim@example.com')], total: 1 });
+    });
+
+    it('also drops the user currently being impersonated', async () => {
+      const res = buildRes();
+      const req = {
+        ...buildReq({ type: 'committee_member', name: 'a' }),
+        appSession: { impersonationUser: { username: 'kim', email: 'kim@example.com' } },
+      } as unknown as Request;
+
+      await controller.searchUsersAsImpersonator(req, res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ results: [], total: 0 });
+    });
+
+    it('leaves the plain route unfiltered', async () => {
+      const res = buildRes();
+
+      await controller.searchUsers(buildReq({ type: 'committee_member', name: 'a' }), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ results: [row('admin', 'admin@example.com'), row('kim', 'kim@example.com')], total: 2 });
+    });
   });
 
   it('does not search when the caller cannot impersonate', async () => {

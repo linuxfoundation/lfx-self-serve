@@ -25,6 +25,7 @@ import type {
   HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRowView,
+  HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -48,8 +49,8 @@ export class EngagementNonMemberParticipationComponent {
    * pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -75,10 +76,10 @@ export class EngagementNonMemberParticipationComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** No row at all is an empty foundation; rows with none active in the period are a measured zero. */
-  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
   /** The selected period's scope count, which the view denormalizes onto every row; `null` is unmeasured. */
   protected readonly periodCounts = computed(() => selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
+  /** No non-member for the foundation, or none measured in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response(), this.chrome.selectedRange()));
   protected readonly countLabel = computed(() => {
     const counts = this.periodCounts();
     if (!counts) return '—';
@@ -145,7 +146,7 @@ export class EngagementNonMemberParticipationComponent {
               );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response, this.chrome.selectedRange()));
             })
           )
         )
@@ -161,5 +162,12 @@ export class EngagementNonMemberParticipationComponent {
     if (this.loadFailed() || this.loading()) return;
 
     this.countsChange.emit(selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
+    // Whether the period has any non-member moves with it, and so may the section's height.
+    this.settled.emit(isEmptyScope(this.response(), this.chrome.selectedRange()));
   }
+}
+
+/** No non-member row for the period: none at all, none measured, or none active in it. */
+function isEmptyScope(response: HealthMetricsEngagementNonMemberParticipation, range: HealthMetricsRange): boolean {
+  return filterHealthMetricsEngagementNonMemberRows(response.rows, range).length === 0;
 }

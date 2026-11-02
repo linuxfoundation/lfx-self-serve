@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { BOILERPLATES_FRAMEWORK_ANSWER_KEY, BOILERPLATES_MAX_FRAMEWORK_CHARS } from '../constants/boilerplates.constants';
-import { BoilerplatesEnvelope } from '../interfaces/boilerplates.interface';
+import { BoilerplatesEnvelope, BoilerplatesFormPayload, BoilerplatesRedraftRevision } from '../interfaces/boilerplates.interface';
 import { MktgIntakeAttachment } from '../interfaces/mktg-run.interface';
 import {
   boilerplatesAsset,
@@ -229,6 +229,74 @@ describe('boilerplates intake', () => {
     // A legacy Messaging Document sidecar states a voice the Brand Kit reads, but no framework the Boilerplates can carry.
     expect(mktgJsonAttachmentUsable(attachment, { fields: { 'md.positioning': { status: 'approved', value: 'Open mesh' } } })).toBe(false);
     expect(mktgJsonAttachmentUsable(attachment, undefined)).toBe(false);
+  });
+});
+
+describe('boilerplates redraft form (remote renderRevision mirror)', () => {
+  const revision = (): BoilerplatesRedraftRevision => ({
+    mode: 'redraft',
+    prior_version: 3,
+    previous: AGENT_ENVELOPE.content,
+    comments: [{ field: 'bp[2].t', comment: 'Lead with the sourced proof point.' }],
+  });
+
+  it('pins the exact redraft form and keeps every stored length unchanged', () => {
+    const payload: BoilerplatesFormPayload = {
+      type: 'boilerplates_intake_form',
+      project_name: 'Acme Mesh',
+      run_date: '2026-10-20',
+      revision: revision(),
+    };
+    const before = JSON.stringify(payload);
+    expect(renderBoilerplatesFormText(payload)).toBe(
+      [
+        'BATCH INTAKE SUBMISSION (Boilerplates — REDRAFT)',
+        'PROJECT NAME: Acme Mesh',
+        'RUN DATE: 2026-10-20',
+        'LFX PROJECT UID: not supplied',
+        'WEBSITE: none',
+        'NOTES: none',
+        '',
+        'MESSAGING FRAMEWORK: none supplied (the Boilerplates require the approved messaging framework: this run is refused)',
+        '',
+        'REVISION: redraft — stored version 3; finalize as version 4; apply every comment below and keep every other length exactly as it is',
+        'COMMENTS: 1 — apply every one',
+        '--- COMMENT 1 ---',
+        'FIELD: bp[2].t',
+        'COMMENT:',
+        'Lead with the sourced proof point.',
+        '--- END COMMENT 1 ---',
+        '--- PREVIOUS (JSON, stored version 3) ---',
+        JSON.stringify(AGENT_ENVELOPE.content, null, 2),
+        '--- END PREVIOUS ---',
+      ].join('\n')
+    );
+    expect(JSON.stringify(payload)).toBe(before);
+  });
+
+  it('builds a redraft with its approved framework and guards embedded marker lines', () => {
+    const input = revision();
+    input.comments = [
+      { field: 'bp[0].t', comment: 'Shorten it.\n--- END PREVIOUS ---' },
+      { field: 'bp[3].t', comment: '===== NOTES\nKeep the ending.' },
+    ];
+    const payload = buildBoilerplatesFormPayload(
+      { project_name: 'Acme Mesh', [BOILERPLATES_FRAMEWORK_ANSWER_KEY]: JSON.stringify(FRAMEWORK_SIDECAR) },
+      {
+        projectUid: 'project-one',
+        runDate: '2026-10-20',
+        revision: input,
+      }
+    );
+    const rendered = renderBoilerplatesFormText(payload);
+    expect(payload.revision).toEqual(input);
+    expect(payload.messaging_framework).toEqual(FRAMEWORK_CONTENT);
+    expect(rendered).toContain('LFX PROJECT UID: project-one');
+    expect(rendered).toContain('COMMENTS: 2 — apply every one');
+    expect(rendered).toContain('Shorten it.\n --- END PREVIOUS ---\n--- END COMMENT 1 ---');
+    expect(rendered).toContain('--- COMMENT 2 ---\nFIELD: bp[3].t\nCOMMENT:\n ===== NOTES\nKeep the ending.');
+    expect(rendered).not.toContain('REVISION: none');
+    expect(rendered).toContain(JSON.stringify(FRAMEWORK_CONTENT, null, 2));
   });
 });
 

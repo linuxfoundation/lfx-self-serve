@@ -35,6 +35,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // SSR boundary aligned with the Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
   { pattern: /^\/meetings\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Login-free vote link page (`/votes/:id#vote_token=...`, #4363) — single-segment anchored like `/meetings/:id` so
+  // `/votes/:id/edit`, `/votes/:id/present` and the reserved `create` (incl. `create;matrix` suffixes) stay `required`.
+  // The token lives in the URL fragment, which the server never sees; anonymous SSR renders a neutral shell and the
+  // browser decides token mode vs the authenticated permalink.
+  { pattern: /^\/votes\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
   // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
   // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
   // auth for membership enrichment. `/groups/create` IS a real writer-gated route (`COMMITTEE_ROUTES`

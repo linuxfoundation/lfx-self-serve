@@ -37,8 +37,8 @@ export class NonMembersConversionComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -51,6 +51,8 @@ export class NonMembersConversionComponent {
   }));
   protected readonly response: Signal<HealthMetricsNonMembersConversion> = this.initResponse();
   protected readonly view: Signal<HealthMetricsNonMembersConversionView> = computed(() => buildHealthMetricsNonMembersConversionView(this.response()));
+  /** The period's conversion was never measured; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.view().measured);
 
   private initResponse(): Signal<HealthMetricsNonMembersConversion> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -78,10 +80,10 @@ export class NonMembersConversionComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && !buildHealthMetricsNonMembersConversionView(response).measured);
             })
           )
         )

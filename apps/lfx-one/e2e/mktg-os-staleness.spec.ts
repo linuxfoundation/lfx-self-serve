@@ -49,7 +49,8 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await expect(page.getByTestId('mktg-family-state-boilerplates')).toContainText('Needs rebuild');
     await page.getByTestId('mktg-rebuild-open-boilerplates').getByRole('button').click();
     await expect(page).toHaveURL(new RegExp(`revision=${upstreamRef(2).revisionId}`));
-    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Synthetic rebuilt draft');
+    await expect(page.getByTestId('mktg-document-view-boilerplates')).toContainText('Synthetic rebuilt draft');
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
     await page.goBack();
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
     await expect(page).toHaveURL(STALENESS_FAMILY_URL);

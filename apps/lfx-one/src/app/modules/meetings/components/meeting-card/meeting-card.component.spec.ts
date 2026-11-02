@@ -528,6 +528,47 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
 
+  describe('the associated group line', () => {
+    const groupNames = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-groups-names"]')?.textContent?.trim();
+
+    it('names the group the meeting belongs to, under the title', async () => {
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1', name: 'Technical Steering Committee' }] } as Meeting);
+
+      expect(groupNames(card)).toBe('Technical Steering Committee');
+      const title = card.querySelector('[data-testid="meeting-title-section"]');
+      const groups = card.querySelector('[data-testid="meeting-groups"]');
+      expect(title?.nextElementSibling).toBe(groups);
+    });
+
+    it('lists every group when a meeting belongs to several', async () => {
+      const card = await render({
+        ...INVITED,
+        committees: [
+          { uid: 'group-1', name: 'Technical Steering Committee' },
+          { uid: 'group-2', name: 'Security Working Group' },
+        ],
+      } as Meeting);
+
+      expect(groupNames(card)).toBe('Technical Steering Committee, Security Working Group');
+    });
+
+    it('leaves a group with no resolved name out instead of showing a blank', async () => {
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1' }, { uid: 'group-2', name: 'Security Working Group' }] } as Meeting);
+
+      expect(groupNames(card)).toBe('Security Working Group');
+    });
+
+    it.each([
+      ['no committees field', {}],
+      ['an empty committees list', { committees: [] }],
+      ['only groups with no resolved name', { committees: [{ uid: 'group-1' }] }],
+    ])('shows no line for a meeting with %s', async (_label, overrides) => {
+      const card = await render({ ...INVITED, ...overrides } as Meeting);
+
+      expect(card.querySelector('[data-testid="meeting-groups"]')).toBeNull();
+    });
+  });
+
   describe("the viewer's own invite actions", () => {
     it('puts Resend Invite and Remove Myself side by side in one row, like Guests and See Meeting Details', async () => {
       const card = await render(INVITED);

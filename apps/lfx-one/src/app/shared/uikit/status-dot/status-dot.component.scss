@@ -1,0 +1,15 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Tailwind's animate-pulse is 2s down to 50%; the library pulses 1.4s down to 35%. Runs only when motion is allowed.
+@media (prefers-reduced-motion: no-preference) {
+  .status-dot-pulse {
+    animation: status-dot-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes status-dot-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

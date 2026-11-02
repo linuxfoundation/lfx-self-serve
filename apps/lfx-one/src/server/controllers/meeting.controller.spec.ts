@@ -76,7 +76,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REGISTRANT_BATCH_MAX: 100,
   MEETING_REGISTRANT_BATCH_CONCURRENCY: 5,
   MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
-  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
+  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join', 'meetings-home'],
   MIN_CUSTOM_DURATION: 5,
   MAX_MEETING_DURATION: 600,
 }));
@@ -112,12 +112,36 @@ vi.mock('../utils/auth-helper', () => ({
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
-vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
-vi.mock('../services/ai.service', () => ({ AiService: vi.fn(() => aiSvc) }));
-vi.mock('../services/committee.service', () => ({ CommitteeService: vi.fn(() => committeeSvc) }));
-vi.mock('../services/nats.service', () => ({ NatsService: vi.fn(() => ({})) }));
-vi.mock('../services/user.service', () => ({ UserService: vi.fn(() => ({})) }));
-vi.mock('../services/access-check.service', () => ({ AccessCheckService: vi.fn(() => ({})) }));
+vi.mock('../services/meeting.service', () => ({
+  MeetingService: vi.fn(function () {
+    return meetingSvc;
+  }),
+}));
+vi.mock('../services/ai.service', () => ({
+  AiService: vi.fn(function () {
+    return aiSvc;
+  }),
+}));
+vi.mock('../services/committee.service', () => ({
+  CommitteeService: vi.fn(function () {
+    return committeeSvc;
+  }),
+}));
+vi.mock('../services/nats.service', () => ({
+  NatsService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/user.service', () => ({
+  UserService: vi.fn(function () {
+    return {};
+  }),
+}));
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: vi.fn(function () {
+    return {};
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: {
     startOperation: vi.fn(() => 0),
@@ -698,6 +722,21 @@ describe('MeetingController', () => {
       await controller.deleteMeetingRegistrants(buildReq({ body: uids(MEETING_REGISTRANT_BATCH_MAX + 1) }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids' })] }));
+      expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a string', 'reg-0,reg-1'],
+      ['an object with a length', { length: 2, 0: 'reg-0', 1: 'reg-1' }],
+    ])('rejects %s body without counting it as registrants', async (_label, body) => {
+      const req = buildReq({ body });
+
+      await controller.deleteMeetingRegistrants(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'delete_meeting_registrants', expect.objectContaining({ registrant_count: 0 }));
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'registrantUids', message: 'Array of registrant UIDs is required' })] })
+      );
       expect(meetingSvc.deleteMeetingRegistrant).not.toHaveBeenCalled();
     });
 
@@ -1311,17 +1350,17 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('logs the UI surface named in the removal-source header on start and success', async () => {
-      const req = buildReq({}, { 'x-lfx-removal-source': 'meeting-card' });
+    it.each(['meeting-card', 'meetings-home'])('logs the UI surface named in the removal-source header (%s) on start and success', async (source) => {
+      const req = buildReq({}, { 'x-lfx-removal-source': source });
 
       await controller.removeMyMeetingRegistration(req, buildRes(), next);
 
-      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source: 'meeting-card' }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source }));
       expect(logger.success).toHaveBeenCalledWith(
         req,
         'remove_my_meeting_registration',
         expect.anything(),
-        expect.objectContaining({ source: 'meeting-card', removed_count: 1, remaining_count: 0 })
+        expect.objectContaining({ source, removed_count: 1, remaining_count: 0 })
       );
     });
 

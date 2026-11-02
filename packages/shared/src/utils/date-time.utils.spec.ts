@@ -13,6 +13,7 @@ import {
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
+  isLocalDateOnlyString,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -256,6 +257,19 @@ describe('formatVoteDeadline', () => {
     expect(formatVoteDeadline(null)).toBe('');
     expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
   });
+
+  it.each([
+    ['Europe/Lisbon', '2027-01-15T12:00:00.000Z', 'Jan 15, 2027 12:00 PM UTC'],
+    ['Atlantic/Azores', '2027-07-15T12:00:00.000Z', 'Jul 15, 2027 12:00 PM UTC'],
+  ])('shows a zero-offset zone with no abbreviation (%s) as UTC, not GMT+0 (#4767)', (zone, instant, expected) => {
+    expect(formatVoteDeadline(instant, zone)).toBe(expected);
+  });
+
+  it('leaves zero-offset zones that have an abbreviation, and non-zero offsets, unchanged', () => {
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'Europe/London')).toBe('Jan 15, 2027 12:00 PM GMT');
+    expect(formatVoteDeadline('2027-07-15T12:00:00.000Z', 'Europe/London')).toBe('Jul 15, 2027 1:00 PM GMT+1');
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'UTC')).toBe('Jan 15, 2027 12:00 PM UTC');
+  });
 });
 
 describe('getLongTimezoneName', () => {
@@ -353,6 +367,23 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// Gates which cached Snowflake `Date`s skip ISO normalization (server `isoDateReplacer`): only a bare
+// DATE may pass; every timestamp shape, including Snowflake's own output format, must not.
+describe('isLocalDateOnlyString', () => {
+  it.each([
+    ['2030-03-04', true],
+    ['2030-03-04T00:00:00.000Z', false],
+    ['2026-10-21 16:12:33.000 -0700', false],
+    ['2030-3-4', false],
+    ['', false],
+    [null, false],
+    [undefined, false],
+    [20300304, false],
+  ])('isLocalDateOnlyString(%s) → %s', (value, expected) => {
+    expect(isLocalDateOnlyString(value)).toBe(expected);
   });
 });
 

@@ -1,376 +1,632 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type {
-  HEALTH_METRICS_OVERVIEW_AREAS,
-  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
-  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
-  HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
-  HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
-  HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
-  HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS,
-  HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
-  HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS,
-} from '../constants/health-metrics-overview.constants';
-import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
-import type { HealthMetricsEventsQueryParams, HealthMetricsEventsSectionKey } from './health-metrics-events.interface';
-import type { HealthMetricsMembersQueryParams, HealthMetricsMembersSectionKey } from './health-metrics-members.interface';
-import type { HealthMetricsNonMembersQueryParams, HealthMetricsNonMembersSectionKey } from './health-metrics-non-members.interface';
-import type { HealthMetricsTrainingQueryParams, HealthMetricsTrainingSectionKey } from './health-metrics-training.interface';
+import type { Signal } from '@angular/core';
 
-/** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
-export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
+import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
 
-/** Urgency classification — never a category or a composite score, per the logic spec's hard constraints. */
-export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS;
-
-/** A rail revenue-stream key — fixed 3-stream set per `railHTML()`'s legend. */
-export type HealthMetricsOverviewRevenueStreamKey = keyof typeof HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS;
-
-/** A recognized `hm_findings.link_target` value — every in-app tab target and the one external Insights target. */
-export type HealthMetricsOverviewLinkTarget =
-  | keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS
-  | keyof typeof HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS
-  | keyof typeof HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS
-  | keyof typeof HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS
-  | keyof typeof HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS
-  | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
-
-/** One entry of `HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS`: the owning section and its arrival filters. */
-export interface HealthMetricsOverviewEngagementLinkSpec {
-  section: HealthMetricsEngagementSectionKey;
-  /** Merged into the current query string; `null` clears a filter the URL already carries. */
-  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
+/** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
+export interface HealthMetricsOverviewQuery {
+  foundationSlug: string;
 }
 
-/** One entry of `HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS`: the owning section and its arrival params. */
-export interface HealthMetricsOverviewEventsLinkSpec {
-  section: HealthMetricsEventsSectionKey;
-  /** Merged into the current query string; `null` clears a param the URL already carries. */
-  queryParams: Readonly<HealthMetricsEventsQueryParams>;
+/** High / Medium / Low organizations and their 0–1 shares. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsOverviewEngagementSplit {
+  highCount: number | null;
+  mediumCount: number | null;
+  lowCount: number | null;
+  highPct: number | null;
+  mediumPct: number | null;
+  lowPct: number | null;
 }
 
-/** One entry of `HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS`: the owning section and its arrival filters. */
-export interface HealthMetricsOverviewMembersLinkSpec {
-  section: HealthMetricsMembersSectionKey;
-  /** Merged into the current query string; `null` clears a filter the URL already carries. */
-  queryParams: Readonly<HealthMetricsMembersQueryParams>;
+/** One period of the participating organizations card. */
+export interface HealthMetricsOverviewParticipatingOrgsPeriod {
+  activeMembers: number | null;
+  newMembers: number | null;
+  nonRenewals: number | null;
+  nonMembers: number | null;
+  /** `null` for a period the view does not split by engagement. */
+  memberEngagement: HealthMetricsOverviewEngagementSplit | null;
+  nonMemberEngagement: HealthMetricsOverviewEngagementSplit | null;
 }
 
-/** One entry of `HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS`: the owning section and its arrival filters. */
-export interface HealthMetricsOverviewNonMembersLinkSpec {
-  section: HealthMetricsNonMembersSectionKey;
-  /** Merged into the current query string; `null` clears a filter the URL already carries. */
-  queryParams: Readonly<HealthMetricsNonMembersQueryParams>;
+/** `GET /api/analytics/overview-participating-orgs`; `measured` is false when the foundation has no row. */
+export interface HealthMetricsOverviewParticipatingOrgs {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewParticipatingOrgsPeriod>;
 }
 
-/** One entry of `HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS`: the owning section and its arrival params. */
-export interface HealthMetricsOverviewTrainingLinkSpec {
-  section: HealthMetricsTrainingSectionKey;
-  /** Merged into the current query string; `null` clears a param the URL already carries. */
-  queryParams: Readonly<HealthMetricsTrainingQueryParams>;
+/** The Board audience's survey as of one period; `responseRatePct` is 0–1. */
+export interface HealthMetricsOverviewNpsPeriod {
+  npsScore: number | null;
+  /** Points since the previous survey wave, named by `previousSurveyQuarter`. */
+  scoreChangePp: number | null;
+  previousSurveyQuarter: string | null;
+  /** The wave the figures come from, e.g. `Q2 2026`. */
+  lastUpdatedQuarter: string | null;
+  recipientsCount: number | null;
+  responsesCount: number | null;
+  responseRatePct: number | null;
+  promotersCount: number | null;
+  passivesCount: number | null;
+  detractorsCount: number | null;
+  noResponseCount: number | null;
 }
 
-/** An in-app Overview link into a Level 2 tab, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
-export interface HealthMetricsOverviewFindingRoute {
-  commands: readonly string[];
-  fragment:
-    | HealthMetricsEngagementSectionKey
-    | HealthMetricsEventsSectionKey
-    | HealthMetricsMembersSectionKey
-    | HealthMetricsNonMembersSectionKey
-    | HealthMetricsTrainingSectionKey;
-  queryParams:
-    | Readonly<HealthMetricsEngagementQueryParams>
-    | Readonly<HealthMetricsEventsQueryParams>
-    | Readonly<HealthMetricsMembersQueryParams>
-    | Readonly<HealthMetricsNonMembersQueryParams>
-    | Readonly<HealthMetricsTrainingQueryParams>;
+/** `GET /api/analytics/overview-nps`; a `null` period had no Board survey sent. */
+export interface HealthMetricsOverviewNps {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewNpsPeriod | null>;
 }
 
-/**
- * Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per
- * period. Fields are camelCase here; whatever service layer calls the LFXV2-3364 API is responsible
- * for mapping the table's snake_case columns (`stat_value`, `evaluated_at`, ...) onto this shape.
- */
-export interface HealthMetricsAreaState {
-  area: HealthMetricsOverviewArea;
-  statValue: string;
-  statLabel: string;
-  statSource: string;
-  classification: HealthMetricsOverviewClassification;
-  /**
-   * ISO date, or '' when the area was never evaluated (e.g. a neutral placeholder tile) OR when
-   * its source table simply carries no evaluation timestamp at all (e.g. `HEALTH_OVERVIEW_KPIS`,
-   * a point-in-time read) — '' is not proof an evaluation never happened, only that no date is
-   * available to show.
-   */
-  evaluatedAt: string;
-  /**
-   * False to hide the status chip entirely (distinct from a 'none' classification's "No data"
-   * chip) — e.g. events with neither a registration goal nor a computed status. Omitted/true renders
-   * the chip normally. Synthesized by the service layer (e.g. `project.service.ts`'s
-   * `getHealthOverviewKpis`) — unlike every other field on this interface, it has no backing
-   * `hm_area_state` column.
-   */
-  showStatus?: boolean;
+/** The foundation-wide churn figures. Rates are percentages (0–100); the `ChangePct` fields are fractions. */
+export interface HealthMetricsOverviewChurnTotals {
+  churnRatePct: number | null;
+  churnRatePctPriorYear: number | null;
+  /** Percentage points against the year before. */
+  churnRateChangePp: number | null;
+  membershipsLost: number | null;
+  membershipsLostPriorYear: number | null;
+  membershipsLostChangePct: number | null;
+  valueLostUsd: number | null;
+  valueLostUsdPriorYear: number | null;
+  valueLostChangePct: number | null;
 }
 
-/**
- * One period's slice of a `HEALTH_OVERVIEW_KPIS` row (LFXV2-3365), projected out of a
- * {@link HealthOverviewAllPeriodsRow} by `getHealthOverviewKpis`. Field names are the underlying
- * columns' uppercase aliases with the period suffix stripped. The events/training/contributors fields
- * vary by period; the members/non-members fields are point-in-time and repeat across every range.
- */
-export interface HealthOverviewKpisRow {
-  EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
-  EVENTS_STATUS: string | null;
-  CERTIFICATIONS_EARNED_COUNT: number | null;
-  TRAINING_STATUS: string | null;
-  CONTRIBUTORS_COUNT: number | null;
-  MEMBERS_RENEWING_90D_VALUE_USD: number | null;
-  MEMBERS_STATUS: string | null;
-  NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
-}
-
-/**
- * One period's slice of a `HEALTH_OVERVIEW_REVENUE` row (LFXV2-3365). Field names are the underlying
- * columns' uppercase aliases with the period suffix stripped. `REVENUE_DOMAIN` is period-invariant and
- * stays out of {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS}, which the service generates the SELECT
- * list from and type-checks its readers against. Revenue has no single projection helper the way the
- * KPI side does, so a new field needs its own reader — see `ProjectService.revenueAlias`.
- */
-export interface HealthOverviewRevenueRow {
-  REVENUE_USD: number | null;
-  REVENUE_SHARE_PCT: number | null;
-  FOUNDATION_TOTAL_REVENUE_USD: number | null;
-}
-
-/**
- * One period's group counts behind the Engagement tile, read from `ENGAGEMENT_GROUP_ATTENDANCE` until
- * `HEALTH_OVERVIEW_KPIS` carries engagement columns: every group, and those the view flags dormant —
- * the same pair the Engagement tab's group attendance counts. `null` means no figure for that period.
- */
-export interface HealthOverviewEngagementCounts {
-  totalGroups: number | null;
-  dormantGroups: number | null;
-}
-
-/**
- * Raw all-periods row from `HEALTH_OVERVIEW_KPIS` / `HEALTH_OVERVIEW_REVENUE`. Both tables key on
- * `foundation_slug` alone and expose the period as a column suffix, so one read covers every range:
- * period-suffixed columns are aliased `<COLUMN>__<RANGE>` (one per selectable range) and the
- * period-invariant ones keep their bare alias. Projected per range by the service layer.
- */
-export type HealthOverviewAllPeriodsRow = Record<string, number | string | null>;
-
-/**
- * Per-range KPI area states from one all-periods read. Keyed only by the ranges the period selector
- * offers (`buildHealthMetricsOverviewPeriods()`) — `HealthMetricsRange` carries a fifth member these
- * tables have no columns for, so callers must handle a missing key.
- */
-export type HealthMetricsOverviewKpisByRange = Partial<Record<HealthMetricsRange, HealthMetricsAreaState[]>>;
-
-/** Per-range signal-feed findings from one all-periods `HEALTH_OVERVIEW_SIGNALS` read, in model order. Same partial-key caveat. */
-export type HealthMetricsOverviewFindingsByRange = Partial<Record<HealthMetricsRange, HealthMetricsFinding[]>>;
-
-/** One `HEALTH_OVERVIEW_SIGNALS` row as selected — uppercase aliases, one row per signal per period. */
-export interface HealthOverviewSignalRow {
-  PERIOD_SLUG: string | null;
-  SIGNAL_KEY: string | null;
-  SEVERITY_BAND: string | null;
-  CATEGORY: string | null;
-  HEADLINE: string | null;
-  BODY: string | null;
-  METRIC_VALUE: string | null;
-  METRIC_CAPTION: string | null;
-  METRIC_SECONDARY: string | null;
-}
-
-/** Per-range revenue summaries from one all-periods read. Same partial-key caveat as {@link HealthMetricsOverviewKpisByRange}. */
-export type HealthMetricsOverviewRevenueByRange = Partial<Record<HealthMetricsRange, HealthMetricsOverviewRevenue>>;
-
-/**
- * Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity.
- * Fields are camelCase here; the mapping from the table's snake_case columns (`key_value`,
- * `link_target`, `sort_rank`, ...) is the responsibility of whatever service layer calls the API.
- * `sentence` is plain text with no markup. `emphasis`, when present, names a substring of `sentence`
- * of potential future interest to callers — the finding-item component renders `sentence` as plain
- * text (matching the design) and does not use this field.
- */
-export interface HealthMetricsFinding {
-  classification: HealthMetricsOverviewClassification;
-  area: HealthMetricsOverviewArea;
-  title: string;
-  sentence: string;
-  emphasis?: string;
-  keyValue: string;
-  keyLabel: string;
-  /** Optional caption under {@link keyLabel} — the model's `metric_secondary`. */
-  keySecondary?: string;
-  linkTarget: HealthMetricsOverviewLinkTarget;
-  /**
-   * Display order: the row's index within its period in the ordered `HEALTH_OVERVIEW_SIGNALS` read,
-   * so unique across one range's findings — {@link HealthMetricsOverviewFindingViewModel.sortRank}
-   * relies on this for row-scoped ids.
-   */
-  sortRank: number;
-  evaluatedAt: string;
-  visual?: HealthMetricsFindingVisual;
-}
-
-/**
- * Optional per-finding visual encoding (logic spec §8.7) — omitted for "good"/"none" classification
- * findings. `band`'s `pred` is the point-prediction fill (design's `fband-pred`, painted over the
- * `low`–`high` predicted-range band) — all four values are percentages (0-100) on the same axis.
- */
-export type HealthMetricsFindingVisual =
-  | { kind: 'dots'; groups: HealthMetricsFindingVisualDotGroup[]; caption?: string }
-  | ({ kind: 'bar' } & HealthMetricsFindingVisualBar)
-  | { kind: 'band'; low: number; high: number; goal: number; pred: number; caption?: string }
-  | { kind: 'tags'; tags: string[] };
-
-export interface HealthMetricsFindingVisualDotGroup {
+/** One membership tier's churn in a period; `churnRatePct` is 0–100. */
+export interface HealthMetricsOverviewChurnTier {
+  tier: string;
   label: string;
-  filled: number;
-  total: number;
+  churnRatePct: number | null;
+  membershipsLost: number | null;
+  valueLostUsd: number | null;
 }
 
-export interface HealthMetricsFindingVisualBarPart {
-  label: string;
-  value: number;
-  tone: HealthMetricsOverviewClassification;
+/** One period of the churn card; `tiers` follow the view's tier rank, then label. */
+export interface HealthMetricsOverviewChurnPeriod {
+  totals: HealthMetricsOverviewChurnTotals | null;
+  tiers: HealthMetricsOverviewChurnTier[];
 }
 
-/** The `bar` member of {@link HealthMetricsFindingVisual}, named so the finding-item component can type its precomputed view model against it. */
-export interface HealthMetricsFindingVisualBar {
-  parts: HealthMetricsFindingVisualBarPart[];
-  caption?: string;
+/** `GET /api/analytics/overview-churn`. */
+export interface HealthMetricsOverviewChurn {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewChurnPeriod>;
 }
 
-/** Container-computed view model for `lfx-health-metrics-overview-tile` — one per rendered tile. */
-export interface HealthMetricsOverviewTileViewModel {
-  area: HealthMetricsOverviewArea;
+/** `GET /api/analytics/overview-outstanding-balance` — overdue invoices today; the view has no periods. Shares are 0–1. */
+export interface HealthMetricsOverviewOutstandingBalance {
+  measured: boolean;
+  outstandingUsd: number | null;
+  overdueMembers: number | null;
+  highRiskUsd: number | null;
+  highRiskMembers: number | null;
+  highRiskSharePct: number | null;
+  mediumRiskUsd: number | null;
+  mediumRiskMembers: number | null;
+  mediumRiskSharePct: number | null;
+}
+
+/** One event on the Overview list. Every `null` is unmeasured, never zero. */
+export interface HealthMetricsOverviewEvent {
+  eventId: string;
+  eventName: string;
+  /** `YYYY-MM-DD`. */
+  startDate: string | null;
+  endDate: string | null;
+  city: string | null;
+  registrations: number | null;
+  /** `null` when no goal is set. */
+  registrationsGoal: number | null;
+  /** Upcoming only: the view's pace against last year (`high`, `medium` or `low`). */
+  compScore: string | null;
+  acceptedTalks: number | null;
+  totalProposals: number | null;
+  /** The call for proposals' stage, e.g. `In Review`. */
+  cfpStatus: string | null;
+  /** Past only: the periods the event was held in. */
+  ranges: HealthMetricsL2Range[];
+}
+
+/** `GET /api/analytics/overview-events` — upcoming events soonest first, past events newest first. */
+export interface HealthMetricsOverviewEvents {
+  upcoming: HealthMetricsOverviewEvent[];
+  past: HealthMetricsOverviewEvent[];
+  /** True when the read hit its row cap, so a list may be short. */
+  truncated: boolean;
+}
+
+/** The board's meetings in one period. Attendance is 0–1; the `ChangePct` fields are fractions. */
+export interface HealthMetricsOverviewBoardPeriod {
+  meetings: number | null;
+  meetingsChangePct: number | null;
+  avgAttendancePct: number | null;
+  avgAttendanceChangePct: number | null;
+}
+
+/** One board member's attendance in a period they were invited to; `attendancePct` is 0–1. */
+export interface HealthMetricsOverviewBoardAttendance {
+  invited: number;
+  attended: number | null;
+  attendancePct: number | null;
+}
+
+/** One board member; `attendance` holds only the periods they were invited in. */
+export interface HealthMetricsOverviewBoardMember {
+  key: string;
   name: string;
+  jobTitle: string | null;
+  organization: string | null;
+  logoUrl: string | null;
+  /** `YYYY-MM-DD`. */
+  lastAttendedDate: string | null;
+  attendance: Partial<Record<HealthMetricsL2Range, HealthMetricsOverviewBoardAttendance>>;
+}
+
+/** `GET /api/analytics/overview-board`; a `null` period has no board row. */
+export interface HealthMetricsOverviewBoard {
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewBoardPeriod | null>;
+  members: HealthMetricsOverviewBoardMember[];
+}
+
+/** One period's contributors. */
+export interface HealthMetricsOverviewCodePeriod {
+  contributors: number | null;
+  newContributors: number | null;
+}
+
+/** `GET /api/analytics/overview-code` — contributors per period and the all-time roles. */
+export interface HealthMetricsOverviewCode {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewCodePeriod>;
+  committers: number | null;
+  maintainers: number | null;
+  reviewers: number | null;
+}
+
+/** One period's newsletter figures; rates are 0–1 shares, growth a fraction of the baseline's subscribers. */
+export interface HealthMetricsOverviewNewsletterPeriod {
+  subscribers: number | null;
+  subscribersGrowth: number | null;
+  /** ISO date the growth is measured from. */
+  growthBaselineDate: string | null;
+  newslettersSent: number | null;
+  avgOpenRate: number | null;
+  avgClickToOpenRate: number | null;
+  highEngagement: number | null;
+  mediumEngagement: number | null;
+  lowEngagement: number | null;
+  /** Each level's 0–1 share of the three, as the view computes it. */
+  highEngagementShare: number | null;
+  mediumEngagementShare: number | null;
+  lowEngagementShare: number | null;
+  /** How many newsletters the High / Medium / Low split is based on. */
+  newslettersConsidered: number | null;
+  mostEngagingName: string | null;
+  mostEngagingClickToOpenRate: number | null;
+}
+
+/** One sent newsletter with engagement data; both rates are 0–1 shares of its recipients. */
+export interface HealthMetricsOverviewNewsletterSend {
+  key: string;
+  name: string;
+  /** ISO date. */
+  sentDate: string | null;
+  openRate: number | null;
+  clickRate: number | null;
+}
+
+/** `GET /api/analytics/overview-newsletters` — the summary per period and every newsletter with engagement data. */
+export interface HealthMetricsOverviewNewsletters {
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsOverviewNewsletterPeriod | null>;
+  newsletters: HealthMetricsOverviewNewsletterSend[];
+}
+
+/** Where a card's read stands: loading until the first foundation resolves, then ready or failed. */
+export type HealthMetricsOverviewCardStatus = 'loading' | 'failed' | 'ready';
+
+/** An "Explore …" link into a Level 2 tab section; `queryParams` clears the section's filters on arrival. */
+export interface HealthMetricsOverviewExploreLink {
+  label: string;
+  commands: readonly string[];
+  /** The section to land on; none opens the page at the top. */
+  fragment?: string;
+  queryParams: Readonly<Record<string, string | null>>;
+  /** Leaves Health Metrics: `queryParams` replace the current ones instead of merging into them. */
+  replaceQueryParams?: boolean;
+}
+
+/** A card's empty state as shown: an icon tile, a title, then one sentence or a short list of reasons. */
+export interface HealthMetricsOverviewEmptyCopy {
   icon: string;
-  statValue: string;
-  statLabel: string;
-  classification: HealthMetricsOverviewClassification;
-  evaluatedAt: string;
-  /** Set only for the `code` area — tile renders an "LFX Insights" link instead of a status word. */
-  insightsUrl?: string;
-  /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
-  showStatus?: boolean;
-  /** The top of the area's Level 2 tab; the whole tile links there. Unset for `code`, which has no tab. */
-  tabRoute?: readonly string[];
-}
-
-/** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
-export interface HealthMetricsOverviewFindingViewModel {
-  classification: HealthMetricsOverviewClassification;
-  area: HealthMetricsOverviewArea;
-  areaLabel: string;
   title: string;
-  sentence: string;
-  emphasis?: string;
-  keyValue: string;
-  keyLabel: string;
-  keySecondary?: string;
-  /** Carried through from {@link HealthMetricsFinding.sortRank} — display order and, since it's unique per row, also this row's `@for` track key and `data-testid` suffix. */
-  sortRank: number;
-  evaluatedAt: string;
-  /** Set for the Insights link; mutually exclusive with {@link linkRoute}. */
-  linkHref?: string;
-  /** Set for every in-app tab finding (`eng.*`, `evt.*`, `mem.*`, `non.*`, `trn.*`), which links into its Level 2 tab. */
-  linkRoute?: HealthMetricsOverviewFindingRoute;
-  linkIsExternal: boolean;
-  /** The top of the area's Level 2 tab, linked from the area eyebrow. Unset for `code`, which has no tab. */
-  areaTabRoute?: readonly string[];
-  visual?: HealthMetricsFindingVisual;
+  /** One sentence; empty when the reasons list stands in for it. */
+  text: string;
+  reasons: readonly string[];
 }
 
-/** One fixed findings-list section (per {@link HEALTH_METRICS_OVERVIEW_GROUP_ORDER}); hidden when empty. */
-export interface HealthMetricsOverviewFindingGroup {
-  group: string;
-  /** The section's classification key — a stable lookup key for its tone/icon, independent of the display-string `group` label. */
-  classification: HealthMetricsOverviewClassification;
-  /** The section's classification tone, as a Tailwind text-color class — colors the group heading. */
-  groupTextClass: string;
-  /** The section's classification icon (design's `TTONE`/group-header icon set) — same icon as the matching tile's status row. */
-  groupIcon: string;
-  findings: HealthMetricsOverviewFindingViewModel[];
+/** An empty state's words for one period; in a past year's copy, `{Y}` stands for the year. */
+export interface HealthMetricsOverviewEmptyPeriodCopy {
+  title: string;
+  text: string;
+  reasons: readonly string[];
 }
 
-/** Raw-{@link HealthMetricsFinding} counterpart of {@link HealthMetricsOverviewFindingGroup}, returned by `groupHealthMetricsOverviewFindings` before per-finding view-model mapping (link resolution needs foundation context the pure grouping function doesn't have). */
-export interface HealthMetricsOverviewFindingGroupRows {
-  group: string;
-  classification: HealthMetricsOverviewClassification;
-  findings: HealthMetricsFinding[];
+/** A card's empty state for YTD and for a past year, word for word from the design. */
+export interface HealthMetricsOverviewEmptyStateCopy {
+  icon: string;
+  ytd: HealthMetricsOverviewEmptyPeriodCopy;
+  /** None for a card that shows today's figures whatever the period, so it always speaks of today. */
+  past?: HealthMetricsOverviewEmptyPeriodCopy;
 }
 
-/**
- * Precomputed dots-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
- * design's `fviz()`, all of a finding's dot groups render as ONE flat row (not one row per group) —
- * `dots[i]` is `true` when that dot renders filled; `caption` is the visual's own free-text caption
- * (design's `fvs` sub-caption), falling back to the first group's label when the finding didn't
- * author one. Rendered dot count is capped and proportionally scaled; see
- * `health-metrics-overview-finding-item.component.ts`.
- */
-export interface HealthMetricsFindingVisualDotsViewModel {
-  dots: boolean[];
-  caption?: string;
+/** A change against the year before: the arrow follows the figure, the colour whether that is good. */
+export interface HealthMetricsOverviewDelta {
+  label: string;
+  direction: 'up' | 'down';
+  good: boolean;
 }
 
-/**
- * Precomputed bar-visual view model for `lfx-health-metrics-overview-finding-item`. Per the
- * design's `fviz()`, a bar renders as a SINGLE fill in the finding's own classification tone,
- * sized to the sum of the authored parts' `value`s whose `tone` matches that classification
- * (clamped to 100) — falling back to summing every part when none match, so an authoring-only
- * breakdown still renders something rather than a zero-width bar.
- */
-export interface HealthMetricsFindingVisualBarViewModel {
-  fillPercent: number;
-  toneClass: string;
-  caption?: string;
+/** A labelled KPI figure, with an optional change and a note under it. */
+export interface HealthMetricsOverviewKpiView {
+  key: string;
+  label: string;
+  value: string;
+  delta: HealthMetricsOverviewDelta | null;
+  note: string;
+  /** The label's help tooltip, where the design gives one. */
+  tip?: string;
 }
 
-/**
- * Rail "Foundation Revenue" data, live from `HEALTH_OVERVIEW_REVENUE` (LFXV2-3365). `streams[].key` is
- * the raw `revenue_domain` value from Snowflake — not narrowed to {@link HealthMetricsOverviewRevenueStreamKey},
- * since real domains aren't guaranteed to be one of the 3 known streams; unrecognized keys fall back to
- * `UNKNOWN_REVENUE_STREAM_META` in `buildHealthMetricsOverviewRevenueStreams`.
- */
-export interface HealthMetricsOverviewRevenue {
-  dataAvailable: boolean;
-  total: number;
-  /** `value`/`share` are `null` when the view has no figure — rendered as "—", not "$0"/"0%". `share` is the model's percent of total. */
-  streams: { key: string; value: number | null; share: number | null }[];
+/** One ring of the engagement donut, as SVG `stroke-dasharray` / `stroke-dashoffset` values. */
+export interface HealthMetricsOverviewDonutSegmentView {
+  key: string;
+  stroke: string;
+  dashArray: string;
+  dashOffset: string;
 }
 
-/**
- * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
- * doc). `size` is the member count. `nextRenewals` reflects the table's only renewal window, 90 days.
- * `dataAvailable` is false when the read failed or found no row; a null column renders as "—".
- */
-export interface HealthMetricsOverviewFoundationSummary {
-  dataAvailable: boolean;
-  size: string;
-  projects: string;
-  tiers: string;
-  board: string;
-  nextRenewals: string;
-}
-
-/** Precomputed "Foundation Revenue" legend row for `lfx-health-metrics-overview-rail`. */
-export interface HealthMetricsOverviewRevenueStreamViewModel {
-  /** The raw `stream.key` — kept for `@for track`, since multiple degraded/unknown streams share the same fallback `label`. */
+/** One High / Medium / Low row beside the donut. */
+export interface HealthMetricsOverviewEngagementRowView {
   key: string;
   label: string;
   dotClass: string;
-  /** Rounded "N%" legend text, or "—" when the stream has no value — see `widthPercent` for the bar segment. */
-  percentLabel: string;
-  /** The model's unrounded share, clamped to 0–100 (0 when unmeasured), for the bar's `[style.width.%]` — rounding each stream first could leave a gap. */
-  widthPercent: number;
+  countLabel: string;
+  pctLabel: string;
+}
+
+/** One half of the participating organizations card: members or non-members. */
+export interface HealthMetricsOverviewOrgsHalfView {
+  key: 'members' | 'non-members';
+  kpis: HealthMetricsOverviewKpiView[];
+  engagementLabel: string;
+  /** Empty when the period has no engagement split, so the donut shows its track only. */
+  donut: HealthMetricsOverviewDonutSegmentView[];
+  rows: HealthMetricsOverviewEngagementRowView[];
+  link: HealthMetricsOverviewExploreLink;
+}
+
+export interface HealthMetricsOverviewParticipatingOrgsView {
+  isEmpty: boolean;
+  halves: HealthMetricsOverviewOrgsHalfView[];
+}
+
+/** One arc of the NPS gauge; the band the score falls in is drawn solid, the others faint. */
+export interface HealthMetricsOverviewGaugeSegmentView {
+  key: string;
+  path: string;
+  /** Full color for the segment holding the score, the color mixed toward white for the rest. */
+  stroke: string;
+}
+
+/** A round end cap of the gauge, at -100 or +100, in its segment's color. */
+export interface HealthMetricsOverviewGaugeCapView {
+  key: string;
+  x: string;
+  y: string;
+  fill: string;
+}
+
+/** One "Label: value" part of a card's meta line under its title. */
+export interface HealthMetricsOverviewMetaPart {
+  label: string;
+  value: string;
+}
+
+/** One Promoters / Passives / Detractors row. */
+export interface HealthMetricsOverviewNpsRowView {
+  key: string;
+  label: string;
+  range: string;
+  dotClass: string;
+  countLabel: string;
+  pctLabel: string;
+}
+
+export interface HealthMetricsOverviewNpsView {
+  isEmpty: boolean;
+  /** "Latest NPS: Q2 2026 · Audience: Board · Responses: 15 of 22 (68%)". */
+  meta: HealthMetricsOverviewMetaPart[];
+  scoreLabel: string;
+  delta: HealthMetricsOverviewDelta | null;
+  segments: HealthMetricsOverviewGaugeSegmentView[];
+  caps: HealthMetricsOverviewGaugeCapView[];
+  /** The needle's tip; `null` without a score, so no needle is drawn. */
+  needle: { x: string; y: string } | null;
+  ariaLabel: string;
+  rows: HealthMetricsOverviewNpsRowView[];
+  noResponseLabel: string;
+}
+
+/** One tier row; `rateWidthPct` and the card's `overallPct` share the 0–100 axis. */
+export interface HealthMetricsOverviewChurnTierView {
+  key: string;
+  label: string;
+  rateLabel: string;
+  rateWidthPct: number;
+  lostLabel: string;
   valueLabel: string;
 }
+
+export interface HealthMetricsOverviewChurnView {
+  isEmpty: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  tiers: HealthMetricsOverviewChurnTierView[];
+  overallPct: number;
+  overallLabel: string;
+}
+
+/** One risk band of the outstanding balance. */
+export interface HealthMetricsOverviewBalanceRowView {
+  key: 'high' | 'medium';
+  label: string;
+  daysLabel: string;
+  dotClass: string;
+  widthPct: number;
+  membersLabel: string;
+  amountLabel: string;
+}
+
+export interface HealthMetricsOverviewBalanceView {
+  isEmpty: boolean;
+  /** A measured zero balance; a missing one is unknown, not paid. */
+  isPaidInFull: boolean;
+  totalLabel: string;
+  overdueMembersLabel: string;
+  atRiskLabel: string;
+  rows: HealthMetricsOverviewBalanceRowView[];
+}
+
+/**
+ * A count over a bar: the figure, then "Goal: 1,000" or "Received: 185" at the right (`sideLabel`, `sideValue`), and the
+ * bar's width and fill. `neutral` is the design's no-goal bar: a white, outlined track with no fill.
+ */
+export interface HealthMetricsOverviewEventBarView {
+  countLabel: string;
+  sideLabel: string;
+  /** Empty when the side text has no value, as "No goal set" doesn't. */
+  sideValue: string;
+  widthPct: number;
+  barClass: string;
+  neutral: boolean;
+}
+
+/** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
+export interface HealthMetricsOverviewEventRegistrationsView extends HealthMetricsOverviewEventBarView {
+  statusLabel: string | null;
+}
+
+/** Accepted speaking proposals as a bar when there are proposals, otherwise the call for proposals' stage. */
+export interface HealthMetricsOverviewEventTalksView extends HealthMetricsOverviewEventBarView {
+  hasProposals: boolean;
+  note: string;
+}
+
+export interface HealthMetricsOverviewEventRowView {
+  eventId: string;
+  name: string;
+  meta: string;
+  /** Past events read their history, upcoming ones their forecast. */
+  isPast: boolean;
+  registrations: HealthMetricsOverviewEventRegistrationsView;
+  talks: HealthMetricsOverviewEventTalksView;
+}
+
+/** The period's events, split into held and upcoming for the stacked bar. */
+export interface HealthMetricsOverviewEventsTotalView {
+  value: string;
+  delta: HealthMetricsOverviewDelta | null;
+  pastLabel: string;
+  upcomingLabel: string;
+  pastPct: number;
+  upcomingPct: number;
+}
+
+export interface HealthMetricsOverviewSponsorshipView {
+  valueLabel: string;
+  hasGoal: boolean;
+  goalLabel: string;
+  widthPct: number;
+  barClass: string;
+  progressLabel: string;
+}
+
+export interface HealthMetricsOverviewEventsView {
+  isEmpty: boolean;
+  total: HealthMetricsOverviewEventsTotalView;
+  sponsorship: HealthMetricsOverviewSponsorshipView;
+  listTitle: string;
+  listInfo: string;
+  rows: HealthMetricsOverviewEventRowView[];
+}
+
+/** One program bar; `widthPct` is relative to the largest program. */
+export interface HealthMetricsOverviewTrainingItemView {
+  key: string;
+  label: string;
+  valueLabel: string;
+  widthPct: number;
+  shareLabel: string;
+}
+
+/** What the training card measures. */
+export type HealthMetricsOverviewTrainingMetric = 'enrollments' | 'revenue';
+
+export interface HealthMetricsOverviewTrainingView {
+  isEmpty: boolean;
+  totalLabel: string;
+  metricLabel: string;
+  /** `null` when the period models no goal, so the arc shows its track only. */
+  goalLabel: string | null;
+  trackPath: string;
+  progressPath: string;
+  ariaLabel: string;
+  items: HealthMetricsOverviewTrainingItemView[];
+}
+
+/** One all-time role segment and legend entry. */
+export interface HealthMetricsOverviewCodeRoleView {
+  key: string;
+  label: string;
+  valueLabel: string;
+  widthPct: number;
+  colorClass: string;
+}
+
+export interface HealthMetricsOverviewCodeView {
+  isEmpty: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  roles: HealthMetricsOverviewCodeRoleView[];
+}
+
+/** One newsletter's point on the rate chart; `x` and the `y`s are percentages of the plot, `y` from the top. */
+export interface HealthMetricsOverviewNewsletterPointView {
+  key: string;
+  xPct: string;
+  openYPct: string;
+  clickYPct: string;
+  /** "Name · Mon D, YYYY · open N%, click N%", the point's tooltip and its screen-reader text. */
+  label: string;
+  /** Which way the tooltip extends from the point, so one at either end stays inside the card. */
+  tipAlign: 'start' | 'center' | 'end';
+}
+
+/** A month label under the first newsletter sent in that month. */
+export interface HealthMetricsOverviewNewsletterTickView {
+  label: string;
+  xPct: string;
+}
+
+/** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */
+export interface HealthMetricsOverviewNewsletterChartView {
+  openPath: string;
+  openAreaPath: string;
+  clickPath: string;
+  points: HealthMetricsOverviewNewsletterPointView[];
+  ticks: HealthMetricsOverviewNewsletterTickView[];
+}
+
+/** One High / Medium / Low row of the subscriber engagement split. */
+export interface HealthMetricsOverviewNewsletterEngagementRowView {
+  key: 'high' | 'medium' | 'low';
+  label: string;
+  description: string;
+  dotClass: string;
+  countLabel: string;
+  pctLabel: string;
+  /** The segment's share of the bar, as its flex-grow ratio; 0 draws none. */
+  widthPct: number;
+}
+
+export interface HealthMetricsOverviewNewsletterView {
+  isEmpty: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  /** `null` when no newsletter in the period carries engagement data. */
+  chart: HealthMetricsOverviewNewsletterChartView | null;
+  /** "Based on opens and clicks across the last N newsletters"; empty when the view gives no count. */
+  engagementBasis: string;
+  engagement: HealthMetricsOverviewNewsletterEngagementRowView[];
+  mostEngaging: { name: string; rateLabel: string } | null;
+}
+
+/** How the board table is sorted; the design opens on the lowest attendance first. */
+export type HealthMetricsOverviewBoardSort = 'att-asc' | 'att-desc' | 'name-asc' | 'name-desc';
+
+export interface HealthMetricsOverviewBoardRowView {
+  key: string;
+  name: string;
+  initials: string;
+  title: string;
+  organization: string;
+  organizationInitial: string;
+  logoUrl: string | null;
+  attendedLabel: string;
+  pctLabel: string;
+  /** 0–1, for sorting. */
+  attendance: number;
+  widthPct: number;
+  barClass: string;
+  lastAttendedLabel: string;
+}
+
+export interface HealthMetricsOverviewBoardView {
+  isEmpty: boolean;
+  kpis: HealthMetricsOverviewKpiView[];
+  rows: HealthMetricsOverviewBoardRowView[];
+}
+
+/** A trend dialog figure; the predicted one carries its range as a small high and low stack. */
+export interface HealthMetricsOverviewTrendKpiView {
+  key: string;
+  label: string;
+  value: string;
+  range: { high: string; low: string } | null;
+}
+
+/** An axis tick: its label and where it sits, as a percentage of the plot. */
+export interface HealthMetricsOverviewTrendTickView {
+  label: string;
+  pct: string;
+}
+
+/** A y-axis tick, which also draws a gridline at its y on the 600×220 canvas. */
+export interface HealthMetricsOverviewTrendYTickView extends HealthMetricsOverviewTrendTickView {
+  y: string;
+}
+
+/** The registration trend dialog: its figures, axis ticks and chart paths on the 600×220 viewBox. */
+export interface HealthMetricsOverviewTrendView {
+  /** Current, Same point last year, and Predicted (or Final for a past event). */
+  kpis: HealthMetricsOverviewTrendKpiView[];
+  goalLabel: string;
+  /** "Days left", or "Event held" for a past event. */
+  daysTitle: string;
+  daysLabel: string;
+  yTicks: HealthMetricsOverviewTrendYTickView[];
+  xTicks: HealthMetricsOverviewTrendTickView[];
+  currentPath: string;
+  lastYearPath: string;
+  predictedPath: string;
+  bandPath: string;
+  /** `null` once the event is past the chart's window or has no actuals. */
+  todayX: string | null;
+  /** Where the "Today" label sits, as a percentage of the plot's width. */
+  todayPct: string | null;
+  /** The registration goal's dashed line; `null` without a goal. */
+  goalY: string | null;
+}
+
+/** One Overview card's read: the response once it lands, and where the read stands. */
+export interface HealthMetricsOverviewCardRead<T> {
+  data: Signal<T | null>;
+  status: Signal<HealthMetricsOverviewCardStatus>;
+}
+
+/** What the events card hands the registration trend dialog; a past event shows its history, with no forecast. */
+export interface HealthMetricsOverviewTrendDialogData {
+  event: HealthMetricsOverviewEvent;
+  isPast: boolean;
+}
+
+/** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */
+export type HealthMetricsOverviewKpiStripLayout = 'row' | 'stack' | 'grid';

@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<!-- Physical units match the framework's portrait print, on either paper size. -->
+<section
+  class="lfx-framework-print lfx-boilerplates-print bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] break-before-page [overflow-wrap:anywhere]"
+  [style.--mfp-font]="v.brand.fontStack"
+  [style.--mfp-dark]="v.brand.dark"
+  [style.--mfp-accent]="v.brand.accent"
+  [style.--mfp-tint]="v.brand.tint"
+  [style.--mfp-ink]="v.brand.ink"
+  aria-label="Boilerplates"
+  data-testid="mktg-boilerplates-print">
+  @for (length of v.lengths; track length.index; let first = $first) {
+    <article class="flex flex-col gap-[6pt] pb-[14pt] break-inside-avoid" data-testid="mktg-boilerplates-print-length">
+      @if (first) {
+        <lfx-mktg-print-running-head [brand]="v.brand" [label]="projectName() + ' Boilerplates'" />
+        <lfx-mktg-print-chapter-header [number]="number()" title="Boilerplates" [accent]="v.brand.accent" />
+      }
+      <h3 class="border-b border-black/10 pb-[6pt] text-[11pt] font-semibold break-after-avoid">{{ length.label }}</h3>
+      <p class="whitespace-pre-line rounded-[6pt] bg-[color:var(--mfp-tint)] p-[10pt]">{{ length.text }}</p>
+    </article>
+  }
+</section>

@@ -38,7 +38,7 @@ export const mapMentorshipProgramTask = (task: MentorshipUpstreamTask): Mentorsh
 /**
  * One program detail row, from an application of the program. `statusMap` says how each upstream status
  * reads for the caller, since a mentor sees `hold` as pending. A row carries tasks when `tasks` is given
- * and none when they were not read.
+ * and none when they were not read, and the applicant's user id only when it is a UUID.
  */
 export const mapMentorshipProgramApplicationRow = (
   application: MentorshipUpstreamProgramApplicationRow,
@@ -56,6 +56,8 @@ export const mapMentorshipProgramApplicationRow = (
     termName: application.term?.name ?? termName,
   };
   if (application.avatar_url) mentee.avatarUrl = application.avatar_url;
+  // Keys the mentee's public page, so only a UUID is kept.
+  if (isUuid(application.user_id)) mentee.userId = application.user_id;
   if (application.note) mentee.note = application.note;
   if (tasks) mentee.tasks = tasks.map(mapMentorshipProgramTask);
   return mentee;

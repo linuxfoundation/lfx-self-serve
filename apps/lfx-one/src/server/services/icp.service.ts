@@ -15,6 +15,8 @@ import {
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
+import { AuthorizationError } from '../errors';
+import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { GithubReadmeService } from './github-readme.service';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -61,6 +63,7 @@ export class IcpService {
   private readonly projectService = new ProjectService();
   /** Records every persisted ICP document as a revision of the project's ICP document (the Documents area). */
   private readonly documentStore: MktgDocumentStoreService;
+  private readonly redrafts = new MktgDocumentRedraftContextService();
 
   public constructor(attribution?: MktgGenerationAttribution) {
     this.documentStore = new MktgDocumentStoreService(attribution);
@@ -136,6 +139,10 @@ export class IcpService {
    * it the document is still returned; it is simply not persisted.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<IcpResultResponse> {
+    if (await this.redrafts.forSession(req, sessionId)) {
+      logger.debug(req, 'icp_result', 'Refused ICP result for a redraft-bound session', {});
+      throw new AuthorizationError('This session is bound to a different registered agent.');
+    }
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 

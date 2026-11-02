@@ -9,7 +9,7 @@ import { PreferenceReadResponse, User } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { NEVER, asapScheduler, map, observeOn, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { FavoriteProjectsService } from './favorite-projects.service';
 
@@ -18,12 +18,12 @@ describe('FavoriteProjectsService', () => {
 
   let service: FavoriteProjectsService;
   let navigationService: {
-    getFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
-    upsertFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
-    deleteFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
+    getFavoriteProjectsPreference: Mock;
+    upsertFavoriteProjectsPreference: Mock;
+    deleteFavoriteProjectsPreference: Mock;
   };
   let userService: { user: ReturnType<typeof signal<User | null>> };
-  let messageService: { add: ReturnType<typeof vi.fn> };
+  let messageService: { add: Mock };
 
   beforeEach(() => {
     // The service now owns its own HTTP transport (GH-3453, to avoid a circular dependency with

@@ -310,9 +310,10 @@ test.describe('Create Quick-Link — search-fallback for an inherited-writer (LF
 // popover (data-testid="create-menu-mobile") — see LFXV2-3248. The regression this suite guards
 // (the former lens-switcher rail's anchoring CSS) is gated at the `lg` breakpoint (1024px,
 // matching tailwind.config.js), so the skip boundary matches that rather than `md` (768px) —
-// a viewport in [768, 1024) still renders the mobile drawer (the app's own responsive split is
-// keyed on `lg`, not `md`), so gating the skip at `md` would incorrectly treat that range as
-// desktop and skip M1 even though the regression this test guards still applies there.
+// a touch device's viewport in [768, 1024) still renders the mobile drawer (the app's own responsive
+// split is keyed on `lg`, not `md`; a non-touch device keeps the navbar rail at every width), so gating
+// the skip at `md` would incorrectly treat that range as desktop and skip M1 even though the regression
+// this test guards still applies there.
 function skipOnDesktopViewport(page: Page): void {
   const viewport = page.viewportSize();
   if (viewport && viewport.width >= 1024) {

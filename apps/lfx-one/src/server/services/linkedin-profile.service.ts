@@ -9,6 +9,7 @@ import { createHash, createHmac } from 'node:crypto';
 
 import { MicroserviceError } from '../errors';
 import { ObjectStoreService } from './object-store.service';
+import { MktgLastIntakeService } from './mktg-last-intake.service';
 import { logger } from './logger.service';
 
 /** One current profile per effective subject; deletion follows the backend retention policy. */
@@ -77,6 +78,7 @@ export class LinkedinProfileService {
   /** Removes current bytes, but cannot cancel a first-run write already admitted above. */
   public async delete(req: Request, user: string): Promise<void> {
     await this.store.deletePrivateObject(req, 'marketing-os-artifacts', `${this.prefix(user)}current.json`);
+    await new MktgLastIntakeService().eraseWriter(req, user);
   }
 
   private input(profile: LinkedinStoredProfile): ObjectStorePutInput {

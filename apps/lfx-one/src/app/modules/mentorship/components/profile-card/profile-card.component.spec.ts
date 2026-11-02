@@ -6,6 +6,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
 import {
+  IDENTITY_ALREADY_CONNECTED_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
+  IDENTITY_ALREADY_CONNECTED_SUMMARY,
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
@@ -658,6 +661,74 @@ describe('ProfileCardComponent', () => {
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', detail: LFX_PROFILE_CARD_LINK_INCOMPLETE_DETAIL });
       expect(refreshUserIdentities).not.toHaveBeenCalled();
+    });
+
+    // #4327: reconnecting an account that is already the mentor's own is a no-op, not a new link —
+    // so it must not claim a link, must not copy anything onto mentorship profiles, and must not
+    // read as the another-account conflict.
+    describe('and the reconnected account is already theirs', () => {
+      const alreadyConnected = { success: IDENTITY_ALREADY_CONNECTED_STATUS };
+
+      it('says so once and re-reads the profile', () => {
+        render(profile, alreadyConnected);
+
+        expect(toast).toHaveBeenCalledExactlyOnceWith({
+          severity: 'success',
+          summary: IDENTITY_ALREADY_CONNECTED_SUMMARY,
+          detail: IDENTITY_ALREADY_CONNECTED_MESSAGE,
+        });
+        expect(refreshUserIdentities).toHaveBeenCalledTimes(1);
+      });
+
+      it('copies nothing onto mentorship profiles, even when the page turns the sync on', () => {
+        render(profile, alreadyConnected, 'browser', { enabled: true });
+
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      it('stays silent on the server', () => {
+        render(profile, alreadyConnected, 'server', { enabled: true });
+
+        expect(toast).not.toHaveBeenCalled();
+        expect(refreshUserIdentities).not.toHaveBeenCalled();
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      it('ignores an unknown success marker', () => {
+        render(profile, { success: 'identity_something_else' }, 'browser', { enabled: true });
+
+        expect(toast).not.toHaveBeenCalled();
+        expect(refreshUserIdentities).not.toHaveBeenCalled();
+        expect(syncLfxProfileFields).not.toHaveBeenCalled();
+      });
+
+      describe('and the params are stripped', () => {
+        // Moves the shared jsdom URL, so it puts it back for later specs.
+        let originalUrl: string;
+        let originalState: unknown;
+
+        beforeEach(() => {
+          originalUrl = window.location.href;
+          originalState = window.history.state;
+        });
+
+        afterEach(() => {
+          window.history.replaceState(originalState, '', originalUrl);
+        });
+
+        it('keeps the page, fragment, and history state present on arrival, without another history entry', () => {
+          window.history.replaceState({ navigationId: 7 }, '', `/mentorship/mentor?success=${IDENTITY_ALREADY_CONNECTED_STATUS}#application`);
+          const historyLength = window.history.length;
+
+          render(profile, alreadyConnected);
+
+          expect(window.location.search).toBe('');
+          expect(window.location.pathname).toBe('/mentorship/mentor');
+          expect(window.location.hash).toBe('#application');
+          expect(window.history.state).toEqual({ navigationId: 7 });
+          expect(window.history.length).toBe(historyLength);
+        });
+      });
     });
   });
 });

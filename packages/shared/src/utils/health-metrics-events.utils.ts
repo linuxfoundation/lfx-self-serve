@@ -360,10 +360,12 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     .filter((event) => event.isPastEvent && event.ranges.some((candidate) => candidate === range))
     .sort((a, b) => compareStartDates(a.eventStartDate, b.eventStartDate, 'desc'));
   const rows = [...upcoming, ...past].map(buildRevenueRowView);
+  const figures = [period?.totalUsd, period?.registrationUsd, period?.sponsorshipUsd];
 
   return {
     foundationMeasured: revenue.periods.length > 0,
     measured: period !== null,
+    hasRevenue: rows.length > 0 || period?.hasUnconverted === true || figures.some((value) => typeof value === 'number' && value !== 0),
     headline: stat('total', 'Total event revenue', period?.totalUsd, delta(changes?.total)),
     side: [
       stat('registration', 'Registration', period?.registrationUsd, delta(changes?.registration)),

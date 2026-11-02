@@ -8,8 +8,9 @@ import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@a
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR, MKTG_ANSWER_TOO_LONG_ERROR } from '@lfx-one/shared/constants';
-import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip } from '@lfx-one/shared/interfaces';
-import { foundationMessageAnswerOrigin, isFoundationMessageAnswerSubstantive, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
+import { MktgRunAnswer, MktgRunQuestion, MktgRunQuestionChip, MktgRunQuestionDraft } from '@lfx-one/shared/interfaces';
+import { foundationMessageAnswerOrigin, mktgRunQuestionShortLabel } from '@lfx-one/shared/utils';
+import { mktgAnswerProblem } from '@lfx-one/shared/utils/mktg-run-answers.utils';
 import { map } from 'rxjs';
 
 /** One basis entry: a link when it is one, plain text otherwise. */
@@ -30,7 +31,7 @@ interface QuestionView extends MktgRunQuestion {
 // top, then a card with the question, why the agent asks, where its
 // suggestion comes from, and one box already holding the suggested answer to
 // keep or edit. The last question's button sends every answer back on the
-// same run. No skip and no TBD: every answer has to say something.
+// same run. By default, no skip or TBD: every answer has to say something.
 @Component({
   selector: 'lfx-mktg-run-questions',
   imports: [NgClass, ReactiveFormsModule, ButtonComponent, TextareaComponent],
@@ -46,10 +47,18 @@ export class MktgRunQuestionsComponent {
   public readonly previousAnswers = input<Record<string, string>>({});
   /** True while the answers are being sent. */
   public readonly busy = input(false);
+  /** Saved answers and index restored after reload, taking precedence over previousAnswers. */
+  public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
+  /** Temporary AEO/GEO compatibility until its exclusion question has a stable id. */
+  public readonly allowNonAnswers = input(false);
+  /** Only these stable question ids may use literal none on otherwise substantive-only surfaces. */
+  public readonly allowNoneFor = input<readonly string[]>([]);
 
   // === Outputs ===
   /** Every question's answer, sent together from the last question. */
   public readonly answered = output<MktgRunAnswer[]>();
+  /** Emits index and answers on every change, including the initial reset, for host persistence. */
+  public readonly draftChanged = output<MktgRunQuestionDraft>();
 
   // === Forms ===
   /** One box per question, holding the suggested answer until the requester changes it. */
@@ -76,14 +85,14 @@ export class MktgRunQuestionsComponent {
     if (!current) {
       return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
     }
-    return this.answerError(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '');
+    return this.answerError(this.values()[current.key] ?? this.answersForm.controls[current.key]?.value ?? '', current.key);
   });
   protected readonly currentValid = computed(() => this.currentError() === '');
   protected readonly chips: Signal<MktgRunQuestionChip[]> = this.initChips();
 
   // Literal class names so Tailwind's content scan generates them.
   protected readonly chipClass: Record<MktgRunQuestionChip['state'], string> = {
-    current: 'border-blue-300 bg-blue-50 text-blue-700',
+    current: 'border-gray-300 bg-white font-semibold text-gray-900',
     answered: 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50',
     open: 'border-gray-100 bg-white text-gray-400 hover:bg-gray-50',
   };
@@ -93,8 +102,16 @@ export class MktgRunQuestionsComponent {
     // suggestion (or the earlier try's answer).
     effect(() => {
       const questions = this.questions();
-      const previous = this.previousAnswers();
-      untracked(() => this.reset(questions, previous));
+      const draft = untracked(() => this.initialDraft());
+      const previous = draft?.answers ?? untracked(() => this.previousAnswers());
+      untracked(() => {
+        this.reset(questions, previous);
+        this.goTo(draft?.index ?? 0);
+      });
+    });
+    effect(() => {
+      const draft = { index: this.index(), answers: this.values() };
+      if (this.questions().length) this.draftChanged.emit(draft);
     });
   }
 
@@ -115,7 +132,7 @@ export class MktgRunQuestionsComponent {
       return;
     }
     // Every answer has to stand before they go: an earlier one may have been emptied after a jump back.
-    const firstFailing = this.questions().findIndex((question) => this.answerError(this.answersForm.controls[question.key]?.value ?? '') !== '');
+    const firstFailing = this.questions().findIndex((question) => this.answerError(this.answersForm.controls[question.key]?.value ?? '', question.key) !== '');
     if (firstFailing >= 0) {
       this.goTo(firstFailing);
       this.showError.set(true);
@@ -174,13 +191,9 @@ export class MktgRunQuestionsComponent {
   }
 
   // === Private helpers ===
-  /**
-   * Why an answer would be refused — the two rules the BFF applies to the
-   * answers turn (`validateFoundationMessageAnswers`), on the trimmed text
-   * that is sent — or '' when it stands.
-   */
-  private answerError(text: string): string {
-    if (!isFoundationMessageAnswerSubstantive(text)) {
+  /** Shared per-question policy, except the explicit legacy AEO/GEO route opt-in. */
+  private answerError(text: string, questionId: string): string {
+    if (!text.trim() || (!this.allowNonAnswers() && mktgAnswerProblem(text, { allowNone: this.allowNoneFor().includes(questionId) }))) {
       return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
     }
     if (text.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {

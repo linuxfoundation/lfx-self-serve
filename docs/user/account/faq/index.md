@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing]
-last_updated: 2026-10-09
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
+last_updated: 2026-11-02
 intercom_collection: Account
 ---
 
@@ -14,7 +14,7 @@ intercom_collection: Account
 
 ## How do I change my email address?
 
-Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**. A 6-digit verification code is sent to the new address to confirm it. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
+Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. If the address can be added to your account, a 6-digit verification code is sent to it; enter it to confirm the address. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
 
 ## How do I change my password?
 
@@ -102,7 +102,13 @@ Your transaction history includes all purchases made through the LFX platform un
 
 ## Can I download a receipt or invoice?
 
-Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download. For an event registration, download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. For anything else, or if you can't find the email, contact LFX support. See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
+Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download.
+
+- **Training courses, certification exams, bundles, and subscriptions** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID.
+- **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact LFX support.
+- **Anything else** — contact LFX support.
+
+See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
 
 ## Why is a purchase missing from my transaction history?
 
@@ -110,7 +116,7 @@ Recent purchases may take up to 48 hours to appear in LFX Self Serve. If a purch
 
 ## Can I request a refund through LFX Self Serve?
 
-No — there is no refund request in LFX Self Serve. To request a refund, contact LFX support with your order confirmation.
+No — there is no refund request in LFX Self Serve. For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) with your order ID. For other purchases, contact LFX support with your order confirmation.
 
 ## Who can see my transactions?
 
@@ -118,8 +124,12 @@ You can only see your own transactions. Other users and project administrators c
 
 ## I was charged incorrectly. Who do I contact?
 
-Contact LFX support via in-app messaging. Include the transaction date, amount, and item name so the support team can investigate.
+For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
+
+## How do I delete my account or personal data?
+
+You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled.
 
 ## Who do I contact if a setting isn't working?
 
-Contact LFX support via in-app messaging. Describe the setting you changed and the behavior you expected.
+Contact LFX support. Describe the setting you changed and the behavior you expected.

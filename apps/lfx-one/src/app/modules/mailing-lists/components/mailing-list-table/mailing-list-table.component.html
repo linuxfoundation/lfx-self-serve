@@ -131,7 +131,7 @@
               <a
                 [routerLink]="mailingList.viewCommands"
                 [queryParams]="mailingList.linkQueryParams"
-                [state]="{ backLabel: 'My ' + mailingListLabelPlural, fromMeLens: true }"
+                [state]="{ backLabel: mailingListLabelPlural, fromMeLens: true }"
                 class="lfx-table-name-link text-sm"
                 [attr.data-testid]="'mailing-list-title-' + mailingList.uid">
                 {{ mailingList.title || mailingList.group_name || '-' }}

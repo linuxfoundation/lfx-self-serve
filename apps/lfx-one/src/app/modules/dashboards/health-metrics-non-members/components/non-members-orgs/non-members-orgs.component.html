@@ -10,13 +10,8 @@
       title="Company participation unavailable"
       subtitle="We could not load this foundation's non-member organizations. Refresh the page to try again."
       data-testid="non-members-orgs-error" />
-  } @else if (!loading() && !scopeTotal()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No active non-member organizations"
-      subtitle="No non-member organization attended a meeting or contributed in this period."
-      data-testid="non-members-orgs-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-orgs-controls">
       <div class="w-full sm:w-64">

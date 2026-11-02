@@ -26,8 +26,6 @@ import type {
   HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentTotals,
-  HealthMetricsTrainingPresence,
-  HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -44,7 +42,10 @@ export function isSupportedTrainingRange(range: string): range is HealthMetricsL
 }
 
 /** Upper-cased Snowflake keys; each period's columns carry the range as a suffix (e.g. `ENROLLMENTS_YTD`). */
-type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null } & Record<string, unknown>;
+type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null; IS_LISTED_REVENUE_DELIVERY_TYPE?: boolean | null } & Record<
+  string,
+  unknown
+>;
 
 interface YearRow {
   ENROLLMENT_YEAR: number;
@@ -75,24 +76,6 @@ export class HealthMetricsTrainingService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Whether LF Education has any training rows for the foundation; none means it runs no programme. */
-  public async getPresence(req: Request, query: HealthMetricsTrainingPresenceQuery): Promise<HealthMetricsTrainingPresence> {
-    const sql = `
-      SELECT 1 AS present
-      FROM ${TRAINING_SUMMARY_VIEW}
-      WHERE foundation_slug = ?
-      LIMIT 1
-    `;
-
-    const { rows } = await executeSnowflakeViewRead<{ PRESENT: number }>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      operation: 'get_training_presence',
-      view: TRAINING_SUMMARY_VIEW,
-      clientMessage: 'Training is unavailable right now.',
-    });
-
-    return { hasProgramme: rows.length > 0 };
-  }
-
   /** Every period's KPI strip and by-type split from the summary, plus enrollments for every year, in one read. */
   public async getEnrollment(req: Request, query: HealthMetricsTrainingEnrollmentQuery): Promise<HealthMetricsTrainingEnrollment> {
     // Every column comes from fixed maps keyed by the L2 ranges, never from the request.
@@ -110,10 +93,15 @@ export class HealthMetricsTrainingService {
       SELECT
         delivery_type,
         is_listed_delivery_type,
+        is_listed_revenue_delivery_type,
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
-        revenue_change_pct
+        revenue_change_pct,
+        enrollment_goal,
+        enrollment_goal_progress_ytd,
+        revenue_goal_usd,
+        revenue_goal_progress_ytd
       FROM ${TRAINING_SUMMARY_VIEW}
       WHERE foundation_slug = ?
     `;
@@ -143,6 +131,13 @@ export class HealthMetricsTrainingService {
       measured: true,
       periods,
       trend: trend.rows.map((row) => ({ year: Number(row.ENROLLMENT_YEAR), enrollments: toNullableNumber(row.ENROLLMENT_COUNT) })),
+      // Goals ride on the `All` row only; a goal of zero or less is no goal.
+      goals: {
+        enrollments: toPositiveOrNull(all['ENROLLMENT_GOAL']),
+        revenueUsd: toPositiveOrNull(all['REVENUE_GOAL_USD']),
+        enrollmentsProgressYtd: toNullableNumber(all['ENROLLMENT_GOAL_PROGRESS_YTD']),
+        revenueProgressYtd: toNullableNumber(all['REVENUE_GOAL_PROGRESS_YTD']),
+      },
     };
   }
 
@@ -245,6 +240,7 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
     .map((row) => ({
       deliveryType: row.DELIVERY_TYPE,
       isListed: row.IS_LISTED_DELIVERY_TYPE === true,
+      isListedRevenue: row.IS_LISTED_REVENUE_DELIVERY_TYPE === true,
       enrollments: toNullableNumber(row[`ENROLLMENTS_${range}`]),
       revenueUsd: toNullableNumber(row[`REVENUE_USD_${range}`]),
     }));
@@ -264,6 +260,11 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
 
 function toTotals(enrollments: unknown, certifications: unknown, revenueUsd: unknown): HealthMetricsTrainingEnrollmentTotals {
   return { enrollments: toNullableNumber(enrollments), certifications: toNullableNumber(certifications), revenueUsd: toNullableNumber(revenueUsd) };
+}
+
+function toPositiveOrNull(value: unknown): number | null {
+  const number = toNullableNumber(value);
+  return number !== null && number > 0 ? number : null;
 }
 
 function toNullableNumber(value: unknown): number | null {

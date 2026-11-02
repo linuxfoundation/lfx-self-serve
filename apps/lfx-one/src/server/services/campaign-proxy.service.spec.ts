@@ -123,8 +123,7 @@ describe('CampaignProxyService email delivery type', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => '{}',
-          json: async () => ({ choices: [{ message: { content: '{}' } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: '{}' } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode(sse));
@@ -331,8 +330,12 @@ describe('CampaignProxyService email delivery type', () => {
     expect(keywordPrompt).not.toMatch(/Google Search keywords/i);
   });
 
-  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
-  it('still refuses twitter-ads, which the brief generator does not serve', async () => {
+  /**
+   * X, selectable in the Plan tab behind `twitterCreateEnabled`, is served like Microsoft with no
+   * copy key, and needs no keywords either: an X-only brief skips both stages rather than paying
+   * for the Google default.
+   */
+  it('accepts an X-only brief, skipping the ad-copy and keyword stages', async () => {
     const events = await drain(
       service.streamBrief(
         req,
@@ -341,9 +344,26 @@ describe('CampaignProxyService email delivery type', () => {
       ) as AsyncGenerator<{ type: string; data: unknown }>
     );
 
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(false);
+    expect(events.find((e) => e.type === 'copy_structured')?.data).toEqual({});
+  });
+
+  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
+  it('still refuses a platform the brief generator does not know', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['tiktok-ads' as never] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
     const error = events.find((e) => e.type === 'error');
     expect(error).toBeDefined();
-    expect(String(error?.data)).toContain('twitter-ads');
+    expect(String(error?.data)).toContain('tiktok-ads');
     // The message enumerates the live set, so it names microsoft-ads as supported rather than
     // carrying a stale hand-written list.
     expect(String(error?.data)).toContain('microsoft-ads');
@@ -533,8 +553,7 @@ describe('CampaignProxyService model JSON fences', () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        text: async () => payload,
-        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        text: async () => JSON.stringify({ choices: [{ message: { content: payload } }] }),
         body: new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -710,8 +729,7 @@ describe('CampaignProxyService Google extensions', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => body,
-          json: async () => ({ choices: [{ message: { content: body } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: body } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -1500,6 +1518,37 @@ describe('extractableHtml', () => {
     expect(Date.now() - started, 'the removal pass scanned past MAX_JSON_LD_SCAN_CHARS').toBeLessThan(4000);
     // The block found inside the cap is still preserved -- bounding must not cost the extraction.
     expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
+  // The closing-tag STRIP used `.replace(/<\/script[^>]*>$/i, '')` on the collected body: unanchored
+  // at the front, with `[^>]*` running forward to the next `>` before `$` is tested. Every `</script`
+  // literal the block's own close scan (`rawTextBlockEnd`) does NOT recognise as a real close -- its
+  // `(?=[\s>])` lookahead rejects `</scriptx` -- is a fresh backtracking candidate for that regex.
+  // A body of many `</scriptx` tokens followed by one lone `>` and then the real `</script>` makes
+  // `rawTextBlockEnd` treat the whole thing as one element (every inner token fails its lookahead),
+  // so the strip regex sees all of them as start candidates whose `[^>]*` must each scan forward to
+  // that one inner `>` and then backtrack. Quadratic in the token count; GH-549 measured tens of
+  // seconds on ~116k tokens. The fix slices the body up to the close position `rawTextBlockEnd`
+  // already computed instead of re-finding and stripping the close tag with a regex.
+  it('does not stall stripping a json-ld body full of near-miss close tokens', () => {
+    // 100k, not 20k: at 20k tokens the OLD regex itself only took ~1.3-1.5s, well inside a 4s
+    // budget -- three reviewers independently caught that the old code would pass this test too,
+    // so it could not detect its own regression. 100k decoys (~900KB, still under the 1 MiB
+    // MAX_SCAN_CHARS cap) pushed the old regex to ~46.5s measured directly against the fix's
+    // slice-based version, which stays in the tens of milliseconds -- a budget comfortably between
+    // the two, with room for a loaded CI runner.
+    const decoys = '</scriptx'.repeat(100_000);
+    const html = `<script type="application/ld+json">{"startDate":"2027-03-15"}${decoys}>REST</script><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(html);
+    const elapsed = Date.now() - started;
+
+    expect(elapsed, `extractableHtml took ${elapsed}ms stripping a json-ld body with 100k near-miss close tokens`).toBeLessThan(4000);
+    expect(out).toContain('"startDate":"2027-03-15"');
+    // The real closing tag must still be stripped out of the preserved json-ld.
+    expect(out).not.toContain('</script>');
+    expect(out).toContain('Tokyo');
   });
 
   // A flat `slice(0, MAX_SOURCE_CHARS)` cut whichever block 150k landed inside, taking its closing
@@ -2445,8 +2494,7 @@ describe('CampaignProxyService streaming AI failures', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => EXTRACTION,
-          json: async () => ({ choices: [{ message: { content: EXTRACTION } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: EXTRACTION } }] }),
           body: null,
         };
       })
@@ -2524,6 +2572,23 @@ describe('CampaignProxyService streaming AI failures', () => {
     // asymmetry between them is what #3996 was. Extraction is non-fatal, so this stage logs and
     // the brief continues.
     expect(loggedMessage('campaign_brief_extract')).toBe('AI request failed (403): rejected Authorization: Bearer [redacted]');
+  });
+
+  it('fails the non-streaming call cleanly on a 2xx that is not JSON (#4500)', async () => {
+    const service = stubAi({ ok: true, status: 200, body: null }, 'sk-live-abc+123', {
+      ok: true,
+      status: 200,
+      text: '<html>gateway page echoing Bearer sk-live-abc+123</html>',
+    });
+
+    await errorEvent(briefStream(service));
+
+    // A raw `response.json()` threw V8's `SyntaxError` here, which names neither the proxy nor the
+    // status and quotes the body unredacted. Extraction is non-fatal, so this stage logs and the
+    // brief continues.
+    expect(loggedMessage('campaign_brief_extract')).toBe(
+      'AI proxy returned a response that is not a JSON object (200): <html>gateway page echoing Bearer [redacted]</html>'
+    );
   });
 
   it('bounds the body rather than putting a whole error page in one log line', async () => {

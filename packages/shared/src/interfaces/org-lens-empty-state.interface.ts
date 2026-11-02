@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys). */
+/** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225). */
 export type OrgLensEmptyStateName =
   | 'no-organization'
   | 'no-access'
@@ -10,6 +10,7 @@ export type OrgLensEmptyStateName =
   | 'could-not-load'
   | 'staff-check-failed'
   | 'contractor-no-grant'
+  | 'affiliated-no-grant'
   | 'section-empty'
   | 'section-could-not-load'
   | 'section-no-access'

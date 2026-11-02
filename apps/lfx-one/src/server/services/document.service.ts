@@ -699,7 +699,8 @@ export class DocumentService {
   private mapPastMeetingSummaries(summaries: PastMeetingSummaryQueryResult[], meetingDetails: MeetingDetails): MyDocumentItem[] {
     return summaries.map((s): MyDocumentItem => {
       const meeting = meetingDetails.get(s.meeting_id);
-      const summaryContent = s.edited_content ?? s.content;
+      // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
+      const summaryContent = s.edited_content || s.content;
       return {
         id: `past_meeting_summary:${s.id}`,
         name: s.summary_title || s.zoom_meeting_topic || 'Meeting Summary',

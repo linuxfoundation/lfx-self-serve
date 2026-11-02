@@ -48,6 +48,7 @@ import {
   isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
   isMeetingOrganizedByViewer,
+  isMeetingPendingRsvp,
   meetingToCalendarEvents,
   resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
@@ -266,7 +267,7 @@ export class MeetingsDashboardComponent {
     this.nextWindowCount = this.initNextWindowCount();
     this.nextMeetingLabel = this.initNextMeetingLabel();
     this.allMeetingsCount = computed(() => this.sortedUpcomingUserMeetings().length);
-    this.pendingRsvpCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => this.isPendingRsvp(m)).length);
+    this.pendingRsvpCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => isMeetingPendingRsvp(m)).length);
     this.acceptedCount = computed(() => this.sortedUpcomingUserMeetings().filter((m) => isMeetingInviteResponsesEnabled(m) && isMeetingAccepted(m)).length);
     this.maybeCount = this.initResponseCount('maybe');
     this.declinedCount = this.initResponseCount('declined');
@@ -828,7 +829,7 @@ export class MeetingsDashboardComponent {
     }
 
     if (view === 'upcoming' && responseFilter === 'pending') {
-      filtered = filtered.filter((m) => this.isPendingRsvp(m));
+      filtered = filtered.filter((m) => isMeetingPendingRsvp(m));
     } else if (view === 'upcoming' && responseFilter !== 'all') {
       // The BFF may carry a fallback RSVP from another date. Do not classify the next date
       // as Going/Maybe/Not going unless that response actually applies to it.
@@ -895,18 +896,6 @@ export class MeetingsDashboardComponent {
     });
   }
 
-  private isPendingRsvp(meeting: Meeting): boolean {
-    // A confirmed empty registration list leaves nothing to answer: the RSVP write cannot resolve a registrant.
-    // Absent IDs mean the lookup was unavailable, and a retained confirmed write already proves a live registration.
-    const registrationIds = meeting.my_registrant_ids;
-    return (
-      isMeetingInviteResponsesEnabled(meeting) &&
-      meeting.my_rsvp !== undefined &&
-      (registrationIds === undefined || registrationIds.length > 0) &&
-      !getApplicableMeetingRsvp(meeting)
-    );
-  }
-
   private meetingStartLabel(meeting: Meeting, options: Intl.DateTimeFormatOptions): string {
     const occ = getCurrentOrNextOccurrence(meeting);
     return new Date(occ ? occ.start_time : meeting.start_time).toLocaleString('en-US', options);
@@ -927,7 +916,7 @@ export class MeetingsDashboardComponent {
 
   private initEarliestPendingRsvpLabel(): Signal<string> {
     return computed(() => {
-      const first = this.sortedUpcomingUserMeetings().find((m) => this.isPendingRsvp(m));
+      const first = this.sortedUpcomingUserMeetings().find((m) => isMeetingPendingRsvp(m));
       return first ? this.meetingStartLabel(first, { weekday: 'short', month: 'short', day: 'numeric' }) : '';
     });
   }

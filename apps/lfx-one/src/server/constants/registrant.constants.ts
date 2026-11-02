@@ -54,10 +54,11 @@ export const NULLISH_DROPPED_REGISTRANT_KEYS = Object.keys(RENAMED_REGISTRANT_KE
 /**
  * Registrant fields ITX declares under the app's own name, as a non-nullable `type: string`.
  *
- * `getChangedFields` sends `null` to mean "the organizer cleared this", and for these two it used to
- * send it straight through: a declared field given an off-contract value, on an ordinary registrant
- * edit. `job_title` has a form control, so an organizer emptying it hits this every time; `username`
- * has none, so it is nulled on every edit that changes anything at all.
+ * `getChangedFields` sends `null` to mean "the organizer cleared this", and for `job_title` it still
+ * does: a declared field given an off-contract value, on an ordinary registrant edit. `job_title` has
+ * a form control, so an organizer emptying it hits this every time. `username` has none, and
+ * `getChangedFields` now sends it back as stored or leaves it out, never `null`; it stays in this list
+ * as a guard against a client that names it as `null` itself.
  *
  * Omitted rather than renamed-away, because there is nowhere to rename them to — the name is
  * already right, only the `null` is wrong. The cost is the same one the renamed three carry:
@@ -156,12 +157,24 @@ const UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP = {
   host: true,
   job_title: true,
   username: true,
+  user_id: true,
   committee_uid: true,
   linkedin_profile: true,
 } as const satisfies Record<
   Exclude<keyof CreateMeetingRegistrantRequest | keyof UpdateMeetingRegistrantRequest, (typeof APP_ONLY_REGISTRANT_KEYS)[number]>,
   true
 >;
+
+/**
+ * Passthrough keys that are forwarded on update only.
+ *
+ * `user_id` is the one: upstream treats it as immutable and compares an update's value against the
+ * stored one, so the update has to send it back. A create has no stored value to compare against, so a
+ * client-named `user_id` there would let a caller pick which LF account a guest is linked to. It stays
+ * in {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP} for the exhaustiveness check and is skipped by the
+ * mapper on create.
+ */
+export const UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS = ['user_id'] as const satisfies readonly (keyof UpdateMeetingRegistrantRequest)[];
 
 /**
  * The key list of {@link UPSTREAM_PASSTHROUGH_REGISTRANT_KEY_MAP}, in declaration order.

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -14,12 +14,15 @@ import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metr
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
 import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
+import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
 import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
+import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { LensService } from './shared/services/lens.service';
 
 import type { Route } from '@angular/router';
@@ -32,6 +35,10 @@ function findRoute(tree: Route[], path: string): Route | undefined {
   }
   return undefined;
 }
+
+// The authenticated shell: the pathless route that hosts every logged-in page. Top-level chrome-less routes (such as
+// the login-free vote link) are mounted before it, so it is not `routes[0]`.
+const shellRoute = routes.find((route) => route.path === '' && !!route.children)!;
 
 // The flag decides legacy page vs outlet inside the gate (its own spec); this pins the child routes.
 describe('Health Metrics routes', () => {
@@ -53,12 +60,12 @@ describe('Health Metrics routes', () => {
 
 describe('Personal newsletter route isolation', () => {
   it('mounts the auth-only Me reader ahead of permalink and publisher matches', async () => {
-    const children = routes[0].children!;
+    const children = shellRoute.children!;
     const personal = findRoute(routes, 'newsletters/my')!;
-    expect(personal).toMatchObject({ pathMatch: 'full', title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(personal).toMatchObject({ pathMatch: 'full', title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await personal.loadComponent!()).toBe(MyNewsletterFoundationsComponent);
     const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
-    expect(foundation).toMatchObject({ title: 'My Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
     expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
     for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
       expect(children.indexOf(personal)).toBeLessThan(children.indexOf(findRoute(routes, path)!));
@@ -79,25 +86,93 @@ describe('Personal newsletter route isolation', () => {
 });
 
 describe('Vote permalink route isolation', () => {
-  const children = routes[0].children!;
-  const permalink = children.find((route) => route.path === 'votes/:id')!;
+  const children = shellRoute.children!;
+  const voteIdEntries = children.filter((route) => route.path === 'votes/:id');
+  const flat = children.find((route) => route.path === 'votes')!;
 
-  it('mounts the auth-only Me permalink ahead of the lens-redirected votes mount', () => {
-    const flat = children.find((route) => route.path === 'votes')!;
-    expect(permalink).toMatchObject({
-      pathMatch: 'full',
-      data: { lens: 'me', preload: false },
-      canMatch: [votePermalinkMatchGuard],
-      canActivate: [authGuard],
-    });
-    expect(children.indexOf(permalink)).toBeLessThan(children.indexOf(flat));
+  it('mounts the vote detail page as the only auth-only /votes/:id entry, ahead of the lens-redirected votes mount', async () => {
+    expect(voteIdEntries).toHaveLength(1);
+    const [page] = voteIdEntries;
+
+    expect(await page.loadComponent!()).toBe(VoteDetailComponent);
+    expect(children.indexOf(page)).toBeLessThan(children.indexOf(flat));
+    expect(page).toMatchObject({ pathMatch: 'full', canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
     expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('keeps the lens the user came from on the detail page — no lens data, no lens redirect', () => {
+    const [page] = voteIdEntries;
+
+    expect(page.data).toEqual({ preload: false });
+    expect(page.canActivate).not.toContain(lensRedirectGuard);
   });
 
   it('leaves /votes/create to the votes module and matches a vote uid', () => {
     const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
-    expect(votePermalinkMatchGuard(permalink, segments('create'))).toBe(false);
-    expect(votePermalinkMatchGuard(permalink, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+    const [page] = voteIdEntries;
+    expect(votePermalinkMatchGuard(page, segments('create'))).toBe(false);
+    expect(votePermalinkMatchGuard(page, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+  });
+});
+
+describe('Login-free vote link route (#4363)', () => {
+  const tokenRoute = routes.find((route) => route.path === 'votes/:id')!;
+  const segments = (...parts: string[]) => parts.map((part) => new UrlSegment(part, {}));
+  const matchWith = (platformId: string, hash: string, parts: string[] = ['votes', 'abc123']) => {
+    window.location.hash = hash;
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: platformId }] });
+    return TestBed.runInInjectionContext(() => voteTokenMatchGuard(tokenRoute, segments(...parts)) as boolean);
+  };
+
+  it('mounts a chrome-less top-level route before the authenticated shell', () => {
+    expect(routes.indexOf(tokenRoute)).toBeGreaterThanOrEqual(0);
+    expect(routes.indexOf(tokenRoute)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(tokenRoute).toMatchObject({ pathMatch: 'full', canMatch: [voteTokenMatchGuard] });
+    expect(tokenRoute.canActivate).toBeUndefined();
+    expect(tokenRoute.children).toBeUndefined();
+  });
+
+  it('matches only in the browser and only when the fragment carries vote_token', () => {
+    expect(matchWith('browser', '#vote_token=synthetic')).toBe(true);
+    expect(matchWith('browser', '#other=1&vote_token=synthetic')).toBe(true);
+    expect(matchWith('browser', '')).toBe(false);
+    expect(matchWith('browser', '#section')).toBe(false);
+    expect(matchWith('server', '#vote_token=synthetic')).toBe(false);
+    window.location.hash = '';
+  });
+
+  it('does not match the create segment', () => {
+    expect(matchWith('browser', '#vote_token=synthetic', ['votes', 'create'])).toBe(false);
+    window.location.hash = '';
+  });
+
+  it('renders the neutral page, not the authenticated shell, for an anonymous server render of /votes/:id', () => {
+    const anonymousRoute = routes.find((route) => route.path === 'votes/:id' && route.canMatch?.includes(voteAnonymousSsrMatchGuard))!;
+    expect(routes.indexOf(anonymousRoute)).toBeLessThan(routes.indexOf(shellRoute));
+
+    const matches = (platformId: string, auth: unknown, parts = ['votes', 'abc123']) => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PLATFORM_ID, useValue: platformId },
+          { provide: REQUEST_CONTEXT, useValue: auth === undefined ? null : { auth } },
+        ],
+      });
+      return TestBed.runInInjectionContext(() => voteAnonymousSsrMatchGuard(anonymousRoute, segments(...parts)) as boolean);
+    };
+
+    expect(matches('server', { authenticated: false })).toBe(true);
+    expect(matches('server', { authenticated: true })).toBe(false);
+    expect(matches('server', undefined)).toBe(false);
+    expect(matches('browser', { authenticated: false })).toBe(false);
+    expect(matches('server', { authenticated: false }, ['votes', 'create'])).toBe(false);
+  });
+
+  it('leaves the authenticated permalink and presenter routes untouched', () => {
+    const permalink = shellRoute.children!.find((route) => route.path === 'votes/:id')!;
+    expect(permalink).toMatchObject({ canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
+    expect(findRoute(routes, 'votes/:id/present')?.canActivate).toContain(authGuard);
   });
 });
 

@@ -19,7 +19,7 @@ import { MentorshipMentorProfileDetails, MentorshipMentorProfileUpdateRequest } 
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -90,10 +90,6 @@ async function addSkill(page: Page, skill: string): Promise<void> {
 }
 
 test.describe('Mentor Profile - persist edits', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('adding a skill sends only the skills and shows them without re-reading the profile', async ({ page }) => {
     const stub = await stubProfile(page, 200);
     await openEditDrawer(page);

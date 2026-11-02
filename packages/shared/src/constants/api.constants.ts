@@ -102,6 +102,13 @@ export const NATS_CONFIG = {
   REQUEST_TIMEOUT: 5000,
 
   /**
+   * Wall-clock budget, in milliseconds, for the best-effort stored-name lookup done on every
+   * authenticated SSR render. It covers the connection attempt as well as the request, so an
+   * unreachable NATS can never hold up a page for CONNECTION_TIMEOUT.
+   */
+  SSR_DISPLAY_NAME_TIMEOUT: 750,
+
+  /**
    * Request timeout for the meeting-service `preferred_email.set` RPC, in milliseconds.
    *
    * Deliberately longer than REQUEST_TIMEOUT: the responder gives its downstream SET call a

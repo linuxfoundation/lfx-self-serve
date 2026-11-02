@@ -1,32 +1,33 @@
 ---
 title: Votes
-description: Create polls, cast votes, and view results for project governance decisions in LFX Self Serve.
+description: Create votes, cast your ballot, and view results for project governance decisions in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, polls, governance, decisions, elections]
-last_updated: 2026-10-18
+tags: [votes, governance, decisions, elections]
+last_updated: 2026-10-29
 intercom_collection: Votes
 ---
 
-All authenticated users can view polls and cast votes on polls they are eligible for. Creating and managing polls requires a **maintainer**, **board-member**, or **executive-director** persona.
+All authenticated users can view votes and cast a ballot on the ones they are eligible for. Creating and managing votes requires permission to manage votes for the project, foundation, or group.
 
-The Votes section lets you create and manage polls for formal project governance decisions. Votes are used for committee elections, policy approvals, and other decisions that require a recorded community response.
+The Votes section lets you create and manage votes for formal project governance decisions. Votes are used for committee elections, policy approvals, and other decisions that require a recorded community response.
 
 ## What you can do
 
-- View all polls for your project or foundation
-- Create new polls with custom options and voting rules
-- Cast your vote on open polls
-- View real-time and final vote results
-- Manage poll settings and close polls
+- View all votes for your project or foundation
+- [Create a vote](create-vote/) with one or more questions, comment questions, and an optional abstain choice
+- Cast your vote on an open vote: select **Vote**, or **Review** once you have voted
+- [See results](vote-results/): a vote's page shows the tallies, abstentions, comments, and who has voted
+- [Manage votes](manage-votes/): edit or delete drafts, send reminders, and copy a link from the **⋮** row menu
+- [Present, extend, clone, or send a summary](present-extend-clone/) from the same row menu
 
 ## Navigation
 
-To view and cast votes, select **My Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. My Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls.
+To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the votes you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other votes. Selecting an active vote you haven't voted on yet opens its ballot right on the list, so you can vote without leaving the page. Selecting **Review** on an active vote you've already voted on opens the same ballot drawer with your recorded choices locked. Ballots are read-only in the app; only a personalized ballot link can update an active ballot. Selecting any other vote opens its page.
 
-To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the polls for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see polls with every status.
+To manage votes for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the votes for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see votes with every status.
 
-In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching polls.
+In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching votes.
 
 ### Project and Foundation summaries
 
@@ -45,7 +46,7 @@ While the summary loads, counts show dashes and the cells are disabled. A succes
 
 While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
-Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
+Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. Votes and existing creation, voting, and result permissions are unchanged.
 
 ### Empty lists
 
@@ -57,19 +58,19 @@ When a list has no votes, the message names the situation:
 
 Search ignores leading and trailing spaces, so a search of only spaces does not filter the list. **Reset filters** clears every filter and selects **All**.
 
-If **My Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
+If **Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
 
 ### Sharing a link to a vote
 
 Select **⋮ → Copy link** on an active or ended vote to copy a direct link to it, which you can paste into an email, a chat or a mailing list. Draft votes have no link.
 
-Opening the link signs you in if needed and opens the vote in **My Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
+Opening the link signs you in if needed and opens the vote in **Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
 
 ### Your vote
 
-In **My Votes**, the **Your vote** column shows your participation rather than a response count. A solid green circle-check means **Voted**; hover over or focus the icon to see its tooltip. A muted dash means **Not voted**. Both indicators have accessible labels and apply to active and ended votes. The separate **Status** column shows whether the vote is active or ended. Project, Foundation, and group vote tables retain their response summaries.
+In **Votes**, the **Your vote** column shows your participation rather than a response count. A solid green circle-check means **Voted**; hover over or focus the icon to see its tooltip. A muted dash means **Not voted**. Both indicators have accessible labels and apply to active and ended votes. The separate **Status** column shows whether the vote is active or ended. Project, Foundation, and group vote tables retain their response summaries.
 
-### My Votes summary
+### Votes summary
 
 Two summary cells above the table help you find approaching deadlines and outstanding responses:
 
@@ -82,15 +83,15 @@ Select a cell to filter the table and switch to **Active**. Select the same cell
 
 If your filters have no matches, the empty list keeps the controls available. **Reset filters** clears the summary and table filters and selects **All**. If a scope change removes the selected group, only that group selection is cleared.
 
-My Votes group choices use consistent English alphabetical ordering across browser and server locales.
+Votes group choices use consistent English alphabetical ordering across browser and server locales.
 
 While loading, the cells show dashes and cannot be selected. A successfully loaded empty feed shows zero. If loading fails, counts are unavailable and **Unable to load your votes** appears instead of the no-invitations message. Select **Retry** to reload without losing your search and group controls.
 
 ## Key concepts
 
-- **Poll**: A formal vote with defined options and an eligible voter set
-- **Voter eligibility**: Voter eligibility is configured by the poll creator.
-- **Vote result**: The tally of responses after the poll closes
+- **Vote**: A formal decision with one or more questions and an eligible voter set
+- **Eligible Participants**: Who in the vote's group can vote: voting reps only, voting reps and alternates, or all members of the group
+- **Vote result**: The tally of responses. Voters see it after the vote closes; managers can see live tallies while it is open
 
 ## Project context
 
@@ -98,5 +99,5 @@ Votes are scoped to a specific project or foundation. Use the lens switcher to c
 
 ## Related sections
 
-- [Committees](../committees/) — committee members are often the eligible voter set for polls
+- [Committees](../committees/) — committee members are often the eligible voter set for votes
 - [Surveys](../surveys/) — for collecting general feedback rather than formal decisions

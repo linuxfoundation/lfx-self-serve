@@ -8,6 +8,9 @@ import { ActivatedRoute } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  IDENTITY_ALREADY_CONNECTED_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
+  IDENTITY_ALREADY_CONNECTED_SUMMARY,
   IDENTITY_LINK_ERROR_MESSAGES,
   LFX_PROFILE_CARD_CONNECT_IMPERSONATING_LABEL,
   LFX_PROFILE_CARD_CONNECT_LABEL,
@@ -249,6 +252,14 @@ export class ProfileCardComponent implements OnInit {
       this.announce('success', 'Success', LFX_PROFILE_CARD_LINK_SUCCESS_DETAIL);
       // No name or picture changed, so none is sent: the BFF adds the email and the new GitHub link.
       this.syncMentorshipProfileFields({}, LFX_PROFILE_CARD_MENTORSHIP_LINK_SYNC_FAILED_DETAIL);
+      return;
+    }
+
+    // #4327: the account the mentor reconnected is already theirs — a no-op, so nothing changed for
+    // the mentorship profile and no field sync is sent. The refresh still shows the canonical card.
+    if (params['success'] === IDENTITY_ALREADY_CONNECTED_STATUS) {
+      this.userService.refreshUserIdentities();
+      this.announce('success', IDENTITY_ALREADY_CONNECTED_SUMMARY, IDENTITY_ALREADY_CONNECTED_MESSAGE);
       return;
     }
 

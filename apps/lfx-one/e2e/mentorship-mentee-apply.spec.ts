@@ -18,7 +18,7 @@ import { MENTORSHIP_MENTEE_APPLY_SUCCESS_SUMMARY } from '@lfx-one/shared/constan
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -105,10 +105,6 @@ async function submitApplication(page: Page): Promise<void> {
 }
 
 test.describe('Mentee apply — blocked states', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('a term that is not accepting applications shows the closed state', async ({ page }) => {
     await stubApplyFlow(page, { acceptingApplications: false });
     await openApplyPage(page);
@@ -125,10 +121,6 @@ test.describe('Mentee apply — blocked states', () => {
 });
 
 test.describe('Mentee apply — submit', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('a filed application toasts success and goes to the Overview', async ({ page }) => {
     await stubMenteeApplications(page, 200, JSON.stringify({ data: [], total: 0 }));
     const stub = await stubApplyFlow(page, { submitStatus: 201 });

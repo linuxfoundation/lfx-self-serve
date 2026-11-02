@@ -33,18 +33,9 @@ export class OrgInvolvementAnalyticsService {
   }
 
   public getMaintainersMonthly(accountId: string): Observable<OrgInvolvementMaintainersMonthlyResponse> {
-    return this.http.get<OrgInvolvementMaintainersMonthlyResponse>('/api/analytics/org-involvement-maintainers-monthly', { params: { accountId } }).pipe(
-      catchError(() =>
-        of({
-          accountId,
-          accountName: '',
-          totalMaintainersYearly: 0,
-          totalProjectsYearly: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        })
-      )
-    );
+    return this.http
+      .get<OrgInvolvementMaintainersMonthlyResponse>('/api/analytics/org-involvement-maintainers-monthly', { params: { accountId } })
+      .pipe(catchError(() => of({ accountId, maintainerRoles: null, monthlyData: [], monthlyLabels: [] })));
   }
 
   public getEventAttendanceMonthly(accountId: string): Observable<OrgInvolvementEventAttendanceMonthlyResponse> {

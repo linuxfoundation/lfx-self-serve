@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Writer-only scalar prefill. No author, source contents or session capabilities cross this boundary. */
+/** Writer-only re-enterable scalar prefill. No author, extracted/uploaded payloads or session capabilities. */
 export interface MktgLastIntake {
   answers: Record<string, string>;
   documentCount: number;
@@ -26,6 +26,11 @@ export interface MktgLastIntakeStart extends MktgLastIntake {
   project: string;
   agentId: string;
   runId: string;
+}
+
+/** Service boundary projects untrusted source values before any history persistence. */
+export interface MktgLastIntakeInput extends Omit<MktgLastIntakeStart, 'answers'> {
+  answers: unknown;
 }
 
 /** Private last-writer-wins snapshot; deliberately separate from started-run/session records. */

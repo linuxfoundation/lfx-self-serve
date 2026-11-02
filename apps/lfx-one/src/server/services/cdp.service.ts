@@ -46,6 +46,10 @@ interface CachedToken {
  * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
+  // Static: several controllers/services each construct their own CdpService. Maps member id → the
+  // never-rejecting tail of its identity write queue; present only while work is queued or running.
+  private static readonly memberIdentityWritesInFlight = new Map<string, Promise<void>>();
+
   private cachedToken: CachedToken | null = null;
 
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
@@ -261,11 +265,12 @@ export class CdpService {
   }
 
   /**
-   * Reject an identity for a user by resolving their member ID first
+   * Reject an identity for a user by resolving their member ID first. Runs in the member's write
+   * queue: after any reconcile chain on this pod, and holding the slot so none can overlap it.
    */
   public async rejectIdentityForUser(req: Request | undefined, sub: string, identityId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
-    await this.rejectIdentity(req, memberId, identityId, sub);
+    await CdpService.runSerialForMember(memberId, () => this.rejectIdentity(req, memberId, identityId, sub));
   }
 
   /**
@@ -344,23 +349,29 @@ export class CdpService {
   }
 
   /**
-   * Create an identity for a user by resolving their member ID first
-   */
-  public async createIdentityForUser(req: Request | undefined, lfids: string[], body: CdpCreateIdentityRequest): Promise<void> {
-    const memberId = await this.resolveMember(req, lfids);
-    await this.createIdentity(req, memberId, body);
-  }
-
-  /**
    * Orchestrates the full flow: token → resolve → get identities
    * Maps raw CDP identities to frontend-ready CdpIdentity format
    */
   public async getIdentitiesForUser(req: Request | undefined, sub: string, email?: string): Promise<CdpIdentity[]> {
+    return (await this.getMemberIdentitiesForUser(req, sub, email)).identities;
+  }
+
+  /**
+   * {@link getIdentitiesForUser} plus the resolved member id, so a caller writing back to the same
+   * member skips a resolve per write. `memberId` is null when CDP has no profile for the user.
+   */
+  public async getMemberIdentitiesForUser(
+    req: Request | undefined,
+    sub: string,
+    email?: string
+  ): Promise<{ memberId: string | null; identities: CdpIdentity[] }> {
     const startTime = logger.startOperation(req, 'get_cdp_identities_for_user', { sub });
+    // Set once resolve succeeds, so a 404 on the identities read keeps it and reconcile can still write.
+    let memberId: string | null = null;
 
     try {
       const emails = email ? [email] : undefined;
-      const memberId = await this.resolveMember(req, [sub], emails);
+      memberId = await this.resolveMember(req, [sub], emails);
 
       logger.debug(req, 'get_cdp_identities_for_user', 'Resolved CDP member', { member_id: memberId });
 
@@ -395,17 +406,43 @@ export class CdpService {
         identity_count: identities.length,
       });
 
-      return identities;
+      return { memberId, identities };
     } catch (error) {
       // Return empty array on 404 (user has no CDP profile)
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.warning(req, 'get_cdp_identities_for_user', 'No CDP profile found for user', { sub });
-        return [];
+        // A resolved member whose identities read 404s is not "no profile" — say which case it was.
+        const message = memberId ? 'CDP identities not found for resolved member' : 'No CDP profile found for user';
+        logger.warning(req, 'get_cdp_identities_for_user', message, { sub, member_id: memberId });
+        return { memberId, identities: [] };
       }
 
       logger.error(req, 'get_cdp_identities_for_user', startTime, error, { sub });
       throw error;
     }
+  }
+
+  /**
+   * Fire-and-forget: run one member's identity writes one at a time. Parallel writes on a member
+   * deadlock CDP (#4523), so this is skipped while the member has queued writes on this pod (another
+   * reconcile chain or a removal). Returns false when skipped. Each write should catch and log its own failure.
+   */
+  public runMemberIdentityWrites(req: Request | undefined, memberId: string, writes: (() => Promise<void>)[]): boolean {
+    if (CdpService.memberIdentityWritesInFlight.has(memberId)) {
+      logger.debug(req, 'run_cdp_member_identity_writes', 'Identity writes already in flight for member; skipping', {
+        member_id: memberId,
+        write_count: writes.length,
+      });
+      return false;
+    }
+
+    void CdpService.runSerialForMember(memberId, async () => {
+      for (const write of writes) {
+        await write().catch((err: unknown) => {
+          logger.warning(req, 'run_cdp_member_identity_writes', 'CDP identity write failed (non-blocking)', { member_id: memberId, err });
+        });
+      }
+    });
+    return true;
   }
 
   /**
@@ -454,18 +491,7 @@ export class CdpService {
 
       const rawExperiences = await this.getMemberWorkExperiences(req, memberId);
 
-      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => ({
-        id: raw.id,
-        organization: raw.organizationName,
-        organizationId: raw.organizationId,
-        organizationLogo: raw.organizationLogo || undefined,
-        jobTitle: raw.jobTitle,
-        startDate: this.formatDateToMonthYear(raw.startDate),
-        endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
-        source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
-        cdpSource: raw.source,
-        needsReview: !(raw.verified && raw.verifiedBy === sub),
-      }));
+      const entries: WorkExperienceEntry[] = rawExperiences.map((raw) => this.toWorkExperienceEntry(raw, sub));
 
       logger.success(req, 'get_cdp_work_experiences_for_user', startTime, {
         sub,
@@ -481,6 +507,48 @@ export class CdpService {
       }
 
       logger.error(req, 'get_cdp_work_experiences_for_user', startTime, error, { sub });
+      throw error;
+    }
+  }
+
+  /**
+   * #4225 — work history for a caller we are only reading about, which never creates a CDP member.
+   *
+   * {@link getWorkExperiencesForUser} resolves through `resolveMember`, and that helper *creates* a
+   * member when CDP has none. That is right on the profile, where the user is curating their own
+   * record, but wrong on `GET /api/orgs/me/role-grants`: it would make a read endpoint write to CDP
+   * for precisely the population this lookup runs for — callers with no Org Lens grant, who are the
+   * most likely to have no CDP profile yet — and make a page-blocking call wait on that create.
+   *
+   * An unknown member is not an error here: they simply have no work history, so the caller reads
+   * "no employer" and gets the unchanged copy.
+   */
+  public async getWorkExperiencesForKnownUser(req: Request | undefined, sub: string): Promise<WorkExperienceEntry[]> {
+    // `sub` is the caller's LFID username, not an opaque id, so it stays out of every log line here:
+    // this runs on a page-blocking request for every grant-less caller, which would put a username in
+    // production logs for exactly that group (PR #4318 review; `security/pii-in-logs-and-identifiers`).
+    // CDP's own member id is opaque and safe, and the request-scoped logger already identifies the caller.
+    const startTime = logger.startOperation(req, 'get_cdp_work_experiences_for_known_user');
+
+    try {
+      const memberId = await this.resolveMemberId(req, [sub]);
+      if (!memberId) {
+        logger.debug(req, 'get_cdp_work_experiences_for_known_user', 'No CDP member for caller; reporting no work history');
+        return [];
+      }
+
+      const entries = (await this.getMemberWorkExperiences(req, memberId)).map((raw) => this.toWorkExperienceEntry(raw, sub));
+
+      logger.success(req, 'get_cdp_work_experiences_for_known_user', startTime, { member_id: memberId, work_experience_count: entries.length });
+
+      return entries;
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        logger.warning(req, 'get_cdp_work_experiences_for_known_user', 'No CDP profile found for caller');
+        return [];
+      }
+
+      logger.error(req, 'get_cdp_work_experiences_for_known_user', startTime, error);
       throw error;
     }
   }
@@ -913,6 +981,27 @@ export class CdpService {
   }
 
   /**
+   * Queue `task` behind the member's pending identity writes on this pod. The slot is taken
+   * synchronously, before the task runs, and released once nothing newer is queued. The returned
+   * promise carries the task's own outcome; the stored tail never rejects.
+   */
+  private static runSerialForMember<T>(memberId: string, task: () => Promise<T>): Promise<T> {
+    const queue = CdpService.memberIdentityWritesInFlight;
+    const result = (queue.get(memberId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    queue.set(memberId, tail);
+    void tail.then(() => {
+      if (queue.get(memberId) === tail) {
+        queue.delete(memberId);
+      }
+    });
+    return result;
+  }
+
+  /**
    * Create a new CDP member seeded with the given identities.
    * Private: member creation is an internal step of resolveMember(), which owns the
    * resolve-or-create invariant; there is no standalone create-member use case.
@@ -964,6 +1053,22 @@ export class CdpService {
     return data.memberId;
   }
 
+  /** Shared wire → `WorkExperienceEntry` mapping for both work-history readers. */
+  private toWorkExperienceEntry(raw: CdpWorkExperience, sub: string): WorkExperienceEntry {
+    return {
+      id: raw.id,
+      organization: raw.organizationName,
+      organizationId: raw.organizationId,
+      organizationLogo: raw.organizationLogo || undefined,
+      jobTitle: raw.jobTitle,
+      startDate: this.formatDateToMonthYear(raw.startDate),
+      endDate: raw.endDate ? this.formatDateToMonthYear(raw.endDate) : undefined,
+      source: raw.source === 'lfxOne' || raw.source === 'ui' ? ('manual' as const) : ('cdp-enriched' as const),
+      cdpSource: raw.source,
+      needsReview: !(raw.verified && raw.verifiedBy === sub),
+    };
+  }
+
   /**
    * Resolve an LFID/emails to a CDP member ID via CDP's resolve endpoint.
    * Returns undefined when CDP has no member for the request — either a 404
@@ -975,7 +1080,10 @@ export class CdpService {
     const resolveUrl = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.RESOLVE_MEMBER}`;
     const requestId = randomUUID();
 
-    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfids, request_id: requestId });
+    // The LFIDs themselves are usernames, so they stay out of the metadata: `request_id` is the
+    // value sent upstream as `X-LFX-Request-ID` and is the correlation key worth having here
+    // (`security/pii-in-logs-and-identifiers`; PR #4318 review).
+    logger.debug(req, 'resolve_cdp_member', 'Resolving CDP member', { lfid_count: lfids.length, has_emails: !!emails?.length, request_id: requestId });
 
     const body: { lfids: string[]; emails?: string[] } = { lfids };
     if (emails?.length) {
@@ -998,7 +1106,9 @@ export class CdpService {
       // LFID/emails — treat as "no member" so resolveMember creates one. This is an
       // expected path, so skip reading the body here. Other statuses are genuine failures.
       if (response.status === 404) {
-        logger.debug(req, 'resolve_cdp_member', 'No CDP member found; will create', { lfids, request_id: requestId });
+        // "will create" was only ever true of `resolveMember`; this helper just reports the miss,
+        // and `getWorkExperiencesForKnownUser` deliberately does not create.
+        logger.debug(req, 'resolve_cdp_member', 'No CDP member matched', { lfid_count: lfids.length, request_id: requestId });
         return undefined;
       }
       const errorText = await response.text();

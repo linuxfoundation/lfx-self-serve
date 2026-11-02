@@ -60,6 +60,7 @@ export const BOILERPLATES_LENGTH_HINTS = [
 
 /** First line of the rendered draft form — the marker the agent parses back. */
 export const BOILERPLATES_DRAFT_HEADER = 'BATCH INTAKE SUBMISSION (Boilerplates — DRAFT)';
+export const BOILERPLATES_REDRAFT_HEADER = 'BATCH INTAKE SUBMISSION (Boilerplates — REDRAFT)';
 
 /** The fixed lines of the rendered draft form, by what they say. */
 export const BOILERPLATES_FORM_LINES = {

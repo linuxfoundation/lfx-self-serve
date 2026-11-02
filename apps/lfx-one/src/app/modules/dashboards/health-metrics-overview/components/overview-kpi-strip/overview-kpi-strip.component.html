@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="grid border-y border-gray-200" [style.grid-template-columns]="columns()" [attr.data-layout]="layout()" [attr.data-testid]="testId()">
+  @for (kpi of kpis(); track kpi.key; let index = $index) {
+    <div class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[16px]" [class]="itemClasses()[index]" [attr.data-testid]="testId() + '-' + kpi.key">
+      <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
+        >{{ kpi.label }}
+        @if (kpi.tip; as tip) {
+          <lfx-overview-info-tip [text]="tip" />
+        }
+      </span>
+      <div class="flex flex-wrap items-baseline gap-x-[8px]">
+        <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900" [attr.data-testid]="testId() + '-' + kpi.key + '-value'">{{
+          kpi.value
+        }}</span>
+        @if (kpi.delta; as delta) {
+          <span
+            class="inline-flex items-center gap-[3px] whitespace-nowrap text-[12px] font-medium"
+            [class]="delta.good ? 'text-emerald-700' : 'text-red-700'"
+            [attr.data-testid]="testId() + '-' + kpi.key + '-delta'">
+            <i class="text-[10px]" [class]="delta.direction === 'up' ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'" aria-hidden="true"></i>
+            <span class="sr-only">{{ delta.direction === 'up' ? 'Up' : 'Down' }}</span
+            >{{ delta.label }}
+          </span>
+        }
+      </div>
+      @if (kpi.note) {
+        <span class="text-[11px] text-gray-400">{{ kpi.note }}</span>
+      }
+    </div>
+  }
+</div>

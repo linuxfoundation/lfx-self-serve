@@ -30,6 +30,8 @@ export class MetricCardComponent {
   public readonly chartOptions = input<ChartOptions<ChartType>>();
   // Tailwind height/flex class(s) for the chart body; defaults to h-16. Use 'flex-1' to fill available card height.
   public readonly chartHeightClass = input<string>('');
+  // Line under the chart stating its window, e.g. which months the bars cover.
+  public readonly chartCaption = input<string>();
 
   // Footer inputs
   public readonly value = input<string>();

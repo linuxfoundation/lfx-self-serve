@@ -13,19 +13,6 @@ export interface HealthMetricsTrainingSubNavItem extends HealthMetricsL2SubNavIt
   key: HealthMetricsTrainingSectionKey;
 }
 
-/** `GET /api/analytics/training-presence` query. */
-export interface HealthMetricsTrainingPresenceQuery {
-  foundationSlug: string;
-}
-
-/** Whether the foundation runs a training programme through LF Education. */
-export interface HealthMetricsTrainingPresence {
-  hasProgramme: boolean;
-}
-
-/** What the Training tab renders: a skeleton while reading, the shell, the no-programme state, or an error. */
-export type HealthMetricsTrainingPresenceState = 'loading' | 'present' | 'absent' | 'failed';
-
 /** `GET /api/analytics/training-enrollment` query; one read carries every period, so a period change never re-reads. */
 export interface HealthMetricsTrainingEnrollmentQuery {
   foundationSlug: string;
@@ -43,6 +30,8 @@ export interface HealthMetricsTrainingEnrollmentType {
   deliveryType: string;
   /** PCC's listed types (`is_listed_delivery_type`); MicroCourse and Bundle count in the totals but are not listed. */
   isListed: boolean;
+  /** Listed on the revenue view (`is_listed_revenue_delivery_type`), which adds Bundle. */
+  isListedRevenue: boolean;
   enrollments: number | null;
   revenueUsd: number | null;
 }
@@ -70,11 +59,20 @@ export interface HealthMetricsTrainingEnrollmentPeriod {
   byType: HealthMetricsTrainingEnrollmentType[];
 }
 
+/** The foundation's yearly goals; progress (0–1) is modelled for YTD only. `null` is no goal set. */
+export interface HealthMetricsTrainingEnrollmentGoals {
+  enrollments: number | null;
+  revenueUsd: number | null;
+  enrollmentsProgressYtd: number | null;
+  revenueProgressYtd: number | null;
+}
+
 /** The Enrollment & revenue section: every L2 period, plus the period-independent yearly trend. */
 export interface HealthMetricsTrainingEnrollment {
   measured: boolean;
   periods: Record<HealthMetricsL2Range, HealthMetricsTrainingEnrollmentPeriod>;
   trend: HealthMetricsTrainingEnrollmentYear[];
+  goals: HealthMetricsTrainingEnrollmentGoals;
 }
 
 /** What the by-type list ranks by; the trend always shows enrollments. */

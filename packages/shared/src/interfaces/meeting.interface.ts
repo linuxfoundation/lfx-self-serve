@@ -213,6 +213,9 @@ export interface MeetingOrganizerChipModel {
   overflow: MeetingOrganizerLink[];
 }
 
+/** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
+export type MeetingGuestRole = 'organizer' | 'host' | null;
+
 /**
  * Minimal host-candidate shape for the organizer host-fallback derivation.
  * Satisfied structurally by both {@link MeetingRegistrant} and {@link PastMeetingParticipant}.
@@ -411,6 +414,8 @@ export interface Meeting {
   /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
    * An empty array confirms no active registration; undefined means enrichment was unavailable. */
   my_registrant_ids?: string[];
+  /** Viewer's RSVPs from active registrations (/api/user/meetings only); [] confirms none, undefined means unavailable. */
+  my_rsvps?: MeetingRsvp[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */
@@ -423,6 +428,8 @@ export interface Meeting {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL from BFF project enrichment; else the payload's own value, else empty */
+  project_logo_url?: string;
 }
 
 /**
@@ -444,6 +451,10 @@ export interface MeetingOccurrence {
   status?: string;
   /** Total registrant count for this occurrence */
   registrant_count?: number;
+  /** "Yes" responses for this occurrence; set by the v1_meeting index only */
+  response_count_yes?: number;
+  /** "No" responses for this occurrence; set by the v1_meeting index only */
+  response_count_no?: number;
   /**
    * Per-occurrence recurrence override. When a recurring meeting's cadence changes from a
    * specific occurrence onwards, Zoom records it as an `all_following` update and the
@@ -630,6 +641,11 @@ export interface MeetingRegistrant {
   avatar_url: string | null;
   /** Registrant's LFID username */
   username: string | null;
+  /**
+   * The LF user the registrant is linked to, as the index stores it. Upstream treats it as immutable, so an
+   * update has to send it back as it is; leaving it out reads as a change and fails with "user_id cannot be changed".
+   */
+  user_id?: string | null;
   /** Registrant's LinkedIn profile URL */
   linkedin_profile: string | null;
   /** Creation timestamp */
@@ -776,9 +792,9 @@ export interface UpdateMeetingRegistrantRequest {
    * Three known gaps, all pre-dating that rename:
    *
    * - `null` does not erase. Every field upstream declares is declared non-nullable, and
-   *   `MeetingService.getChangedFields` nulls each of these whenever it's blank, so the BFF omits a
-   *   `null` rather than sending one — for `job_title` and `username` under their own name, for the
-   *   three renamed fields by skipping the rename. Clearing a stored organization or job title
+   *   `MeetingService.getChangedFields` nulls `job_title` and the three renamed fields whenever they are
+   *   blank, so the BFF omits a `null` rather than sending one — for `job_title` under its own name, for
+   *   the renamed fields by skipping the rename. `username` is never nulled: it goes back as stored or is left out. Clearing a stored organization or job title
    *   therefore doesn't take effect. Fixing it needs upstream to say how these fields are erased —
    *   don't guess between `null` and `''`; `occurrence` already gives blank its own meaning
    *   ("blank = all occurrences").
@@ -814,6 +830,8 @@ export interface UpdateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /** The LF user the registrant is linked to; sent back unchanged, because upstream rejects an update that changes it. */
+  user_id?: string;
   /** User's LinkedIn profile URL */
   linkedin_profile?: string | null;
 }
@@ -862,6 +880,10 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /** The host toggle's accessible name, built from the same name as `removeLabel` and flipping with the guest's host flag. */
+  hostLabel: string;
+  /** The host toggle's tooltip: `Make host`, or `Remove host` when the guest already is one. */
+  hostTooltip: string;
   /**
    * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
    * `This occurrence`. `null` everywhere else, where every guest shares the same scope.
@@ -872,6 +894,26 @@ export interface ComposerGuestRow {
    * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
    */
   removable: boolean;
+}
+
+/**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**
@@ -1031,6 +1073,10 @@ export interface PastMeeting extends Meeting {
   sessions: MeetingSession[];
   /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
+  /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_recording?: boolean;
+  /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_ai_summary?: boolean;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */
@@ -1782,6 +1828,17 @@ export interface CreateMeetingRsvpRequest {
   response: RsvpResponse;
 }
 
+/**
+ * Failed RSVP submission
+ * @description Error emitted by the frontend RSVP submit flow; `message` is ready to show to the user
+ */
+export interface MeetingRsvpSubmitError {
+  /** User-facing reason the RSVP was not saved */
+  message: string;
+  /** HTTP status of the failed request, absent when the request was never sent */
+  status?: number;
+}
+
 // ============================================================================
 // ITX Meeting Response Interfaces (Goa endpoint shape)
 // ============================================================================
@@ -2315,3 +2372,11 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** A placeholder block in the meetings redesign's right column. */
+export interface MeetingsRailBlock {
+  /** Stable key, also used in the block's test ids. */
+  key: string;
+  /** Uppercase kicker shown above the block. */
+  label: string;
+}

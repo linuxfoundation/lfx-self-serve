@@ -1,23 +1,97 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* Compose existing renderings without changing their asset-page print rules. */
+/* Shared portrait composition for family PDFs and the standalone native kit print. */
 .lfx-family-print-only {
   display: none;
 }
 
+.lfx-family-print-cover {
+  /* Readable with Background graphics ON or OFF: ink and logo are for white. */
+  background-color: white;
+  color: var(--mfp-ink);
+  border: 1pt solid var(--mfp-dark);
+}
+
+@layer tailwind-base {
+  .lfx-family-print-cover :is(h1, p) {
+    font-family: inherit;
+  }
+}
+
 @media print {
-  body.lfx-print-family {
+  /* Match the standalone framework reset: neither shell containers nor filters
+     may anchor the native document to the app's narrow content column. */
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
+    :has(.lfx-brand-kit-portrait) {
+      position: static !important;
+      transform: none !important;
+      filter: none !important;
+      backdrop-filter: none !important;
+      perspective: none !important;
+      contain: none !important;
+      container-type: normal !important;
+      will-change: auto !important;
+    }
+
+    .lfx-brand-kit-portrait {
+      position: absolute !important;
+      inset: 0 0 auto !important;
+      width: 100% !important;
+      margin: 0 !important;
+    }
+  }
+
+  html:has(body.lfx-print-framework),
+  html:has(body.lfx-print-family),
+  html:has(body.lfx-print-brand-kit .lfx-brand-kit-portrait) {
+    background: white !important;
+  }
+
+  body.lfx-print-family,
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
+    page: mktg-framework;
+
+    .lfx-family-print-cover {
+      /* Leave room for the named page margins. Grid without a viewport-height
+         flex-growing child keeps title/contents together on either paper size. */
+      min-height: calc(100vh - 1.1in);
+      align-content: space-between;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+
+    /* One cover and one contents list for the family, not a second per asset. */
+    [data-testid='mktg-framework-print-cover'],
+    [data-testid='brand-kit-page-cover'],
+    [data-testid='brand-kit-page-contents'],
+    [data-testid='brand-kit-page-back-cover'] {
+      display: none;
+    }
+  }
+
+  /* :has raises specificity above the legacy body height:0/overflow:hidden
+     rules emitted after this partial by styles.scss. */
+  body.lfx-print-framework:has(.lfx-framework-print),
+  body.lfx-print-family,
+  body.lfx-print-brand-kit:has(.lfx-brand-kit-portrait) {
+    page: mktg-framework;
+
     /* Named pages require in-flow boxes. Keep only the document's ancestor chain
        and its contents; hidden siblings must not reserve blank printed space. */
-    *:not(:has(.lfx-family-print-only)):not(.lfx-family-print-only):not(.lfx-family-print-only *) {
+    *:not(:has(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only))):not(
+        :is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only)
+      ):not(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only) *) {
       display: none !important;
     }
 
     &,
-    *:has(.lfx-family-print-only),
-    .lfx-family-print-only {
+    *:has(:is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only)),
+    :is(.lfx-framework-print-only, .lfx-family-print-only, .lfx-brand-kit-print-only) {
       display: block !important;
+      /* Screen shell/canvas backgrounds must not paint the unused part of a sheet. */
+      background: white !important;
+      box-shadow: none !important;
       position: static !important;
       width: auto !important;
       min-width: 0 !important;
@@ -33,39 +107,32 @@
       transform: none !important;
     }
 
-    lfx-mktg-framework-print {
+    lfx-mktg-framework-print,
+    lfx-mktg-boilerplates-print,
+    lfx-mktg-faq-print,
+    lfx-mktg-brand-kit-print {
       page: mktg-framework;
-      width: 7.3in;
-    }
-
-    lfx-brand-kit-view {
-      page: brand-kit;
-      width: 11in;
+      width: 100%;
       break-before: page;
     }
 
-    .lfx-brand-kit-book {
-      display: block;
-      width: 11in;
-      margin: 0;
-      gap: 0;
+    /* The legacy standalone book uses hidden visibility on the shell. Its
+       replacement is native text, in-flow, on the shared portrait named page. */
+    .lfx-brand-kit-portrait,
+    .lfx-brand-kit-portrait * {
+      visibility: visible !important;
+    }
+  }
+
+  body.lfx-print-framework {
+    lfx-mktg-framework-print {
+      break-before: auto;
     }
 
-    .lfx-brand-kit-page {
-      width: 11in;
-      height: 8.5in;
-      margin: 0;
-      border: 0;
-      border-radius: 0;
-      box-shadow: none;
-      break-after: page;
-      break-inside: avoid;
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
-
-    .lfx-brand-kit-page:last-child {
-      break-after: auto;
+    .lfx-framework-print {
+      /* Override the legacy absolute root: only in-flow content sizes the body. */
+      position: static !important;
+      margin: 0 !important;
     }
   }
 }

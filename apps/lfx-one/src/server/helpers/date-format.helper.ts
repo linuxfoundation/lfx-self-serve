@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep path, not the `@lfx-one/shared/utils` barrel: the barrel reaches `@angular/forms`, which cannot
+// load in the server-only vitest runtime, and this helper sits under `valkey.service`.
+import { isLocalDateOnlyString } from '@lfx-one/shared/utils/date-time.utils';
+
 /** Normalize Snowflake `Date | string | null` to ISO `YYYY-MM-DD` (null on invalid). Mirrors the regex-prefix pattern in `org-lens-people.service.ts` / `ProjectService.toIsoDate` so non-strict-ISO strings can't drift by a day via `new Date(...)` local-time parsing. */
 export function toIsoDate(value: Date | string | null | undefined): string | null {
   if (!value) return null;
@@ -53,16 +57,19 @@ export function toIsoTimestamp(value: Date | string | null | undefined): string 
 }
 
 /**
- * `JSON.stringify` replacer that writes every `Date` as strict ISO-8601 UTC. `snowflake-sdk` returns
- * timestamp columns as `Date`s whose `toJSON()` is overridden to emit the session output format
+ * `JSON.stringify` replacer that writes every timestamp `Date` as strict ISO-8601 UTC. `snowflake-sdk`
+ * returns timestamp columns as `Date`s whose `toJSON()` is overridden to emit the session output format
  * (`YYYY-MM-DD HH24:MI:SS.FF3 TZHTZM`, e.g. `2026-10-21 23:12:33.000 -0700`), which `new Date()`
- * cannot parse — so a cache hit silently turned a valid timestamp into null. Reads `this[key]` because
- * the replacer's `value` argument has already been through `toJSON()`.
+ * cannot parse — so a cache hit silently turned a valid timestamp into null. Snowflake DATE columns
+ * serialize as `YYYY-MM-DD` (`DATE_OUTPUT_FORMAT`) and are kept as-is, so a cache hit returns the same
+ * date-only shape as a miss. Reads `this[key]` because the replacer's `value` argument has already been
+ * through `toJSON()`.
  */
 export function isoDateReplacer(this: Record<string, unknown>, key: string, value: unknown): unknown {
   const original = this[key];
   if (original instanceof Date) {
-    return Number.isNaN(original.getTime()) ? null : original.toISOString();
+    if (Number.isNaN(original.getTime())) return null;
+    return isLocalDateOnlyString(value) ? value : original.toISOString();
   }
   return value;
 }

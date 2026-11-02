@@ -296,13 +296,14 @@
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          @for (platform of platforms; track platform.id) {
+          @for (platform of platforms(); track platform.id) {
+            <!-- A disabled tile stays clickable while selected, so a held X can be cleared; see `isPlatformClickable`. -->
             <button
               type="button"
-              (click)="platform.disabled ? null : togglePlatform(platform.id)"
-              [disabled]="platform.disabled"
+              (click)="isPlatformClickable(platform) ? togglePlatform(platform.id) : null"
+              [disabled]="!isPlatformClickable(platform)"
               [class]="
-                platform.disabled
+                !isPlatformClickable(platform)
                   ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
                   : isPlatformSelected(platform.id)
                     ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
@@ -1189,14 +1190,21 @@
           needing the same fix again for the next one.
         -->
         @if (!isEmail()) {
-          <lfx-button
-            label="Refine Brief"
-            icon="fa-light fa-wand-magic-sparkles"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="enterRefineMode()"
-            ariaLabel="Provide feedback to regenerate the brief"
-            data-testid="planning-refine-brief-btn" />
+          <!-- Not offered for an X-only brief: nothing in it is generated (see `refineApplies`). -->
+          @if (refineApplies()) {
+            <lfx-button
+              label="Refine Brief"
+              icon="fa-light fa-wand-magic-sparkles"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="enterRefineMode()"
+              ariaLabel="Provide feedback to regenerate the brief"
+              data-testid="planning-refine-brief-btn" />
+          } @else {
+            <span class="self-center text-xs text-gray-500" data-testid="planning-refine-x-only">
+              X-only briefs have no generated copy to refine. Write the tweet on the Implement tab.
+            </span>
+          }
           <lfx-button
             label="Edit Brief"
             icon="fa-light fa-pen-to-square"

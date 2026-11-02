@@ -59,6 +59,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     isHttpsUrl: url.isHttpsUrl,
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
+    hyphenatedClaGroupId: actual.hyphenatedClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     validateOrgClaApprovalValue: approval.validateOrgClaApprovalValue,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
@@ -3228,6 +3229,209 @@ describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () =>
   });
 });
 
+describe('OrgClaService.getContributorAcknowledgments — invalidator display', () => {
+  const audience = 'https://gw.example.org';
+  const salesforceId = '003000000000001AAA';
+
+  beforeEach(() => {
+    process.env['API_GW_AUDIENCE'] = audience;
+  });
+
+  afterEach(() => {
+    delete process.env['API_GW_AUDIENCE'];
+  });
+
+  function userListUrl(username: string): string {
+    return `${audience}/user-service/v1/users?${new URLSearchParams({ username, pageSize: '2', offset: '0' })}`;
+  }
+
+  async function readWith(overrides: Partial<EasyClaCorporateContributor>, directory: unknown[]) {
+    stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager', ...overrides })] }));
+    for (const body of directory) gatewayFetch.mockResolvedValueOnce(body);
+    return new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+  }
+
+  it('shows the directory name and keeps the stamped username', async () => {
+    const list = await readWith({}, [{ Data: [{ ID: salesforceId, Username: 'cla-manager', Name: 'Casey Nguyen' }], Metadata: { TotalSize: 1 } }]);
+
+    expect(list?.list[0]).toMatchObject({ invalidatedBy: 'cla-manager', invalidatedByDisplay: 'Casey Nguyen' });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      userListUrl('cla-manager'),
+      expect.objectContaining({ operation: 'org_cla_resolve_invalidator', redactResponseBody: true })
+    );
+    expect(gatewayFetch.mock.calls.some((call) => String(call[1]).includes(`/users/${salesforceId}`))).toBe(false);
+  });
+
+  it('uses first and last name when the full name is blank', async () => {
+    const list = await readWith({}, [
+      {
+        Data: [{ ID: salesforceId, Username: 'cla-manager', Name: '  ', FirstName: 'Casey', LastName: 'Nguyen' }],
+        Metadata: { TotalSize: 1 },
+      },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBe('Casey Nguyen');
+  });
+
+  it('uses the primary verified email when no name is present, and ignores the others', async () => {
+    const list = await readWith({}, [
+      {
+        Data: [
+          {
+            ID: salesforceId,
+            Username: 'cla-manager',
+            Emails: [
+              { EmailAddress: 'other@example.org', IsPrimary: false, IsVerified: true, Active: true, IsDeleted: false },
+              { EmailAddress: 'unverified@example.org', IsPrimary: true, IsVerified: false, Active: true, IsDeleted: false },
+              { EmailAddress: 'manager@example.org', IsPrimary: true, IsVerified: true, Active: true, IsDeleted: false },
+            ],
+          },
+        ],
+        Metadata: { TotalSize: 1 },
+      },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBe('manager@example.org');
+  });
+
+  it('reads the profile when the list row has no name or email', async () => {
+    const list = await readWith({}, [
+      { Data: [{ ID: salesforceId, Username: 'cla-manager' }], Metadata: { TotalSize: 1 } },
+      { ID: salesforceId, Username: 'cla-manager', Name: 'Casey Nguyen' },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBe('Casey Nguyen');
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `${audience}/user-service/v1/users/${salesforceId}`,
+      expect.objectContaining({ redactResponseBody: true })
+    );
+  });
+
+  it('looks up a repeated username once', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [
+          contributor({ signatureID: 'ecla-sig-1', signatureApproved: false, invalidatedBy: 'cla-manager' }),
+          contributor({ signatureID: 'ecla-sig-2', signatureApproved: false, invalidatedBy: 'cla-manager' }),
+        ],
+      })
+    );
+    gatewayFetch.mockResolvedValueOnce({
+      Data: [{ ID: salesforceId, Username: 'cla-manager', Name: 'Casey Nguyen' }],
+      Metadata: { TotalSize: 1 },
+    });
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list.map((row) => row.invalidatedByDisplay)).toEqual(['Casey Nguyen', 'Casey Nguyen']);
+    expect(gatewayFetch.mock.calls.filter((call) => String(call[1]).includes('/user-service/')).length).toBe(1);
+  });
+
+  it('ignores a profile whose username is a different person', async () => {
+    const list = await readWith({}, [
+      { Data: [{ ID: salesforceId, Username: 'cla-manager' }], Metadata: { TotalSize: 1 } },
+      { ID: salesforceId, Username: 'someone-else', Name: 'Casey Nguyen' },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+  });
+
+  it('leaves the username when the directory match is ambiguous', async () => {
+    const list = await readWith({}, [
+      {
+        Data: [
+          { Username: 'cla-manager', Name: 'Casey Nguyen' },
+          { Username: 'other-manager', Name: 'Other Person' },
+        ],
+        Metadata: { TotalSize: 2 },
+      },
+    ]);
+
+    expect(list?.list[0]?.invalidatedBy).toBe('cla-manager');
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+  });
+
+  it('still returns the page when the directory lookup fails', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager' })] }));
+    gatewayFetch.mockRejectedValueOnce(new Error('directory down'));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    expect(list?.list[0]?.invalidatedBy).toBe('cla-manager');
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+  });
+
+  it("sends the target user's token to both directory reads while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager' })] }));
+    gatewayFetch
+      .mockResolvedValueOnce({ Data: [{ ID: salesforceId, Username: 'cla-manager' }], Metadata: { TotalSize: 1 } })
+      .mockResolvedValueOnce({ ID: salesforceId, Username: 'cla-manager', Name: 'Casey Nguyen' });
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', {
+      search: '',
+      pageSize: 50,
+    });
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBe('Casey Nguyen');
+    const directoryCalls = gatewayFetch.mock.calls.filter((call) => String(call[1]).includes('/user-service/'));
+    expect(directoryCalls).toHaveLength(2);
+    for (const call of directoryCalls) {
+      expect(call[2]).toMatchObject({ bearerToken: 'target-user-token' });
+    }
+  });
+
+  it('returns the page with usernames when the directory does not answer within the budget', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      stageAckRead(contributorPage({ list: [contributor({ signatureApproved: false, invalidatedBy: 'cla-manager' })] }));
+      gatewayFetch.mockReturnValueOnce(new Promise(() => undefined));
+
+      const pending = new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const list = await pending;
+
+      expect(list?.list[0]?.invalidatedBy).toBe('cla-manager');
+      expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+      expect(loggerWarning).toHaveBeenCalledWith(
+        expect.anything(),
+        'org_cla_resolve_invalidator',
+        'invalidator display lookup ran out of time',
+        expect.objectContaining({ budget_ms: 3_000, resolved: 0, looked_up: 1 })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not show an email whose deleted flag is missing', async () => {
+    const list = await readWith({}, [
+      {
+        Data: [
+          { ID: salesforceId, Username: 'cla-manager', Emails: [{ EmailAddress: 'manager@example.org', IsPrimary: true, IsVerified: true, Active: true }] },
+        ],
+        Metadata: { TotalSize: 1 },
+      },
+    ]);
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+  });
+
+  it('does not reach for the directory when no row carries a username', async () => {
+    delete process.env['API_GW_AUDIENCE'];
+    stageAckRead(contributorPage({ list: [contributor()] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.invalidatedByDisplay).toBeUndefined();
+    expect(gatewayFetch.mock.calls.some((call) => String(call[1]).includes('/user-service/'))).toBe(false);
+    expect(loggerWarning).not.toHaveBeenCalledWith(expect.anything(), 'org_cla_resolve_invalidator', expect.any(String), expect.anything());
+  });
+});
+
 describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
   it.each([
     ['null beside a non-zero row count', null],
@@ -4078,5 +4282,85 @@ describe('OrgClaService — CLA manager designee (#2780)', () => {
       expect(error.statusCode).toBe(409);
       expect(error.toResponse()['upstreamCode']).toBe('already-signed');
     });
+  });
+});
+
+describe('OrgClaService.getClaGroupCatalogue', () => {
+  it('returns the project the catalogue resolved, the same field the sign picker uses', async () => {
+    gatewayFetch.mockResolvedValueOnce({
+      claGroupID: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSFID: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+
+    const option = await new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID);
+
+    expect(option).toMatchObject({
+      claGroupId: CLA_GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projectName: 'Cascade',
+      projectSfid: PROJECT_SFID,
+      cclaEnabled: true,
+    });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`,
+      expect.objectContaining({ operation: 'org_cla_group_catalogue' })
+    );
+  });
+
+  // The producer matches the id literally, so every spelling the controller accepts has to reach
+  // it as the one it stores.
+  it.each([
+    ['compact', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case', CLA_GROUP_ID.toUpperCase()],
+    ['compact upper-case', CLA_GROUP_ID.replaceAll('-', '').toUpperCase()],
+  ])('asks upstream for a %s id in the stored spelling', async (_label, spelling) => {
+    gatewayFetch.mockResolvedValueOnce({ claGroupID: CLA_GROUP_ID, claGroupName: 'Nimbus Foundation CLA', projectSFID: PROJECT_SFID, cclaEnabled: true });
+
+    const option = await new OrgClaService().getClaGroupCatalogue(req(), spelling);
+
+    expect(option).toMatchObject({ claGroupId: CLA_GROUP_ID, projectSfid: PROJECT_SFID });
+    expect(gatewayFetch).toHaveBeenCalledWith(
+      expect.anything(),
+      `https://gw.example.org/cla-service/v4/cla-group/${CLA_GROUP_ID}/catalogue`,
+      expect.anything()
+    );
+  });
+
+  it('accepts an echo in another spelling of the requested group', async () => {
+    gatewayFetch.mockResolvedValueOnce({ claGroupID: CLA_GROUP_ID.replaceAll('-', '').toUpperCase(), claGroupName: 'Nimbus Foundation CLA' });
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).resolves.toMatchObject({ claGroupName: 'Nimbus Foundation CLA' });
+  });
+
+  // Rendering the answer would name a group the address did not, so it is a failed read rather
+  // than a not-found — the signing hand-off refuses the same echo the same way.
+  it.each([
+    ['a different group', { claGroupID: '0b7e2d14-5c3a-4f19-9e86-1a2b3c4d5e6f', claGroupName: 'Other CLA' }],
+    ['no group', { claGroupName: 'Nimbus Foundation CLA' }],
+  ])('refuses a 200 that names %s', async (_label, body) => {
+    gatewayFetch.mockResolvedValueOnce(body);
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CLA_GROUP_CATALOGUE_MISMATCH',
+    });
+  });
+
+  it('treats an upstream 404 as not found, including a producer route that is not deployed yet', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).resolves.toBeNull();
+  });
+
+  it('rethrows an upstream failure that is not a 404', async () => {
+    const { MicroserviceError } = await import('../errors');
+    gatewayFetch.mockRejectedValueOnce(new MicroserviceError('down', 502, 'UPSTREAM_ERROR', { service: 'cla_service' }));
+
+    await expect(new OrgClaService().getClaGroupCatalogue(req(), CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502 });
   });
 });

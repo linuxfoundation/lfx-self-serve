@@ -217,7 +217,7 @@ export interface HealthMetricsEventsAtAGlancePeriod {
   organizations: number | null;
   speakers: number | null;
   countries: number | null;
-  /** Events held in the period; for YTD that is the events held so far. */
+  /** Events in the period; for YTD that is those held so far plus this year's upcoming ones, which its change compares too. */
   events: number | null;
   pastEvents: number | null;
   /** Attendees over registrations, 0–1; `null` with no registrations, since that rate is undefined. */
@@ -395,6 +395,8 @@ export interface HealthMetricsEventsRevenueView {
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
+  /** `false` when the period lists no event, has no non-zero figure and no unconverted revenue, so it reads as empty. */
+  hasRevenue: boolean;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */

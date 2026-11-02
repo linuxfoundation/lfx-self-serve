@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
-import { VoteReminderRecipient, VoteTableRow } from '@lfx-one/shared/interfaces';
+import { Vote, VoteReminderRecipient } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
@@ -28,7 +28,7 @@ import { finalize, take } from 'rxjs';
   templateUrl: './vote-reminder-dialog.component.html',
 })
 export class VoteReminderDialogComponent {
-  private readonly config = inject<DynamicDialogConfig<{ vote: VoteTableRow }>>(DynamicDialogConfig);
+  private readonly config = inject<DynamicDialogConfig<{ vote: Vote }>>(DynamicDialogConfig);
   private readonly ref = inject(DynamicDialogRef);
   private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);

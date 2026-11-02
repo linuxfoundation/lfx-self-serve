@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The real validation helper's import graph pulls in partially compiled Angular; load the JIT compiler for it.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks. stripHostKey is kept as a spy so we can assert every list item is sanitized;
@@ -226,4 +229,31 @@ describe('UserController — foundation_uid validation on meeting list endpoints
       expect(next).toHaveBeenCalledWith(expect.objectContaining({ name: 'ServiceValidationError' }));
     });
   }
+});
+
+describe('UserController.getUserPastMeetings include param', () => {
+  let controller: UserController;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    controller = new UserController();
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    userSvc.getUserPastMeetings.mockResolvedValue([]);
+    const actual = await vi.importActual<typeof import('../helpers/validation.helper')>('../helpers/validation.helper');
+    getStringQueryParamMock.mockImplementation(actual.getStringQueryParam as never);
+  });
+
+  it.each([
+    [{ include: 'artifacts' }, true],
+    [{ include: 'everything' }, false],
+    [{ include: ['artifacts', 'artifacts'] }, false],
+    [{}, false],
+  ])('passes includeArtifacts for query %j as %s', async (query, includeArtifacts) => {
+    const next = vi.fn();
+
+    await controller.getUserPastMeetings({ query, path: '/api/user/past-meetings', log: {} } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(userSvc.getUserPastMeetings).toHaveBeenCalledWith(expect.anything(), 'user@example.com', undefined, undefined, { includeArtifacts });
+  });
 });

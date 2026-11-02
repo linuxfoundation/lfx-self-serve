@@ -575,6 +575,77 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
     value:
 
+  # Applies the create flow's flight dates to Microsoft Ads: the form sends them as
+  # `microsoftConfig.startDate` / `endDate` ("YYYY-MM-DD", the same keys and format as Meta's), and
+  # campaign-service sets them on the Microsoft ad group.
+  #
+  # A CAPABILITY flag, like BIDDING: "does the DEPLOYED campaign-service understand Microsoft
+  # flight dates?" REQUIRES linuxfoundation/lfx-v2-campaign-service#409 DEPLOYED — v1.0.21 and
+  # earlier drop the unknown keys and create the campaign with NO flight while the job reports
+  # success. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator
+  # does not read the dates either.
+  #
+  # Off (the default), the form sends no Microsoft dates and keeps its warning that Microsoft
+  # campaigns ignore the flight dates, and the create route refuses a request carrying either key
+  # with a 400 rather than dropping it. Turning it back off strands nothing: existing campaigns keep
+  # their flight. Order: deploy campaign-service #409, confirm it, THEN set this. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE:
+    value:
+
+  # Offers X (`twitter-ads`) in the create flow: the Plan picker lets it be chosen and the Implement
+  # tab builds a `twitterConfig` — a daily budget, the flight dates, an authored promoted-only tweet
+  # (never posted to the public timeline) with the brief's registration link appended, an optional
+  # tweet image and, with BIDDING on, a bidding choice. X campaigns are created PAUSED.
+  #
+  # A PRODUCT switch, not a wait for a release: every campaign-service from v1.0.21 creates X
+  # campaigns (`bidding` needs #332, as on every lane; v1.0.21 ignores it). Turning it on is the
+  # decision to let operators create X campaigns. Before it, confirm the project's X connection
+  # carries a funding instrument and the publishing handle (`as_user_id`), and note the wire has no
+  # location targeting: an X campaign created here can serve in every market once enabled. It also
+  # needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator has no X path.
+  #
+  # Off (the default), X stays "Coming soon" in the picker, and the create route refuses a request
+  # that selects `twitter-ads` or carries `twitterConfig` with a 400. The Monitor tab and the
+  # pause-only treatment of adopted X rows are unaffected either way. Turning it back off strands
+  # nothing: X campaigns already created stay listed, monitored and pausable. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE:
+    value:
+
+  # Offers the Meta Instagram account id and the EU Digital Services Act beneficiary/payor in the
+  # create flow, sent as `metaConfig.instagramUserId` / `dsaBeneficiary` / `dsaPayor`. With it on,
+  # the form requires the Instagram id when an Instagram placement is enabled and both disclosures
+  # when an EU or EEA country is targeted, and blocks Create until they are filled in.
+  #
+  # A CAPABILITY flag, like MICROSOFT_SCHEDULE. REQUIRES linuxfoundation/lfx-v2-campaign-service#414
+  # DEPLOYED: that release refuses (400) an EU-targeted Meta create without both disclosures, which
+  # these inputs exist to satisfy. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on.
+  #
+  # Off (the default), the form shows none of the three inputs and sends none of the keys, and the
+  # create route refuses a request carrying any of them with a 400. Turning it back off strands
+  # nothing. Order: deploy campaign-service #414, confirm it, THEN set this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA:
+    value:
+
+  # Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
+  # table: the operator types a postal code or place name, picks a result, and its numeric id is sent
+  # in `googleAdsConfig.geoTargets` exactly as a typed id would be.
+  #
+  # A CAPABILITY flag, like MICROSOFT_SCHEDULE: "does the DEPLOYED campaign-service have
+  # `GET /projects/{project_id}/google-ads/geo-targets`?" REQUIRES
+  # linuxfoundation/lfx-v2-campaign-service#411 RELEASED and DEPLOYED — an older campaign-service has
+  # no such route, so every search would fail. It also needs the create pipeline (CREATE, BRIEFS,
+  # JOBS) on, because postal-code ids reach a campaign on that road only.
+  #
+  # Off (the default), the tab keeps the typed-id box and `GET /api/campaigns/google/geo-targets`
+  # answers 404. Turning it back off strands nothing: ids already picked stay on the draft and are
+  # sent as typed ones are. Order: deploy campaign-service #411, confirm it, THEN set this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH:
+    value:
+
   # Offers an image UPLOAD in the Reddit section of the create flow (decision D3): the operator
   # picks a PNG/JPEG (up to 10 MB), it is stored by campaign-service against the brief, and the
   # create sends its id as `redditConfig.imageAssetId` instead of a pasted `imageUrl`. The pasted
@@ -587,12 +658,92 @@ environment:
   # both, campaign-service refuses every `imageAssetId` with a 400. It also needs the create
   # pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator never reads `imageAssetId`.
   #
-  # Off (the default), the upload control is hidden, the upload route refuses, and a create request
-  # carrying `redditConfig.imageAssetId` is refused with a 400 rather than dropped. Order: configure
-  # campaign-service's signing key and public base URL, confirm it, THEN set this. Same accepted
-  # values as the flags above.
+  # Off (the default), the Reddit upload control is hidden and a create request carrying
+  # `redditConfig.imageAssetId` is refused with a 400 rather than dropped. The shared upload ROUTE
+  # refuses only when GOOGLE_ASSETS below is also off — either flag admits an image into the
+  # brief's one library. Order: configure campaign-service's signing key and public base URL,
+  # confirm it, THEN set this. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
     value:
+
+  # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
+  # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
+  # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
+  # size. A pick is sent as an `{ "imageAssetId": "<id>" }` entry in the slot's own array (e.g.
+  # `demandGenCreative.logoImages`), beside any pasted image URLs.
+  #
+  # A CAPABILITY flag like REDDIT_ASSETS, but it asserts something DIFFERENT. It does NOT say URL
+  # signing is configured: Google's dispatch path reads the stored bytes and POSTs them to the
+  # Google Ads `assets:mutate` endpoint, so no URL ever leaves campaign-service and the signing
+  # settings are irrelevant to it. What it says is that the DEPLOYED campaign-service resolves
+  # Google creative asset ids, which every release from v1.0.21 does (campaign-service #394). It
+  # also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator reads no
+  # creative key either.
+  #
+  # ON in this chart, like META_ASSETS and for the same reason: production runs a campaign-service
+  # from v1.0.21, and nothing has to be configured on it first. Turn it off only for a deployment
+  # pinned to an older campaign-service, which cannot decode an asset entry and would fail the
+  # Google create. Off, the Google library controls are hidden, Create is blocked while a stored
+  # image is still held in a slot, and a create request carrying a Google `imageAssetId` is refused
+  # with a 400 rather than dropped; the pasted image URLs stay offered either way.
+  #
+  # It is a SIBLING of REDDIT_ASSETS rather than a widening of it so the two can ship
+  # independently. It does NOT gate the brief's asset list, get, plan and delete routes — those are
+  # addressed by a campaign-service brief and gate on BRIEFS like every other brief route, so a
+  # deployment can always see and prune the library it already holds. Same accepted values as the
+  # flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS:
+    value: "true"
+
+  # Offers a PNG/JPEG image upload in the Meta section of the create flow, sent as
+  # `metaConfig.variants[].imageAssetId` (the same image on every ad) instead of a pasted image URL.
+  #
+  # A CAPABILITY flag like GOOGLE_ASSETS, asserting the same kind of thing: no URL signing is
+  # involved, because Meta's dispatch path reads the stored bytes and uploads them to the ad
+  # account's image library. What it says is that the DEPLOYED campaign-service resolves Meta asset
+  # ids, which every release from v1.0.21 does. It also needs the create pipeline (CREATE, BRIEFS,
+  # JOBS) on, because the legacy creator reads no Meta image.
+  #
+  # ON in this chart, like GOOGLE_ASSETS and unlike REDDIT_ASSETS, because nothing has to be
+  # configured on campaign-service first. Off, the Meta upload control is hidden and a create request carrying a Meta
+  # `imageAssetId` is refused with a 400 rather than dropped; the pasted image URL stays offered.
+  # Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS:
+    value: "true"
+
+  # Offers a PNG/JPEG image upload in the LinkedIn section of the create flow, sent as
+  # `linkedInConfig.variants[].imageAssetId` (the same image on every variant), which becomes each
+  # dark post's article thumbnail. LinkedIn takes no image URL, so this is its only image control.
+  #
+  # A CAPABILITY flag like META_ASSETS: no URL signing is involved, because LinkedIn's dispatch path
+  # reads the stored bytes and uploads them through LinkedIn's Images API. What it says is that the
+  # DEPLOYED campaign-service resolves LinkedIn asset ids, which every release from v1.0.21 does. It
+  # also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator reads no
+  # `imageAssetId`.
+  #
+  # ON in this chart, like META_ASSETS, because nothing has to be configured on campaign-service
+  # first. Off, the LinkedIn upload control is hidden and a create request carrying a LinkedIn
+  # `imageAssetId` is refused with a 400 rather than dropped. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
+    value: "true"
+
+  # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
+  # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
+  # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the
+  # shared 10 MB upload cap, so the Implement tab checks the size before uploading.
+  #
+  # A CAPABILITY flag like META_ASSETS: no URL signing is involved, because Microsoft's dispatch path
+  # reads the stored bytes and uploads them to the ad account's media library. What it says is that
+  # the DEPLOYED campaign-service resolves Microsoft asset ids, which every release from v1.0.21
+  # does. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator
+  # reads no `imageAssetId`.
+  #
+  # ON in this chart, like META_ASSETS, because nothing has to be configured on campaign-service
+  # first. Off, the Microsoft upload control is hidden and a create request carrying
+  # `microsoftConfig.imageAssetId` is refused with a 400 rather than dropped. Same accepted values as
+  # the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS:
+    value: "true"
 
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
@@ -919,6 +1070,13 @@ environment:
 
   AI_PROXY_URL:
     value:
+
+  # Model sent to the LiteLLM proxy. Must be a short name the proxy publishes in its model_list
+  # (lfit-litellm.yaml), never a Bedrock id. Swapping it is a values change, not a release; the
+  # server decides at runtime whether to send temperature (Claude Opus 4.7+, any 5-series model and
+  # unknown names get none). Keep equal to AI_MODEL in packages/shared/src/constants/ai.constants.ts.
+  AI_MODEL:
+    value: "claude-sonnet-4-5"
 
   AI_API_KEY:
     value:

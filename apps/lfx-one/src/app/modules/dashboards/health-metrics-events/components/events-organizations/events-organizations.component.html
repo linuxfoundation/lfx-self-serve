@@ -10,14 +10,7 @@
       title="Organizations at events unavailable"
       subtitle="We could not load the organizations at this foundation's events. Refresh the page to try again."
       data-testid="events-orgs-error" />
-  } @else if (!loading() && !scopeTotal()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No organizations at events this period"
-      subtitle="No organization registered, sponsored, proposed or spoke at this foundation's events in the selected period."
-      data-testid="events-orgs-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
       <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">

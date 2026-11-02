@@ -76,6 +76,8 @@ import {
   MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE,
+  MENTORSHIP_TASK_FILE_VIEW_TYPES,
   MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
@@ -99,6 +101,7 @@ import type {
   MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
+  MentorshipPublicPage,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
@@ -220,15 +223,20 @@ export function isMentorshipHttpUrl(value: string): boolean {
 }
 
 /**
- * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
-export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPage, id?: string): string {
   // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
   let end = base.length;
   while (end > 0 && base[end - 1] === '/') end--;
-  const programs = `${base.slice(0, end)}/programs`;
-  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+  const listing = `${base.slice(0, end)}/${page}`;
+  return id ? `${listing}/${encodeURIComponent(id)}` : listing;
+}
+
+/** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  return buildMentorshipPublicUrl(base, 'programs', programId);
 }
 
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
@@ -1528,6 +1536,20 @@ export function hasMentorshipTaskFileExtension(fileName: string): boolean {
 }
 
 /**
+ * The type a downloaded task file is opened as in a browser tab, or null when browsers cannot show it (DOC, DOCX, or
+ * anything unknown). A specific response type decides; a missing or generic one leaves it to the file name's extension.
+ * Only the map's own keys match, so a type such as `constructor` cannot pick up an inherited value.
+ */
+export function mentorshipTaskFileViewType(contentType: string | null | undefined, fileName: string | null | undefined): string | null {
+  const viewTypeOf = (key: string): string | null => (Object.hasOwn(MENTORSHIP_TASK_FILE_VIEW_TYPES, key) ? MENTORSHIP_TASK_FILE_VIEW_TYPES[key] : null);
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return viewTypeOf(type);
+  const dot = fileName?.lastIndexOf('.') ?? -1;
+  if (!fileName || dot === -1) return null;
+  return viewTypeOf(fileName.slice(dot).toLowerCase());
+}
+
+/**
  * A task file's name made safe to write into the multipart `Content-Disposition` the BFF sends upstream: path
  * separators, quotes and control characters become `_`, and a run of dots becomes one, so the result passes
  * `isSafeUploadFileName`. Upstream cleans the name further, to `[A-Za-z0-9._-]`, so nothing a mentee picked is refused here.
@@ -1630,6 +1652,7 @@ export function buildMentorshipMenteeApplicationView(
   const totalCount = tasks.length;
   return {
     id: app.id,
+    programId: app.programId,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
@@ -1643,7 +1666,6 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
     tasks: tasks
       .map((task) =>
         buildMentorshipMenteeTaskView(
@@ -1683,6 +1705,7 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     if (outcome) {
       past.push({
         id: app.id,
+        programId: app.programId,
         programName: app.programName,
         projectName: app.projectName,
         termName: app.term.name,

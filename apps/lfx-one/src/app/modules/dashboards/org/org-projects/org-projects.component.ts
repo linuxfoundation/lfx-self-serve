@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -12,6 +12,7 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  DEFAULT_ORG_SCOPE,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
   INFLUENCE_BAND_BAR_FILL_CLASS,
@@ -26,6 +27,8 @@ import {
   ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  ORG_SCOPE_PROJECTS_NOTE,
+  ORG_SCOPE_QUERY_PARAM,
   PD_CONTRIBUTORS_CARD_KEY,
   PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
@@ -45,6 +48,7 @@ import type {
   OrgProjectsTableRow,
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
+  OrgScopeFilter,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
 import { buildHealthAriaLabel, downloadCsv, formatHealthLabel, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
@@ -53,7 +57,7 @@ import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -63,6 +67,8 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
@@ -74,6 +80,8 @@ import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
 type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
@@ -92,6 +100,8 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
     MenuComponent,
     MultiSelectComponent,
     OrgLensEmptyStateComponent,
+    MoreFiltersToggleComponent,
+    OrgScopeSelectComponent,
     PopoverModule,
     RouterLink,
     SelectComponent,
@@ -113,13 +123,14 @@ export class OrgProjectsComponent {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
-  protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
   /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
   protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
+  protected readonly orgScopeNote = ORG_SCOPE_PROJECTS_NOTE;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -135,6 +146,10 @@ export class OrgProjectsComponent {
   protected readonly filterForm = new FormGroup({
     foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, { nonNullable: true }),
     employees: new FormControl<string[]>(this.readEmployeesFromUrl(), { nonNullable: true }),
+  });
+  /** Organization scope (lfx-self-serve-ops#1219): only the contributors column follows it. */
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
   });
   /** Name field for the add / rename workspace dialog. */
   protected readonly workspaceForm = new FormGroup({
@@ -179,13 +194,30 @@ export class OrgProjectsComponent {
   private readonly workspaceReload = signal(0);
   private addableProjectsSearchRequestId = 0;
   private addableProjectsSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last name each employee id was listed under, so a selected id the current projects don't list keeps its label. */
+  private readonly employeeLabels = new Map<string, string>();
+  /** Set while `resetFilters` resets the form, so its single navigation is the only URL write. */
+  private resettingFilters = false;
   /** Action menu items rebuilt per row when the kebab is opened. */
   protected rowMenuItems: MenuItem[] = [];
 
   // Computed / toSignal
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly formValue = toSignal(this.filterForm.valueChanges, { initialValue: this.filterForm.getRawValue() });
+  private readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
+    initialValue: this.scopeForm.controls.orgScope.value,
+  });
+  // The organization scope sits behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted
+  // while not at its default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => (this.orgScope() !== DEFAULT_ORG_SCOPE ? 1 : 0));
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
+  /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
+  protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
+  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() => ({
+    ...this.projectDetailQueryParams(),
+    [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
+  }));
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -210,6 +242,7 @@ export class OrgProjectsComponent {
   protected readonly selectedWorkspaceName = computed<string>(() => this.selectedWorkspace()?.name ?? '');
   private readonly workspacesResponse = this.initWorkspaces();
   private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
+  protected readonly maintainerRolesUnavailable = computed<boolean>(() => this.response()?.maintainerRolesUnavailable === true);
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 
@@ -280,17 +313,15 @@ export class OrgProjectsComponent {
   );
 
   public constructor() {
+    // A pick changes which projects an Employees filter matches, so it starts again on page 1, as the filters do.
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      void this.router.navigate([], {
-        relativeTo: this.route,
-        queryParams: {
-          foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
-          employees: value.employees && value.employees.length ? value.employees.join(',') : null,
-          page: null,
-        },
-        queryParamsHandling: 'merge',
-        replaceUrl: true,
+      if (this.resettingFilters) return;
+      this.writeQueryParams({
+        foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
+        employees: value.employees && value.employees.length ? value.employees.join(',') : null,
+        page: null,
       });
     });
 
@@ -304,6 +335,18 @@ export class OrgProjectsComponent {
       this.editingWorkspace.set(null);
     });
 
+    // The selection came from the previous org's roster, so a change between two resolved orgs (a switch, or Back /
+    // Forward across one) clears it; the switch navigation strips `?employees=` too. The first org resolving
+    // (null → uid) must keep a deep-linked selection.
+    this.orgUid$
+      .pipe(
+        filter((uid) => uid !== null),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.employees.setValue([]));
+
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value.name?.trim()) {
         this.workspaceNameError.set(null);
@@ -311,7 +354,7 @@ export class OrgProjectsComponent {
     });
 
     // Clear pending debounce timer on teardown.
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
       }
@@ -352,9 +395,13 @@ export class OrgProjectsComponent {
     });
   }
 
+  /** One navigation clears every filter, the organization scope and the workspace, so no write can restore another's pre-reset params. */
   protected resetFilters(): void {
+    this.resettingFilters = true;
     this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
-    this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
+    this.resettingFilters = false;
+    // The organization scope too, hidden behind "More filters" or not (lfx-self-serve#4735); the URL sync resets its picker.
+    this.writeQueryParams({ foundation: null, employees: null, workspace: null, page: null, [ORG_SCOPE_QUERY_PARAM]: null });
   }
 
   protected openAddProjects(): void {
@@ -737,12 +784,13 @@ export class OrgProjectsComponent {
         workspaceError: this.workspaceError(),
         workspaceLoading: this.workspaceLoading(),
         _workspaces: this.workspacesResponse(),
+        orgScope: this.orgScope(),
         _reload: this.reload(),
       }))
     );
     return toSignal(
       account$.pipe(
-        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces }) => {
+        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces, orgScope }) => {
           if (!account?.uid || !workspace || workspaceError || workspaceLoading || _workspaces === null) {
             this.projectsLoading.set(false);
             return of(null);
@@ -756,7 +804,14 @@ export class OrgProjectsComponent {
           this.projectsError.set(false);
           return concat(
             of(null),
-            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs, orgScope).pipe(
+              tap((response) => {
+                for (const project of response.projects) {
+                  for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+                    this.employeeLabels.set(person.id, person.name);
+                  }
+                }
+              }),
               catchError((err) => {
                 console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
@@ -985,14 +1040,20 @@ export class OrgProjectsComponent {
         byId.set(person.id, person.name);
       }
     }
-    return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    const options = [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    // A selected id no project here lists (stale link, other workspace) stays offered so the picker can show and remove it.
+    for (const id of new Set(this.formValue().employees ?? [])) {
+      if (!byId.has(id)) options.push({ value: id, label: this.employeeLabels.get(id) ?? id });
+    }
+    return options;
   }
 
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
-    const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
-    const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
+    // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
+    // predicate and match nothing, so a selection never widens the list or the CSV export.
+    const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
@@ -1183,5 +1244,12 @@ export class OrgProjectsComponent {
   private readEmployeesFromUrl(): string[] {
     const raw = this.route.snapshot.queryParamMap.get('employees');
     return raw ? raw.split(',').filter(Boolean) : [];
+  }
+
+  /** Merges `queryParams` into the URL once no other navigation (an org switch swapping the path) is in flight. */
+  private writeQueryParams(queryParams: Params): void {
+    runWhenRouterIdle(this.router, this.destroyRef, () => {
+      void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+    });
   }
 }

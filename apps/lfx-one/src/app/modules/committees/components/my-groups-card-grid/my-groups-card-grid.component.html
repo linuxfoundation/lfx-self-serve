@@ -40,7 +40,7 @@
             <a
               [routerLink]="item.viewCommands"
               [queryParams]="item.viewQueryParams"
-              [state]="{ backLabel: 'My Groups', fromMeLens: true }"
+              [state]="{ backLabel: 'Groups', fromMeLens: true }"
               class="text-gray-900 hover:text-blue-600 no-underline rounded focus-visible:outline-2 focus-visible:outline-blue-500"
               [attr.data-testid]="'groups-card-grid-title-' + item.committee.uid">
               {{ item.committee.name || 'Group' }}
@@ -97,7 +97,7 @@
             <a
               [routerLink]="mlLink.commands"
               [queryParams]="mlLink.queryParams"
-              [state]="mlLink.target === 'group' ? { backLabel: 'My Groups', fromMeLens: true } : undefined"
+              [state]="mlLink.target === 'group' ? { backLabel: 'Groups', fromMeLens: true } : undefined"
               class="text-blue-600 rounded focus-visible:outline-2 focus-visible:outline-blue-500"
               [attr.aria-label]="item.mailingListAriaLabel"
               [attr.data-testid]="'groups-card-grid-mailing-list-link-' + item.committee.uid"

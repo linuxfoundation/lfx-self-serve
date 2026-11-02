@@ -30,6 +30,7 @@ import {
   mentorshipPersonInitials,
 } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { startWith, tap } from 'rxjs';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
@@ -42,7 +43,15 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
  */
 @Component({
   selector: 'lfx-mentorship-mentor-applicants-tab',
-  imports: [ReactiveFormsModule, ApplicantTasksPanelComponent, ButtonComponent, InputTextComponent, PersonCellComponent, TableComponent],
+  imports: [
+    ReactiveFormsModule,
+    ApplicantTasksPanelComponent,
+    ButtonComponent,
+    InputTextComponent,
+    PersonCellComponent,
+    TableComponent,
+    MentorshipPublicUrlPipe,
+  ],
   templateUrl: './mentor-applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -72,13 +72,15 @@ vi.mock('./logger.service', () => ({
 // `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
 // cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn().mockImplementation(() => ({
-    getCodec: () => ({
-      encode: (v: string) => v,
-      decode: (v: unknown) => v as string,
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn().mockImplementation(function () {
+    return {
+      getCodec: () => ({
+        encode: (v: string) => v,
+        decode: (v: unknown) => v as string,
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 
 const { FormationService } = await import('./formation.service');

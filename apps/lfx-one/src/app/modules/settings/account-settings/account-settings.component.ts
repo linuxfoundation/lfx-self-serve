@@ -12,7 +12,19 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, INSIGHTS_PUBLIC_API_FLAG, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_SETTINGS_SECTIONS,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  INSIGHTS_PUBLIC_API_FLAG,
+  PROFILE_EMAILS_PATH,
+} from '@lfx-one/shared/constants';
 import { emailsEqual } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
@@ -85,6 +97,13 @@ export class AccountSettingsComponent {
   // ── Resend cooldown ──
   private resendCooldownUtil = useResendCooldown(this.destroyRef);
   public resendCooldown = this.resendCooldownUtil.cooldown;
+  // Resends sent for the pending address; once it reaches the threshold, Resend gives way to Contact support.
+  public resendCount = signal(0);
+  public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
+  public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
+  public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
+  public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   // ── TOC active section ──
   private static readonly sectionIds = [
@@ -309,11 +328,16 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
 
   public sendVerificationCode(): void {
-    if (this.addEmailForm.invalid) {
+    if (this.addEmailForm.invalid || this.sendingCode()) {
       return;
     }
 
     const email = this.addEmailForm.value.email!;
+    const isResend = this.otpStep();
+    if (isResend && (this.resendCooldown() > 0 || this.showResendSupport())) {
+      return;
+    }
+
     this.sendingCode.set(true);
 
     this.userService
@@ -324,16 +348,18 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.pendingEmail.set(email);
             this.otpStep.set(true);
+            this.resendCount.set(isResend ? this.resendCount() + 1 : 0);
             this.resendCooldownUtil.start();
           } else {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.message || 'Failed to send verification code' });
+            const detail = isResend ? EMAIL_RESEND_FAILED_MESSAGE : response.message || 'Failed to send verification code';
+            this.messageService.add({ severity: 'error', summary: 'Error', detail });
           }
         },
         error: (error) => {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: error.error?.message || error.error?.error || 'Failed to send verification code',
+            detail: isResend ? EMAIL_RESEND_FAILED_MESSAGE : error.error?.message || error.error?.error || 'Failed to send verification code',
           });
         },
       });
@@ -355,7 +381,9 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.cancelOtpStep();
             this.emailRefresh.next();
-            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+            // An address already connected to this account was not added — don't claim it was.
+            const detail = response.status === EMAIL_ALREADY_CONNECTED_STATUS ? EMAIL_ALREADY_CONNECTED_MESSAGE : 'Email address added successfully';
+            this.messageService.add({ severity: 'success', summary: 'Success', detail });
           } else {
             this.messageService.add({
               severity: 'error',
@@ -374,11 +402,20 @@ export class AccountSettingsComponent {
       });
   }
 
+  public changeEmail(): void {
+    if (this.sendingCode() || this.verifyingOtp()) {
+      return;
+    }
+
+    this.cancelOtpStep();
+  }
+
   public cancelOtpStep(): void {
     this.otpStep.set(false);
     this.pendingEmail.set('');
     this.addEmailForm.reset();
     this.otpForm.reset();
+    this.resendCount.set(0);
     this.resendCooldownUtil.clear();
   }
 

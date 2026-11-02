@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request } from 'express';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LfxAccessTokenClaims, User } from '@lfx-one/shared/interfaces';
 
@@ -18,6 +18,7 @@ import {
   hasActiveImpersonation,
   hasActiveImpersonationSession,
   isImpersonating,
+  refreshExpiredSsrAccessToken,
   resolveAuditUserDisplayName,
   resolveRealAccessToken,
   resolveUserIdentity,
@@ -484,5 +485,73 @@ describe('resolveUserIdentity', () => {
   it('drops an unverified session email but keeps the username', async () => {
     const req = buildReq({ oidc: { email: 'invitee@example.com', email_verified: false, [LF_USERNAME_CLAIM]: 'auth0|someuser' } });
     await expect(resolveUserIdentity(req)).resolves.toEqual({ email: null, username: 'someuser' });
+  });
+});
+
+describe('refreshExpiredSsrAccessToken', () => {
+  // GH-4179 regression coverage: the SSR handler must refresh an expired access token for an
+  // otherwise-valid session before deciding `authenticated`, the same way auth.middleware.ts
+  // already does for API routes. Without this, an idle session with a valid refresh token still
+  // renders as signed-out, `FeatureFlagService.initialize()` never runs client-side, and
+  // LaunchDarkly stays on its anonymous bootstrap context until a `/login` round-trip.
+  function buildReqWithAccessToken(opts: { authenticated: boolean; isExpired?: () => boolean; refresh?: () => Promise<unknown> }): Request {
+    return {
+      path: '/mentorship',
+      log: { warn: vi.fn() },
+      oidc: opts.authenticated
+        ? {
+            isAuthenticated: () => true,
+            accessToken: opts.isExpired ? { isExpired: opts.isExpired, refresh: opts.refresh } : undefined,
+          }
+        : { isAuthenticated: () => false },
+    } as unknown as Request;
+  }
+
+  it('refreshes the token when the session is authenticated and the access token is expired, flipping isExpired() for the caller', async () => {
+    // isExpired() is stateful here (true until refresh() resolves) to mirror express-openid-connect's
+    // real behavior: refresh() rewrites the session TokenSet, so the caller's post-refresh
+    // `isExpired()` check — the one that actually decides `authenticated` in server.ts — sees false.
+    let expired = true;
+    const refresh = vi.fn().mockImplementation(async () => {
+      expired = false;
+      return { access_token: 'refreshed-token' };
+    });
+    const req = buildReqWithAccessToken({ authenticated: true, isExpired: () => expired, refresh });
+    await refreshExpiredSsrAccessToken(req);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(req.oidc?.accessToken?.isExpired()).toBe(false);
+  });
+
+  it('does not refresh when the access token is not expired', async () => {
+    const refresh = vi.fn().mockResolvedValue({ access_token: 'unused' });
+    const req = buildReqWithAccessToken({ authenticated: true, isExpired: () => false, refresh });
+    await refreshExpiredSsrAccessToken(req);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh when there is no authenticated session at all, even if an access token is present', async () => {
+    // The access token and refresh spy are present so this test can't pass by vacuous truth (no
+    // token to refresh) — it only passes because `isAuthenticated()` is checked first.
+    const refresh = vi.fn().mockResolvedValue({ access_token: 'unused' });
+    const req = { oidc: { isAuthenticated: () => false, accessToken: { isExpired: () => true, refresh } } } as unknown as Request;
+    await expect(refreshExpiredSsrAccessToken(req)).resolves.toBeUndefined();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh when authenticated but there is no access token on the session', async () => {
+    const req = { oidc: { isAuthenticated: () => true, accessToken: undefined } } as unknown as Request;
+    await expect(refreshExpiredSsrAccessToken(req)).resolves.toBeUndefined();
+  });
+
+  it('logs and swallows a failed refresh instead of throwing, so the caller falls through to signed-out', async () => {
+    const refresh = vi.fn().mockRejectedValue(new Error('refresh failed'));
+    const req = buildReqWithAccessToken({ authenticated: true, isExpired: () => true, refresh });
+    await expect(refreshExpiredSsrAccessToken(req)).resolves.toBeUndefined();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(req.log.warn).toHaveBeenCalledTimes(1);
+    expect(req.log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'ssr_token_refresh', data: expect.objectContaining({ failure_reason: 'token_refresh_failed' }) }),
+      expect.any(String)
+    );
   });
 });

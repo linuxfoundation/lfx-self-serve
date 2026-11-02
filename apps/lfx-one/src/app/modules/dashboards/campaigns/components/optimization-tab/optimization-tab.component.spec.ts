@@ -2224,6 +2224,248 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
 
   const q = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
 
+  /**
+   * The campaign-service Google read (#4526) can return rows it could not read or pace, with zero
+   * placeholders: an unread row must not rank as a 0% CTR, and unknown pacing must not read as 0%.
+   */
+  it('leaves unread display campaigns out and shows unknown pacing as Unknown', () => {
+    fixture.detectChanges();
+    const display = (campaignId: string, overrides: Record<string, unknown>): Record<string, unknown> => ({
+      name: campaignId,
+      shortName: campaignId,
+      eventName: 'KubeCon',
+      adFormat: 'Display',
+      targeting: 'Global',
+      status: 'enabled',
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      budgetDay: 100,
+      totalBudget: 3000,
+      spend: 25,
+      impressions: 1000,
+      clicks: 40,
+      ctr: 4,
+      avgCpc: 0.625,
+      conversions: 1,
+      pacingPct: 50,
+      pacingLabel: 'normal',
+      campaignId,
+      googleAdsUrl: '',
+      ...overrides,
+    });
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void };
+      displayCampaigns: () => { campaignId: string; displayPacingPct: number; displayPacingText: string }[];
+    };
+    instance.monitorData.set({
+      pulledAt: '2026-08-30T00:00:00.000Z',
+      dateRange: { mode: 'last_30_days' },
+      campaigns: [
+        display('read', { pacingPct: 120 }),
+        display('unread', { fetchFailed: true, ctr: 0, pacingPct: 0 }),
+        display('unpaced', { pacingUnknown: true, pacingPct: 0, ctr: 5 }),
+      ],
+      accountTotals: { budgetDay: 300, impressions: 3000, clicks: 120, spend: 75, conversions: 3 },
+      actionItems: [],
+    });
+
+    expect(instance.displayCampaigns().map((c) => [c.campaignId, c.displayPacingPct, c.displayPacingText])).toEqual([
+      ['read', 100, '120%'],
+      ['unpaced', 0, 'Unknown'],
+    ]);
+  });
+
+  function renderGoogle(campaigns: Record<string, unknown>[]): void {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), campaigns, actionItems: [] });
+    fixture.detectChanges();
+  }
+
+  const googleRow = (campaignId: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    name: campaignId,
+    shortName: campaignId,
+    eventName: 'KubeCon',
+    adFormat: 'Display',
+    targeting: 'Global',
+    status: 'enabled',
+    startDate: '2026-08-01',
+    endDate: '2026-08-30',
+    budgetDay: 100,
+    totalBudget: 3000,
+    spend: 25,
+    impressions: 1000,
+    clicks: 40,
+    ctr: 4,
+    avgCpc: 0.625,
+    conversions: 0,
+    pacingPct: 50,
+    pacingLabel: 'normal',
+    campaignId,
+    googleAdsUrl: '',
+    ...overrides,
+  });
+
+  /** campaign-service raises no item for an unread campaign, so "no items" is not an all-clear while one exists. */
+  it('replaces the all-clear with an incomplete-check notice when a campaign could not be read', () => {
+    renderGoogle([googleRow('read'), googleRow('unread', { fetchFailed: true })]);
+
+    expect(q('optimization-no-actions')).toBeNull();
+    expect(q('optimization-actions-incomplete')?.textContent).toContain('1 of 2 campaigns could not be read');
+  });
+
+  it('keeps the all-clear when every campaign was read', () => {
+    renderGoogle([googleRow('read')]);
+
+    expect(q('optimization-no-actions')).not.toBeNull();
+    expect(q('optimization-actions-incomplete')).toBeNull();
+  });
+
+  it('shows unmeasured conversions as Not measured, and a measured zero still in red', () => {
+    renderGoogle([googleRow('measured', { ctr: 1 }), googleRow('unmeasured', { ctr: 2, conversionsMeasured: false })]);
+    const cells = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('td')).map((cell) => cell as HTMLElement);
+    const notMeasured = cells.find((cell) => cell.textContent?.trim() === 'Not measured');
+    const redZero = cells.find((cell) => cell.textContent?.trim() === '0' && cell.className.includes('text-red-600'));
+
+    expect(notMeasured).toBeDefined();
+    expect(notMeasured?.className).not.toContain('text-red-600');
+    expect(redZero).toBeDefined();
+  });
+
+  /** An item whose campaign campaign-service could not pace carries a 0 placeholder; it must not read as a red 0%. */
+  it('shows an action item with unknown pacing as Unknown, and a measured one as its percentage', () => {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void; (): Record<string, unknown> | null } };
+    const item = (pacingPct: number, pacingUnknown?: boolean): Record<string, unknown> => ({
+      eventName: 'KubeCon',
+      campaigns: ['KubeCon'],
+      campaignUrls: {},
+      priority: 'HIGH',
+      issue: 'Budget is $0.00/day',
+      action: 'Set a real daily budget',
+      metrics: { spend: 0, budget: 0, pacingPct, impressions: 0, clicks: 0, conversions: 0, ...(pacingUnknown === undefined ? {} : { pacingUnknown }) },
+    });
+    instance.monitorData.set({ ...(instance.monitorData() ?? {}), actionItems: [item(0, true), item(42)] });
+    fixture.detectChanges();
+
+    const pacingCell = (i: number): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="action-item-row-${i}"] td:last-child span`);
+    expect(pacingCell(0)?.textContent?.trim()).toBe('Unknown');
+    expect(pacingCell(0)?.className).not.toContain('text-red-600');
+    expect(pacingCell(1)?.textContent?.trim()).toBe('42%');
+    expect(pacingCell(1)?.className).toContain('text-red-600');
+  });
+
+  /**
+   * campaign-service's Google amounts are the connected account's own, unnamed currency (#4807). One
+   * fixture exercises every changed binding: the action item, a display campaign, a wasted-spend
+   * keyword and a low-quality keyword, each with a recognisable amount.
+   */
+  function renderGoogleAmounts(inAccountCurrency: boolean): void {
+    renderKeywords(false);
+    const instance = fixture.componentInstance as unknown as {
+      monitorData: { set(v: unknown): void; (): Record<string, unknown> | null };
+      keywordsData: { set(v: unknown): void; (): Record<string, unknown> | null };
+    };
+    const keyword = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      keyword: 'kw',
+      matchType: 'PHRASE',
+      qualityScore: 8,
+      status: 'ENABLED',
+      adGroup: 'AG',
+      adGroupId: '1',
+      criterionId: '2',
+      campaign: 'C',
+      campaignId: '555',
+      googleAdsUrl: '',
+      impressions: 100,
+      clicks: 10,
+      ctr: 10,
+      avgCpc: 3.25,
+      spend: 0,
+      conversions: 1,
+      ...overrides,
+    });
+    instance.monitorData.set({
+      ...(instance.monitorData() ?? {}),
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      campaigns: [
+        {
+          name: 'D',
+          shortName: 'D',
+          eventName: 'KubeCon',
+          adFormat: 'Display',
+          targeting: 'Global',
+          status: 'enabled',
+          startDate: '2026-08-01',
+          endDate: '2026-08-30',
+          budgetDay: 100,
+          totalBudget: 3000,
+          spend: 2222.5,
+          impressions: 1000,
+          clicks: 40,
+          ctr: 4,
+          avgCpc: 0.625,
+          conversions: 1,
+          pacingPct: 50,
+          pacingLabel: 'normal',
+          campaignId: '777',
+          googleAdsUrl: '',
+        },
+      ],
+      actionItems: [
+        {
+          eventName: 'KubeCon',
+          campaigns: ['KubeCon'],
+          campaignUrls: {},
+          priority: 'MED',
+          issue: 'Underspending',
+          action: 'Broaden targeting',
+          metrics: { spend: 1234.5, budget: 100, pacingPct: 40, impressions: 1, clicks: 1, conversions: 0 },
+        },
+      ],
+    });
+    instance.keywordsData.set({
+      ...(instance.keywordsData() ?? {}),
+      ...(inAccountCurrency ? { amountsInAccountCurrency: true } : {}),
+      keywords: [
+        keyword({ keyword: 'wasted', criterionId: '3', spend: 3333.5, conversions: 0 }),
+        keyword({ keyword: 'weak', criterionId: '4', qualityScore: 3, spend: 4444.5 }),
+      ],
+    });
+    fixture.detectChanges();
+  }
+
+  const cellText = (id: string): string => q(id)?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+  it("prints a connected account's Google amounts without a dollar sign on every table, and says so", () => {
+    renderGoogleAmounts(true);
+
+    expect(cellText('action-item-row-0')).toContain('1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3,333.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('3.25');
+    expect(cellText('optimization-low-quality-row-0')).toContain('4,444.50');
+    for (const id of ['action-item-row-0', 'optimization-display-row-0', 'optimization-wasted-keyword-row-0', 'optimization-low-quality-row-0']) {
+      expect(cellText(id), id).not.toContain('$');
+    }
+    // The action-item note covers the issue text too, whose amounts campaign-service formats itself.
+    expect(cellText('optimization-google-currency-note-actions')).toContain('the amounts in each issue');
+    expect(q('optimization-google-currency-note-display')).not.toBeNull();
+    expect(q('optimization-keyword-currency-note')).not.toBeNull();
+  });
+
+  it("keeps the legacy read's dollar amounts on every table, with no currency notes", () => {
+    renderGoogleAmounts(false);
+
+    expect(cellText('action-item-row-0')).toContain('$1,234.50');
+    expect(cellText('optimization-display-row-0')).toContain('$2,222.50');
+    expect(cellText('optimization-wasted-keyword-row-0')).toContain('$3,333.50');
+    expect(cellText('optimization-low-quality-row-0')).toContain('$4,444.50');
+    expect(q('optimization-google-currency-note-actions')).toBeNull();
+    expect(q('optimization-google-currency-note-display')).toBeNull();
+    expect(q('optimization-keyword-currency-note')).toBeNull();
+  });
+
   it('does not claim ALL keywords are clean when the set was capped', () => {
     renderKeywords(true);
 
@@ -3822,6 +4064,37 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
   });
 
+  // The table's "Add as negative" writes through the same lever as the row's editor, so it is offered
+  // for exactly the Reddit rows whose editor is available, and never for a Reddit id two rows share.
+  it('hands the Reddit keyword table the brief and the Reddit campaigns that take negatives now', () => {
+    render([
+      doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-2', platform: 'reddit-ads', platform_campaign_id: 't3_del', status: 'deleted' }),
+      doc({ id: 'c-3', platform: 'reddit-ads', platform_campaign_id: undefined }),
+      doc({ id: 'c-4', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-5', platform: 'reddit-ads', platform_campaign_id: 't3_dup' }),
+      doc({ id: 'c-6', platform: 'microsoft-ads', platform_campaign_id: '99' }),
+    ]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.briefId()).toBe('b-1');
+    expect(table.negativeTargets()).toEqual({ t3_abc: { campaignId: 'c-1', campaignName: 'Reddit one' } });
+  });
+
+  // Unknown is not empty: a list still loading hands the table `null`, which a pending add waits out.
+  // A FAILED list read ends nothing on its own, so it hands `{}` and the add stops, saying so.
+  it('hands the Reddit keyword table null while the campaign list loads, and no targets once it fails', () => {
+    fixture.componentRef.setInput('briefCampaigns', null);
+    fixture.componentRef.setInput('campaignsUnavailable', false);
+    fixture.detectChanges();
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.negativeTargets()).toBeNull();
+
+    fixture.componentRef.setInput('campaignsUnavailable', true);
+    fixture.detectChanges();
+    expect(table.negativeTargets()).toEqual({});
+  });
+
   // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
   it('holds the keyword-targeting panel open while its removal is in flight', () => {
     const pending = new Subject<unknown>();
@@ -5127,6 +5400,18 @@ describe('OptimizationTabComponent — shared Google Ads account restriction', (
 
     expect(el('optimization-error')).not.toBeNull();
     expect(el('optimization-restricted')).toBeNull();
+    expect(el('optimization-retry')).not.toBeNull();
+  });
+
+  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
+  it('offers no Retry when the Google read is refused for the caller role', () => {
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('optimization-error')?.textContent).toContain("campaign-service refused to read this project's Google Ads connection.");
+    expect(el('optimization-retry')).toBeNull();
   });
 
   it('clears cached Google monitor data after a refusal so a pending retry shows loading', () => {

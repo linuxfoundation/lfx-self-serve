@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -198,9 +199,11 @@ export class UserController {
    * Returns past meetings the user has direct FGA access to (host, invitee, attendee, organizer), optionally filtered by project
    * @query projectUid - Optional project UID to filter meetings
    * @query foundation_uid - Optional foundation UID to filter meetings (OR across child projects)
+   * @query include - Optional; `artifacts` adds `has_recording` / `has_ai_summary`, other values are ignored
    */
   public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
+    const includeArtifacts = getStringQueryParam(req, 'include') === USER_PAST_MEETINGS_INCLUDE_ARTIFACTS;
     const foundationUidParam = req.query['foundation_uid'];
     if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_past_meetings' })) {
       return;
@@ -210,6 +213,7 @@ export class UserController {
     const startTime = logger.startOperation(req, 'get_user_past_meetings', {
       project_uid: projectUid,
       foundation_uid: foundationUid,
+      include_artifacts: includeArtifacts,
     });
 
     try {
@@ -227,7 +231,7 @@ export class UserController {
       }
 
       // Get user's past meetings from service
-      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, foundationUid);
+      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, foundationUid, { includeArtifacts });
 
       // Past meetings never surface the Zoom host key.
       pastMeetings.forEach((meeting) => stripHostKey(meeting));

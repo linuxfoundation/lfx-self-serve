@@ -15,12 +15,14 @@ const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger 
 // The strict variants answer from the same stubs (a stub that rejects stands in for an upstream
 // failure), so tests read the same either way; only the service's handling of a rejection differs.
 vi.mock('./access-check.service', () => ({
-  AccessCheckService: vi.fn().mockImplementation(() => ({
-    checkSingleAccess,
-    checkAccess,
-    checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
-    checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
-  })),
+  AccessCheckService: vi.fn().mockImplementation(function () {
+    return {
+      checkSingleAccess,
+      checkAccess,
+      checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
+      checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
+    };
+  }),
 }));
 
 // Answers a batched check from the per-relation stub each test sets on checkSingleAccess, without
@@ -34,22 +36,26 @@ function answerBatchesFromSingleAccessStub(): void {
 }
 
 vi.mock('./project.service', () => ({
-  ProjectService: vi.fn().mockImplementation(() => ({
-    getProjectIdBySlug,
-  })),
+  ProjectService: vi.fn().mockImplementation(function () {
+    return {
+      getProjectIdBySlug,
+    };
+  }),
 }));
 
 // NatsService is only exercised here through resolveRootUid (ROOT slug -> uid). A trivial passthrough
 // codec keeps encode/decode out of scope for these tests, which are about the access-check fan-out, not
 // wire encoding.
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn().mockImplementation(() => ({
-    getCodec: () => ({
-      encode: (v: string) => v,
-      decode: (v: unknown) => v as string,
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn().mockImplementation(function () {
+    return {
+      getCodec: () => ({
+        encode: (v: string) => v,
+        decode: (v: unknown) => v as string,
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 
 vi.mock('./logger.service', () => ({ logger }));
@@ -90,8 +96,9 @@ describe('PersonaDetectionService', () => {
 
   describe('checkLFStaff', () => {
     // Staff-only by decision: its consumers are the dashboard / ED / marketing bypasses, none of
-    // which were extended to contractors. Adding `lf-contractor` back to this check fails here:
-    // the authorizer is told the caller is a contractor and the answer must still be "not staff".
+    // which were extended to contractors — and `OrgLensEventsService`, where a `true` DISCLOSES the
+    // event registration goal. Adding `lf-contractor` back to this check fails here: the authorizer
+    // is told the caller is a contractor and the answer must still be "not staff".
     it('asks the authorizer for `team:lf-staff` membership only — a contractor-only caller is not staff', async () => {
       checkSingleAccess.mockImplementation((_req: Request, args: { id: string }) => Promise.resolve(args.id === 'lf-contractor'));
 
@@ -100,6 +107,17 @@ describe('PersonaDetectionService', () => {
       expect(result).toBe(false);
       expect(checkSingleAccess).toHaveBeenCalledTimes(1);
       expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'lf-staff', access: 'member' });
+    });
+
+    // The `.catch` here is load-bearing for `OrgLensEventsService`, which awaits this outside every
+    // query try: a rejection would 500 the whole Events list, and reject unhandled on the early
+    // returns that never await it, rather than withhold one field. Fail-closed
+    // is also the right direction for a disclosure gate — a staff member briefly missing a number
+    // they can get elsewhere beats an external admin seeing one they should not.
+    it('degrades to `not staff` when the access check fails, rather than rejecting', async () => {
+      checkSingleAccess.mockRejectedValue(new Error('fga unavailable'));
+
+      await expect(service.checkLFStaff(req)).resolves.toBe(false);
     });
   });
 

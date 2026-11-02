@@ -70,7 +70,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
-/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+/** Shape guard shared by {@link parseLocalDateString}, {@link tryParseLocalDateString}, and {@link isLocalDateOnlyString} — keep them in sync by referencing this rather than restating the pattern. */
 const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -100,10 +100,15 @@ export const parseLocalDateString = (dateString: string): Date => {
  * cannot fail on — a malformed value comes back as `null` instead of throwing.
  */
 export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
-  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
+  if (!isLocalDateOnlyString(dateString)) {
     return null;
   }
   return parseLocalDateString(dateString);
+}
+
+/** True when `value` is exactly a `YYYY-MM-DD` date-only string (shape check only; no calendar validation). */
+export function isLocalDateOnlyString(value: unknown): value is string {
+  return typeof value === 'string' && LOCAL_DATE_ONLY_PATTERN.test(value);
 }
 
 /**
@@ -316,16 +321,21 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
   if (Number.isNaN(date.getTime())) return '';
 
   try {
-    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   } catch {
-    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   }
+}
+
+/** Zones at a zero offset with no abbreviation (e.g. Europe/Lisbon in winter) format as "GMT+0"; say "UTC" instead. */
+function readableZeroOffset(formatted: string): string {
+  return formatted.replace(/ GMT[+-]0$/, ' UTC');
 }
 
 /**
  * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
  * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
- * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * provides the full zone name for the hover tooltip, even when formatVoteDeadline normalizes a zero-offset label to UTC.
  * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {

@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseOrgScope } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -21,10 +22,17 @@ export class OrgLensProjectsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_projects');
-      const response = await this.service.getProjects(orgUid, getStringQueryParam(req, 'orgName') ?? '', this.parseSlugList(getStringQueryParam(req, 'slugs')));
+      const orgScope = parseOrgScope(req, 'get_org_lens_projects');
+      const response = await this.service.getProjects(
+        orgUid,
+        getStringQueryParam(req, 'orgName') ?? '',
+        this.parseSlugList(getStringQueryParam(req, 'slugs')),
+        orgScope
+      );
 
       logger.success(req, 'get_org_lens_projects', startTime, {
         org_uid: orgUid,
+        org_scope: orgScope,
         project_count: response.projects.length,
       });
 

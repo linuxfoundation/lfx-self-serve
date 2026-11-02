@@ -36,6 +36,8 @@ interface Harness {
   claOnlyUids: WritableSignal<Set<string>>;
   /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
   claLookupFailed: WritableSignal<boolean>;
+  /** #4225 — the server established the caller works for an LF member org and holds no grant on it. */
+  affiliatedToMember: WritableSignal<boolean>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
@@ -70,6 +72,7 @@ function setup(): Harness {
   const hasOrgSelectorAccess = signal(false);
   const claOnlyUids = signal(new Set<string>());
   const claLookupFailed = signal(false);
+  const affiliatedToMember = signal(false);
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
@@ -103,6 +106,7 @@ function setup(): Harness {
           auditorSet: signal(new Set<string>()),
           inheritedWriterSet: signal(new Set<string>()),
           inheritedAuditorSet,
+          affiliatedToMember,
           refresh,
         },
       },
@@ -135,6 +139,7 @@ function setup(): Harness {
     hasOrgSelectorAccess,
     claOnlyUids,
     claLookupFailed,
+    affiliatedToMember,
     refresh,
     listLoaded,
     listLoading,
@@ -233,6 +238,55 @@ describe('OrgLensEmptyStateService.pageState', () => {
   it('renders no-organization for a clean lookup that holds nothing', () => {
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
     expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // #4225 — rule 6: an employee of a member org was never granted access, so the affiliation CTA of
+  // `no-organization` is the one action that cannot help them.
+  it('renders affiliated-no-grant for an employee of a member org who holds nothing', () => {
+    h.affiliatedToMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
+    expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // The server reports an unestablished employer as false, so an outage or an older BFF keeps today's copy.
+  it('keeps no-organization when the employer verdict was not established', () => {
+    h.affiliatedToMember.set(false);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
+  });
+
+  // FR-011 again: an outage outranks the employer verdict, which says nothing about the roster.
+  it('renders could-not-load ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
+  it('renders staff-check-failed ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.staffCheck.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
+  });
+
+  // Rule 5 before 6: a contractor gets the reason that applies to them, whatever their work history says.
+  it('renders contractor-no-grant ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('contractor-no-grant');
+  });
+
+  // Rule 1 still wins: holding the selected organization renders the page, employer or not.
+  it('renders the page for a holder even when the employer verdict is set', () => {
+    h.affiliatedToMember.set(true);
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageState()).toBeNull();
   });
 
   it('renders the page while a selection among loaded holdings is pending', () => {

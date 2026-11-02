@@ -7,7 +7,6 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
@@ -29,8 +28,6 @@ import {
   MENTORSHIP_MENTEE_PROFILE_CREATED_STATE,
   MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS,
   MENTORSHIP_MENTEE_TERMS_INTRO,
-  MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
-  MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
   MENTORSHIP_REGISTER_WARN_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeRegisterFieldErrors, MentorshipMenteeRegisterForm, MentorshipMenteeRegisterSubmitFailure } from '@lfx-one/shared/interfaces';
@@ -45,6 +42,7 @@ import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { startWith } from 'rxjs';
 
+import { ComplianceConfirmationComponent } from '../../components/compliance-confirmation/compliance-confirmation.component';
 import { ProfileCardComponent } from '../../components/profile-card/profile-card.component';
 import { SkillsPickerComponent } from '../../components/skills-picker/skills-picker.component';
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
@@ -69,7 +67,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
   selector: 'lfx-mentorship-mentee-register',
   imports: [
     ButtonComponent,
-    CheckboxComponent,
+    ComplianceConfirmationComponent,
     RichEditorComponent,
     TextareaComponent,
     MenteeCountrySectionComponent,
@@ -102,8 +100,6 @@ export class MenteeRegisterComponent {
   protected readonly additionalNotesPlaceholder = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER;
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
   protected readonly exportDisclaimer = MENTORSHIP_MENTEE_EXPORT_DISCLAIMER;
-  protected readonly complianceLead = MENTORSHIP_MENTOR_COMPLIANCE_LEAD;
-  protected readonly complianceItems = MENTORSHIP_MENTOR_COMPLIANCE_ITEMS;
   protected readonly termsIntro = MENTORSHIP_MENTEE_TERMS_INTRO;
   protected readonly profileExistsContinueLabel = MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE;
   protected readonly cancelRoute = '/mentorship/admin';

@@ -7,7 +7,7 @@ import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { finalize, take } from 'rxjs';
+import { defer, EMPTY, finalize, Observable, take } from 'rxjs';
 
 /**
  * "Resend invite" flows shared by every surface that offers one.
@@ -16,7 +16,8 @@ import { finalize, take } from 'rxjs';
  * so the host passes it in. Upstream enforces the organizer relation; hosts gate the button on the
  * meeting's `organizer` flag. Registrants resend to themselves from a meeting card or the join page
  * (`resendOwn`): the server resolves which registrant that is, and upstream verifies it is theirs.
- * In-flight tracking and success/error toasts live here so the surfaces stay consistent.
+ * In-flight tracking and success/error toasts live here so the surfaces stay consistent; `resendOwn$` leaves
+ * feedback to surfaces that show their own.
  */
 @Injectable({ providedIn: 'root' })
 export class MeetingInviteResendService {
@@ -44,37 +45,43 @@ export class MeetingInviteResendService {
   /**
    * Resends the meeting invitation to the signed-in user's own registration, for the occurrence being viewed when the
    * surface has one (registrations can be scoped to a single occurrence). No confirmation: it only emails the
-   * caller, and a second click while one is in flight is ignored. The server's own reason is shown only when it
-   * rejected the request itself (a validation error); any other failure gets generic copy, since an upstream
-   * status line is not something to put on screen.
+   * caller, and a second click while one is in flight is ignored. Toasts the result; see {@link resendOwn$} for
+   * surfaces that show their own feedback.
    */
   public resendOwn(meetingUid: string, occurrenceId?: string | null): void {
-    if (!meetingUid || this.isResendingOwn(meetingUid)) {
-      return;
-    }
+    this.resendOwn$(meetingUid, occurrenceId).subscribe({
+      next: () =>
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Invitation Sent',
+          detail: 'We sent the meeting invitation to your email.',
+        }),
+      error: (error: unknown) =>
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: this.describeOwnResendFailure(error),
+        }),
+    });
+  }
 
-    this.setResendingOwn(meetingUid, true);
+  /**
+   * {@link resendOwn} without toasts: tracks the in-flight send from subscribe until it settles and completes without
+   * a value when the meeting id is empty or a send for it is already in flight. Pair errors with
+   * {@link describeOwnResendFailure} for user-facing copy.
+   */
+  public resendOwn$(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
+    return defer(() => {
+      if (!meetingUid || this.isResendingOwn(meetingUid)) {
+        return EMPTY;
+      }
 
-    this.meetingService
-      .resendMyMeetingInvitation(meetingUid, occurrenceId)
-      .pipe(
+      this.setResendingOwn(meetingUid, true);
+      return this.meetingService.resendMyMeetingInvitation(meetingUid, occurrenceId).pipe(
         take(1),
         finalize(() => this.setResendingOwn(meetingUid, false))
-      )
-      .subscribe({
-        next: () =>
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Invitation Sent',
-            detail: 'We sent the meeting invitation to your email.',
-          }),
-        error: (error: unknown) =>
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: this.describeOwnResendFailure(error),
-          }),
-      });
+      );
+    });
   }
 
   public confirmAndResend(confirmationService: ConfirmationService, meetingUid: string, registrant: MeetingRegistrant): void {
@@ -94,6 +101,21 @@ export class MeetingInviteResendService {
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
       accept: () => this.resend(meetingUid, registrant, label),
     });
+  }
+
+  /**
+   * User-facing copy for a failed own-resend.
+   * A 429 is the per-user limit: retrying right away cannot work, so say to wait, in fixed words rather than the
+   * server's. A server-written validation reason is shown as is. Anything else gets generic copy, since an upstream
+   * status line is not something to put on screen.
+   */
+  public describeOwnResendFailure(error: unknown): string {
+    if (error instanceof HttpErrorResponse && error.status === 429) {
+      return 'You have resent your invitation too many times. Please try again later.';
+    }
+
+    const fallback = 'Unable to resend the invitation. Please try again.';
+    return isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback;
   }
 
   private resend(meetingUid: string, registrant: MeetingRegistrant, label: string): void {
@@ -119,21 +141,6 @@ export class MeetingInviteResendService {
           });
         },
       });
-  }
-
-  /**
-   * Toast copy for a failed own-resend.
-   * A 429 is the per-user limit: retrying right away cannot work, so say to wait, in fixed words rather than the
-   * server's. A server-written validation reason is shown as is. Anything else gets generic copy, since an upstream
-   * status line is not something to put on screen.
-   */
-  private describeOwnResendFailure(error: unknown): string {
-    if (error instanceof HttpErrorResponse && error.status === 429) {
-      return 'You have resent your invitation too many times. Please try again later.';
-    }
-
-    const fallback = 'Unable to resend the invitation. Please try again.';
-    return isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback;
   }
 
   private setResendingOwn(meetingUid: string, resending: boolean): void {

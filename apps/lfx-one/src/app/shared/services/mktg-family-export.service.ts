@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
+import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 import {
   MktgFamilyExportLastResponse,
   MktgFamilyExportMember,
@@ -15,7 +15,17 @@ import {
   MktgFamilyPrintView,
   MktgSlidesExportMode,
 } from '@lfx-one/shared/interfaces';
-import { buildBrandKitBookView, buildFoundationMessagePrintView, readBrandKitRevision, readFoundationMessageContent } from '@lfx-one/shared/utils';
+import {
+  boilerplatesAssetOfRevision,
+  buildBoilerplatesPrintView,
+  buildBrandKitBookView,
+  buildFaqPrintView,
+  buildFoundationMessagePrintView,
+  faqAssetOfRevision,
+  mktgPrintBrand,
+  readBrandKitRevision,
+  readFoundationMessageContent,
+} from '@lfx-one/shared/utils';
 import { pollMktgSlidesExport } from '@shared/utils/mktg-slides-export-poll.util';
 import { catchError, finalize, forkJoin, map, Observable, shareReplay, startWith, switchMap, take, throwError } from 'rxjs';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -92,7 +102,7 @@ export class MktgFamilyExportService {
 
   /** Read approved refs only. Reject changed pointers instead of printing a different revision. */
   public printView(target: MktgFamilyExportTarget, members: MktgFamilyExportMember[], projectName: string): Observable<MktgFamilyPrintView> {
-    const printable = members.filter((member) => member.agentKey === 'foundation-message' || member.agentKey === 'brand-kit');
+    const printable = members.filter((member) => Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, member.agentKey));
     if (!printable.length) return throwError(() => new Error('No approved members have a print layout.'));
     return forkJoin(
       printable.map((member) =>
@@ -122,10 +132,22 @@ export class MktgFamilyExportService {
         if (frameworkResponse && !content) throw new Error('The approved messaging framework could not be read.');
         const book = kit ? buildBrandKitBookView(kit, kitResponse?.revision.number) : null;
         const framework = content ? buildFoundationMessagePrintView(content, projectName, frameworkResponse?.revision.number ?? null, kit) : null;
+        const brand = mktgPrintBrand(kit);
+        const boilerplatesResponse = responses.find((response) => response.type.agentKey === 'boilerplates');
+        const boilerplates = boilerplatesResponse ? boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar) : null;
+        if (boilerplatesResponse && !boilerplates) throw new Error('The approved boilerplates could not be read.');
+        const faqResponse = responses.find((response) => response.type.agentKey === 'faq');
+        const faq = faqResponse ? faqAssetOfRevision(faqResponse.markdown, faqResponse.sidecar) : null;
+        if (faqResponse && !faq) throw new Error('The approved FAQ could not be read.');
         return {
           framework,
           kit: book,
-          fontFamily: book?.fontUrl ? book.type.family : (framework?.brand.fontFamily ?? null),
+          boilerplates: boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null,
+          faq: faq ? buildFaqPrintView(faq, brand) : null,
+          brand,
+          projectName,
+          printedAt: new Date().toISOString(),
+          fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
         };
       })

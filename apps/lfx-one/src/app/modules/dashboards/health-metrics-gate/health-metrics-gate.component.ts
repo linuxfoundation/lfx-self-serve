@@ -5,18 +5,19 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
+import { filter } from 'rxjs';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 import type { IsActiveMatchOptions } from '@angular/router';
-import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsRange, HealthMetricsTab, HealthMetricsTabKey, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
 
 /**
  * Route target for `foundation/health-metrics`. Renders the legacy page by default (server and
@@ -56,6 +57,7 @@ export class HealthMetricsGateComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
   protected readonly chrome = inject(HealthMetricsChromeService);
   protected readonly userService = inject(UserService);
 
@@ -63,8 +65,11 @@ export class HealthMetricsGateComponent {
   protected readonly tabs: readonly HealthMetricsTab[] = HEALTH_METRICS_TABS;
   protected readonly ytdRangeLabel = buildHealthMetricsYtdRangeLabel(new Date());
   protected readonly periodOptions = [...this.chrome.periods];
+  protected readonly tabOptions = [...HEALTH_METRICS_TABS];
   /** The narrow header's dropdown, kept in step with the pill through the shared period. */
   protected readonly periodForm = new FormGroup({ range: new FormControl<HealthMetricsRange>(this.chrome.selectedRange(), { nonNullable: true }) });
+  /** The narrowest header's tab dropdown, kept on the routed tab. */
+  protected readonly tabForm = new FormGroup({ tab: new FormControl<HealthMetricsTabKey>(this.activeTabKey(this.router.url), { nonNullable: true }) });
 
   // queryParams must be `ignored` rather than the `{ exact: true }` shorthand's `exact` — the tab
   // links carry no query params of their own while the URL always carries `foundationSlug`.
@@ -82,6 +87,7 @@ export class HealthMetricsGateComponent {
   public constructor() {
     afterNextRender(() => this.hydrated.set(true));
     this.initPeriodSelect();
+    this.initTabSelect();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
     // latches — watching the viewChild signal picks it up whenever that happens.
     toObservable(this.pageHeader)
@@ -103,6 +109,28 @@ export class HealthMetricsGateComponent {
       const period = this.chrome.periods.find((option) => option.range === range);
       if (period) this.chrome.setPeriod(period);
     });
+  }
+
+  private initTabSelect(): void {
+    const control = this.tabForm.controls.tab;
+    this.router.events
+      .pipe(
+        // A cancelled or failed navigation leaves the route where it was, so the dropdown goes back with it.
+        filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => control.setValue(this.activeTabKey(this.router.url), { emitEvent: false }));
+    control.valueChanges.pipe(takeUntilDestroyed()).subscribe((key) => {
+      const tab = this.tabs.find((candidate) => candidate.key === key);
+      if (tab) void this.router.navigate(tab.route ? [this.basePath, tab.route] : [this.basePath], { queryParamsHandling: 'preserve' });
+    });
+  }
+
+  /** The tab a URL routes to: the segment after the base path, or the Overview. */
+  private activeTabKey(url: string): HealthMetricsTabKey {
+    const path = url.split(/[?#]/)[0];
+    const segment = path.startsWith(this.basePath) ? (path.slice(this.basePath.length).split('/')[1] ?? '') : '';
+    return (this.tabs.find((tab) => tab.route === segment) ?? this.tabs[0]).key;
   }
 
   private observeHeaderHeight(header: HTMLElement | undefined): void {

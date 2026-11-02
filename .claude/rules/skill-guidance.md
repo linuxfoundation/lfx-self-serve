@@ -83,3 +83,4 @@ Non-developer contributors use these skills as guided workflows. Follow these ru
 - For pre-PR and post-PR review behavior, follow `AGENTS.md`'s **Pre-PR review** and **Post-PR review** sections exactly; do not reconstruct the protocol from this routing file.
 - If you are unsure which workflow applies, ask the user what they're trying to accomplish.
 - When a skill references architecture docs in `docs/`, read those docs before generating code — they are the source of truth.
+- When a change adds, removes, or visibly changes a feature, also update the matching `docs/user/` articles (see `.claude/rules/development-rules.md` § User Documentation Maintenance).

@@ -141,3 +141,73 @@ describe('OrgRoleGrantsService.claManagerOrgSet', () => {
     expect(service.claManagerOrgSet().size).toBe(0);
   });
 });
+
+// #4225 — `affiliatedToMember` only goes true on a completed verdict naming a member employer. Every
+// other answer, and a transport failure, must clear a previously true value, or a caller would keep
+// the `affiliated-no-grant` copy after the server stopped asserting it.
+describe('OrgRoleGrantsService.affiliatedToMember', () => {
+  let service: OrgRoleGrantsService;
+  let http: HttpTestingController;
+  const grants = { writers: [], auditors: [], isStaff: false };
+  const member = { hasEmployer: true, employerIsMember: true, lookup: 'ok' };
+
+  /** Answers one `refresh()` with `body` and waits for the signals to settle. */
+  async function answer(body: Record<string, unknown>): Promise<void> {
+    const done = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush(body);
+    await done;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(OrgRoleGrantsService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('is true for a completed verdict naming a member employer', async () => {
+    await answer({ ...grants, affiliation: member });
+
+    expect(service.affiliatedToMember()).toBe(true);
+  });
+
+  it('is false when the server omits the field, as an older BFF does', async () => {
+    await answer(grants);
+
+    expect(service.affiliatedToMember()).toBe(false);
+  });
+
+  it.each([
+    ['a failed lookup', { hasEmployer: true, employerIsMember: true, lookup: 'failed' }],
+    ['a non-member employer', { hasEmployer: true, employerIsMember: false, lookup: 'ok' }],
+    ['no employer at all', { hasEmployer: false, employerIsMember: false, lookup: 'ok' }],
+  ])('clears a previously true value on %s', async (_label, affiliation) => {
+    await answer({ ...grants, affiliation: member });
+    expect(service.affiliatedToMember()).toBe(true);
+
+    await answer({ ...grants, affiliation });
+
+    expect(service.affiliatedToMember()).toBe(false);
+  });
+
+  it('clears a previously true value when a later answer omits the field', async () => {
+    await answer({ ...grants, affiliation: member });
+    expect(service.affiliatedToMember()).toBe(true);
+
+    await answer(grants);
+
+    expect(service.affiliatedToMember()).toBe(false);
+  });
+
+  it('is cleared on a transport failure', async () => {
+    await answer({ ...grants, affiliation: member });
+    expect(service.affiliatedToMember()).toBe(true);
+
+    const second = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').error(new ProgressEvent('error'));
+    await second;
+
+    expect(service.affiliatedToMember()).toBe(false);
+  });
+});

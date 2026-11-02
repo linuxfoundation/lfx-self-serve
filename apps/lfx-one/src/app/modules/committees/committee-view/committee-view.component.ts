@@ -25,6 +25,7 @@ import {
   CommitteeUser,
   getCommitteeCategorySeverity,
   MembershipTagDisplay,
+  PollStatus,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -34,6 +35,7 @@ import {
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
   CommitteeOrganizationReference,
+  GroupEditLink,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -54,6 +56,8 @@ import {
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
+  getGroupEditLink,
   hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
@@ -67,6 +71,8 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
 import { DocumentService } from '@services/document.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
@@ -196,6 +202,7 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly surveyService = inject(SurveyService);
   private readonly voteService = inject(VoteService);
   private readonly documentService = inject(DocumentService);
@@ -244,6 +251,7 @@ export class CommitteeViewComponent {
   // window is exhausted, so the view shows "finalizing access" rather than the error state.
   public accessFinalizing = signal<boolean>(false);
   public refresh = signal(0);
+  private readonly projectWriterRetry = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
   public invitesLoading = signal<boolean>(true);
@@ -271,6 +279,9 @@ export class CommitteeViewComponent {
   // every tab switch, which previously dropped the override and let the stale pre-extension deadline
   // reappear once the user returned to the Votes tab (per @audigregorie, GH-3823 review).
   private readonly extendedVoteOverrides = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
+  // Confirmed `ended` status from committee-votes' voteClosed output, held for the same reason as extendedVoteOverrides and
+  // dropped once rawVotes() reports the vote as no longer active.
+  private readonly closedVoteOverrides = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -312,10 +323,12 @@ export class CommitteeViewComponent {
   // destroyed/recreated on tab switches (per @audigregorie, GH-3823 review).
   public votes: Signal<Vote[]> = computed(() => {
     const overrides = this.extendedVoteOverrides();
-    if (overrides.size === 0) return this.rawVotes();
+    const closed = this.closedVoteOverrides();
+    if (overrides.size === 0 && closed.size === 0) return this.rawVotes();
     return this.rawVotes().map((vote) => {
       const override = overrides.get(vote.uid);
-      return override ? { ...vote, ...override } : vote;
+      const closedOverride = closed.get(vote.uid);
+      return override || closedOverride ? { ...vote, ...override, ...closedOverride } : vote;
     });
   });
   public surveys: Signal<Survey[]> = this.initSurveys();
@@ -377,9 +390,69 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /**
+   * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
+   * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
+   * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   * Tagged with the committee uid it was fetched for: this view is reused across `/groups/:id`
+   * navigations, so an untagged result from the previous group would stay visible until the next
+   * lookup settles.
+   */
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean; failed: boolean; attempt: number } | null> = toSignal(
+    combineLatest([toObservable(this.committee), toObservable(this.projectWriterRetry)]).pipe(
+      map(([committee, attempt]) =>
+        committee?.writer
+          ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null), attempt }
+          : null
+      ),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key && previous?.attempt === next?.attempt),
+      switchMap((target) => {
+        if (!target) {
+          return of(null);
+        }
+        if (!target.key) {
+          // Missing project context is not a transient lookup failure; retrying cannot supply it.
+          return of({ uid: target.uid, writer: false, failed: false, attempt: target.attempt });
+        }
+        return this.projectService.getProject(target.key, false, { strictWriter: true }).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true, failed: project === null, attempt: target.attempt })),
+          catchError(() => of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt }))
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
+  /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
+  public editLink: Signal<GroupEditLink | null> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
+  });
+
+  /** The weekly brief email share requires project-writer access server-side (`NOT_PROJECT_WRITER`), not just committee-writer access. */
+  public canShareWeeklyBriefByEmail: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && !this.shareAccessLoading() && access?.uid === committee.uid && access.writer;
+  });
+
+  /** True while the project-writer lookup for the current committee is unresolved, so the card can hold back its denial hint. */
+  public shareAccessLoading: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && (access?.uid !== committee.uid || access.attempt !== this.projectWriterRetry());
+  });
+
+  /** A failed lookup grants nothing, but must not be presented as a confirmed permission denial. */
+  public shareAccessError: Signal<boolean> = computed(() => {
+    const access = this.projectWriter();
+    return this.canEdit() && !this.shareAccessLoading() && access?.uid === this.committee()?.uid && access?.failed === true;
+  });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {
@@ -599,6 +672,14 @@ export class CommitteeViewComponent {
     toObservable(this.rawVotes)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((votes) => {
+        const closed = this.closedVoteOverrides();
+        if (closed.size > 0) {
+          const nextClosed = new Map(closed);
+          for (const vote of votes) {
+            if (vote.status !== PollStatus.ACTIVE) nextClosed.delete(vote.uid);
+          }
+          if (nextClosed.size !== closed.size) this.closedVoteOverrides.set(nextClosed);
+        }
         const overrides = this.extendedVoteOverrides();
         if (overrides.size === 0) return;
         const next = new Map(overrides);
@@ -703,6 +784,31 @@ export class CommitteeViewComponent {
     this.router.navigate(['/', 'groups']);
   }
 
+  /**
+   * Settings saved. Normally a plain refetch by the route id — but a rename regenerates `sso_group_name`
+   * for public / SSO groups, so a page opened through the old vanity slug would refetch a slug that no
+   * longer resolves. Move to the stable UID route first; the param change drives the refetch.
+   */
+  public onSettingsSaved(): void {
+    const committee = this.committee();
+    if (committee?.uid && this.committeeId() !== committee.uid) {
+      // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+        queryParams: { tab: this.activeTab() },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      return;
+    }
+    this.refreshCommittee();
+  }
+
+  public retryShareAccessCheck(): void {
+    if (this.shareAccessError()) {
+      this.projectWriterRetry.update((attempt) => attempt + 1);
+    }
+  }
+
   public refreshCommittee(): void {
     // Set synchronously here, not only inside initializeCommittee's async switchMap below (which
     // still sets it too, on the actual refetch) -- closes a race where refreshMembers() bumps
@@ -738,6 +844,10 @@ export class CommitteeViewComponent {
   /** committee-votes' voteExtended output (relayed from votes-table) — held in parent-owned state so the
    *  confirmed deadline survives the Votes tab being destroyed/recreated on tab switches (per
    *  @audigregorie, GH-3823 review). */
+  public onVoteClosed(vote: Vote): void {
+    this.closedVoteOverrides.update((map) => new Map(map).set(vote.uid, { status: PollStatus.ENDED, early_end_time: vote.early_end_time }));
+  }
+
   public onVoteExtended(vote: Vote): void {
     this.extendedVoteOverrides.update((map) => new Map(map).set(vote.uid, { end_time: vote.end_time, end_time_timezone: vote.end_time_timezone }));
   }

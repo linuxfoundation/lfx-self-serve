@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { environment } from '@environments/environment';
 import {
   MentorshipAdminApplicationStatusUpdate,
   MentorshipAdminMenteesQuery,
@@ -20,6 +21,7 @@ import {
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
@@ -38,6 +40,7 @@ describe('CurrentMenteesTabComponent', () => {
   const mentee = (overrides: Partial<MentorshipProgramApplicant> = {}): MentorshipProgramApplicant => ({
     id: 'app_1',
     name: 'Ifeoma Adeyemi',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
     termId: 'trm_fall26',
@@ -154,6 +157,7 @@ describe('CurrentMenteesTabComponent', () => {
 
     fixture = TestBed.createComponent(CurrentMenteesTabComponent);
     fixture.componentRef.setInput('programId', 'prog_1');
+    fixture.componentRef.setInput('programPublished', true);
     fixture.componentRef.setInput('terms', [term('Fall 2026', 'open'), term('Winter 2027', 'open'), term('Spring 2026', 'closed')]);
     settle();
   });
@@ -202,6 +206,20 @@ describe('CurrentMenteesTabComponent', () => {
     expect(rowText('app_1')).not.toContain('Tasks Completed');
     expect(rowText('app_2')).toContain('Tasks Completed');
     expect(rowText('app_3')).toContain('Declined');
+  });
+
+  it("links the mentee's name to the public mentee page in a new tab", () => {
+    const link = element().querySelector('[data-testid="mentorship-current-mentee-link-app_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+    expect(link?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('shows the mentee name as plain text when the program is not published', () => {
+    fixture.componentRef.setInput('programPublished', false);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-link-app_1"]')).toBeNull();
+    expect(rowText('app_1')).toContain('Ifeoma Adeyemi');
   });
 
   it('shows the created and updated dates, and links out to other active applications', () => {
@@ -356,12 +374,13 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('offers the row actions each status allows', () => {
     expect(labelsFor('app_1')).toEqual(['Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_3')).toEqual([]);
+    expect(labelsFor('app_3')).toEqual(['Re-open']);
     expect(labelsFor('app_4')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_5')).toEqual([]);
+    expect(labelsFor('app_5')).toEqual(['Undo graduation']);
   });
 
-  it('keeps the Note link on a row with no actions left', () => {
+  it('keeps the Note link on an ended application', () => {
+    expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_3"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-current-mentee-note-app_5"]')).not.toBeNull();
   });
 
@@ -475,6 +494,7 @@ describe('CurrentMenteesTabComponent', () => {
       fixture.destroy();
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
       clickNote('app_1');
 
@@ -500,6 +520,7 @@ describe('CurrentMenteesTabComponent', () => {
       getProgramMentees.mockReturnValue(staleRead);
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
 
       pending.next();
@@ -930,6 +951,7 @@ describe('CurrentMenteesTabComponent', () => {
       fixture.destroy();
       fixture = TestBed.createComponent(CurrentMenteesTabComponent);
       fixture.componentRef.setInput('programId', 'prog_1');
+      fixture.componentRef.setInput('programPublished', true);
       settle();
       const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
       createFor('app_4');
@@ -1101,6 +1123,83 @@ describe('CurrentMenteesTabComponent', () => {
       expect(detailOf(toast)).toBe("This term is closed, so the application can't be accepted.");
       expect(getProgramMentees.mock.calls.length).toBe(reads);
       expect(emitted).not.toHaveBeenCalled();
+    });
+
+    it('undoes a graduation only after the confirmation is accepted, then reloads and tells the parent', () => {
+      const confirm = confirmSpy();
+      const toast = toasts();
+      const emitted = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', emitted);
+      const reads = getProgramMentees.mock.calls.length;
+
+      fixture.componentInstance['onRowAction'](rowFor('app_5')!, actionFor('app_5', 'undo-graduation'));
+      expect(confirm.mock.calls[0][0].message).toContain('no email is sent');
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      settle();
+
+      // No attendance type: upstream keeps the one the mentee was accepted with.
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_5', { status: 'accepted' });
+      expect(detailOf(toast)).toBe('Graduation undone');
+      expect(emitted).toHaveBeenCalledTimes(1);
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('shows the refused message on a 422 for an undone graduation, without reloading', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_5', 'undo-graduation', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe("This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open.");
+      expect(getProgramMentees.mock.calls.length).toBe(reads);
+    });
+
+    it('re-opens a declined application as pending only after the confirmation is accepted', () => {
+      const confirm = confirmSpy();
+      const toast = toasts();
+
+      fixture.componentInstance['onRowAction'](rowFor('app_3')!, actionFor('app_3', 'reopen'));
+      expect(confirm.mock.calls[0][0].message).toContain('no email is sent');
+      expect(updateApplicationStatus).not.toHaveBeenCalled();
+
+      confirm.mock.calls[0][0].accept?.();
+      settle();
+
+      expect(updateApplicationStatus).toHaveBeenCalledWith('app_3', { status: 'pending' });
+      expect(detailOf(toast)).toBe('Application re-opened');
+    });
+
+    it('shows the refused message on a 422 for a re-open', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+
+      confirmAction('app_3', 'reopen', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe(
+        "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review."
+      );
+    });
+
+    it('reloads with its own message on a 409 for a re-open, which may mean the mentee applied again', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_3', 'reopen', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe(
+        "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed."
+      );
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
     });
 
     it('shows the server read-only message on an impersonation 403', () => {

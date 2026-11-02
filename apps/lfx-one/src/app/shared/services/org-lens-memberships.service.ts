@@ -13,6 +13,7 @@ import type {
   OrgExpiredMembershipsResponse,
   OrgMembershipDetailResponse,
   OrgMembershipDocumentsResponse,
+  OrgMembershipProjectsResponse,
   ReplaceKeyContactRequest,
 } from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
@@ -48,6 +49,13 @@ export class OrgLensMembershipsService {
   public getMembershipDocuments(orgUid: string, foundationId: string): Observable<OrgMembershipDocumentsResponse> {
     return this.http.get<OrgMembershipDocumentsResponse>(
       `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/documents`
+    );
+  }
+
+  /** Projects the org is involved in for one foundation — backs the Org Projects side panel on the memberships table. */
+  public getFoundationProjects(orgUid: string, foundationId: string): Observable<OrgMembershipProjectsResponse> {
+    return this.http.get<OrgMembershipProjectsResponse>(
+      `/api/orgs/${encodeURIComponent(orgUid)}/lens/memberships/${encodeURIComponent(foundationId)}/projects`
     );
   }
 

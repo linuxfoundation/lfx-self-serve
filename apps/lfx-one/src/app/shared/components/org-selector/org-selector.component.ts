@@ -33,6 +33,7 @@ import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRo
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
+import { LensService } from '@services/lens.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -55,6 +56,7 @@ export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -89,7 +91,7 @@ export class OrgSelectorComponent {
   public readonly enabled = input<boolean>(true);
   /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
   public readonly variant = input<ContextSelectorVariant>('default');
-  /** The viewer picked an organization that re-addresses the page (a switch, or leaving the not-found dead end). */
+  /** The viewer picked an organization — the one already selected included, which re-addresses nothing by itself. */
   public readonly itemSelected = output<OrgItem>();
 
   protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
@@ -332,8 +334,8 @@ export class OrgSelectorComponent {
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');
-        this.itemSelected.emit(item);
       }
+      this.itemSelected.emit(item);
       this.popoverRef()?.hide();
       return;
     }
@@ -599,6 +601,12 @@ export class OrgSelectorComponent {
 
   private bootstrapOrgList(): void {
     const restoredUid = this.accountContextService.selectedAccount().uid ?? this.accountContextService.getStoredUid();
+    // Shown only because the mobile drawer previews Org Lens (#4208): load the list without bootstrap semantics, so it
+    // can't default-select an organization, clear one or navigate away — the page underneath is another lens's.
+    if (this.lensService.previewingMenuLens()) {
+      this.orgNavigationService.refreshList(restoredUid);
+      return;
+    }
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 

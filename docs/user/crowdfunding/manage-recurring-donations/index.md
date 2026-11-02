@@ -4,45 +4,55 @@ description: How to view recurring donation details and cancel a recurring subsc
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, recurring donations, cancel, subscription, manage]
-last_updated: 2026-06-29
+last_updated: 2026-10-29
 intercom_collection: Crowdfunding
 ---
 
-This article explains how to view your recurring donation details and how to cancel a recurring donation subscription in LFX Self Serve. A recurring donation is a monthly subscription that automatically charges your saved payment method each billing cycle. You can view the details of a recurring donation and cancel it at any time from the recurring donation detail page.
+This article explains how to view your recurring donation details and how to cancel a recurring donation subscription in LFX Self Serve. A recurring donation is a monthly subscription that automatically charges your saved payment method each billing cycle. You can cancel it at any time from the recurring donations list or from its detail page.
 
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
-- You must have at least one active recurring donation. If your recurring donations list is empty, you have no active subscriptions.
+- You must have at least one recurring donation. The **Recurring Donations** section appears on the Donations page only when you have one.
 
 ## View recurring donation details
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Donations** from the left navigation sidebar.
-3. Find the recurring donation in the recurring donations list.
-4. Select the donation name to open its detail page.
+2. Select **Crowdfunding → Donations** from the left navigation sidebar.
+3. Find the donation in the **Recurring Donations** list.
+4. Select the donation to open its detail page.
 
 The detail page shows:
 
-- Initiative name and fund type
-- Subscription status — **Active** means the subscription is running and charges will continue on the next billing date; **Paused** means the subscription is temporarily on hold and no charges are being processed
-- Monthly charge amount
+- Initiative name, fund type, and description, with **View Initiative** to open the initiative on the public crowdfunding site in a new tab
+- Monthly amount and subscription status:
+  - **Active** — the subscription is running and charges will continue on the next billing date
+  - **Paused** — the subscription is temporarily on hold and no charges are being processed
+  - **Canceled** — the subscription has been canceled and will not be charged again
 - Billing description
-- Subscription start date
-- Next charge date
-- Total amount contributed to date
-- Full charge history with the date, period, amount, and status of each past charge:
-  - **Paid** — the charge was successfully processed
-  - **Pending** — the charge is being processed and the outcome is not yet confirmed
-  - **Failed** — the charge could not be processed, usually because the payment method was declined or expired; check that your saved card is valid and not expired (see [Manage Payment Methods](../manage-payment-methods/))
+- Start date and total amount contributed to date
+- **Next Charge** date for an active subscription, or **Paused Since** for a paused one
+- **Charge History**, listing the period, date charged, and amount of each past charge. Select **Load more** to see older charges.
+
+Select **Back to Donations** to return to the Donations page.
 
 ## Cancel a recurring donation
 
-1. Open the recurring donation detail page (see steps above).
-2. Select **Cancel Recurring Donation**.
-3. Confirm the cancellation in the dialog that appears.
+You can cancel from the detail page or directly from the list.
 
-Cancelling a recurring donation stops all future charges for that subscription immediately. Past charges are not refunded. The subscription is removed from your active recurring donations list, but all past charges remain visible in your donation history table on the [View Donations](../view-donations/) page.
+**From the detail page:**
+
+1. Open the recurring donation detail page (see steps above).
+2. Select **Cancel**.
+3. In the **Cancel Recurring Donation** dialog, select **Cancel Donation**. Select **Keep** to leave the subscription running.
+
+**From the list:**
+
+1. Go to **Crowdfunding → Donations**.
+2. In the **Recurring Donations** list, select the **More options** menu (⋯) on the donation.
+3. Select **Cancel**, then **Cancel Donation** to confirm.
+
+Cancelling a recurring donation stops all future charges for that subscription immediately and cannot be undone. Past charges are not refunded. The subscription stays in your **Recurring Donations** list with a red **Canceled** status, and its detail page no longer shows the **Cancel** button. Past charges remain visible in its charge history and in your donation history on the [View Donations](../view-donations/) page.
 
 ## Frequently asked
 
@@ -52,8 +62,11 @@ No. Cancelling a recurring donation stops all future charges immediately. You wi
 **Can I get a refund after cancelling?**
 Cancelling a recurring donation does not refund any past charges. Only future charges are stopped.
 
-**Why does a charge show a Failed status?**
-A charge fails when the linked payment method cannot be processed — for example, because the card is expired, declined, or no longer saved on your account. Check that your saved card is valid and up to date under [Manage Payment Methods](../manage-payment-methods/).
+**Why is my canceled donation still in the list?**
+Canceled subscriptions stay in your **Recurring Donations** list, marked **Canceled**, so you can still review their charge history. They are not charged again.
+
+**Can I restart a canceled recurring donation?**
+No. Cancellation cannot be undone. To give monthly again, start a new recurring donation from the initiative's page on the [LFX Crowdfunding site](https://crowdfunding.linuxfoundation.org).
 
 **What does a Paused subscription mean?**
 A Paused subscription is temporarily on hold. No charges are processed while the subscription is paused, and no action is needed from you. The subscription resumes automatically when the pause period ends.

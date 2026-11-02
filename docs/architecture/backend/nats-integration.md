@@ -125,6 +125,16 @@ uses the authenticated HTTP resolver `GET /projects/slug-to-uid/{slug}?v=1` thro
 404 for a confirmed miss and 500/503 for lookup failures, allowing deep-link guards
 to show a retry view rather than a false "Page not found".
 
+For callers that must distinguish a writer-check outage from a confirmed denial,
+`GET /api/projects/:slug?strict_writer=true` opts into `checkSingleAccessStrict` on
+`project:{uid}#writer_guard` after the project read. It returns `writer: false` only
+for a resolved denial; upstream failures or incomplete check results propagate as
+errors. The option works with both UUIDs and slugs and leaves ordinary lookups
+unchanged. The frontend `ProjectService` passes it as `{ strictWriter: true }`,
+caches it separately from ordinary lookups, and evicts failed entries so Retry
+can issue a fresh check. The group page uses this mode for weekly-brief email
+sharing; the send endpoint's authorization and recipients are unchanged.
+
 The legacy `ProjectService.getProjectIdBySlug` NATS helper remains available to its
 other callers. Its contract is ambiguous: the upstream responder sends an empty
 reply for both missing projects and internal failures, and the helper also maps

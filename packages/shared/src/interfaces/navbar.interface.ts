@@ -59,8 +59,14 @@ export interface NavbarMenuBlock<T> {
   items: T[];
 }
 
-/** Side of the trigger a navbar tooltip opens on. */
-export type NavTooltipPlacement = 'top' | 'bottom';
+/** Side of the trigger a navbar tooltip opens on. `right` is the collapsed rail's: beside the trigger, vertically centred. */
+export type NavTooltipPlacement = 'top' | 'bottom' | 'right';
+
+/**
+ * What started a navbar collapse / peek change, which decides focus afterwards: `pointer` drops focus from the navbar,
+ * `keyboard` keeps it on a control the new state still shows, `none` leaves it where the change put it.
+ */
+export type NavbarMorphFocus = 'pointer' | 'keyboard' | 'none';
 
 /** A chip in an interactive navbar tooltip. */
 export interface NavTooltipItem {

@@ -103,9 +103,11 @@ Meeting cards reset their local confirmed RSVPs and optimistic post-registration
 
 The BFF personal feed likewise prefers all-date history before reducing an unresolved recurring meeting to `my_rsvp`. It retains the legacy aggregate fallback only when no all-date answer exists; personal response filters still reject that date-scoped fallback. The join page and RSVP controls request `rsvp_scope=all` on the existing current-user RSVP lookup when their recurring date is unresolved, so the BFF selects only the effective user's all-date responses before choosing the newest answer (or returns `null` without one). Resolved-date and default aggregate lookups keep their existing precedence.
 
-Registration lifetime also bounds retained responses. The personal-feed BFF enriches `my_registrant_ids` from its existing active-registration lookup (`[]` means no active registration; absent means enrichment unavailable). Without an active registration the RSVP write cannot resolve a registrant, so the dashboard keeps meetings with `[]` out of Needs response; absent IDs stay eligible, because a retained confirmed write during an outage already proves a live registration. `UserService` reconciles retained and indexed candidates against those IDs and records ended registration UIDs per effective subject and meeting. Fully completed card/page removals clear root confirmations under the captured subject and discard local history; RSVP controls reject supplied, fetched, retained, and late write acknowledgements for ended registrations. Re-registration can retain responses only for the new registration, while a failed removal leaves the previous response intact. A complete removal also advances a per-subject, per-meeting registration generation; RSVP controls capture it before each write, so an acknowledgement for a write submitted before the removal ends its registration even when the removal could not name that registration's ID. Answers from every live registration stay retained (`retainConfirmedRsvp`): a newer scoped answer keeps an older all-dates answer covering the other dates, and only a newer all-dates answer supersedes them. Confirmation order beats stored timestamps: an acknowledgement (scoped or all-dates) whose timestamp is not later than every retained answer is stamped just after the newest one, so it still wins when a superseded answer resurfaces from the card or roster index, and RSVP controls use that retained copy. Card and join-page organizer overviews receive the same retained answers (filtered by `isMeetingRsvpCurrent`) and apply each by date, so an occurrence switch or remount does not drop a successful write; when a roster is present, a confirmed answer whose registration has no roster row yet is added as its own guest row so counts and previews include it.
+Registration lifetime also bounds retained responses. The personal-feed BFF enriches `my_registrant_ids` from its existing active-registration lookup (`[]` means no active registration; absent means enrichment unavailable), and `my_rsvps` from the same lookup lists the RSVPs of those active registrations with the same `[]`/absent meaning. Without an active registration the RSVP write cannot resolve a registrant, so the dashboard keeps meetings with `[]` out of Needs response; absent IDs stay eligible, because a retained confirmed write during an outage already proves a live registration. `UserService` reconciles retained and indexed candidates against those IDs and records ended registration UIDs per effective subject and meeting. Fully completed card/page removals clear root confirmations under the captured subject and discard local history; RSVP controls reject supplied, fetched, retained, and late write acknowledgements for ended registrations. Re-registration can retain responses only for the new registration, while a failed removal leaves the previous response intact. A complete removal also advances a per-subject, per-meeting registration generation; RSVP controls capture it before each write, so an acknowledgement for a write submitted before the removal ends its registration even when the removal could not name that registration's ID. Answers from every live registration stay retained (`retainConfirmedRsvp`): a newer scoped answer keeps an older all-dates answer covering the other dates, and only a newer all-dates answer supersedes them. Confirmation order beats stored timestamps: an acknowledgement (scoped or all-dates) whose timestamp is not later than every retained answer is stamped just after the newest one, so it still wins when a superseded answer resurfaces from the card or roster index, and RSVP controls use that retained copy. Card and join-page organizer overviews receive the same retained answers (filtered by `isMeetingRsvpCurrent`) and apply each by date, so an occurrence switch or remount does not drop a successful write; when a roster is present, a confirmed answer whose registration has no roster row yet is added as its own guest row so counts and previews include it.
 
-`DELETE /api/meetings/:uid/registrants/self` returns `200` with `MeetingRegistrationRemovalResult`: `removed_registrant_ids` contains only successful upstream deletions and `remaining_registrant_ids` contains the caller's rows whose deletion failed. The BFF resolves those IDs from the session; the client supplies only the meeting ID, plus an optional `x-lfx-removal-source` header (`meeting-card`, `meeting-join` or `email-link`, the last for the remove-yourself link in invite emails and calendar events that opens the meeting page with `?action=leave`) that the BFF only logs as `source`. A missing or unrecognised value is logged as `unknown`; the header is never used for authorization and is not forwarded upstream. The success log records the `removed_registrant_ids` and never the removing user's `username` or `email`, so removals can be matched to the upstream service's own logs and registrant records without putting personal data in durable logs. On partial removal it also reads raw RSVP history under the caller's token and returns `remaining_rsvps` restricted to the surviving IDs and meeting. An empty history is known-empty; an omitted field means history was unavailable (or removal was complete). History lookup failure cannot undo successful deletions or turn their result into a failed removal. `clearConfirmedMeetingRsvps` ends only the deleted IDs and preserves the registration generation and surviving confirmations, so a survivor's in-flight RSVP acknowledgement stays valid. It merges recovered history without stamping it as a new write and keeps the newer copy of a matching RSVP row. The active personal feed therefore immediately reselects the survivor's applicable response even after a fresh page load; the card controls and join-page status use the same retained history with their date guards. The card and join page remain invited, warn that removal is incomplete, refresh meeting data, and lazily invalidate the personal replay for its next consumer. Only a result with no remaining IDs marks the meeting registration removed.
+`GET /api/user/past-meetings?include=artifacts` also sets `has_recording` (a recording with a share URL) and `has_ai_summary` (a summary with content that is approved or needs no approval, or awaits approval and the viewer is an organizer) from batched user-token lookups on the recording and summary indexes; other `include` values are ignored, and without it the response and its latency are unchanged. A failed lookup leaves the flag absent.
+
+`DELETE /api/meetings/:uid/registrants/self` returns `200` with `MeetingRegistrationRemovalResult`: `removed_registrant_ids` contains only successful upstream deletions and `remaining_registrant_ids` contains the caller's rows whose deletion failed. The BFF resolves those IDs from the session; the client supplies only the meeting ID, plus an optional `x-lfx-removal-source` header (`meeting-card`, `meeting-join`, `meetings-home` or `email-link`, the last for the remove-yourself link in invite emails and calendar events that opens the meeting page with `?action=leave`) that the BFF only logs as `source`. A missing or unrecognised value is logged as `unknown`; the header is never used for authorization and is not forwarded upstream. The success log records the `removed_registrant_ids` and never the removing user's `username` or `email`, so removals can be matched to the upstream service's own logs and registrant records without putting personal data in durable logs. On partial removal it also reads raw RSVP history under the caller's token and returns `remaining_rsvps` restricted to the surviving IDs and meeting. An empty history is known-empty; an omitted field means history was unavailable (or removal was complete). History lookup failure cannot undo successful deletions or turn their result into a failed removal. `clearConfirmedMeetingRsvps` ends only the deleted IDs and preserves the registration generation and surviving confirmations, so a survivor's in-flight RSVP acknowledgement stays valid. It merges recovered history without stamping it as a new write and keeps the newer copy of a matching RSVP row. The active personal feed therefore immediately reselects the survivor's applicable response even after a fresh page load; the card controls and join-page status use the same retained history with their date guards. The card and join page remain invited, warn that removal is incomplete, refresh meeting data, and lazily invalidate the personal replay for its next consumer. Only a result with no remaining IDs marks the meeting registration removed.
 
 Fresh acknowledgements bridge registration-index lag too: before a newly confirmed registration first appears in indexed metadata, an older or empty registration list cannot invalidate its successful write. Once its UID has appeared, a later missing/replaced UID invalidates that registration's retained responses. Explicit successful removal always ends the registration immediately, even before its first indexed appearance.
 
@@ -401,19 +403,55 @@ source counts require reattachment or an explicit choice to continue without the
 never a false kept-file claim. No uploaded content is added to browser persistence.
 The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
 
-The run route owns intake, the research/writing feed and questions, not the
-result or a feedback form. Direct no-answers intakes open the document route
-before their first POST. Questions runs transfer their owned attempt after the
-accepted answers ACK. Without questions, the first finalize/checking step (or
-an earlier receipt-less ready result) transfers the same attempt. A partial
-Guild stream cannot distinguish writing from another research/questions round;
-model starts or completions alone never authorize a handoff. The producer can
-label no-questions writing retroactively once an unambiguous finalize confirms
-it. An agent-emitted writing marker would allow an earlier writing-start
-handoff; it is a follow-up in marketing-os-agents' [self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md), not a contract change here.
-There is no unused no-feed submitted-ACK fallback.
-The asset page resumes the same attempt without a second POST and owns writing
-until the exact stored revision lands. Catalog/intakes own membership/routing.
+The run route owns living-asset intake, the research/writing feed and questions,
+not the result or a feedback form. Direct no-answers runs, questions runs and
+restored accepted attempts stay there through checking and receipt-less readiness.
+Only the private attempt's exact stored-revision receipt lands with `revision=`;
+recorded terminal failures open the document page's failed run card. Navigation
+recovery retries only its saved destination, never Generate or answers. An active-conflict handoff restores its scoped request before opening the guard, so a successful recheck can follow that request's exact receipt. A recheck timeout or non-transient read error clears running/navigation flags and returns to the editable intake without another automatic start.
+A partial Guild stream cannot distinguish writing from another research/questions
+round; model starts or completions alone never authorize a landing. The producer
+can label no-questions writing retroactively once an unambiguous finalize confirms
+it. Agent writing markers remain a contract follow-up in marketing-os-agents'
+[self-serve follow-ups](https://github.com/linuxfoundation/marketing-os-agents/blob/main/docs/self-serve-follow-ups.md).
+
+**The server is the only run-state authority on every shared surface.** Browser attempts
+are recovery hints, never evidence that a run is writing, waiting or complete. First
+observation gates the page behind one neutral, layout-shaped skeleton; no intake,
+old document or local questions appear first. Recorded state wins on open, focus and
+visibility return. A private questions block can continue only for the matching server
+run/questions turn; missing or contradictory recorded state retires that private
+block immediately. Capability-only agents without a document-run contract are not
+promoted into public run-state evidence. Documents labels use only the recorded state. The shared
+visibility poller pauses hidden work, re-reads on focus and keeps live lists/documents
+fresh while idle as well as running. Selected closed-run detail requests carry the
+opaque `run` query so a discarded/superseded marker can render safe navigation copy
+instead of a blank page. No browser cache or actor identifier substitutes for server facts.
+
+`MktgRunProgressComponent` owns living-document public detail/body reads and their
+single bounded availability budget. The document view consumes its read cycles headlessly for living runs: only the
+failed card renders there, and an active `?run=` replaces to the run page. The
+run page owns one asset heading, one status line and the progress steps. A server-observed discarded/superseded marker cancels the document receiver matching private stream; late results cannot replace that closed view.
+One-off receivers keep their generating presentation and use the same visible/focus lifetime for reads. A living run-page `?run=` reader always measures public progress, including when a matching private attempt exists. Public landing opens the current
+document without selecting or claiming an exact revision: completed runs leave
+`runs[]` without a public completion receipt. Public kit questions carrying a writer-visible `pendingQuestions` block reuse the
+shared questions UI. The route shows a neutral `lfx-mktg-skeleton` until the first server read,
+never an intake-form flash. Recorded state wins over private recovery on load,
+focus and visibility return; questions are reconciled every ten seconds without
+resetting unsent edits. A private block uses its owner-token continuation only
+while the server still reports that questions turn, never also
+posting publicly. LinkedIn pending recovery uses the same headless observer
+before restoring its creator-only questions; writing or a stored revision opens
+its document instead. Other writers submit
+`project`, `questionsId` and answers to `/api/mktg-agents/runs/:runId/answers`
+without any session capability. An accepted answer resumes public progress;
+403 retains a reason-bearing waiting notice without retries. A scoped 409
+`MKTG_RUN_ANSWERED` retires the submitted questions block, shows the server's
+safe display name (or Another writer), and resumes writing progress without
+resending. Identifier-like names are not echoed. A genuinely new server questions
+block remains answerable; other 409/412 responses refresh the current row. A waiting reader can also Refresh progress after another
+browser answers; successful Send resumes normal polling. One-off answers remain creator-only.
+Catalog/intakes own membership/routing.
 Framework, kit and boilerplates renderers, exports and dependency sidecars stay
 on the document view. Revision workflows, not the retired inline feedback form,
 own changes; the existing asset-store current pointer remains authoritative.
@@ -462,3 +500,84 @@ location (or `null` until its receipt arrives) and accepted attempt. Cached hist
 order never selects a handoff revision; receipt-less recovery retains that attempt's
 session, capability and prior-version hint, not a newer cached run's. The asset-store item's single approved-current pointer and its chip/state
 are the authority for current status, never a separate run/list-derived flag.
+
+## Asset comment client
+
+`MktgDocumentCommentsService` owns one selected document revision's comment list.
+The view selects its project/agent/document/revision scope and clears selection
+on departure. Instantiating the client or reopening a stored view never POSTs.
+Readonly signals distinguish loading, measured empty, load failure and save
+failure. A transient same-scope refresh retains the last measured list; access
+denials clear it. Effective-subject/project changes immediately hide old data
+and cancel outstanding requests. Scope generations reject a deferred old action
+even after navigating away and back to the same revision. A successful add
+cancels a pre-save GET so it cannot overwrite the acknowledged snapshot.
+
+The client retains each field's browser-memory form and opaque request ID across
+tab-host destruction, keyed by effective viewer and document revision; changing
+that scope discards old drafts. The composer handles explicit save retries. The
+client never automatically retries a POST or invents an ID.
+Comment forms are memory-only and all HTTP is browser-gated; no sources,
+sessions, attribution IDs or agent handles are added to the comment request.
+Redraft recovery separately retains its opaque send nonce after the 24-hour
+capability TTL. Expired session capabilities are removed; a read-only, creator-bound
+ledger check is required before automatic cleanup, which is allowed only for a
+completed/failed (including released) send. Unknown/non-terminal state and failed
+reconciliation retain the frozen IDs; restoring a view never POSTs.
+
+The framework document view adds data-keyed comment controls inside the existing
+field wrappers. Stored JSON order owns array anchors, not a goal's business ID.
+Stored Brand Kits opt into string passage pins in their screen chapters (never SVG
+bytes, generated sample text or the printed book). The BFF captures passage text
+from the immutable stored key for `brand_kit_revise_form`; the browser sends only
+that key and comment. Boilerplates pin each original `bp[index].t` length and send
+the selected asset's comments through the same redraft flow. FAQ pins each answer
+at `faq[g][1][q][1]`, including null answers, both in its group and on the Needs an
+answer tab. An answer supplied in a comment is published by the agent as Notes;
+the next revision's content determines which questions still need an answer.
+Framework, Kit, Boilerplates and FAQ keep Comments, Revisions and About together in the right-hand column
+at 1280px and 1440px; at 390px the details follow the asset below. The main layout's
+800px host-container threshold and each asset's inner container grids remain intact.
+The side panel uses one empty-comments instruction (Send and its reason appear only with open comments after a successful read), revision labels limited to version/state/date plus the Current pill, hover/focus Make current help rather than a footnote, and About rows for Agent and Stored only.
+Run previews and legacy/unreadable assets do not opt in. Shared labels name palette entries, voice attributes,
+boilerplate lengths and FAQ group/question positions identically in pins and the panel.
+The controls appear on hover/focus, and stay visible on hover-less devices; threads
+and a wrapper-based composer pin beneath their field. Disabled hosts have no
+layout box; the extra hover groups use display:contents until controls are shown.
+Inner grids respond to each asset's own container rather than viewport width;
+Framework and Kit containment is screen-only to preserve print positioning.
+The shared contract-specific label util gives pins and the panel the same human
+field caption, including original array position and goal/audience title. Closing
+a composer restores its Comment button's focus; successful adds announce politely.
+An in-flight comment save outlives its field/tab host; the retained per-field form
+and nonce survive that host's replacement. A matching ACK clears only its submitted
+text, never newer edits made while that response was pending.
+The Comments panel shows only read errors; save errors belong to the composer.
+The Comments panel owns
+selection/lifetime and lists the same server threads beside revision history.
+A shared thread component renders author/date/field/status as text only. Form
+validation uses the shared text cap; failed saves retain text and the opaque
+request ID, while changed text or a revision change starts a different draft.
+No source report fields or print surfaces are made editable. Send freezes the
+selected open IDs/nonce in subject-and-revision-bound private TTL recovery before
+POST. Unknown ACK restoration never auto-submits; retry reuses that exact intent.
+Only primary BFF allow-listed answers clear unaccepted intent: 400 VALIDATION_ERROR,
+404 NOT_FOUND, or 409 MKTG_REDRAFT_COMMENTS_BUSY / MKTG_REDRAFT_REQUEST_FAILED.
+Other 4xx, code-less 5xx and transport failures retain the nonce and permit creator
+release. Post-session server failures are always uncertain, not definitive 4xx. The ACK supplies the authoritative stored
+prior version for polling and exact version comparison, not legacy display metadata.
+Known ACKs use the existing run observer and bounded receipt retry, without fake
+intake answers, another poller, or a Generate fallback. Only the exact scoped new
+Draft receipt lands; approved current is not inferred or changed. Landing preserves
+the reader's tab, with the submitted kit passage's registered chapter taking
+precedence when it differs. That chapter is UI-only context, frozen for the send;
+it is not added to revise requests or persistence receipts. A 409 on an explicit
+release means the start is still active. Release is offered only for an unaccepted
+intent whose response proved uncertainty, transport failure or expiry; accepted
+attempts offer re-observe Retry instead. An unknown release is idempotent success
+with no ledger write. Identity/navigation cancellation hides stale feeds. Disabled
+Send controls explain missing source, empty/over-cap comments or unread state; counts
+appear only after successful reads, and run messages use a persistent live region.
+Description idrefs bind declaratively through the shared button wrapper, with a
+CDK-generated per-instance reason id. The feed starts only after an accepted
+attempt or nonempty activity, never merely because a primary POST is pending.

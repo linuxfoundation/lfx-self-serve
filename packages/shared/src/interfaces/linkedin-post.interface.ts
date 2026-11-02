@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MktgPendingDocumentRun, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** Per-user posting identity, in the live linkedin-post-output/v1 contract. */
 export interface LinkedinProfile {
@@ -53,27 +53,11 @@ export interface LinkedinForm {
   content_url?: string;
   content_file_name?: string;
 }
-/** Live retry snapshot; raw sources and personal setup stay in memory only. */
-export interface LinkedinRetryInputs {
-  answers: Record<string, string>;
-  setup?: LinkedinSetup;
-  /** A restored run needs the requester to choose/paste/re-enter its source again. */
-  requiresSource?: boolean;
-}
 export interface LinkedinGeneration extends MktgRunSessionResponse {
-  retryInputs?: LinkedinRetryInputs;
-  /** Last answered gap round, retained with a pending capability to avoid asking twice after reload. */
-  answeredQuestionsId?: string;
   documentId: string;
   /** LFX-only run answers, never sent to the agent. */
   answers?: Record<string, string>;
   source: { label: string; words: number; fetched: boolean };
-}
-export interface LinkedinPendingRun extends MktgPendingDocumentRun {
-  /** Reload metadata only; no content_text, content_url, upload bytes or personal setup. */
-  retryInputs?: Omit<LinkedinRetryInputs, 'setup'>;
-  answeredQuestionsId?: string;
-  source: LinkedinGeneration['source'];
 }
 export interface LinkedinResult extends MktgRunResultResponse {
   questionsProject?: string;

@@ -1,0 +1,161 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [ariaCloseLabel]="'Close panel'"
+  [pt]="{
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'membership-projects-drawer-title',
+      'data-testid': 'membership-projects-drawer',
+    },
+    pcCloseButton: { root: { 'data-testid': 'membership-projects-drawer-close' } },
+  }"
+  (onShow)="onDrawerShow()"
+  (onHide)="onDrawerHide()"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full">
+  <ng-template #header>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+        <i class="fa-light fa-diagram-project text-lg" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        <!-- tabindex="-1": out of the Tab order, but focusable so onDrawerShow() can move focus
+             here on open. It is also what aria-labelledby points at, so the panel announces as a
+             named dialog the way a dialog title normally would. -->
+        <h2
+          #titleRef
+          id="membership-projects-drawer-title"
+          tabindex="-1"
+          class="text-base font-semibold text-gray-900 truncate"
+          data-testid="membership-projects-drawer-title">
+          Org Projects
+        </h2>
+        <p class="text-sm text-gray-500 truncate" data-testid="membership-projects-drawer-subtitle">
+          {{ foundationName() }} &middot; {{ count() | number }} {{ count() === 1 ? 'project' : 'projects' }}
+        </p>
+      </div>
+    </div>
+  </ng-template>
+
+  <!-- Inside <p-drawer>, deliberately not hoisted out: the panel is aria-modal="true" (via [pt]
+       above), and content outside a modal's subtree is unreliable for AT to reach while it's open.
+       That means this node IS destroyed and recreated on every open; contentRevealed (see its own
+       comment in the .ts) handles what that implies for the first paint. -->
+  <p class="sr-only" role="status" aria-live="polite" data-testid="membership-projects-drawer-status">
+    {{ contentRevealed() ? statusMessage() : '' }}
+  </p>
+
+  <div class="flex flex-col gap-4 h-full">
+    <!-- Search -->
+    <div>
+      <label for="membership-projects-search" class="sr-only">Search projects</label>
+      <lfx-input-text
+        [form]="filterForm"
+        control="search"
+        id="membership-projects-search"
+        placeholder="Search projects..."
+        icon="fa-light fa-magnifying-glass"
+        styleClass="w-full"
+        size="small"
+        dataTest="membership-projects-search" />
+    </div>
+
+    <!-- List -->
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16" data-testid="membership-projects-loading">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (loadFailed()) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="membership-projects-error">
+        <i class="fa-light fa-triangle-exclamation text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500 mb-3">Failed to load projects.</p>
+        <button
+          type="button"
+          class="px-3 py-1.5 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+          data-testid="membership-projects-retry"
+          (click)="retry()">
+          Retry
+        </button>
+      </div>
+    } @else if (filteredProjects().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-center">
+        <i class="fa-light fa-diagram-project text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">
+          @if (searchTerm()) {
+            No projects match your search.
+          } @else {
+            No projects found for this foundation.
+          }
+        </p>
+      </div>
+    } @else {
+      <ul class="flex flex-col divide-y divide-gray-100" data-testid="membership-projects-list">
+        @for (project of filteredProjects(); track project.projectId) {
+          <li class="py-3" [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId)">
+            <div class="flex items-center gap-3">
+              <!-- Influence dot — same scale as the Overview foundations table -->
+              @switch (project.influence) {
+                @case ('Leading') {
+                  <span class="inline-block w-2 h-2 rounded-full bg-emerald-700 flex-shrink-0" aria-hidden="true"></span>
+                }
+                @case ('Contributing') {
+                  <span class="inline-block w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true"></span>
+                }
+                @case ('Participating') {
+                  <span class="inline-block w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" aria-hidden="true"></span>
+                }
+                @default {
+                  <span class="inline-block w-2 h-2 rounded-full bg-gray-400 flex-shrink-0" aria-hidden="true"></span>
+                }
+              }
+              <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                @if (project.isLfProject) {
+                  <a [routerLink]="project.link" class="text-sm font-medium text-blue-600 truncate no-underline hover:underline" (click)="visible.set(false)">
+                    {{ project.projectName }}
+                  </a>
+                } @else {
+                  <span class="text-sm font-medium text-gray-900 truncate">{{ project.projectName }}</span>
+                }
+                <span class="text-xs text-gray-500 truncate">{{ project.influence }}</span>
+              </div>
+              <div class="flex items-center gap-4 flex-shrink-0 text-xs text-gray-500">
+                <!-- LF maintainer roles only: a non-LF project, or roles that are unavailable (null), show a dash, not a misleading zero. -->
+                <span
+                  class="flex flex-col items-end"
+                  [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles'">
+                  <span class="text-sm text-gray-900">{{ project.isLfProject ? ((project.maintainers | number) ?? '—') : '—' }}</span>
+                  <span class="inline-flex items-center gap-1">
+                    {{ maintainerRolesLabel }}
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      aria-label="How maintainer roles are counted"
+                      [pTooltip]="maintainerRolesDefinition"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      [attr.data-testid]="'membership-project-' + (project.projectSlug || project.projectId) + '-maintainer-roles-info'">
+                      <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                    </button>
+                  </span>
+                </span>
+                <span class="flex flex-col items-end">
+                  <span class="text-sm text-gray-900">{{ project.contributors | number }}</span>
+                  Contributors
+                </span>
+                <span class="flex flex-col items-end">
+                  <span class="text-sm text-gray-900">{{ project.commits | number }}</span>
+                  Commits
+                </span>
+              </div>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</p-drawer>

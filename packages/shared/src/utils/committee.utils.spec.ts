@@ -20,11 +20,15 @@ import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
+  buildParentCommitteeOptions,
   canManageCommitteeMembers,
   canViewCommitteeRoster,
   committeeRouteIdMatches,
   getCommitteeMailingListLink,
   countVotingReps,
+  getEditableCommitteeCategories,
+  getGroupCommands,
+  getGroupEditLink,
   getSelectableCommitteeCategories,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
@@ -681,5 +685,55 @@ describe('getCommitteeMailingListLink', () => {
   it('falls back to the flat paths when the tier is unknown', () => {
     expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual(['/mailing-lists', 'ml-1']);
     expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('a', 'a'), list('b', 'b')] })?.commands).toEqual(['/groups', 'c1']);
+  });
+});
+
+describe('getEditableCommitteeCategories', () => {
+  it('returns the persona set unchanged when the current category is already in it', () => {
+    expect(getEditableCommitteeCategories('board-member', 'Board')).toEqual(getSelectableCommitteeCategories('board-member'));
+  });
+
+  it('prepends the current category when the persona set excludes it', () => {
+    const options = getEditableCommitteeCategories('maintainer', 'Board');
+
+    expect(options[0]).toEqual({ label: 'Board', value: 'Board' });
+    expect(options).toHaveLength(getSelectableCommitteeCategories('maintainer').length + 1);
+  });
+
+  it('adds nothing when there is no current category', () => {
+    expect(getEditableCommitteeCategories('maintainer', undefined)).toEqual(getSelectableCommitteeCategories('maintainer'));
+  });
+});
+
+describe('buildParentCommitteeOptions', () => {
+  const groups = [
+    { uid: 'a', name: 'A' },
+    { uid: 'b', name: 'B', parent_uid: 'a' },
+    { uid: 'c', name: 'C' },
+  ] as Committee[];
+
+  it('leads with the null "No Parent" choice and keeps only top-level groups', () => {
+    expect(buildParentCommitteeOptions(groups, undefined, 'Group')).toEqual([
+      { label: 'No Parent Group', value: null },
+      { label: 'A', value: 'a' },
+      { label: 'C', value: 'c' },
+    ]);
+  });
+
+  it('excludes the group being edited', () => {
+    expect(buildParentCommitteeOptions(groups, 'a', 'Group').map((option) => option.value)).toEqual([null, 'c']);
+  });
+});
+
+describe('getGroupEditLink', () => {
+  it('uses the tier-aware route and carries the project slug', () => {
+    const link = getGroupEditLink({ uid: 'g-1', is_foundation: false, project_slug: 'kubernetes' });
+
+    expect(link.commands).toEqual(getGroupCommands({ uid: 'g-1', is_foundation: false }, 'edit'));
+    expect(link.queryParams).toEqual({ project: 'kubernetes' });
+  });
+
+  it('falls back to the flat edit path with no query params for an unenriched payload', () => {
+    expect(getGroupEditLink({ uid: 'g-1' })).toEqual({ commands: ['/groups', 'g-1', 'edit'], queryParams: {} });
   });
 });

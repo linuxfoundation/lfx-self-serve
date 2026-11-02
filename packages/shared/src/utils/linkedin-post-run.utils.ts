@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_NONE_ALLOWED_QUESTION_IDS } from '../constants/mktg-run.constants';
+
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import {
   LINKEDIN_ANSWERS_HEADER,
@@ -103,7 +106,7 @@ export function linkedinRunQuestions(turn: LinkedinQuestionsTurn): MktgRunQuesti
 }
 
 export function validLinkedinAnswers(value: unknown): value is MktgRunAnswer[] {
-  if (!Array.isArray(value) || value.length > LINKEDIN_MAX_QUESTIONS) return false;
+  if (!Array.isArray(value) || value.length === 0 || value.length > LINKEDIN_MAX_QUESTIONS) return false;
   const seen = new Set<string>();
   return value.every((answer) => {
     if (
@@ -112,7 +115,7 @@ export function validLinkedinAnswers(value: unknown): value is MktgRunAnswer[] {
       !Object.keys(LINKEDIN_PROFILE_GAP_LABELS).includes(answer['key']) ||
       seen.has(answer['key']) ||
       typeof answer['text'] !== 'string' ||
-      !answer['text'].trim() ||
+      mktgAnswerProblem(answer['text'], { allowNone: MKTG_NONE_ALLOWED_QUESTION_IDS.includes(answer['key']) }) !== null ||
       answer['text'].length > 4000 ||
       !FOUNDATION_MESSAGE_ANSWER_ORIGINS.some((origin) => origin === answer['origin'])
     )

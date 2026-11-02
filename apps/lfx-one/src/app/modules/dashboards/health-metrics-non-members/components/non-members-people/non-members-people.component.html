@@ -10,13 +10,8 @@
       title="People unavailable"
       subtitle="We could not load this foundation's engaged non-member individuals. Refresh the page to try again."
       data-testid="non-members-people-error" />
-  } @else if (!loading() && scopeTotal() === 0) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-user"
-      title="No engaged non-member individuals"
-      subtitle="No individual from a non-member organization attended a meeting in this period."
-      data-testid="non-members-people-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-people-controls">
       <div class="w-full sm:w-64">

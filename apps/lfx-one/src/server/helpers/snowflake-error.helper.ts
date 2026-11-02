@@ -7,10 +7,30 @@
  * malformed query (e.g. a wrong column name) against a table that does exist. Extracted from
  * `SnowflakeService.isMissingObjectError` so callers — including specs — can depend on the real
  * predicate instead of a hand-copied regex that can drift silently.
+ *
+ * Pass `expectedObject` to ask the narrower question "is THIS object the missing one?" — enough to
+ * choose a fallback tier, and enough to keep a missing core table out of a caller's exemption.
  */
-export function isMissingObjectError(error: unknown): boolean {
+export function isMissingObjectError(error: unknown, expectedObject?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /does not exist or not authorized/i.test(message);
+  const isMissingObject = /does not exist or not authorized/i.test(message);
+  if (!isMissingObject || !expectedObject) {
+    return isMissingObject;
+  }
+
+  // Snowflake names the object it blames. Without a name there is nothing to match, so the caller's
+  // narrower expectation is not met and the error keeps its normal failure handling.
+  const objectMatch = /\b(?:object|table|view|schema|database)\s+(?:'([^']+)'|"([^"]+)"|([^\s,;]+?))\s+does not exist or not authorized/i.exec(message);
+  const blamedObject = objectMatch?.[1] ?? objectMatch?.[2] ?? objectMatch?.[3];
+  if (!blamedObject) {
+    return false;
+  }
+
+  // Compare on the qualified name's last segment so a caller can name the table alone, but require a
+  // dot at the boundary: `FOO.BAR_REGISTRATIONS` must not satisfy an expectation of `REGISTRATIONS`.
+  const actual = blamedObject.replace(/"/g, '').toUpperCase();
+  const expected = expectedObject.replace(/"/g, '').toUpperCase();
+  return actual === expected || actual.endsWith(`.${expected}`);
 }
 
 /**
@@ -50,7 +70,11 @@ export function isValueConversionError(error: unknown): boolean {
   return normalizedErrorCode === '100038' || /\b(?:date|time|timestamp|numeric value|boolean value) '[^']*' is not recognized/i.test(message);
 }
 
-/** True when Snowflake rejects a column reference, optionally for one expected identifier. */
+/**
+ * True when Snowflake rejects a column reference, optionally for one expected identifier. Snowflake names the
+ * reference as written, so an aliased column (`r.IS_CDP_TEAM_MEMBER`) comes back qualified (`'R.IS_CDP_TEAM_MEMBER'`):
+ * quotes are stripped and a qualified name matches on its last part.
+ */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);
   let errorCode = '';
@@ -64,6 +88,7 @@ export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: st
   }
 
   const identifierMatch = /invalid identifier\s+(?:'([^']+)'|"([^"]+)"|([^\s,;]+))/i.exec(message);
-  const actualIdentifier = identifierMatch?.[1] ?? identifierMatch?.[2] ?? identifierMatch?.[3];
-  return actualIdentifier?.toUpperCase() === expectedIdentifier.toUpperCase();
+  const actual = (identifierMatch?.[1] ?? identifierMatch?.[2] ?? identifierMatch?.[3])?.replace(/["']/g, '').toUpperCase();
+  const expected = expectedIdentifier.replace(/["']/g, '').toUpperCase();
+  return actual !== undefined && (actual === expected || actual.endsWith(`.${expected}`));
 }

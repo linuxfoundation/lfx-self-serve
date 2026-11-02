@@ -2,14 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-5" data-testid="audience-last-sent">
-  <!-- How reuse works, stated once: the two direct actions create nothing in HubSpot, which is the
-       whole reason to prefer them over a compose. -->
+  <!-- How reuse works, stated once: the two direct actions build no master list, which is the whole
+       reason to prefer them over a compose. Whether they create anything else is the container's call. -->
   <div class="flex items-start gap-2 rounded-md bg-blue-50 p-3 text-xs text-blue-900" data-testid="audience-last-sent-howto">
     <i class="fa-light fa-circle-info mt-0.5 text-blue-600" aria-hidden="true"></i>
     <div class="flex flex-col gap-1">
       <span>
-        <span class="font-medium">Use for this email</span> attaches existing lists to this email as-is, together with the exclusions ticked in step 3. No
-        master list is built and nothing new is created in HubSpot.
+        <span class="font-medium">Use for this email</span> attaches existing lists to this email as-is, together with the exclusions ticked under Standard
+        suppressions.
+        <span data-testid="audience-last-sent-attach-note">{{ attachNote() }}</span>
       </span>
       <span><span class="font-medium">Copy selection</span> ticks the same lists in steps 2–3 so you can adjust them first.</span>
       <span><span class="font-medium">Exclude</span> keeps a list's contacts off this send instead of including them.</span>

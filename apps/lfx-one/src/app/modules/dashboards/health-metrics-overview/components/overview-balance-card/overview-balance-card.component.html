@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy()"
+  testId="overview-balance">
+  @if (view(); as view) {
+    <div class="flex flex-col gap-[2px]">
+      <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900" data-testid="overview-balance-total">{{ view.totalLabel }}</span>
+      <span class="text-[12px] text-gray-500"
+        >Overdue across {{ view.overdueMembersLabel }} members ·
+        <span class="inline-flex items-center gap-[4px] font-medium text-red-700" data-testid="overview-balance-at-risk"
+          ><i class="fa-light fa-circle-exclamation text-[12px]" aria-hidden="true"></i>{{ view.atRiskLabel }} at risk of churn</span
+        ></span
+      >
+    </div>
+
+    <div class="flex h-[8px] gap-[2px] overflow-hidden rounded-full" aria-hidden="true" data-testid="overview-balance-bar">
+      @for (row of view.rows; track row.key) {
+        @if (row.widthPct > 0) {
+          <span [class]="row.dotClass" [style.flex]="'0 0 ' + row.widthPct + '%'"></span>
+        }
+      }
+    </div>
+
+    <div class="flex flex-col" role="table" aria-label="Outstanding balance by risk">
+      <div class="grid grid-cols-[1fr_auto_auto] gap-[14px] border-b border-gray-200 pb-[6px] text-[12px] text-gray-500" role="row">
+        <span role="columnheader"><span class="sr-only">Risk</span></span>
+        <span class="text-right" role="columnheader">Members</span>
+        <span class="w-[96px] text-right" role="columnheader">Amount</span>
+      </div>
+      @for (row of view.rows; track row.key) {
+        <div
+          class="grid grid-cols-[1fr_auto_auto] items-center gap-[14px] border-b border-gray-100 py-[9px] text-[13px]"
+          role="row"
+          [attr.data-testid]="'overview-balance-' + row.key">
+          <div class="flex flex-col gap-[1px]" role="cell">
+            <span class="inline-flex items-center gap-[8px] text-gray-900"
+              ><span class="h-[8px] w-[8px] flex-none rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}</span
+            >
+            <span class="pl-[16px] text-[11px] text-gray-400">{{ row.daysLabel }} overdue</span>
+          </div>
+          <span class="text-right text-gray-700" role="cell">{{ row.membersLabel }}</span>
+          <span class="w-[96px] text-right font-semibold text-gray-900" role="cell">{{ row.amountLabel }}</span>
+        </div>
+      }
+    </div>
+
+    <div class="mt-auto flex">
+      <lfx-overview-explore-link [link]="link" testId="overview-balance-explore" />
+    </div>
+  }
+</lfx-overview-card>

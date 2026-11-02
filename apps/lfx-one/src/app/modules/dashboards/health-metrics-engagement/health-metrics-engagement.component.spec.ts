@@ -29,7 +29,7 @@ import type {
 class GroupAttendanceStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Same stand-in for Meeting participation: the shell only reacts to its two outputs.
@@ -37,14 +37,14 @@ class GroupAttendanceStubComponent {
 class MeetingParticipationStubComponent {
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Same stand-in for Attendance trend: it reports its reads and nothing else.
 @Component({ selector: 'lfx-engagement-attendance-trend', template: '' })
 class AttendanceTrendStubComponent {
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Same stand-in for Organization participation.
@@ -52,7 +52,7 @@ class AttendanceTrendStubComponent {
 class OrgParticipationStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Same stand-in for Representatives.
@@ -60,7 +60,7 @@ class OrgParticipationStubComponent {
 class RepresentativesStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Same stand-in for Non-member participation.
@@ -68,7 +68,23 @@ class RepresentativesStubComponent {
 class NonMemberParticipationStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   public readonly reading = output<void>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
+}
+
+// Same stand-in for Newsletter performance, whose badge is a plain count.
+@Component({ selector: 'lfx-engagement-newsletter-performance', template: '' })
+class NewsletterPerformanceStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<boolean | null>();
+}
+
+// Same stand-in for Newsletter recipient engagement.
+@Component({ selector: 'lfx-engagement-newsletter-recipients', template: '' })
+class NewsletterRecipientsStubComponent {
+  public readonly countChange = output<number | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<boolean | null>();
 }
 
 // Covers only what Engagement wires into the shell: its copy, badges and section relays. The
@@ -94,6 +110,14 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(NonMemberParticipationStubComponent)).componentInstance as NonMemberParticipationStubComponent;
   }
 
+  function newsletterChild(): NewsletterPerformanceStubComponent {
+    return fixture.debugElement.query(By.directive(NewsletterPerformanceStubComponent)).componentInstance as NewsletterPerformanceStubComponent;
+  }
+
+  function recipientsChild(): NewsletterRecipientsStubComponent {
+    return fixture.debugElement.query(By.directive(NewsletterRecipientsStubComponent)).componentInstance as NewsletterRecipientsStubComponent;
+  }
+
   function repChild(): RepresentativesStubComponent {
     return fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
   }
@@ -105,7 +129,7 @@ describe('HealthMetricsEngagementComponent', () => {
   // The body each data section is projected as, for the tests that drive its `reading`/`settled` relays.
   const sectionChildren: Record<
     (typeof HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS)[number],
-    () => { reading: OutputEmitterRef<void>; settled: OutputEmitterRef<void> }
+    () => { reading: OutputEmitterRef<void>; settled: OutputEmitterRef<boolean | null> }
   > = {
     participation: participationChild,
     committees: stubChild,
@@ -113,12 +137,14 @@ describe('HealthMetricsEngagementComponent', () => {
     orgs: orgChild,
     reps: repChild,
     nonmem: nonMemberChild,
+    newsletters: newsletterChild,
+    recipients: recipientsChild,
   };
 
   /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
   function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3, lowAttendanceGroups: 2 }): void {
     stubChild().countsChange.emit(counts);
-    stubChild().settled.emit();
+    stubChild().settled.emit(false);
   }
 
   function activeKey(): string | null {
@@ -146,6 +172,8 @@ describe('HealthMetricsEngagementComponent', () => {
             HealthMetricsL2SectionDirective,
             HealthMetricsL2ShellComponent,
             MeetingParticipationStubComponent,
+            NewsletterPerformanceStubComponent,
+            NewsletterRecipientsStubComponent,
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
             RepresentativesStubComponent,
@@ -235,6 +263,20 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(item.textContent).toContain('63');
   });
 
+  it('badges Newsletter performance with the newsletters that section reports sent', () => {
+    newsletterChild().countChange.emit(11);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-newsletters"]').textContent).toContain('11');
+  });
+
+  it('badges Newsletter recipient engagement with the recipients that section reports', () => {
+    recipientsChild().countChange.emit(1490);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-recipients"]').textContent).toContain('1,490');
+  });
+
   it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');
@@ -258,12 +300,14 @@ describe('HealthMetricsEngagementComponent', () => {
   // deep link would hang on the TTL. This fails the moment the list grows past its emitters.
   it('has a settle emitter wired for every section the deep link waits on', async () => {
     const emitters: Record<HealthMetricsEngagementSectionKey, (() => void) | undefined> = {
-      participation: () => participationChild().settled.emit(),
-      committees: () => stubChild().settled.emit(),
-      trend: () => trendChild().settled.emit(),
-      orgs: () => orgChild().settled.emit(),
-      reps: () => repChild().settled.emit(),
-      nonmem: () => nonMemberChild().settled.emit(),
+      participation: () => participationChild().settled.emit(false),
+      committees: () => stubChild().settled.emit(false),
+      trend: () => trendChild().settled.emit(false),
+      orgs: () => orgChild().settled.emit(false),
+      reps: () => repChild().settled.emit(false),
+      nonmem: () => nonMemberChild().settled.emit(false),
+      newsletters: () => newsletterChild().settled.emit(false),
+      recipients: () => recipientsChild().settled.emit(false),
     } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');
@@ -279,7 +323,7 @@ describe('HealthMetricsEngagementComponent', () => {
 
     // Every listed section settled, so the key is released: a further settle does not re-scroll.
     const settledCalls = scrollIntoView.mock.calls.length;
-    participationChild().settled.emit();
+    participationChild().settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -289,7 +333,7 @@ describe('HealthMetricsEngagementComponent', () => {
   // A dropped or misrouted `(reading)` binding would release a late deep link before that re-read lands.
   it.each(HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS)('holds a late deep link while the "%s" section re-reads', async (key) => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
-    for (const settledKey of HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS) sectionChildren[settledKey]().settled.emit();
+    for (const settledKey of HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS) sectionChildren[settledKey]().settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -297,14 +341,14 @@ describe('HealthMetricsEngagementComponent', () => {
     fragment.next('committees');
     scrollIntoView.mockClear();
 
-    sectionChildren[key]().settled.emit();
+    sectionChildren[key]().settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
     // That read was the only one outstanding, so the key is released: a further settle does not re-scroll.
-    sectionChildren[key]().settled.emit();
+    sectionChildren[key]().settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
 

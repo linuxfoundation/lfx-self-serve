@@ -12,7 +12,7 @@
       data-testid="non-members-conversion-error" />
   } @else if (loading()) {
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading" aria-hidden="true" />
-  } @else {
+  } @else if (!empty()) {
     <span class="self-end rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] text-blue-700" data-testid="non-members-conversion-summary">{{
       view().summary
     }}</span>

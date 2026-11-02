@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+
 /** Status badge on a per-(person, course) detail row — mirrors `STATUS` column on `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING`. */
 export type OrgTraineeStatus = 'Certified' | 'Enrolled';
 
@@ -9,9 +11,6 @@ export type OrgTraineeSortColumn = 'name' | 'status' | 'courses' | 'certs' | 're
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgTraineeSortDirection = 1 | -1;
-
-/** Time-window filter buckets — anchored on `ACTIVITY_TS` server-side; client just toggles strings. */
-export type OrgTraineeTimeWindow = '3m' | '6m' | '12m' | '2y' | 'all';
 
 /** One detail row from `PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING` — finest grain the BFF returns; client groups by `(personKey, courseId)` for the expanded row. */
 export interface OrgTraineeDetailRow {
@@ -22,7 +21,7 @@ export interface OrgTraineeDetailRow {
   courseName: string;
   foundationId: string | null;
   foundationName: string | null;
-  /** ISO timestamp — union of `enrollment_ts` (Enrolled rows) and `issued_ts` (Certified rows); drives time-window filter + Most Recent Course tiebreaker. */
+  /** ISO timestamp — union of `enrollment_ts` (Enrolled rows) and `issued_ts` (Certified rows); the BFF windows on it and it breaks Most Recent Course ties. */
   activityTs: string;
 }
 
@@ -36,13 +35,13 @@ export interface OrgTraineeRow {
   email: string | null;
 }
 
-/** Foundation dropdown option — only foundations the org has trainee rows for. */
+/** Foundation dropdown option — only foundations the org has trainee rows for in the range. */
 export interface OrgTraineeFoundationOption {
   foundationId: string;
   foundationName: string;
 }
 
-/** Course dropdown option — keyed on `COURSE_ID`; label is course name. */
+/** Course dropdown option — keyed on `COURSE_ID`; label is course name. Only courses with rows in the range. */
 export interface OrgTraineeCourseOption {
   courseId: string;
   courseName: string;
@@ -57,9 +56,11 @@ export interface OrgTraineeStatsBaseline {
   completionRate: number;
 }
 
-/** Bundled GET response for `/api/orgs/:orgUid/lens/people/trainees`. */
+/** GET response for `/api/orgs/:orgUid/lens/people/trainees?range=…` — only enrollments and certificates dated in the range. */
 export interface OrgTraineesResponse {
   accountId: string;
+  /** Echo of the range the BFF read — lets the client drop a late response from a previous range. */
+  timeRange: OrgLensTimeRange;
   trainees: OrgTraineeRow[];
   details: OrgTraineeDetailRow[];
   foundationOptions: OrgTraineeFoundationOption[];
@@ -95,12 +96,6 @@ export interface OrgTraineeExpandedRowVm {
   completedLabel: string;
   /** ISO timestamp used as primary sort key inside the sub-table — `MAX(enrolledTs, completedTs)`. */
   sortTs: string;
-}
-
-/** Trainees time-window dropdown option — label rendered as-is in `<lfx-select>`. */
-export interface OrgTraineeTimeWindowOption {
-  label: string;
-  value: OrgTraineeTimeWindow;
 }
 
 // Server-internal Snowflake row shapes (not on the wire) — kept here so the rule against local interfaces in `apps/lfx-one/` holds.

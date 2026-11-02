@@ -40,7 +40,7 @@ import {
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { EnrollDetailsStepComponent } from './components/enroll-details-step/enroll-details-step.component';
 import { EnrollPrerequisitesStepComponent } from './components/enroll-prerequisites-step/enroll-prerequisites-step.component';
@@ -94,11 +94,11 @@ const httpError = (status: number, body: unknown = null): HttpErrorResponse => n
 describe('EnrollProgramComponent', () => {
   let fixture: ComponentFixture<EnrollProgramComponent>;
   let component: EnrollProgramComponent;
-  let toast: ReturnType<typeof vi.fn>;
+  let toast: Mock;
   let router: Router;
-  let confirm: ReturnType<typeof vi.fn>;
-  let createProgram: ReturnType<typeof vi.fn>;
-  let uploadProgramLogo: ReturnType<typeof vi.fn>;
+  let confirm: Mock;
+  let createProgram: Mock;
+  let uploadProgramLogo: Mock;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const byTestId = (id: string): HTMLElement | null => element().querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -575,10 +575,10 @@ describe('EnrollProgramComponent — edit mode', () => {
 
   let fixture: ComponentFixture<EnrollProgramComponent>;
   let component: EnrollProgramComponent;
-  let toast: ReturnType<typeof vi.fn>;
+  let toast: Mock;
   let router: Router;
   let calls: string[];
-  let service: Record<string, ReturnType<typeof vi.fn>>;
+  let service: Record<string, Mock>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const byTestId = (id: string): HTMLElement | null => element().querySelector<HTMLElement>(`[data-testid="${id}"]`);

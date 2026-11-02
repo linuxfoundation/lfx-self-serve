@@ -62,7 +62,12 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
+import {
+  NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS,
+  RENAMED_REGISTRANT_KEYS,
+  UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS,
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
+} from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -1159,7 +1164,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
-      this.toUpstreamRegistrantBody(registrantData)
+      this.toUpstreamRegistrantBody(registrantData, 'create')
     );
 
     // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
@@ -1196,7 +1201,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
-      this.toUpstreamRegistrantBody(updateData)
+      this.toUpstreamRegistrantBody(updateData, 'update')
     );
 
     // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
@@ -2752,8 +2757,9 @@ export class MeetingService {
    *
    * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
    * without the rename: `job_title` and `username` are declared upstream under the app's own name and
-   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
-   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * are equally non-nullable. `getChangedFields` nulls `job_title` when it is blank, and sends
+   * `username` back as stored or leaves it out — so a `null` on either is skipped even though the
+   * key itself is allowed through. `linkedin_profile` is left alone: it
    * isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
@@ -2761,7 +2767,7 @@ export class MeetingService {
    * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
-  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest, verb: 'create' | 'update'): Record<string, unknown> {
     // Spread rather than cast: the declared parameter types are interfaces with no index
     // signature, and the runtime object is exactly what a client posted, extra keys included.
     const submitted: Record<string, unknown> = { ...body };
@@ -2773,6 +2779,11 @@ export class MeetingService {
     // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
     // to know exactly which keys survive here to tell an empty update apart from a real one.
     for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
+      // {@link UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS} have no stored value to be checked against on a create.
+      if (verb === 'create' && (UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
+        continue;
+      }
+
       const value = submitted[passthroughKey];
 
       // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,
