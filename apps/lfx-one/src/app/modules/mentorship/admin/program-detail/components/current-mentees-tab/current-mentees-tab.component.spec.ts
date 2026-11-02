@@ -374,9 +374,9 @@ describe('CurrentMenteesTabComponent', () => {
 
   it('offers the row actions each status allows', () => {
     expect(labelsFor('app_1')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_3')).toEqual(['Re-open']);
+    expect(labelsFor('app_3')).toEqual(['Contact Mentee', 'Re-open']);
     expect(labelsFor('app_4')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('app_5')).toEqual(['Undo graduation']);
+    expect(labelsFor('app_5')).toEqual(['Contact Mentee', 'Undo graduation']);
   });
 
   it('makes Contact Mentee a mailto: link to the mentee, and leaves the other actions handled', () => {

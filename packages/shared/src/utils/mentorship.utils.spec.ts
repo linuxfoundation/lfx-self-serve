@@ -1257,7 +1257,7 @@ describe('program detail helpers', () => {
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
-  it('offers Current Mentees row actions by status, and only a walk-back once the application ends', () => {
+  it('offers Current Mentees row actions by status, and only contact and a walk-back once the application ends', () => {
     const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
       mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
@@ -1270,10 +1270,10 @@ describe('program detail helpers', () => {
     // Only an accepted mentee is given tasks or graduated.
     expect(labelsFor('accepted')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
     // A declined or withdrawn application can be re-opened, back to review.
-    expect(labelsFor('declined')).toEqual(['Re-open']);
-    expect(labelsFor('withdrawn')).toEqual(['Re-open']);
+    expect(labelsFor('declined')).toEqual(['Contact Mentee', 'Re-open']);
+    expect(labelsFor('withdrawn')).toEqual(['Contact Mentee', 'Re-open']);
     // A graduation can be undone, back to accepted.
-    expect(labelsFor('graduated')).toEqual(['Undo graduation']);
+    expect(labelsFor('graduated')).toEqual(['Contact Mentee', 'Undo graduation']);
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {

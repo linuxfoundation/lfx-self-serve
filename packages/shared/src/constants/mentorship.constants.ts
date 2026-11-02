@@ -561,14 +561,15 @@ export const MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS: Record<MentorshipCurrentMen
  * Row actions each status offers on the Current Mentees tab. An application under
  * review can be decided; an accepted mentee can be given tasks and graduated. The
  * end states can be walked back: a graduation is undone back to accepted, and a
- * declined or withdrawn application is re-opened back to review.
+ * declined or withdrawn application is re-opened back to review. The mentee can be
+ * contacted at every status.
  */
 export const MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS: Record<MentorshipMenteeStatus, readonly MentorshipCurrentMenteeAction[]> = {
   pending: ['contact-mentee', 'accept', 'decline', 'withdraw'],
   accepted: ['create-task', 'contact-mentee', 'graduate', 'decline', 'withdraw'],
-  declined: ['reopen'],
-  withdrawn: ['reopen'],
-  graduated: ['undo-graduation'],
+  declined: ['contact-mentee', 'reopen'],
+  withdrawn: ['contact-mentee', 'reopen'],
+  graduated: ['contact-mentee', 'undo-graduation'],
 };
 
 /**
