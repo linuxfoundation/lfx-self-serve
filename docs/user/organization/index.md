@@ -29,5 +29,5 @@ Go to **app.lfx.dev**, switch to the **Organization** lens, and select the organ
 
 - [Manage Org Lens Access](./manage-org-lens-access/) — add, change or remove who can open the organization
 - [EasyCLA](./easycla/) — corporate CLAs for the selected organization
-- [EasyCLA FAQ](./faq/) — short answers for who can edit, who can see a company, and CLA Manager changes
+- [Organization FAQ](./faq/) — short answers about Org Lens access, who can edit a corporate CLA, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA
