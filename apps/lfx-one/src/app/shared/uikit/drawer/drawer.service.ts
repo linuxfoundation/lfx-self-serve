@@ -36,7 +36,7 @@ export class UiDrawerService {
 
     const ref = this.modal.open<R, D, C>(
       content,
-      { ...config, closeOnEscape: false, closeOnBackdropClick: false },
+      { ...config, role: 'dialog', closeOnEscape: false, closeOnBackdropClick: false },
       {
         positionStrategy: context.side === 'left' ? edge.left('0') : edge.right('0'),
         height: '100%',

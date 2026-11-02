@@ -156,6 +156,11 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(testId('ui-drawer-footer').className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
   });
 
+  it('is always a dialog, even when a modal config with another role is passed', async () => {
+    await open((host) => (host.config = { role: 'alertdialog' } as UiDrawerConfig));
+    expect(dialog()?.getAttribute('role')).toBe('dialog');
+  });
+
   it('is described by its subtitle when the config asks for it', async () => {
     await open((host) => (host.config = { describedBy: true }));
     expect(dialog()?.getAttribute('aria-describedby')).toBe(testId('ui-drawer-subtitle').id);
