@@ -4,10 +4,10 @@
 import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Newsletter, Project } from '@lfx-one/shared/interfaces';
+import { MyNewsletterFoundation, MyNewsletterFoundationsResponse, Newsletter, NewsletterJoinResult, Project } from '@lfx-one/shared/interfaces';
 import { ProjectStage } from '@lfx-one/shared/enums';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, Subject, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 
@@ -16,6 +16,9 @@ import { ProjectService } from '@services/project.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ShareDialogService } from '@services/share-dialog.service';
 import { LensService } from '@services/lens.service';
+import { DialogService } from 'primeng/dynamicdialog';
+
+import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
@@ -64,12 +67,38 @@ function makeNewsletter(overrides: Partial<Newsletter> = {}): Newsletter {
   };
 }
 
+function makeFoundation(overrides: Partial<MyNewsletterFoundation> = {}): MyNewsletterFoundation {
+  return {
+    uid: 'proj-123',
+    slug: 'kubernetes',
+    name: 'Kubernetes',
+    logo_url: null,
+    received_count: 3,
+    last_sent_at: '2026-08-13T10:00:00Z',
+    newsletter_group: { uid: 'group-1', name: 'Kubernetes Newsletter' },
+    can_invite: true,
+    membership_name: 'The Linux Foundation',
+    ...overrides,
+  };
+}
+
+function makeFoundationsResponse(overrides: Partial<MyNewsletterFoundationsResponse> = {}): MyNewsletterFoundationsResponse {
+  return {
+    foundations: [makeFoundation()],
+    newsletters: [],
+    complete: true,
+    inviter: { eligible: true, company_name: 'Acme Motors' },
+    ...overrides,
+  };
+}
+
 describe('NewsletterReaderComponent', () => {
   let component: NewsletterReaderComponent;
   let fixture: ComponentFixture<NewsletterReaderComponent>;
   let projectService: ProjectService;
   let newsletterService: NewsletterService;
   let paramMap$: BehaviorSubject<Map<string, string>>;
+  let dialogService: { open: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
     const mockProjectService = {
@@ -78,7 +107,9 @@ describe('NewsletterReaderComponent', () => {
     const mockNewsletterService = {
       getReaderAccess: vi.fn(),
       joinNewsletterGroup: vi.fn(),
+      getMyNewsletterFoundations: vi.fn().mockReturnValue(of(makeFoundationsResponse({ foundations: [] }))),
     };
+    dialogService = { open: vi.fn() };
     const mockShareDialogService = {
       open: vi.fn(),
     };
@@ -104,7 +135,9 @@ describe('NewsletterReaderComponent', () => {
         { provide: Router, useValue: { navigate: vi.fn() } },
         provideNoopAnimations(),
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(NewsletterReaderComponent, { set: { providers: [{ provide: DialogService, useValue: dialogService }] } })
+      .compileComponents();
 
     projectService = TestBed.inject(ProjectService);
     newsletterService = TestBed.inject(NewsletterService);
@@ -438,6 +471,129 @@ describe('NewsletterReaderComponent', () => {
 
       expect(component['access']()?.access).toBe('eligible');
       expect(newsletterService.joinNewsletterGroup).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('invite a colleague', () => {
+    function render(): HTMLElement {
+      fixture = TestBed.createComponent(NewsletterReaderComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+      TestBed.tick();
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    it('shows the CTA when the issue foundation allows inviting and opens the invite dialog with it', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(of(makeFoundationsResponse()));
+
+      const el = render();
+      el.querySelector<HTMLButtonElement>('[data-testid="newsletter-reader-invite"] button')!.click();
+
+      expect(dialogService.open).toHaveBeenCalledWith(
+        NewsletterInviteDialogComponent,
+        expect.objectContaining({ header: 'Invite a colleague', data: { foundation: expect.objectContaining({ uid: 'proj-123' }) } })
+      );
+    });
+
+    it('resolves a sub-project issue to its foundation through the feed row', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', parent_uid: 'other-parent' })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(
+          makeFoundationsResponse({
+            foundations: [makeFoundation({ uid: 'found-1' })],
+            newsletters: [{ id: 'news-123', project_uid: 'sub-1', foundation_uid: 'found-1' } as MyNewsletterFoundationsResponse['newsletters'][number]],
+          })
+        )
+      );
+
+      render();
+
+      expect(component['inviteFoundation']()?.uid).toBe('found-1');
+    });
+
+    it('falls back to the project parent when the issue is not in the feed', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject({ uid: 'sub-1', parent_uid: 'found-1' })));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter({ project_uid: 'sub-1' }) }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(makeFoundationsResponse({ foundations: [makeFoundation({ uid: 'found-1' })] }))
+      );
+
+      render();
+
+      expect(component['inviteFoundation']()?.uid).toBe('found-1');
+    });
+
+    it('hides the CTA when the foundation does not allow inviting', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(makeFoundationsResponse({ foundations: [makeFoundation({ can_invite: false, invite_denied_reason: 'not_member_company' })] }))
+      );
+
+      expect(render().querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
+    });
+
+    it('hides the CTA when the issue foundation is not among the reader foundations', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(
+        of(makeFoundationsResponse({ foundations: [makeFoundation({ uid: 'unrelated' })] }))
+      );
+
+      expect(render().querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
+    });
+
+    it('hides the CTA when the lookup fails', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'group_member', newsletter: makeNewsletter() }));
+      vi.mocked(newsletterService.getMyNewsletterFoundations).mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect(render().querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
+    });
+
+    it('does not look up invite eligibility for a denied reader', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(of({ access: 'denied', denied_reason: 'not_member_company' }));
+
+      render();
+
+      expect(newsletterService.getMyNewsletterFoundations).not.toHaveBeenCalled();
+    });
+
+    it('looks up again after the member benefit adds the reader to the group', () => {
+      vi.mocked(projectService.getProjectStrict).mockReturnValue(of(makeProject()));
+      vi.mocked(newsletterService.getReaderAccess).mockReturnValue(
+        of({
+          access: 'eligible',
+          newsletter: makeNewsletter(),
+          qualifying_email: 'jane@acme-motors.example',
+          company_name: 'Acme Motors',
+          committee_name: 'LF Weekly',
+        })
+      );
+      const join$ = new Subject<NewsletterJoinResult>();
+      vi.mocked(newsletterService.joinNewsletterGroup).mockReturnValue(join$);
+      vi.mocked(newsletterService.getMyNewsletterFoundations)
+        .mockReturnValueOnce(of(makeFoundationsResponse({ foundations: [] })))
+        .mockReturnValue(of(makeFoundationsResponse()));
+
+      const el = render();
+      expect(component['joinState']().status).toBe('joining');
+      expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(1);
+      expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).toBeNull();
+
+      join$.next({ status: 'added', email: 'jane@acme-motors.example', committee_name: 'LF Weekly', company_name: 'Acme Motors' });
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(component['joinState']().status).toBe('added');
+      expect(newsletterService.getMyNewsletterFoundations).toHaveBeenCalledTimes(2);
+      expect(el.querySelector('[data-testid="newsletter-reader-invite"]')).not.toBeNull();
     });
   });
 });
