@@ -15,12 +15,15 @@ import {
   ORG_LENS_DEFAULT_VIEW_PHRASE,
   ORG_OVERVIEW_ACTIVE_CONTRIBUTORS_DEFINITION,
   ORG_OVERVIEW_MAINTAINER_ROLES_DEFINITION,
+  ORG_OVERVIEW_TRAINING_TREND_LABEL,
+  ORG_TRAINING_STAT_DEFINITIONS,
 } from '@lfx-one/shared/constants';
-import { hexToRgba, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { hexToRgba, orgTrainingStatCaption, orgTrainingStatTooltip, tryParseLocalDateString } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgInvolvementAnalyticsService } from '@services/org-involvement-analytics.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { distinctUntilChanged, map, Observable, of, switchMap, tap } from 'rxjs';
+import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { catchError, distinctUntilChanged, finalize, map, Observable, of, switchMap, tap } from 'rxjs';
 
 import type {
   DashboardMetricCard,
@@ -31,6 +34,7 @@ import type {
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgInvolvementMaintainersMonthlyResponse,
   OrgTrainingEnrollmentsResponse,
+  OrgTrainingStats,
 } from '@lfx-one/shared/interfaces';
 import type { ChartOptions, ChartType } from 'chart.js';
 
@@ -43,6 +47,7 @@ import type { ChartOptions, ChartType } from 'chart.js';
 export class OrgOverviewInvolvementComponent {
   private readonly analyticsService = inject(OrgInvolvementAnalyticsService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly trainingService = inject(OrgLensTrainingService);
 
   public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
@@ -50,6 +55,7 @@ export class OrgOverviewInvolvementComponent {
   private readonly contributorsLoading = signal(true);
   private readonly certifiedEmployeesLoading = signal(true);
   private readonly trainingEnrollmentsLoading = signal(true);
+  private readonly trainingStatsLoading = signal(true);
   private readonly eventsLoading = signal(true);
   private readonly coverageLoading = signal(true);
   public readonly selectedFilter = signal<string>('all');
@@ -71,6 +77,7 @@ export class OrgOverviewInvolvementComponent {
   private readonly contributorsData = this.initializeContributorsData();
   private readonly certifiedEmployeesData = this.initializeCertifiedEmployeesData();
   private readonly trainingEnrollmentsData = this.initializeTrainingEnrollmentsData();
+  private readonly trainingStats = this.initializeTrainingStats();
   private readonly eventAttendanceMonthlyData = this.initializeEventAttendanceMonthlyData();
 
   public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Organization');
@@ -130,6 +137,28 @@ export class OrgOverviewInvolvementComponent {
     );
   }
 
+  /** The Training page's stats (Org Lens training route, keyed by org uid); null while loading or when the read fails. */
+  private initializeTrainingStats(): Signal<OrgTrainingStats | null> {
+    return toSignal(
+      toObservable(this.accountContextService.selectedAccount).pipe(
+        map((account) => account.uid ?? ''),
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          if (!uid) {
+            this.trainingStatsLoading.set(false);
+            return of(null);
+          }
+          this.trainingStatsLoading.set(true);
+          return this.trainingService.getTrainingStats(uid).pipe(
+            catchError(() => of(null)),
+            finalize(() => this.trainingStatsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initializeEventAttendanceMonthlyData(): Signal<OrgInvolvementEventAttendanceMonthlyResponse> {
     return this.buildOrgDataSignal(
       (id) => this.analyticsService.getEventAttendanceMonthly(id),
@@ -167,7 +196,13 @@ export class OrgOverviewInvolvementComponent {
   }
 
   private initializeTrainingEnrollmentsCard(): Signal<DashboardMetricCard> {
-    return computed(() => this.transformTrainingEnrollments(this.trainingEnrollmentsData(), this.getMetricConfig('Training Enrollments')));
+    return computed(() =>
+      this.transformTrainingEnrollments(
+        this.trainingEnrollmentsData(),
+        this.trainingStats(),
+        this.getMetricConfig(ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity.label)
+      )
+    );
   }
 
   private initializePrimaryMetrics(): Signal<DashboardMetricCard[]> {
@@ -358,17 +393,23 @@ export class OrgOverviewInvolvementComponent {
     };
   }
 
-  private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, metric: DashboardMetricCard): DashboardMetricCard {
+  /** Headline: people with training activity, all time, as on the Training page. The chart keeps this year's cumulative enrollments, captioned as such. */
+  private transformTrainingEnrollments(data: OrgTrainingEnrollmentsResponse, stats: OrgTrainingStats | null, metric: DashboardMetricCard): DashboardMetricCard {
+    const activity = ORG_TRAINING_STAT_DEFINITIONS.peopleWithTrainingActivity;
+    const labels = data.dailyData.map(
+      (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
+    );
     return {
       ...metric,
-      loading: this.trainingEnrollmentsLoading(),
-      value: data.totalEnrollments.toString(),
-      subtitle: 'Training courses enrolled this year',
+      loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
+      // A failed stats read shows a dash, never a zero that reads as "nobody trained".
+      value: stats ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
+      subtitle: orgTrainingStatCaption(activity, stats?.trainingActivityAsOf),
+      tooltipText: orgTrainingStatTooltip(activity, stats?.trainingActivityAsOf),
+      chartCaption: labels.length > 0 ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, through ${labels[labels.length - 1]}` : undefined,
       chartOptions: this.createLineChartOptions('Training enrollments'),
       chartData: {
-        labels: data.dailyData.map(
-          (row) => tryParseLocalDateString(row.date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) ?? row.date
-        ),
+        labels,
         datasets: [
           {
             data: data.dailyData.map((row) => row.cumulativeCount),

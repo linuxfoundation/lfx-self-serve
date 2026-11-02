@@ -125,6 +125,7 @@ export * from './health-metrics-members.utils';
 export * from './health-metrics-non-members.utils';
 export * from './health-metrics-overview.utils';
 export * from './health-metrics-training.utils';
+export * from './org-training-stats.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';

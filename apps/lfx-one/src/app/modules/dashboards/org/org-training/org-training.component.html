@@ -21,6 +21,11 @@
           <p-skeleton height="5rem" />
         }
       </div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        @for (slot of [1, 2]; track slot) {
+          <p-skeleton height="4rem" />
+        }
+      </div>
       <p-skeleton height="24rem" />
     </div>
   } @else {
@@ -32,86 +37,65 @@
       descriptionTestId="org-training-subtitle"
       data-testid="org-training-header" />
 
-    <!-- Stat Strip -->
+    <!-- Stat Strip: cumulative numbers, then the in-progress snapshot in its own labelled row. Each number states its unit, window and as-of date. -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-stats">
       <div class="grid w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-        <!-- Certified Employees (clickable → Certifications tab) -->
-        <button
-          type="button"
-          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          data-testid="org-training-stat-certified-employees"
-          (click)="onStatCardClick('certifications')">
-          <div class="flex items-center justify-center w-11 h-11 rounded-full bg-violet-100 text-violet-600 flex-shrink-0">
-            <i class="fa-light fa-user-check text-xl" aria-hidden="true"></i>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            @if (statsLoading() || statsError()) {
-              <p class="text-xl font-medium text-gray-400">&mdash;</p>
-            } @else {
-              <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.certifiedEmployees ?? 0 }}</p>
-            }
-            <p class="text-sm font-normal text-gray-900">Certified Employees</p>
-          </div>
-        </button>
-
-        <!-- Certifications Earned (clickable → Certifications tab) -->
-        <button
-          type="button"
-          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          data-testid="org-training-stat-certifications-earned"
-          (click)="onStatCardClick('certifications')">
-          <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
-            <i class="fa-light fa-award text-xl" aria-hidden="true"></i>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            @if (statsLoading() || statsError()) {
-              <p class="text-xl font-medium text-gray-400">&mdash;</p>
-            } @else {
-              <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.certificationsEarned ?? 0 }}</p>
-            }
-            <p class="text-sm font-normal text-gray-900">Certifications Earned</p>
-          </div>
-        </button>
-
-        <!-- Employees in Training (clickable → Trainings tab) -->
-        <button
-          type="button"
-          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          data-testid="org-training-stat-employees-in-training"
-          (click)="onStatCardClick('trainings')">
-          <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
-            <i class="fa-light fa-users text-xl" aria-hidden="true"></i>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            @if (statsLoading() || statsError()) {
-              <p class="text-xl font-medium text-gray-400">&mdash;</p>
-            } @else {
-              <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.employeesInTraining ?? 0 }}</p>
-            }
-            <p class="text-sm font-normal text-gray-900">Employees in Training</p>
-          </div>
-        </button>
-
-        <!-- Training Courses Enrolled (clickable → Trainings tab) -->
-        <button
-          type="button"
-          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
-          data-testid="org-training-stat-training-courses-enrolled"
-          (click)="onStatCardClick('trainings')">
-          <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
-            <i class="fa-light fa-book-open text-xl" aria-hidden="true"></i>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            @if (statsLoading() || statsError()) {
-              <p class="text-xl font-medium text-gray-400">&mdash;</p>
-            } @else {
-              <p class="text-xl font-medium text-gray-900">{{ trainingStats()?.trainingCoursesEnrolled ?? 0 }}</p>
-            }
-            <p class="text-sm font-normal text-gray-900">Training Courses Enrolled</p>
-          </div>
-        </button>
+        @for (tile of cumulativeStatTiles(); track tile.key) {
+          <ng-container [ngTemplateOutlet]="statTile" [ngTemplateOutletContext]="{ $implicit: tile }" />
+        }
+      </div>
+      <div class="border-t border-dashed border-gray-300 bg-gray-50" data-testid="org-training-stats-snapshot">
+        <p class="flex items-center gap-2 px-4 pt-3 text-xs font-medium text-gray-600" data-testid="org-training-stats-snapshot-heading">
+          <i class="fa-light fa-camera" aria-hidden="true"></i>
+          {{ snapshotHeading }} · {{ snapshotAsOf() }}
+        </p>
+        <div class="grid w-full grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+          @for (tile of snapshotStatTiles(); track tile.key) {
+            <ng-container [ngTemplateOutlet]="statTile" [ngTemplateOutletContext]="{ $implicit: tile }" />
+          }
+        </div>
       </div>
     </lfx-card>
+
+    <ng-template #statTile let-tile>
+      <!-- Tiles with a list behind them open its tab; the roster and activity counts have none. -->
+      @if (tile.tab) {
+        <button
+          type="button"
+          class="flex items-center gap-3 p-4 text-left w-full hover:bg-gray-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+          [attr.data-testid]="tile.testId"
+          [pTooltip]="tile.tooltip"
+          tooltipPosition="top"
+          (click)="onStatCardClick(tile.tab)">
+          <ng-container [ngTemplateOutlet]="statTileBody" [ngTemplateOutletContext]="{ $implicit: tile }" />
+        </button>
+      } @else {
+        <div
+          class="flex items-center gap-3 p-4 w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+          tabindex="0"
+          [attr.data-testid]="tile.testId"
+          [pTooltip]="tile.tooltip"
+          tooltipPosition="top"
+          tooltipEvent="both">
+          <ng-container [ngTemplateOutlet]="statTileBody" [ngTemplateOutletContext]="{ $implicit: tile }" />
+        </div>
+      }
+    </ng-template>
+
+    <ng-template #statTileBody let-tile>
+      <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="tile.iconClass">
+        <i [class]="tile.icon + ' text-xl'" aria-hidden="true"></i>
+      </div>
+      <div class="flex flex-col gap-0.5 min-w-0">
+        @if (statsLoading() || statsError() || tile.value === null) {
+          <p class="text-xl font-medium text-gray-400" [attr.data-testid]="tile.testId + '-value'">&mdash;</p>
+        } @else {
+          <p class="text-xl font-medium text-gray-900" [attr.data-testid]="tile.testId + '-value'">{{ tile.value | number }}</p>
+        }
+        <p class="text-sm font-normal text-gray-900">{{ tile.label }}</p>
+        <p class="text-xs text-gray-500" [attr.data-testid]="tile.testId + '-caption'">{{ tile.caption }}</p>
+      </div>
+    </ng-template>
 
     <!-- Content Card: tabs + search + filter + tab panels -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-content-card">

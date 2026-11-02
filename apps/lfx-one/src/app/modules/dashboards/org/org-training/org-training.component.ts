@@ -3,6 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -19,6 +20,7 @@ import {
   EMPTY_ORG_TRAININGS_RESPONSE,
   ORG_CERTIFICATIONS_WINDOW_NOTE,
   ORG_TRAINING_LEVEL_OPTIONS,
+  ORG_TRAINING_SNAPSHOT_HEADING,
   ORG_TRAINING_TABS,
   VALID_ORG_TRAINING_TAB_IDS,
 } from '@lfx-one/shared/constants';
@@ -28,12 +30,15 @@ import type {
   OrgTraining,
   OrgTrainingsResponse,
   OrgTrainingStats,
+  OrgTrainingStatTileVm,
   OrgTrainingTabId,
   PageChangeEvent,
   SortChangeEvent,
 } from '@lfx-one/shared/interfaces';
+import { buildOrgTrainingStatTiles, formatOrgTrainingAsOf } from '@lfx-one/shared/utils';
 import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -55,8 +60,11 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
 @Component({
   selector: 'lfx-org-training',
   imports: [
+    DecimalPipe,
+    NgTemplateOutlet,
     PageHeaderComponent,
     SkeletonModule,
+    TooltipModule,
     CardComponent,
     CardTabsBarComponent,
     InputTextComponent,
@@ -83,6 +91,7 @@ export class OrgTrainingComponent {
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into mutable arrays for the component inputs that expect them.
   protected readonly certificationsWindowNote = ORG_CERTIFICATIONS_WINDOW_NOTE;
+  protected readonly snapshotHeading = ORG_TRAINING_SNAPSHOT_HEADING;
   protected readonly tabs = [...ORG_TRAINING_TABS];
   protected readonly levelOptions = [...ORG_TRAINING_LEVEL_OPTIONS];
 
@@ -130,6 +139,11 @@ export class OrgTrainingComponent {
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();
   protected readonly trainingStats: Signal<OrgTrainingStats | null> = this.initTrainingStats();
+  // Cumulative numbers and the in-progress snapshot render as separate rows so the snapshot never reads as a running total.
+  private readonly statTiles: Signal<OrgTrainingStatTileVm[]> = computed(() => buildOrgTrainingStatTiles(this.trainingStats()));
+  protected readonly cumulativeStatTiles = computed(() => this.statTiles().filter((tile) => tile.group === 'cumulative'));
+  protected readonly snapshotStatTiles = computed(() => this.statTiles().filter((tile) => tile.group === 'snapshot'));
+  protected readonly snapshotAsOf = computed(() => formatOrgTrainingAsOf(this.trainingStats()?.inProgressAsOf));
   protected readonly certifications: Signal<OrgCertificationsResponse> = this.initCertifications();
   protected readonly trainings: Signal<OrgTrainingsResponse> = this.initTrainings();
   protected readonly hasActiveFilters = computed(() => !!this.searchValue() || !!this.levelValue());
