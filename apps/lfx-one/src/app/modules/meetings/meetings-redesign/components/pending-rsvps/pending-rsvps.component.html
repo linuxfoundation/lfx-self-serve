@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-@if (items().length) {
+@if (rows().length) {
   <lfx-ui-button
     variant="secondary"
     icon="fa-light fa-clock"
@@ -13,7 +13,7 @@
     [ariaLabel]="buttonLabel()"
     data-testid="meetings-home-pending-rsvps-button">
     Pending RSVPs
-    <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-pending-rsvps-count">{{ items().length }}</lfx-ui-badge>
+    <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-pending-rsvps-count">{{ rows().length }}</lfx-ui-badge>
   </lfx-ui-button>
 }
 
@@ -26,15 +26,15 @@
       <div class="flex flex-wrap items-center gap-x-[32px] gap-y-[12px] p-[16px]" data-testid="meetings-home-pending-rsvps-row">
         <div class="flex min-w-0 flex-[1_1_220px] flex-col gap-[4px]">
           @if (item.project; as project) {
-            <span class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
+            <span class="flex min-w-0 items-center gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-pending-rsvps-row-project">
               <lfx-ui-avatar shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-              <span class="min-w-0 truncate">{{ project.name }}</span>
+              <span class="min-w-0 break-words">{{ project.name }}</span>
             </span>
           }
           <!-- Masked in Session Replay: the href carries the meeting password. -->
           <a
             data-dd-privacy="mask"
-            class="min-w-0 truncate text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            class="min-w-0 break-words text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
             [href]="item.link.url"
             [attr.target]="item.link.newTab ? '_blank' : null"
             [attr.rel]="item.link.newTab ? 'noopener noreferrer' : null"

@@ -45,9 +45,8 @@
             <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
           </div>
         }
-        <div class="flex flex-none items-center gap-[12px]">
-          <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="heading()?.nativeElement ?? null" />
-        </div>
+        <!-- Renders nothing while no date is pending, so it adds no wrapped row on narrow screens. -->
+        <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="heading()?.nativeElement ?? null" />
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below -->

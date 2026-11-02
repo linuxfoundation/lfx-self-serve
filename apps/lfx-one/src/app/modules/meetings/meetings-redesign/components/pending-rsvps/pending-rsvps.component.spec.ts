@@ -68,12 +68,11 @@ describe('PendingRsvpsComponent', () => {
     trigger()?.click();
     await settle();
   };
-  const answer = async (row: HTMLElement, testId: string): Promise<HTMLButtonElement> => {
+  const answer = async (row: HTMLElement, testId: string): Promise<void> => {
     const button = row.querySelector(`[data-testid="${testId}"] button`) as HTMLButtonElement;
     button.focus();
     button.click();
     await settle();
-    return button;
   };
 
   beforeEach(() => {
@@ -135,10 +134,9 @@ describe('PendingRsvpsComponent', () => {
     await render([buildRow('a'), buildRow('b')]);
     await open();
 
-    const button = await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-accepted');
+    await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-accepted');
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), undefined, 'accepted', 'all');
-    // The store drops the answered date; its button goes with it.
-    button.blur();
+    // The store drops the answered date; the focused button goes with it.
     await setRows([buildRow('b')]);
 
     expect(all('meetings-home-pending-rsvps-row')).toHaveLength(1);
@@ -150,13 +148,24 @@ describe('PendingRsvpsComponent', () => {
     await render([buildRow('a')]);
     await open();
 
-    const button = await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-declined');
-    button.blur();
+    await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-declined');
     await setRows([]);
 
     expect(byTestId('meetings-home-pending-rsvps-panel')).toBeNull();
     expect(trigger()).toBeNull();
     expect(document.activeElement).toBe(fallback);
+  });
+
+  it('leaves focus alone when a date is answered elsewhere while the popover is closed', async () => {
+    await render([buildRow('a'), buildRow('b')]);
+    const outside = document.body.appendChild(document.createElement('button'));
+    outside.focus();
+
+    await setRows([buildRow('b')]);
+    await setRows([]);
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it('asks which dates a recurring answer covers and saves with that scope', async () => {
