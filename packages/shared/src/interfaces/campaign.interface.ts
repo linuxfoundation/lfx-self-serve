@@ -1499,6 +1499,32 @@ export interface CampaignBriefLoadResult {
   approved: boolean;
 }
 
+/**
+ * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
+ *
+ * Emitted by both the restore offer and its Open to edit action (#4983). `readAt` is the
+ * `savedBriefRefreshToken` the offer's lookup was dispatched under; see `restoreSavedBriefRequested`.
+ */
+export interface CampaignSavedBriefOffer {
+  brief: CampaignBriefOutput;
+  briefId: string;
+  etag: string | null;
+  approved: boolean;
+  readAt: number;
+}
+
+/**
+ * Asks the Plan tab to open a brief in its editor (#4983): the saved brief from Open to edit, or the
+ * brief on the Implement tab from Edit brief.
+ *
+ * `requestId` makes each request distinct, so asking again for the same brief re-opens it, and a
+ * Plan tab re-created by a program change does not re-apply a request it already handled.
+ */
+export interface CampaignBriefEditRequest {
+  brief: CampaignBriefOutput;
+  requestId: number;
+}
+
 // ---------------------------------------------------------------------------
 // LinkedIn Ads
 // ---------------------------------------------------------------------------

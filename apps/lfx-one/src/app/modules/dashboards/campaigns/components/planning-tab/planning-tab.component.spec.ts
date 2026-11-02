@@ -241,7 +241,7 @@ describe('PlanningTabComponent brief read-back', () => {
     await typeEventUrl('https://events.example.com/kubecon-eu-2026');
 
     const announcement = (fixture.componentInstance as unknown as { savedBriefAnnouncement(): string }).savedBriefAnnouncement();
-    expect(announcement).toContain('A restore action is available.');
+    expect(announcement).toContain('Open to edit and restore actions are available.');
     expect(announcement).toContain('never approved');
   });
 
@@ -818,6 +818,198 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     expect(campaignService.loadBrief).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4983: open the event's saved brief in the Plan editor, and edit an existing brief without being
+ * able to move it to another event.
+ */
+describe('PlanningTabComponent editing an existing brief', () => {
+  const storedBrief = {
+    eventDetails: {
+      slug: 'kubecon-eu-2026',
+      name: 'KubeCon EU 2026',
+      registrationUrl: 'https://events.example.com/kubecon-eu-2026',
+      dates: '',
+      city: '',
+      countryCode: '',
+      audience: '',
+      themes: [],
+      speakers: [],
+      formatNotes: '',
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
+    },
+    structuredCopy: { google_search: { headlines: ['Stored headline'], descriptions: ['Stored description'] } },
+    keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
+    hsUtm: 'utm-stored',
+    totalBudget: 5000,
+    driveFolderUrl: '',
+    campaignGoal: 'conversions',
+    programType: 'events',
+    deliveryType: 'paid-marketing',
+    selectedPlatforms: ['google-ads', 'reddit-ads'],
+    googleCallouts: [],
+    redditCopy: { variants: [{ headline: 'Stored reddit headline' }] },
+  } as unknown as CampaignBriefOutput;
+
+  const programTypeConfig: CampaignProgramTypeOption = {
+    id: 'events',
+    label: 'Events',
+    breadcrumbLabel: 'Events',
+    urlLabel: 'Event URL',
+    urlPlaceholder: 'https://events.example.com/event-name',
+    urlHelp: 'Enter the event registration URL',
+    goalLabel: 'Event conversions',
+    audiencePlaceholder: 'Enter target audience',
+    valuePropPlaceholder: 'Enter value proposition',
+  };
+
+  interface EditInternals {
+    step(): string;
+    isEditing(): boolean;
+    editingExistingBrief(): boolean;
+    keywords(): { term: string }[];
+    editSearchHeadlines: { set(v: string[]): void };
+    briefForm: FormGroup;
+    openSavedBriefToEdit(): void;
+    onUrlInput(): void;
+    onProceedToImplementation(): void;
+    reset(): void;
+  }
+
+  let fixture: ComponentFixture<PlanningTabComponent>;
+  let loadBrief: Mock;
+  const internals = (): EditInternals => fixture.componentInstance as unknown as EditInternals;
+  const el = (testId: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${testId}"]`);
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [PlanningTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    loadBrief = vi.fn();
+    vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+    const context = TestBed.inject(ProjectContextService);
+    context.setRouteLensKind('foundation');
+    context.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const openInEditor = async (requestId = 1): Promise<void> => {
+    fixture.componentRef.setInput('editRequest', { brief: storedBrief, requestId });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('offers Open to edit beside Restore, and emits the offer with its provenance rather than proceeding', async () => {
+    loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
+    internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    internals().onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(el('planning-open-saved-brief'), 'no Open to edit action on the restore offer').not.toBeNull();
+    const opened: unknown[] = [];
+    const restored: unknown[] = [];
+    const proceeded: unknown[] = [];
+    fixture.componentInstance.openSavedBriefRequested.subscribe((v) => opened.push(v));
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((v) => restored.push(v));
+    fixture.componentInstance.proceedToImplementation.subscribe((v) => proceeded.push(v));
+
+    internals().openSavedBriefToEdit();
+
+    // The id and validator go with it: the parent records ownership from them before the editor
+    // opens, so the edited brief can be saved over this row.
+    expect(opened).toEqual([{ brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true, readAt: 0 }]);
+    expect(restored).toEqual([]);
+    expect(proceeded).toEqual([]);
+  });
+
+  it('opens a requested brief on the review step, in the editor, with the stored copy', async () => {
+    await openInEditor();
+
+    expect(internals().step()).toBe('review');
+    expect(internals().editingExistingBrief()).toBe(true);
+    expect(internals().isEditing(), 'the brief opened read-only, not in the editor').toBe(true);
+    expect(
+      internals()
+        .keywords()
+        .map((k) => k.term)
+    ).toEqual(['kubecon']);
+    expect(el('planning-success-banner')?.textContent).toContain('Editing the saved brief');
+  });
+
+  it('holds the event fixed while editing: the URL is read-only and Proceed keeps the stored slug', async () => {
+    await openInEditor();
+
+    expect(internals().briefForm.controls['url'].disabled, 'the URL stayed editable on an existing brief').toBe(true);
+    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026');
+
+    const proceeded: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+    internals().editSearchHeadlines.set(['Edited headline']);
+    internals().onProceedToImplementation();
+
+    expect(proceeded).toHaveLength(1);
+    expect(proceeded[0].eventDetails.slug).toBe('kubecon-eu-2026');
+    expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['Edited headline']);
+    // What this planner does not model rides through from the stored brief instead of being dropped.
+    expect(proceeded[0].redditCopy).toEqual(storedBrief.redditCopy);
+    expect(proceeded[0].googleCallouts, 'an emptied callout list came back as absent').toEqual([]);
+    expect(proceeded[0].hsUtm).toBe('utm-stored');
+  });
+
+  it('frees the event again on New Brief', async () => {
+    await openInEditor();
+    internals().reset();
+    fixture.detectChanges();
+
+    expect(internals().editingExistingBrief()).toBe(false);
+    expect(internals().briefForm.controls['url'].enabled).toBe(true);
+    expect(internals().step()).toBe('input');
+  });
+
+  it('applies each request once, so a repeated value does not reopen a brief the user left', async () => {
+    await openInEditor(1);
+    internals().reset();
+    fixture.detectChanges();
+
+    fixture.componentRef.setInput('editRequest', { brief: storedBrief, requestId: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(internals().step()).toBe('input');
+
+    await openInEditor(2);
+    expect(internals().step()).toBe('review');
+  });
+
+  it('offers no Open to edit on the email planner', async () => {
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.detectChanges();
+    loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
+    internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    internals().onUrlInput();
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(el('planning-restore-brief')).not.toBeNull();
+    expect(el('planning-open-saved-brief')).toBeNull();
   });
 });
 

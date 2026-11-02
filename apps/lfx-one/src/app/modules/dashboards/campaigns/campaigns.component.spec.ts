@@ -18,6 +18,7 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefEditRequest,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -29,6 +30,7 @@ import type {
   CampaignJobOutcome,
   CampaignListResult,
   CampaignProgramType,
+  CampaignSavedBriefOffer,
   CampaignTab,
   CampaignTabOption,
   ProjectContext,
@@ -39,13 +41,13 @@ import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywo
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
+import { CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE, EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
@@ -3402,6 +3404,172 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(unavailable()).toBe(false);
         expect(campaigns()).toHaveLength(1);
+      });
+    });
+  });
+
+  /**
+   * #4983. The saved brief can be reopened in the Plan editor and saved back over its own row, from
+   * the restore offer, from the unowned refusal on Implement, or from Edit brief on Implement.
+   */
+  describe('open the saved brief to edit', () => {
+    const offer = (readAt = 0, etag: string | null = 'W/"3"'): CampaignSavedBriefOffer => ({ brief, briefId: 'stored-1', etag, approved: true, readAt });
+
+    function openFromOffer(o: CampaignSavedBriefOffer): void {
+      (fixture.componentInstance as unknown as { onOpenSavedBriefToEdit(o: CampaignSavedBriefOffer): void }).onOpenSavedBriefToEdit(o);
+    }
+
+    function editRequest(): CampaignBriefEditRequest | null {
+      return (fixture.componentInstance as unknown as { planningEditRequest(): CampaignBriefEditRequest | null }).planningEditRequest();
+    }
+
+    // The foundation is persisted to a cookie, which outlives this TestBed; put back whatever was
+    // there so the suites after this one read the foundation they were written against.
+    let previousFoundation: ProjectContext | null = null;
+
+    beforeEach(async () => {
+      const context = TestBed.inject(ProjectContextService);
+      previousFoundation = context.selectedFoundation();
+      context.setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+      TestBed.tick();
+      await fixture.whenStable();
+    });
+
+    afterEach(() => {
+      const context = TestBed.inject(ProjectContextService);
+      if (previousFoundation === null) {
+        context.clearFoundation(false);
+      } else {
+        context.setFoundation(previousFoundation, false);
+      }
+    });
+
+    it('records ownership from the offer, so the edited brief is saved over the stored row with its ETag as If-Match', async () => {
+      openFromOffer(offer());
+      expect(editRequest()?.brief).toBe(brief);
+      expect(tab()).toBe('planning');
+
+      // The edited brief comes back through Proceed, exactly as Planning emits it.
+      const edited = { ...brief, keywords: [{ term: 'edited', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', created: false, approved: true }));
+      proceed(edited);
+      await fixture.whenStable();
+
+      // A replace of THIS row, conditioned on the version the user opened. `saveBrief` approves it
+      // in the same call, which is what re-enables Create.
+      expect(persistBrief).toHaveBeenLastCalledWith(edited, 'foundation-a', 'stored-1', 'W/"3"', false);
+      expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+      expect(tab()).toBe('implementation');
+    });
+
+    it('grants the overwrite licence only when the offer carried no validator, as a restore does', async () => {
+      openFromOffer(offer(0, null));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+    });
+
+    it('keeps a newer validator this session holds for the same content (an approval moved only the ETag)', async () => {
+      // This session restored the row and approved it: same bytes, newer ETag.
+      approveBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true }));
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Planning still offers its cached pre-approval read.
+      openFromOffer(offer(0, 'W/"3"'));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
+
+    it('conditions the save on the offer when the content changed after the record (a newer save by this session)', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      restore(brief, 'stored-1', true, 'W/"3"');
+      proceed();
+      await fixture.whenStable();
+
+      // An offer read BEFORE that save holds the older bytes, so its own ETag is the precondition and
+      // the server answers with the stale-brief warning instead of the save overwriting unseen.
+      openFromOffer(offer(0, 'W/"3"'));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"3"', false);
+    });
+
+    it('drops the edit request when Planning discards its brief, and on a restore', () => {
+      openFromOffer(offer());
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      expect(editRequest()).toBeNull();
+
+      openFromOffer(offer());
+      restore(brief, 'stored-1', true, 'W/"3"');
+      expect(editRequest()).toBeNull();
+    });
+
+    it('reopens the Implement brief in the editor on Edit brief, with a fresh request each time', () => {
+      proceed();
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      const first = editRequest();
+      expect(first?.brief).toEqual(brief);
+      expect(tab()).toBe('planning');
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      expect(editRequest()?.requestId).not.toBe(first?.requestId);
+    });
+
+    describe('from the unowned refusal on Implement', () => {
+      let loadBrief: Mock;
+      const stored = { ...brief, keywords: [{ term: 'stored', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+
+      function openFromImplement(): void {
+        (fixture.componentInstance as unknown as { onOpenSavedBriefFromImplement(): void }).onOpenSavedBriefFromImplement();
+      }
+
+      beforeEach(async () => {
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('words the refusal around the two buttons under it', () => {
+        expect(state().conflict).toBe('unowned-brief-exists');
+        expect(state().message).toBe(CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE);
+        expect(state().message).toContain('Open the saved brief to edit it');
+      });
+
+      it('reads the stored brief, takes ownership of it, and opens it in the editor', async () => {
+        loadBrief.mockReturnValue(of({ status: 'loaded', brief: stored, briefId: 'stored-1', etag: 'W/"5"', approved: true }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        expect(editRequest()?.brief).toBe(stored);
+        expect(tab()).toBe('planning');
+
+        persistBrief.mockReturnValueOnce(NEVER);
+        proceed(stored);
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be opened', async () => {
+        loadBrief.mockReturnValue(of({ status: 'unreadable', brief: null, briefId: 'stored-1', etag: 'W/"5"', approved: false }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(editRequest()).toBeNull();
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('could not be opened');
       });
     });
   });

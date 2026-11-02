@@ -1443,6 +1443,8 @@
             (proceedToImplementation)="onProceedToImplementation($event)"
             (briefDiscarded)="onPlanningBriefDiscarded()"
             (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
+            [editRequest]="planningEditRequest()"
+            (openSavedBriefRequested)="onOpenSavedBriefToEdit($event)"
             data-testid="campaigns-planning-tab" />
         }
       </div>
@@ -1487,6 +1489,8 @@
               [createCapabilityRead]="briefCampaignsCapabilityRead()"
               (retryCreateCapabilities)="retryCreateCapabilities()"
               (replaceSavedBriefRequested)="onReplaceSavedBrief()"
+              (openSavedBriefRequested)="onOpenSavedBriefFromImplement()"
+              (editBriefRequested)="onEditBriefFromImplement()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>
