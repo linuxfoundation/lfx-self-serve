@@ -8602,7 +8602,6 @@ describe('CampaignsComponent — email delivery channel', () => {
       emailCopy: WritableSignal<unknown>;
       onStageEmailSend(): Promise<void>;
       canGenerateEmailCopy: Signal<boolean>;
-      onGenerateSurveySequence(): Promise<void>;
       onEmailProceedFromPlanning(brief: unknown): void;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
@@ -9239,6 +9238,29 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted()).toBe(true);
       expect(seq().surveySeriesStarted()).toBe(false);
       expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('selects the survey template itself, since its picker is hidden, and never replaces a choice', () => {
+      selectSurvey();
+      const templates = [
+        { id: 'hs-a', name: 'Newsletter', subject: 'News' },
+        { id: 'hs-b', name: 'Survey invitation', subject: 'Take our survey' },
+      ] as HubSpotMarketingEmail[];
+      const fill = fixture.componentInstance as unknown as { ensureSurveyTemplateSelected(): void };
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set(templates);
+
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId()).not.toBe('');
+
+      seq().selectedEmailTemplateId.set('hs-a');
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId(), "the operator's choice stays").toBe('hs-a');
+
+      seq().selectorForm.controls.deliveryType.setValue('email');
+      seq().selectedEmailTemplateId.set('');
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId(), 'the event picker only suggests (#2057)').toBe('');
     });
 
     it('locks Regenerate once the single Stage button staged the brief', () => {
