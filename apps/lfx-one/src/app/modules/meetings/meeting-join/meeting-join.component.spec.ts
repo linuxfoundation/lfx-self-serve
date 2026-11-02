@@ -332,6 +332,9 @@ describe('MeetingJoinComponent', () => {
   });
 
   describe('support launcher overlay state (#4865)', () => {
+    // These tests open the real PrimeNG drawer, whose template needs the animation providers.
+    beforeEach(() => TestBed.configureTestingModule({ providers: [provideNoopAnimations()] }));
+
     const renderWithRoster = async (): Promise<ComponentFixture<MeetingJoinComponent>> => {
       getPublicMeeting.mockReturnValue(
         of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
@@ -344,14 +347,34 @@ describe('MeetingJoinComponent', () => {
     };
     const drawer = (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.debugElement.query(By.css('[data-testid="meeting-registrants-drawer"]'));
 
-    it('registers the guests drawer as open on show and clears it on hide', async () => {
+    const settle = (): Promise<void> => TestBed.inject(ApplicationRef).whenStable();
+
+    it('registers the guests drawer as open when it opens', async () => {
       const overlayState = TestBed.inject(OverlayStateService);
       const fixture = await renderWithRoster();
 
-      drawer(fixture).triggerEventHandler('onShow', {});
-      expect(overlayState.anyOpen()).toBe(true);
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
 
-      drawer(fixture).triggerEventHandler('onHide', {});
+      expect(overlayState.anyOpen()).toBe(true);
+    });
+
+    it.each([
+      ['the header close button', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.onDrawerHide()],
+      [
+        'PrimeNG closing it (Esc or mask click)',
+        (fixture: ComponentFixture<MeetingJoinComponent>) => drawer(fixture).triggerEventHandler('visibleChange', false),
+      ],
+      ['a programmatic close', (fixture: ComponentFixture<MeetingJoinComponent>) => fixture.componentInstance.showRegistrants.set(false)],
+    ])('clears the registration when closed via %s, without relying on onHide', async (_label, close) => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      close(fixture);
+      await settle();
+
       expect(overlayState.anyOpen()).toBe(false);
     });
 
@@ -359,7 +382,8 @@ describe('MeetingJoinComponent', () => {
       const overlayState = TestBed.inject(OverlayStateService);
       const fixture = await renderWithRoster();
 
-      drawer(fixture).triggerEventHandler('onShow', {});
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
       fixture.destroy();
 
       expect(overlayState.anyOpen()).toBe(false);

@@ -8,6 +8,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   inject,
   makeStateKey,
   OnInit,
@@ -470,7 +471,7 @@ export class MeetingJoinComponent implements OnInit {
   public formValues: Signal<{ name: string; email: string; organization: string }>;
 
   public constructor() {
-    // Navigating away destroys the drawer without firing onHide; never leave the launcher stranded hidden.
+    // Navigating away destroys the page with the drawer possibly still open; never strand the launcher hidden.
     this.destroyRef.onDestroy(() => this.overlayState.unregister(this.registrantsOverlayId));
     // Initialize all class variables
     this.authenticated = this.userService.authenticated;
@@ -605,6 +606,18 @@ export class MeetingJoinComponent implements OnInit {
     // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
     afterNextRender(() => {
       this.userTimezone.set(getUserTimezone());
+    });
+
+    // Drive the launcher from the same signal the drawer's [(visible)] binds to, so every close path
+    // (header X, Esc, mask click, programmatic set(false)) unregisters. PrimeNG's onHide is not
+    // reliable here: it fires after the leave animation, which never completes when the drawer is
+    // removed first, and that left the launcher hidden for good.
+    effect(() => {
+      if (this.showRegistrants()) {
+        this.overlayState.register(this.registrantsOverlayId);
+      } else {
+        this.overlayState.unregister(this.registrantsOverlayId);
+      }
     });
   }
 
