@@ -3,8 +3,8 @@ title: Mailing Lists FAQ
 description: Frequently asked questions about joining, leaving, creating, and managing mailing lists in LFX Self Serve.
 audience: [all]
 product_area: Mailing Lists
-tags: [mailing-lists, faq, join, leave, settings, subscribers]
-last_updated: 2026-10-28
+tags: [mailing-lists, faq, join, leave, settings, subscribers, newsletters]
+last_updated: 2026-11-02
 intercom_collection: Mailing Lists
 ---
 
@@ -73,6 +73,22 @@ LFX Self Serve doesn't have a delete control for mailing lists. Contact LFX supp
 ## What happens to a mailing list when the project is archived?
 
 If a project is archived, contact LFX support for information about accessing its mailing list history.
+
+## Is a newsletter the same as a mailing list?
+
+No. A mailing list runs on Groups.io and everyone subscribed can receive the messages posted to it. A newsletter is written and sent from the **Newsletters** page to the members of one group whose type is **Newsletter**, and you can see who opened it. See [Newsletters](../newsletters/).
+
+## How do I create a group with the Newsletter category?
+
+In the **Foundation** or **Project** lens, select **Groups**, then **Create Group**, and choose **Newsletter** as the group type on the first step. Add the people who should receive the newsletter as members. Only groups with the Newsletter type can be picked as a newsletter's audience. See [Before you start: create a Newsletter group](../newsletters/#before-you-start-create-a-newsletter-group).
+
+## Can I personalize a newsletter with each recipient's name?
+
+No. Newsletters don't support merge fields or placeholders such as `{{first_name}}`. Every recipient gets the same subject and body. See [Personalization](../newsletters/#personalization).
+
+## Why don't I see Newsletters in the Foundation or Project lens?
+
+Sending newsletters is limited to executive directors and people who can manage the foundation or project. Everyone can read the newsletters they receive from **Newsletters** in the **Me** lens. See [Who can use Newsletters](../newsletters/#who-can-use-newsletters).
 
 ## Who do I contact if a mailing list is set up incorrectly?
 
