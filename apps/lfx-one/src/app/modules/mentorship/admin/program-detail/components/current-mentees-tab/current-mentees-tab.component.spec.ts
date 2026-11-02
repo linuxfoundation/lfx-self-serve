@@ -1174,7 +1174,7 @@ describe('CurrentMenteesTabComponent', () => {
       expect(detailOf(toast)).toBe('Application re-opened');
     });
 
-    it('shows the hidden-program message on a 422 for a re-open', () => {
+    it('shows the refused message on a 422 for a re-open', () => {
       updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422 })));
       const toast = toasts();
       const confirm = confirmSpy();
@@ -1182,7 +1182,9 @@ describe('CurrentMenteesTabComponent', () => {
       confirmAction('app_3', 'reopen', confirm);
       settle();
 
-      expect(detailOf(toast)).toBe("This application can't be re-opened while the program is hidden.");
+      expect(detailOf(toast)).toBe(
+        "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review."
+      );
     });
 
     it('reloads with its own message on a 409 for a re-open, which may mean the mentee applied again', () => {

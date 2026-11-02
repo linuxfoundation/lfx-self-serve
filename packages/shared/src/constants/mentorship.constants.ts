@@ -130,8 +130,9 @@ export const MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE = 'Re-open this application
 /** Shown when Re-open hits a 409: the application changed, or the mentee has since applied to the term again. */
 export const MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE =
   "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed.";
-/** Shown when Re-open hits a 422: the program is hidden. */
-export const MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE = "This application can't be re-opened while the program is hidden.";
+/** Shown when Re-open hits a 422: the program is hidden, the term is closed, or the mentee is at the pending-application limit. */
+export const MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE =
+  "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_MESSAGE = "Decline every pending application in the term you pick. Accepted mentees aren't affected.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_NO_TERMS_MESSAGE = 'There is no open term to decline applications in.';
