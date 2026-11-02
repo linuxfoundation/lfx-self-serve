@@ -25,12 +25,19 @@
           [class.opacity-0]="!scrolled() || tabsStuck()"
           aria-hidden="true"
           data-testid="meetings-redesign-header-fade"></span>
-        <div class="flex min-w-0 flex-col gap-[4px]">
-          <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
-          <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
-            Meetings you're invited to or organizing, across all your projects.
-          </p>
-        </div>
+        @if (personaLoaded()) {
+          <div class="flex min-w-0 flex-col gap-[4px]">
+            <h1 class="font-display text-[24px] font-light leading-tight text-gray-900" data-testid="meetings-redesign-title">Meetings</h1>
+            <p class="text-[13px] text-gray-600" data-testid="meetings-redesign-description">
+              Meetings you're invited to or organizing, across all your projects.
+            </p>
+          </div>
+        } @else {
+          <div class="flex min-w-0 flex-col gap-[8px]" data-testid="meetings-home-persona-loading">
+            <lfx-ui-skeleton width="12rem" height="28px" />
+            <lfx-ui-skeleton width="min(28rem, 100%)" height="14px" />
+          </div>
+        }
       </div>
 
       <!-- Right column content, folded into the centre at 1024px and below -->
@@ -54,26 +61,35 @@
           ariaLabel="Meetings"
           size="small"
           [idPrefix]="idPrefix"
-          [tabs]="tabs"
-          [(value)]="activeTab"
+          [tabs]="tabs()"
+          [value]="store.tab()"
+          (valueChange)="onTabChange($event)"
           data-testid="meetings-redesign-tabs" />
-        <lfx-ui-search-input
-          class="w-full min-[641px]:w-auto"
-          placeholder="Search meetings"
-          ariaLabel="Search meetings"
-          [(value)]="search"
-          data-testid="meetings-redesign-search" />
+        @if (!tabEmpty()) {
+          <lfx-ui-search-input
+            class="w-full min-[641px]:w-auto"
+            placeholder="Search meetings"
+            ariaLabel="Search meetings"
+            [value]="store.search()"
+            (valueChange)="store.setSearch($event)"
+            data-testid="meetings-redesign-search" />
+        }
       </div>
 
-      <!-- List areas: one tabpanel per tab, so every aria-controls resolves; the inactive one is hidden -->
-      @for (tab of tabs; track tab.value) {
+      <!-- List areas: one tabpanel per tab, so every aria-controls resolves; only the active one renders the list -->
+      @for (tab of tabs(); track tab.value) {
         <div
           role="tabpanel"
-          class="min-h-[240px] rounded-[12px] border border-dashed border-gray-200"
+          class="flex-col"
+          [class.flex]="store.tab() === tab.value"
           [attr.id]="idPrefix + '-panel-' + tab.value"
           [attr.aria-labelledby]="idPrefix + '-tab-' + tab.value"
-          [hidden]="activeTab() !== tab.value"
-          [attr.data-testid]="'meetings-redesign-list-' + tab.value"></div>
+          [hidden]="store.tab() !== tab.value"
+          [attr.data-testid]="'meetings-redesign-list-' + tab.value">
+          @if (store.tab() === tab.value) {
+            <ng-container [ngTemplateOutlet]="listTemplate" />
+          }
+        </div>
       }
     </div>
   </div>
@@ -94,5 +110,97 @@
       <h2 class="text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-600">{{ block.label }}</h2>
       <div class="h-[112px] rounded-[12px] border border-gray-200 bg-gray-50"></div>
     </section>
+  }
+</ng-template>
+
+<ng-template #listTemplate>
+  @if (store.loading()) {
+    <div class="flex flex-col" role="status" aria-live="polite" aria-label="Loading meetings" data-testid="meetings-home-list-loading">
+      @for (row of skeletonRows; track row) {
+        <div class="flex items-center gap-[16px] py-[16px]">
+          <div class="flex min-w-0 flex-auto flex-col gap-[8px]">
+            <lfx-ui-skeleton width="24%" height="10px" />
+            <lfx-ui-skeleton width="56%" height="14px" />
+            <lfx-ui-skeleton width="40%" height="10px" />
+          </div>
+          <lfx-ui-skeleton shape="circle" width="44px" height="44px" />
+          <lfx-ui-skeleton shape="circle" width="32px" height="32px" />
+        </div>
+      }
+    </div>
+  } @else if (store.failed()) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-triangle-exclamation"
+      heading="Couldn't load your meetings"
+      description="Something went wrong. Try again."
+      data-testid="meetings-home-error">
+      <lfx-ui-button
+        empty-state-action
+        variant="secondary"
+        size="large"
+        icon="fa-light fa-arrow-rotate-right"
+        (click)="store.retry()"
+        data-testid="meetings-home-error-retry">
+        Retry
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else if (tabEmpty()) {
+    @if (store.tab() === 'past') {
+      <lfx-ui-empty-state
+        class="mt-[16px]"
+        icon="fa-light fa-clock-rotate-left"
+        heading="No past meetings"
+        description="Your past meetings will appear here."
+        data-testid="meetings-home-empty-past" />
+    } @else {
+      <lfx-ui-empty-state
+        class="mt-[16px]"
+        icon="fa-light fa-calendar"
+        heading="No upcoming meetings"
+        description="Meetings from your committees and projects will appear here."
+        data-testid="meetings-home-empty-upcoming" />
+    }
+  } @else if (noResults()) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-eyes"
+      heading="No results found"
+      description="Try adjusting your filter criteria"
+      data-testid="meetings-home-no-results">
+      @if (store.hasActiveQuery()) {
+        <lfx-ui-button
+          empty-state-action
+          variant="tertiary-accent"
+          size="large"
+          icon="fa-light fa-arrow-rotate-left"
+          (click)="store.resetFilters()"
+          data-testid="meetings-home-no-results-reset">
+          Reset filters
+        </lfx-ui-button>
+      }
+    </lfx-ui-empty-state>
+  } @else {
+    <!-- 22px between day groups (exact px) -->
+    <div class="relative flex flex-col gap-[22px]" data-testid="meetings-home-list">
+      @for (group of store.groups(); track group.label) {
+        <lfx-meetings-day-group [group]="group" data-testid="meetings-home-day-group" />
+      }
+      @if (store.hasMore()) {
+        <!-- Re-created per page so a trigger still in view after a page loads fires again. -->
+        @for (page of [store.visibleCount()]; track page) {
+          <span
+            #loadMoreTrigger
+            class="pointer-events-none absolute bottom-0 left-0 h-[280px] w-px"
+            aria-hidden="true"
+            data-testid="meetings-home-load-more"></span>
+        }
+      }
+    </div>
+    @if (allLoaded()) {
+      <span class="flex justify-center pb-[4px] pt-[8px] text-[12px] text-gray-400" data-testid="meetings-home-all-loaded">
+        All {{ store.filteredRows().length }} meetings loaded
+      </span>
+    }
   }
 </ng-template>

@@ -15,12 +15,12 @@ import {
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
-  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_SCOPE_QUERY_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -65,8 +65,6 @@ export class SidebarNavService {
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off or while the provider is not ready (unlike `mentorshipEnabledGuard`, which fails open). */
-  private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
@@ -261,16 +259,13 @@ export class SidebarNavService {
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
   // then My Formations (#2753) appended to Engagement while `formation-enabled` is on — the first
-  // item-level gate on this lens; the section gates subtract whole sections by label.
+  // item-level gate on this lens; the section gate subtracts a whole section by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
     if (!this.isAkritesEnabled()) {
       hiddenSections.add('Security');
-    }
-    if (!this.isMentorshipEnabled()) {
-      hiddenSections.add('Mentorship');
     }
 
     const items = hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
@@ -920,6 +915,9 @@ export class SidebarNavService {
   private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
     const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
     return [
+      // The organization scope carries between the pages with a scope picker — Projects, People, Code Contributions, and
+      // Project Detail through Projects (lfx-self-serve-ops#1219) — so a pick of All related organizations survives the
+      // sidebar. The Dashboard always counts the default scope, so its link carries none.
       {
         label: 'Dashboard',
         icon: 'fa-light fa-grid-2',
@@ -934,6 +932,7 @@ export class SidebarNavService {
         label: 'Projects',
         icon: 'fa-light fa-folders',
         routerLink: org('projects'),
+        carryQueryParams: [ORG_SCOPE_QUERY_PARAM],
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
@@ -946,15 +945,15 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range,
-            // not page-specific params.
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159); only the range and the
+            // organization scope, not page-specific params.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
             icon: 'fa-light fa-code',
             routerLink: org('contributions'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM],
           },
           {
             label: 'Events',

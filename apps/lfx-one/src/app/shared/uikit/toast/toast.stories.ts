@@ -5,6 +5,7 @@ import { Directive, inject, input } from '@angular/core';
 import { UiToastConfig } from '@lfx-one/shared/interfaces';
 import { argsToTemplate, moduleMetadata, type Meta, type StoryObj } from '@storybook/angular';
 
+import { UiButtonComponent } from '../button/button.component';
 import { UiToastComponent } from './toast.component';
 import { UiToastService } from './toast.service';
 
@@ -25,10 +26,10 @@ class StoryShowsToastDirective {
 const meta: Meta<UiToastComponent> = {
   title: 'Uikit/Toast',
   component: UiToastComponent,
-  argTypes: { variant: { control: 'inline-radio', options: ['default', 'success', 'warning', 'error'] } },
-  decorators: [moduleMetadata({ imports: [StoryShowsToastDirective] })],
+  argTypes: { variant: { control: 'inline-radio', options: ['default', 'success', 'warning', 'error', 'dark'] } },
+  decorators: [moduleMetadata({ imports: [StoryShowsToastDirective, UiButtonComponent] })],
   parameters: { layout: 'padded' },
-  args: { variant: 'default', actions: [], duration: 0, dismissible: true },
+  args: { variant: 'default', description: '', actions: [], duration: 0, dismissible: true },
   render: (args) => ({ props: args, template: `<lfx-ui-toast ${argsToTemplate(args)}>Committee created.</lfx-ui-toast>` }),
 };
 export default meta;
@@ -39,6 +40,8 @@ export const Success: Story = { args: { variant: 'success' } };
 export const Warning: Story = { args: { variant: 'warning' } };
 /** An error is an alert and never dismisses itself; the dismiss button stays so it can be cleared. */
 export const ErrorToast: Story = { args: { variant: 'error', actions: [{ label: 'Retry', run: () => undefined }] } };
+/** A short confirmation: check, medium title and a quieter description. The service shows it bottom-centre for 3s. */
+export const Dark: Story = { args: { variant: 'dark', description: 'Anyone with the link can join.', dismissible: false } };
 /** Up to two actions. `primary` gives an action the accent fill on a default toast. */
 export const WithActions: Story = {
   args: {
@@ -67,7 +70,7 @@ export const Stack: Story = {
   }),
 };
 
-/** Toasts from `UiToastService`: bottom-right stack, auto-dismiss after 5s (8s with actions, never for errors), paused by hover and focus. */
+/** Toasts from `UiToastService`: bottom-right stack, auto-dismiss after 5s (8s with actions, never for errors), paused by hover and focus; dark toasts sit bottom-centre for 3s. */
 export const FromService: Story = {
   render: () => ({
     props: {
@@ -89,14 +92,15 @@ export const FromService: Story = {
           label: 'error',
           config: { message: "Couldn't send the invite. Try again.", variant: 'error', actions: [{ label: 'Retry', run: () => undefined }] },
         },
+        { label: 'dark', config: { message: 'Meeting Link Copied', variant: 'dark', dismissible: false } },
       ],
     },
     template: `
       <div class="flex flex-wrap gap-[8px]">
         @for (entry of entries; track entry.label) {
-          <button type="button" class="edge h-ui-small cursor-pointer rounded-[10px] bg-ui-background-100 px-[10px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryShowsToast]="entry.config">{{ entry.label }}</button>
+          <lfx-ui-button variant="secondary" [lfxStoryShowsToast]="entry.config">{{ entry.label }}</lfx-ui-button>
         }
-        <button type="button" class="h-ui-small cursor-pointer rounded-[10px] px-[10px] button-14 text-ui-neutral-900 hover:bg-ui-neutral-alpha-100 focus-visible:shadow-focus focus-visible:outline-none" [lfxStoryShowsToast]="null">dismiss all</button>
+        <lfx-ui-button variant="tertiary" [lfxStoryShowsToast]="null">dismiss all</lfx-ui-button>
       </div>`,
   }),
 };

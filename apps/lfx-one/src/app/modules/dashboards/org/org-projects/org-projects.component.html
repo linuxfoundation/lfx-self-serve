@@ -81,6 +81,11 @@
               placeholder="All Employees"
               data-testid="org-projects-employee-filter" />
           </div>
+          <lfx-more-filters-toggle
+            [(expanded)]="moreFiltersExpanded"
+            [count]="hiddenFilterCount()"
+            controls="org-projects-more-filters"
+            dataTest="org-projects-more-filters-toggle" />
         </div>
         <div class="flex items-center gap-2">
           <lfx-button
@@ -102,6 +107,16 @@
             [tooltip]="addProjectDisabledReason()"
             (onClick)="openAddProjects()"
             data-testid="org-projects-add-project" />
+        </div>
+      </div>
+      <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+      <div
+        id="org-projects-more-filters"
+        class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 sm:flex-row sm:items-center"
+        [class.hidden]="!moreFiltersExpanded()"
+        data-testid="org-projects-more-filters">
+        <div class="w-full sm:w-60">
+          <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
         </div>
       </div>
 
@@ -261,6 +276,7 @@
                     } @else {
                       <a
                         [routerLink]="project.projectLink"
+                        [queryParams]="projectDetailQueryParams()"
                         class="flex items-center gap-2 text-left"
                         [attr.aria-label]="'View ' + project.name + ' project detail'">
                         <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
@@ -382,7 +398,7 @@
                   } @else {
                     <a
                       [routerLink]="project.projectLink"
-                      [queryParams]="contributorsDrawerQueryParams"
+                      [queryParams]="contributorsDrawerQueryParams()"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.contributorsAriaLabel"
                       [attr.data-testid]="'org-projects-contributors-' + project.slug"
@@ -398,6 +414,7 @@
                   } @else {
                     <a
                       [routerLink]="project.projectLink"
+                      [queryParams]="projectDetailQueryParams()"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.participantsAriaLabel"
                       [attr.data-testid]="'org-projects-participants-' + project.slug"

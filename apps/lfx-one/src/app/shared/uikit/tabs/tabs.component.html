@@ -22,8 +22,7 @@
       (keydown)="onKeydown($event, i)"
       [attr.data-testid]="'ui-tab-' + tab.value">
       @if (tab.icon) {
-        <!-- Important width: Font Awesome 7 makes every glyph 1.25em wide, the library keeps it 1em. -->
-        <i class="inline-block h-[1em] !w-[1em] shrink-0" [class]="tab.icon" [style.font-size.px]="iconSize()" aria-hidden="true"></i>
+        <i class="ui-icon" [class]="tab.icon" [style.font-size.px]="iconSize()" aria-hidden="true"></i>
       }
       <!-- The hidden 500-weight copy keeps the tab's width steady when the label turns bold. -->
       <span

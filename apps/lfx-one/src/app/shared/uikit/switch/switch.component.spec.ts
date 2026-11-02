@@ -154,12 +154,26 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
       expect(classes).not.toContain('forced-colors:text-[color:HighlightText]');
     });
 
-    it('marks the checked segment with a Highlight fill and border, and the focus ring with an outline, in forced colours', () => {
-      expect(segments()[1].classList).toContain('forced-colors:bg-[color:Highlight]');
-      expect(segments()[1].classList).toContain('forced-colors:border');
-      expect(segments()[0].classList).not.toContain('forced-colors:bg-[color:Highlight]');
-      expect(segments()[0].classList).toContain('forced-colors:peer-focus-visible:outline');
+    it('marks the checked segment with a Highlight border and CanvasText ink, never a Highlight fill, in forced colours', () => {
+      const checked = segments()[1].classList;
+      expect(checked).toContain('forced-colors:border-2');
+      expect(checked).toContain('forced-colors:border-[color:Highlight]');
+      expect(checked).toContain('forced-colors:text-[color:CanvasText]');
+      expect(checked).not.toContain('forced-colors:bg-[color:Highlight]');
+      expect(checked).not.toContain('forced-colors:text-[color:HighlightText]');
+    });
+
+    it('keeps an unchosen segment borderless-looking (Canvas border, same width) and the focus ring an outline in forced colours', () => {
+      const other = segments()[0].classList;
+      expect(other).toContain('forced-colors:border-2');
+      expect(other).toContain('forced-colors:border-[color:Canvas]');
+      expect(other).not.toContain('forced-colors:border-[color:Highlight]');
+      expect(other).toContain('forced-colors:peer-focus-visible:outline');
       expect(segments()[3].classList).toContain('forced-colors:text-[color:GrayText]');
+    });
+
+    it('swaps colours at once in forced colours, so a half-faded label is never on screen', () => {
+      segments().forEach((segment) => expect(segment.classList).toContain('forced-colors:transition-none'));
     });
   });
 

@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (unavailable()) {
+  <!-- The disabled select keeps its size; the info button takes the place of its chevron, which opens nothing here. -->
+  <div class="relative">
+    <lfx-select
+      [form]="fallbackForm"
+      control="orgScope"
+      size="small"
+      [options]="options()"
+      styleClass="w-full [&_.p-select-dropdown]:invisible"
+      [ariaLabel]="label"
+      [tooltip]="tooltip()"
+      tooltipPosition="top"
+      [dataTest]="dataTest()" />
+    <button
+      type="button"
+      class="absolute inset-y-0 right-0 flex w-8 items-center justify-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      [attr.aria-label]="unavailableNote"
+      [pTooltip]="unavailableNote"
+      tooltipPosition="top"
+      tooltipEvent="both"
+      [attr.data-testid]="dataTest() + '-unavailable'">
+      <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+    </button>
+  </div>
+} @else {
+  <lfx-select
+    [form]="form()"
+    [control]="control()"
+    size="small"
+    [options]="options()"
+    styleClass="w-full"
+    [ariaLabel]="label"
+    [tooltip]="tooltip()"
+    tooltipPosition="top"
+    [dataTest]="dataTest()" />
+}

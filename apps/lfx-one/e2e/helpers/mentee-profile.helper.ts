@@ -9,19 +9,11 @@
  * client-side navigation instead.
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page } from '@playwright/test';
 
 export const MENTEE_OVERVIEW_URL = '/mentorship/mentee/overview';
 export const MENTEE_PROFILE_URL = '/mentorship/mentee/profile';
 export const MENTEE_PROFILE_LOAD_TIMEOUT = 30_000;
-
-export async function enableMentorshipFlag(page: Page): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [MENTORSHIP_ENABLED_FLAG]: true }),
-  ] as const);
-}
 
 /** Answers every mentee applications read with the given status and body. */
 export async function stubMenteeApplications(page: Page, status: number, body: string): Promise<void> {

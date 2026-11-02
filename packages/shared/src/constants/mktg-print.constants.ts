@@ -61,6 +61,44 @@ export const MKTG_PRINT_REVERSED_FILTER = 'brightness(0) invert(1)';
 export const MKTG_PRINT_FONT_WAIT_MS = 3000;
 
 /**
+ * How long the hidden print frame stays after its print dialog opened when no
+ * `afterprint` arrives (ms): iOS Safari builds its preview asynchronously and
+ * may never fire the event, so the frame is kept well past any preview, then
+ * reclaimed. The next print, or the view's `clear`, removes it at once.
+ */
+export const MKTG_PRINT_FRAME_LINGER_MS = 5 * 60 * 1000;
+
+/**
+ * The hidden print frame's viewport in CSS inches: US Letter's width and a
+ * hair under its height. WebKit lays a subframe out at the frame's own size
+ * and resolves its viewport units there (Chromium paginates against the page
+ * box whatever the frame measures), so a 1px frame collapsed every `100vh`
+ * cover and shifted the page breaks. Letter is the SHORTER common paper (11in
+ * against A4's 11.69in; it is the wider one, 8.5in against 8.27in), so a cover
+ * sized from `vh` fills a Letter page and never spills a blank sheet on A4;
+ * never size print rules from `vw`. The height stops short of 11in because a
+ * cover of `calc(100vh - 1.1in)` on an exact 11in frame equals the Letter
+ * page area to the pixel, and a fraction of rounding would push an empty
+ * remainder onto a blank sheet; 0.1in of slack keeps it inside.
+ */
+export const MKTG_PRINT_FRAME_PAPER_IN = { width: 8.5, height: 10.9 } as const;
+
+/**
+ * The page setups of the named `@page` rules in styles.scss (`brand-kit`:
+ * the legacy landscape book; `mktg-framework`: every portrait document, the
+ * brand kit's own portrait print included), repeated as the ONE unnamed
+ * `@page` rule the print frame writes into its document. WebKit's support for
+ * named pages is doubtful, and on the browser's default margins a cover sized
+ * to the page area spills a blank sheet. Chrome is unchanged: a matched named
+ * rule outranks the unnamed one and carries the same values. Keep these in
+ * step with styles.scss, which cannot read them.
+ */
+export const MKTG_PRINT_PAGE_SETUPS = {
+  'brand-kit': 'size: letter landscape; margin: 0;',
+  'mktg-framework': 'size: portrait; margin: 0.55in 0.6in;',
+} as const;
+
+/**
  * The weights the framework print sets the brand's typeface in, loaded before
  * the print dialog opens: the body (400), the headings, tagline and key
  * numbers (`font-medium`, 500) and the labels (`font-semibold`, 600).

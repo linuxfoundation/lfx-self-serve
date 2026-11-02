@@ -32,7 +32,7 @@ export const Informational: Story = {
     props: args,
     template: `
       <lfx-ui-empty-state ${argsToTemplate(args)}>
-        <lfx-ui-button empty-state-action>Connect GitHub</lfx-ui-button>
+        <lfx-ui-button size="large" empty-state-action>Connect GitHub</lfx-ui-button>
         <a empty-state-action href="#" class="text-ui-accent-700 underline-offset-[3px] hover:underline focus-visible:shadow-focus focus-visible:outline-none">
           Learn more <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
         </a>
@@ -51,8 +51,8 @@ export const Educational: Story = {
     props: args,
     template: `
       <lfx-ui-empty-state ${argsToTemplate(args)}>
-        <lfx-ui-button empty-state-action icon="fa-light fa-play">Start Walkthrough</lfx-ui-button>
-        <lfx-ui-button empty-state-action variant="secondary">Skip</lfx-ui-button>
+        <lfx-ui-button size="large" empty-state-action icon="fa-light fa-play">Start Walkthrough</lfx-ui-button>
+        <lfx-ui-button size="large" empty-state-action variant="secondary">Skip</lfx-ui-button>
       </lfx-ui-empty-state>`,
   }),
 };
@@ -64,7 +64,7 @@ export const Guide: Story = {
     props: args,
     template: `
       <lfx-ui-empty-state ${argsToTemplate(args)}>
-        <lfx-ui-button empty-state-action variant="secondary">Start Blank</lfx-ui-button>
+        <lfx-ui-button size="large" empty-state-action variant="secondary">Start Blank</lfx-ui-button>
         <!-- Exact px, not rem; 14px root: library guide grid, 640px wide, 12px gaps, 12px above. -->
         <div class="mt-[12px] grid w-full max-w-[640px] grid-cols-3 gap-[12px] text-left">
           <div class="edge rounded-ui-sm p-[16px] label-14 text-ui-neutral-900">Governance board</div>

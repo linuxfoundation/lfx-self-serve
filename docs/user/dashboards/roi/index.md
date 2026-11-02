@@ -1,6 +1,6 @@
 ---
 title: ROI metrics
-description: How the Org Lens ROI page estimates your organization's investment in Linux Foundation projects and the return associated with it.
+description: What the Org Lens ROI Metrics page shows, and where to find the full documentation of how the figures are estimated.
 audience: [all]
 product_area: Dashboards
 tags: [org, org lens, roi, return on investment, investment, return, estimation method, markup]
@@ -12,29 +12,25 @@ The **ROI Metrics** page in Org Lens estimates what your organization invests in
 
 Find the page in the **LF Staff Only** section at the bottom of the Org Lens menu. Only Linux Foundation staff can see that section or open the page.
 
-Full documentation of the ROI model is being written. This page summarizes what the ROI page itself states.
+## What the page shows
 
-## What the figures mean
-
-- **Total investment** — your organization's public contribution activity (commits, community participation, meetings, events, memberships, and training), priced at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.
-- **Total return** — the economic value your organization received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.
-- **Net return** — total return less investment. A project can have a negative net return when it returned less than it cost.
-- **ROI** — net return divided by investment, shown as a percentage. Blank when there is no investment to divide by.
-- **BCR** — total return divided by investment (benefit-cost ratio). Always exactly one more than ROI.
+- **Total investment** — public contribution activity (commits, community participation, meetings, events, memberships, and training), priced at standard rates that are the same for every organization. Direct spending comes from LF records, and staff time is priced at flat benchmark rates, not anyone's actual or reported compensation.
+- **Total return** — the estimated economic value received back from the projects you contributed to
+- **Net return**, **ROI**, and **BCR** — return less investment, that difference as a share of investment, and return per dollar invested (always exactly one more than ROI)
 
 ## Estimation method
 
-Return is estimated with one of two markup methods, chosen in **Model assumptions** on the ROI page:
+Return is estimated with one of two markup methods, chosen in **Model assumptions** on the page: **Logistic markup** (the default) or **Direct markup**. The choice applies to every figure on the page and is remembered on the device you choose it on. See [Stage 1: markups](../../roi/stage-1-markups/) for how the two differ.
 
-- **Logistic markup** — the default.
-- **Direct markup**
+## Full documentation
 
-The choice applies to every figure on the page and is remembered on the device you choose it on. Both methods draw on the same investment base, so switching moves the figures modestly rather than dramatically.
+The [ROI documentation](../../roi/) explains the model at three levels of depth:
 
-## Cost rates
-
-The rates used to price contribution activity are global constants: one rate per contribution type, applied identically to every organization. They are not specific to your organization and are not derived from anyone's actual or reported compensation. They are set in the data pipeline, so the figures on the page cannot be recalculated with different values.
+- [How the model works](../../roi/how-it-works/) and [Interpreting results](../../roi/interpreting-results/) — plain-language explanations
+- [Data overview](../../roi/data-overview/) — what goes in and how it is priced
+- [Technical model description](../../roi/model/) — the full mathematical description and its assumptions
 
 ## Related sections
 
-- [Dashboard](../index.md)
+- [Dashboard](../)
+- [ROI documentation](../../roi/)

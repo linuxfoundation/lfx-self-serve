@@ -76,7 +76,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REGISTRANT_BATCH_MAX: 100,
   MEETING_REGISTRANT_BATCH_CONCURRENCY: 5,
   MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
-  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
+  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join', 'meetings-home'],
   MIN_CUSTOM_DURATION: 5,
   MAX_MEETING_DURATION: 600,
 }));
@@ -1350,17 +1350,17 @@ describe('MeetingController', () => {
       expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
     });
 
-    it('logs the UI surface named in the removal-source header on start and success', async () => {
-      const req = buildReq({}, { 'x-lfx-removal-source': 'meeting-card' });
+    it.each(['meeting-card', 'meetings-home'])('logs the UI surface named in the removal-source header (%s) on start and success', async (source) => {
+      const req = buildReq({}, { 'x-lfx-removal-source': source });
 
       await controller.removeMyMeetingRegistration(req, buildRes(), next);
 
-      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source: 'meeting-card' }));
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source }));
       expect(logger.success).toHaveBeenCalledWith(
         req,
         'remove_my_meeting_registration',
         expect.anything(),
-        expect.objectContaining({ source: 'meeting-card', removed_count: 1, remaining_count: 0 })
+        expect.objectContaining({ source, removed_count: 1, remaining_count: 0 })
       );
     });
 

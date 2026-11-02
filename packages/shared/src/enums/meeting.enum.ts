@@ -13,6 +13,16 @@ export enum MeetingVisibility {
 }
 
 /**
+ * Visibility badge shown on a meetings home row
+ * @description Restriction wins over visibility, so a restricted public meeting shows as restricted
+ */
+export enum MeetingVisibilityKind {
+  PUBLIC = 'public',
+  PRIVATE = 'private',
+  RESTRICTED = 'restricted',
+}
+
+/**
  * Meeting type categories
  * @description Categorizes meetings by their purpose and governance structure
  */

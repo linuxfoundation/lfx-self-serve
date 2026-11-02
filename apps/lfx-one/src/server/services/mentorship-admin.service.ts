@@ -444,7 +444,11 @@ export class MentorshipAdminService {
     return tasks.map(mapMentorshipProgramTask);
   }
 
-  /** Accepts, declines or graduates one application. `attendanceType` rides along only with an accept. Upstream's 409 and 422 pass through. */
+  /**
+   * Accepts, declines or graduates one application, undoes a graduation (an accept with no `attendanceType`, so
+   * upstream keeps the stored one), or re-opens a declined or withdrawn one (`pending`). `attendanceType` rides along
+   * only with an accept. Upstream's 409 and 422 pass through.
+   */
   public async updateApplicationStatus(req: Request, applicationId: string, body: MentorshipAdminApplicationStatusUpdate): Promise<void> {
     logger.debug(req, 'mentorship_admin_update_application_status', 'Updating application status', { applicationId, status: body.status });
 
@@ -454,7 +458,7 @@ export class MentorshipAdminService {
       `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/status`,
       'PATCH',
       undefined,
-      { status: body.status, ...(body.status === 'accepted' ? { attendance_type: body.attendanceType } : {}) }
+      { status: body.status, ...(body.status === 'accepted' && body.attendanceType ? { attendance_type: body.attendanceType } : {}) }
     );
   }
 

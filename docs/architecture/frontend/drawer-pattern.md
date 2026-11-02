@@ -9,6 +9,8 @@ Drawer components provide detail panels that slide in from the right side of the
 
 All drawer components follow a consistent pattern built on PrimeNG's `p-drawer` with Angular signals for state management.
 
+> **New drawers:** use the uikit `UiDrawerService` with an `lfx-ui-drawer` layout (`apps/lfx-one/src/app/shared/uikit/drawer/`) instead of PrimeNG's `p-drawer`. It is built on the uikit modal, so focus trap, focus return, scroll lock, Escape and `canClose` are handled for you. The PrimeNG pattern below describes the existing drawers.
+
 ## Visibility Management
 
 Drawers use `model<boolean>(false)` for two-way binding with the parent component:

@@ -3,18 +3,18 @@ title: Navigate Your Dashboard
 description: How to switch lenses and use the LFX Self Serve dashboard effectively.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-10-09
+tags: [dashboard, lens, navigation, organization, company, employer]
+last_updated: 2026-11-02
 intercom_collection: Dashboards
 ---
 
-The LFX Self Serve dashboard adapts based on your persona and the lens you have selected. This article explains how to switch lenses, what each view contains, and how to use the project context switcher.
+The LFX Self Serve dashboard adapts based on your roles and the lens you have selected. This article explains how to switch lenses, what each view contains, and how to use the project context switcher.
 
 ## Switch lenses
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Locate the lens switcher in the top navigation or sidebar.
-3. Select one of the available lenses: **Me**, **Foundation**, **Project**, or **Org**.
+3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Organization**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
 4. The dashboard and left navigation update automatically to reflect the selected lens.
 
 On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
@@ -37,15 +37,15 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ## Project lens
 
-The **Project** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
 
 ## Org lens
 
-The **Org** lens shows your organization's membership status and participation across Linux Foundation projects.
+The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 
-When you are in the **Foundation** or **Project** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
+When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
 
 ## Drawers and detail panels
 
@@ -53,6 +53,6 @@ Many dashboard cards open a **drawer** (a side panel) when you select them. Draw
 
 ## Related
 
-- [Dashboard overview](../) — lens and persona concepts
+- [Dashboard overview](../) — lenses and who can see each one
 - [Committees](../../committees/) — manage your committees from the dashboard
 - [Foundation Health Metrics](../foundation-health-metrics/) — health cards and the Health Metrics page

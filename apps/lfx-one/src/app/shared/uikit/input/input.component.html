@@ -10,7 +10,7 @@
     @if (hasPrefix()) {
       <span [id]="prefixId" [class]="prefixClasses()" data-testid="ui-input-prefix">
         @if (prefixIcon()) {
-          <i [class]="prefixIcon()" aria-hidden="true"></i>
+          <i class="ui-icon" [class]="prefixIcon()" aria-hidden="true"></i>
         }
         {{ prefixText() }}
       </span>
@@ -37,14 +37,14 @@
       <span [id]="suffixId" [class]="suffixClasses()" data-testid="ui-input-suffix">
         {{ suffixText() }}
         @if (suffixIcon()) {
-          <i [class]="suffixIcon()" aria-hidden="true"></i>
+          <i class="ui-icon" [class]="suffixIcon()" aria-hidden="true"></i>
         }
       </span>
     }
     <ng-content select="[lfxUiInputAction]" />
   </div>
   @if (error()) {
-    <lfx-ui-error size="small" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>
+    <lfx-ui-error size="field" [announce]="false" [id]="errorId" data-testid="ui-input-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
     <p [id]="hintId" class="copy-13 text-ui-neutral-600" data-testid="ui-input-hint">{{ hint() }}</p>
   }

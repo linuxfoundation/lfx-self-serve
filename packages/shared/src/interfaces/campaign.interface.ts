@@ -335,7 +335,7 @@ export interface CreativeSlotCoverageRow {
   requirement: string;
   /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
   filled: number;
-  /** How many more this slot or rule still needs. Zero when nothing is missing. */
+  /** How many more this slot or rule still needs. Zero when nothing is missing, including a row the form already fills. */
   need: number;
   /** The plan's own words for why it is short. Empty when nothing is missing. */
   reason: string;
@@ -345,7 +345,8 @@ export interface CreativeSlotCoverageRow {
    * The count as a phrase: `filled` against the slot's minimum where the plan carried an
    * assignment and that minimum is above zero, a bare stored count where the slot states no
    * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
-   * cross-slot requirement, which has no single slot to count in.
+   * cross-slot requirement, which has no single slot to count in. A row the host's form already
+   * fills (#4833) reads `N in the form` instead, summed across a cross-slot rule's member slots.
    */
   countText: string;
 }
@@ -913,6 +914,27 @@ export interface CampaignBriefPersistenceState {
   conflict?: CampaignBriefPersistResult['conflict'];
 }
 
+/** The Implementation tab's Google budget and flight controls, read together (#4847). */
+export interface GoogleBudgetInputs {
+  /** The daily budget control's value; `null` once the number input is emptied, whatever the control's declared type. */
+  daily: number | null;
+  /** The flight's first day, `YYYY-MM-DD`. */
+  start: string;
+  /** The flight's last day, `YYYY-MM-DD`. */
+  end: string;
+}
+
+/**
+ * The Google daily budget's flight on the Implementation tab: how many days it runs and what the
+ * daily figure spends over them, shown beside the field so the operator sees both numbers (#4847).
+ */
+export interface GoogleBudgetFlight {
+  /** Flight length in days, start and end days both counted (`campaignFlightDays`). */
+  days: number;
+  /** The daily budget times {@link GoogleBudgetFlight.days}. */
+  total: number;
+}
+
 /**
  * The Implementation tab's in-progress edits, held by the PARENT so they survive a tab switch.
  *
@@ -983,7 +1005,10 @@ export interface CampaignImplementationDraft {
   /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
   headlines: string[];
   descriptions: string[];
-  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  /**
+   * Budget and flight, which the brief seeds but the user routinely overrides. `budgetUsd` is the
+   * Google DAILY budget (#4847), the same figure {@link CampaignCreateRequest.budgetUsd} sends.
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
@@ -2511,15 +2536,31 @@ export interface CreativeAssetLibraryState {
  *
  * Not expressible as a per-field {@link GoogleCreativeFieldSpec.min}: the requirement is on the
  * PAIR, and putting `min: 1` on either member would refuse a creative that supplied only the other
- * one — which upstream accepts. Demand Gen and Display both state it over the two marketing-image
- * arrays (`demandgen_creative.go`, `display_creative.go`); Performance Max has no such rule because
- * it requires both arrays independently, which its two `min: 1` entries already carry.
+ * one — which upstream accepts. Demand Gen states it over the two marketing-image arrays
+ * (`demandgen_creative.go`). Performance Max and Display have no such rule because they require
+ * both arrays independently, which their two `min: 1` entries already carry (#4848).
  */
 export interface GoogleCreativeEitherOrRule {
   /** The `control` names of the list fields, at least one of which must be non-empty. */
   controls: readonly string[];
   /** What is missing, as a clause that follows the channel's label in the submit-time message. */
   message: string;
+}
+
+/**
+ * One ceiling Google states across SEVERAL of a channel's image fields (#4848).
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.max}: each field can sit under its
+ * own cap while the group is over the shared one, which campaign-service refuses before anything
+ * is created (`demandgen_creative.go`, `pmax_creative.go`, `display_creative.go`).
+ */
+export interface GoogleCreativeSharedCap {
+  /** The `control` names of the image fields the ceiling spans. */
+  controls: readonly string[];
+  /** The most entries, pasted URLs and stored images together, across all of them. */
+  max: number;
+  /** The group's name in the submit-time message, e.g. `marketing images`. */
+  label: string;
 }
 
 /**
@@ -2662,8 +2703,9 @@ export interface GooglePerformanceMaxCreative {
  */
 export interface GoogleDisplayCreative {
   /**
-   * The two marketing arrays are reciprocally required — Google requires each when the other is
-   * absent — and share a combined cap. Both logo arrays are optional and capped separately. Their
+   * Both marketing arrays are required — Google's `ResponsiveDisplayAdInfo` needs a landscape AND a
+   * square marketing image (#4848) — and share a combined cap of 15. Both logo arrays are optional
+   * and share a combined cap of 5. Their
    * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
    * slots'. Each list carries URLs and asset refs alike, as on the siblings.
    */
@@ -3007,6 +3049,11 @@ export interface CampaignCreateRequest {
   registrationUrl: string;
   hsToken?: string;
   campaignTypes: CampaignType[];
+  /**
+   * The Google DAILY budget. campaign-service creates the Google budget with no period, which
+   * Google treats as daily, so this is never a flight total (#4847). Spent in the ad account's
+   * currency despite the name (LFXV2-3251).
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
@@ -3393,6 +3440,14 @@ export interface CampaignMetrics {
   pacingLabel: PacingLabel;
   campaignId: string;
   googleAdsUrl: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `pacingPct` is 0 and `pacingLabel` a
+   * placeholder whenever `pacingUnknown` or `fetchFailed` is set.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignActionItem {
@@ -3409,6 +3464,11 @@ export interface CampaignActionItem {
     impressions: number;
     clicks: number;
     conversions: number;
+    /**
+     * Campaign-service path only: true when `pacingPct` is a 0 placeholder — the item's campaign could not
+     * be read or paced, or the item names no campaign at all.
+     */
+    pacingUnknown?: boolean;
   };
 }
 
@@ -3418,6 +3478,8 @@ export interface CampaignAccountTotals {
   impressions: number;
   clicks: number;
   conversions: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignMonitorResponse {
@@ -3427,6 +3489,12 @@ export interface CampaignMonitorResponse {
   accountTotals: CampaignAccountTotals;
   actionItems: CampaignActionItem[];
   message?: string;
+  /**
+   * Campaign-service path only: true when the amounts are the project's own connected account's,
+   * unconverted, in a currency nobody named — campaign-service sets no `currency` for Google. The
+   * legacy read is the LF's own USD account and leaves it unset.
+   */
+  amountsInAccountCurrency?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -3476,6 +3544,12 @@ export interface KeywordMetricsResponse {
   truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
+  /**
+   * Campaign-service path only: true when spend and CPC are the project's own connected account's,
+   * unconverted, in a currency nobody named (`cost_micros` is "the account's native currency", with
+   * no FX). The legacy read is the LF's own USD account and leaves it unset (#4807).
+   */
+  amountsInAccountCurrency?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -3739,13 +3813,17 @@ export interface CampaignServiceAudience {
 // campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
 //
 // campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
-// currency, `ctr` as a PERCENTAGE). The LinkedIn, Meta and Reddit routes map these onto the legacy
-// `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the Microsoft, X and HubSpot routes have no
-// legacy shape and return these unchanged.
+// currency, `ctr` as a PERCENTAGE). The Google Ads, LinkedIn, Meta and Reddit routes map these onto the legacy
+// `CampaignMonitorResponse` / `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the
+// Microsoft, X and HubSpot routes have no legacy shape and return these unchanged.
 // ---------------------------------------------------------------------------
 
-/** The ad platforms with an account-scoped monitor this app proxies (Google is not routed here). */
-export type CampaignServiceMonitorProvider = 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+/**
+ * The ad platforms with an account-scoped monitor this app proxies. `google-ads` is read by the Google
+ * Ads monitor route itself, from the project's own connection, and is not a Monitor tab connection
+ * picker (`MonitorConnectionPlatform`), because the Google panel has no account picker.
+ */
+export type CampaignServiceMonitorProvider = 'google-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
 
 export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
 
@@ -3957,9 +4035,12 @@ export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'micros
  * - `connected`: a connection exists and is bound to `accountId`;
  * - `no_connection`: campaign-service has no connection of this provider for the project;
  * - `no_account`: a connection exists but no ad account is bound to it;
- * - `unavailable`: the connection could not be read, so neither of the above is known.
+ * - `unavailable`: the connection could not be read, so neither of the above is known;
+ * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
+ *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
  */
-export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable';
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
 
 /** One platform's connection, as the Monitor tab's account picker consumes it. */
 export interface MonitorConnectionAccount {
@@ -5748,10 +5829,11 @@ export type CampaignTwitterDraft = Pick<
 export interface CampaignTwitterAccountState {
   /**
    * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
-   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `error` for any
-   * other failure. Only `loaded` carries a `result`.
+   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `forbidden` when
+   * campaign-service refused to read the project's X connection for lack of its `campaign_manager` role
+   * (#4837), `error` for any other failure. Only `loaded` carries a `result`.
    */
-  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'error';
+  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'forbidden' | 'error';
   result: TwitterAdsAccountsResult | null;
 }
 

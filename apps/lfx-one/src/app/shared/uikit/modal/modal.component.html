@@ -7,14 +7,17 @@
     <ng-container [ngTemplateOutlet]="titleBlock" />
   </div>
 }
-<div [class]="bodyClasses()" data-testid="ui-modal-body">
+<!-- cdkScrollable lets overlays opened from the body (Select, Menu) follow its scrolling. -->
+<div [class]="bodyClasses()" cdkScrollable data-testid="ui-modal-body">
   @if (!sticky()) {
     <div class="flex flex-col gap-[8px]" data-testid="ui-modal-header">
       <ng-container [ngTemplateOutlet]="titleBlock" />
     </div>
   }
   <ng-content />
-  <div class="-mx-[24px] border-y border-ui-neutral-alpha-200 bg-ui-background-200 px-[24px] py-[16px] empty:hidden -mb-[24px]" data-testid="ui-modal-inset">
+  <div
+    class="-mx-[24px] bg-ui-background-200 shadow-[inset_0_1px_0_0,inset_0_-1px_0_0] shadow-ui-neutral-alpha-200 px-[24px] py-[16px] empty:hidden -mb-[24px]"
+    data-testid="ui-modal-inset">
     <ng-content select="[modalInset]" />
   </div>
 </div>
@@ -23,7 +26,8 @@
 </div>
 
 <ng-template #titleBlock>
-  <h2 class="heading-24 text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
+  <!-- Roboto Slab 300 20/28: heading-24 at the library's smaller modal size. -->
+  <h2 class="heading-24 text-[20px] leading-[28px] text-ui-neutral-900" [id]="titleId" data-testid="ui-modal-title">{{ heading() }}</h2>
   @if (subtitle()) {
     <p class="copy-14 text-ui-neutral-600" [id]="subtitleId" data-testid="ui-modal-subtitle">{{ subtitle() }}</p>
   }

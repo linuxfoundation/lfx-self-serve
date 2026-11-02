@@ -23,7 +23,7 @@ apps/lfx-one/src/app/modules/
 ├── meetings/                   # Meetings management
 │   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
 │   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
-│   ├── meetings-redesign/      # Me lens meetings redesign, layout shell (flag-gated)
+│   ├── meetings-redesign/      # Me lens meetings home page redesign (flag-gated)
 │   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
 │   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-join/           # Public meeting join page
@@ -120,7 +120,7 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 
 - Selector prefix `lfx-ui-` (enforced by an ESLint override for `shared/uikit/**`) and class names `Ui*Component`, so they never collide with the wrapper classes
 - Standalone, signal inputs, `model()` for two-way values, `OnPush`
-- Styled with Tailwind only; new and realigned components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens)), while components not yet realigned keep `lfxColors` (listed in `shared/uikit/README.md` § Conventions)
+- Styled with Tailwind only; components use the LFX UI Library `ui-*` roles (see [Styling System](./styling-system.md#lfx-ui-library-tokens))
 - Overlays, when needed, build on `@angular/cdk`
 - Every component has a Storybook story and a unit spec; run Storybook with `yarn storybook` from the repo root
 

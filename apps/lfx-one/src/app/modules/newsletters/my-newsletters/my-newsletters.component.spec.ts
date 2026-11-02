@@ -9,7 +9,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsResponse, NewsletterGroupJoinStatus } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { PersonaService } from '@services/persona.service';
-import { ClipboardShareService } from '@services/clipboard-share.service';
+import { ShareDialogService } from '@services/share-dialog.service';
 import { SelectComponent } from '@components/select/select.component';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -72,7 +72,7 @@ describe('MyNewslettersComponent', () => {
     joinNewsletterGroupByInvite: vi.fn(),
   };
   const messages = { add: vi.fn() };
-  const clipboard = { copyLink: vi.fn() };
+  const shareDialog = { open: vi.fn() };
   const dialog = { open: vi.fn() };
   const find = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   // PrimeNG moves the drawer overlay outside the fixture into document.body.
@@ -141,7 +141,7 @@ describe('MyNewslettersComponent', () => {
           useValue: { paramMap: routeParams, queryParamMap: params, snapshot: { paramMap: routeParams.value } },
         },
         { provide: MessageService, useValue: messages },
-        { provide: ClipboardShareService, useValue: clipboard },
+        { provide: ShareDialogService, useValue: shareDialog },
       ],
     })
       .overrideComponent(MyNewslettersComponent, { set: { providers: [{ provide: DialogService, useValue: dialog }] } })
@@ -509,8 +509,10 @@ describe('MyNewslettersComponent', () => {
       expect.objectContaining({ queryParams: { issue: 'issue', project: 'child-slug' }, queryParamsHandling: 'merge', preserveFragment: true })
     );
     expect(overlay('newsletter-preview-drawer-header')!.textContent).toContain('Sent Aug 13, 2026');
-    overlay('newsletter-preview-drawer-copy-link')!.click();
-    expect(clipboard.copyLink).toHaveBeenCalledWith(expect.stringContaining('/newsletters/child-slug/issue'), 'Newsletter link copied to clipboard.');
+    overlay('newsletter-preview-drawer-share')!.click();
+    expect(shareDialog.open).toHaveBeenCalledWith(
+      expect.objectContaining({ url: expect.stringContaining('/newsletters/child-slug/issue'), copiedMessage: 'Newsletter link copied to clipboard.' })
+    );
     expect(overlay('newsletter-preview-drawer-open-new-tab')!.getAttribute('target')).toBe('_blank');
     overlay('newsletter-preview-drawer-close')!.click();
     await settle();

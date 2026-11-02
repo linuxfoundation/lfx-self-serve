@@ -662,7 +662,10 @@ export class MentorshipAdminController {
     return { status: raw['status'] as MentorshipAdminMentorStatusUpdate['status'] };
   }
 
-  /** `status` must be one the admin can set; an accept also needs an `attendanceType`. */
+  /**
+   * `status` must be one the admin can set. An accept may carry an `attendanceType`; without one (Undo graduation),
+   * upstream keeps the one the application was accepted with, and refuses an application that never had one.
+   */
   private parseStatusUpdate(body: unknown, operation: string): MentorshipAdminApplicationStatusUpdate {
     const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
     const statuses: readonly string[] = MENTORSHIP_ADMIN_DECISION_STATUSES;
@@ -670,19 +673,13 @@ export class MentorshipAdminController {
       throw ServiceValidationError.forField('status', `status must be one of: ${statuses.join(', ')}`, { operation });
     }
     const status = raw['status'] as MentorshipAdminApplicationStatusUpdate['status'];
-    if (status !== 'accepted') {
+    const attendanceType = raw['attendanceType'];
+    if (status !== 'accepted' || attendanceType === undefined) {
       return { status };
     }
 
-    const attendanceType = raw['attendanceType'];
     if (typeof attendanceType !== 'string' || !(MENTORSHIP_ATTENDANCE_TYPES as readonly string[]).includes(attendanceType)) {
-      throw ServiceValidationError.forField(
-        'attendanceType',
-        `attendanceType is required to accept and must be one of: ${MENTORSHIP_ATTENDANCE_TYPES.join(', ')}`,
-        {
-          operation,
-        }
-      );
+      throw ServiceValidationError.forField('attendanceType', `attendanceType must be one of: ${MENTORSHIP_ATTENDANCE_TYPES.join(', ')}`, { operation });
     }
     return { status, attendanceType: attendanceType as MentorshipAttendanceType };
   }

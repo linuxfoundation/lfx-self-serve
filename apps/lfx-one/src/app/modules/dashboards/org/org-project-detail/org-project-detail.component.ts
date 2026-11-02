@@ -5,7 +5,7 @@ import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, type Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Params, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -14,11 +14,14 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -48,6 +51,8 @@ import {
   PD_TIME_RANGE_OPTIONS,
   PD_VALID_METRICS,
   PD_VALID_TIME_RANGES,
+  ORG_SCOPE_PROJECT_DETAIL_NOTE,
+  DEFAULT_ORG_SCOPE,
 } from '@lfx-one/shared/constants';
 import type {
   BlockState,
@@ -66,6 +71,7 @@ import type {
   OrgLensProjectInfluenceCard,
   OrgLensProjectLeaderboardRow,
   OrgLensTrendBlock,
+  OrgScopeFilter,
 } from '@lfx-one/shared/interfaces';
 import { buildHealthAriaLabel, formatHealthLabel, isPartialHealthScore, parseLocalDateString } from '@lfx-one/shared/utils';
 import type { MenuItem } from 'primeng/api';
@@ -97,6 +103,8 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
     OrgLensEmptyStateComponent,
     OrgLeaderboardDetailDrawerComponent,
     OrgProjectDetailTabBarComponent,
+    MoreFiltersToggleComponent,
+    OrgScopeSelectComponent,
     PersonDetailDrawerComponent,
     TableComponent,
     TagComponent,
@@ -122,6 +130,18 @@ export class OrgProjectDetailComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+
+  // Organization scope (lfx-self-serve-ops#1219), kept in step with `?orgScope=`: the cards, rosters and boards the BFF
+  // scopes re-read on a change; the hero and the influence trend are unscoped.
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
+  });
+  // What the pick changes here, after the picker's tooltip: maintainer roles, health and influence scores stay.
+  protected readonly orgScopeNote = ORG_SCOPE_PROJECT_DETAIL_NOTE;
+  // The organization scope sits behind "More filters" (lfx-self-serve#4735): shown for this visit only, and counted
+  // while not at its default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(() => (this.orgScope() !== DEFAULT_ORG_SCOPE ? 1 : 0));
 
   // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
   // never forces a whole-page reload.
@@ -170,10 +190,21 @@ export class OrgProjectDetailComponent {
 
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
 
+  protected readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
+    initialValue: this.scopeForm.controls.orgScope.value,
+  });
+
   // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
   protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
+  /** The way back to Projects keeps the organization scope, so the sidebar carries it on from there (lfx-self-serve-ops#1219). */
+  private readonly projectsQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
   /** Breadcrumb home, as one stable object: an inline literal in the template would be a new object per change-detection pass. */
-  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({ icon: 'fa-light fa-house', routerLink: this.projectsLink(), styleClass: 'sr-only' }));
+  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({
+    icon: 'fa-light fa-house',
+    routerLink: this.projectsLink(),
+    queryParams: this.projectsQueryParams(),
+    styleClass: 'sr-only',
+  }));
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
@@ -210,6 +241,7 @@ export class OrgProjectDetailComponent {
   );
   private readonly range$ = toObservable(this.timeRange).pipe(distinctUntilChanged());
   private readonly metric$ = toObservable(this.metric).pipe(distinctUntilChanged());
+  private readonly orgScope$ = toObservable(this.orgScope).pipe(distinctUntilChanged());
   private readonly influenceActivated$ = toObservable(this.activeTab).pipe(
     map((tab) => tab === 'pd-influence'),
     scan((seen, active) => seen || active, false),
@@ -349,10 +381,11 @@ export class OrgProjectDetailComponent {
     bindLfxDocumentTitle(computed(() => this.hero()?.projectName));
     this.searchForm.controls.technical.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.techSearch.set(value));
     this.searchForm.controls.ecosystem.valueChanges.pipe(debounceTime(250), takeUntilDestroyed()).subscribe((value) => this.ecoSearch.set(value));
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router);
 
-    // A refetch driver (range / org / slug change) re-scopes every range-scoped block server-side.
+    // A refetch driver (range / org / slug / organization scope change) re-scopes every range-scoped block server-side.
     // Close any open card drawer so it can never pair a new range label with a stale payload.
-    combineLatest([this.orgUidOrCleared$, this.slug$, this.range$])
+    combineLatest([this.orgUidOrCleared$, this.slug$, this.range$, this.orgScope$])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => this.closeCardDetail());
 
@@ -368,12 +401,12 @@ export class OrgProjectDetailComponent {
         this.leaderboardDetailOpen.set(false);
       });
 
-    // Board reload driver — org / slug / range / metric changes re-request BOTH boards at page 0,
+    // Board reload driver — org / slug / range / metric / organization scope changes re-request BOTH boards at page 0,
     // once the Leaderboards tab has been activated (lazy on first activation). Superseded requests
     // are dropped by the per-board request token, so a burst of changes yields one applied result.
-    combineLatest([this.orgUid$, this.slug$, this.range$, this.metric$, this.leaderboardsActivated$])
+    combineLatest([this.orgUid$, this.slug$, this.range$, this.metric$, this.orgScope$, this.leaderboardsActivated$])
       .pipe(
-        filter(([, , , , activated]) => activated),
+        filter(([, , , , , activated]) => activated),
         takeUntilDestroyed()
       )
       .subscribe(() => {
@@ -553,13 +586,14 @@ export class OrgProjectDetailComponent {
     this.refreshArrows(el, track === 'tech');
   }
 
-  /** B5 — Lazy-fetch the drawer section for one card, cached per (org, project, card, range); force bypasses the cache for retry. */
+  /** B5 — Lazy-fetch the drawer section for one card, cached per (org, project, card, range, scope); force bypasses the cache for retry. */
   private loadDrawer(cardKey: string, force = false): void {
     const uid = this.accountContext.selectedAccount()?.uid;
     const slug = this.projectSlug();
     if (!uid || !slug) return;
     const range = this.timeRange();
-    const cacheKey = `${uid}|${slug}|${cardKey}|${range}`;
+    const orgScope = this.orgScope();
+    const cacheKey = `${uid}|${slug}|${cardKey}|${range}|${orgScope}`;
 
     if (force) this.drawerCache.delete(cacheKey);
     if (this.drawerCache.has(cacheKey)) {
@@ -570,7 +604,7 @@ export class OrgProjectDetailComponent {
 
     this.drawerState.set({ status: 'loading', data: null });
     this.detailService
-      .getCardDrawer(uid, this.orgName(), slug, cardKey, range)
+      .getCardDrawer(uid, this.orgName(), slug, cardKey, range, orgScope)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (section) => {
@@ -579,7 +613,8 @@ export class OrgProjectDetailComponent {
             this.accountContext.selectedAccount()?.uid !== uid ||
             this.projectSlug() !== slug ||
             this.selectedCardKey() !== cardKey ||
-            this.timeRange() !== range
+            this.timeRange() !== range ||
+            this.orgScope() !== orgScope
           )
             return;
           this.drawerState.set(section ? { status: 'ready', data: section } : { status: 'empty', data: null });
@@ -590,7 +625,8 @@ export class OrgProjectDetailComponent {
             this.accountContext.selectedAccount()?.uid !== uid ||
             this.projectSlug() !== slug ||
             this.selectedCardKey() !== cardKey ||
-            this.timeRange() !== range
+            this.timeRange() !== range ||
+            this.orgScope() !== orgScope
           )
             return;
           this.drawerState.set({ status: 'error', data: null });
@@ -621,12 +657,13 @@ export class OrgProjectDetailComponent {
     const slug = this.projectSlug();
     if (!uid || !slug) return;
     const range = this.timeRange();
+    const orgScope = this.orgScope();
     const page = Math.floor(first / rowsPerPage);
     this.rosterFirst.set(first);
     this.rosterRowsPerPage.set(rowsPerPage);
     this.rosterLoading.set(true);
     this.detailService
-      .getCardRoster(uid, this.orgName(), slug, cardKey, range, page, rowsPerPage)
+      .getCardRoster(uid, this.orgName(), slug, cardKey, range, page, rowsPerPage, orgScope)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -635,6 +672,7 @@ export class OrgProjectDetailComponent {
             this.projectSlug() !== slug ||
             this.selectedCardKey() !== cardKey ||
             this.timeRange() !== range ||
+            this.orgScope() !== orgScope ||
             this.rosterFirst() !== first ||
             this.rosterRowsPerPage() !== rowsPerPage
           )
@@ -650,6 +688,7 @@ export class OrgProjectDetailComponent {
             this.projectSlug() !== slug ||
             this.selectedCardKey() !== cardKey ||
             this.timeRange() !== range ||
+            this.orgScope() !== orgScope ||
             this.rosterFirst() !== first ||
             this.rosterRowsPerPage() !== rowsPerPage
           )
@@ -706,6 +745,7 @@ export class OrgProjectDetailComponent {
 
     const range = this.timeRange();
     const metric = this.metric();
+    const orgScope = this.orgScope();
     const isActivity = metric === 'activity';
     const search = (dimension === 'technical' ? this.techSearch() : this.ecoSearch()).trim();
     const page = rowsPerPage > 0 ? Math.floor(first / rowsPerPage) : 0;
@@ -717,8 +757,8 @@ export class OrgProjectDetailComponent {
 
     const fetch =
       dimension === 'technical'
-        ? this.detailService.getTechnicalBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search)
-        : this.detailService.getEcosystemBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search);
+        ? this.detailService.getTechnicalBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search, orgScope)
+        : this.detailService.getEcosystemBoard(uid, this.orgName(), slug, range, metric, page, rowsPerPage, search, orgScope);
 
     fetch.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (result) => {
@@ -802,12 +842,12 @@ export class OrgProjectDetailComponent {
     );
   }
 
-  /** B3/B4 — Our-Influence stream: lazy on first pd-influence activation, re-fetches on range change. */
+  /** B3/B4 — Our-Influence stream: lazy on first pd-influence activation, re-fetches on range or organization scope change. */
   private buildInfluenceState(): Observable<BlockState<OrgLensInfluenceBlock>> {
-    return combineLatest([this.orgUid$, this.slug$, this.range$, this.influenceActivated$, toObservable(this.influenceRetry)]).pipe(
-      filter(([, , , activated]) => activated),
-      switchMap(([uid, slug, range]) =>
-        this.detailService.getInfluenceBlock(uid, this.orgName(), slug, range).pipe(
+    return combineLatest([this.orgUid$, this.slug$, this.range$, this.orgScope$, this.influenceActivated$, toObservable(this.influenceRetry)]).pipe(
+      filter(([, , , , activated]) => activated),
+      switchMap(([uid, slug, range, orgScope]) =>
+        this.detailService.getInfluenceBlock(uid, this.orgName(), slug, range, orgScope).pipe(
           map((block): BlockState<OrgLensInfluenceBlock> => (block ? { status: 'ready', data: block } : { status: 'empty', data: null })),
           startWith<BlockState<OrgLensInfluenceBlock>>({ status: 'loading', data: null }),
           catchError((err: unknown): Observable<BlockState<OrgLensInfluenceBlock>> => {
@@ -840,7 +880,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink() };
+    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink(), queryParams: this.projectsQueryParams() };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

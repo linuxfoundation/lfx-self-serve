@@ -6,7 +6,7 @@
 import { DatePipe, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
 import { Certification, EnrollmentStatus, TrainingEnrollment } from '@lfx-one/shared/interfaces';
-import { CONTINUE_LEARNING_URL, COURSE_URL_PREFIX, ENROLL_AGAIN_URL, ENROLL_AGAIN_URL_PREFIX } from '@lfx-one/shared/constants';
+import { CERTIFICATION_PRODUCT_TYPE, CONTINUE_LEARNING_URL, COURSE_URL_PREFIX, ENROLL_AGAIN_URL, ENROLL_AGAIN_URL_PREFIX } from '@lfx-one/shared/constants';
 import { formatDuration } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,6 +32,8 @@ export class TrainingCardComponent {
   protected readonly continueLearningUrl: Signal<string> = this.initContinueLearningUrl();
   protected readonly enrollAgainUrl: Signal<string> = this.initEnrollAgainUrl();
   protected readonly isActiveEnrollment: Signal<boolean> = this.initIsActiveEnrollment();
+  protected readonly isExam: Signal<boolean> = this.initIsExam();
+  protected readonly isActiveExam = computed(() => this.isExam() && this.isActiveEnrollment());
   protected readonly statusLabel: Signal<string> = this.initStatusLabel();
   protected readonly statusClasses: Signal<string> = this.initStatusClasses();
   protected readonly enrolledDate: Signal<string | null> = this.initEnrolledDate();
@@ -76,6 +78,13 @@ export class TrainingCardComponent {
       if (this.variant() !== 'ongoing') return true;
       const t = this.training() as TrainingEnrollment;
       return t.isActiveEnrollment;
+    });
+  }
+
+  private initIsExam(): Signal<boolean> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return false;
+      return (this.training() as TrainingEnrollment).productType === CERTIFICATION_PRODUCT_TYPE;
     });
   }
 

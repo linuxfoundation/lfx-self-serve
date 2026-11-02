@@ -12,8 +12,7 @@
  * so the progress and counts follow.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the browser and the
- * stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs. The module is behind the
- * `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -24,7 +23,7 @@ import { MentorshipApplicantTask, MentorshipApplicantTaskStatus, MentorshipMento
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -131,10 +130,6 @@ async function pickStatus(page: Page, taskId: string, label: string): Promise<vo
 }
 
 test.describe('Mentor program detail — Edit task and set status', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('sets a mentee task status, keeps the row and reads the detail again', async ({ page }) => {
     const reads = await stubDetail(page, detailWith('pending'), detailWith('completed'));
     const sent = await stubTaskUpdate(page, MENTEE_TASK_ID);

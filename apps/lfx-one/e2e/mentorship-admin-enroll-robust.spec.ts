@@ -17,7 +17,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ENROLL_EDIT_PROGRAM_ID,
   ENROLL_IMPORT_SOURCE_ID,
@@ -38,7 +38,6 @@ const fulfillJson = (route: Route, body: unknown) => route.fulfill({ status: 200
 
 test.describe('Admin enroll wizard — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await openMentorPage(page, '/mentorship/admin/enroll');
     await expect(page.getByTestId('mentorship-enroll-title')).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
@@ -76,7 +75,6 @@ test.describe('Admin enroll wizard — structure', () => {
 
 test.describe('Admin enroll wizard — import structure', () => {
   const openWizard = async (page: Page, options: { templateFails?: boolean } = {}): Promise<void> => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollImportReads(page, fulfillJson, options);
     await openMentorPage(page, '/mentorship/admin/enroll');
@@ -122,7 +120,6 @@ test.describe('Admin enroll wizard — edit structure', () => {
   const editUrl = `/mentorship/admin/enroll?programId=${ENROLL_EDIT_PROGRAM_ID}`;
 
   test('renders the details step without the import picker once the program has loaded', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollEditReads(page, fulfillJson);
     await openMentorPage(page, editUrl);
@@ -133,7 +130,6 @@ test.describe('Admin enroll wizard — edit structure', () => {
   });
 
   test('leaves out the terms acknowledgement on the prerequisites step', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollEditReads(page, fulfillJson);
     const nameChecked = page.waitForResponse(/\/api\/mentorship\/programs\/name-available/);
@@ -150,7 +146,6 @@ test.describe('Admin enroll wizard — edit structure', () => {
   });
 
   test('announces a failed program read as an alert with a Retry button', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollEditReads(page, fulfillJson, { templateFails: true });
     await openMentorPage(page, editUrl);
