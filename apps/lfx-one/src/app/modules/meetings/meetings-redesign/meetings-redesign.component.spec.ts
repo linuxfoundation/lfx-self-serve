@@ -383,14 +383,19 @@ describe('MeetingsRedesignComponent', () => {
       const fixture = render();
       await fixture.whenStable();
       await loadFeeds(fixture, meetings());
+      document.body.appendChild(fixture.nativeElement);
       await applyOrganizedByMe(fixture);
 
-      (query(fixture, 'meetings-home-filters-chip')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement).click();
+      const dismiss = query(fixture, 'meetings-home-filters-chip')?.querySelector('[data-testid="ui-chip-dismiss"]') as HTMLButtonElement;
+      dismiss.focus();
+      dismiss.click();
       await fixture.whenStable();
 
       expect(chips(fixture)).toEqual([]);
       expect(query(fixture, 'meetings-home-filters-count')).toBeNull();
       expect(rowTitles(fixture)).toEqual(['Board Review', 'Tech Sync']);
+      expect(document.activeElement).toBe(query(fixture, 'meetings-home-filters-button')?.querySelector('button'));
+      fixture.nativeElement.remove();
     });
 
     it('clears applied filters on a tab switch but keeps the search', async () => {
