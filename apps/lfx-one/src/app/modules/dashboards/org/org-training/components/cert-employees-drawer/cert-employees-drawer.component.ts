@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms';
 import { OrgLensTrainingService } from '@app/shared/services/org-lens-training.service';
 import { computePersonInitials } from '@app/shared/utils/person-avatar.util';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { MAX_ORG_CERT_EMPLOYEES } from '@lfx-one/shared/constants';
+import { MAX_ORG_CERT_EMPLOYEES, ORG_CERT_IN_PROGRESS_WINDOW_NOTE } from '@lfx-one/shared/constants';
 import type { OrgCertEmployeesResponse, OrgCertEmployeeStatus, OrgCertEmployeeVm } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
@@ -33,6 +33,7 @@ export class CertEmployeesDrawerComponent {
   public readonly status = input<OrgCertEmployeeStatus>('certified');
   public readonly count = input<number>(0);
 
+  protected readonly inProgressWindowNote = ORG_CERT_IN_PROGRESS_WINDOW_NOTE;
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
 
