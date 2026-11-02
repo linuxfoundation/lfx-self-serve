@@ -31,6 +31,7 @@ import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
+import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -1941,6 +1942,114 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
       expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
       expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
+    });
+  });
+
+  // #4859 Session B: mobile polish on the meeting detail page.
+  describe('mobile polish (#4860, #4861, #4863)', () => {
+    const PAST_START_TIME = '2020-01-01T00:00:00.000Z';
+
+    const renderPage = async (overrides: Partial<Meeting> = {}): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting(overrides), project: buildProject() }));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the hero logo below md and keeps it on desktop (#4860)', async () => {
+      const page = await renderPage();
+
+      const hero = page.querySelector('[data-testid="meeting-hero-logo"]');
+      expect(hero).not.toBeNull();
+      expect(hero?.classList.contains('hidden')).toBe(true);
+      expect(hero?.classList.contains('md:flex')).toBe(true);
+    });
+
+    it('renders no AI Summary chip for a future meeting even when summaries are enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: FUTURE_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    it('still renders the AI Summary chip for a past meeting with summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: true, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).not.toBeNull();
+    });
+
+    it('renders no AI Summary chip for a past meeting without summaries enabled (#4863)', async () => {
+      const page = await renderPage({ ai_summary_enabled: false, start_time: PAST_START_TIME });
+
+      expect(page.querySelector('[data-testid="meeting-badge-ai-summary"]')).toBeNull();
+    });
+
+    describe('compact meta summary (#4861)', () => {
+      const LONG_NAME = 'Maximilian Alexander Featherstonehaugh-Montgomery';
+
+      it('keeps the desktop pills and hides them below md', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const desktopRow = page.querySelector('[data-testid="meeting-meta-desktop"]');
+        const mobile = page.querySelector('[data-testid="meeting-meta-mobile"]');
+        expect(desktopRow?.classList.contains('hidden')).toBe(true);
+        expect(desktopRow?.classList.contains('md:flex')).toBe(true);
+        expect(mobile?.classList.contains('md:hidden')).toBe(true);
+      });
+
+      it('shows the viewer timezone abbreviation next to the time', async () => {
+        const page = await renderPage();
+
+        const abbreviation = page.querySelector('[data-testid="meeting-meta-mobile-timezone"]');
+        expect(abbreviation?.textContent?.trim()).toBe(getTimezoneAbbreviation(FUTURE_START_TIME, getUserTimezone()));
+      });
+
+      it('names the scheduled zone as visible text when it differs from the viewer zone', async () => {
+        const scheduledZone = getUserTimezone() === 'Asia/Tokyo' ? 'America/New_York' : 'Asia/Tokyo';
+        const page = await renderPage({ timezone: scheduledZone });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')?.textContent).toContain(`Scheduled in ${scheduledZone}`);
+      });
+
+      it('omits the scheduled zone line when it matches the viewer zone', async () => {
+        const page = await renderPage({ timezone: getUserTimezone() });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-scheduled-zone"]')).toBeNull();
+      });
+
+      it('still shows foundation and project when the guest projection has no start_time', async () => {
+        const page = await renderPage({ start_time: undefined as unknown as string });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows foundation and project on one line', async () => {
+        const page = await renderPage();
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-context"]')?.textContent).toContain('Test Project');
+      });
+
+      it('shows the full organizer name without truncating it', async () => {
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        const organizer = page.querySelector('[data-testid="meeting-meta-mobile-organizer"]');
+        expect(organizer?.textContent).toContain(`Organized by ${LONG_NAME}`);
+        expect(organizer?.querySelector('.truncate')).toBeNull();
+        expect(organizer?.classList.contains('truncate')).toBe(false);
+      });
+
+      it('falls back to Linux Foundation when the meeting was created by a service account', async () => {
+        const page = await renderPage({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')?.textContent).toContain('Organized by Linux Foundation');
+      });
+
+      it('does not show the organizer to unauthenticated viewers', async () => {
+        authenticated.set(false);
+        const page = await renderPage({ owner: { name: LONG_NAME, username: 'mfm', email: 'mfm@acme-motors.example' } });
+
+        expect(page.querySelector('[data-testid="meeting-meta-mobile-organizer"]')).toBeNull();
+      });
     });
   });
 });

@@ -82,6 +82,10 @@ import {
   getAttachmentScope,
   getMeetingSelfRemovalMessage,
   getUserTimezone,
+  getTimezoneAbbreviation,
+  collectMeetingOrganizers,
+  getMeetingOrganizerDisplayName,
+  organizerDisplayName,
   isHostKeyVisible,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
@@ -323,6 +327,11 @@ export class MeetingJoinComponent implements OnInit {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
+  public showAiSummaryBadge: Signal<boolean>;
+  public mobileTimezoneAbbreviation: Signal<string>;
+  public mobileScheduledTimezoneLabel: Signal<string>;
+  public mobileContextLabel: Signal<string>;
+  public mobileOrganizerLabel: Signal<string>;
   protected isPastMeeting: Signal<boolean>;
   // Gates agenda, materials, and date/time rendering for both the past-meeting and live-meeting
   // paths — picks whichever full-access flag matches how the current meeting() was loaded.
@@ -526,6 +535,11 @@ export class MeetingJoinComponent implements OnInit {
     bindLfxDocumentTitle(this.meetingTitle);
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
+    this.showAiSummaryBadge = this.initializeShowAiSummaryBadge();
+    this.mobileTimezoneAbbreviation = this.initializeMobileTimezoneAbbreviation();
+    this.mobileScheduledTimezoneLabel = this.initializeMobileScheduledTimezoneLabel();
+    this.mobileContextLabel = this.initializeMobileContextLabel();
+    this.mobileOrganizerLabel = this.initializeMobileOrganizerLabel();
     this.isPastMeeting = this.initializeIsPastMeeting();
     this.pastMeetingSummary = this.initializePastMeetingSummary();
     this.hasSummaryContent = this.initializeHasSummaryContent();
@@ -1564,6 +1578,53 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeHasAiCompanion(): Signal<boolean> {
     return computed(() => this.meeting()?.ai_summary_enabled || false);
+  }
+
+  // The chip advertises a summary that only exists after the meeting; before the end there is nothing to show (#4863).
+  private initializeShowAiSummaryBadge(): Signal<boolean> {
+    return computed(() => this.hasAiCompanion() && this.isPastMeeting());
+  }
+
+  // Compact mobile meta summary (#4861): viewer-local zone abbreviation next to the time.
+  private initializeMobileTimezoneAbbreviation(): Signal<string> {
+    return computed(() => {
+      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const timezone = this.userTimezone();
+      return startTime && timezone ? getTimezoneAbbreviation(startTime, timezone) : '';
+    });
+  }
+
+  // Visible line naming the zone the meeting was scheduled in, shown only when it differs from the viewer's
+  // zone (title tooltips are unreachable on touch and by keyboard).
+  private initializeMobileScheduledTimezoneLabel(): Signal<string> {
+    return computed(() => {
+      const startTime = this.currentOccurrence()?.start_time || this.meeting()?.start_time;
+      const scheduledZone = this.meeting()?.timezone;
+      if (!startTime || !scheduledZone || scheduledZone === this.userTimezone()) {
+        return '';
+      }
+      return `Scheduled in ${scheduledZone} (${getTimezoneAbbreviation(startTime, scheduledZone)})`;
+    });
+  }
+
+  private initializeMobileContextLabel(): Signal<string> {
+    return computed(() => {
+      const foundation = this.parentProject()?.name;
+      const project = this.project()?.name || this.meeting()?.project_name;
+      return [foundation, project].filter(Boolean).join(' · ');
+    });
+  }
+
+  // Full organizer name(s) from the same organizer set as the desktop chip (every name comma-joined, no "you"/"+N" collapsing);
+  // when none resolves, organizerDisplayName supplies a never-blank fallback.
+  private initializeMobileOrganizerLabel(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const names = collectMeetingOrganizers(meeting, this.organizerChipHosts())
+        .map((organizer) => getMeetingOrganizerDisplayName(organizer))
+        .filter((name) => !!name);
+      return names.length > 0 ? names.join(', ') : organizerDisplayName(meeting);
+    });
   }
 
   private initializeIsInvited(): Signal<boolean> {
