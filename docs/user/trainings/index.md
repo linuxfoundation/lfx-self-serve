@@ -44,6 +44,23 @@ The **Training & Certification** page in Org Lens (route: `/org/training`) gives
 - Certification achievements earned by people affiliated with your company
 - An overview of your organization's investment in Linux Foundation learning programs
 
+### Numbers at the top of the page
+
+Every number states what it counts (people, certificates or enrollments), its time window, and the date of the data it reflects ("as of"), and its tooltip gives the full definition. Two numbers count learners in different ways:
+
+- **Training-program roster members** — everyone LF Education's training program lists for your organization, including people who never enrolled in a course. Shows "—" and "No LF Education training program on record" when your organization has no training program.
+- **People with training activity** — people with at least one training or certification enrollment, or a certificate, at any time. It includes learners linked to your organization who are not on its people list, so it is not a subset of the roster members.
+
+**Certified people** and **Certifications earned** count current certificates held by people on your organization's people list, matching the Certifications tab they open. Below them, **In progress now** is a snapshot of today, not a running total: **People in training** counts people on the people list with a training course in progress today, and **Training courses in progress** counts their in-progress enrollments.
+
+The **People with training activity** card on the Org Overview page shows the same all-time number; its chart shows this calendar year's training enrollments, cumulative.
+
+### People › Trainees
+
+People › Trainees lists everyone with training activity in the selected time range. Filter by foundation, project, course, level or format, or search by name. **Format** applies to enrollments only, since certificates carry no format, so picking a format hides certificates. The cards at the top follow the time range and the filters, and state the date of the data.
+
+Learners linked to your organization who are not on its people list appear with their name, marked **Not on the people list**, and their training status only. They have no detail panel.
+
 ### Which enrollments and certificates are counted
 
 On the Certifications tab, **In Progress** counts people enrolled in the last 12 months who have no current certificate for the course. **Certified** counts people holding a current certificate, issued at any time; certificates the training system marks expired are not counted (the training system can take a while to mark a certificate expired after its expiration date). The same rule applies to the course list in a person's detail panel and in an expanded row on People › All Employees, where the course count on the row follows the page's time range instead. The Trainings tab counts people who are In Progress or Completed in a course with no 12-month limit, and People › Trainees uses its own time range.
