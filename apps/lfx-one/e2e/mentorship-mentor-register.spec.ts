@@ -23,7 +23,6 @@ import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 import {
-  enableMentorshipFlag,
   MENTOR_PAGE_LOAD_TIMEOUT,
   MENTOR_PROGRAMS_URL,
   MENTOR_REGISTER_URL,
@@ -81,10 +80,6 @@ async function fillRegistrationForm(page: Page): Promise<void> {
 }
 
 test.describe('Mentor registration — guard', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('a mentor who already has a profile is sent to My Programs', async ({ page }) => {
     await stubMentorHasProfile(page, true);
     await openMentorPage(page, MENTOR_REGISTER_URL);
@@ -96,7 +91,6 @@ test.describe('Mentor registration — guard', () => {
 
 test.describe('Mentor registration — save', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubMentorHasProfile(page, false);
   });
 

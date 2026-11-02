@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ADMIN_MENTORS,
   ADMIN_PAST_APPLICATIONS,
@@ -44,7 +44,6 @@ const FIRST_ID = adminApplicationId(1);
 const TABS = ['current-mentees', 'past-mentees', 'mentors', 'terms'];
 
 async function open(page: Page, requests: AdminProgramRequests): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);
@@ -144,7 +143,6 @@ test.describe('Admin program detail — tasks panel', () => {
 
   test('renders the tasks error with a Retry keyed by application id when the read fails', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, requests);
     await stubAdminTasks(page, requests, () => 500);
@@ -160,7 +158,6 @@ test.describe('Admin program detail — tasks panel', () => {
 
 test.describe('Admin program detail — failed mentees read', () => {
   test('renders the mentees error with a Retry and no rows or empty state', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, { mentees: [], tasks: [] }, 500);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
@@ -176,7 +173,6 @@ test.describe('Admin program detail — failed mentees read', () => {
 
 test.describe('Admin program detail — failed page read', () => {
   test('renders only the no-access structure for a 403', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 403);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -187,7 +183,6 @@ test.describe('Admin program detail — failed page read', () => {
   });
 
   test('renders only the not-found structure for a 404', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 404);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -198,7 +193,6 @@ test.describe('Admin program detail — failed page read', () => {
 
   test('renders the load error with a Retry for any other failure, and the tab once Retry succeeds', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 503);
     await stubAdminMentees(page, requests);
     await openMentorPage(page, ADMIN_PROGRAM_URL);

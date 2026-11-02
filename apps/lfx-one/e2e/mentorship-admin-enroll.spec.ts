@@ -21,7 +21,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ENROLL_EDIT_PROGRAM_ID,
   ENROLL_EDIT_TEMPLATE,
@@ -46,7 +46,6 @@ const PROGRAM_NAME = 'Acme Rocket Mentorship';
 const fulfillJson = (route: Route, body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
 async function openWizard(page: Page, options: { templateFails?: boolean } = {}): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubEnrollWizardReads(page, fulfillJson);
   await stubEnrollImportReads(page, fulfillJson, options);
   await openMentorPage(page, ENROLL_URL);
@@ -152,7 +151,6 @@ test.describe('Admin enroll wizard — edit a program', () => {
   let nameChecked: Promise<unknown>;
 
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubEnrollWizardReads(page, fulfillJson);
     await stubEnrollEditReads(page, fulfillJson);
     nameChecked = page.waitForResponse(/\/api\/mentorship\/programs\/name-available/);

@@ -36,7 +36,6 @@ import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
-import { mentorshipEnabledGuard } from './shared/guards/mentorship-enabled.guard';
 import { crowdfundingAttributionEnabledGuard } from './shared/guards/crowdfunding-attribution-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
@@ -835,7 +834,6 @@ export const routes: Routes = [
         path: 'mentorship',
         title: 'Mentorship',
         data: { lens: 'me' },
-        canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
       },
       {

@@ -15,7 +15,6 @@ import {
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
-  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
@@ -65,8 +64,6 @@ export class SidebarNavService {
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
-  /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off or while the provider is not ready (unlike `mentorshipEnabledGuard`, which fails open). */
-  private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Project/Foundation lens Initiatives entry (#347), matching `crowdfundingAttributionEnabledGuard`. */
@@ -261,16 +258,13 @@ export class SidebarNavService {
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
   // then My Formations (#2753) appended to Engagement while `formation-enabled` is on — the first
   // item-level gate on this lens; the section gates subtract whole sections by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
     if (!this.isAkritesEnabled()) {
       hiddenSections.add('Security');
-    }
-    if (!this.isMentorshipEnabled()) {
-      hiddenSections.add('Mentorship');
     }
 
     const items = hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
