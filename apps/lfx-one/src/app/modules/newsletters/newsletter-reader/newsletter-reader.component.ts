@@ -25,7 +25,6 @@ import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ShareDialogService } from '@services/share-dialog.service';
-import { ShareButtonComponent } from '../components/share-button/share-button.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
@@ -33,6 +32,7 @@ import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of
 import { NewsletterMemberBenefitBannerComponent } from './newsletter-member-benefit-banner/newsletter-member-benefit-banner.component';
 import { NewsletterNotFoundComponent } from './newsletter-not-found/newsletter-not-found.component';
 import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
+import { NewsletterEngagementRailComponent } from '../components/newsletter-engagement-rail/newsletter-engagement-rail.component';
 import { NewsletterPreviewComponent } from '../components/newsletter-preview/newsletter-preview.component';
 
 /**
@@ -52,10 +52,10 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
   selector: 'lfx-newsletter-reader',
   imports: [
     ButtonComponent,
+    NewsletterEngagementRailComponent,
     NewsletterMemberBenefitBannerComponent,
     NewsletterNotFoundComponent,
     NewsletterPreviewComponent,
-    ShareButtonComponent,
     SkeletonModule,
   ],
   providers: [DialogService],
@@ -134,6 +134,9 @@ export class NewsletterReaderComponent {
     return nl?.sent_at ? `Received ${formatDate(nl.sent_at, 'MMM d, y', 'en-US')}` : '';
   });
 
+  // === Computed: views (upstream `total_opens`; null when unknown so the rail hides it) ===
+  protected readonly viewCount = computed(() => this.newsletter()?.total_opens ?? null);
+
   // === Computed: share URL (SSR-safe) ===
   protected readonly shareUrl = computed(() => {
     const slug = this.projectSlug();
@@ -143,7 +146,7 @@ export class NewsletterReaderComponent {
   });
 
   // === Writable Signals (linked) ===
-  /** Share count beside the Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
+  /** Share count on the engagement rail's Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
   protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => ({ count: this.newsletter()?.share_count ?? null, channels: [] }));
 
   // === Protected Methods ===

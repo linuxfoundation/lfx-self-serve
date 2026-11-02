@@ -26,3 +26,20 @@ export function addShareToTally(tally: NewsletterShareTally, channel: SocialShar
   if (tally.channels.includes(channel)) return tally;
   return { ...tally, count: tally.count === null ? null : tally.count + 1, channels: [...tally.channels, channel] };
 }
+
+/**
+ * The share count a Share button shows: hidden (null) while unknown or zero. Shared by the reader drawer's
+ * Share button and the reader page's engagement rail so both show the same issue's count the same way.
+ */
+export function visibleShareCount(count: number | null | undefined): number | null {
+  return count && count > 0 ? count : null;
+}
+
+/**
+ * Accessible name of a Share button for an already-visible count (see {@link visibleShareCount}),
+ * e.g. "Share, shared 1,234 times"; just "Share" when no count is shown.
+ */
+export function shareButtonAriaLabel(visibleCount: number | null): string {
+  if (visibleCount === null) return 'Share';
+  return visibleCount === 1 ? 'Share, shared 1 time' : `Share, shared ${visibleCount.toLocaleString('en-US')} times`;
+}

@@ -164,6 +164,8 @@ export interface Newsletter {
   updated_at: string;
   /** In-app share count, one per user per channel. Sent newsletters only; absent when unknown — not zero. */
   share_count?: number;
+  /** Raw open total (every open, not unique readers), shown as views. Sent newsletters from GET one only; absent when unknown — not zero. */
+  total_opens?: number;
 }
 
 /**

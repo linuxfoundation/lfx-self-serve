@@ -65,9 +65,6 @@
             (onClick)="onInvite()"
             data-testid="newsletter-reader-invite" />
         }
-        @if (shareUrl()) {
-          <lfx-newsletter-share-button [count]="shareTally().count" (share)="openShare()" testId="newsletter-reader-share" />
-        }
       </div>
     </div>
 
@@ -83,11 +80,22 @@
       </div>
     }
 
-    <!-- Newsletter preview inline (not a drawer) -->
-    <lfx-newsletter-preview
-      [subject]="newsletter()?.subject ?? ''"
-      [bodyHtml]="newsletter()?.body_html ?? ''"
-      [displayName]="project()?.name ?? ''"
-      data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    <!-- Engagement rail (views + share) beside the issue on large screens, a row above it on smaller ones -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-center lg:gap-8">
+      <lfx-newsletter-engagement-rail
+        class="lg:sticky lg:top-24"
+        [views]="viewCount()"
+        [shares]="shareTally().count"
+        (share)="openShare()"
+        testId="newsletter-reader" />
+
+      <!-- Newsletter preview inline (not a drawer). 600px: matches the email body width in newsletter-preview.component.scss -->
+      <lfx-newsletter-preview
+        class="w-full lg:max-w-[600px]"
+        [subject]="newsletter()?.subject ?? ''"
+        [bodyHtml]="newsletter()?.body_html ?? ''"
+        [displayName]="project()?.name ?? ''"
+        data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    </div>
   }
 </div>
