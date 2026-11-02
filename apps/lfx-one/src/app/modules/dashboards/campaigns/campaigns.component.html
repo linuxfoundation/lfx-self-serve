@@ -1281,6 +1281,10 @@
                              the button goes dead with nothing said about why. -->
                         @if (sequenceStagedBriefIds().length > 0) {
                           These emails are staged in HubSpot. Edit the drafts there, or start the series over below.
+                        } @else if (surveySingleSendStaged()) {
+                          This email is staged in HubSpot. Edit the draft there, or start the series over below to write new ones.
+                        } @else if (sequenceHasHeldSend()) {
+                          A send is unconfirmed and its draft may exist in HubSpot. Check there, then start the series over below.
                         } @else if (emailBriefOutput() === null) {
                           {{ briefRequiredHint }}
                         } @else if (activeFoundationSlug() === '') {

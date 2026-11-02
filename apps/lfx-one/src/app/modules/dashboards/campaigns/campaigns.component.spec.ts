@@ -8596,6 +8596,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectedEmailTab: WritableSignal<string>;
       onStartSeriesOver(): void;
       surveySeriesStarted: Signal<boolean>;
+      surveySeriesRestarted: Signal<boolean>;
+      emailCopy: WritableSignal<unknown>;
+      onStageEmailSend(): Promise<void>;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
 
@@ -9198,6 +9201,32 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
       seq().sequenceUnresolvedBriefIds.set(['brief-1']);
       expect(seq().canGenerateSurveySequence(), 'a rewrite would clear the hold and reuse the brief').toBe(false);
+    });
+
+    it('locks the count and rewrites once the single Stage button staged the brief, until a restart', async () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      seq().surveySequenceSends.set([]);
+      seq().emailCopy.set(copyFor('Survey Promo'));
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'j1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1' }] }) as never
+      );
+      expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
+
+      await seq().onStageEmailSend();
+
+      expect(seq().emailStaging()).toBe('done');
+      expect(seq().surveySeriesStarted()).toBe(true);
+      expect(seq().canGenerateSurveySequence(), 'a rewrite would reuse the staged draft').toBe(false);
+      seq().onSurveyEmailCountChange(3);
+      expect(seq().surveyEmailCount(), 'a series would open on the staged draft').toBe(1);
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesRestarted()).toBe(true);
+      expect(seq().surveySeriesStarted()).toBe(false);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
     });
 
     it('starts the series over from a held send, clearing its staging so it can be written again', () => {

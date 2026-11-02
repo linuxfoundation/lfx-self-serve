@@ -2142,6 +2142,8 @@ export class CampaignsComponent {
    * ("connect HubSpot", "pick a template") and the one they cannot are both surfaced here.
    */
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
+  /** The scope the single Stage button last created a draft under; survives the display reset. */
+  private readonly singleSendStagedScope = signal<string>('');
   /**
    * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
    * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
@@ -2302,7 +2304,21 @@ export class CampaignsComponent {
       this.sequenceStagedBriefIds().length > 0 ||
       this.sequenceStagingState() === 'staging' ||
       this.sequenceHasHeldSend() ||
+      this.surveySingleSendStaged() ||
       this.sendWorkflowState() === 'building'
+  );
+
+  /**
+   * Whether the single Stage button already put THIS brief's draft in HubSpot. A series opens on the
+   * same brief, whose existing draft campaign-service would hand back unchanged, so a new count or
+   * rewrite would show copy HubSpot never sends. A restart moves the series to new briefs.
+   */
+  protected readonly surveySingleSendStaged = computed(
+    () =>
+      this.isSurvey() &&
+      !this.surveySeriesRestarted() &&
+      this.singleSendStagedScope() !== '' &&
+      this.singleSendStagedScope() === this.stageScopeKey(this.activeFoundationSlug(), this.emailBriefId())
   );
 
   /** A survey written as a SERIES: Write all and Stage all own its copy, so the single path hides. */
@@ -2342,6 +2358,7 @@ export class CampaignsComponent {
       // Nor over a send held unconfirmed: its draft may exist, and rewriting would clear the hold
       // and reuse the same brief. Start the series over, which writes on new briefs.
       !this.sequenceHasHeldSend() &&
+      !this.surveySingleSendStaged() &&
       this.surveySequenceState() !== 'generating' &&
       this.sequenceStagingState() !== 'staging' &&
       this.sendWorkflowState() !== 'building' &&
@@ -5806,6 +5823,7 @@ export class CampaignsComponent {
           // the contract, and an older service that omits it entirely would otherwise report every
           // successful staging as an error. Only an explicit `ok: false` is a failure.
           this.emailStaging.set('done');
+          this.singleSendStagedScope.set(this.stageScopeKey(projectSlug, briefId));
           // The id is INCLUDED, because without it this message sends the user to hunt for one
           // draft among the hundreds the portal lists — the picker above says "Showing 100 of 500".
           //
