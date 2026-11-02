@@ -37,6 +37,10 @@ The page opens on **Tasks**. Each tab shows a count.
 
 Select an applicant's name to open their public mentee page in a new tab. The row itself does not open anything, and there is no cover letter to read — what you review is their tasks and the notes on the row. The **Other Active Applications** column shows the other programs they have live applications on.
 
+## Contact a mentee
+
+Select the envelope icon on a row, on **Applicants** or **Mentees**, to open an email to that mentee in your mail app. It is offered whatever the mentee's status.
+
 ## Create a task
 
 Tasks are created from the **Mentees** tab, under **Current Mentees**, not the Tasks tab, and only for an accepted mentee:

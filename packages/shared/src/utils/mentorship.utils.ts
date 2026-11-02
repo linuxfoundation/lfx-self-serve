@@ -155,6 +155,7 @@ import type {
   MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { isMailtoSafeEmail } from './email.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -1410,6 +1411,14 @@ export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRo
  */
 export function mentorshipRowActions<T extends string>(actions: readonly T[], labels: Record<T, string>, icons: Record<T, string>): MentorshipRowAction[] {
   return actions.map((action) => ({ value: action, label: labels[action], icon: icons[action] }));
+}
+
+/**
+ * The Contact Mentee `mailto:` link for a mentee's address, or null when the address is not safe
+ * to put in one, so a row with no usable address offers no Contact Mentee.
+ */
+export function mentorshipContactMenteeUrl(email: string | null | undefined): string | null {
+  return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
 }
 
 /**
