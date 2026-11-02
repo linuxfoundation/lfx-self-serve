@@ -6,7 +6,13 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_CODE_MEASURE_DEFINITION, ORG_CODE_METRIC_LABEL, ORG_CODE_METRIC_UNIT, ORG_COMMITS_DEFINITION } from '@lfx-one/shared/constants';
+import {
+  ORG_CODE_MEASURE_DEFINITION,
+  ORG_CODE_METRIC_LABEL,
+  ORG_CODE_METRIC_UNIT,
+  ORG_COMMITS_DEFINITION,
+  PERSON_DETAIL_TRAINING_WINDOW_NOTE,
+} from '@lfx-one/shared/constants';
 import type {
   OrgAllEmployeeDetail,
   OrgKeyContactAssignment,
@@ -326,6 +332,18 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(drawer.loading()).toBe(true);
     await render();
     expect(emailState('none')).toBeNull();
+  });
+
+  it('states the enrollment window on the Training tab, whether or not courses are listed', async () => {
+    drawer.open(person);
+    await render();
+    reply(`${BY_USERNAME}/detail`).next(detail());
+    drawer.setTab('training');
+    await render();
+
+    expect(byTestId('person-detail-drawer-training-window')?.textContent?.trim()).toBe(PERSON_DETAIL_TRAINING_WINDOW_NOTE);
+    expect(PERSON_DETAIL_TRAINING_WINDOW_NOTE).toContain('last 12 months');
+    expect(byTestId('person-detail-drawer-training-empty')).not.toBeNull();
   });
 
   it('renders the key contact roles the person holds, foundation-labelled and sorted', async () => {

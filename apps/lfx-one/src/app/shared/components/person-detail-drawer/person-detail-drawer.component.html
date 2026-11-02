@@ -249,6 +249,7 @@
             }
           }
           @case ('training') {
+            <p class="mb-3 text-xs text-gray-500" data-testid="person-detail-drawer-training-window">{{ trainingWindowNote }}</p>
             @if (detail.training.length === 0) {
               <p class="py-6 text-center text-sm text-gray-500" data-testid="person-detail-drawer-training-empty">No training or certifications recorded.</p>
             } @else {

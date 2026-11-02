@@ -85,3 +85,23 @@ export const CONTINUE_LEARNING_URL = 'https://trainingportal.linuxfoundation.org
 export const COURSE_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/learn/course/';
 export const ENROLL_AGAIN_URL = 'https://trainingportal.linuxfoundation.org/courses';
 export const ENROLL_AGAIN_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/courses/';
+
+// ─── Enrollment window (lfx-self-serve#4288) ───────────────────────────────
+
+/**
+ * Length of the enrollment window the Certifications tab, its rosters and the person detail apply to training
+ * enrollments. People › Trainees has its own range selector instead. Certificates are never windowed. The SQL
+ * predicate and the copy below both derive from this value so a label cannot drift from the query.
+ */
+export const ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS = 12;
+
+const ORG_TRAINING_ENROLLMENT_WINDOW_LABEL = `last ${ORG_TRAINING_ENROLLMENT_WINDOW_MONTHS} months`;
+
+/** Note above the Certifications table. */
+export const ORG_CERTIFICATIONS_WINDOW_NOTE = `In Progress counts people enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} with no certificate for the course. Certified counts certificates of any age.`;
+
+/** Note in the Certifications In Progress roster drawer. */
+export const ORG_CERT_IN_PROGRESS_WINDOW_NOTE = `Enrolled in the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL}, with no certificate for this course.`;
+
+/** Note on the person detail Training tab. */
+export const PERSON_DETAIL_TRAINING_WINDOW_NOTE = `Certificates of any age. Enrollments from the ${ORG_TRAINING_ENROLLMENT_WINDOW_LABEL} only.`;

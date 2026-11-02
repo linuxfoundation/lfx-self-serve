@@ -4,7 +4,7 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { EMPTY_ORG_CERTIFICATIONS_RESPONSE, EMPTY_ORG_TRAININGS_RESPONSE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_CERTIFICATIONS_RESPONSE, EMPTY_ORG_TRAININGS_RESPONSE, ORG_CERTIFICATIONS_WINDOW_NOTE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
@@ -96,5 +96,13 @@ describe('OrgTrainingComponent', () => {
     expect(el.querySelector('[data-testid="org-training-stats"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-training-content-card"]')).toBeNull();
     expect(el.textContent).not.toContain('Acme Motors, Inc.');
+  });
+
+  it('states the enrollment window above the Certifications table', async () => {
+    const el = await render(null);
+
+    expect(el.querySelector('[data-testid="org-certifications-window-note"]')?.textContent?.trim()).toBe(ORG_CERTIFICATIONS_WINDOW_NOTE);
+    expect(ORG_CERTIFICATIONS_WINDOW_NOTE).toContain('last 12 months');
+    expect(ORG_CERTIFICATIONS_WINDOW_NOTE).not.toMatch(/all time/i);
   });
 });
