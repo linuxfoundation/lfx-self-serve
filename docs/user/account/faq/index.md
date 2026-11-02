@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy]
-last_updated: 2026-10-29
+last_updated: 2026-11-02
 intercom_collection: Account
 ---
 
@@ -102,7 +102,13 @@ Your transaction history includes all purchases made through the LFX platform un
 
 ## Can I download a receipt or invoice?
 
-Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download. For an event registration, download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. For anything else, or if you can't find the email, contact LFX support. See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
+Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download.
+
+- **Training courses, certification exams, bundles, and subscriptions** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID.
+- **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact LFX support.
+- **Anything else** — contact LFX support.
+
+See [Get a receipt or invoice](../transactions/#get-a-receipt-or-invoice).
 
 ## Why is a purchase missing from my transaction history?
 
@@ -110,7 +116,7 @@ Recent purchases may take up to 48 hours to appear in LFX Self Serve. If a purch
 
 ## Can I request a refund through LFX Self Serve?
 
-No — there is no refund request in LFX Self Serve. To request a refund, contact LFX support with your order confirmation.
+No — there is no refund request in LFX Self Serve. For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) with your order ID. For other purchases, contact LFX support with your order confirmation.
 
 ## Who can see my transactions?
 
@@ -118,7 +124,7 @@ You can only see your own transactions. Other users and project administrators c
 
 ## I was charged incorrectly. Who do I contact?
 
-Contact LFX support. Include the transaction date, amount, and item name so the support team can investigate.
+For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
 
 ## How do I delete my account or personal data?
 
