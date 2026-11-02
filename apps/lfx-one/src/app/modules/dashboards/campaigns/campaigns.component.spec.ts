@@ -9549,7 +9549,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
-      expect(picker().selectedEmailTemplateId(), 'the suggestion selected a template on the operator\'s behalf').toBe('');
+      expect(picker().selectedEmailTemplateId(), "the suggestion selected a template on the operator's behalf").toBe('');
       // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
       expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
