@@ -64,6 +64,12 @@ export class MyMeetingsComponent {
   protected readonly emptyUpcomingText = computed(() =>
     this.activeLens() === 'me' ? 'Your scheduled meetings will appear here.' : 'No upcoming meetings found.'
   );
+  // initLensSwitchedData sets `error` for both the Me-lens fetch and the project/foundation-lens
+  // fetch, so the copy must not always claim it's "your" meetings — only true on the Me lens.
+  protected readonly pastErrorText = computed(() => (this.activeLens() === 'me' ? "Couldn't load your past meetings" : "Couldn't load past meetings"));
+  protected readonly upcomingErrorText = computed(() =>
+    this.activeLens() === 'me' ? "Couldn't load your upcoming meetings" : "Couldn't load upcoming meetings"
+  );
 
   protected retryUpcoming(): void {
     this.upcomingRetry.update((n) => n + 1);
