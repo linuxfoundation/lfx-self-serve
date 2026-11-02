@@ -1,15 +1,25 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-ui-badge [tone]="tone()" [variant]="variant()" [size]="size()">
+<lfx-ui-badge class="max-w-full min-w-0" [tone]="tone()" [variant]="variant()" [size]="size()">
   <ng-content select="[slot=icon]" />
-  <span data-testid="ui-chip-label">{{ label() }}</span>
+  <span
+    #labelElement
+    class="min-w-0 truncate focus-visible:shadow-focus focus-visible:outline-none"
+    [attr.tabindex]="truncated() ? 0 : null"
+    [lfxUiTooltip]="label()"
+    [lfxUiTooltipDisabled]="tooltipOff()"
+    data-testid="ui-chip-label"
+    >{{ label() }}</span
+  >
   @if (dismissible()) {
     <button
       type="button"
       [class]="dismissClasses()"
       [attr.aria-label]="removeLabel()"
       (click)="onDismiss(dismissButton)"
+      (keydown)="onKeydown($event)"
+      (mousedown)="onMouseDown($event)"
       #dismissButton
       data-testid="ui-chip-dismiss">
       <i class="fa-light fa-xmark" aria-hidden="true"></i>

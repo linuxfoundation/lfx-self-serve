@@ -3,6 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiChipGroupComponent } from './chip-group.component';
@@ -21,12 +22,25 @@ const GROUP_TEMPLATE = `
 @Component({ selector: 'lfx-ui-test-host', template: '' })
 class TestHostComponent {
   public readonly filters = signal(['Project: CNCF', 'Meeting type: Committee', 'RSVP: Going']);
-  public readonly fallback = signal<HTMLElement | null>(null);
+  public readonly fallback = signal<{ focus(): void } | null>(null);
   public readonly removed = signal<string[]>([]);
+  /** When set, a dismissal waits here, like a removal that needs a request, until `flush`. */
+  public readonly deferred = signal(false);
+  private readonly pending: string[] = [];
 
   public remove(filter: string): void {
     this.removed.update((list) => [...list, filter]);
-    this.filters.update((list) => list.filter((item) => item !== filter));
+    if (this.deferred()) this.pending.push(filter);
+    else this.drop([filter]);
+  }
+
+  public flush(order: string[] = [...this.pending]): void {
+    this.pending.length = 0;
+    this.drop(order);
+  }
+
+  private drop(names: string[]): void {
+    this.filters.update((list) => list.filter((item) => !names.includes(item)));
   }
 }
 
@@ -46,21 +60,21 @@ describe('UiChipComponent', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it('is a 24px accent subtle badge by default and shows its label', () => {
+  it('is a 20px accent subtle badge by default and shows its label', () => {
     expect(host.querySelector('[data-testid="ui-chip-label"]')?.textContent).toBe('Project: CNCF');
     expect(badge().className).toContain('bg-ui-accent-100');
     expect(badge().className).toContain('text-ui-accent-700');
-    expect(badge().className).toContain('h-ui-tiny');
+    expect(badge().className).toContain('h-[20px]');
+    expect(badge().className).toContain('text-[11px]');
     expect(badge().className).toContain('rounded-ui-full');
     expect(host.getAttribute('data-testid')).toBe('ui-chip');
   });
 
-  it('takes the badge sizes, tones and the outline look', async () => {
-    fixture.componentRef.setInput('size', 'sm');
+  it('takes the medium size, the tones and the outline look', async () => {
+    fixture.componentRef.setInput('size', 'md');
     fixture.componentRef.setInput('tone', 'success');
     await fixture.whenStable();
-    expect(badge().className).toContain('h-[20px]');
-    expect(badge().className).toContain('text-[11px]');
+    expect(badge().className).toContain('h-ui-tiny');
     expect(badge().className).toContain('bg-ui-success-100');
 
     fixture.componentRef.setInput('variant', 'outline');
@@ -81,12 +95,59 @@ describe('UiChipComponent', () => {
   it('keeps a 24px hit area on both sizes and a circle that fits inside the badge', async () => {
     expect(dismiss()?.className).toContain('after:h-[24px]');
     expect(dismiss()?.className).toContain('after:w-[24px]');
-    expect(dismiss()?.className).toContain('h-[20px]');
+    expect(dismiss()?.className).toContain('h-[16px]');
 
-    fixture.componentRef.setInput('size', 'sm');
+    fixture.componentRef.setInput('size', 'md');
     await fixture.whenStable();
     expect(dismiss()?.className).toContain('after:h-[24px]');
-    expect(dismiss()?.className).toContain('h-[16px]');
+    expect(dismiss()?.className).toContain('h-[20px]');
+  });
+
+  it('shrinks the label with an ellipsis and keeps the × from shrinking', () => {
+    expect(badge().className).toContain('max-w-full');
+    expect(badge().className).toContain('min-w-0');
+    const label = host.querySelector('[data-testid="ui-chip-label"]') as HTMLElement;
+    expect(label.className).toContain('truncate');
+    expect(label.className).toContain('min-w-0');
+    expect(dismiss()?.className).toContain('shrink-0');
+  });
+
+  it('ignores a second activation while the removal is pending, and allows a fresh click again', () => {
+    const dismissed = vi.fn();
+    fixture.componentInstance.dismissed.subscribe(dismissed);
+
+    dismiss()?.click();
+    dismiss()?.click();
+    expect(dismissed).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.dismissing()).toBe(true);
+
+    // The second mouse down of a double-click does not start a new activation; a fresh click does.
+    dismiss()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 2 }));
+    dismiss()?.click();
+    expect(dismissed).toHaveBeenCalledTimes(1);
+
+    dismiss()?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 1 }));
+    dismiss()?.click();
+    expect(dismissed).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a fresh key press as a new activation, and the repeats of a held key as none', () => {
+    const dismissed = vi.fn();
+    fixture.componentInstance.dismissed.subscribe(dismissed);
+    dismiss()?.click();
+    dismiss()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    dismiss()?.click();
+    expect(dismissed).toHaveBeenCalledTimes(2);
+  });
+
+  it('swallows the repeats of a held key on the ×, and not the first press', () => {
+    const first = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    const repeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true });
+    dismiss()?.dispatchEvent(first);
+    dismiss()?.dispatchEvent(repeat);
+
+    expect(first.defaultPrevented).toBe(false);
+    expect(repeat.defaultPrevented).toBe(true);
   });
 
   it('emits dismissed once per activation and does not remove itself', () => {
@@ -107,6 +168,32 @@ describe('UiChipComponent', () => {
 
   it('is not a list item outside a group', () => {
     expect(host.getAttribute('role')).toBeNull();
+  });
+});
+
+describe('UiChipComponent long label', () => {
+  const mount = async (truncated: boolean) => {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(truncated ? 300 : 80);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
+    await TestBed.configureTestingModule({ imports: [UiChipComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(UiChipComponent);
+    fixture.componentRef.setInput('label', 'Project: The Linux Foundation Core Infrastructure Initiative');
+    await fixture.whenStable();
+    return fixture.nativeElement.querySelector('[data-testid="ui-chip-label"]') as HTMLElement;
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('describes the label with a tooltip and gives it a tab stop when it is cut off', async () => {
+    const label = await mount(true);
+    expect(label.getAttribute('aria-describedby')).toBeTruthy();
+    expect(label.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('has no tooltip and no tab stop when the label fits', async () => {
+    const label = await mount(false);
+    expect(label.getAttribute('aria-describedby')).toBeNull();
+    expect(label.hasAttribute('tabindex')).toBe(false);
   });
 });
 
@@ -166,6 +253,83 @@ describe('UiChipGroupComponent', () => {
     expect(document.activeElement).toBe(document.getElementById('filters'));
   });
 
+  describe('removal that waits', () => {
+    const activeName = () => document.activeElement?.getAttribute('aria-label');
+
+    beforeEach(() => fixture.componentInstance.deferred.set(true));
+
+    it('keeps focus on the × while the removal is pending, then moves it to the next chip once the chip is gone', async () => {
+      dismiss(1).focus();
+      dismiss(1).click();
+      await fixture.whenStable();
+
+      expect(remaining()).toHaveLength(3);
+      expect(document.activeElement).toBe(dismiss(1));
+
+      fixture.componentInstance.flush();
+      await fixture.whenStable();
+
+      expect(remaining()).toEqual(['Project: CNCF', 'RSVP: Going']);
+      expect(activeName()).toBe('Remove RSVP: Going');
+    });
+
+    it('lands on the last chip left after two quick removals', async () => {
+      dismiss(0).focus();
+      dismiss(0).click();
+      dismiss(1).focus();
+      dismiss(1).click();
+      await fixture.whenStable();
+      expect(fixture.componentInstance.removed()).toEqual(['Project: CNCF', 'Meeting type: Committee']);
+
+      fixture.componentInstance.flush();
+      await fixture.whenStable();
+
+      expect(remaining()).toEqual(['RSVP: Going']);
+      expect(activeName()).toBe('Remove RSVP: Going');
+    });
+
+    it('does not hand focus to a chip that is itself being removed', async () => {
+      dismiss(2).focus();
+      dismiss(2).click();
+      dismiss(1).focus();
+      dismiss(1).click();
+      await fixture.whenStable();
+
+      fixture.componentInstance.flush(['Meeting type: Committee']);
+      await fixture.whenStable();
+
+      expect(remaining()).toEqual(['Project: CNCF', 'RSVP: Going']);
+      expect(activeName()).toBe('Remove Project: CNCF');
+    });
+
+    it('leaves focus on the × and the chip in place when the parent never removes it', async () => {
+      dismiss(1).focus();
+      dismiss(1).click();
+      dismiss(1).click();
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.removed()).toEqual(['Meeting type: Committee']);
+      expect(remaining()).toHaveLength(3);
+      expect(document.activeElement).toBe(dismiss(1));
+
+      dismiss(1).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 1 }));
+      dismiss(1).click();
+      expect(fixture.componentInstance.removed()).toHaveLength(2);
+    });
+
+    it('does not move focus that the user already took elsewhere', async () => {
+      dismiss(1).focus();
+      dismiss(1).click();
+      await fixture.whenStable();
+      document.getElementById('filters')?.focus();
+
+      fixture.componentInstance.flush();
+      await fixture.whenStable();
+
+      expect(document.activeElement).toBe(document.getElementById('filters'));
+    });
+  });
+
   it('moves focus to the row itself when there is no fallback', async () => {
     fixture.componentInstance.filters.set(['Project: CNCF']);
     await fixture.whenStable();
@@ -176,5 +340,44 @@ describe('UiChipGroupComponent', () => {
 
     expect(document.activeElement).toBe(group());
     expect(group().getAttribute('tabindex')).toBe('-1');
+  });
+});
+
+describe('UiChipGroupComponent with the animation renderer', () => {
+  let fixture: ComponentFixture<TestHostComponent>;
+  const dismiss = (index: number) => fixture.nativeElement.querySelectorAll('[data-testid="ui-chip-dismiss"]')[index] as HTMLButtonElement;
+
+  // The animation renderer removes a node after the chip's destroy hook has run, so the × still holds focus when focus is restored.
+  beforeEach(async () => {
+    TestBed.configureTestingModule({ imports: [TestHostComponent], providers: [provideNoopAnimations()] });
+    TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiChipGroupComponent, UiChipComponent], template: GROUP_TEMPLATE } });
+    fixture = TestBed.createComponent(TestHostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    vi.restoreAllMocks();
+  });
+
+  it('moves focus to the next chip when a chip in the middle is removed', async () => {
+    dismiss(1).focus();
+    dismiss(1).click();
+    await fixture.whenStable();
+
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove RSVP: Going');
+  });
+
+  it('moves focus to the fallback when the last chip is removed', async () => {
+    fixture.componentInstance.filters.set(['Project: CNCF']);
+    fixture.componentInstance.fallback.set(document.getElementById('filters'));
+    await fixture.whenStable();
+
+    dismiss(0).focus();
+    dismiss(0).click();
+    await fixture.whenStable();
+
+    expect(document.activeElement).toBe(document.getElementById('filters'));
   });
 });
