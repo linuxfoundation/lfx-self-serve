@@ -3263,8 +3263,12 @@ export class CampaignsComponent {
     //
     // The SUGGESTION only. Nothing is ever selected on the operator's behalf (#2057), so the
     // selection is theirs and a type change is not permission to touch it.
+    //
+    // Not while a search is on the wire: `emailTemplates` still holds the rows that search is
+    // replacing, so a suggestion derived from them would be announced for a row the loading state
+    // hides. The search's success arm derives it from the new rows under the new type anyway.
     const templates = this.emailTemplates();
-    if (templates !== null) {
+    if (templates !== null && !this.emailTemplatesLoading()) {
       this.applyEventTemplateSuggestion(templates);
     }
     this.emailCopy.set(null);

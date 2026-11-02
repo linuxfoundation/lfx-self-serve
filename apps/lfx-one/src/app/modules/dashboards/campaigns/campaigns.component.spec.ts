@@ -10301,8 +10301,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      *
      * There is no list to render the row in, and `canStageEmail` reads the id, so a surviving
      * selection would let Stage Email Draft clone a template the operator can no longer see. One
-     * row per terminal arm of `searchEmailTemplates`; a search that merely replaces the list keeps
-     * the pick (the test below).
+     * row per terminal arm of `searchEmailTemplates` that answers a request. The fifth arm, no
+     * foundation, is reached only through a foundation switch, and that switch clears the
+     * selection itself, so a row for it could not fail. A search that merely replaces the list
+     * keeps the pick (the test below).
      */
     it.each([
       ['HubSpot refuses the search', (): void => respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] })],
@@ -10336,6 +10338,29 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId(), 'an invisible, stageable selection survived the list').toBe('');
       expect(picker().emailTemplatesRendered()).toEqual([]);
       expect(picker().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * A type change during a search must not re-derive the suggestion from the rows that search is
+     * replacing: the loading state hides them, so the live region would announce a recommendation
+     * for a row nobody can see. The search's own answer derives it under the new type.
+     */
+    it('does not suggest from the previous results while a search is pending', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      (picker() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+
+      expect(picker().emailTemplateSuggestionId(), 'a suggestion was derived from rows the pending search is replacing').toBe('');
     });
 
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */
