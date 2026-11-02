@@ -260,7 +260,7 @@ export class SidebarNavService {
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
   // then My Formations (#2753) appended to Engagement while `formation-enabled` is on — the first
-  // item-level gate on this lens; the section gates subtract whole sections by label.
+  // item-level gate on this lens; the section gate subtracts a whole section by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
     if (!this.isAkritesEnabled()) {
