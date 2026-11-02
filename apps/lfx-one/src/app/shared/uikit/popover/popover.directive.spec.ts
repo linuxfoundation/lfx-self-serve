@@ -469,6 +469,24 @@ describe('UiPopoverDirective', () => {
       expect(document.activeElement).toBe(trigger());
     });
 
+    it('Tab from an open menu, with its button as the last field, closes the menu and the popover onto the host', async () => {
+      await open();
+      (container.querySelector('lfx-ui-button button') as HTMLElement).click();
+      await settle();
+      const item = container.querySelector('[data-testid="ui-menu"] [role="menuitem"]') as HTMLElement;
+      item.focus();
+      expect(document.activeElement).toBe(item);
+
+      // CDK Menu reads `keyCode`, so the synthetic event carries it.
+      const event = key(item, 'Tab', { keyCode: 9 });
+      await settle();
+
+      expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
+    });
+
     it('ignores an Escape that something inside already handled', async () => {
       await open();
       const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });

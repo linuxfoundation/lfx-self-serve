@@ -160,13 +160,15 @@ export class UiPopoverDirective {
       .subscribe((event) => {
         if (this.isTab(event)) this.onTab(event, event.target as HTMLElement);
       });
-    // A list opened from the panel, such as a select's search field, hands focus back to its trigger here before the browser moves it.
+    // A list opened from the panel (select search, multi-select, menu) hands focus back to its trigger here before the browser moves it.
     fromEvent<KeyboardEvent>(this.document, 'keydown')
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {
+        const panelElement = this.panelElement();
+        const target = event.target as Node;
         const active = this.document.activeElement as HTMLElement | null;
-        if (!this.isTab(event) || event.defaultPrevented || !this.inLaterOverlay(overlayRef, event.target as Node)) return;
-        if (active && this.panelElement()?.contains(active)) this.onTab(event, active);
+        if (!this.isTab(event) || event.defaultPrevented || !panelElement || panelElement.contains(target) || this.host.contains(target)) return;
+        if (active && panelElement.contains(active)) this.onTab(event, active);
       });
     // Backstop for a Tab that leaves the panel without `onTab` catching it.
     fromEvent<FocusEvent>(this.panelElement() as HTMLElement, 'focusout')

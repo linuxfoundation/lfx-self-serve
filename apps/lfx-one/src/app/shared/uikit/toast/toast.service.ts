@@ -12,10 +12,10 @@ import { UiToastConfig, UiToastItem, UiToastPosition, UiToastRef } from '@lfx-on
 import { UiToastRegionComponent } from './toast-region.component';
 
 /**
- * Puts short messages on screen in a stack at the bottom-right, or the bottom centre for `dark` toasts and any with that `position`, newest on top. Each toast dismisses itself (5s, 8s with actions,
- * never for errors) and waits while the pointer or focus is on it. The stack lives in a CDK overlay that the service creates after
- * its first render, a polite live region that stays in place, so inject the service ahead of the first `show` for the first message
- * to be announced reliably. On the server nothing is rendered. A toast shown over an open modal sits outside the modal's focus trap,
+ * Puts short messages on screen in a stack at the bottom-right, newest on top; `dark` toasts, and any with `position: 'bottom-center'`,
+ * stack at the bottom centre instead. Each toast dismisses itself (5s, 3s for `dark`, 8s with actions, never for errors) and waits while
+ * the pointer or focus is on it. Each stack lives in its own CDK overlay that the service creates after its first render, a polite live
+ * region that stays in place, so inject the service ahead of the first `show` for the first message to be announced reliably. On the server nothing is rendered. A toast shown over an open modal sits outside the modal's focus trap,
  * so its buttons are out of keyboard reach until the modal closes: keep every toast action available elsewhere too.
  *
  * ```ts

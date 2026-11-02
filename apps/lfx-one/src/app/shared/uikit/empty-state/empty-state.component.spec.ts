@@ -67,7 +67,7 @@ describe('UiEmptyStateComponent', () => {
   });
 
   it('sets the title in Inter 500 16/24 and the description in neutral-500, 600px wide and balanced', () => {
-    expect(Array.from((q('ui-empty-state-heading') as HTMLElement).classList)).toEqual(expect.arrayContaining(['label-16', 'font-medium', 'leading-[24px]']));
+    expect(Array.from((q('ui-empty-state-heading') as HTMLElement).classList)).toEqual(expect.arrayContaining(['copy-16', 'font-medium']));
     expect(Array.from((q('ui-empty-state-description') as HTMLElement).classList)).toEqual(
       expect.arrayContaining(['max-w-[600px]', 'text-balance', 'text-ui-neutral-500'])
     );

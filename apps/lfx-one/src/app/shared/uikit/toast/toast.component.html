@@ -1,11 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Exact px: 16px check, the library's toast icon. -->
 @if (variant() === 'dark') {
   <i class="ui-icon fa-solid fa-circle-check text-[16px] leading-none text-ui-success-400" aria-hidden="true" data-testid="ui-toast-icon"></i>
 }
 <span class="min-w-0 flex-1">
-  <span [class]="variant() === 'dark' ? 'block font-medium' : 'block'" data-testid="ui-toast-message"><ng-content /></span>
+  <span [class]="messageClasses()" data-testid="ui-toast-message"><ng-content /></span>
   @if (description()) {
     <span [class]="descriptionClasses()" data-testid="ui-toast-description">{{ description() }}</span>
   }

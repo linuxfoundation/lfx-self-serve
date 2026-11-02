@@ -67,6 +67,7 @@ export class UiToastComponent {
   protected readonly visibleActions: Signal<{ action: UiToastAction; classes: string }[]> = this.initVisibleActions();
   protected readonly dismissClasses: Signal<string> = this.initDismissClasses();
   protected readonly showDismiss: Signal<boolean> = this.initShowDismiss();
+  protected readonly messageClasses: Signal<string> = this.initMessageClasses();
   protected readonly descriptionClasses: Signal<string> = this.initDescriptionClasses();
 
   private readonly resolvedDuration: Signal<number> = this.initResolvedDuration();
@@ -181,6 +182,10 @@ export class UiToastComponent {
 
   private initDismissClasses(): Signal<string> {
     return computed(() => `${this.buttonBase()} aspect-square rounded-ui-full ${this.quietInk()}`);
+  }
+
+  private initMessageClasses(): Signal<string> {
+    return computed(() => (this.variant() === 'dark' ? 'block font-medium' : 'block'));
   }
 
   private initDescriptionClasses(): Signal<string> {

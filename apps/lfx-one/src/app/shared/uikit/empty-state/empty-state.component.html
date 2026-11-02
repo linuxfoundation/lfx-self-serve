@@ -11,8 +11,8 @@
   </span>
 }
 <ng-content select="[empty-state-media]" />
-<!-- Inter 500 16/24: label-16 with the library's weight and line height. -->
-<p class="label-16 font-medium leading-[24px] text-ui-neutral-900" role="heading" [attr.aria-level]="headingLevel()" data-testid="ui-empty-state-heading">
+<!-- Inter 500 16/24: copy-16 at medium weight. -->
+<p class="copy-16 font-medium text-ui-neutral-900" role="heading" [attr.aria-level]="headingLevel()" data-testid="ui-empty-state-heading">
   {{ heading() }}
 </p>
 @if (description()) {
