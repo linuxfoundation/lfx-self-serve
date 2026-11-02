@@ -358,6 +358,8 @@ app.use(auth(authConfig));
 app.use('/meetings/', attemptSilentLogin());
 app.use('/groups/', attemptSilentLogin());
 
+// Must precede the /login handler below, which always ends the response.
+app.use('/login', authRateLimiter);
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     const returnTo = req.query['returnTo'] as string;
@@ -382,7 +384,6 @@ app.use(authMiddleware);
 
 app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
-app.use('/login', authRateLimiter);
 
 // Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
 // document must also never leak the page URL via Referer to anything it links to or loads (#4363).
