@@ -583,15 +583,16 @@ export class OrgLensPeopleService {
 
   /**
    * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
-   * `people-all:v6:{range}:{projectScope}` | `people-all:v4:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * `people-all:v7:{range}:{projectScope}` | `people-all:v7:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
    * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
    * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
-   * the same entry the page lists.
+   * the same entry the page lists. `v7` (lfx-self-serve#4287; the roster was `v4:roster`): training foundation labels
+   * come from people-list rows only.
    */
   private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     return withOrgCompactCache(
       accountId,
-      range ? `people-all:v6:${range}:${projectScope}` : 'people-all:v4:roster',
+      range ? `people-all:v7:${range}:${projectScope}` : 'people-all:v7:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
       {
@@ -737,7 +738,9 @@ export class OrgLensPeopleService {
 
     // Distinct (foundation_id, foundation_name) pairs across the four detail sources; keeps the BFF confined to PLATINUM_LFX_ONE.
     // Code labels read the full-history daily code rows (ENGAGED_FOUNDATION_IDS' code source), not the 12-month
-    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year.
+    // ORG_PEOPLE_CODE_CONTRIBUTIONS, so an `all` range keeps a label for code older than a year. Training labels read
+    // people-list rows only: ORG_PEOPLE_TRAINING also holds learners outside the list (lfx-self-serve#4287), who are
+    // not on this roster, so their foundations would offer a filter that matches nobody listed.
     const foundationQuery = `
       WITH pairs AS (
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
@@ -754,7 +757,7 @@ export class OrgLensPeopleService {
         UNION
         SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-        WHERE ACCOUNT_ID = ? AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
+        WHERE ACCOUNT_ID = ? AND ON_PEOPLE_LIST AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
       )
       SELECT FOUNDATION_ID, FOUNDATION_NAME
       FROM pairs

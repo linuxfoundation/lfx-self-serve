@@ -45,8 +45,8 @@ function responseFor(range: OrgLensTimeRange): OrgTraineesResponse {
     accountId: ORG,
     timeRange: range,
     trainees: [
-      { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: null, email: null },
-      ...(range === '30d' ? [] : [{ personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null }]),
+      { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: null, email: null, onPeopleList: true },
+      ...(range === '30d' ? [] : [{ personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null, onPeopleList: true }]),
     ],
     details,
     filterOptions: {
@@ -206,9 +206,9 @@ function filterResponseFor(range: OrgLensTimeRange): OrgTraineesResponse {
         ];
   const options = (values: (string | null)[]) => [...new Set(values.filter((v): v is string => !!v))].sort().map((v) => ({ label: v, value: v }));
   const people = [
-    { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com' },
-    { personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null },
-    { personKey: 'p-3', lfid: null, cdpMemberId: null, name: 'Grace Hopper', title: null, email: null },
+    { personKey: 'p-1', lfid: null, cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com', onPeopleList: true },
+    { personKey: 'p-2', lfid: null, cdpMemberId: null, name: 'Alan Turing', title: null, email: null, onPeopleList: true },
+    { personKey: 'p-3', lfid: null, cdpMemberId: null, name: 'Grace Hopper', title: null, email: null, onPeopleList: true },
   ];
   return {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
@@ -313,6 +313,86 @@ describe('TraineesComponent — project, course, level and format filters (lfx-s
     expect(optionValues('formatOptions')).toEqual(['', 'E-Learning']);
     expect(form().getRawValue()).toMatchObject({ project: '', level: '', format: '' });
     expect(listed()).toEqual(['p-3']);
+    expect(stat('trainees')).toBe('1');
+  });
+});
+
+describe('TraineesComponent — a learner outside the people list (lfx-self-serve#4287)', () => {
+  let fixture: ComponentFixture<TraineesComponent>;
+  let open: Mock;
+
+  const el = (): HTMLElement => fixture.nativeElement;
+  const stat = (name: string): string => el().querySelector(`[data-testid="org-people-trainees-stat-${name}"] .text-2xl`)?.textContent?.trim() ?? '';
+  const listed = (): string[] =>
+    [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
+  const component = (): { onSort(column: string): void; filterForm: FormGroup } =>
+    fixture.componentInstance as unknown as { onSort(column: string): void; filterForm: FormGroup };
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    open = vi.fn();
+    const response: OrgTraineesResponse = {
+      ...EMPTY_ORG_TRAINEES_RESPONSE,
+      accountId: ORG,
+      timeRange: '730d',
+      trainees: [
+        { personKey: 'p-1', lfid: 'lfid-1', cdpMemberId: null, name: 'Ada Lovelace', title: 'Engineer', email: 'ada@example.com', onPeopleList: true },
+        // The BFF sends nothing but the name for these learners; the row must not invent or borrow the rest.
+        { personKey: 'ti:outside', lfid: null, cdpMemberId: null, name: 'Bea Outside', title: null, email: null, onPeopleList: false },
+      ],
+      details: [detail('p-1', 'lfs101', 'Enrolled', 'lf'), detail('ti:outside', 'cka', 'Certified', 'cncf'), detail('ti:outside', 'lfs101', 'Enrolled', 'lf')],
+    };
+    await TestBed.configureTestingModule({
+      imports: [TraineesComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: TraineesService, useValue: { getTrainees: vi.fn(() => of(response)) } },
+        { provide: PersonDetailDrawerService, useValue: { open } },
+      ],
+    }).compileComponents();
+    await TestBed.inject(Router).navigateByUrl('/?tab=training');
+    fixture = TestBed.createComponent(TraineesComponent);
+    await settle();
+  });
+
+  it('lists the learner with name and training status only, counted in the stat cards', () => {
+    const row = el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-ti:outside"]')!;
+
+    expect(listed().sort()).toEqual(['p-1', 'ti:outside']);
+    expect(stat('trainees')).toBe('2');
+    expect(stat('certifications')).toBe('1');
+    expect(row.textContent).toContain('Bea Outside');
+    expect(row.textContent).toContain('Certified');
+    expect(row.textContent).toContain('Not on the people list');
+    expect(row.textContent).not.toContain('@');
+    expect(row.querySelector('button')).toBeNull();
+  });
+
+  it('opens no person drawer from the learner, and the row still expands, sorts and searches', async () => {
+    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-ti:outside-name"]')!.click();
+    await settle();
+
+    expect(open).not.toHaveBeenCalled();
+    // The click reached the row: it toggled the training details open.
+    expect(el().querySelector('[data-testid="org-people-trainees-row-ti:outside-detail-row"]')?.textContent).toContain('Courses & Certifications (2)');
+
+    component().onSort('name');
+    await settle();
+    expect(listed()).toEqual(['p-1', 'ti:outside']);
+    component().onSort('name');
+    await settle();
+    expect(listed()).toEqual(['ti:outside', 'p-1']);
+
+    component().filterForm.patchValue({ search: 'bea' });
+    await firstValueFrom(timer(200));
+    await settle();
+    expect(listed()).toEqual(['ti:outside']);
     expect(stat('trainees')).toBe('1');
   });
 });

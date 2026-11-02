@@ -64,6 +64,9 @@ function mockWarehouse(): void {
         ],
       };
     }
+    if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
+      return { rows: [{ PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Grace Hopper' }] };
+    }
     if (query.includes('MAX(DBT_RUN_AT)')) {
       return { rows: [{ AS_OF: '2026-10-30 04:15:00' }] };
     }
@@ -276,6 +279,9 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       if (query.includes('ORG_PEOPLE_ALL')) {
         return { rows: [{ PERSON_KEY: null, LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
       }
+      if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
+        return { rows: [{ PERSON_KEY: null, LEARNER_NAME: null }] };
+      }
       return {
         rows: [
           {
@@ -312,7 +318,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
 
     const response = await service.getTrainees(ACCOUNT, '365d');
 
-    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+    expect(response.trainees.map((row) => row.personKey)).toEqual(['person-one', 'person-two', 'ti:outside-one']);
   });
 
   it('treats a v4-shaped entry without the build time as a miss, so the as-of date is never dropped for a TTL', async () => {
@@ -343,7 +349,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     const response = await service.getTrainees(ACCOUNT, range);
 
     expect(response.timeRange).toBe(range);
-    expect(rangedQueries()).toHaveLength(2);
+    expect(rangedQueries()).toHaveLength(3);
     for (const sql of rangedQueries()) {
       expect(sql).toContain(`AND ACTIVITY_TS >= DATEADD(day, -${days}, CURRENT_DATE())`);
     }
@@ -352,7 +358,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
   it('reads all time without a date predicate', async () => {
     await service.getTrainees(ACCOUNT, 'all');
 
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     for (const sql of queries()) {
       expect(sql).not.toContain('ACTIVITY_TS >=');
     }
@@ -379,6 +385,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     expect(identity).toContain("TIME_RANGE = 'all'");
     expect(identity).toContain("PROJECT_SCOPE = 'all'");
     expect(identity).toMatch(/PERSON_KEY IN \(\s*SELECT PERSON_KEY\s+FROM ANALYTICS\.PLATINUM_LFX_ONE\.ORG_PEOPLE_TRAINING[\s\S]*DATEADD\(day, -90,/);
+    expect(identity).toMatch(/AND ON_PEOPLE_LIST\b/);
   });
 
   // A former employee's ranges row carries a personal address; the Trainees tab must never send it. The fake warehouse
@@ -405,7 +412,7 @@ describe('OrgPeopleTraineesService range (lfx-self-serve#4159)', () => {
     await service.getTrainees(ACCOUNT, '365d');
     await service.getTrainees(ACCOUNT, '30d');
 
-    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute).toHaveBeenCalledTimes(8);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:30d')!)).toBe(true);
     expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-trainees:v5:365d')!)).toBe(true);
   });
@@ -452,7 +459,7 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
 
   beforeEach(() => {
     execute.mockImplementation(async (query: string) => {
-      if (query.includes('ORG_PEOPLE_ALL') || query.includes('MAX(DBT_RUN_AT)')) return { rows: [] };
+      if (query.includes('ORG_PEOPLE_ALL') || query.includes('MAX(DBT_RUN_AT)') || query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) return { rows: [] };
       return { rows: /ACTIVITY_TS >= DATEADD\(day, -30,/.test(query) ? rows.filter((row) => row.ACTIVITY_TS === recent) : rows };
     });
   });
@@ -513,5 +520,72 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
     expect(count(filterOptions.formats, 'courseFormat')).toBe(details.filter((row) => row.status === 'Enrolled').length);
     expect(count(filterOptions.projects, 'projectId')).toBe(details.length);
     expect(count(filterOptions.courses, 'courseName')).toBe(details.length);
+  });
+});
+
+describe('OrgPeopleTraineesService learners outside the people list (lfx-self-serve#4287)', () => {
+  const detailRow = (personKey: string, courseOrCertId: string, status: string) => ({
+    PERSON_KEY: personKey,
+    STATUS: status,
+    COURSE_OR_CERT_ID: courseOrCertId,
+    COURSE_ID: 'course-one',
+    COURSE_NAME: 'Course One',
+    ACTIVITY_TS: '2026-09-01 00:00:00',
+    FOUNDATION_ID: 'foundation-one',
+    FOUNDATION_NAME: 'Foundation One',
+    PROJECT_ID: 'project-one',
+    PROJECT_NAME: 'Project One',
+    COURSE_LEVEL: 'Beginner',
+    COURSE_FORMAT: status === 'Enrolled' ? 'E-Learning' : null,
+  });
+
+  beforeEach(() => {
+    execute.mockImplementation(async (query: string) => {
+      if (query.includes('ORG_PEOPLE_ALL_RANGES')) {
+        return {
+          rows: [
+            {
+              PERSON_KEY: 'person-listed',
+              LFID: 'lfid-listed',
+              CDP_MEMBER_ID: null,
+              NAME: 'Listed Person',
+              TITLE: 'Engineer',
+              EMAIL: 'listed@company.example',
+            },
+          ],
+        };
+      }
+      if (query.includes('ORG_TRAINING_OUTSIDE_LEARNERS')) {
+        return { rows: [{ PERSON_KEY: 'ti:outside-one', LEARNER_NAME: 'Outside Learner' }] };
+      }
+      if (query.includes('MAX(DBT_RUN_AT)')) return { rows: [] };
+      return {
+        rows: [
+          detailRow('person-listed', 'enrolled:course-one', 'Enrolled'),
+          detailRow('ti:outside-one', 'enrolled:course-one', 'Enrolled'),
+          detailRow('ti:outside-one', 'certified:cert-one', 'Certified'),
+        ],
+      };
+    });
+  });
+
+  it('lists the learner once, with a name and training rows and no ids, title or email', async () => {
+    const response = await service.getTrainees(ACCOUNT, '730d');
+
+    expect(response.trainees).toEqual([
+      expect.objectContaining({ personKey: 'person-listed', onPeopleList: true, email: 'listed@company.example' }),
+      { personKey: 'ti:outside-one', lfid: null, cdpMemberId: null, name: 'Outside Learner', title: null, email: null, onPeopleList: false },
+    ]);
+    expect(response.details.filter((row) => row.personKey === 'ti:outside-one').map((row) => row.status)).toEqual(['Enrolled', 'Certified']);
+  });
+
+  it('reads the learners of the range from rows outside the people list, and the identity of listed people from rows on it', async () => {
+    await service.getTrainees(ACCOUNT, '90d');
+
+    const queries = execute.mock.calls.map(([sql]) => sql as string);
+    const outside = queries.find((sql) => sql.includes('ORG_TRAINING_OUTSIDE_LEARNERS'))!;
+    expect(outside).toMatch(/AND NOT ON_PEOPLE_LIST\s+AND ACTIVITY_TS >= DATEADD\(day, -90,/);
+    expect(outside).not.toMatch(/\b(EMAIL|TITLE)\b/);
+    expect(queries.find((sql) => sql.includes('ORG_PEOPLE_ALL_RANGES'))).toMatch(/AND ON_PEOPLE_LIST\s+AND ACTIVITY_TS/);
   });
 });

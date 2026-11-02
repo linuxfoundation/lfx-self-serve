@@ -5,6 +5,7 @@ import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
   ORG_TRAINEE_DETAIL_COLUMNS,
+  ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS,
   ORG_TRAINEE_ROW_COLUMNS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -18,6 +19,7 @@ import type {
   OrgTraineeFilterOptions,
   OrgTraineeRow,
   OrgTraineesResponse,
+  OrgTrainingOutsideLearnerRow,
   TraineeAsOfRow,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -53,10 +55,11 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE, timeRange: range };
     }
 
-    // `people-trainees:v5:{range}` (lfx-self-serve#4159, #4916): ORG_PEOPLE_TRAINING holds enrollments of any age, so the
-    // read is windowed per range here instead of shipping every row for the client to filter. `v5` adds the table's
-    // build time and the project, level and format columns, and drops the two option reads; a `v4` entry must miss.
-    const { traineeRows, detailRows, asOf } = await withOrgCompactCache(
+    // `people-trainees:v5:{range}` (lfx-self-serve#4159, #4916, #4287): ORG_PEOPLE_TRAINING holds enrollments of any age,
+    // so the read is windowed per range here instead of shipping every row for the client to filter. `v5` adds the
+    // table's build time, the project, level and format columns and the learners outside the people list, and drops the
+    // two option reads; a `v4` entry must miss.
+    const { traineeRows, outsideLearnerRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
       `people-trainees:v5:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
@@ -64,14 +67,27 @@ export class OrgPeopleTraineesService {
       { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
     );
 
-    const trainees: OrgTraineeRow[] = traineeRows.map((row) => ({
-      personKey: row.PERSON_KEY,
-      lfid: row.LFID,
-      cdpMemberId: row.CDP_MEMBER_ID,
-      name: row.NAME ?? '',
-      title: row.TITLE,
-      email: row.EMAIL,
-    }));
+    const trainees: OrgTraineeRow[] = [
+      ...traineeRows.map((row) => ({
+        personKey: row.PERSON_KEY,
+        lfid: row.LFID,
+        cdpMemberId: row.CDP_MEMBER_ID,
+        name: row.NAME ?? '',
+        title: row.TITLE,
+        email: row.EMAIL,
+        onPeopleList: true,
+      })),
+      // Name and training status only (lfx-self-serve#4287): no ids, title or email ever leave the BFF for these learners.
+      ...outsideLearnerRows.map((row) => ({
+        personKey: row.PERSON_KEY,
+        lfid: null,
+        cdpMemberId: null,
+        name: row.LEARNER_NAME ?? '',
+        title: null,
+        email: null,
+        onPeopleList: false,
+      })),
+    ];
 
     // Drop null-ACTIVITY_TS rows; coercing to '' would corrupt downstream lex sorts and most-recent derivations.
     const details: OrgTraineeDetailRow[] = detailRows.flatMap<OrgTraineeDetailRow>((row) => {
@@ -113,23 +129,26 @@ export class OrgPeopleTraineesService {
     range: OrgLensTimeRange
   ): Promise<{
     traineeRows: OrgPeopleAllTraineeRow[];
+    outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
     detailRows: OrgPeopleTrainingRow[];
     asOf: string | null;
   }> {
     const inRange = trainingRangePredicate(range);
-    const [traineeRows, detailRows, asOf] = await Promise.all([
+    const [traineeRows, outsideLearnerRows, detailRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
+      this.fetchOutsideLearnerRows(accountId, inRange),
       this.fetchDetailRows(accountId, inRange),
       this.fetchAsOf(accountId),
     ]);
-    return { traineeRows, detailRows, asOf };
+    return { traineeRows, outsideLearnerRows, detailRows, asOf };
   }
 
   /**
-   * Identity of everyone with a training row in the range. ORG_PEOPLE_TRAINING has no name columns, and ORG_PEOPLE_ALL
-   * counts only the last 12 months of enrollments, so identity comes from the all-time, all-projects ranges row, which
-   * every current employee with a course signal has (lf-dbt test). Only the current-employee row: a former employee's
-   * row carries a personal address the People tabs must never send.
+   * Identity of everyone on the people list with a training row in the range. ORG_PEOPLE_TRAINING has no name columns,
+   * and ORG_PEOPLE_ALL counts only the last 12 months of enrollments, so identity comes from the all-time, all-projects
+   * ranges row, which every current employee with a course signal has (lf-dbt test). Only the current-employee row: a
+   * former employee's row carries a personal address the People tabs must never send. Only people-list training rows:
+   * a learner outside the list can share a former employee's key, and is read by {@link fetchOutsideLearnerRows}.
    */
   private async fetchTraineeRows(accountId: string, inRange: string): Promise<OrgPeopleAllTraineeRow[]> {
     const query = `
@@ -149,11 +168,36 @@ export class OrgPeopleTraineesService {
           SELECT PERSON_KEY
           FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
           WHERE ACCOUNT_ID = ?
+            AND ON_PEOPLE_LIST
             ${inRange}
         )
       ORDER BY NAME ASC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<OrgPeopleAllTraineeRow>(query, [accountId, accountId]);
+    return result.rows;
+  }
+
+  /**
+   * Learners attributed to the organization by their enrollment who are not on the people list (lfx-self-serve#4287),
+   * with a training row in the range: the name, nothing else.
+   */
+  private async fetchOutsideLearnerRows(accountId: string, inRange: string): Promise<OrgTrainingOutsideLearnerRow[]> {
+    const query = `
+      SELECT
+        PERSON_KEY,
+        LEARNER_NAME
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_TRAINING_OUTSIDE_LEARNERS
+      WHERE ACCOUNT_ID = ?
+        AND PERSON_KEY IN (
+          SELECT PERSON_KEY
+          FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
+          WHERE ACCOUNT_ID = ?
+            AND NOT ON_PEOPLE_LIST
+            ${inRange}
+        )
+      ORDER BY LEARNER_NAME ASC NULLS LAST
+    `;
+    const result = await this.snowflakeService.execute<OrgTrainingOutsideLearnerRow>(query, [accountId, accountId]);
     return result.rows;
   }
 
@@ -242,6 +286,7 @@ function trainingRangePredicate(range: OrgLensTimeRange): string {
  */
 function encodeTraineesRaw(raw: {
   traineeRows: OrgPeopleAllTraineeRow[];
+  outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
   detailRows: OrgPeopleTrainingRow[];
   asOf: string | null;
 }): CompactOrgTraineesRawCache {
@@ -257,6 +302,7 @@ function encodeTraineesRaw(raw: {
 
   return {
     traineeRows: toColumnar(raw.traineeRows, ORG_TRAINEE_ROW_COLUMNS),
+    outsideLearnerRows: toColumnar(raw.outsideLearnerRows, ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS),
     courses: toColumnar(courses.values, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS),
     details: toColumnar(raw.detailRows, ORG_TRAINEE_DETAIL_COLUMNS),
     // Every detail row was part of the set `courses` was built from, so the lookup always resolves.
@@ -268,6 +314,7 @@ function encodeTraineesRaw(raw: {
 /** Rebuilds the raw rows {@link encodeTraineesRaw} stored, so the mapping above sees exactly what a cache miss would hand it. */
 function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   traineeRows: OrgPeopleAllTraineeRow[];
+  outsideLearnerRows: OrgTrainingOutsideLearnerRow[];
   detailRows: OrgPeopleTrainingRow[];
   asOf: string | null;
 } {
@@ -276,6 +323,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   detailRows.forEach((row, index) => Object.assign(row, courses[value.detailCourses[index]]));
   return {
     traineeRows: fromColumnar<OrgPeopleAllTraineeRow>(value.traineeRows),
+    outsideLearnerRows: fromColumnar<OrgTrainingOutsideLearnerRow>(value.outsideLearnerRows),
     detailRows,
     asOf: value.asOf,
   };
@@ -289,12 +337,14 @@ function isCompactTraineesRaw(value: unknown): boolean {
     // Required, not optional: a `v4`-shaped entry under this key would otherwise serve no as-of date for the whole TTL.
     !(cache.asOf === null || typeof cache.asOf === 'string') ||
     !isColumnarTable(cache.traineeRows) ||
+    !isColumnarTable(cache.outsideLearnerRows) ||
     !isColumnarTable(cache.courses) ||
     !isColumnarTable(cache.details) ||
     // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
     // "successfully" into rows missing data the writer always emits, which is worse than a miss —
     // the tab renders with holes in it for the rest of the TTL instead of refetching.
     !hasExactColumns(cache.traineeRows, ORG_TRAINEE_ROW_COLUMNS) ||
+    !hasExactColumns(cache.outsideLearnerRows, ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS) ||
     !hasExactColumns(cache.courses, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS) ||
     !hasExactColumns(cache.details, ORG_TRAINEE_DETAIL_COLUMNS)
   ) {
@@ -309,9 +359,11 @@ function isCompactTraineesRaw(value: unknown): boolean {
   const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
   const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');
+  const outsideKeyIndex = ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS.indexOf('PERSON_KEY');
   if (
     !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[courseOrCertIndex])) ||
-    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex]))
+    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex])) ||
+    !cache.outsideLearnerRows.r.every((row) => isStoredNullableString(row[outsideKeyIndex]))
   ) {
     return false;
   }

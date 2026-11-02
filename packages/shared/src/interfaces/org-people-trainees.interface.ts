@@ -32,7 +32,10 @@ export interface OrgTraineeDetailRow {
   activityTs: string;
 }
 
-/** Per-(account, person) main row source — joined client-side with `details` for filter-aware derivations. */
+/**
+ * Per-(account, person) main row source — joined client-side with `details` for filter-aware derivations. A learner
+ * outside the Org Lens people list (lfx-self-serve#4287) carries a name and nothing else: no ids, title or email.
+ */
 export interface OrgTraineeRow {
   personKey: string;
   lfid: string | null;
@@ -40,6 +43,8 @@ export interface OrgTraineeRow {
   name: string;
   title: string | null;
   email: string | null;
+  /** False for a learner attributed to the organization by their enrollment who is not on the people list. */
+  onPeopleList: boolean;
 }
 
 /** Stats-card shape for the Trainees tab — recomputed client-side from filtered details on every filter change (not shipped on the wire). */
@@ -86,6 +91,8 @@ export interface OrgTraineeRowVm {
   email: string | null;
   initials: string;
   avatarColorClass: string;
+  /** False: name and training status only, and no person drawer (the drawer reads people-list data). */
+  onPeopleList: boolean;
   status: OrgTraineeStatus;
   coursesCount: number;
   certsCount: number;
@@ -138,4 +145,10 @@ export interface OrgPeopleTrainingRow {
 /** `MAX(DBT_RUN_AT)` of the account's `ORG_PEOPLE_TRAINING` rows. */
 export interface TraineeAsOfRow {
   AS_OF: Date | string | null;
+}
+
+/** Per-(account, person) row from `ORG_TRAINING_OUTSIDE_LEARNERS`: a learner outside the people list, name only. */
+export interface OrgTrainingOutsideLearnerRow {
+  PERSON_KEY: string;
+  LEARNER_NAME: string | null;
 }
