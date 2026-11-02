@@ -77,15 +77,16 @@ An application can't be re-opened while the program is hidden.
 
 ## Troubleshooting
 
-| What you see                                                                                                     | What it means                                                                          |
-| ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| "This application changed. The list has been refreshed."                                                         | Someone else decided first. Check the new status before acting again.                  |
-| "This term is closed, so the application can't be accepted."                                                     | The term closed while you were looking.                                                |
-| "Another change is still being saved. Try again in a moment."                                                    | One decision at a time.                                                                |
-| "This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open." | See [Undoing a graduation](#undoing-a-graduation).                                     |
-| "This application can't be re-opened while the program is hidden."                                               | Select **Unhide Program** first. See [Hide or Show a Program](../program-visibility/). |
-| "Choose an attendance type to accept the application."                                                           | Accept requires **Full time** or **Part time**.                                        |
-| "The change couldn't be saved. Please try again."                                                                | A transient failure; nothing changed.                                                  |
+| What you see                                                                                                                  | What it means                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "This application changed. The list has been refreshed."                                                                      | Someone else decided first. Check the new status before acting again.                                                                                    |
+| "This term is closed, so the application can't be accepted."                                                                  | The term closed while you were looking.                                                                                                                  |
+| "Another change is still being saved. Try again in a moment."                                                                 | One decision at a time.                                                                                                                                  |
+| "This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open."              | See [Undoing a graduation](#undoing-a-graduation).                                                                                                       |
+| "This application can't be re-opened while the program is hidden."                                                            | Select **Unhide Program** first. See [Hide or Show a Program](../program-visibility/).                                                                   |
+| "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed." | The mentee has applied to the term again since withdrawing, so their newer application is the one to decide on. Otherwise someone else changed it first. |
+| "Choose an attendance type to accept the application."                                                                        | Accept requires **Full time** or **Part time**.                                                                                                          |
+| "The change couldn't be saved. Please try again."                                                                             | A transient failure; nothing changed.                                                                                                                    |
 
 ## Related
 

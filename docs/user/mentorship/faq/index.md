@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [faq, mentorship, mentee, mentor, program-admin, applications, tasks]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
@@ -34,7 +34,7 @@ Prerequisite tasks are part of your application and come before a decision. Task
 
 ### Can I undo a withdrawal?
 
-No, a withdrawal cannot be undone. You would have to apply again, and the term may have closed in the meantime.
+Not yourself. Ask a Program Admin of the program: they can re-open the application, which puts it back under review. Otherwise you would have to apply again, and the term may have closed in the meantime.
 
 ### Where do I actually apply?
 
@@ -79,7 +79,7 @@ A program can have up to four open terms at a time.
 
 ### What does "Decline by Term" do?
 
-It declines every **pending** application in the term you pick. Accepted mentees are not affected, and it cannot be undone.
+It declines every **pending** application in the term you pick. Accepted mentees are not affected. There is no bulk undo; you can **Re-open** each application on its own row. See [Review Applications and Decide](../review-applications/#re-opening-an-application).
 
 ### What happens if I graduate a mentee with unfinished tasks?
 

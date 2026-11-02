@@ -1180,8 +1180,24 @@ describe('CurrentMenteesTabComponent', () => {
       const confirm = confirmSpy();
 
       confirmAction('app_3', 'reopen', confirm);
+      settle();
 
       expect(detailOf(toast)).toBe("This application can't be re-opened while the program is hidden.");
+    });
+
+    it('reloads with its own message on a 409 for a re-open, which may mean the mentee applied again', () => {
+      updateApplicationStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
+      const toast = toasts();
+      const confirm = confirmSpy();
+      const reads = getProgramMentees.mock.calls.length;
+
+      confirmAction('app_3', 'reopen', confirm);
+      settle();
+
+      expect(detailOf(toast)).toBe(
+        "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed."
+      );
+      expect(getProgramMentees.mock.calls.length).toBe(reads + 1);
     });
 
     it('shows the server read-only message on an impersonation 403', () => {

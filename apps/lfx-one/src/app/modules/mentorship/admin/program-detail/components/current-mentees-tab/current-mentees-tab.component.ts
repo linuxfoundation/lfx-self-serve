@@ -28,6 +28,7 @@ import {
   MENTORSHIP_ADMIN_MENTEES_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
   MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE,
+  MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE,
   MENTORSHIP_ADMIN_TASKS_LOAD_ERROR_MESSAGE,
   MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE,
@@ -447,10 +448,12 @@ export class CurrentMenteesTabComponent {
 
   /**
    * Runs one decision write; on success reloads the page and has the parent refresh the counts. An accept, an undone
-   * graduation and a re-open give a 422 their own message; any other decision shows the generic copy.
+   * graduation and a re-open give a 422 their own message; any other decision shows the generic copy. A re-open also
+   * gives a 409 its own message, since it may mean the mentee has applied to the term again.
    */
   private decide(write: Observable<void>, outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): void {
-    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), this.unprocessableMessage(outcome));
+    const conflictMessage = outcome === 'reopened' ? MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE : undefined;
+    this.runWrite(write, () => this.showSuccess(MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES[outcome]), this.unprocessableMessage(outcome), conflictMessage);
   }
 
   private unprocessableMessage(outcome: keyof typeof MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES): string | undefined {
@@ -476,7 +479,7 @@ export class CurrentMenteesTabComponent {
    * A write that lands after the tab is gone still toasts and refreshes the parent's counts, but skips the table
    * reload; the next tab render reads the page afresh.
    */
-  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, unprocessableMessage?: string): void {
+  private runWrite<T>(write: Observable<T>, onDone: (result: T) => void, unprocessableMessage?: string, conflictMessage?: string): void {
     if (this.decisionInFlight()) {
       this.showPleaseWait();
       return;
@@ -491,20 +494,21 @@ export class CurrentMenteesTabComponent {
       },
       error: (err: unknown) => {
         this.decisionInFlight.set(false);
-        this.onDecisionError(err, unprocessableMessage);
+        this.onDecisionError(err, unprocessableMessage, conflictMessage);
       },
     });
   }
 
   /**
-   * 409 means the application moved on, so the page reloads; a 422 shows the decision's own message when it has one
-   * (any other 422 gets the generic copy); an impersonation 403 shows the server's text.
+   * 409 means the application moved on, so the page reloads, with the decision's own message when it has one; a 422
+   * shows the decision's own message when it has one (any other 422 gets the generic copy); an impersonation 403 shows
+   * the server's text.
    */
-  private onDecisionError(err: unknown, unprocessableMessage?: string): void {
+  private onDecisionError(err: unknown, unprocessableMessage?: string, conflictMessage?: string): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 409) {
       if (!this.destroyed) this.reloadCount.update((count) => count + 1);
-      this.showFailure(MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE);
+      this.showFailure(conflictMessage ?? MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE);
       return;
     }
     if (status === 422 && unprocessableMessage) {
