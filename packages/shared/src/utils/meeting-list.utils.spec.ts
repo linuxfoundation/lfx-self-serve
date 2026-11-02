@@ -153,6 +153,7 @@ describe('expandMeetingOccurrences', () => {
     });
     expect(expandMeetingOccurrences([meeting], NOW).map((item) => item.occurrenceId)).toEqual([first.occurrence_id]);
     expect(expandMeetingOccurrences([{ ...meeting, cancelled_occurrences: [first.occurrence_id, second.occurrence_id] }], NOW)).toEqual([]);
+    expect(expandMeetingOccurrences([{ ...meeting, occurrences: [] }], NOW)).toEqual([]);
   });
 
   it('uses the occurrence title when it has one', () => {
@@ -225,6 +226,12 @@ describe('expandMeetingOccurrences', () => {
       });
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => item.myRsvp?.response_type);
       expect(responses).toEqual(['accepted', 'declined', 'declined', 'declined']);
+    });
+
+    it('keeps a confirmed rewrite that reuses its row id', () => {
+      const stored = rsvp({ id: 'same', response_type: 'declined', created_at: '2026-09-01T00:00:00Z' });
+      const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: dates, my_rsvps: [stored], my_rsvp: { ...stored, response_type: 'accepted' } });
+      expect(expandMeetingOccurrences([meeting], NOW).every((item) => item.myRsvp?.response_type === 'accepted')).toBe(true);
     });
 
     it('uses the newest RSVP for a one-time meeting', () => {
@@ -453,6 +460,7 @@ describe('formatMeetingTimeRange', () => {
     ['2026-10-01T18:30:00Z', 60, 'America/Los_Angeles', '11:30 AM – 12:30 PM PDT'],
     ['2026-12-01T14:00:00Z', 30, 'America/Los_Angeles', '6:00 – 6:30 AM PST'],
     ['2026-10-01T13:30:00Z', 60, 'UTC', '1:30 – 2:30 PM UTC'],
+    ['2026-11-01T08:30:00Z', 60, 'America/Los_Angeles', '1:30 AM PDT – 1:30 AM PST'],
     ['not-a-date', 60, 'UTC', ''],
   ])('%s +%i min in %s → %s', (start, duration, zone, label) => {
     expect(formatMeetingTimeRange(start, duration, zone)).toBe(label);

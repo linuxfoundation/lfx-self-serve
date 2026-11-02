@@ -29,7 +29,7 @@ import {
   resolveShownOccurrenceId,
   resolveUpcomingMeetingDurationMinutes,
 } from './meeting.utils';
-import { selectApplicableRsvp } from './rsvp-calculator.util';
+import { getRsvpTimestampMs, isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -207,7 +207,8 @@ export function getMeetingRecurrenceTooltip(
 
 /**
  * Time range in the viewer's zone, e.g. "6:30 – 7:30 AM PDT" or "11:30 AM – 12:30 PM PDT".
- * @description The start drops its AM/PM when it matches the end's. `timeZone` defaults to the viewer's own.
+ * @description The start drops its AM/PM when it matches the end's; across a DST change each end names its own zone.
+ * `timeZone` defaults to the viewer's own.
  */
 export function formatMeetingTimeRange(start: string | Date, durationMinutes: number, timeZone?: string): string {
   const startDate = new Date(start);
@@ -219,9 +220,10 @@ export function formatMeetingTimeRange(start: string | Date, durationMinutes: nu
 
   const from = partsOf(startDate);
   const to = partsOf(new Date(startDate.getTime() + durationMinutes * MINUTE_MS));
-  const fromLabel = from['dayPeriod'] === to['dayPeriod'] ? `${from['hour']}:${from['minute']}` : `${from['hour']}:${from['minute']} ${from['dayPeriod']}`;
+  const sameZone = from['timeZoneName'] === to['timeZoneName'];
+  const fromLabel = sameZone && from['dayPeriod'] === to['dayPeriod'] ? '' : ` ${from['dayPeriod']}${sameZone ? '' : ` ${from['timeZoneName']}`}`;
 
-  return `${fromLabel} – ${to['hour']}:${to['minute']} ${to['dayPeriod']} ${from['timeZoneName']}`;
+  return `${from['hour']}:${from['minute']}${fromLabel} – ${to['hour']}:${to['minute']} ${to['dayPeriod']} ${to['timeZoneName']}`;
 }
 
 /** Countdown copy: "Meeting starts in N min" under an hour, "Meeting starts in N h" under a day, otherwise null. */
@@ -256,6 +258,8 @@ function buildUpcomingRow(meeting: MeetingWithRsvps, occurrence: MeetingOccurren
   if (!startTime || Number.isNaN(Date.parse(startTime))) return null;
 
   const occurrenceId = meeting.recurrence ? resolveShownOccurrenceId(meeting, occurrence) : null;
+  // The fallback start comes from `next_occurrence_start_time`, which can name a cancelled date.
+  if (!occurrence && occurrenceId && meeting.cancelled_occurrences?.some((id) => isSameOccurrenceId(id, occurrenceId))) return null;
   return {
     key: occurrenceId ? `${meeting.id}:${occurrenceId}` : meeting.id,
     meeting,
@@ -274,10 +278,10 @@ function resolveRowRsvp(meeting: MeetingWithRsvps, occurrenceId: string | null, 
     return selectApplicableRsvp(occurrenceId, [meeting.my_rsvp]) ?? (isNextDate ? null : undefined);
   }
 
-  const candidates = [...(meeting.my_rsvps ?? [])];
-  if (meeting.my_rsvp && !candidates.some((rsvp) => rsvp.id === meeting.my_rsvp?.id)) {
-    candidates.push(meeting.my_rsvp);
-  }
+  // A confirmed rewrite can keep its row id: keep the newer copy, the overlay on ties.
+  const overlay = meeting.my_rsvp;
+  const candidates = meeting.my_rsvps.filter((rsvp) => !overlay || rsvp.id !== overlay.id || getRsvpTimestampMs(rsvp) > getRsvpTimestampMs(overlay));
+  if (overlay && !candidates.some((rsvp) => rsvp.id === overlay.id)) candidates.push(overlay);
   return selectApplicableRsvp(occurrenceId, candidates);
 }
 
