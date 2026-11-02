@@ -544,6 +544,12 @@ export class CommitteeSettingsTabComponent {
     // silently reset it to manual. Re-linking to a DIFFERENT committee must reset to manual instead,
     // or auto-sync would silently start against a committee nobody configured it for (#4880 review).
     const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = ml.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
     return {
       name: ml.group_name,
       public: ml.public,
@@ -556,7 +562,7 @@ export class CommitteeSettingsTabComponent {
       subject_tag: ml.subject_tag,
       writers: ml.writers,
       auditors: ml.auditors,
-      sync_mode: sameCommittee ? ml.sync_mode : committeeUid ? MailingListSyncMode.MANUAL : undefined,
+      sync_mode: syncMode,
     };
   }
 
