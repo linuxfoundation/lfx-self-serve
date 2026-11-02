@@ -32,6 +32,7 @@ import {
   mktgKitRootPath,
   mktgRunRouteFor,
   mktgRunAnsweredBy,
+  mktgRunHoldsQuestions,
   mktgSentenceCaseLabel,
   readMktgRetiredRunHint,
 } from '@lfx-one/shared/utils';
@@ -445,7 +446,8 @@ export class MktgRunProgressComponent {
                       this.answeredQuestionsId.set('');
                     }
                     const prior = previous?.runs?.find((entry) => entry.runId === row.runId);
-                    if (row.pendingQuestions && prior?.pendingQuestions?.questionsId === row.pendingQuestions.questionsId)
+                    // The same block keeps its object (no stepper reset); a questions row without its block keeps the held one.
+                    if (prior?.pendingQuestions && mktgRunHoldsQuestions(row, prior.pendingQuestions.questionsId))
                       return { ...row, pendingQuestions: prior.pendingQuestions };
                     return row;
                   }),

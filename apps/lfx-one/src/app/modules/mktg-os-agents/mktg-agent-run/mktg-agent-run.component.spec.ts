@@ -2322,6 +2322,58 @@ describe('MktgAgentRunComponent', () => {
         expect(answerQuestions).not.toHaveBeenCalled();
       }
     });
+
+    it('keeps this browser’s questions through polls that omit them, until a newer round or another state', async () => {
+      await configure('browser', type.catalogAgentId, { run: runId });
+      const attempt = { runId, priorVersion: 0, session: { agentId: intake.agentId, sessionId: 'synthetic-owned', ownerToken: 'synthetic-proof' } };
+      const question = { key: 'goal', label: 'Goal', question: 'Which goal?', why: '', suggestedAnswer: '', basis: [] };
+      TestBed.inject(MktgRunAttemptService).save({
+        request: { projectUid: PROJECT_1.uid, agentId: intake.agentId, intake, answers: {} },
+        state: 'questions',
+        updatedAt: new Date().toISOString(),
+        attempt,
+        pendingQuestions: { attempt, questionsId: 'synthetic-block', questions: [question] },
+      });
+      const read = vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument);
+      const held = () => TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, intake.agentId)?.pendingQuestions?.questionsId;
+      // The row waits on answers but carries no block: a reader the BFF could not verify, or a non-writer poll.
+      read.mockReturnValue(of(record('questions')));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-run-questions')).not.toBeNull();
+      expect(held()).toBe('synthetic-block');
+      expect(query('mktg-run-progress-owner-note')).toBeNull();
+      expect(query('mktg-document-view-refresh-progress')).toBeNull();
+      // A partial read whose row still waits confirms the held block rather than clearing it.
+      read.mockReturnValue(of({ ...record('questions'), progressUnavailable: true }));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-run-questions')).not.toBeNull();
+      expect(held()).toBe('synthetic-block');
+      // A visible newer round retires the held block; the public form for that round takes over.
+      const measured = record('questions');
+      read.mockReturnValue(
+        of({
+          ...measured,
+          runs: [{ ...measured.runs[0], pendingQuestions: { questionsId: 'e'.repeat(64), askedAt: measured.runs[0].startedAt, questions: [question] } }],
+        })
+      );
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(held()).toBeUndefined();
+      expect(query('mktg-run-questions')).not.toBeNull();
+      // Another state clears the form.
+      read.mockReturnValue(of(record('writing')));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('running');
+      expect(query('mktg-run-questions')).toBeNull();
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
   });
 
   describe('run-page progress until stored-revision landing', () => {

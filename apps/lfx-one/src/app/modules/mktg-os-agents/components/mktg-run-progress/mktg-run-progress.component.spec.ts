@@ -451,17 +451,61 @@ describe('MktgRunProgressComponent', () => {
     expect(answer).toHaveBeenCalledOnce();
   });
 
-  it('refreshes a waiting row when another browser has answered it', async () => {
+  it('follows a waiting row to writing on its own poll when another browser has answered it, with no Refresh button', async () => {
     await setup();
     read.mockReturnValue(of(detail([waiting])));
     await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
     read.mockReturnValue(of(detail()));
-    fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"] button').click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
     await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
     expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
     expect(answer).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps the answer form when a poll omits the questions, replaces it with a newer round and clears it on another state', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    const textarea = fixture.nativeElement.querySelector('textarea');
+    expect(textarea.value).toBe('Synthetic maintainers');
+    // A reader the BFF could not verify (or a non-writer) gets the row without its block: nothing is deleted.
+    read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: undefined }])));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
+    expect(fixture.componentInstance.selectedRun()?.pendingQuestions?.questionsId).toBe(waiting.pendingQuestions.questionsId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-owner-note"]')).toBeNull();
+    // A partial read that still omits the block keeps it too, under the shared retry warning.
+    read.mockReturnValue(of({ ...detail([{ ...waiting, pendingQuestions: undefined }]), progressUnavailable: true }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(text()).toContain('Could not fully refresh');
+    expect(fixture.nativeElement.querySelector('textarea')).toBe(textarea);
+    // A visible newer round replaces the held block.
+    const newer = {
+      ...waiting.pendingQuestions,
+      questionsId: 'e'.repeat(64),
+      questions: [{ ...waiting.pendingQuestions.questions[0], suggestedAnswer: 'Newer' }],
+    };
+    read.mockReturnValue(of(detail([{ ...waiting, pendingQuestions: newer }])));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.selectedRun()?.pendingQuestions?.questionsId).toBe(newer.questionsId);
+    expect(fixture.nativeElement.querySelector('textarea').value).toBe('Newer');
+    // Another state clears it.
+    read.mockReturnValue(of(detail()));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(fixture.componentInstance.runState()).toBe('writing');
+    expect(fixture.nativeElement.querySelector('textarea')).toBeNull();
+    expect(answer).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('keeps unavailable-questions guidance specific to its surface (run page: %s)', async (runPage) => {
@@ -470,7 +514,7 @@ describe('MktgRunProgressComponent', () => {
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     if (runPage) {
-      expect(text()).toContain('Answering needs project write access or the browser that started this run. Refresh progress to check again.');
+      expect(text()).toContain('Answering needs project write access or the browser that started this run. This page keeps checking on its own.');
       expect(text()).not.toContain('Open the intake form');
     } else {
       expect(text()).toContain('Open the intake form to continue with an available questions block.');
@@ -719,7 +763,7 @@ describe('MktgRunProgressComponent', () => {
     fixture.componentRef.setInput('runPage', true);
     await fixture.whenStable();
     expect(questions).toHaveBeenCalledOnce();
-    expect(text()).toContain('Answering needs project write access or the browser that started this run. Refresh progress to check again.');
+    expect(text()).toContain('Answering needs project write access or the browser that started this run. This page keeps checking on its own.');
   });
 
   it('retains the last measured record on transient failure and fails closed on denied reads', async () => {
@@ -807,21 +851,42 @@ describe('MktgRunProgressComponent', () => {
     expect(text()).not.toContain('Synthetic creator step');
   });
 
-  it('refreshes a public questions pause after the owner continues elsewhere', async () => {
+  it('follows a public questions pause on its own poll after the owner continues elsewhere, with no Refresh button', async () => {
     await setup();
     read.mockReturnValue(of(detail([{ ...run, state: 'questions' }])));
     await fixture.whenStable();
     expect(text()).toContain('Waiting for your answers');
+    expect(text()).toContain('This page keeps checking on its own.');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-run-progress-questions-refresh"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(read).toHaveBeenCalledOnce();
     read.mockReturnValue(of(detail()));
-    fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"] button').click();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.questionsIntervalMs - MKTG_RUN_POLL.intervalMs);
     await fixture.whenStable();
     expect(read).toHaveBeenCalledTimes(2);
     expect(text()).toContain('Writing…');
     expect(text()).not.toContain('Waiting for your answers');
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it('offers Refresh in the waiting state only once automatic checks are paused', async () => {
+    await setup();
+    read.mockReturnValue(of(detail([waiting])));
+    await fixture.whenStable();
+    read.mockReturnValue(of({ ...detail([waiting]), progressUnavailable: true }));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.timeoutMs + MKTG_RUN_POLL.questionsIntervalMs);
+    await fixture.whenStable();
+    expect(text()).toContain('Automatic checks are paused');
+    expect(fixture.nativeElement.querySelector('textarea')).not.toBeNull();
+    const count = read.mock.calls.length;
+    read.mockReturnValue(of(detail([waiting])));
+    fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"] button').click();
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(count + 1);
+    expect(text()).not.toContain('Automatic checks are paused');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-document-view-refresh-progress"]')).toBeNull();
   });
 
   it('cancels a previous reader on subject change and hides its creator feed immediately', async () => {

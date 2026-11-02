@@ -602,6 +602,49 @@ describe('MktgDocumentRunService', () => {
     expect(flows.result).not.toHaveBeenCalled();
   });
 
+  it('marks a questions read partially unavailable when writer access cannot be verified, instead of reporting no questions', async () => {
+    const answerable = types.find((type) => !!MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.endpoints.answers) ?? types[0];
+    await service.start(req, project, answerable.agentKey, session);
+    const questionsId = 'a'.repeat(64);
+    flows.result.mockResolvedValue({
+      status: 'questions',
+      questionsId,
+      questions: [{ key: 'audience', label: 'Audience', question: 'Who is this for?', why: '', suggestedAnswer: 'Synthetic maintainers', basis: [] }],
+    });
+    // A verified writer sees the block.
+    const verified = await service.readProgress(req, project);
+    expect(verified.progressUnavailable).toBeUndefined();
+    expect(verified.runs[0]).toMatchObject({ state: 'questions', pendingQuestions: { questionsId } });
+    // A verified non-writer gets a complete answer without the block.
+    flows.project.mockResolvedValue({ uid: project, writer: false });
+    const reader = await service.readProgress(req, project);
+    expect(reader.progressUnavailable).toBeUndefined();
+    expect(reader.runs[0].state).toBe('questions');
+    expect(reader.runs[0].pendingQuestions).toBeUndefined();
+    // An unverifiable reader gets a partial read: the client keeps the questions it already holds.
+    flows.project.mockRejectedValue(new MicroserviceError('Synthetic project outage', 503, 'PROJECT_UNAVAILABLE'));
+    const unverified = await service.readProgress(req, project);
+    expect(unverified.progressUnavailable).toBe(true);
+    expect(unverified.runs[0].state).toBe('questions');
+    expect(unverified.runs[0].pendingQuestions).toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'mktg_run_questions_access',
+      expect.stringContaining('could not be verified'),
+      expect.objectContaining({ project, run: hash(session) })
+    );
+    // The same rule reaches an explicitly selected run whose row was not in the list.
+    const detail = { project, type: answerable, documentId: 'living', revisions: [], approvedCurrent: null };
+    const selected = await service.detailWithProgress(req, project, answerable, 'living', detail, { runs: [] }, false, undefined, hash(session));
+    expect(selected?.progressUnavailable).toBe(true);
+    expect(selected?.runs[0]).toMatchObject({ runId: hash(session), state: 'questions' });
+    expect(selected?.runs[0].pendingQuestions).toBeUndefined();
+    flows.project.mockResolvedValue({ uid: project, writer: true });
+    const selectedVerified = await service.detailWithProgress(req, project, answerable, 'living', detail, { runs: [] }, false, undefined, hash(session));
+    expect(selectedVerified?.progressUnavailable).toBeUndefined();
+    expect(selectedVerified?.runs[0]).toMatchObject({ state: 'questions', pendingQuestions: { questionsId } });
+  });
+
   it('does not turn intentionally bounded closed history into an unavailable/active work signal', async () => {
     await service.start(req, project, types[0].agentKey, session);
     const template = stored();

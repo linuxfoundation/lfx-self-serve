@@ -468,12 +468,12 @@ export class MktgDocumentRunService {
             if (isMktgRunTerminal(record.state)) {
               this.remember(entry, mktgRunProgress(record), record);
             }
-            return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity);
+            return this.publicProgress(req, record, record.state === 'failed' ? fullReply : undefined, activity, coverage);
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
             if (coverage) coverage.lookupFailed = true;
-            return stored ? this.publicProgress(req, stored.record) : null;
+            return stored ? this.publicProgress(req, stored.record, undefined, undefined, coverage) : null;
           }
         })
       );
@@ -498,9 +498,11 @@ export class MktgDocumentRunService {
       throw ServiceValidationError.forField('refreshRun', 'Refresh must name one run on an explicit detail read.');
     }
     const snapshot: MktgDocumentRunSnapshot = { runs: [...progress.runs], ...(progress.progressUnavailable && { progressUnavailable: true }) };
+    // Selected reads share the list's partial-coverage rule: an unverified questions reader marks the detail unavailable.
+    const coverage: MktgDocumentRunCoverage = { uncheckedCount: 0, retainedRunIds: [] };
     if (refreshRunId) {
       try {
-        const refreshed = await this.refreshFailure(req, project, type.agentKey, documentId, refreshRunId);
+        const refreshed = await this.refreshFailure(req, project, type.agentKey, documentId, refreshRunId, coverage);
         snapshot.runs = snapshot.runs.filter((run) => run.runId !== refreshRunId);
         if (refreshed) snapshot.runs.unshift(refreshed);
       } catch (err) {
@@ -526,7 +528,8 @@ export class MktgDocumentRunService {
           type.agentKey,
           documentId,
           selectedRunId,
-          snapshot.runs.find((run) => run.runId === selectedRunId)
+          snapshot.runs.find((run) => run.runId === selectedRunId),
+          coverage
         );
         snapshot.runs = snapshot.runs.filter((run) => run.runId !== selectedRunId);
         if (selected) {
@@ -547,6 +550,7 @@ export class MktgDocumentRunService {
       }
     }
     const detail = typeof readDetail === 'function' ? await readDetail() : readDetail;
+    if (coverage.lookupFailed) snapshot.progressUnavailable = true;
     if (!detail && !snapshot.runs.length && !poll && !snapshot.progressUnavailable) return null;
     return { ...(detail ?? { project, type, documentId, revisions: [], approvedCurrent: null }), ...snapshot };
   }
@@ -580,7 +584,7 @@ export class MktgDocumentRunService {
               return;
             }
             const stored = await this.read(req, project, key);
-            const row = stored && matchesMktgRunProgress(await this.publicProgress(req, stored.record), agentKey, documentId);
+            const row = stored && matchesMktgRunProgress(await this.publicProgress(req, stored.record, undefined, undefined, coverage), agentKey, documentId);
             if (row && stored) {
               rows.set(id, row);
               staleWindow ||=
@@ -663,14 +667,21 @@ export class MktgDocumentRunService {
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
-  public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
+  public async refreshFailure(
+    req: Request,
+    project: string,
+    agentKey: string,
+    documentId: string,
+    runId: string,
+    coverage?: MktgDocumentRunCoverage
+  ): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
-      return this.publicProgress(req, stored.record);
+      return this.publicProgress(req, stored.record, undefined, undefined, coverage);
     }
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
-    return this.publicProgress(req, record, result.failureText ?? result.reply);
+    return this.publicProgress(req, record, result.failureText ?? result.reply, undefined, coverage);
   }
 
   /** Server-only creator ACK repair; confirmed absence is uncertain, never permission to create again. */
@@ -901,7 +912,8 @@ export class MktgDocumentRunService {
     req: Request,
     run: MktgStartedRunRecord,
     reply = run.failureText,
-    activity?: MktgRunActivity[]
+    activity?: MktgRunActivity[],
+    coverage?: MktgDocumentRunCoverage
   ): Promise<MktgDocumentRunProgress | null> {
     let writer = false;
     if (run.state === 'questions' && run.pendingQuestions && MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === run.agentKey && type.kind === 'living')) {
@@ -909,7 +921,13 @@ export class MktgDocumentRunService {
         const project = await this.projects.getProjectById(req, run.project, true);
         writer = project.writer === true && project.uid === run.project;
       } catch (err) {
-        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted because writer access could not be verified', { project: run.project, err });
+        // An unverified reader is not a non-writer: the read is partial, so the client keeps the questions it already holds.
+        if (coverage) coverage.lookupFailed = true;
+        logger.warning(req, 'mktg_run_questions_access', 'Questions omitted and progress marked unavailable; writer access could not be verified', {
+          project: run.project,
+          run: run.runId,
+          err,
+        });
       }
     }
     return mktgRunProgress(run, reply, activity, getEffectiveSub(req) ?? undefined, writer);
@@ -1477,14 +1495,15 @@ export class MktgDocumentRunService {
     agentKey: string,
     documentId: string,
     runId: string,
-    known?: MktgDocumentRunProgress
+    known?: MktgDocumentRunProgress,
+    coverage?: MktgDocumentRunCoverage
   ): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     const closed = await this.closedProgress(req, stored.record);
     if (closed) return closed;
     if (stored.record.state === 'completed') return null;
     if (known) return known;
-    if (stored.record.state === 'failed') return this.publicProgress(req, stored.record);
+    if (stored.record.state === 'failed') return this.publicProgress(req, stored.record, undefined, undefined, coverage);
     const result = await this.result(req, stored.record);
     const record = await this.advanceResult(req, stored, result);
     const concurrentlyClosed = await this.closedProgress(req, record);
@@ -1493,7 +1512,7 @@ export class MktgDocumentRunService {
     const closedDuringResult = await this.closedProgress(req, latest.record);
     if (closedDuringResult) return closedDuringResult;
     const activity = record.creatorSubject && record.creatorSubject === getEffectiveSub(req) ? result.activity : undefined;
-    return this.publicProgress(req, record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity);
+    return this.publicProgress(req, record, record.state === 'failed' ? (result.failureText ?? result.reply) : undefined, activity, coverage);
   }
 
   private closedMarker(record: MktgStartedRunRecord): MktgDocumentRunProgress | null {

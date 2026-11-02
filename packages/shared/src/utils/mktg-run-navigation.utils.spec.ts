@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgDiscardedRunMessage, mktgRunAnsweredBy, readMktgRetiredRunHint } from './mktg-run-navigation.utils';
+import { mktgDiscardedRunMessage, mktgRunAnsweredBy, mktgRunHoldsQuestions, readMktgRetiredRunHint } from './mktg-run-navigation.utils';
 
 describe('retired run navigation', () => {
   const row = { runId: 'b'.repeat(64), state: 'discarded', replacedBy: 'c'.repeat(64), closedBy: 'Synthetic writer', closedAt: '2026-10-28T10:00:00Z' };
@@ -40,5 +40,22 @@ describe('retired run navigation', () => {
     expect(mktgDiscardedRunMessage(readMktgRetiredRunHint({ ...row, state: 'superseded' }))).toBe('A newer run replaced this one.');
     expect(readMktgRetiredRunHint({ ...row, closedAt: 'bad', replacedBy: 'bad' })).toMatchObject({ closedAt: null, replacedBy: null });
     expect(mktgDiscardedRunMessage(null)).toBe('This run was discarded; a newer run was started.');
+  });
+});
+
+describe('held questions against a polled row', () => {
+  const held = 'd'.repeat(64);
+  const block = (questionsId: string) => ({ questionsId, askedAt: '2026-10-28T10:00:00Z', questions: [] });
+  it('is confirmed by the same visible block and by a questions row that omits its block', () => {
+    expect(mktgRunHoldsQuestions({ state: 'questions', pendingQuestions: block(held) }, held)).toBe(true);
+    expect(mktgRunHoldsQuestions({ state: 'questions' }, held)).toBe(true);
+  });
+  it('is retired only by a visible newer round or by another state', () => {
+    expect(mktgRunHoldsQuestions({ state: 'questions', pendingQuestions: block('e'.repeat(64)) }, held)).toBe(false);
+    for (const state of ['writing', 'storing', 'completed', 'failed', 'superseded', 'discarded'] as const) {
+      expect(mktgRunHoldsQuestions({ state, pendingQuestions: block(held) }, held)).toBe(false);
+    }
+    expect(mktgRunHoldsQuestions(null, held)).toBe(false);
+    expect(mktgRunHoldsQuestions(undefined, held)).toBe(false);
   });
 });
