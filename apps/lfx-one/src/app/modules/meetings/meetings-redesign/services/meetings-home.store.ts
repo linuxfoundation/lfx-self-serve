@@ -249,7 +249,8 @@ export class MeetingsHomeStore {
       const rsvps = loaded();
       const meeting = this.nextRow()?.meeting;
       if (!rsvps?.length || !meeting) return rsvps;
-      return [...rsvps, ...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id))];
+      // Confirmations go first so they win timestamp ties.
+      return [...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id)), ...rsvps];
     });
   }
 

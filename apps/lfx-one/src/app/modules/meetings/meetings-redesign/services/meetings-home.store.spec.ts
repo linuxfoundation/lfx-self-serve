@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingRsvp, PastMeeting, PastMeetingRecording, PastMeetingSummary, PastMeetingTranscript } from '@lfx-one/shared/interfaces';
+import { calculateRsvpCounts } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -468,11 +469,23 @@ describe('MeetingsHomeStore', () => {
       TestBed.tick();
 
       confirmed.set([mine]);
-      expect(store.nextRowRsvps()).toEqual([...others, mine]);
+      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
 
       upcoming$.next([buildMeeting({ id: 'm-2' })]);
       TestBed.tick();
       expect(store.nextRowRsvps()).toEqual([]);
+    });
+
+    it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {
+      const createdAt = new Date().toISOString();
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([rsvp({ created_at: createdAt })]));
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([rsvp({ response_type: 'declined', created_at: createdAt })]);
+
+      expect(calculateRsvpCounts(null, store.nextRowRsvps() ?? [])).toMatchObject({ accepted: 0, declined: 1 });
     });
 
     it('never lets the viewer join a restricted meeting they are not invited to', () => {
