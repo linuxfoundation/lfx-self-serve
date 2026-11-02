@@ -14,6 +14,7 @@ import { UiModalComponent } from '../modal/modal.component';
 import { UiModalService } from '../modal/modal.service';
 import { UiOptionComponent } from '../select/option.component';
 import { UiSelectComponent } from '../select/select.component';
+import { UiToastService } from '../toast/toast.service';
 import { UiPopoverDirective } from './popover.directive';
 
 // Set through overrideComponent because an inline template this long trips component-max-inline-declarations.
@@ -361,6 +362,25 @@ describe('UiPopoverDirective', () => {
     });
   });
 
+  describe('with a toast on screen', () => {
+    beforeEach(async () => mount(HOST_TEMPLATE));
+
+    it('stays open for a click on the toast', async () => {
+      const toast = TestBed.inject(UiToastService);
+      await host.whenStable();
+      toast.show({ message: 'Saved' });
+      await settle();
+      await open();
+
+      const message = container.querySelector('.lfx-ui-toast-pane [data-testid="ui-toast-message"]') as HTMLElement;
+      expect(message).not.toBeNull();
+      message.click();
+      await settle();
+
+      expect(panel()).not.toBeNull();
+    });
+  });
+
   describe('with a modal opened from the panel', () => {
     beforeEach(async () => mount(MODAL_FROM_PANEL_TEMPLATE, [UiModalComponent]));
 
@@ -578,6 +598,23 @@ describe('UiPopoverDirective', () => {
       expect(host.componentInstance.project()).toBe('cncf');
       expect(panel()).not.toBeNull();
       expect(container.querySelector('[role="listbox"]')).toBeNull();
+    });
+
+    it('Tab from a Select trigger with its list open, as the last field, closes onto the host', async () => {
+      await open();
+      const select = container.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement;
+      select.click();
+      select.focus();
+      await settle();
+      expect(container.querySelector('[role="listbox"]')).not.toBeNull();
+
+      const event = key(select, 'Tab');
+      await settle();
+
+      expect(container.querySelector('[role="listbox"]')).toBeNull();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(trigger());
+      expect(event.defaultPrevented).toBe(false);
     });
 
     it('closes only the list on Escape, then the popover on the next Escape', async () => {

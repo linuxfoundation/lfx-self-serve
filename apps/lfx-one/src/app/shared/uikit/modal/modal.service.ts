@@ -53,7 +53,8 @@ export class UiModalService {
     if (closeOnEscape) {
       ref.keydownEvents
         .pipe(
-          filter((event) => event.key === 'Escape' && !event.defaultPrevented && !hasModifierKey(event)),
+          // An Escape that cancels an IME composition is the input method's.
+          filter((event) => event.key === 'Escape' && !event.defaultPrevented && !hasModifierKey(event) && !event.isComposing && event.keyCode !== 229),
           takeUntil(ref.closed)
         )
         .subscribe((event) => {

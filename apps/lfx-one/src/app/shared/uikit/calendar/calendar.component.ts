@@ -196,19 +196,21 @@ export class UiCalendarComponent implements ControlValueAccessor {
   private dayClasses(day: UiCalendarDay, gridOff: boolean): string {
     // Exact px height; 14px root. The today dot is a 4px pseudo-element centred 5px above the bottom.
     const base =
-      'relative h-[36px] w-full rounded-ui-sm label-14 tabular-nums transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none';
+      'relative h-[36px] w-full rounded-ui-sm label-14 tabular-nums transition-colors duration-ui-fast motion-reduce:transition-none focus-visible:shadow-focus focus-visible:outline-none forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 forced-colors:focus-visible:outline-[color:CanvasText]';
+    // forced-colors: fills and shadows vanish, so the selected day is a Highlight fill with HighlightText (forced-color-adjust off, or the browser puts a Canvas backplate behind the text) and the dot takes a system colour.
     const dot = day.today
       ? "after:absolute after:bottom-[5px] after:left-1/2 after:-ml-[2px] after:h-[4px] after:w-[4px] after:rounded-ui-full after:content-['']"
       : '';
     if (day.selected) {
       // An unavailable selected date keeps its fill and gains the strike-through; the ink stays white to stay readable on the fill.
       const unavailable = day.disabled ? 'cursor-not-allowed line-through' : '';
-      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
+      return `${base} ${dot} bg-ui-accent-500 text-ui-white after:bg-ui-white forced-color-adjust-none forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText] forced-colors:after:bg-[color:HighlightText] ${unavailable} ${gridOff ? 'cursor-not-allowed opacity-50' : ''}`;
     }
-    if (day.disabled) return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500`;
+    if (day.disabled)
+      return `${base} ${dot} cursor-not-allowed text-ui-neutral-400 line-through after:bg-ui-accent-500 forced-colors:text-[color:GrayText] forced-colors:after:bg-[color:GrayText]`;
     const tone = day.outside ? 'text-ui-neutral-500' : 'text-ui-neutral-900';
     const interaction = gridOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-ui-neutral-alpha-100';
-    return `${base} ${dot} ${tone} ${interaction} after:bg-ui-accent-500`;
+    return `${base} ${dot} ${tone} ${interaction} after:bg-ui-accent-500 forced-colors:after:bg-[color:CanvasText]`;
   }
 
   private startOfToday(): Date {

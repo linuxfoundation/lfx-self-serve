@@ -142,6 +142,18 @@ describe('UiSearchInputComponent', () => {
     expect(outer).not.toHaveBeenCalled();
   });
 
+  it('keeps the text on the Escape that reports keyCode 229', async () => {
+    fixture.componentInstance.value.set('kube');
+    await fixture.whenStable();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', keyCode: 229, bubbles: true, cancelable: true });
+    input().dispatchEvent(event);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.value()).toBe('kube');
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it('returns focus to the field when Escape is pressed on the clear button', async () => {
     document.body.appendChild(host);
     fixture.componentInstance.value.set('kube');

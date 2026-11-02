@@ -68,15 +68,18 @@ export class UiSwitchOptionComponent {
         medium: 'gap-[6px] rounded-[9px] px-[12px] button-14',
       };
       // The checked segment is raised; in the dark theme it is neutral-200 because background-100 is the track's neighbour there.
-      // forced-colors: fills and shadows vanish, so a checked segment gets a border (Highlight plus fill, GrayText if disabled) and focus an outline.
-      const forcedChecked = this.isDisabled()
-        ? 'forced-colors:border forced-colors:border-[color:GrayText]'
-        : 'forced-colors:border forced-colors:border-[color:Highlight] forced-colors:bg-[color:Highlight] forced-colors:text-[color:HighlightText]';
-      const fill = this.isChecked() ? `bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200 ${forcedChecked}` : '';
+      const fill = this.isChecked() ? "bg-ui-background-100 shadow-small [[data-theme='dark']_&]:bg-ui-neutral-200" : '';
       let ink = 'cursor-pointer text-ui-neutral-600 hover:text-ui-neutral-900';
-      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400 forced-colors:text-[color:GrayText]';
+      if (this.isDisabled()) ink = 'cursor-not-allowed text-ui-neutral-400';
       else if (this.isChecked()) ink = 'cursor-pointer text-ui-neutral-900';
-      return `${base} ${sizes[this.group.size()]} ${fill} ${ink}`;
+      // forced-colors: fills and shadows vanish and a Highlight fill gets a Canvas text backplate (white text on white), so no fill is used.
+      // Every segment keeps a 2px border (Canvas, so layout does not move); the chosen one shows it in Highlight, GrayText if disabled. Ink is CanvasText, GrayText if disabled.
+      // forced-color-adjust stays auto: only system colours are set here, and the browser keeps them.
+      let forcedBorder = 'forced-colors:border-[color:Canvas]';
+      if (this.isChecked()) forcedBorder = this.isDisabled() ? 'forced-colors:border-[color:GrayText]' : 'forced-colors:border-[color:Highlight]';
+      const forcedInk = this.isDisabled() ? 'forced-colors:text-[color:GrayText]' : 'forced-colors:text-[color:CanvasText]';
+      const forced = `forced-colors:border-2 ${forcedBorder} ${forcedInk}`;
+      return `${base} ${sizes[this.group.size()]} ${fill} ${ink} ${forced}`;
     });
   }
 }

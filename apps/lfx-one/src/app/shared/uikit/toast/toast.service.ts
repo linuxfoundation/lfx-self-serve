@@ -60,6 +60,8 @@ export class UiToastService {
     // 16px from the window edge, matching the toast's `100vw - 32px` maximum width.
     const overlayRef = this.overlay.create({
       positionStrategy: this.overlay.position().global().bottom('16px').right('16px'),
+      // Marks the stack for code that must not treat a click on it as an outside click, such as the popover.
+      panelClass: 'lfx-ui-toast-pane',
       disposeOnNavigation: false,
     });
     // shortcut: 1001 sits above the 1000 of every other CDK overlay, so a toast shows over an open modal. revisit: when the overlay container moves to --ui-z-* tokens, give toasts their own layer above CDK panes.

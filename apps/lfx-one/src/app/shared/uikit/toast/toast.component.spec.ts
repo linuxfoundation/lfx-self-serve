@@ -356,6 +356,10 @@ describe('UiToastService', () => {
     expect(pane.style.marginRight).toBe('16px');
   });
 
+  it('marks the pane with lfx-ui-toast-pane so a popover does not treat a click on it as outside', () => {
+    expect((region()?.closest('.cdk-overlay-pane') as HTMLElement).classList.contains('lfx-ui-toast-pane')).toBe(true);
+  });
+
   it('shows toasts newest first', async () => {
     service.show({ message: 'First.' });
     service.show({ message: 'Second.' });

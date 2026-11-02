@@ -45,7 +45,7 @@ import { UiPopoverPanelComponent } from './popover-panel.component';
  * Focus moves to the first tabbable element in the panel, or to the panel itself. Escape or a click outside closes it. Escape always returns focus
  * to the host; an outside click does too, unless the click already focused something else. Tab past the last field closes it and continues from the
  * host, and Shift+Tab before the first field closes it onto the host. A click inside a select list, menu, modal or drawer opened from the panel
- * does not close it, and Escape closes that overlay first. It is not a focus trap: for a choice that must be answered first, use a modal.
+ * does not close it, and Escape closes that overlay first. A click on a toast does not close it either. It is not a focus trap: for a choice that must be answered first, use a modal.
  *
  * Two-way `[(lfxUiPopoverOpen)]` reads or sets whether it is open. The template receives `close`, and `#pop="lfxUiPopover"` exposes `close()` and `toggle()`.
  * On `lfx-ui-button` the directive never attaches to the button element itself, so use the button's `popover`, `popoverLabel`, `popoverWidth` and
@@ -141,18 +141,24 @@ export class UiPopoverDirective {
     this.panel.setInput('panelId', this.panelId);
     this.panel.setInput('labelledBy', this.host.id);
     this.apply(this.config());
-    // The host toggles itself, and a modal or drawer opened from the panel has no outside-click listener, so neither counts here.
+    // The host toggles itself, a modal or drawer opened from the panel has no outside-click listener, and a toast is not an outside click: none of them counts here.
     overlayRef
       .outsidePointerEvents()
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => {
         const target = event.target as Node;
-        if (!this.host.contains(target) && !this.inLaterOverlay(overlayRef, target)) this.close();
+        if (!this.host.contains(target) && !this.inLaterOverlay(overlayRef, target) && !(target as Element).closest?.('.lfx-ui-toast-pane')) this.close();
       });
     overlayRef
       .keydownEvents()
       .pipe(takeUntil(overlayRef.detachments()))
       .subscribe((event) => this.onKeydown(event));
+    // Tab is read on the panel itself: an open select or combobox list is the top overlay and takes every key the body-level dispatcher sees.
+    fromEvent<KeyboardEvent>(this.panelElement() as HTMLElement, 'keydown')
+      .pipe(takeUntil(overlayRef.detachments()))
+      .subscribe((event) => {
+        if (event.key === 'Tab' && !event.isComposing && event.keyCode !== 229 && !event.ctrlKey && !event.altKey && !event.metaKey) this.onTab(event);
+      });
     // Backstop for a Tab that leaves the panel without `onTab` catching it.
     fromEvent<FocusEvent>(this.panelElement() as HTMLElement, 'focusout')
       .pipe(takeUntil(overlayRef.detachments()))
@@ -215,8 +221,6 @@ export class UiPopoverDirective {
       event.preventDefault();
       this.open.set(false);
       this.detach(true);
-    } else if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
-      this.onTab(event);
     }
   }
 
