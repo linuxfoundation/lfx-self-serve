@@ -4,25 +4,21 @@
 import {
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
-  ORG_TRAINEE_COURSE_OPTION_COLUMNS,
   ORG_TRAINEE_DETAIL_COLUMNS,
-  ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS,
   ORG_TRAINEE_ROW_COLUMNS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgTraineesRawCache,
+  OrgDropdownOption,
   OrgLensTimeRange,
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
-  OrgTraineeCourseOption,
   OrgTraineeDetailRow,
-  OrgTraineeFoundationOption,
+  OrgTraineeFilterOptions,
   OrgTraineeRow,
   OrgTraineesResponse,
   TraineeAsOfRow,
-  TraineeCourseOptionRow,
-  TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
 import {
   dedupeByKey,
@@ -39,7 +35,7 @@ import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
 
-/** Trainees tab data access — one GET per range that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
+/** Trainees tab data access — one GET per range that backs the filters, four stat cards, main row, and lazy expanded section client-side. */
 export class OrgPeopleTraineesService {
   private readonly snowflakeService: SnowflakeService;
 
@@ -48,8 +44,9 @@ export class OrgPeopleTraineesService {
   }
 
   /**
-   * The range's trainees, details and filter dropdowns: four parallel Snowflake queries over enrollments and certificates
-   * dated in the range; stats are recomputed client-side from the filtered details so the server ships none.
+   * The range's trainees, details and filter dropdowns: parallel Snowflake reads over enrollments and certificates dated
+   * in the range; the dropdowns are built from those details, and stats are recomputed client-side from the filtered
+   * details, so the server ships none.
    */
   public async getTrainees(accountId: string, range: OrgLensTimeRange): Promise<OrgTraineesResponse> {
     if (!accountId) {
@@ -58,8 +55,8 @@ export class OrgPeopleTraineesService {
 
     // `people-trainees:v5:{range}` (lfx-self-serve#4159, #4916): ORG_PEOPLE_TRAINING holds enrollments of any age, so the
     // read is windowed per range here instead of shipping every row for the client to filter. `v5` adds the table's
-    // build time; a `v4` entry has none and must miss.
-    const { traineeRows, detailRows, foundationRows, courseRows, asOf } = await withOrgCompactCache(
+    // build time and the project, level and format columns, and drops the two option reads; a `v4` entry must miss.
+    const { traineeRows, detailRows, asOf } = await withOrgCompactCache(
       accountId,
       `people-trainees:v5:${range}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
@@ -92,28 +89,21 @@ export class OrgPeopleTraineesService {
           courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
           foundationId: row.FOUNDATION_ID,
           foundationName: row.FOUNDATION_NAME,
+          projectId: row.PROJECT_ID,
+          projectName: row.PROJECT_NAME,
+          courseLevel: row.COURSE_LEVEL,
+          courseFormat: row.COURSE_FORMAT,
           activityTs,
         },
       ];
     });
-
-    const foundationOptions: OrgTraineeFoundationOption[] = foundationRows.map((row) => ({
-      foundationId: row.FOUNDATION_ID,
-      foundationName: row.FOUNDATION_NAME,
-    }));
-
-    const courseOptions: OrgTraineeCourseOption[] = courseRows.map((row) => ({
-      courseId: row.COURSE_ID,
-      courseName: row.COURSE_NAME,
-    }));
 
     return {
       accountId,
       timeRange: range,
       trainees,
       details,
-      foundationOptions,
-      courseOptions,
+      filterOptions: buildFilterOptions(details),
       asOf,
     };
   }
@@ -124,19 +114,15 @@ export class OrgPeopleTraineesService {
   ): Promise<{
     traineeRows: OrgPeopleAllTraineeRow[];
     detailRows: OrgPeopleTrainingRow[];
-    foundationRows: TraineeFoundationOptionRow[];
-    courseRows: TraineeCourseOptionRow[];
     asOf: string | null;
   }> {
     const inRange = trainingRangePredicate(range);
-    const [traineeRows, detailRows, foundationRows, courseRows, asOf] = await Promise.all([
+    const [traineeRows, detailRows, asOf] = await Promise.all([
       this.fetchTraineeRows(accountId, inRange),
       this.fetchDetailRows(accountId, inRange),
-      this.fetchFoundationOptions(accountId, inRange),
-      this.fetchCourseOptions(accountId, inRange),
       this.fetchAsOf(accountId),
     ]);
-    return { traineeRows, detailRows, foundationRows, courseRows, asOf };
+    return { traineeRows, detailRows, asOf };
   }
 
   /**
@@ -181,41 +167,17 @@ export class OrgPeopleTraineesService {
         COURSE_NAME,
         ACTIVITY_TS,
         FOUNDATION_ID,
-        FOUNDATION_NAME
+        FOUNDATION_NAME,
+        PROJECT_ID,
+        PROJECT_NAME,
+        COURSE_LEVEL,
+        COURSE_FORMAT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
       WHERE ACCOUNT_ID = ?
         ${inRange}
       ORDER BY PERSON_KEY ASC, ACTIVITY_TS DESC NULLS LAST
     `;
     const result = await this.snowflakeService.execute<OrgPeopleTrainingRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchFoundationOptions(accountId: string, inRange: string): Promise<TraineeFoundationOptionRow[]> {
-    const query = `
-      SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ?
-        AND FOUNDATION_ID IS NOT NULL
-        AND FOUNDATION_NAME IS NOT NULL
-        ${inRange}
-      ORDER BY FOUNDATION_NAME ASC
-    `;
-    const result = await this.snowflakeService.execute<TraineeFoundationOptionRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchCourseOptions(accountId: string, inRange: string): Promise<TraineeCourseOptionRow[]> {
-    const query = `
-      SELECT DISTINCT COURSE_ID, COURSE_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_TRAINING
-      WHERE ACCOUNT_ID = ?
-        AND COURSE_ID IS NOT NULL
-        AND COURSE_NAME IS NOT NULL
-        ${inRange}
-      ORDER BY COURSE_NAME ASC
-    `;
-    const result = await this.snowflakeService.execute<TraineeCourseOptionRow>(query, [accountId]);
     return result.rows;
   }
 
@@ -232,6 +194,36 @@ export class OrgPeopleTraineesService {
 }
 
 /**
+ * The five Trainees dropdowns from the details the response ships, so an option exists only when a row of the range
+ * carries it and picking it can never empty the table. Rows without the field are reachable only through "All": a
+ * certified row has no format, a few courses have no level.
+ */
+function buildFilterOptions(details: OrgTraineeDetailRow[]): OrgTraineeFilterOptions {
+  const foundations = new Map<string, string>();
+  const projects = new Map<string, string>();
+  const courses = new Map<string, string>();
+  const levels = new Map<string, string>();
+  const formats = new Map<string, string>();
+  for (const row of details) {
+    if (row.foundationId && row.foundationName) foundations.set(row.foundationId, row.foundationName);
+    if (row.projectId && row.projectName) projects.set(row.projectId, row.projectName);
+    // Keyed on the name: several course ids share one (course versions), and one entry has to cover all of their rows.
+    courses.set(row.courseName, row.courseName);
+    if (row.courseLevel) levels.set(row.courseLevel, row.courseLevel);
+    if (row.courseFormat) formats.set(row.courseFormat, row.courseFormat);
+  }
+  const toOptions = (entries: Map<string, string>): OrgDropdownOption[] =>
+    [...entries].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+  return {
+    foundations: toOptions(foundations),
+    projects: toOptions(projects),
+    courses: toOptions(courses),
+    levels: toOptions(levels),
+    formats: toOptions(formats),
+  };
+}
+
+/**
  * `ACTIVITY_TS` (enrollment or certificate date) on or after N days before today; empty for all time. Inline, not bound —
  * the day count comes from the allow-listed range — so the planner can fold it.
  */
@@ -240,19 +232,17 @@ function trainingRangePredicate(range: OrgLensTimeRange): string {
 }
 
 /**
- * Compacts the four raw reads for Valkey storage (GH-1906).
+ * Compacts the raw reads for Valkey storage (GH-1906).
  *
  * Same shape of waste as the event-attendees payload: `detailRows` is grained per (person,
- * course-or-cert), so every row for a course repeats that course's `COURSE_ID`, `COURSE_NAME`,
- * `FOUNDATION_ID` and `FOUNDATION_NAME`. Those four are stored once per distinct course; what stays
+ * course-or-cert), so every row for a course repeats that course's columns
+ * ({@link ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS}). Those are stored once per distinct set; what stays
  * per row is `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID` (the enrollment/certification instance,
  * genuinely per row) and `ACTIVITY_TS`.
  */
 function encodeTraineesRaw(raw: {
   traineeRows: OrgPeopleAllTraineeRow[];
   detailRows: OrgPeopleTrainingRow[];
-  foundationRows: TraineeFoundationOptionRow[];
-  courseRows: TraineeCourseOptionRow[];
   asOf: string | null;
 }): CompactOrgTraineesRawCache {
   // Keyed on the whole tuple, not on COURSE_ID: two rows sharing a course id but disagreeing on a
@@ -261,7 +251,7 @@ function encodeTraineesRaw(raw: {
   // Keyed once per row and reused for both the dictionary and the index array: the key is the
   // expensive part of the encode, and computing it twice per row bought nothing.
   const keys = new Map<OrgPeopleTrainingRow, string>(
-    raw.detailRows.map((row) => [row, tupleKey([row.COURSE_ID, row.COURSE_NAME, row.FOUNDATION_ID, row.FOUNDATION_NAME])])
+    raw.detailRows.map((row) => [row, tupleKey(ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS.map((column) => row[column]))])
   );
   const courses = dedupeByKey(raw.detailRows, (row) => keys.get(row)!);
 
@@ -271,8 +261,6 @@ function encodeTraineesRaw(raw: {
     details: toColumnar(raw.detailRows, ORG_TRAINEE_DETAIL_COLUMNS),
     // Every detail row was part of the set `courses` was built from, so the lookup always resolves.
     detailCourses: raw.detailRows.map((row) => courses.indexOf.get(keys.get(row)!)!),
-    foundationRows: toColumnar(raw.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS),
-    courseRows: toColumnar(raw.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS),
     asOf: raw.asOf,
   };
 }
@@ -281,8 +269,6 @@ function encodeTraineesRaw(raw: {
 function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   traineeRows: OrgPeopleAllTraineeRow[];
   detailRows: OrgPeopleTrainingRow[];
-  foundationRows: TraineeFoundationOptionRow[];
-  courseRows: TraineeCourseOptionRow[];
   asOf: string | null;
 } {
   const courses = fromColumnar<OrgPeopleTrainingRow>(value.courses);
@@ -291,8 +277,6 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
   return {
     traineeRows: fromColumnar<OrgPeopleAllTraineeRow>(value.traineeRows),
     detailRows,
-    foundationRows: fromColumnar<TraineeFoundationOptionRow>(value.foundationRows),
-    courseRows: fromColumnar<TraineeCourseOptionRow>(value.courseRows),
     asOf: value.asOf,
   };
 }
@@ -307,16 +291,12 @@ function isCompactTraineesRaw(value: unknown): boolean {
     !isColumnarTable(cache.traineeRows) ||
     !isColumnarTable(cache.courses) ||
     !isColumnarTable(cache.details) ||
-    !isColumnarTable(cache.foundationRows) ||
-    !isColumnarTable(cache.courseRows) ||
     // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
     // "successfully" into rows missing data the writer always emits, which is worse than a miss —
     // the tab renders with holes in it for the rest of the TTL instead of refetching.
     !hasExactColumns(cache.traineeRows, ORG_TRAINEE_ROW_COLUMNS) ||
     !hasExactColumns(cache.courses, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS) ||
-    !hasExactColumns(cache.details, ORG_TRAINEE_DETAIL_COLUMNS) ||
-    !hasExactColumns(cache.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS) ||
-    !hasExactColumns(cache.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS)
+    !hasExactColumns(cache.details, ORG_TRAINEE_DETAIL_COLUMNS)
   ) {
     return false;
   }

@@ -40,7 +40,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { TraineesService } from '../../services/trainees.service';
 
-/** Trainees tab body — search + foundation + course + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
+/** Trainees tab body — search + foundation + project + course + level + format + range filters, four stat cards, sortable table with chevron-toggled Courses & Certifications detail. */
 @Component({
   selector: 'lfx-org-people-trainees',
   imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
@@ -61,7 +61,10 @@ export class TraineesComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string>('', { nonNullable: true }),
+    project: new FormControl<string>('', { nonNullable: true }),
     course: new FormControl<string>('', { nonNullable: true }),
+    level: new FormControl<string>('', { nonNullable: true }),
+    format: new FormControl<string>('', { nonNullable: true }),
     // Follows `?range=` (shared with every People tab and Code Contributions); the BFF reads only this range's rows.
     timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
   });
@@ -102,8 +105,25 @@ export class TraineesComponent {
 
   protected readonly response: Signal<OrgTraineesResponse> = this.initResponse();
 
-  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
-  protected readonly courseOptions: Signal<OrgDropdownOption[]> = computed(() => this.initCourseOptions());
+  protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
+    ...this.response().filterOptions.foundations,
+  ]);
+  protected readonly projectOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: 'All Projects', value: '' },
+    ...this.response().filterOptions.projects,
+  ]);
+  protected readonly courseOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: 'All Courses', value: '' },
+    ...this.response().filterOptions.courses,
+  ]);
+  protected readonly levelOptions: Signal<OrgDropdownOption[]> = computed(() => [{ label: 'All Levels', value: '' }, ...this.response().filterOptions.levels]);
+  protected readonly formatOptions: Signal<OrgDropdownOption[]> = computed(() => [
+    { label: 'All Formats', value: '' },
+    ...this.response().filterOptions.formats,
+  ]);
+  // Certified rows carry no format, so a picked format leaves enrollments only; the template says so while one is picked.
+  protected readonly formatPicked: Signal<boolean> = computed(() => !!this.filterValues().format);
 
   // Detail set is the canonical source — every filter-aware derivation (stats, rows, expanded section) reads it.
   protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
@@ -195,22 +215,9 @@ export class TraineesComponent {
     this.retryTrigger.update((v) => v + 1);
   }
 
-  private initFoundationOptions(): OrgDropdownOption[] {
-    return [
-      { label: ORG_ALL_FOUNDATIONS_LABEL, value: '' },
-      ...this.response().foundationOptions.map((f) => ({ label: f.foundationName, value: f.foundationId })),
-    ];
-  }
-
-  private initCourseOptions(): OrgDropdownOption[] {
-    return [{ label: 'All Courses', value: '' }, ...this.response().courseOptions.map((c) => ({ label: c.courseName, value: c.courseId }))];
-  }
-
   private initFilteredDetails(): OrgTraineeDetailRow[] {
-    const values = this.filterValues();
-    const q = (values.search ?? '').trim().toLowerCase();
-    const foundationId = values.foundation ?? '';
-    const courseId = values.course ?? '';
+    const { search = '', foundation = '', project = '', course = '', level = '', format = '' } = this.filterValues();
+    const q = search.trim().toLowerCase();
 
     // Build a name+title lookup so search filters details by who-the-person-is, not by per-row strings.
     const personIndex = new Map<string, { name: string; title: string | null }>();
@@ -218,10 +225,14 @@ export class TraineesComponent {
       personIndex.set(t.personKey, { name: t.name, title: t.title });
     }
 
-    // The details are already the range's (the BFF windows them), so only the client-side trio filters here.
+    // The details are already the range's (the BFF windows them), so only the dropdowns and search filter here.
     return this.response().details.filter((row) => {
-      if (foundationId && row.foundationId !== foundationId) return false;
-      if (courseId && row.courseId !== courseId) return false;
+      if (foundation && row.foundationId !== foundation) return false;
+      if (project && row.projectId !== project) return false;
+      // Course options are keyed on the name, so every course id sharing it matches.
+      if (course && row.courseName !== course) return false;
+      if (level && row.courseLevel !== level) return false;
+      if (format && row.courseFormat !== format) return false;
       if (q) {
         const person = personIndex.get(row.personKey);
         if (!person) return false;
@@ -343,12 +354,10 @@ export class TraineesComponent {
   }
 
   private initIsFiltering(): boolean {
-    const values = this.filterValues();
-    const hasSearch = (values.search ?? '').trim().length > 0;
-    const hasFoundation = !!(values.foundation ?? '');
-    const hasCourse = !!(values.course ?? '');
+    const { search = '', foundation, project, course, level, format } = this.filterValues();
+    const hasDropdown = !!(foundation || project || course || level || format);
     const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;
-    return hasSearch || hasFoundation || hasCourse || hasTimeFilter;
+    return search.trim().length > 0 || hasDropdown || hasTimeFilter;
   }
 
   private initAriaSortMap(): Record<OrgTraineeSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -419,20 +428,24 @@ export class TraineesComponent {
     );
   }
 
-  /** A new range rebuilds both dropdowns, and filtering on a foundation or course it no longer lists would hide every row. */
+  /** A new range rebuilds every dropdown, and filtering on a value it no longer lists would hide every row. */
   private dropSelectionsAbsentFrom(res: OrgTraineesResponse): void {
-    const { foundation, course } = this.filterForm.getRawValue();
-    const patch: { foundation?: string; course?: string } = {};
-    if (foundation && !res.foundationOptions.some((option) => option.foundationId === foundation)) patch.foundation = '';
-    if (course && !res.courseOptions.some((option) => option.courseId === course)) patch.course = '';
-    if (patch.foundation === undefined && patch.course === undefined) return;
+    const values = this.filterForm.getRawValue();
+    const { foundations, projects, courses, levels, formats } = res.filterOptions;
+    const listed = { foundation: foundations, project: projects, course: courses, level: levels, format: formats };
+    const patch: Partial<Record<keyof typeof listed, string>> = {};
+    for (const control of Object.keys(listed) as (keyof typeof listed)[]) {
+      const picked = values[control];
+      if (picked && !listed[control].some((option) => option.value === picked)) patch[control] = '';
+    }
+    if (Object.keys(patch).length === 0) return;
     this.filterForm.patchValue(patch);
     this.selectionsPruned$.next();
   }
 
   private resetAllState(): void {
     // The range is page-level URL state, not per-org, so an org switch keeps it.
-    this.filterForm.patchValue({ search: '', foundation: '', course: '' });
+    this.filterForm.patchValue({ search: '', foundation: '', project: '', course: '', level: '', format: '' });
     this.sortColumn.set('courses');
     this.sortDirection.set(-1);
     this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);

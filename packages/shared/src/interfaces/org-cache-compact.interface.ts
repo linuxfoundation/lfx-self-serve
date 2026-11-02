@@ -125,14 +125,12 @@ export interface CompactOrgEventAttendeesRawCache {
 /** Cached form of the Trainees raw warehouse reads. */
 export interface CompactOrgTraineesRawCache {
   traineeRows: ColumnarTable;
-  /** Distinct course-level field sets (`COURSE_ID`, `COURSE_NAME`, `FOUNDATION_ID`, `FOUNDATION_NAME`), once each. */
+  /** Distinct course-level field sets (course, foundation, project, level and format columns), once each. */
   courses: ColumnarTable;
   /** Per-(person, course-or-cert) rows reduced to `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID`, `ACTIVITY_TS`. */
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `courses.r` each detail row belongs to. */
   detailCourses: number[];
-  foundationRows: ColumnarTable;
-  courseRows: ColumnarTable;
   /** ISO build time of the training table, or null (`OrgTraineesResponse.asOf`). */
   asOf: string | null;
 }
