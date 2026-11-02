@@ -14,9 +14,10 @@ import {
   NewsletterInviteLookup,
   NewsletterJoinState,
   NewsletterReaderState,
+  NewsletterShareEvent,
   NewsletterShareTally,
+  NewsletterShareTarget,
   ServerRequestContext,
-  SocialShareChannel,
 } from '@lfx-one/shared/interfaces';
 import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
@@ -134,13 +135,19 @@ export class NewsletterReaderComponent {
   // === Protected Methods ===
   protected openShare(): void {
     const url = this.shareUrl();
+    const project = this.project();
+    const newsletter = this.newsletter();
     if (!url) return;
 
+    // Bind the share to the issue the dialog opened for: Back/Forward can show another issue while it is open.
+    const target: NewsletterShareTarget | null = project && newsletter ? { projectUid: project.uid, newsletterId: newsletter.id } : null;
     this.shareDialog.open({
       url,
-      title: this.newsletter()?.subject || this.pageTitle(),
+      title: newsletter?.subject || this.pageTitle(),
       copiedMessage: 'Newsletter link copied to clipboard.',
-      onShare: (channel) => this.onShared(channel),
+      onShare: (channel) => {
+        if (target) this.onShared({ ...target, channel });
+      },
     });
   }
 
@@ -157,18 +164,14 @@ export class NewsletterReaderComponent {
     });
   }
 
-  /** Records the share and, once the server accepts it, bumps the visible count (still on the same issue). */
-  protected onShared(channel: SocialShareChannel): void {
-    const project = this.project();
-    const newsletter = this.newsletter();
-    if (!project || !newsletter) return;
-
+  /** Records the share and, once the server accepts it, bumps the visible count if that issue is still shown. */
+  protected onShared(event: NewsletterShareEvent): void {
     this.newsletterService
-      .recordShare(project.uid, newsletter.id, channel)
+      .recordShare(event.projectUid, event.newsletterId, event.channel)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((accepted) => {
-        if (accepted && this.newsletter()?.id === newsletter.id) {
-          this.shareTally.update((tally) => addShareToTally(tally, channel));
+        if (accepted && this.newsletter()?.id === event.newsletterId) {
+          this.shareTally.update((tally) => addShareToTally(tally, event.channel));
         }
       });
   }

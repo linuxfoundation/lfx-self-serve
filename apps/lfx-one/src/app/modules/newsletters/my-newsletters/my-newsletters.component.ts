@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe, formatDate, isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, model, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, model, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -20,8 +20,10 @@ import {
   MyNewsletterFoundationsState,
   MyNewsletterRow,
   NewsletterInviteDialogData,
+  MyNewsletterFoundationsResponse,
+  NewsletterShareEvent,
   NewsletterShareTally,
-  SocialShareChannel,
+  NewsletterShareTarget,
 } from '@lfx-one/shared/interfaces';
 import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
@@ -96,8 +98,12 @@ export class MyNewslettersComponent {
   protected readonly previewBody = signal<string>('');
   protected readonly searchTerm = signal<string>('');
   protected readonly projectFilter = signal<string | null>(null);
-  /** Shares made on this page, by newsletter id — overrides the row's server count until the next load. */
-  private readonly shareTallies = signal<Record<string, NewsletterShareTally>>({});
+  /** Shares accepted on this page, by newsletter id — override the row's server count until the feed next loads. */
+  private readonly shareTallies = linkedSignal<MyNewsletterFoundationsResponse | null, Record<string, NewsletterShareTally>>({
+    // A new feed response (load, Retry) brings fresh server counts, so local tallies start over.
+    source: () => this.state().data,
+    computation: () => ({}),
+  });
 
   // === Route Signals ===
   protected readonly foundationSlug: Signal<string> = toSignal(this.route.paramMap.pipe(map((m) => m.get('foundationSlug') ?? '')), {
@@ -143,7 +149,14 @@ export class MyNewslettersComponent {
   /** Share count for the drawer's Share button — the same number the selected row shows. */
   protected readonly selectedShareCount: Signal<number | null> = computed(() => {
     const selected = this.selected();
-    return selected ? this.shareCountOf(selected) : null;
+    if (!selected) return null;
+    // Prefer the current feed row: `selected` is a snapshot from when the drawer opened.
+    return this.shareCountOf(this.myNewsletters().find((row) => row.id === selected.id) ?? selected);
+  });
+  /** The issue the drawer shows, for binding its shares. */
+  protected readonly selectedShareTarget: Signal<NewsletterShareTarget | null> = computed(() => {
+    const selected = this.selected();
+    return selected ? { projectUid: selected.project_uid, newsletterId: selected.id } : null;
   });
   /** Canonical permalink for the selected newsletter (SSR-safe absolute URL). */
   protected readonly selectedShareUrl: Signal<string | null> = computed(() => {
@@ -220,20 +233,18 @@ export class MyNewslettersComponent {
   }
 
   // === Protected Methods ===
-  /** A share was made from the drawer: record it and, once the server accepts it, bump that row's count. */
-  protected onShared(channel: SocialShareChannel): void {
-    const selected = this.selected();
-    if (!selected) return;
-
+  /** A share was made from the drawer: record it and, once the server accepts it, bump that issue's count. */
+  protected onShared(event: NewsletterShareEvent): void {
     this.newsletterService
-      .recordShare(selected.project_uid, selected.id, channel)
+      .recordShare(event.projectUid, event.newsletterId, event.channel)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((accepted) => {
         if (!accepted) return;
         this.shareTallies.update((tallies) => {
-          const current = tallies[selected.id] ?? { count: selected.share_count ?? null, channels: [] };
-          const next = addShareToTally(current, channel);
-          return next === current ? tallies : { ...tallies, [selected.id]: next };
+          const serverCount = this.myNewsletters().find((row) => row.id === event.newsletterId)?.share_count ?? null;
+          const current = tallies[event.newsletterId] ?? { count: serverCount, channels: [] };
+          const next = addShareToTally(current, event.channel);
+          return next === current ? tallies : { ...tallies, [event.newsletterId]: next };
         });
       });
   }

@@ -53,6 +53,13 @@ export class ShareDialogComponent {
     this.reportShare(link.key);
   }
 
+  /** Middle-click opens the link natively through `auxclick`, not `click`; right-click (button 2) is not a share. */
+  protected onShareLinkAuxClick(event: MouseEvent, link: SocialShareLink): void {
+    if (event.button === 1) {
+      this.reportShare(link.key);
+    }
+  }
+
   protected onClose(): void {
     this.dialogRef.close();
   }

@@ -72,6 +72,18 @@ describe('ShareDialogComponent', () => {
     expect(onShare).toHaveBeenCalledWith('linkedin');
   });
 
+  it('reports a middle-click on a destination, but not a right-click', async () => {
+    const onShare = vi.fn();
+    await mount({ url: URL, title: 'K8s Weekly #42', onShare });
+    const link = find('share-dialog-x')!;
+
+    link.dispatchEvent(new MouseEvent('auxclick', { button: 2, bubbles: true }));
+    expect(onShare).not.toHaveBeenCalled();
+
+    link.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true }));
+    expect(onShare).toHaveBeenCalledWith('x');
+  });
+
   it('reports copy_link only when the copy succeeded', async () => {
     const onShare = vi.fn();
     await mount({ url: URL, title: 'K8s Weekly #42', onShare });

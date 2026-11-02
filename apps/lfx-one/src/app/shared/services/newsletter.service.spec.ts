@@ -76,5 +76,6 @@ describe('NewsletterService.recordShare (#4958)', () => {
     expect(next).toHaveBeenCalledWith(false);
     expect(error).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalled();
+    expect(trackEvent).not.toHaveBeenCalled();
   });
 });

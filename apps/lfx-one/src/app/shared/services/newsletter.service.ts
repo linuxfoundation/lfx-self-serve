@@ -32,7 +32,7 @@ import {
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
 import { PlausibleService } from '@services/plausible.service';
-import { catchError, map, Observable, of, take, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -138,14 +138,15 @@ export class NewsletterService {
   }
 
   /**
-   * Records an in-app share of a sent issue (#4958) and sends the matching Plausible event. Emits
-   * `true` once the server accepted the share, `false` when it did not (the 403 while impersonating,
-   * a 404 for a draft, a network error). It never errors: sharing must not fail because tracking did.
+   * Records an in-app share of a sent issue (#4958) and, once the server accepts it, sends the matching
+   * Plausible event — so Plausible and `total_shares` count the same accepted shares. Emits `true` when
+   * the server accepted the share, `false` when it did not (the 403 while impersonating, a 404 for a
+   * draft, a network error). It never errors: sharing must not fail because tracking did.
    */
   public recordShare(projectUid: string, newsletterUid: string, channel: SocialShareChannel): Observable<boolean> {
-    this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel });
     return this.http.post<void>(`/api/newsletters/${this.enc(projectUid)}/${this.enc(newsletterUid)}/share`, { channel }).pipe(
       take(1),
+      tap(() => this.plausible.trackEvent('newsletter_shared', { newsletterId: newsletterUid, channel })),
       map(() => true),
       catchError((error) => {
         console.warn('[NewsletterService] Failed to record newsletter share', error);

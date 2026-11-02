@@ -550,6 +550,10 @@ describe('MyNewslettersComponent', () => {
     expect(gateway.recordShare).toHaveBeenCalledWith('child', 'issue', 'reddit');
     expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('4');
     expect(overlay('newsletter-preview-drawer-share-count')!.textContent!.trim()).toBe('· 4');
+    // A fresh feed response brings the server's count, replacing the local tally.
+    feed.next(feedOf([row({ share_count: 10 }), row({ id: 'quiet', subject: 'Quiet news' })], true));
+    await settle();
+    expect(find('my-newsletters-shares-issue')!.textContent!.trim()).toBe('10');
   });
   it('preserves canonical absence fallback and body-fetch error handling', async () => {
     await respond(feedOf([row()], true));

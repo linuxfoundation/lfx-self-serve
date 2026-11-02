@@ -249,10 +249,11 @@ export class NewsletterServiceClient {
    * to the caller's principal, and the gateway gates it on project viewer.
    */
   public async recordShare(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterShareRequest): Promise<void> {
+    // The controller already restricts both IDs to UUIDs; encoding keeps the path safe if a future caller skips that.
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectUid}/newsletters/${newsletterUid}/shares`,
+      `/projects/${encodeURIComponent(projectUid)}/newsletters/${encodeURIComponent(newsletterUid)}/shares`,
       'POST',
       undefined,
       payload

@@ -3,7 +3,7 @@
 
 import { Component, inject, input, model, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { SocialShareChannel } from '@lfx-one/shared/interfaces';
+import { NewsletterShareEvent, NewsletterShareTarget } from '@lfx-one/shared/interfaces';
 import { ShareDialogService } from '@services/share-dialog.service';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -37,10 +37,12 @@ export class NewsletterPreviewDrawerComponent {
   public readonly shareUrl = input<string | null>(null);
   /** Share count shown on the Share button; null hides it (unknown, or a manager preview). */
   public readonly shareCount = input<number | null>(null);
+  /** The issue shown — captured when the dialog opens, so shares stay bound to it. Null: shares aren't reported. */
+  public readonly shareTarget = input<NewsletterShareTarget | null>(null);
 
   // === Outputs ===
   /** A share was made from the dialog — the parent records it and updates its count. */
-  public readonly shared = output<SocialShareChannel>();
+  public readonly shared = output<NewsletterShareEvent>();
 
   // === Model Signals (two-way) ===
   public readonly visible = model<boolean>(false);
@@ -49,11 +51,14 @@ export class NewsletterPreviewDrawerComponent {
     const url = this.shareUrl();
     if (!url) return;
 
+    const target = this.shareTarget();
     this.shareDialog.open({
       url,
       title: this.subject(),
       copiedMessage: 'Newsletter link copied to clipboard.',
-      onShare: (channel) => this.shared.emit(channel),
+      onShare: (channel) => {
+        if (target) this.shared.emit({ ...target, channel });
+      },
     });
   }
 

@@ -550,6 +550,17 @@ export interface MyNewsletterRow extends MyNewsletter {
   shareCount: number | null;
 }
 
+/** The issue a Share dialog was opened for — captured at open so a later navigation can't retarget it. */
+export interface NewsletterShareTarget {
+  projectUid: string;
+  newsletterId: string;
+}
+
+/** A share made from the reader drawer's dialog, bound to the issue it was opened for. */
+export interface NewsletterShareEvent extends NewsletterShareTarget {
+  channel: SocialShareChannel;
+}
+
 /** Share count shown beside a newsletter's Share button, bumped locally after each accepted share. */
 export interface NewsletterShareTally {
   /** Null when the server did not return a count (unknown, not zero). */
