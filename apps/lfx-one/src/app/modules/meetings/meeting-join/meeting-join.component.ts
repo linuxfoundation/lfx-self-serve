@@ -278,6 +278,8 @@ export class MeetingJoinComponent implements OnInit {
   protected readonly showStickyBar: Signal<boolean> = this.initShowStickyBar();
   // Primary action in the bar: Resend Invite for an invitee (the page's own self-resend), else Subscribe to the project feed.
   protected readonly stickyBarAction: Signal<'resend' | 'subscribe' | null> = this.initStickyBarAction();
+  // The phone bar carries Resend Invite, so the page's own copy is hidden below `sm:` (like the inline Join) to avoid two.
+  protected readonly stickyBarOffersResend: Signal<boolean> = computed(() => this.showStickyBar() && this.stickyBarAction() === 'resend');
   // The project's public calendar feed, built the way the meetings dashboard's iCal Subscribe does.
   protected readonly projectCalendarFeedUrl: Signal<string> = computed(() => {
     const projectUid = this.project()?.uid || this.meeting()?.project_uid;

@@ -2168,6 +2168,26 @@ describe('MeetingJoinComponent', () => {
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
       });
 
+      it.each([
+        ['an invitee', { organizer: false, invited: true }, 'resend-invite-button'],
+        ['an invited organizer', { organizer: true, invited: true }, 'resend-invite-organizer-button'],
+      ])("hides the page's own Resend Invite below sm for %s, since the bar carries it", async (_label, overrides, testId) => {
+        const fixture = await render(overrides);
+
+        const inline = part(fixture, testId);
+        expect(inline).not.toBeNull();
+        expect(inline?.classList.contains('max-sm:hidden')).toBe(true);
+        expect(part(fixture, 'sticky-resend-invite')).not.toBeNull();
+      });
+
+      it("keeps the page's own Resend Invite visible when there is no bar (a password-only guest)", async () => {
+        const fixture = await render({ organizer: false, invited: true }, { full_access: false });
+
+        expect(part(fixture, 'sticky-resend-invite')).toBeNull();
+        const inline = part(fixture, 'resend-invite-button');
+        expect(inline?.classList.contains('max-sm:hidden') ?? false).toBe(false);
+      });
+
       it('shows the same in-flight state as the page button while the resend is pending', async () => {
         resendMyMeetingInvitation.mockReturnValue(new Subject());
         const fixture = await render();

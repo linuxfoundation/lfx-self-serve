@@ -504,6 +504,7 @@
                   @if (canResendInvite()) {
                     <lfx-button
                       class="w-full"
+                      [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
                       styleClass="w-full"
                       icon="fa-light fa-paper-plane"
                       label="Resend Invite"
@@ -541,6 +542,7 @@
                       @if (canResendInvite()) {
                         <lfx-button
                           class="w-full"
+                          [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
                           styleClass="w-full"
                           icon="fa-light fa-paper-plane"
                           label="Resend Invite"
