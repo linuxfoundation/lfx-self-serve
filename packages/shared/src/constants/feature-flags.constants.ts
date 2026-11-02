@@ -65,6 +65,22 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Dark-launch gate for the Mailing List Sync Settings section (#4024) — the ON/OFF toggle,
+ * direction selector, and "Sync Now" entry point on the mailing list view page
+ * (mailing-list-view.component.html). Default false: an unflagged evaluation hides the section
+ * entirely so the feature ships dark ahead of #4022's full rollout.
+ *
+ * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through
+ * `FeatureFlagService.getBooleanFlag`, which never runs server-side, so it cannot gate an Express
+ * handler. The actual `sync_mode` write (via `MailingListService.updateMailingList`) and the
+ * sync-diff/sync-apply BFF endpoints stay reachable by a direct API caller while this is off — the
+ * real-time auto-sync execution kill switch is tracked separately as a server-side env-var flag in
+ * #4878. Both would need to be enabled for the feature to be fully reachable; this flag alone only
+ * controls whether Self Serve renders the Sync Settings UI.
+ */
+export const MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG = 'mailing-list-committee-sync-enabled';
+
+/**
  * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
  * restricted to internal audiences while their real-data backends were built, and both gates are
  * gone: Org Profile logo upload was ungated in #1887, and person-detail-drawer company emails in
