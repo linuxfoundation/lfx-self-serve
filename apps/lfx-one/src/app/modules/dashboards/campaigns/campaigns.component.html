@@ -496,6 +496,10 @@
                       data-testid="campaigns-email-generate-btn" />
                     @if (emailBriefOutput() === null) {
                       <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
+                    } @else if (surveySingleSendStaged()) {
+                      <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">
+                        This email is staged or unconfirmed in HubSpot. Edit the draft there, or start the series over to write new copy.
+                      </span>
                     }
                   </div>
 

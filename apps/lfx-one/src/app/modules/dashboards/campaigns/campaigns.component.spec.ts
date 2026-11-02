@@ -6616,7 +6616,8 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       await internals().onGenerateEmailCopy();
 
-      expect(gen).toHaveBeenCalledWith('tlf', 'brief-9', 'Survey Promo', 'urgency-fomo', undefined);
+      // No urgency variant: campaign-service writes it as an event invite.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-9', 'Survey Promo', undefined, undefined);
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {
@@ -8600,6 +8601,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       surveySeriesRestarted: Signal<boolean>;
       emailCopy: WritableSignal<unknown>;
       onStageEmailSend(): Promise<void>;
+      canGenerateEmailCopy: Signal<boolean>;
+      onGenerateSurveySequence(): Promise<void>;
+      onEmailProceedFromPlanning(brief: unknown): void;
     }
     const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
 
@@ -9235,6 +9239,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(seq().surveySeriesRestarted()).toBe(true);
       expect(seq().surveySeriesStarted()).toBe(false);
       expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('locks Regenerate once the single Stage button staged the brief', () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      expect(seq().canGenerateEmailCopy(), 'fixture precondition').toBe(true);
+      seq().emailStaging.set('staging');
+      expect(seq().canGenerateEmailCopy(), 'regenerating would never reach the draft').toBe(false);
+    });
+
+    it('moves the next write to new briefs when Planning drops a staged series', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set([seq().surveySequenceSends()[0].briefId]);
+      expect(seq().surveySeriesRestarted(), 'fixture precondition').toBe(false);
+
+      seq().onEmailProceedFromPlanning(surveyBrief);
+
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+      expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
+    });
+
+    it('keeps the briefs when Planning drops a series that never reached HubSpot', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+
+      seq().onEmailProceedFromPlanning(surveyBrief);
+
+      expect(seq().surveySeriesRestarted()).toBe(false);
     });
 
     it('locks the count and rewrites while the single Stage button is still in flight', () => {

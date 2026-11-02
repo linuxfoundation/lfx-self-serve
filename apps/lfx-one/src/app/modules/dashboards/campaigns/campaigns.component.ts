@@ -1720,7 +1720,11 @@ export class CampaignsComponent {
    * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
    * ONLY supplied event facts and has nothing to work from otherwise.
    */
-  protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
+  protected readonly canGenerateEmailCopy = computed(
+    // Not over a staged or held survey send: staging the brief again returns its existing draft,
+    // so new copy here would never reach HubSpot. Start the series over writes on new briefs.
+    () => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating' && !this.surveySingleSendStaged()
+  );
 
   /**
    * Whether the operator wants a native HubSpot A/B test on this send. Off by default — most
@@ -2144,6 +2148,8 @@ export class CampaignsComponent {
   protected readonly emailStaging = signal<'idle' | 'staging' | 'done' | 'error'>('idle');
   /** Every scope the single Stage button created a draft under; survives the display reset. */
   private readonly singleSendStagedScopes = signal<ReadonlySet<string>>(new Set());
+  /** The survey the current series was written for, so a brief reset can retire its briefs. */
+  private seriesBase: { projectSlug: string; baseSlug: string } | null = null;
   /**
    * A stage ended WITHOUT a terminal answer, so a HubSpot draft may still be created against this
    * brief's audience: the poll lost track of the job or timed out, the create was accepted with no
@@ -3814,7 +3820,7 @@ export class CampaignsComponent {
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
     const projectSlug = this.activeFoundationSlug();
-    if (brief === null || projectSlug === '') {
+    if (brief === null || projectSlug === '' || this.surveySingleSendStaged()) {
       return;
     }
 
@@ -3846,7 +3852,8 @@ export class CampaignsComponent {
       // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
       // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
       const result = await firstValueFrom(
-        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo', this.selectedEmailSegment())
+        // Not for a survey or report: campaign-service writes that variant as an event invite.
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), this.isSurvey() ? undefined : 'urgency-fomo', this.selectedEmailSegment())
       );
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
@@ -4047,6 +4054,7 @@ export class CampaignsComponent {
     this.clearSequenceDates();
 
     const baseSlug = brief.eventDetails?.slug ?? '';
+    this.seriesBase = { projectSlug, baseSlug };
     const restart = this.readSeriesRestart(projectSlug, baseSlug);
     const seriesSlug = restart > 0 ? `${baseSlug}-r${restart + 1}` : baseSlug;
 
@@ -7599,6 +7607,7 @@ export class CampaignsComponent {
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
     // The survey series is this brief's too: its sends are copies of it under each stage.
+    this.retireStagedSeries();
     this.resetSurveySequence();
     // The survey surface hides the picker, so the selection cleared above would otherwise stay
     // empty -- Stage disabled behind "Finding a template" -- until the list was fetched again.
@@ -7924,6 +7933,24 @@ export class CampaignsComponent {
    * something the page no longer holds. The generation bump stops a loop still awaiting upstream
    * from writing the previous series back.
    */
+  /**
+   * Before a brief reset drops the series' staging records: if any send reached HubSpot, move the
+   * next write of that survey to NEW briefs, as Start the series over does. Otherwise returning to
+   * Planning and writing again reuses the briefs, and staging hands back the old drafts.
+   */
+  private retireStagedSeries(): void {
+    const base = this.seriesBase;
+    this.seriesBase = null;
+    const reachedHubSpot =
+      this.sequenceStagedBriefIds().length > 0 ||
+      this.sequenceUnresolvedBriefIds().length > 0 ||
+      this.sequenceStagingState() === 'staging' ||
+      this.sendWorkflowResult() !== null;
+    if (base !== null && reachedHubSpot) {
+      this.writeSeriesRestart(base.projectSlug, base.baseSlug, this.readSeriesRestart(base.projectSlug, base.baseSlug) + 1);
+    }
+  }
+
   private resetSurveySequence(): void {
     this.surveySequenceGeneration++;
     this.surveySequenceSends.set([]);

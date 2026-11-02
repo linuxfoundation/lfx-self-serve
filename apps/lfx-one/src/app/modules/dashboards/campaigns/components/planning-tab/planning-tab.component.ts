@@ -16,7 +16,7 @@ import {
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
 } from '@lfx-one/shared/constants';
-import { campaignSurveySourceTextLength, coerceCampaignEventDetails, deriveSurveySlug, normaliseForMatch } from '@lfx-one/shared/utils';
+import { campaignSurveySourceTextLength, canonicalHttpUrl, coerceCampaignEventDetails, deriveSurveySlug, normaliseForMatch } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, skip, Subject, Subscription, switchMap, take } from 'rxjs';
@@ -1665,6 +1665,11 @@ export class PlanningTabComponent implements OnInit {
     const sourceLength = campaignSurveySourceTextLength(this.emailEditForm.controls.sourceText.value ?? '');
     if (this.isSurvey() && sourceLength > CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS) {
       this.emailEditError.set(`The source text is ${sourceLength} characters; shorten it to ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS} or fewer.`);
+      return;
+    }
+    // The link becomes the email's button, and an unusable one drops the button silently.
+    if (this.isSurvey() && canonicalHttpUrl(this.emailEditForm.controls.registrationUrl.value ?? '') === '') {
+      this.emailEditError.set('Enter the full survey or report link, starting with https://.');
       return;
     }
     this.emailEditError.set('');

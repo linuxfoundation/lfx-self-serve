@@ -1892,6 +1892,18 @@ describe('PlanningTabComponent email brief editing', () => {
     expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
   });
 
+  it.each([[''], ['/survey'], ['not a link']])('refuses a survey link edit that is not a full web address (%j)', async (bad) => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Title', registrationUrl: 'https://surveys.example.com/s/one' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['registrationUrl'].setValue(bad);
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect(internals().eventDetails()?.registrationUrl).toBe('https://surveys.example.com/s/one');
+  });
+
   it('clears a refused edit when the editor is cancelled and reopened', async () => {
     await buildWithScrape('survey');
     internals().eventDetails.set({ ...scraped, sourceText: 'short' });
