@@ -200,6 +200,21 @@ describe('MeetingsHomeStore', () => {
       expect(store.upcomingRows()[0].myRsvp).toBeNull();
     });
 
+    it('drops a meeting once it ends while the page stays open', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+      try {
+        const store = create();
+        upcoming$.next([buildMeeting({ start_time: new Date().toISOString() })]);
+        expect(store.upcomingRows()).toHaveLength(1);
+
+        vi.advanceTimersByTime(2 * 60 * 60 * 1000);
+
+        expect(store.upcomingRows()).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('maps past meetings to rows, most recent first, keyed by their resource id', () => {
       const store = create();
       past$.next([buildPastMeeting('older', inDays(-5)), buildPastMeeting('newer', inDays(-1))]);

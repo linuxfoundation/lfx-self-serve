@@ -17,7 +17,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { catchError, combineLatest, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, interval, map, Observable, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
 /**
  * State of the Me lens meetings home list, provided by the page component.
@@ -38,6 +38,8 @@ export class MeetingsHomeStore {
   private readonly upcomingFailedState: WritableSignal<boolean> = signal(false);
   private readonly pastFailedState: WritableSignal<boolean> = signal(false);
   private readonly retry$ = new Subject<void>();
+  /** Current time, ticking every minute so ended dates drop out and day buckets roll over. */
+  private readonly now: Signal<Date> = this.initClock();
 
   public readonly tab: Signal<MeetingDashboardView> = this.tabState.asReadonly();
   public readonly search: Signal<string> = this.searchState.asReadonly();
@@ -78,7 +80,7 @@ export class MeetingsHomeStore {
   /** Rows shown so far; back to one page whenever the tab, search or filters change. */
   public readonly visibleCount: Signal<number> = this.visibleCountState.asReadonly();
   public readonly groups: Signal<MeetingDayGroup[]> = computed(() =>
-    groupMeetingsByDayBucket(this.filteredRows(), this.tab(), new Date(), this.visibleCount())
+    groupMeetingsByDayBucket(this.filteredRows(), this.tab(), this.now(), this.visibleCount())
   );
   public readonly hasMore: Signal<boolean> = computed(() => this.visibleCount() < this.filteredRows().length);
   public readonly hasActiveQuery: Signal<boolean> = computed(() => this.search().trim() !== '' || countAppliedMeetingFilters(this.filters()) > 0);
@@ -111,6 +113,11 @@ export class MeetingsHomeStore {
   /** Re-requests both feeds after a failure. */
   public retry(): void {
     this.retry$.next();
+  }
+
+  private initClock(): Signal<Date> {
+    if (!isPlatformBrowser(this.platformId)) return signal(new Date());
+    return toSignal(interval(60_000).pipe(map(() => new Date())), { initialValue: new Date() });
   }
 
   /** Re-requests the feed when the viewer changes (login, impersonation), never keeping the previous viewer's rows. */
@@ -148,7 +155,7 @@ export class MeetingsHomeStore {
       const meetings = this.upcomingMeetings()
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
         .map((meeting) => this.withCurrentRsvps(meeting));
-      return expandMeetingOccurrences(meetings);
+      return expandMeetingOccurrences(meetings, this.now());
     });
   }
 
