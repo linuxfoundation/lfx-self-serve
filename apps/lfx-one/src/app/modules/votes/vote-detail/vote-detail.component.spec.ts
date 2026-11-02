@@ -785,7 +785,7 @@ describe('VoteDetailComponent', () => {
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[0].progress).toEqual({
         segments: [
           { percentage: 50, className: 'bg-blue-600' },
-          { percentage: 25, className: 'bg-gray-400' },
+          { percentage: 25, className: 'bg-gray-800' },
         ],
         ariaLabel: '2 voted, 1 abstained, 1 not voted yet of 4 eligible voters',
       });
