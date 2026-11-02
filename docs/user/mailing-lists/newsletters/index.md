@@ -62,7 +62,7 @@ The **Send** step summarizes the audience size, who the newsletter is from, wher
 - Select **Send test** to send a test copy to your own email address only.
 - Choose **Send immediately** and select **Send now**, or choose **Schedule for later**, pick a time, and select **Schedule**. A scheduled time must be at least 35 minutes from now and no more than 72 hours ahead.
 
-A scheduled newsletter can't be edited. To change it, open it from the **Scheduled** tab and select **Cancel schedule**; it goes back to being a draft, and the time you picked is kept so you can schedule it again. You can't cancel when it is too close to the send time: you see **Too late to cancel**, and the newsletter goes out as scheduled.
+A scheduled newsletter can't be edited. To change it, find it on the **Scheduled** tab and select **Cancel schedule** on its row, then open it from the **Drafts** tab to edit it. It goes back to being a draft and the time you picked is kept so you can schedule it again. You can't cancel when it is too close to the send time: you see **Too late to cancel**, and the newsletter goes out as scheduled.
 
 ## Personalization
 
@@ -89,9 +89,9 @@ Select the failed count to open **Failed deliveries**, which lists the addresses
 
 ## Read the newsletters you receive
 
-In the **Me** lens, select **Newsletters** in the sidebar. You see one card per foundation whose newsletters you have received. Select **View newsletters** to see that foundation's newsletters, search them, and filter by project. Select a newsletter to read it.
+In the **Me** lens, select **Newsletters** in the sidebar. You see one card for each foundation where you are a member of a Newsletter group. The newsletters shown follow your group membership, so when you join a Newsletter group you can also read the newsletters it sent before you joined. A foundation whose Newsletter group hasn't sent anything yet still gets a card. Select **View newsletters** to see that foundation's newsletters, search them, and filter by project. Select a newsletter to read it.
 
-If you have no newsletters yet, the page says "No newsletters yet". Newsletters are sent to the members of a Newsletter group, so join the group to receive them.
+If you aren't a member of any Newsletter group, the page says "No newsletters yet". Join a foundation or project's Newsletter group to see its newsletters.
 
 From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to invite a colleague to the foundation's newsletter. To send an invitation, you must be a member of the foundation's newsletter group and have a verified email at one of the member organizations named in the invite dialog. Your colleague's company email must also be at one of those member organizations.
 
