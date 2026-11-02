@@ -387,7 +387,13 @@ test.describe('My Newsletters — foundation drill-down', () => {
 
     // Copy link still copies, with a success toast
     await page.getByTestId('share-dialog-copy-link').click();
-    await expect(page.getByText('Link Copied')).toBeVisible();
+    await expect(page.getByText('Link Copied', { exact: true })).toBeVisible();
+
+    // Escape dismisses only the share dialog; the drawer underneath stays open
+    await expect(page.getByTestId('newsletter-preview-drawer-header')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(shareDialog).toBeHidden({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('newsletter-preview-drawer-header')).toBeVisible();
   });
 
   test('subject renders as a real link to the canonical permalink', async ({ page }) => {

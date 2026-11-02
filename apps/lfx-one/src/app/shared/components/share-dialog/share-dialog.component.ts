@@ -1,12 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Component, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ShareDialogData, SocialShareLink } from '@lfx-one/shared/interfaces';
 import { buildSocialShareLinks } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { filter, fromEvent } from 'rxjs';
 
 /**
  * Share a link to X, LinkedIn, Reddit or email, or copy it. Opened headless through
@@ -24,12 +27,19 @@ export class ShareDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig<ShareDialogData>);
   private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly document = inject(DOCUMENT);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Dialog Data ===
   private readonly data = this.config.data as ShareDialogData;
   protected readonly headingId = ShareDialogComponent.headingId;
   protected readonly eyebrow = this.data.eyebrow ?? this.data.title;
   protected readonly links: SocialShareLink[] = buildSocialShareLinks(this.data.url, this.data.title);
+
+  // === Constructor ===
+  public constructor() {
+    this.initEscapeToClose();
+  }
 
   // === Protected Methods ===
   protected onCopyLink(): void {
@@ -38,5 +48,26 @@ export class ShareDialogComponent {
 
   protected onClose(): void {
     this.dialogRef.close();
+  }
+
+  // === Private Initializers ===
+  /**
+   * Escape closes only this dialog. PrimeNG overlays (e.g. the newsletter drawer this opens over) listen
+   * for Escape on `document` without checking whether they are the top layer, so the key is claimed in
+   * the window capture phase — before any `document` listener runs — and not passed on.
+   */
+  private initEscapeToClose(): void {
+    const win = this.document.defaultView;
+    if (!win) return;
+
+    fromEvent<KeyboardEvent>(win, 'keydown', { capture: true })
+      .pipe(
+        filter((event) => event.key === 'Escape'),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((event) => {
+        event.stopPropagation();
+        this.onClose();
+      });
   }
 }

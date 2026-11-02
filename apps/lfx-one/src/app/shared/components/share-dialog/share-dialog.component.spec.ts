@@ -63,6 +63,18 @@ describe('ShareDialogComponent', () => {
     expect(copyLink).toHaveBeenCalledWith(URL, 'Newsletter link copied to clipboard.');
   });
 
+  it('claims Escape so overlays underneath do not also close', async () => {
+    await mount({ url: URL, title: 'K8s Weekly #42' });
+    const documentListener = vi.fn();
+    document.addEventListener('keydown', documentListener);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(close).toHaveBeenCalled();
+    expect(documentListener).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', documentListener);
+  });
+
   it('closes from the round close button', async () => {
     await mount({ url: URL, title: 'K8s Weekly #42' });
     find('share-dialog-close')!.click();

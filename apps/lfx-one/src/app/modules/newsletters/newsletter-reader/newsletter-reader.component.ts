@@ -103,7 +103,7 @@ export class NewsletterReaderComponent {
     const url = this.shareUrl();
     if (!url) return;
 
-    this.shareDialog.open({ url, title: this.newsletter()?.subject ?? this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
+    this.shareDialog.open({ url, title: this.newsletter()?.subject || this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
   }
 
   protected retryJoin(): void {
