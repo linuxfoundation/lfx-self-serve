@@ -246,12 +246,12 @@ export const VALKEY_CACHE = {
     // peaks at 1.85 MiB estimated. 4.3 MiB × 1.25 rounds up to 6 MiB. The default view since lfx-self-serve#4694
     // (Past 2 years, all projects), measured 2026-10-29 against prod the same way: 2.00 MiB (1.86 MiB for the
     // largest company; the larger value is a placeholder account).
-    'org-lens-sf:v1:people-all:v4': 6 * 1_048_576,
-    // `v6` (lfx-self-serve#4735; the unranged roster keeps `v4:roster`) leaves the three code counts off ranged rows
-    // (counted live from `people-contributors`), each stored as an absent cell, and is one entry for both organization
-    // scopes. Measured 2026-10-30 on the lf-dbt#3166 dev build: largest value 4.57 MB (largest org, All time); the cap
-    // carries over.
-    'org-lens-sf:v1:people-all:v6': 6 * 1_048_576,
+    // `v6` (lfx-self-serve#4735) leaves the three code counts off ranged rows (counted live from `people-contributors`),
+    // each stored as an absent cell, and is one entry for both organization scopes. Measured 2026-10-30 on the
+    // lf-dbt#3166 dev build: largest value 4.57 MB (largest org, All time). `v7` (lfx-self-serve#4287) reads training
+    // foundation labels from people-list rows only, a few labels fewer at most, and also keys the unranged roster
+    // (`v7:roster`, formerly `v4:roster`); the cap carries over.
+    'org-lens-sf:v1:people-all:v7': 6 * 1_048_576,
     // `people-former` is stored as named-key JSON rows (`withOrgCache`, not columnar). `v3` measured 2026-10-27
     // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
     // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.

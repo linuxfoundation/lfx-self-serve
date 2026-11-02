@@ -302,6 +302,7 @@ export class TraineesComponent {
         email: trainee.email,
         initials: computePersonInitials(trainee.name),
         avatarColorClass: avatarColorClass(trainee.personKey),
+        onPeopleList: trainee.onPeopleList,
         status: certCourseIds.size > 0 ? 'Certified' : 'Enrolled',
         coursesCount: courseIds.size,
         certsCount: certCourseIds.size,

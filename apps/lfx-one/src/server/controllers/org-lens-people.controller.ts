@@ -524,6 +524,7 @@ export class OrgLensPeopleController {
         org_uid: orgUid,
         time_range: range,
         trainee_count: response.trainees.length,
+        outside_learner_count: response.trainees.filter((trainee) => !trainee.onPeopleList).length,
         detail_count: response.details.length,
         foundation_count: response.filterOptions.foundations.length,
         project_count: response.filterOptions.projects.length,
