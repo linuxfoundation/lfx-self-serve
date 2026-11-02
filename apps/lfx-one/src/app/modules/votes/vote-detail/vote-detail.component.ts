@@ -837,7 +837,7 @@ export class VoteDetailComponent {
     return {
       segments: [
         { percentage: segments.voted, className: 'bg-blue-600' },
-        { percentage: segments.abstained, className: 'bg-slate-400' },
+        { percentage: segments.abstained, className: 'bg-gray-400' },
       ],
       ariaLabel: `${stats.totalResponses - Math.min(abstained, stats.totalResponses)} voted, ${abstained} abstained, ${notVoted} not voted yet of ${stats.eligibleVoters} eligible voters`,
     };
