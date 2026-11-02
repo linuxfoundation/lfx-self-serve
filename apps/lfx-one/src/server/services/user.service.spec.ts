@@ -669,6 +669,36 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     expect(meetings).toHaveLength(1);
     expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
     expect(meetings[0].my_registrant_ids).toEqual(['reg-1']);
+    expect(meetings[0].my_rsvps).toEqual([rsvp]);
+  });
+
+  it('lists every RSVP from an active registration in my_rsvps and drops stale ones', async () => {
+    const occurrenceId = String(Math.floor(Date.parse(tomorrow) / 1000));
+    const meeting: Partial<Meeting> = {
+      id: 'synthetic-weekly',
+      start_time: tomorrow,
+      duration: 60,
+      recurrence: { type: 2, repeat_interval: 1 },
+      occurrences: [{ occurrence_id: occurrenceId, start_time: tomorrow, duration: 60 }],
+    };
+    const series: Partial<MeetingRsvp> = { id: 'series', meeting_id: meeting.id, registrant_id: 'reg-active', response_type: 'accepted', scope: 'all' };
+    const single: Partial<MeetingRsvp> = { ...series, id: 'single', response_type: 'declined', scope: 'single', occurrence_id: occurrenceId };
+    const stale: Partial<MeetingRsvp> = { ...series, id: 'stale', registrant_id: 'reg-removed' };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_meeting') return queryPage([meeting]);
+      if (params?.type === 'v1_meeting_registrant') return queryPage([{ uid: 'reg-active', meeting_id: meeting.id }]);
+      if (params?.type === 'v1_meeting_rsvp') return queryPage([series, single, stale]);
+      return queryPage([]);
+    });
+    const service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const [result] = await service.getUserMeetings(req);
+
+    expect(result.my_rsvps?.map((rsvp) => rsvp.id)).toEqual(['series', 'single']);
   });
 
   it.each(['identity-rsvp', 'registrant', 'registrant-rsvp', 'empty'])(
@@ -700,9 +730,11 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
       if (lookup === 'empty') {
         expect(result[0].my_rsvp).toBeNull();
         expect(result[0].my_registrant_ids).toEqual([]);
+        expect(result[0].my_rsvps).toEqual([]);
       } else {
         expect(result[0].my_rsvp).toBeUndefined();
         expect(result[0].my_registrant_ids).toBeUndefined();
+        expect(result[0].my_rsvps).toBeUndefined();
       }
     }
   );
@@ -1620,5 +1652,94 @@ describe('UserService.enrichPastMeetingsWithUserAttendance', () => {
     await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', []);
 
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.getUserPastMeetings artifact flags', () => {
+  const req = {} as unknown as Request;
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const pastMeeting = (id: string): Partial<PastMeeting> => ({
+    id: `row-${id}`,
+    meeting_and_occurrence_id: id,
+    start_time: yesterday,
+    scheduled_end_time: yesterday,
+  });
+  const recording = (id: string, shareUrl?: string) => ({
+    meeting_and_occurrence_id: id,
+    sessions: [{ uuid: 's', start_time: yesterday, total_size: 1, share_url: shareUrl }],
+  });
+  const summary = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id: `summary-${id}`,
+    meeting_and_occurrence_id: id,
+    content: 'Notes',
+    approved: true,
+    requires_approval: true,
+    ...overrides,
+  });
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: PastMeeting[]) => items },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: PastMeeting[]) => items },
+    });
+  });
+
+  function mockIndexes(meetings: Partial<PastMeeting>[], recordings: unknown[] | Error, summaries: unknown[] | Error): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_past_meeting') return queryPage(meetings);
+      if (params?.type === 'v1_past_meeting_recording') return recordings instanceof Error ? Promise.reject(recordings) : queryPage(recordings);
+      if (params?.type === 'v1_past_meeting_summary') return summaries instanceof Error ? Promise.reject(summaries) : queryPage(summaries);
+      return queryPage([]);
+    });
+  }
+
+  it('flags recordings with a share URL and visible summaries with content', async () => {
+    mockIndexes(
+      [pastMeeting('m1:1'), pastMeeting('m2:1'), pastMeeting('m3:1')],
+      [recording('m1:1', 'https://zoom.example/rec/1'), recording('m2:1')],
+      [summary('m1:1'), summary('m2:1', { approved: false }), summary('m3:1', { content: '', requires_approval: false })]
+    );
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com');
+
+    expect(result.map((m) => [m.id, m.has_recording, m.has_ai_summary])).toEqual([
+      ['m1:1', true, true],
+      ['m2:1', false, false],
+      ['m3:1', false, false],
+    ]);
+    for (const type of ['v1_past_meeting_recording', 'v1_past_meeting_summary']) {
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ type, tags: ['meeting_and_occurrence_id:m1:1', 'meeting_and_occurrence_id:m2:1', 'meeting_and_occurrence_id:m3:1'] })
+      );
+    }
+  });
+
+  it('leaves only the failed flag undefined when one index lookup fails', async () => {
+    mockIndexes([pastMeeting('m1:1')], new Error('recording index down'), [summary('m1:1')]);
+
+    const [result] = await service.getUserPastMeetings(req, 'user@example.com');
+
+    expect(result.has_recording).toBeUndefined();
+    expect(result.has_ai_summary).toBe(true);
+  });
+
+  it('queries at most 100 past meetings per request', async () => {
+    const meetings = Array.from({ length: 150 }, (_, i) => pastMeeting(`m${i}:1`));
+    mockIndexes(meetings, [], []);
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com');
+
+    const recordingCalls = proxyRequest.mock.calls.filter(([, , , , params]) => params?.type === 'v1_past_meeting_recording');
+    expect(recordingCalls.map(([, , , , params]) => params.tags.length)).toEqual([100, 50]);
+    expect(result.every((m) => m.has_recording === false)).toBe(true);
   });
 });
