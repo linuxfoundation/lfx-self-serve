@@ -5,6 +5,8 @@ import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
 
+import { PHONE_MEDIA_QUERY } from './viewport.constants';
+
 /**
  * Configurable labels for votes displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed
@@ -308,5 +310,5 @@ export const DRAFT_VOTE_PLACEHOLDER_QUESTION: CreatePollQuestion = {
   choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }],
 };
 
-/** Matches Tailwind's `sm` breakpoint (640px) from below — the width under which voting surfaces switch to their phone layouts. */
-export const VOTES_MOBILE_MEDIA_QUERY = '(max-width: 639.98px)';
+/** The phone breakpoint, under which voting surfaces switch to their phone layouts. */
+export const VOTES_MOBILE_MEDIA_QUERY = PHONE_MEDIA_QUERY;
