@@ -317,6 +317,34 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
     });
 
+    it('makes the invited count a button that opens the guest drawer when the viewer can see the guests (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).toBe('BUTTON');
+      count.click();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(true);
+    });
+
+    it('leaves the invited count as plain text when the guest list is hidden from the viewer (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }), project: buildProject() })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).not.toBe('BUTTON');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 

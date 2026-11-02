@@ -364,10 +364,22 @@
 
                   <!-- Total Invitees -->
                   @if (totalInvitees() > 0 && !isPastMeeting()) {
-                    <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
-                      <i class="fa-light fa-users"></i>
-                      <span>{{ totalInvitees() }} invited</span>
-                    </div>
+                    @if (authenticated() && canViewGuests()) {
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-blue-500"
+                        data-testid="total-invitees"
+                        [attr.aria-label]="totalInvitees() + ' invited, show guest list'"
+                        (click)="onRegistrantsToggle()">
+                        <i class="fa-light fa-users" aria-hidden="true"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </button>
+                    } @else {
+                      <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
+                        <i class="fa-light fa-users"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </div>
+                    }
                   }
                 </div>
 
