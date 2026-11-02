@@ -50,6 +50,7 @@ export * from './permissions.interface';
 
 // Meeting interfaces
 export * from './meeting.interface';
+export * from './meeting-list.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
