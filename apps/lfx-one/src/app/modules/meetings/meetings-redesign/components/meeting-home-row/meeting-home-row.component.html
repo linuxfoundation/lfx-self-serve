@@ -121,5 +121,10 @@
     </span>
   </div>
 
-  <!-- Right-side actions (RSVP, row menu, Join, past Recording / AI Summary) go here, after a margin-left:auto wrapper. -->
+  <!-- Right-side actions (RSVP, row menu, Join, past Recording / AI Summary) -->
+  <div class="ml-auto flex flex-wrap items-center justify-end gap-[18px]" data-testid="meetings-home-row-actions">
+    @if (!past()) {
+      <lfx-meeting-rsvp-controls [row]="row()" />
+    }
+  </div>
 </div>

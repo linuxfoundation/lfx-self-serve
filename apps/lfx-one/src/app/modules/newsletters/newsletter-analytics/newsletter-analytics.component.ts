@@ -10,7 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT } from '@lfx-one/shared/constants';
+import { lfxColors, NEWSLETTER_TOP_LINKS_LIMIT, SHARE_CHANNEL_LABELS, SHARE_CHANNELS } from '@lfx-one/shared/constants';
 import { NewsletterAnalytics, NewsletterChartData, NewsletterLinkRow } from '@lfx-one/shared/interfaces';
 import { normalizeToUrl } from '@lfx-one/shared/utils';
 import { NewsletterService } from '@services/newsletter.service';
@@ -94,6 +94,8 @@ export class NewsletterAnalyticsComponent {
   protected readonly clickChartData: Signal<NewsletterChartData | null> = this.initClickChartData();
   protected readonly topLinkRows: Signal<NewsletterLinkRow[]> = this.initTopLinkRows();
   protected readonly topLinksLimit = NEWSLETTER_TOP_LINKS_LIMIT;
+  /** "LinkedIn 2 · Copy link 1" — the channels used, in dialog order; a hint when there are none yet. */
+  protected readonly shareBreakdown: Signal<string> = this.initShareBreakdown();
 
   public constructor() {
     // Lazy chart rendering on the browser only — Chart.js touches `window` on init.
@@ -257,6 +259,16 @@ export class NewsletterAnalyticsComponent {
           },
         ],
       };
+    });
+  }
+
+  private initShareBreakdown(): Signal<string> {
+    return computed(() => {
+      const byChannel = this.analytics()?.shares_by_channel ?? {};
+      const parts = SHARE_CHANNELS.filter((channel) => (byChannel[channel] ?? 0) > 0).map(
+        (channel) => `${SHARE_CHANNEL_LABELS[channel]} ${byChannel[channel]}`
+      );
+      return parts.length ? parts.join(' · ') : 'from the in-app Share button';
     });
   }
 

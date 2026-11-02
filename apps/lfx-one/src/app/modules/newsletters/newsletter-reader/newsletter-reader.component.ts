@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, PLATFORM_ID, REQUEST_CONTEXT, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,13 +14,17 @@ import {
   NewsletterInviteLookup,
   NewsletterJoinState,
   NewsletterReaderState,
+  NewsletterShareEvent,
+  NewsletterShareTally,
+  NewsletterShareTarget,
   ServerRequestContext,
 } from '@lfx-one/shared/interfaces';
-import { newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
+import { addShareToTally, newsletterIssuePath, toAbsoluteUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { NewsletterService } from '@services/newsletter.service';
 import { ProjectService } from '@services/project.service';
 import { ShareDialogService } from '@services/share-dialog.service';
+import { ShareButtonComponent } from '../components/share-button/share-button.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, defer, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap, timer } from 'rxjs';
@@ -45,7 +49,14 @@ import { NewsletterPreviewComponent } from '../components/newsletter-preview/new
  */
 @Component({
   selector: 'lfx-newsletter-reader',
-  imports: [ButtonComponent, NewsletterMemberBenefitBannerComponent, NewsletterNotFoundComponent, NewsletterPreviewComponent, SkeletonModule],
+  imports: [
+    ButtonComponent,
+    NewsletterMemberBenefitBannerComponent,
+    NewsletterNotFoundComponent,
+    NewsletterPreviewComponent,
+    ShareButtonComponent,
+    SkeletonModule,
+  ],
   providers: [DialogService],
   templateUrl: './newsletter-reader.component.html',
 })
@@ -116,12 +127,27 @@ export class NewsletterReaderComponent {
     return toAbsoluteUrl(newsletterIssuePath(slug, id), isPlatformBrowser(this.platformId));
   });
 
+  // === Writable Signals (linked) ===
+  /** Share count beside the Share button: the server's `share_count`, bumped after each accepted share. Resets per issue. */
+  protected readonly shareTally = linkedSignal<NewsletterShareTally>(() => ({ count: this.newsletter()?.share_count ?? null, channels: [] }));
+
   // === Protected Methods ===
   protected openShare(): void {
     const url = this.shareUrl();
+    const project = this.project();
+    const newsletter = this.newsletter();
     if (!url) return;
 
-    this.shareDialog.open({ url, title: this.newsletter()?.subject || this.pageTitle(), copiedMessage: 'Newsletter link copied to clipboard.' });
+    // Bind the share to the issue the dialog opened for: Back/Forward can show another issue while it is open.
+    const target: NewsletterShareTarget | null = project && newsletter ? { projectUid: project.uid, newsletterId: newsletter.id } : null;
+    this.shareDialog.open({
+      url,
+      title: newsletter?.subject || this.pageTitle(),
+      copiedMessage: 'Newsletter link copied to clipboard.',
+      onShare: (channel) => {
+        if (target) this.onShared({ ...target, channel });
+      },
+    });
   }
 
   protected onInvite(): void {
@@ -134,6 +160,19 @@ export class NewsletterReaderComponent {
       closable: true,
       dismissableMask: false,
       data: { foundation } satisfies NewsletterInviteDialogData,
+    });
+  }
+
+  /**
+   * Records the share and, once the server accepts it, bumps the visible count if that issue is still shown.
+   * Not tied to the component's lifetime: leaving the page must not abort the write. `recordShare`
+   * completes after one emission, so nothing leaks, and the id check keeps a late result off another issue.
+   */
+  protected onShared(event: NewsletterShareEvent): void {
+    this.newsletterService.recordShare(event.projectUid, event.newsletterId, event.channel).subscribe((accepted) => {
+      if (accepted && this.newsletter()?.id === event.newsletterId) {
+        this.shareTally.update((tally) => addShareToTally(tally, event.channel));
+      }
     });
   }
 

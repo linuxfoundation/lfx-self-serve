@@ -5,7 +5,7 @@ import { DOCUMENT } from '@angular/common';
 import { Component, DestroyRef, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { ShareDialogData, SocialShareLink } from '@lfx-one/shared/interfaces';
+import { SocialShareChannel, ShareDialogData, SocialShareLink } from '@lfx-one/shared/interfaces';
 import { buildSocialShareLinks } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -43,7 +43,21 @@ export class ShareDialogComponent {
 
   // === Protected Methods ===
   protected onCopyLink(): void {
-    this.clipboardShare.copyLink(this.data.url, this.data.copiedMessage ?? 'Link copied to clipboard.');
+    if (this.clipboardShare.copyLink(this.data.url, this.data.copiedMessage ?? 'Link copied to clipboard.')) {
+      this.reportShare('copy_link');
+    }
+  }
+
+  /** A destination link was activated; the browser still follows its href. */
+  protected onShareLink(link: SocialShareLink): void {
+    this.reportShare(link.key);
+  }
+
+  /** Middle-click opens the link natively through `auxclick`, not `click`; right-click (button 2) is not a share. */
+  protected onShareLinkAuxClick(event: MouseEvent, link: SocialShareLink): void {
+    if (event.button === 1) {
+      this.reportShare(link.key);
+    }
   }
 
   protected onClose(): void {
@@ -69,5 +83,10 @@ export class ShareDialogComponent {
         event.stopPropagation();
         this.onClose();
       });
+  }
+
+  // === Private Helpers ===
+  private reportShare(channel: SocialShareChannel): void {
+    this.data.onShare?.(channel);
   }
 }

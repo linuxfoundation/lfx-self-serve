@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { newsletterIssuePath } from './newsletter.utils';
+import { addShareToTally, newsletterIssuePath } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
   it('builds the relative permalink path from a project slug and newsletter id', () => {
@@ -12,5 +12,23 @@ describe('newsletterIssuePath', () => {
 
   it('does not encode or otherwise transform its inputs', () => {
     expect(newsletterIssuePath('kubernetes', 'issue-42')).toBe('/newsletters/kubernetes/issue-42');
+  });
+});
+
+describe('addShareToTally', () => {
+  const base = { count: 4, channels: [] };
+
+  it('counts the first share to a channel', () => {
+    expect(addShareToTally(base, 'linkedin')).toEqual({ count: 5, channels: ['linkedin'] });
+  });
+
+  it('counts each channel once, like the server', () => {
+    const once = addShareToTally(base, 'linkedin');
+    expect(addShareToTally(once, 'linkedin')).toBe(once);
+    expect(addShareToTally(once, 'copy_link').count).toBe(6);
+  });
+
+  it('keeps an unknown count unknown but remembers the channel', () => {
+    expect(addShareToTally({ ...base, count: null }, 'x')).toEqual({ count: null, channels: ['x'] });
   });
 });

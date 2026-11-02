@@ -317,6 +317,34 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="total-invitees"]')?.textContent).toContain('7 invited');
     });
 
+    it('makes the invited count a button that opens the guest drawer when the viewer can see the guests (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, meeting_type: 'Technical', show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(3)));
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).toBe('BUTTON');
+      count.click();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(true);
+    });
+
+    it('leaves the invited count as plain text when the guest list is hidden from the viewer (#4864)', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false, registrant_count: 7 }), project: buildProject() })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const count = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="total-invitees"]') as HTMLElement;
+      expect(count.tagName).not.toBe('BUTTON');
+    });
+
     it('fetches and offers the guest list when the meeting shares its attendees', async () => {
       const page = await renderInvitee(true);
 
@@ -388,6 +416,33 @@ describe('MeetingJoinComponent', () => {
       fixture.destroy();
 
       expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('closes the guests drawer and releases the launcher when the route moves in place to another meeting (#4857)', async () => {
+      const overlayState = TestBed.inject(OverlayStateService);
+      const fixture = await renderWithRoster();
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+      expect(overlayState.anyOpen()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: 'another-meeting-id' }));
+      await settle();
+
+      expect(fixture.componentInstance.showRegistrants()).toBe(false);
+      expect(overlayState.anyOpen()).toBe(false);
+    });
+
+    it('gives the guests drawer a full-height class on mobile only, leaving the desktop width chain untouched (#4857)', async () => {
+      const fixture = await renderWithRoster();
+
+      fixture.componentInstance.showRegistrants.set(true);
+      await settle();
+
+      const panel = document.querySelector('.p-drawer') as HTMLElement | null;
+      expect(panel).not.toBeNull();
+      expect(panel?.classList.contains('max-sm:!h-[100dvh]')).toBe(true);
+      expect(panel?.classList.contains('xl:w-[45%]')).toBe(true);
+      expect(panel?.classList.contains('h-[100dvh]')).toBe(false);
     });
   });
 

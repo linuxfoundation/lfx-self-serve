@@ -46,6 +46,27 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
 }
 
 /**
+ * Splits participation into progress-bar segments, as percentages of eligible voters
+ * @description `voted` is the share that cast a substantive ballot (responses minus abstentions); `abstained` is the
+ * share that abstained. Together they represent overall participation, capped at 100%. Zero eligible voters yields zeros;
+ * abstentions are bounded by total participation so inconsistent upstream counts cannot overflow the bar.
+ * @param stats - VoteParticipationStats from computeVoteParticipationStats
+ * @param abstained - Abstention count to show; pass 0 when the payload withholds it
+ * @returns Percentages for the voted and abstained segments
+ */
+export function computeParticipationSegments(stats: VoteParticipationStats, abstained: number): { voted: number; abstained: number } {
+  if (stats.eligibleVoters <= 0) {
+    return { voted: 0, abstained: 0 };
+  }
+
+  const clamp = (value: number): number => Math.min(100, Math.max(0, value));
+  const totalPercent = clamp((stats.totalResponses / stats.eligibleVoters) * 100);
+  const abstainedPercent = Math.min(totalPercent, clamp((abstained / stats.eligibleVoters) * 100));
+
+  return { voted: totalPercent - abstainedPercent, abstained: abstainedPercent };
+}
+
+/**
  * Builds the generic (plurality) per-question results view model from the results API payload
  * @description Choice percentages prefer the upstream value and fall back to `num_votes_cast` as the base. Winner and
  * tie markers are only set when `isClosed`; `isLeading` marks the top option(s) regardless of `isClosed`, and live
