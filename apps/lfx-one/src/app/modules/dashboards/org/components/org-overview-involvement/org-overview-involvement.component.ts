@@ -405,8 +405,8 @@ export class OrgOverviewInvolvementComponent {
     return {
       ...metric,
       loading: this.trainingEnrollmentsLoading() || this.trainingStatsLoading(),
-      // A failed stats read shows a dash, never a zero that reads as "nobody trained".
-      value: stats ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
+      // A failed stats read or an older payload without the field shows a dash, never a zero that reads as "nobody trained".
+      value: stats?.peopleWithTrainingActivity != null ? stats.peopleWithTrainingActivity.toLocaleString('en-US') : '—',
       subtitle: orgTrainingStatCaption(activity, stats?.trainingActivityAsOf),
       tooltipText: orgTrainingStatTooltip(activity, stats?.trainingActivityAsOf),
       chartCaption: labels.length > 0 ? `${ORG_OVERVIEW_TRAINING_TREND_LABEL}, through ${labels[labels.length - 1]}` : undefined,

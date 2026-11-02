@@ -18,6 +18,7 @@ export interface OrgTraineeDetailRow {
   /** Warehouse person key for a people-list member; the same opaque per-response key as its trainee row otherwise. */
   personKey: string;
   status: OrgTraineeStatus;
+  /** Enrollment or certificate id for a people-list member; '' for a learner outside the people list (#4287). */
   courseOrCertId: string;
   courseId: string;
   courseName: string;

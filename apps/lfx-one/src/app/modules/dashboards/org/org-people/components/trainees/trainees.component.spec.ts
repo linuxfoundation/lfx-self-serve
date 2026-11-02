@@ -201,6 +201,18 @@ describe('TraineesComponent — range (lfx-self-serve#4159)', () => {
     expect(caption('trainees')).toContain('All time');
     expect(caption('trainees')).not.toContain('Past 2 years');
   });
+
+  it('names each stat card by its displayed value before the definition', async () => {
+    await mount('/?tab=training');
+
+    for (const name of ['trainees', 'courses-enrolled', 'certifications', 'completion-rate']) {
+      const card = el().querySelector(`[data-testid="org-people-trainees-stat-${name}"]`)!;
+      const shown = card.firstElementChild?.textContent?.trim() ?? '';
+      expect(card.getAttribute('role')).toBe('note');
+      expect(card.getAttribute('aria-label')).toContain(`: ${shown}. `);
+      expect(card.getAttribute('aria-label')).toContain('Oct 30, 2026');
+    }
+  });
 });
 
 /**

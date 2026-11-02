@@ -109,11 +109,15 @@ export class OrgPeopleTraineesService {
       if (row.STATUS !== 'Enrolled' && row.STATUS !== 'Certified') return [];
       const activityTs = toIsoTimestamp(row.ACTIVITY_TS);
       if (!activityTs) return [];
+      const personKey = wireKey(row.PERSON_KEY);
+      const onPeopleList = listedKeys.has(row.PERSON_KEY);
       return [
         {
-          personKey: wireKey(row.PERSON_KEY),
+          personKey,
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
-          courseOrCertId: row.COURSE_OR_CERT_ID,
+          // Blank for learners outside the people list (lfx-self-serve#4287): the enrollment / certificate id is a
+          // per-person identifier, and no client reads it.
+          courseOrCertId: onPeopleList ? row.COURSE_OR_CERT_ID : '',
           // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
           // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
           courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,

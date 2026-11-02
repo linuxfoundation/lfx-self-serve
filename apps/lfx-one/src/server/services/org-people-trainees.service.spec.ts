@@ -504,7 +504,7 @@ describe('OrgPeopleTraineesService filter options (lfx-self-serve#4916)', () => 
   it('offers only what the range holds', async () => {
     const { filterOptions, details } = await service.getTrainees(ACCOUNT, '30d');
 
-    expect(details.map((row) => row.courseOrCertId)).toEqual(['course-v1']);
+    expect(details.map((row) => row.courseId)).toEqual(['course-v1']);
     expect(filterOptions.projects.map((option) => option.value)).toEqual(['project-one']);
     expect(filterOptions.levels.map((option) => option.value)).toEqual(['Beginner']);
     expect(filterOptions.formats.map((option) => option.value)).toEqual(['E-Learning']);
@@ -577,6 +577,10 @@ describe('OrgPeopleTraineesService learners outside the people list (lfx-self-se
       { personKey: 'outside:1', lfid: null, cdpMemberId: null, name: 'Outside Learner', title: null, email: null, onPeopleList: false },
     ]);
     expect(response.details.filter((row) => row.personKey === 'outside:1').map((row) => row.status)).toEqual(['Enrolled', 'Certified']);
+    const outsideRows = response.details.filter((row) => row.personKey === 'outside:1');
+    expect(outsideRows.map((row) => row.courseOrCertId)).toEqual(['', '']);
+    expect(JSON.stringify(outsideRows)).not.toMatch(/certified:|enrolled:/);
+    expect(response.details.find((row) => row.personKey === 'person-listed')?.courseOrCertId).toBe('enrolled:course-one');
   });
 
   it("ships an opaque per-response key in place of the learner's warehouse key, the same in trainees and details", async () => {

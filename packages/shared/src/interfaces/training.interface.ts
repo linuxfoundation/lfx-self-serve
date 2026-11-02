@@ -188,7 +188,10 @@ export interface OrgTrainingStatTileVm extends OrgTrainingStatTileLayout {
   /** null when there is nothing to count: no stats loaded, or no training program for the roster stat. */
   readonly value: number | null;
   readonly caption: string;
+  /** Omits the as-of sentence while stats are not loaded. */
   readonly tooltip: string;
+  /** Accessible name of a non-clickable tile: label, the displayed value (or an em dash), then the tooltip. */
+  readonly ariaLabel: string;
 }
 
 /**

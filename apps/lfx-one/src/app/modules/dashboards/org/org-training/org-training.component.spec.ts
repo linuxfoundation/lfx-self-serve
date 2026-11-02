@@ -17,7 +17,7 @@ import { OrgLensTrainingService } from '@shared/services/org-lens-training.servi
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
-import { Observable, of, Subject } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgTrainingComponent } from './org-training.component';
@@ -168,6 +168,33 @@ describe('OrgTrainingComponent — stat strip', () => {
     expect(value(el, 'org-training-stat-people-with-training-activity')).toBe('830');
   });
 
+  it('does not read an older payload without the roster field as an org without a training program', async () => {
+    const olderStats: OrgTrainingStats = { ...stats };
+    // @ts-expect-error an older response shape has no roster field
+    delete olderStats.rosterMembers;
+    const el = await render(null, { stats: olderStats });
+
+    expect(value(el, 'org-training-stat-roster-members')).toBe('—');
+    expect(el.textContent).not.toContain(ORG_TRAINING_NO_ROSTER_NOTE);
+  });
+
+  it('names the displayed value before the definition on the non-clickable tiles', async () => {
+    const el = await render(null, { stats });
+    const tile = el.querySelector('[data-testid="org-training-stat-roster-members"]')!;
+
+    expect(tile.getAttribute('role')).toBe('note');
+    expect(tile.getAttribute('aria-label')).toMatch(/^[^:]+: 1,250\. /);
+    expect(tile.getAttribute('aria-label')).toContain('Oct 29, 2026');
+  });
+
+  it('shows an error state instead of dashes when the stats read fails', async () => {
+    const el = await render(null, { statsFor: () => throwError(() => new Error('boom')) });
+
+    expect(el.querySelector('[data-testid="org-training-stats-error"]')?.textContent).toContain("Couldn't load training stats");
+    expect(el.querySelector('[data-testid="org-training-stat-roster-members"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-training-content-card"]')).not.toBeNull();
+  });
+
   it('states no as-of date and no previous organization’s captions while the stats load, on first load and on an org switch', async () => {
     const responses: Record<string, Subject<OrgTrainingStats | null>> = {
       'org-uid-1': new Subject<OrgTrainingStats | null>(),
@@ -183,6 +210,9 @@ describe('OrgTrainingComponent — stat strip', () => {
     expect(el.textContent).not.toContain('as-of date unavailable');
     expect(captions()).toEqual([]);
     expect(snapshotAsOf()).toBeNull();
+    const loadingLabel = el.querySelector('[data-testid="org-training-stat-roster-members"]')?.getAttribute('aria-label') ?? '';
+    expect(loadingLabel).toMatch(/^[^:]+: —\. /);
+    expect(loadingLabel).not.toMatch(/as-of date unavailable/i);
 
     responses['org-uid-1'].next(stats);
     responses['org-uid-1'].complete();

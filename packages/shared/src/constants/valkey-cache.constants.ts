@@ -282,7 +282,9 @@ export const VALKEY_CACHE = {
     // to 9 MiB. Same irreducible per-(person, course-or-cert) grain as before (GH-1906). `v5` (lfx-self-serve#4916,
     // #4287) adds one build timestamp per entry, the project id/name, level and format columns to the course
     // dictionary, and the learners outside the people list (name-only rows plus their detail rows); it drops the
-    // foundation and course option rows, which are now built from the details. The cap carries over; v5 was not remeasured.
+    // foundation and course option rows, which are now built from the details. The cap carries over unmeasured for v5:
+    // re-measure it on the largest organization after lf-dbt enables outside learners (rollout step 3), since their
+    // detail rows are the main growth.
     'org-lens-sf:v1:people-trainees:v5': 9 * 1_048_576,
   } as Readonly<Record<string, number>>,
 

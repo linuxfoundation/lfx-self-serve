@@ -119,8 +119,15 @@ describe('buildOrgTrainingStatTiles', () => {
   });
 
   it('shows no value, not an empty one, for a field an older response lacks', () => {
-    const { rosterMembers: _rosterMembers, peopleWithTrainingActivity: _activity, ...olderShape } = stats;
-    const tiles = byKey(buildOrgTrainingStatTiles(olderShape as OrgTrainingStats));
+    const olderShape: OrgTrainingStats = { ...stats };
+    // @ts-expect-error an older response shape has no roster field
+    delete olderShape.rosterMembers;
+    // @ts-expect-error an older response shape has no activity field
+    delete olderShape.peopleWithTrainingActivity;
+    const tiles = byKey(buildOrgTrainingStatTiles(olderShape));
+
+    expect(tiles['rosterMembers'].caption).not.toBe(ORG_TRAINING_NO_ROSTER_NOTE);
+    expect(tiles['rosterMembers'].ariaLabel).toContain(': —. ');
 
     expect(tiles['rosterMembers'].value).toBeNull();
     expect(tiles['peopleWithTrainingActivity'].value).toBeNull();

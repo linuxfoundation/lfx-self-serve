@@ -22,10 +22,15 @@ export function orgTrainingStatCaption(stat: OrgTrainingStatDefinition, asOf: st
   return [unit, stat.window ?? window, formatOrgTrainingAsOf(asOf)].filter(Boolean).join(' · ');
 }
 
+/** A stat's definition, then its unit and window, without an as-of date (used while the stats have not loaded). */
+function orgTrainingStatDefinitionText(stat: OrgTrainingStatDefinition, window?: string): string {
+  return `${stat.definition} Unit: ${stat.unit}. Window: ${stat.window ?? window ?? 'not stated'}.`;
+}
+
 /** Tooltip of a learner or enrollment number: its definition, then unit, window and as-of date. */
 export function orgTrainingStatTooltip(stat: OrgTrainingStatDefinition, asOf: string | null | undefined, window?: string): string {
   const formattedAsOf = formatOrgTrainingAsOf(asOf);
-  return `${stat.definition} Unit: ${stat.unit}. Window: ${stat.window ?? window ?? 'not stated'}. ${formattedAsOf.charAt(0).toUpperCase()}${formattedAsOf.slice(1)}.`;
+  return `${orgTrainingStatDefinitionText(stat, window)} ${formattedAsOf.charAt(0).toUpperCase()}${formattedAsOf.slice(1)}.`;
 }
 
 /** Each strip stat's number and as-of time; the certification counts share ORG_PEOPLE_TRAINING's build with the activity count. */
@@ -48,20 +53,28 @@ function statReading(key: OrgTrainingStatKey, stats: OrgTrainingStats): { value:
 
 /**
  * The Training & Certifications stat strip, in display order. `stats` null (loading or failed) yields null values with the
- * definitions still stated. A null roster means the org has no training program, which the caption says instead of a count.
+ * definitions still stated and no as-of sentence. A roster of exactly null means the org has no training program, which
+ * the caption says instead of a count; an absent field (an older payload) is only an unknown value.
  */
 export function buildOrgTrainingStatTiles(stats: OrgTrainingStats | null): OrgTrainingStatTileVm[] {
   return ORG_TRAINING_STAT_TILES.map((layout) => {
     const definition = ORG_TRAINING_STAT_DEFINITIONS[layout.key];
     const { value, asOf } = stats ? statReading(layout.key, stats) : { value: null, asOf: null };
-    const noRoster = stats !== null && layout.key === 'rosterMembers' && value == null;
+    const noRoster = stats !== null && layout.key === 'rosterMembers' && value === null;
+    // A payload missing a field (an older response shape) reads as no value, never as an empty number.
+    const shownValue = value ?? null;
+    const tooltip = noRoster
+      ? `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.`
+      : stats === null
+        ? orgTrainingStatDefinitionText(definition)
+        : orgTrainingStatTooltip(definition, asOf);
     return {
       ...layout,
       label: definition.label,
-      // A payload missing a field (an older response shape) reads as no value, never as an empty number.
-      value: value ?? null,
+      value: shownValue,
       caption: noRoster ? ORG_TRAINING_NO_ROSTER_NOTE : orgTrainingStatCaption(definition, asOf),
-      tooltip: noRoster ? `${definition.definition} ${ORG_TRAINING_NO_ROSTER_NOTE}.` : orgTrainingStatTooltip(definition, asOf),
+      tooltip,
+      ariaLabel: `${definition.label}: ${shownValue === null ? '—' : shownValue.toLocaleString('en-US')}. ${tooltip}`,
     };
   });
 }
