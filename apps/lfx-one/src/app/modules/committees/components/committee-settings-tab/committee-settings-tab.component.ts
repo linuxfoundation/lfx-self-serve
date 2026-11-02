@@ -32,6 +32,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 
@@ -53,6 +54,7 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
     MailingListEmailPipe,
     MailingListTypePipe,
     UiDrawerComponent,
+    UiButtonComponent,
     MailingListSyncSettingsComponent,
   ],
   providers: [DialogService],
@@ -260,9 +262,11 @@ export class CommitteeSettingsTabComponent {
     this.drawerService.open(this.autoSyncDrawerTemplate(), { width: 600 });
   }
 
-  // Refreshes associatedMailingLists (shared by this card and the drawer) so every open
-  // lfx-mailing-list-sync-settings instance's own siblingLists/activeSync lookup sees the new
-  // sync_mode right away, instead of waiting on each instance's independent polling.
+  // Refreshes associatedMailingLists (shared by this card and the drawer). The @for loop rebinds
+  // every open lfx-mailing-list-sync-settings instance's `mailingList` input to a fresh object,
+  // which in turn makes each instance re-fetch its own siblingLists/activeSync lookup — so the
+  // "only one auto direction per committee" notice updates across all open instances, not just the
+  // one that was just saved (#4025).
   public onSyncSettingsUpdated(): void {
     this.refreshMl$.next();
   }

@@ -15,7 +15,7 @@ import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/i
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MessageService } from 'primeng/api';
-import { catchError, distinctUntilChanged, of, switchMap, take } from 'rxjs';
+import { catchError, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
@@ -162,25 +162,26 @@ export class MailingListSyncSettingsComponent {
   }
 
   private initSiblingLists(): Signal<GroupsIOMailingList[]> {
-    // Gate on the feature flag and writer status so this section's hidden state (enforced in the
-    // template) doesn't still add a request to every committee-linked list view (#4880 review) —
-    // folded into the observed signal itself, not just read inside switchMap, so the lookup also
-    // (re-)runs if the flag/writer status becomes true after the committee uid last changed, e.g.
-    // on a direct page load where FeatureFlagService.initialize() hasn't resolved yet (#4880 review).
-    const lookupUid = computed(() => (this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null));
+    // Keyed on the whole `mailingList` input, not just the committee uid: when multiple instances
+    // of this component are open together (the committee-detail Auto Sync drawer, #4025), one
+    // instance's save only updates the *parent's* mailing list array — every sibling instance must
+    // re-fetch to see the new sync_mode, even though its own committee uid never changed. Keying
+    // on uid with distinctUntilChanged (as a single-instance page can) would suppress that refetch
+    // and leave `activeSync` stale, breaking the "only one auto direction per committee" guarantee
+    // the moment two lists in the same drawer are toggled back to back.
     return toSignal(
-      toObservable(lookupUid).pipe(
-        distinctUntilChanged(),
-        switchMap((committeeUid) =>
-          committeeUid
+      toObservable(this.mailingList).pipe(
+        switchMap(() => {
+          const committeeUid = this.syncEnabled() && this.isWriter() ? (this.committee()?.uid ?? null) : null;
+          return committeeUid
             ? this.mailingListService.getMailingListsByCommittee(committeeUid).pipe(
                 catchError((error) => {
                   console.error('Failed to load sibling mailing lists for sync settings', error);
                   return of([] as GroupsIOMailingList[]);
                 })
               )
-            : of([])
-        )
+            : of([]);
+        })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
     );
