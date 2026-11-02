@@ -18,7 +18,7 @@ const meta: Meta<UiTooltipDirective> = {
       <div class="flex justify-center p-[96px]">
         <button
           type="button"
-          class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none"
+          class="inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm border border-ui-neutral-alpha-200 bg-ui-background-100 text-ui-neutral-900 hover:bg-ui-neutral-alpha-50 focus:outline-none focus-visible:shadow-[0_0_0_4px] focus-visible:shadow-ui-accent-100 forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[color:Highlight]"
           [attr.aria-label]="cfg.text"
           [lfxUiTooltip]="cfg.text"
           [lfxUiTooltipTitle]="cfg.title"
@@ -61,9 +61,7 @@ export const FlipsAtTheEdge: Story = {
   render: () => ({
     template: `
       <div class="flex justify-center">
-        <button type="button" lfxUiTooltip="Flipped below the button" class="edge inline-flex h-ui-medium w-[40px] items-center justify-center rounded-ui-sm bg-ui-background-100 focus-visible:shadow-focus focus-visible:outline-none">
-          <i class="fa-light fa-link" aria-hidden="true"></i><span class="sr-only">Share</span>
-        </button>
+        <lfx-ui-button size="large" variant="secondary" icon="fa-light fa-link" [iconOnly]="true" ariaLabel="Share" lfxUiTooltip="Flipped below the button" />
       </div>`,
   }),
 };

@@ -51,8 +51,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Keyboard: Enter, Space, Arrow Down or Arrow Up on the trigger opens the list and focuses the first picked row, or the first row that can be
  * picked. Arrow Up and Arrow Down move between rows, Home and End to the first and last, Arrow Right moves from a row's checkbox to its Only
  * button and Arrow Left back. Space toggles a checkbox, Enter toggles it or presses Only. Escape closes the list and returns focus to the
- * trigger; Tab closes it and moves on from the trigger. Nothing is picked or dropped by closing. Use it for filters and settings with a few known
- * values; for one value use the select, and for a long searchable list the combobox.
+ * trigger; Tab closes it and moves on from the trigger, and Shift+Tab closes it and stops on the trigger. Nothing is picked or dropped by
+ * closing. Use it for filters and settings with a few known values; for one value use the select, and for a long searchable list the combobox.
  */
 @Component({
   selector: 'lfx-ui-multi-select',
@@ -201,6 +201,8 @@ export class UiMultiSelectComponent extends UiOptionHost implements ControlValue
         this.closePanel(true);
         break;
       case 'Tab': {
+        // Backward, the trigger is where focus stops, as in Select; forward, the browser moves on from it.
+        if (event.shiftKey) event.preventDefault();
         // The panel is still mounted when the browser moves focus, so keep it out of the tab order; focus then goes back to the trigger first.
         const group = this.panel();
         if (group) group.inert = true;
