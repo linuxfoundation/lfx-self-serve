@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibilityKind } from '../enums';
-import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, RsvpResponse, RsvpScope } from './meeting.interface';
+import type { Meeting, MeetingOccurrence, MeetingResponseFilter, MeetingRsvp, PastMeetingSummary, RsvpResponse, RsvpScope } from './meeting.interface';
 import type { UiBadgeTone } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
@@ -95,6 +95,19 @@ export interface MeetingHomeRowType {
   icon: string;
 }
 
+/** One date in the Pending RSVPs popover of the meetings home page, with what its row shows. */
+export interface MeetingPendingRsvpItem {
+  row: MeetingHomeRow;
+  project: MeetingHomeRowProject | null;
+  link: MeetingHomeRowLink;
+  visibilityBadges: MeetingVisibilityInfo[];
+  /** Day and start time in the viewer's zone, e.g. "Thu, Oct 1 · 6:30 AM PDT". */
+  when: string;
+  type: MeetingHomeRowType | null;
+  /** Recurring tooltip; null for a one-time meeting. */
+  recurrenceTooltip: string | null;
+}
+
 /** One RSVP answer on a meetings home row: its button label, its status label and look. */
 export interface MeetingRsvpChoice {
   response: RsvpResponse;
@@ -117,4 +130,23 @@ export interface MeetingRsvpScopeOption {
   value: RsvpScope;
   label: string;
   description: string;
+}
+
+/** What the meetings home AI summary dialog opens with. */
+export interface MeetingSummaryDialogData {
+  row: MeetingHomeRow;
+  summary: PastMeetingSummary;
+  /** Gets the summary after each saved edit or approval. */
+  onChange?: (summary: PastMeetingSummary) => void;
+}
+
+/** What the meetings home transcript dialog opens with. */
+export interface MeetingTranscriptDialogData {
+  row: MeetingHomeRow;
+}
+
+/** What the meetings home recording dialog opens with. */
+export interface MeetingRecordingDialogData {
+  row: MeetingHomeRow;
+  shareUrl: string;
 }

@@ -7,11 +7,11 @@ import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/ro
 import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_PAGE_SIZE } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
-import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -123,13 +123,23 @@ describe('MeetingsRedesignComponent', () => {
             meetingJoinIdentity: signal(null),
             confirmedMeetingRsvps: () => [],
             isMeetingRsvpCurrent: () => true,
+            isMeetingRegistrationEnded: () => false,
           },
         },
-        { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getMeetingRsvps: () => of([]) } },
+        { provide: MeetingInviteResendService, useValue: { isResendingOwn: () => false } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal(new Set<string>()),
+            getMeetingRsvps: () => of([]),
+            getPastMeetingSummary: () => of(null),
+            getPastMeetingTranscript: () => of(null),
+            getPastMeetingRecording: () => of(null),
+          },
+        },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: DialogService, useValue: { open: vi.fn() } },
-        { provide: Router, useValue: { navigate } },
+        { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
     });
@@ -167,6 +177,24 @@ describe('MeetingsRedesignComponent', () => {
     expect(query(fixture, 'meetings-home-last-card-empty')).toBeTruthy();
   });
 
+  it('gives the Last meeting card the row menu', async () => {
+    const fixture = render();
+    await fixture.whenStable();
+
+    latestPast$.next([{ ...buildMeeting(4, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting]);
+    await fixture.whenStable();
+
+    const trigger = query(fixture, 'meetings-home-last-card-menu')?.querySelector<HTMLButtonElement>(
+      '[data-testid="meetings-home-row-actions-trigger"] button'
+    );
+    navigate.mockClear();
+    trigger?.click();
+    await fixture.whenStable();
+
+    expect(document.querySelector('[data-testid="meetings-home-row-actions-menu"]')).toBeTruthy();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it('hides the Last meeting card, with no error, when its feed fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const fixture = render();
@@ -185,6 +213,13 @@ describe('MeetingsRedesignComponent', () => {
     await fixture.whenStable();
 
     expect(fixture.nativeElement.textContent).not.toContain('Create meeting');
+  });
+
+  it('shows the Pending RSVPs button in the header once the feed has dates to answer', async () => {
+    const fixture = render();
+    await loadFeeds(fixture, [buildMeeting(1, { my_rsvp: null, my_rsvps: [], is_invite_responses_enabled: true }), buildMeeting(2)]);
+
+    expect(query(fixture, 'meetings-redesign-header')?.querySelector('[data-testid="meetings-home-pending-rsvps-count"]')?.textContent?.trim()).toBe('1');
   });
 
   it('renders a tabpanel per tab that every tab controls, hiding the inactive one', async () => {
@@ -292,6 +327,15 @@ describe('MeetingsRedesignComponent', () => {
       );
       expect(rowTitles(fixture)).toEqual(['Meeting 2']);
       expect(query(fixture, 'ui-tab-upcoming')?.textContent).toContain('2');
+      const menu = (): Element | null | undefined =>
+        query(fixture, 'meetings-home-next-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]');
+      const firstMenu = menu();
+      expect(firstMenu).toBeTruthy();
+
+      upcoming$.next([buildMeeting(2), buildMeeting(3)]);
+      await fixture.whenStable();
+      expect(menu()).toBeTruthy();
+      expect(menu()).not.toBe(firstMenu);
     });
 
     it('shows the empty Next meeting card and no list or empty state for a lone meeting', async () => {
@@ -299,6 +343,7 @@ describe('MeetingsRedesignComponent', () => {
       await fixture.whenStable();
       await loadFeeds(fixture, []);
       expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.textContent).toContain('Your calendar is clear');
+      expect(query(fixture, 'meetings-redesign-rail-next-meeting')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeNull();
 
       upcoming$.next([buildMeeting(1)]);
       await fixture.whenStable();

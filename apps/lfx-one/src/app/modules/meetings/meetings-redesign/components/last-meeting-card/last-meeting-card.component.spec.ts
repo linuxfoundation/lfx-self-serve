@@ -3,15 +3,12 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { TranscriptModalComponent } from '@app/modules/meetings/components/transcript-modal/transcript-modal.component';
-import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
-import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 import { toPastMeetingHomeRow } from '@lfx-one/shared/utils';
-import { DialogService } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingsHomeDialogsService } from '../../services/meetings-home-dialogs.service';
 import { LastMeetingCardComponent } from './last-meeting-card.component';
 
 const START = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
@@ -76,7 +73,7 @@ const rowOf = (meeting: PastMeeting): MeetingHomeRow => toPastMeetingHomeRow(mee
 
 describe('LastMeetingCardComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
-  let openDialog: ReturnType<typeof vi.fn>;
+  let dialogs: { openSummary: ReturnType<typeof vi.fn>; openTranscript: ReturnType<typeof vi.fn>; openRecording: ReturnType<typeof vi.fn> };
 
   const render = async (inputs: Record<string, unknown>): Promise<ComponentFixture<LastMeetingCardComponent>> => {
     const fixture = TestBed.createComponent(LastMeetingCardComponent);
@@ -92,11 +89,11 @@ describe('LastMeetingCardComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
-    openDialog = vi.fn();
+    dialogs = { openSummary: vi.fn(), openTranscript: vi.fn(), openRecording: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
-        { provide: DialogService, useValue: { open: openDialog } },
+        { provide: MeetingsHomeDialogsService, useValue: dialogs },
       ],
     });
   });
@@ -188,33 +185,26 @@ describe('LastMeetingCardComponent', () => {
       expect(query(fixture, 'meetings-home-last-card-summary')).toBeNull();
     });
 
-    it('opens the summary dialog read-only for an invitee without opening the meeting', async () => {
+    it('opens the summary dialog without opening the meeting', async () => {
       const summary = buildSummary();
       const fixture = await render({ row: rowOf(buildMeeting()), summary });
 
       clickButton(fixture, 'meetings-home-last-card-read-more');
 
       expect(navigateByUrl).not.toHaveBeenCalled();
-      expect(openDialog).toHaveBeenCalledWith(
-        SummaryModalComponent,
-        expect.objectContaining({
-          data: expect.objectContaining({ summaryContent: summary.summary_data.content, summaryUid: 's-1', pastMeetingUid: 'm-1-occ', readOnly: true }),
-        })
-      );
+      expect(dialogs.openSummary).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ', title: 'Steering sync' }), summary, expect.any(Function));
     });
 
-    it('lets an organizer edit and passes the update back', async () => {
-      const summary = buildSummary({ approved: false });
-      const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary });
+    it('passes a summary saved in the dialog back out', async () => {
+      const fixture = await render({ row: rowOf(buildMeeting({ organizer: true })), summary: buildSummary({ approved: false }) });
       const changes: PastMeetingSummary[] = [];
       fixture.componentInstance.summaryChange.subscribe((change) => changes.push(change));
 
       clickButton(fixture, 'meetings-home-last-card-read-more');
-      const data = openDialog.mock.calls[0][1].data;
-      data.onSummaryUpdated({ content: 'New text', approved: true });
+      const approved = buildSummary({ approved: true });
+      dialogs.openSummary.mock.calls[0][2](approved);
 
-      expect(data.readOnly).toBe(false);
-      expect(changes).toEqual([{ ...summary, approved: true, summary_data: { ...summary.summary_data, edited_content: 'New text' } }]);
+      expect(changes).toEqual([approved]);
     });
   });
 
@@ -237,14 +227,8 @@ describe('LastMeetingCardComponent', () => {
       clickButton(fixture, 'meetings-home-last-card-recording');
 
       expect(navigateByUrl).not.toHaveBeenCalled();
-      expect(openDialog).toHaveBeenCalledWith(
-        TranscriptModalComponent,
-        expect.objectContaining({ data: { pastMeetingUid: 'm-1-occ', meetingTitle: 'Steering sync' } })
-      );
-      expect(openDialog).toHaveBeenCalledWith(
-        RecordingModalComponent,
-        expect.objectContaining({ data: { shareUrl: 'https://zoom.example/rec', meetingTitle: 'Steering sync' } })
-      );
+      expect(dialogs.openTranscript).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }));
+      expect(dialogs.openRecording).toHaveBeenCalledWith(expect.objectContaining({ key: 'm-1-occ' }), 'https://zoom.example/rec');
     });
   });
 });

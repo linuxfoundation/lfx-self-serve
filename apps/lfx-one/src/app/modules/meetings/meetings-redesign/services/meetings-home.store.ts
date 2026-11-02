@@ -28,6 +28,7 @@ import {
   getPastMeetingTranscriptUrl,
   getRsvpTimestampMs,
   groupMeetingsByDayBucket,
+  isMeetingHomeRowPendingRsvp,
   selectApplicableRsvp,
   sortPastMeetingsDescending,
   toPastMeetingHomeRow,
@@ -96,6 +97,8 @@ export class MeetingsHomeStore {
   public readonly upcomingRows: Signal<MeetingHomeRow[]> = this.initUpcomingRows();
   /** One row per past meeting, most recent first. */
   public readonly pastRows: Signal<MeetingHomeRow[]> = this.initPastRows();
+  /** Upcoming dates the viewer can still answer, soonest first, whatever the search and filters. */
+  public readonly pendingRsvpRows: Signal<MeetingHomeRow[]> = this.initPendingRsvpRows();
   public readonly loading: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastLoading() : this.upcomingLoading()));
   /** The active tab's feed failed to load; its rows are empty but not confirmed empty. */
   public readonly failed: Signal<boolean> = computed(() => (this.tab() === 'past' ? this.pastFailed() : this.upcomingFailed()));
@@ -249,8 +252,10 @@ export class MeetingsHomeStore {
       const rsvps = loaded();
       const meeting = this.nextRow()?.meeting;
       if (!rsvps?.length || !meeting) return rsvps;
+      // Drops the viewer's own answers from registrations they removed since the roster loaded.
+      const current = rsvps.filter((rsvp) => !this.userService.isMeetingRegistrationEnded(meeting.id, rsvp.registrant_id));
       // Confirmations go first so they win timestamp ties.
-      return [...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id)), ...rsvps];
+      return [...this.currentRsvps(meeting, this.userService.confirmedMeetingRsvps(meeting.id)), ...current];
     });
   }
 
@@ -301,11 +306,20 @@ export class MeetingsHomeStore {
   private initUpcomingRows(): Signal<MeetingHomeRow[]> {
     return computed(() => {
       const removed = this.meetingService.removedRegistrationMeetingIds();
-      // Organizers keep their meetings after removing their own registration.
+      // Organizers keep their meetings after removing their own registration, without the registration.
       const meetings = this.upcomingMeetings()
         .filter((meeting) => meeting.organizer || !removed.has(meeting.id))
+        .map((meeting) => (removed.has(meeting.id) ? { ...meeting, invited: false, my_registrant_ids: [], my_rsvp: null, my_rsvps: [] } : meeting))
         .map((meeting) => this.withCurrentRsvps(meeting));
       return expandMeetingOccurrences(meetings, this.now()).map((row) => this.withConfirmedRowRsvp(row));
+    });
+  }
+
+  private initPendingRsvpRows(): Signal<MeetingHomeRow[]> {
+    return computed(() => {
+      const removed = this.meetingService.removedRegistrationMeetingIds();
+      // Only dates the RSVP controls can answer: invited, with a registration still in place.
+      return this.upcomingRows().filter((row) => row.meeting.invited && !removed.has(row.meeting.id) && isMeetingHomeRowPendingRsvp(row));
     });
   }
 

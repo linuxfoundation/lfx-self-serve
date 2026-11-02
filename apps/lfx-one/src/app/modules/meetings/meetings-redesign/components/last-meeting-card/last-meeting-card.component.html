@@ -21,27 +21,33 @@
     class="flex cursor-pointer flex-col gap-[20px] rounded-[16px] bg-gradient-to-b from-gray-100 to-white to-[45%] p-[20px] shadow-small transition-shadow duration-150 hover:shadow-large motion-reduce:transition-none"
     (click)="open()"
     data-testid="meetings-home-last-card">
-    <!-- Date tile: grey band for a past meeting -->
-    <div class="relative flex h-[54px] w-[52px] flex-none flex-col rounded-[10px] border border-gray-200 bg-white" data-testid="meetings-home-last-card-date">
-      <span
-        class="flex h-[16px] flex-none items-center justify-center rounded-t-[9px] bg-gray-200 text-[9px] font-semibold uppercase leading-none tracking-[.08em] text-gray-900"
-        >{{ row.startTime | date: 'MMM' }}</span
-      >
-      <span class="flex flex-auto items-center justify-center text-[22px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
-      <span class="absolute -right-[11px] -top-[11px] flex">
-        @for (badge of visibilityBadges(); track badge.kind) {
-          <span
-            role="img"
-            tabindex="0"
-            class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-            [class]="visibilityBg[badge.kind]"
-            [attr.aria-label]="badge.title"
-            [lfxUiTooltip]="badge.description ?? ''"
-            [lfxUiTooltipTitle]="badge.title"
-            [attr.data-testid]="'meetings-home-last-card-visibility-' + badge.kind">
-            <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
-          </span>
-        }
+    <div class="flex min-w-0 items-start justify-between gap-[12px]">
+      <!-- Date tile: grey band for a past meeting -->
+      <div class="relative flex h-[54px] w-[52px] flex-none flex-col rounded-[10px] border border-gray-200 bg-white" data-testid="meetings-home-last-card-date">
+        <span
+          class="flex h-[16px] flex-none items-center justify-center rounded-t-[9px] bg-gray-200 text-[9px] font-semibold uppercase leading-none tracking-[.08em] text-gray-900"
+          >{{ row.startTime | date: 'MMM' }}</span
+        >
+        <span class="flex flex-auto items-center justify-center text-[22px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
+        <span class="absolute -right-[11px] -top-[11px] flex">
+          @for (badge of visibilityBadges(); track badge.kind) {
+            <span
+              role="img"
+              tabindex="0"
+              class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [class]="visibilityBg[badge.kind]"
+              [attr.aria-label]="badge.title"
+              [lfxUiTooltip]="badge.description ?? ''"
+              [lfxUiTooltipTitle]="badge.title"
+              [attr.data-testid]="'meetings-home-last-card-visibility-' + badge.kind">
+              <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+            </span>
+          }
+        </span>
+      </div>
+      <!-- Actions menu slot; its clicks never open the card -->
+      <span class="-mr-[6px] -mt-[4px] inline-flex flex-none empty:hidden" (click)="$event.stopPropagation()" data-testid="meetings-home-last-card-menu">
+        <ng-content select="[last-meeting-card-menu]" />
       </span>
     </div>
 

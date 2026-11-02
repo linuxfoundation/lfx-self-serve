@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Component, EnvironmentProviders, input, output, Provider } from '@angular/core';
+import { Component, DestroyRef, EnvironmentProviders, input, output, Provider } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -14501,6 +14501,10 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     public fail(): void {
       this.onerror?.();
     }
+    /** What the component calls to cancel a download; a real browser stops fetching when `src` goes. */
+    public removeAttribute(name: string): void {
+      if (name === 'src') this.src = '';
+    }
   }
 
   const group = GOOGLE_CREATIVE_REQUEST_KEYS.display;
@@ -14537,8 +14541,8 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
 
     images[0].load(300, 300);
 
-    expect(warning(c)).toContain('Measured here as not 1.91:1');
-    expect(warning(c)).toContain('https://cdn.example.com/square.png (300x300)');
+    // Only the pixel size is measured here; the requirement, byte cap included, is what the slot needs.
+    expect(warning(c)).toContain('Measured here: https://cdn.example.com/square.png (300x300) does not fit. This slot needs 1.91:1');
     // "Likely": a browser applies EXIF rotation that campaign-service's decoder does not.
     expect(warning(c)).toContain('Create will likely be refused for it;');
     expect(images[0]).toMatchObject({ referrerPolicy: 'no-referrer' });
@@ -14572,9 +14576,53 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     expect(warning(c)).toBeUndefined();
     vi.advanceTimersByTime(1);
     expect(warning(c)).toContain('Could not be loaded here');
+    // The timeout cancels the download, so a slow host is not left sending an image nothing reads.
+    expect(images[0].src).toBe('');
     // A late load after the timeout changes nothing.
     images[0].load(300, 300);
-    expect(warning(c)).not.toContain('Measured here as not');
+    expect(warning(c)).not.toContain('does not fit');
+  });
+
+  it('stops a probe still loading when the tab is destroyed, and records nothing after', () => {
+    vi.useFakeTimers();
+    const c = seedChannel(fixture, { includeDisplay: true });
+    setUrls(c, 'https://slow.example.com/a.png');
+    const timersBefore = vi.getTimerCount();
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(vi.getTimerCount()).toBe(timersBefore + 1);
+    const probes = c['googleTypedImageProbes'] as () => Record<string, { state: string }>;
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+
+    fixture.destroy();
+
+    // Only the probe's own timer is counted: the tab's other timers are not this probe's to clear.
+    expect(vi.getTimerCount()).toBe(timersBefore);
+    expect(images[0].onload).toBeNull();
+    expect(images[0].onerror).toBeNull();
+    expect(images[0].src).toBe('');
+    vi.advanceTimersByTime(GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS);
+    expect(probes()['https://slow.example.com/a.png']).toEqual({ state: 'checking' });
+  });
+
+  it('releases its destroy callback once the answer is in', () => {
+    const c = seedChannel(fixture, { includeDisplay: true });
+    const destroyRef = c['destroyRef'] as DestroyRef;
+    const register = destroyRef.onDestroy.bind(destroyRef);
+    const releases: ReturnType<typeof vi.fn>[] = [];
+    vi.spyOn(destroyRef, 'onDestroy').mockImplementation((callback: () => void) => {
+      const release = vi.fn(register(callback));
+      releases.push(release);
+      return release;
+    });
+    setUrls(c, 'https://cdn.example.com/wide.png');
+    c['onGoogleImageFieldBlur'](group, marketingField());
+    expect(releases).toHaveLength(1);
+    expect(releases[0]).not.toHaveBeenCalled();
+
+    images[0].load(1200, 628);
+
+    // One callback per probe would otherwise pile up for the life of the tab.
+    expect(releases[0]).toHaveBeenCalledTimes(1);
   });
 
   it('drops the warning when the URL is removed', () => {
@@ -14646,7 +14694,9 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     fixture.detectChanges();
 
     const marketingLabel = (marketingField() as { label: string }).label;
-    expect(region()?.textContent?.trim()).toContain(`${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here as not 1.91:1`);
+    expect(region()?.textContent?.trim()).toContain(
+      `${GOOGLE_CREATIVE_SECTION_TITLES.display} ${marketingLabel}: Measured here: https://cdn.example.com/square.png (300x300) does not fit.`
+    );
     // The visible line carries no role, so the text is read once.
     expect(
       (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-creative-url-check-display-marketingImages"]')?.getAttribute('role')
@@ -14672,7 +14722,8 @@ describe('ImplementationTabComponent pasted Google image URL check', () => {
     images[3].fail();
 
     const line = warning(c) ?? '';
-    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52). Create will likely be refused for them;');
+    expect(line).toContain('https://cdn.example.com/a.png (300x300), https://cdn.example.com/b.png (100x52) do not fit.');
+    expect(line).toContain('Create will likely be refused for them;');
     expect(line).toContain('not checked: https://down.example.com/c.png, https://down.example.com/d.png. campaign-service checks them again at Create.');
   });
 

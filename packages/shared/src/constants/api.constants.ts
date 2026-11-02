@@ -136,6 +136,30 @@ export const NATS_CONFIG = {
   LOOKUP_BATCH_BUDGET_MS: 15000,
 } as const;
 
+/** Email service replies whose contract guarantees rejection before any SMTP attempt. */
+export const EMAIL_SERVICE_PRE_SEND_REJECTIONS: readonly string[] = [
+  'invalid request payload',
+  'to, subject, html, and text are required',
+  'to address too long',
+  'from address too long',
+  'reply_to address too long',
+  'subject too long',
+  'from_display_name too long',
+  'invalid from address',
+  'from address domain not allowed',
+  'invalid reply_to address',
+  'reply_to address domain not allowed',
+  'invalid group_id',
+  'group is full',
+  'internal error',
+];
+
+/** Fixed SMTP-attempt error reply; safe to log, but it does not prove that nothing was sent. */
+export const EMAIL_SERVICE_DELIVERY_FAILED_REASON = 'email delivery failed';
+
+/** An email-service error reply after SMTP may have started; not proof of non-delivery. */
+export const EMAIL_SEND_UNCONFIRMED = 'EMAIL_SEND_UNCONFIRMED';
+
 /**
  * Changelog (lfx-changelog) configuration constants
  * @description Configuration for the LFX Changelog API used for unread tracking against

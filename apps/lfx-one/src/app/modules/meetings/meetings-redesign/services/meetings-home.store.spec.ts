@@ -143,6 +143,7 @@ describe('MeetingsHomeStore', () => {
       getUserLatestPastMeetings: vi.fn(() => latestPast$),
       confirmedMeetingRsvps: vi.fn(() => confirmed()),
       isMeetingRsvpCurrent: vi.fn(() => true),
+      isMeetingRegistrationEnded: vi.fn(() => false),
       authenticated: signal(true),
       meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }),
     };
@@ -203,6 +204,9 @@ describe('MeetingsHomeStore', () => {
       removed.set(new Set(['attendee', 'organized']));
 
       expect(store.upcomingRows().map((row) => row.meeting.id)).toEqual(['organized']);
+      const [organized] = store.upcomingRows();
+      expect(organized.meeting).toMatchObject({ invited: false, my_registrant_ids: [], my_rsvp: null });
+      expect(organized.myRsvp ?? null).toBeNull();
     });
 
     it('shows an answer confirmed this session on the date it applies to', () => {
@@ -310,6 +314,36 @@ describe('MeetingsHomeStore', () => {
       ]);
 
       expect(store.upcomingRows().map((row) => row.key)).toEqual([`series:${seconds(kept)}`]);
+    });
+  });
+
+  describe('pending RSVPs', () => {
+    it('lists every unanswered date the viewer can answer, whatever the search and filters', () => {
+      const [first, second] = [inDays(2), inDays(9)];
+      const store = create();
+      upcoming$.next([
+        weeklyMeeting([first, second], { id: 'series', my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'answered', my_rsvp: rsvp({ meeting_id: 'answered' }), my_rsvps: [] }),
+        buildMeeting({ id: 'not-invited', invited: false, organizer: true, my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'responses-off', is_invite_responses_enabled: false, my_rsvp: null, my_rsvps: [] }),
+        buildMeeting({ id: 'removed', organizer: true, my_rsvp: null, my_rsvps: [] }),
+      ]);
+      removed.set(new Set(['removed']));
+      store.setSearch('no match');
+
+      expect(store.pendingRsvpRows().map((row) => row.key)).toEqual([`series:${seconds(first)}`, `series:${seconds(second)}`]);
+    });
+
+    it('drops a date once answered, and every covered date after a recurring answer', () => {
+      const [first, second, third] = [inDays(2), inDays(9), inDays(16)];
+      const store = create();
+      upcoming$.next([weeklyMeeting([first, second, third], { id: 'series', my_rsvp: null, my_rsvps: [] })]);
+
+      confirmed.set([rsvp({ meeting_id: 'series', scope: 'single', occurrence_id: seconds(first) })]);
+      expect(store.pendingRsvpRows()).toHaveLength(2);
+
+      confirmed.update((answers) => [...answers, rsvp({ id: 'r-2', meeting_id: 'series', scope: 'this_and_following', occurrence_id: seconds(second) })]);
+      expect(store.pendingRsvpRows()).toEqual([]);
     });
   });
 
@@ -474,6 +508,40 @@ describe('MeetingsHomeStore', () => {
       upcoming$.next([buildMeeting({ id: 'm-2' })]);
       TestBed.tick();
       expect(store.nextRowRsvps()).toEqual([]);
+    });
+
+    it("drops the viewer's answers from registrations they removed", () => {
+      const others = [rsvp({ id: 'r-other', registrant_id: 'reg-other', email: 'other@example.test' })];
+      const mine = rsvp({ id: 'r-mine', registrant_id: 'reg-removed' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([mine, ...others]));
+      const ended = signal(new Set<string>());
+      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation((_id: string, registrantId: string) =>
+        ended().has(registrantId)
+      );
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+      expect(store.nextRowRsvps()).toEqual([mine, ...others]);
+
+      ended.set(new Set(['reg-removed']));
+
+      expect(store.nextRowRsvps()).toEqual(others);
+    });
+
+    it('keeps answers saved this session when every loaded answer came from a removed registration', () => {
+      const removed = rsvp({ id: 'r-removed', registrant_id: 'reg-removed' });
+      const survivor = rsvp({ id: 'r-survivor', registrant_id: 'reg-survivor', response_type: 'maybe' });
+      (meetingService['getMeetingRsvps'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(of([removed]));
+      (userService['isMeetingRegistrationEnded'] as ReturnType<typeof vi.fn>).mockImplementation(
+        (_id: string, registrantId: string) => registrantId === 'reg-removed'
+      );
+      const store = create();
+      upcoming$.next([buildMeeting()]);
+      TestBed.tick();
+
+      confirmed.set([survivor]);
+
+      expect(store.nextRowRsvps()).toEqual([survivor]);
     });
 
     it('counts a confirmed change over the loaded answer it replaces, even at the same time', () => {

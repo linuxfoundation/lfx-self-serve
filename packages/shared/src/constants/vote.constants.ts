@@ -94,8 +94,14 @@ export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
 /** The on-demand close summary (#3662) refuses a vote that has not ended yet with this state-conflict code. */
 export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 
-/** The on-demand close summary (#3662) failed to send to every recipient; none were emailed. */
+/** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
+
+/** Toast lifetime (ms) for a summary send outcome the user needs time to read (partial, unconfirmed, nothing sent). */
+export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
+
+/** Pre-send checks failed before any summary email was attempted; nothing was sent and retrying cannot duplicate this attempt. */
+export const VOTE_SUMMARY_PRECHECK_FAILED = 'VOTE_SUMMARY_PRECHECK_FAILED';
 
 /** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
 export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
