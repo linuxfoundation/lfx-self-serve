@@ -18,6 +18,12 @@ Everyone can open the **Organization** lens, but your company's pages show only 
 
 Holding another role, such as committee member, board member or executive director, does not by itself give you access to your company's pages. See [Who can access this](../#who-can-access-this) for the messages you may see and what each one means. If you are a CLA Manager, see the [Organization FAQ](../../organization/faq/#why-can-t-i-see-my-company-in-the-organization-lens).
 
+## I added my company as an affiliation. Why can't I see my organization?
+
+Adding an affiliation links your profile to your employer, but it does not give you access to your company's pages in the **Organization** lens. After you add it, you may see **You do not have access to the Organization Lens** instead of **No organization linked to your account**. Both mean the same thing: you have not been granted access yet.
+
+Access comes only from your organization's Organization Lens administrators. Ask them to grant you access. If you are not sure who they are, your company's open source program office (OSPO) is a good place to start.
+
 ## Why does my dashboard show different content from a colleague's?
 
 The dashboard adapts to your roles and the active project context. If you and your colleague have different roles or have selected different projects, your dashboards will look different.

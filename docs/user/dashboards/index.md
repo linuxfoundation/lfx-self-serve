@@ -83,7 +83,7 @@ Everyone can open the **Organization** lens, but a company's pages show only to 
 
 If you do not have access, the Organization lens shows one of these messages instead of your company's pages:
 
-- **No organization linked to your account**: your profile is not linked to an organization.
+- **No organization linked to your account**: your profile is not linked to an organization. Adding your employer as an affiliation does not by itself give you access. You still need a grant from your organization's Organization Lens administrators.
 - **You do not have access to the Organization Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this organization**: the link you opened is for an organization you do not have access to.
 - **Contractor accounts need an organization grant**: LF contractor accounts need a grant from each organization's administrators.
