@@ -229,7 +229,9 @@ export async function setupLinkedin(
         activity: linkedinRunActivity(events),
       });
     run.completed = true;
-    if (output.profile_source === 'first_run_setup' && options.profileSaved !== false) {
+    // Create-only, like the BFF's initializeOnce: a first run saves the envelope's profile, but a profile the
+    // author already saved is never replaced by a stubbed envelope — the by-line follows the saved profile.
+    if (!hasProfile && output.profile_source === 'first_run_setup' && options.profileSaved !== false) {
       selectedProfile = output.profile;
       hasProfile = true;
     }
