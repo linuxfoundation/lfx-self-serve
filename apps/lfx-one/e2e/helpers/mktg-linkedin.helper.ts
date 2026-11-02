@@ -13,7 +13,13 @@ import {
 import { LINKEDIN_RECORDED_CASES } from '../../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
 import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_PROGRESS } from '../../../../packages/shared/src/constants/linkedin-post-questions.fixture';
 import { parseLinkedinQuestions, linkedinRunQuestions, linkedinRunActivity } from '../../../../packages/shared/src/utils/linkedin-post-run.utils';
-import type { LinkedinEnvelope, MktgDocumentRunProgress, MktgRevisionResponse, MktgRevisionSummary } from '../../../../packages/shared/src/interfaces';
+import type {
+  LinkedinEnvelope,
+  LinkedinProfile,
+  MktgDocumentRunProgress,
+  MktgRevisionResponse,
+  MktgRevisionSummary,
+} from '../../../../packages/shared/src/interfaces';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '../../../../packages/shared/src/utils/linkedin-post.utils';
 import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
@@ -66,6 +72,8 @@ export async function setupLinkedin(
     saved?: boolean;
     writer?: boolean;
     profileError?: boolean;
+    /** The saved profile the stubbed GET returns; defaults to the test profile (or the recorded case's). */
+    profile?: LinkedinProfile;
     author?: { name: string | null; isAuthor: boolean };
     recordedCase?: string;
     questions?: boolean;
@@ -82,7 +90,7 @@ export async function setupLinkedin(
   if (!type) throw new Error('LinkedIn document type is not registered');
   const recorded = options.recordedCase ? LINKEDIN_RECORDED_CASES.find((item) => item.name.endsWith(`/${options.recordedCase}`)) : undefined;
   const output: LinkedinEnvelope = JSON.parse(JSON.stringify(options.output ?? recorded?.envelope ?? linkedinEnvelope()));
-  let selectedProfile = recorded ? output.profile : LINKEDIN_TEST_PROFILE;
+  let selectedProfile = options.profile ?? (recorded ? output.profile : LINKEDIN_TEST_PROFILE);
   let hasProfile = options.saved ?? false;
   const turn = parseLinkedinQuestions(LINKEDIN_RECORDED_QUESTIONS);
   const events = LINKEDIN_RECORDED_PROGRESS.map((event, index) =>
@@ -309,7 +317,8 @@ export async function setupLinkedin(
       ...document,
       documentId: run.documentId,
       linkedinPost: {
-        author: { name: options.author?.name === undefined ? 'Example author' : options.author.name },
+        // Mirrors the BFF: the author's by-line is their saved profile's name; a non-author test names the account explicitly.
+        author: { name: options.author?.name === undefined ? selectedProfile.about.name : options.author.name },
         isAuthor: options.author?.isAuthor ?? true,
         options: output.options,
         notes: output.notes,
