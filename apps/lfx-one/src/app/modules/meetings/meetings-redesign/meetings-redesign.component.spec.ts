@@ -139,7 +139,7 @@ describe('MeetingsRedesignComponent', () => {
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
         { provide: PersonaService, useValue: { personaLoaded } },
-        { provide: Router, useValue: { navigate } },
+        { provide: Router, useValue: { navigate, navigateByUrl: navigate } },
         { provide: ActivatedRoute, useFactory: () => ({ queryParamMap: queryParamMap$ }) },
       ],
     });
@@ -184,7 +184,15 @@ describe('MeetingsRedesignComponent', () => {
     latestPast$.next([{ ...buildMeeting(4, { start_time: new Date(Date.now() - DAY_MS).toISOString() }), occurrence_id: '' } as PastMeeting]);
     await fixture.whenStable();
 
-    expect(query(fixture, 'meetings-home-last-card-menu')?.querySelector('[data-testid="meetings-home-row-actions-trigger"]')).toBeTruthy();
+    const trigger = query(fixture, 'meetings-home-last-card-menu')?.querySelector<HTMLButtonElement>(
+      '[data-testid="meetings-home-row-actions-trigger"] button'
+    );
+    navigate.mockClear();
+    trigger?.click();
+    await fixture.whenStable();
+
+    expect(document.querySelector('[data-testid="meetings-home-row-actions-menu"]')).toBeTruthy();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it('hides the Last meeting card, with no error, when its feed fails', async () => {

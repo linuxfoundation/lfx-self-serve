@@ -89,7 +89,8 @@ export class MeetingHomeActionsComponent {
       this.showError('Copy Failed', 'Unable to build the meeting link. Please try again.');
       return;
     }
-    if (meeting.password) url.searchParams.set('password', meeting.password);
+    // The past meeting page does not take the passcode, so a shared past link leaves it out.
+    if (meeting.password && this.view() === 'upcoming') url.searchParams.set('password', meeting.password);
 
     if (!this.clipboard.copy(url.toString())) {
       this.showError('Copy Failed', 'Failed to copy link. Please try again.');
