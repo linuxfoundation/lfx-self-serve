@@ -1816,6 +1816,17 @@ export interface CreateMeetingRsvpRequest {
   response: RsvpResponse;
 }
 
+/**
+ * Failed RSVP submission
+ * @description Error emitted by the frontend RSVP submit flow; `message` is ready to show to the user
+ */
+export interface MeetingRsvpSubmitError {
+  /** User-facing reason the RSVP was not saved */
+  message: string;
+  /** HTTP status of the failed request, absent when the request was never sent */
+  status?: number;
+}
+
 // ============================================================================
 // ITX Meeting Response Interfaces (Goa endpoint shape)
 // ============================================================================
